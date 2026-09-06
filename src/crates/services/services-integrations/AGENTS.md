@@ -81,6 +81,22 @@ slices that are outside pure product logic but still platform-neutral.
   writes, marker IO, storage/import bundle filesystem IO, and JS worker process/pool
   lifecycle. Manager workflow orchestration remains outside this crate until
   reviewed owner migration.
+- LoopX v0.5.1 `turn plan --include-transaction-detail` is a prospective plan,
+  not a completed-receipt query. External-host settlement must verify the
+  exact goal/agent/Todo/turn identity through the supported compact `history`
+  projection and require both typed `validated_progress` and the matching
+  `quota_slot_spent` event. A legacy `validated_progress` without
+  `progress_observation` is accountable only when it carries an explicit
+  progress delivery outcome. After exact validated progress, the host may
+  idempotently repair a missing turn-scoped quota spend and must re-read
+  history before accepting settlement. Do not infer success from the next turn
+  plan or fabricate progress when no matching validation exists.
+- WebFetch treats HTTP 401, 403, and 429 as structured access restrictions so
+  the Agent can change routes without presenting an expected server policy as
+  a tool crash. Preserve retry/rate-limit headers, prohibit blind same-URL
+  retries in the result guidance, and route authentication through an existing
+  browser or provider boundary; never bypass access controls in the HTTP
+  provider.
 - Managed plugin source integration may own bounded package discovery,
   integrity checks, fixed package input reads, no-follow path handling,
   trust-file locking, and atomic persistence. Product path selection stays in

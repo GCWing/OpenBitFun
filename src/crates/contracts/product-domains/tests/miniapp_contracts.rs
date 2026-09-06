@@ -591,8 +591,25 @@ fn miniapp_bridge_exposes_topic_session_lifecycle() {
     assert!(bridge.contains("agent.ensureSession"));
     assert!(bridge.contains("chat.focusSession"));
     assert!(bridge.contains("chat.clearSession"));
+    assert!(!bridge.contains("loopx.attach"));
     assert!(bridge.contains("_chatUserMessagePending"));
     assert!(bridge.contains("chat.completeUserMessage"));
+}
+
+#[test]
+fn miniapp_bridge_injects_loopx_only_for_the_builtin_identity() {
+    let ordinary = build_bridge_script("app-1", "/tmp/app", "/tmp/workspace", "dark", "win32");
+    let builtin = build_bridge_script(
+        "builtin-bitfun-loopx",
+        "/tmp/app",
+        "/tmp/workspace",
+        "dark",
+        "win32",
+    );
+
+    assert!(!ordinary.contains("loopx.attach"));
+    assert!(builtin.contains("loopx.attach"));
+    assert!(builtin.contains("Private product extension"));
 }
 
 #[test]

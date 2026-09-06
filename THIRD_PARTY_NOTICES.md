@@ -67,3 +67,24 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## loopx
+
+- Project: loopx
+- Source: https://github.com/huangruiteng/loopx
+- License: Apache-2.0
+- Copyright: Copyright 2026 LoopX contributors
+
+BitFun bundles a compiled, self-contained build of the loopx CLI as a desktop
+sidecar resource (`resources/loopx/`). It powers the built-in bitfun-loopx
+MiniApp's issue-fixing loop and is built at packaging time by
+`scripts/build-loopx.mjs` from the pinned upstream release recorded in
+`resources/loopx/manifest.json` (version, commit, content hash, and build
+toolchain). The upstream Apache-2.0 license, NOTICE, historical MIT license, and
+trademark policy ship alongside the binary as `resources/loopx/LICENSE`,
+`resources/loopx/NOTICE`, `resources/loopx/LICENSE-MIT`, and
+`resources/loopx/TRADEMARKS.md` in binary release packages. When the bundled
+sidecar is unavailable, the local Desktop may download the pinned source tag
+into BitFun-managed storage; that checkout retains the same upstream compliance
+files. The `loopx` name is used descriptively to refer to the upstream project;
+bitfun-loopx is a third-party integration and is not a LoopX project release.

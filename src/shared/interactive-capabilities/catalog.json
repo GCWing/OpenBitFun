@@ -182,8 +182,14 @@
     }
   ],
   "implementationOnlyCommands": {
-    "publicMarketImageCache": [
-      "market_image_load"
+    "loopxControlPlane": [
+      "miniapp_loopx_action",
+      "miniapp_loopx_attach",
+      "miniapp_loopx_create_task",
+      "miniapp_loopx_events_since",
+      "miniapp_loopx_list_models",
+      "miniapp_loopx_resolve_intake",
+      "miniapp_loopx_turn_output_since"
     ],
     "legacyUpdateCompatibility": [
       "install_update"
@@ -9378,6 +9384,9 @@
       "capabilityId": "feature.remote-connect"
     },
     "miniapp": {
+      "capabilityId": "feature.miniapps"
+    },
+    "miniapp_loopx": {
       "capabilityId": "feature.miniapps"
     },
     "ssh": {

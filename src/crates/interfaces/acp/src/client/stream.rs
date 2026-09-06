@@ -271,6 +271,7 @@ fn acp_tool_call_events(
                 Some(tool_call.locations),
             );
             events.push(AcpClientStreamEvent::ToolEvent(ToolEventData::Completed {
+                params: None,
                 identity: openbitfun_events::ToolEventIdentity::direct(tool_id, tool_name),
                 result,
                 result_for_assistant: None,
@@ -284,6 +285,7 @@ fn acp_tool_call_events(
         }
         ToolCallStatus::Failed => {
             events.push(AcpClientStreamEvent::ToolEvent(ToolEventData::Failed {
+                params: None,
                 identity: openbitfun_events::ToolEventIdentity::direct(tool_id, tool_name),
                 error: acp_tool_error_text(tool_call.raw_output, tool_call.content),
                 duration_ms: None,
@@ -316,13 +318,17 @@ fn acp_tool_call_update_events(
     match update.fields.status {
         Some(ToolCallStatus::Completed) => {
             let mut events = Vec::new();
-            if let Some(raw_input) = snapshot.raw_input {
+            let input_params = snapshot
+                .raw_input
+                .as_ref()
+                .map(|raw| normalize_tool_params(&tool_name, materialize_raw_input(raw.clone())));
+            if let Some(params) = input_params.clone() {
                 events.push(AcpClientStreamEvent::ToolEvent(ToolEventData::Started {
                     identity: openbitfun_events::ToolEventIdentity::direct(
                         tool_id.clone(),
                         tool_name.clone(),
                     ),
-                    params: normalize_tool_params(&tool_name, materialize_raw_input(raw_input)),
+                    params,
                     timeout_seconds: None,
                 }));
             }
@@ -333,6 +339,7 @@ fn acp_tool_call_update_events(
                 update.fields.locations,
             );
             events.push(AcpClientStreamEvent::ToolEvent(ToolEventData::Completed {
+                params: input_params,
                 identity: openbitfun_events::ToolEventIdentity::direct(tool_id, tool_name),
                 result,
                 result_for_assistant: None,
@@ -358,6 +365,7 @@ fn acp_tool_call_update_events(
                 }));
             }
             events.push(AcpClientStreamEvent::ToolEvent(ToolEventData::Failed {
+                params: None,
                 identity: openbitfun_events::ToolEventIdentity::direct(tool_id, tool_name),
                 error: acp_tool_error_text(
                     update.fields.raw_output,

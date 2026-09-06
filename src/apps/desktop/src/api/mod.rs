@@ -39,6 +39,7 @@ pub mod mcp_api;
 pub mod miniapp_agent_api;
 pub mod miniapp_api;
 pub mod miniapp_export_api;
+pub mod miniapp_loopx_api;
 pub mod miniapp_market_api;
 pub mod pages_api;
 pub mod path_target;

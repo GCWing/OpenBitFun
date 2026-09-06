@@ -189,15 +189,32 @@ impl AppState {
 
         let worker_host_path = match resolve_worker_host_path() {
             Some(p) => {
-                log::info!("Resolved worker_host.js at: {}", p.display());
+                log::info!("Resolved worker host at: {}", p.display());
                 p
             }
             None => {
                 log::warn!(
-                    "worker_host.js not found in any candidate location; \
+                    "worker host not found in any candidate location; \
                      MiniApp Workers will not start"
                 );
                 std::path::PathBuf::from("worker_host.js")
+            }
+        };
+        // The bitfun-loopx MiniApp prefers a bundled, compiled loopx CLI
+        // sidecar (scripts/build-loopx.mjs, shipped via bundle.resources).
+        // Export its resource directory to JS workers when present. The native
+        // LoopX controller separately owns managed GitHub source installation
+        // and the exact-version system fallback used in development.
+        let loopx_resource_dir = match resolve_bundled_loopx_dir() {
+            Some(dir) => {
+                log::info!("Resolved bundled loopx CLI resource dir: {}", dir.display());
+                Some(dir)
+            }
+            None => {
+                log::info!(
+                    "Bundled LoopX CLI not found; the native controller will use managed source or the exact-version system fallback"
+                );
+                None
             }
         };
         let speech_service = Arc::new(SpeechService::new(SpeechStoragePaths::new(
@@ -205,11 +222,11 @@ impl AppState {
             path_manager.speech_model_downloads_dir(),
             path_manager.speech_input_temp_dir(),
         )));
-        let js_worker_pool = JsWorkerPool::new(path_manager, worker_host_path)
+        let js_worker_pool = JsWorkerPool::new(path_manager, worker_host_path, loopx_resource_dir)
             .ok()
             .map(Arc::new);
         if js_worker_pool.is_none() {
-            log::warn!("JsWorkerPool not initialized (missing worker_host.js or no Bun/Node)");
+            log::warn!("JsWorkerPool not initialized (missing worker host or no Bun/Node)");
         }
 
         let statistics = Arc::new(RwLock::new(AppStatistics {
@@ -574,6 +591,9 @@ impl AppState {
 ///   4. `<exe_dir>/../Resources/worker_host.js` — flat macOS layout fallback.
 ///   5. `<exe_dir>/../lib/<bin>/resources/worker_host.js` — typical Linux deb/AppImage.
 ///   6. `<exe_dir>/../share/<bin>/resources/worker_host.js` — alt Linux layout.
+/// `.cjs` (not `.js`): the host is CommonJS and must stay that way regardless of
+/// the nearest `package.json` ("type": "module" in this repo's root would make
+/// Node treat a `.js` host as ESM and crash on `require`).
 fn resolve_worker_host_path() -> Option<std::path::PathBuf> {
     let mut candidates: Vec<std::path::PathBuf> = Vec::new();
 
@@ -615,4 +635,45 @@ fn resolve_worker_host_path() -> Option<std::path::PathBuf> {
     }
 
     candidates.into_iter().find(|p| p.exists())
+}
+
+/// Resolve the directory hosting the bundled, compiled loopx CLI sidecar
+/// (built by `scripts/build-loopx.mjs`, shipped via `bundle.resources`). The
+/// layouts mirror `resolve_worker_host_path`, with the platform binary name
+/// under a `loopx/` subdirectory. Returns the resource directory so the
+/// worker pool can export it as `BITFUN_RESOURCE_DIR`.
+pub(crate) fn resolve_bundled_loopx_dir() -> Option<std::path::PathBuf> {
+    let bin_name = if cfg!(windows) { "loopx.exe" } else { "loopx" };
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    candidates.push(
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("resources")
+            .join("loopx"),
+    );
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            candidates.push(exe_dir.join("resources").join("loopx"));
+            if let Some(parent) = exe_dir.parent() {
+                candidates.push(parent.join("Resources").join("resources").join("loopx"));
+                candidates.push(parent.join("Resources").join("loopx"));
+                if let Some(bin) = exe.file_name().and_then(|s| s.to_str()) {
+                    candidates.push(parent.join("lib").join(bin).join("resources").join("loopx"));
+                    candidates.push(
+                        parent
+                            .join("share")
+                            .join(bin)
+                            .join("resources")
+                            .join("loopx"),
+                    );
+                }
+            }
+        }
+    }
+
+    candidates
+        .into_iter()
+        .find(|dir| dir.join(bin_name).exists())
+        .map(|dir| dir.parent().map(|p| p.to_path_buf()).unwrap_or(dir))
 }

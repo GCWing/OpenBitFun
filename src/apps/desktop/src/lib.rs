@@ -436,6 +436,13 @@ pub async fn run() {
     };
     startup_trace.record_phase("native_process_start", "native");
     crash_diagnostics::initialize_run_state(session_log_dir.clone(), &startup_trace_id);
+    if let Err(error) = crash_diagnostics::acquire_single_instance_lock(&session_log_dir) {
+        // A second instance sharing this data root would corrupt controller
+        // state and workspace lifecycle; refuse to start instead.
+        eprintln!("BitFun desktop exited: {error}");
+        log::error!("{error}");
+        return;
+    }
     setup_panic_hook();
 
     // Install the rustls ring CryptoProvider as the process-level default early,
@@ -669,6 +676,88 @@ pub async fn run() {
         &path_manager.user_data_dir(),
     ));
 
+    let loopx_resource_dir = api::app_state::resolve_bundled_loopx_dir();
+    let managed_loopx_source_dir = path_manager
+        .miniapp_dir(openbitfun_product_domains::miniapp::loopx::LOOPX_BUILTIN_APP_ID)
+        .join("runtime")
+        .join("loopx-source-v0.5.1");
+    let mut loopx_cli_config =
+        openbitfun_services_integrations::miniapp::loopx_cli::LoopxCliAdapterConfig::packaged(
+            loopx_resource_dir.clone().unwrap_or_else(|| {
+                path_manager
+                    .miniapp_dir(openbitfun_product_domains::miniapp::loopx::LOOPX_BUILTIN_APP_ID)
+                    .join("missing-bundled-loopx")
+            }),
+        )
+        .with_managed_source_dir(managed_loopx_source_dir);
+    if loopx_resource_dir.is_none() {
+        loopx_cli_config.system_fallback =
+            openbitfun_services_integrations::miniapp::loopx_cli::LoopxSystemFallbackPolicy::ExactPinned;
+    }
+    let loopx_cli_adapter =
+        openbitfun_services_integrations::miniapp::loopx_cli::LoopxCliProcessAdapter::new(
+            loopx_cli_config,
+        );
+    let loopx_cli_adapter = match openbitfun_services_integrations::miniapp::loopx_github::GithubLoopxIntakeMetadataProvider::new() {
+        Ok(provider) => loopx_cli_adapter.with_intake_metadata_provider(Arc::new(provider)),
+        Err(error) => {
+            log::warn!("LoopX GitHub intake metadata is unavailable: {error}");
+            loopx_cli_adapter
+        }
+    };
+    let loopx_cli: Arc<dyn openbitfun_product_domains::miniapp::loopx::LoopxCliPort> =
+        Arc::new(loopx_cli_adapter);
+    let loopx_workspace: Arc<dyn openbitfun_product_domains::miniapp::loopx::LoopxWorkspacePort> =
+        Arc::new(
+            openbitfun_services_integrations::miniapp::loopx_workspace::LoopxWorkspaceService::new(
+                openbitfun_services_integrations::miniapp::loopx_workspace::LoopxWorkspaceServiceConfig::new(
+                    // Prefer a short home-based root: target repositories can
+                    // contain paths near the Windows MAX_PATH limit, and a
+                    // deep AppData prefix made worktree checkouts fail with
+                    // "Filename too long" -> "Could not reset index file".
+                    dirs::home_dir()
+                        .map(|home| home.join(".bitfun").join("loopx-workspaces"))
+                        .unwrap_or_else(|| {
+                            path_manager
+                                .miniapp_dir(
+                                    openbitfun_product_domains::miniapp::loopx::LOOPX_BUILTIN_APP_ID,
+                                )
+                                .join("workspaces")
+                        }),
+                    std::path::PathBuf::from("git"),
+                ),
+            ),
+        );
+    let loopx_agent: Arc<dyn openbitfun_product_domains::miniapp::loopx::LoopxAgentPort> = Arc::new(
+        openbitfun_core::miniapp::loopx::CoreLoopxAgentPort::new(coordinator.clone()),
+    );
+    let loopx_controller = openbitfun_core::miniapp::loopx::LoopxController::load(
+        loopx_cli,
+        loopx_workspace,
+        loopx_agent,
+        openbitfun_core::miniapp::loopx::LoopxStateStore::new(
+            path_manager
+                .miniapp_dir(openbitfun_product_domains::miniapp::loopx::LOOPX_BUILTIN_APP_ID)
+                .join("loopx-controller-state.json"),
+        ),
+    )
+    .await;
+    event_router.subscribe_internal(
+        "loopx_tasks".to_string(),
+        Arc::new(openbitfun_core::miniapp::loopx::LoopxEventSubscriber::new(
+            loopx_controller.clone(),
+        )),
+    );
+    let loopx_controller_state = api::miniapp_loopx_api::LoopxControllerState {
+        controller: loopx_controller.clone(),
+    };
+    let loopx_environment_controller = loopx_controller.clone();
+    tokio::spawn(async move {
+        if let Err(error) = loopx_environment_controller.refresh_environment().await {
+            log::warn!("LoopX environment initialization failed: {error}");
+        }
+    });
+
     let mut builder = tauri::Builder::default();
     let frontend_protocol_manager = Arc::clone(&frontend_workbench);
     builder = builder.register_uri_scheme_protocol(
@@ -715,6 +804,7 @@ pub async fn run() {
         .manage(desktop_runtime)
         .manage(coordinator_state)
         .manage(scheduler_state)
+        .manage(loopx_controller_state)
         .manage(path_manager)
         .manage(coordinator)
         .manage(scheduler)
@@ -751,6 +841,30 @@ pub async fn run() {
         .setup(move |app| {
             let setup_started = Instant::now();
             startup_trace.record_phase("tauri_setup_start", "native_setup");
+            let mut loopx_events = app
+                .state::<api::miniapp_loopx_api::LoopxControllerState>()
+                .controller
+                .subscribe();
+            let loopx_event_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    match loopx_events.recv().await {
+                        Ok(event) => {
+                            if let Err(error) =
+                                loopx_event_handle.emit("miniapp://loopx-event", event)
+                            {
+                                log::warn!("Failed to emit LoopX task event: {error}");
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            log::warn!(
+                                "LoopX task event subscriber lagged; clients will replay by cursor: skipped={skipped}"
+                            );
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
             #[cfg(target_os = "macos")]
             {
                 app.on_menu_event(|app, event| {
@@ -1827,6 +1941,13 @@ pub async fn run() {
             api::miniapp_agent_api::miniapp_agent_cancel,
             api::miniapp_agent_api::miniapp_agent_turn_text,
             api::miniapp_agent_api::miniapp_agent_cancel_stale_runs,
+            api::miniapp_loopx_api::miniapp_loopx_attach,
+            api::miniapp_loopx_api::miniapp_loopx_list_models,
+            api::miniapp_loopx_api::miniapp_loopx_resolve_intake,
+            api::miniapp_loopx_api::miniapp_loopx_create_task,
+            api::miniapp_loopx_api::miniapp_loopx_action,
+            api::miniapp_loopx_api::miniapp_loopx_events_since,
+            api::miniapp_loopx_api::miniapp_loopx_turn_output_since,
             api::miniapp_export_api::miniapp_render_slide_page,
             // Browser API (embedded webview)
             api::browser_api::browser_webview_eval,

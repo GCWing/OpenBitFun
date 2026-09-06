@@ -142,6 +142,11 @@ jobs:
           node-version: 22
           package-manager-cache: false
 
+      - name: Setup Python (bundled loopx CLI)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:

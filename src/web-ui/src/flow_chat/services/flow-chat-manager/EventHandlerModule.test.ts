@@ -710,6 +710,45 @@ describe('dispatch optimistic turn reconciliation', () => {
   });
 });
 
+describe('MiniApp transient session reconciliation', () => {
+  beforeEach(() => {
+    resetFlowChatStore();
+    stateMachineManager.clear();
+  });
+
+  afterEach(() => {
+    resetFlowChatStore();
+    stateMachineManager.clear();
+  });
+
+  it('upgrades a SessionCreated placeholder when DialogTurnStarted identifies a MiniApp Agent run', () => {
+    const store = FlowChatStore.getInstance();
+    store.addExternalSession(
+      'loopx-session',
+      'LoopX #133',
+      'Cowork',
+      'D:/worktree',
+    );
+
+    __test_only__.handleDialogTurnStarted(createFlowChatContext(), {
+      sessionId: 'loopx-session',
+      turnId: 'loopx-turn-1',
+      turnIndex: 0,
+      userInput: 'Run LoopX task',
+      userMessageMetadata: {
+        surface: 'miniapp_agent',
+        appId: 'builtin-bitfun-loopx',
+      },
+    });
+
+    expect(store.getState().sessions.get('loopx-session')).toMatchObject({
+      isTransient: true,
+      agentBackedTransient: true,
+      sessionKind: 'miniapp',
+    });
+  });
+});
+
 describe('mergeParamsPartialEventData', () => {
   it('appends Write argument deltas within a batch', () => {
     const merged = __test_only__.mergeParamsPartialEventData(

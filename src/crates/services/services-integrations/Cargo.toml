@@ -201,15 +201,30 @@ miniapp-runtime = [
     "uuid",
     "which",
 ]
-account-identity = [
-    "dep:openbitfun-product-domains",
+miniapp-loopx = [
+    "async-trait",
+    "openbitfun-product-domains/miniapp",
+    "openbitfun-services-core/process-runtime",
     "openbitfun-services-core/tls-provider",
-    "openbitfun-services-core/credential-vault",
-    "openbitfun-services-core/product-identity",
-    "chrono", "dirs", "thiserror",
-    "dep:keyring-core", "dep:windows-native-keyring-store", "dep:zbus-secret-service-keyring-store",
-    "reqwest", "reqwest/json", "reqwest/rustls-no-provider",
-    "tokio/rt", "tokio/sync",
+    "dep:openbitfun-product-domains",
+    "dunce",
+    "hex",
+    "reqwest",
+    "reqwest/json",
+    "reqwest/rustls-no-provider",
+    "sha2",
+    "thiserror",
+    "tokio/fs",
+    "tokio/io-util",
+    "tokio/macros",
+    "tokio/process",
+    "tokio/rt",
+    "tokio/sync",
+    "tokio/time",
+    "tokio-util",
+    "url",
+    "uuid",
+    "which",
 ]
 miniapp-market = [
     "account-identity",
@@ -486,6 +501,7 @@ product-full = [
     "function-agents",
     "git",
     "hook-import",
+    "miniapp-loopx",
     "miniapp-runtime",
     "mcp",
     "plugin-source",
@@ -537,6 +553,11 @@ required-features = ["mcp"]
 name = "mcp_streamable_http_contracts"
 path = "tests/mcp_streamable_http_contracts.rs"
 required-features = ["mcp"]
+
+[[test]]
+name = "miniapp_loopx_contracts"
+path = "tests/miniapp_loopx_contracts.rs"
+required-features = ["miniapp-loopx"]
 
 [[test]]
 name = "remote_connect_contracts"

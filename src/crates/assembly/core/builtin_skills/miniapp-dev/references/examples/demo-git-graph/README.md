@@ -28,7 +28,7 @@ This demo showcases OpenBitFun MiniApp's full-stack collaboration capability —
 1. **UI → Bridge**: `app.call('git.log', { cwd, maxCount })` etc. via `window.app` (JSON-RPC)
 2. **Bridge → Tauri**: postMessage intercepted by the host `useMiniAppBridge`, which calls `miniapp_worker_call`
 3. **Tauri → Worker**: Rust writes the request to Worker stdin (JSON-RPC)
-4. **Worker**: `worker_host.js` loads `source/worker.js`; exported handlers are invoked — primarily `git.graphData` (returns commits + refs + stashes + uncommitted in one response), plus `git.show`, `git.checkout`, `git.merge`, `git.push`, `git.stashPush`, and 20+ other methods — all backed by the `simple-git` npm package
+4. **Worker**: `worker_host.cjs` loads `source/worker.js`; exported handlers are invoked — primarily `git.graphData` (returns commits + refs + stashes + uncommitted in one response), plus `git.show`, `git.checkout`, `git.merge`, `git.push`, `git.stashPush`, and 20+ other methods — all backed by the `simple-git` npm package
 5. **Worker → Tauri → Bridge → UI**: response travels back via stderr → Rust → postMessage to iframe → UI refreshes graph and detail panel
 
 ### Directory Structure
@@ -117,7 +117,7 @@ miniapps/git-graph/
 1. **UI → Bridge**：`app.call('git.log', { cwd, maxCount })` 等通过 `window.app` 发起 RPC
 2. **Bridge → Tauri**：postMessage 被宿主 `useMiniAppBridge` 接收，调用 `miniapp_worker_call`
 3. **Tauri → Worker**：Rust 将请求写入 Worker 进程 stdin（JSON-RPC）
-4. **Worker**：`worker_host.js` 加载本目录 `source/worker.js`，其导出的处理函数被调用 — 主要是 `git.graphData`（一次返回提交 + refs + stash + 未提交变更），以及 `git.show`、`git.checkout`、`git.merge`、`git.push`、`git.stashPush` 等 20+ 个方法 — 均基于 `simple-git` npm 包
+4. **Worker**：`worker_host.cjs` 加载本目录 `source/worker.js`，其导出的处理函数被调用 — 主要是 `git.graphData`（一次返回提交 + refs + stash + 未提交变更），以及 `git.show`、`git.checkout`、`git.merge`、`git.push`、`git.stashPush` 等 20+ 个方法 — 均基于 `simple-git` npm 包
 5. **Worker → Tauri → Bridge → UI**：响应经 stderr 回传 Rust，再 postMessage 回 iframe，UI 更新图谱与详情
 
 ### 目录结构

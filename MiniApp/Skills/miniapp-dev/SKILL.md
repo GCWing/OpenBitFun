@@ -121,10 +121,10 @@ src/web-ui/src/flow_chat/tool-cards/MiniAppToolDisplay.tsx   # InitMiniAppDispla
 ### Worker 宿主
 
 ```
-src/apps/desktop/resources/worker_host.js
+src/apps/desktop/resources/worker_host.cjs
 ```
 
-Node/Bun 标准脚本：从 argv 读策略 JSON，stdin 收 RPC、stderr 回响应，内置 fs/shell/net/os/storage dispatch + 加载用户 `source/worker.js` 自定义方法。
+Node/Bun 标准脚本：从 `BITFUN_WORKER_POLICY` 环境变量读策略 JSON（argv[2] 仅作手动运行兜底），stdin 收 RPC、stderr 回响应，内置 fs/shell/net/os/storage dispatch + 加载用户 `source/worker.js` 自定义方法。
 
 ## MiniApp 数据模型 (V2)
 
@@ -216,6 +216,14 @@ MiniApp 框架**只暴露下列能力**，没有任何"通用 OpenBitFun 后端�
 3. **必须真调用某个内部服务** → 暂不支持，先记录到需求池。**不要**自己起一个 worker 去模拟服务行为，会和真正的 service 行为漂移。
 
 > 维护者：以后若新增 `app.openbitfun.*` / `app.workspace.*` 这类宿主直通通道，请同步更新本节，避免"文档说没有、代码偷偷加了"的不一致。
+
+### 内置产品私有扩展
+
+源码、来源和运行域都由宿主验证的内置产品界面可以获得私有 namespace，但它不属于
+MiniApp 公共 API，也不会注入普通、导入或市场 MiniApp。当前仅
+`builtin-bitfun-loopx` 使用私有 `app.loopx` 连接持久宿主控制器；每次调用仍由宿主
+复核原始 bundle、非 draft、非本地覆盖和本地执行域。生成 MiniApp 不得探测、声明或
+模拟这些私有 namespace；需要复用的能力必须先形成产品无关、带权限合同的公开 API。
 
 ## window.app 运行时 API
 

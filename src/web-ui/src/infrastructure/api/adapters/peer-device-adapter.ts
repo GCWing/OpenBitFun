@@ -29,7 +29,7 @@ const log = createLogger('PeerDeviceTransport');
 const LOCAL_ONLY_COMMANDS: ReadonlySet<string> = PEER_CONTROLLER_LOCAL_COMMANDS;
 
 /**
- * Session / workspace / chat / config path — must not wait behind git/SSH/editor
+ * Session / workspace / chat / config path 閳?must not wait behind git/SSH/editor
  * noise. Concurrency is capped (2); demoting `get_config` / modes / agent
  * profile to low starves peer hydrate (missing keys). See peer-device README.
  * Allowlist so new background commands default to normal/low.
@@ -131,7 +131,7 @@ const RETRYABLE_READ_COMMANDS = new Set([
   // side effects (the launch / restart / CDP-enable / permission-prompt /
   // open-settings commands stay mutation below). They start with `browser_`
   // / `computer_`, not `get_`/`read_`/`list_`, so the prefix rules in
-  // isPeerRetryableReadCommand miss them — list them explicitly so a Desktop
+  // isPeerRetryableReadCommand miss them 閳?list them explicitly so a Desktop
   // Peer settings page survives a brief relay blip with a read retry instead of
   // a 30 s mutation timeout. See PR #2428 round 5 #3.
   'browser_control_get_status',
@@ -372,7 +372,7 @@ interface QueuedPeerRequest {
 /**
  * Routes product invokes to a peer device via account Device RPC HostInvoke,
  * while keeping account / window / remote-connect commands on the local host.
- * Event listen stays local — peer events are re-emitted onto this machine.
+ * Event listen stays local 閳?peer events are re-emitted onto this machine.
  * Failures never fall back to the local product data plane.
  *
  * HostInvoke calls are priority-queued with a small concurrency limit so
@@ -405,7 +405,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
     normal: [],
     low: [],
   };
-  /** Every request whose caller promise has not settled — queued or in flight. */
+  /** Every request whose caller promise has not settled 閳?queued or in flight. */
   private readonly pending = new Set<QueuedPeerRequest>();
 
   constructor(
@@ -451,8 +451,8 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
   /**
    * Registry hook: this adapter has started or stopped being the transport the
    * window renders. A request issued under an earlier binding fails as a
-   * surface change when it lands, so slow work — a session-list read still
-   * working through its retry budget, say — cannot resolve into the surface
+   * surface change when it lands, so slow work 閳?a session-list read still
+   * working through its retry budget, say 閳?cannot resolve into the surface
    * that replaced it.
    */
   markRenderedTransport(rendered: boolean, forceNewBinding = false): void {
@@ -598,7 +598,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
    * we have detached from.
    *
    * Every unsettled caller is rejected. Queued entries used to be discarded
-   * with `queue.length = 0`, which never settled their promises — that is what
+   * with `queue.length = 0`, which never settled their promises 閳?that is what
    * left session-list and history loads spinning forever after a teardown.
    */
   async disconnect(): Promise<void> {
@@ -780,7 +780,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
    * A request that outlived its surface binding must not resolve: its answer
    * describes a device this window has stopped rendering, and feeding it to the
    * current surface is how a peer's session list ended up drawn over the local
-   * one. The peer-side effect of a mutation still stands — the caller's own
+   * one. The peer-side effect of a mutation still stands 閳?the caller's own
    * generation guard decides what to do about that.
    */
   private assertBindingUnchanged(issuedBindingEpoch: number, action: string): void {
@@ -833,7 +833,7 @@ export class PeerDeviceTransportAdapter implements ITransportAdapter {
       }
       if (envelope.resp === 'host_invoke_result') {
         if (!envelope.ok) {
-          // Product failure on the peer — do not count as transport loss.
+          // Product failure on the peer 閳?do not count as transport loss.
           throw new PeerProductCommandError(
             envelope.error || `Peer command '${action}' failed`,
           );

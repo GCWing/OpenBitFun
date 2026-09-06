@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "5473331e06ecd4bfafbf9b547d48b4fe1561ccf69d86fdfde51ea10dc919531c",
-  "commandCount": 657,
+  "catalogDigest": "d7a7419ddd673eb733ae8bd33dbb3dcd3b4d1ce0acfc953067a3403fe26d6699",
+  "commandCount": 673,
   "coverage": {
-    "commandCount": 657,
-    "documentedCommandCount": 613,
-    "implementationCommandCount": 44,
-    "implementationDigest": "012cebbd8d7c908d8e4c0787f73a2fa5f43184c240e7fde68cb941667574ba8f"
+    "commandCount": 673,
+    "documentedCommandCount": 633,
+    "implementationCommandCount": 40,
+    "implementationDigest": "c0a1edc760154624bd17f742f82fb66d08af6e8e2b32e99829e92ed6a75cd75e"
   },
   "commands": [
     {
@@ -5737,6 +5737,136 @@
       "sourceFile": "src/apps/desktop/src/api/miniapp_api.rs",
       "signature": "fn miniapp_install_deps( state: State<'_, AppState>, app_id: String, ) -> Result<CoreInstallResult, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "miniapp_loopx_action",
+      "moduleId": "miniapp_loopx",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::miniapp_loopx_api::miniapp_loopx_action",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_loopx_api.rs",
+      "signature": "fn miniapp_loopx_action( app_state: State<'_, AppState>, controller: State<'_, LoopxControllerState>, request: MiniAppLoopxActionRequest, ) -> Result<LoopxActionResponse, String>",
+      "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
+      "id": "miniapp_loopx_attach",
+      "moduleId": "miniapp_loopx",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::miniapp_loopx_api::miniapp_loopx_attach",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_loopx_api.rs",
+      "signature": "fn miniapp_loopx_attach( app_state: State<'_, AppState>, controller: State<'_, LoopxControllerState>, request: MiniAppLoopxAttachRequest, ) -> Result<LoopxAttachResponse, String>",
+      "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
+      "id": "miniapp_loopx_create_task",
+      "moduleId": "miniapp_loopx",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::miniapp_loopx_api::miniapp_loopx_create_task",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_loopx_api.rs",
+      "signature": "fn miniapp_loopx_create_task( app_state: State<'_, AppState>, controller: State<'_, LoopxControllerState>, request: MiniAppLoopxCreateTaskRequest, ) -> Result<LoopxCreateTaskResponse, String>",
+      "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
+      "id": "miniapp_loopx_events_since",
+      "moduleId": "miniapp_loopx",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::miniapp_loopx_api::miniapp_loopx_events_since",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_loopx_api.rs",
+      "signature": "fn miniapp_loopx_events_since( app_state: State<'_, AppState>, controller: State<'_, LoopxControllerState>, request: MiniAppLoopxEventsSinceRequest, ) -> Result<LoopxEventsSinceResponse, String>",
+      "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
+      "id": "miniapp_loopx_list_models",
+      "moduleId": "miniapp_loopx",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::miniapp_loopx_api::miniapp_loopx_list_models",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_loopx_api.rs",
+      "signature": "fn miniapp_loopx_list_models( app_state: State<'_, AppState>, request: MiniAppLoopxListModelsRequest, ) -> Result<Vec<MiniAppAiModelInfo>, String>",
+      "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
+      "id": "miniapp_loopx_resolve_intake",
+      "moduleId": "miniapp_loopx",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::miniapp_loopx_api::miniapp_loopx_resolve_intake",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_loopx_api.rs",
+      "signature": "fn miniapp_loopx_resolve_intake( app_state: State<'_, AppState>, controller: State<'_, LoopxControllerState>, request: MiniAppLoopxResolveIntakeRequest, ) -> Result<LoopxResolveIntakeResponse, String>",
+      "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
+      "id": "miniapp_loopx_turn_output_since",
+      "moduleId": "miniapp_loopx",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::miniapp_loopx_api::miniapp_loopx_turn_output_since",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_loopx_api.rs",
+      "signature": "fn miniapp_loopx_turn_output_since( app_state: State<'_, AppState>, controller: State<'_, LoopxControllerState>, request: MiniAppLoopxTurnOutputSinceRequest, ) -> Result<LoopxTurnOutputSinceResponse, String>",
+      "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
+      "id": "miniapp_market_auth_poll",
+      "moduleId": "miniapp_market",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [
+        "feature.miniapps:market-account"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::miniapp_market_api::miniapp_market_auth_poll",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_market_api.rs",
+      "signature": "fn miniapp_market_auth_poll( app: AppHandle, request: DesktopAuthPollViewRequest, ) -> Result<DesktopAuthPollViewResponse, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
+      "id": "miniapp_market_auth_start",
+      "moduleId": "miniapp_market",
+      "capabilityId": "feature.miniapps",
+      "capabilityIds": [
+        "feature.miniapps"
+      ],
+      "documentedItemIds": [
+        "feature.miniapps:market-account"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::miniapp_market_api::miniapp_market_auth_start",
+      "sourceFile": "src/apps/desktop/src/api/miniapp_market_api.rs",
+      "signature": "fn miniapp_market_auth_start() -> Result<DesktopAuthStartView, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "miniapp_market_browse",

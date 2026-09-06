@@ -32,14 +32,14 @@ parameters:
   - name: search_chord
     description: "Keyboard shortcut to focus the in-app search box. Default ['command','f'] (macOS)."
     required: false
-    default: ["command", "f"]
+    default: '["command", "f"]'
   - name: send_keys
     description: |
       Chord that submits the message in this app. Default ['return'] works for
       WeChat/iMessage/Telegram. Use ['command','return'] for Slack/Lark where
       Return inserts a newline.
     required: false
-    default: ["return"]
+    default: '["return"]'
 
 steps:
   - domain: system

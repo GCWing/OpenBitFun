@@ -566,6 +566,7 @@ mod tests {
     fn completed_event_maps_to_completed_update_with_output() {
         let mut seen = HashSet::new();
         let event = ToolEventData::Completed {
+            params: None,
             identity: identity("ExecCommand"),
             result: serde_json::json!({ "stdout": "ok" }),
             result_for_assistant: Some("done".to_string()),
@@ -876,6 +877,7 @@ mod tests {
         let old_string = "old".repeat(ACP_LARGE_TEXT_PREVIEW_CHARS);
         let new_string = "new".repeat(ACP_LARGE_TEXT_PREVIEW_CHARS);
         let event = ToolEventData::Completed {
+            params: None,
             identity: identity("Edit"),
             result: serde_json::json!({
                 "file_path": "src/lib.rs",

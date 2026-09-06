@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LoopX</title>
+</head>
+<body>
+  <a class="skip-link" href="#log-list" data-i18n="skipToLogs">跳到日志</a>
+
+  <div id="loopx-app" class="loopx-shell" aria-busy="true">
+    <header class="intake-header" aria-labelledby="product-name">
+      <div class="product-mark">
+        <span class="product-mark__glyph" aria-hidden="true">LX</span>
+        <div class="product-mark__copy">
+          <strong id="product-name">LoopX</strong>
+          <span id="connection-label" data-i18n="connecting">正在连接宿主</span>
+        </div>
+      </div>
+
+      <form id="intake-form" class="intake-form" aria-label="创建 LoopX 修复任务">
+        <label class="sr-only" for="intake-input" data-i18n="intakeLabel">GitHub Issue、Pull Request 或仓库链接</label>
+        <span class="field-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </span>
+        <input
+          id="intake-input"
+          name="intake"
+          type="url"
+          inputmode="url"
+          autocomplete="url"
+          list="intake-history"
+          spellcheck="false"
+          maxlength="2048"
+          required
+          placeholder="https://github.com/owner/repo/issues/123"
+          data-i18n-placeholder="intakePlaceholder"
+        />
+        <datalist id="intake-history"></datalist>
+        <span class="model-field" title="模型" data-i18n-title="model">
+          <span class="model-field__label" data-i18n="model">模型</span>
+          <select id="model-select" name="model" class="model-field__select">
+            <option value="auto" data-i18n="modelAuto">自动模型</option>
+          </select>
+        </span>
+        <button id="resolve-button" class="icon-button icon-button--accent" type="submit" title="分析链接" data-i18n-title="resolve">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 14-7-7 14-2-7-5-2Z"/></svg>
+          <span class="sr-only" data-i18n="resolve">分析链接</span>
+        </button>
+      </form>
+
+      <div class="header-actions">
+        <details id="environment-panel" class="environment-panel">
+          <summary title="环境状态" data-i18n-title="environment">
+            <span id="environment-dot" class="status-dot" aria-hidden="true"></span>
+            <span data-i18n="environment">环境</span>
+            <strong id="environment-status">--</strong>
+          </summary>
+          <div class="environment-body">
+            <div id="environment-checked" class="environment-checked"></div>
+            <div id="environment-remediation" class="environment-remediation" role="status" aria-live="polite" hidden>
+              <span class="environment-remediation__indicator" aria-hidden="true"></span>
+              <div class="environment-remediation__copy">
+                <strong id="environment-remediation-title"></strong>
+                <p id="environment-remediation-detail"></p>
+                <span id="environment-remediation-progress" class="environment-remediation__progress" hidden></span>
+              </div>
+              <button id="install-loopx" class="primary-button environment-remediation__action" type="button">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14a2 2 0 0 0 2-2v-4"/><path d="M3 15v4a2 2 0 0 0 2 2"/></svg>
+                <span id="install-loopx-label" data-i18n="installLoopx">安装兼容版本</span>
+              </button>
+            </div>
+            <section aria-labelledby="core-env-title">
+              <div class="section-heading">
+                <h2 id="core-env-title" data-i18n="coreEnvironment">核心环境</h2>
+                <span data-i18n="required">必需</span>
+              </div>
+              <div id="core-environment-list" class="environment-grid"></div>
+            </section>
+            <section aria-labelledby="optional-env-title">
+              <div class="section-heading">
+                <h2 id="optional-env-title" data-i18n="optionalEnvironment">增强能力</h2>
+                <span data-i18n="optional">可选</span>
+              </div>
+              <div id="optional-environment-list" class="environment-grid"></div>
+            </section>
+            <button id="retry-environment" class="text-button" type="button" data-i18n="retryEnvironment">重新检查环境</button>
+          </div>
+        </details>
+        <button id="reset-loopx" class="icon-button" type="button" title="重置 LoopX" data-i18n-title="resetLoopx">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="m6 7 1 14h10l1-14"/><path d="M10 11v6M14 11v6"/></svg>
+          <span class="sr-only" data-i18n="resetLoopx">重置 LoopX</span>
+        </button>
+      </div>
+    </header>
+
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <div id="unsupported-banner" class="unsupported-banner" role="alert" hidden>
+      <span class="status-icon" aria-hidden="true">!</span>
+      <div>
+        <strong data-i18n="unsupportedTitle">当前执行位置不支持 LoopX</strong>
+        <p id="unsupported-reason"></p>
+      </div>
+    </div>
+
+    <section id="approval-alert" class="approval-alert" role="alert" aria-labelledby="approval-alert-title" hidden>
+      <span class="approval-alert__signal" aria-hidden="true">!</span>
+      <button id="approval-alert-open" class="approval-alert__copy" type="button">
+        <strong id="approval-alert-title"></strong>
+        <p id="approval-alert-message"></p>
+      </button>
+      <div class="approval-alert__actions">
+        <button id="approval-alert-open-action" class="primary-button" type="button" data-i18n="reviewDecision">去处理</button>
+      </div>
+    </section>
+
+    <div class="workbench">
+      <aside id="task-rail" class="task-rail" aria-label="LoopX 任务列表">
+        <div class="task-rail__header">
+          <div>
+            <h2 data-i18n="tasks">任务</h2>
+            <span id="task-count" class="count-badge">0</span>
+          </div>
+          <button id="collapse-tasks" class="icon-button icon-button--small" type="button" aria-expanded="true" title="收起任务栏" data-i18n-title="collapseTasks">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+            <span class="sr-only" data-i18n="collapseTasks">收起任务栏</span>
+          </button>
+        </div>
+        <nav id="task-list" class="task-list" aria-label="LoopX 任务">
+          <div id="repository-actions" class="repository-actions" hidden>
+            <button id="resume-repository" class="primary-button" type="button"></button>
+            <span id="repository-actions-meta" data-i18n="repositorySerial">同仓库串行执行</span>
+          </div>
+          <div id="task-items"></div>
+        </nav>
+        <div id="task-empty" class="task-empty">
+          <span aria-hidden="true">#</span>
+          <p data-i18n="noTasks">暂无任务</p>
+        </div>
+      </aside>
+
+      <div id="rail-splitter" class="rail-splitter" role="separator" aria-orientation="vertical" aria-label="调整任务栏宽度" title="调整任务栏宽度" data-i18n-title="resizeTasks" tabindex="0"></div>
+
+      <main id="log-workspace" class="issue-workspace" aria-labelledby="issue-title" tabindex="-1">
+        <div id="follow-banner" class="follow-banner" role="status" hidden>
+          <span class="follow-banner__dot" aria-hidden="true"></span>
+          <span id="follow-banner-text"></span>
+        </div>
+
+        <div id="issue-empty" class="issue-empty" hidden>
+          <span aria-hidden="true">◎</span>
+          <p id="issue-empty-title" data-i18n="emptyNoTask">暂无任务</p>
+          <p id="issue-empty-hint" data-i18n="emptyNoTaskHint">在上方粘贴 GitHub Issue 或 Pull Request 链接创建修复任务；运行过程会实时展示在这里。</p>
+        </div>
+
+        <section id="issue-view" class="issue-view" hidden>
+          <header class="issue-header">
+            <div class="issue-header__titles">
+              <h1 id="issue-title"></h1>
+              <div class="issue-header__meta">
+                <span id="issue-state-pill" class="state-pill" hidden></span>
+                <a id="issue-link" class="issue-link" hidden target="_blank" rel="noopener noreferrer"></a>
+                <span id="issue-updated" class="issue-header__updated"></span>
+              </div>
+            </div>
+            <div class="issue-header__side">
+              <div id="task-actions" class="task-actions"></div>
+            </div>
+          </header>
+
+          <div class="issue-columns">
+            <section id="issue-detail" class="issue-detail" aria-label="任务详情与进展">
+              <section id="issue-approval-panel" class="issue-approval-panel" aria-labelledby="issue-approval-title" hidden>
+                <div class="issue-approval-header">
+                  <span class="issue-approval-signal" aria-hidden="true">!</span>
+                  <div>
+                    <span class="eyebrow"><span data-i18n="decisionRequired">需要你的决定</span> · <span id="issue-approval-kind"></span></span>
+                    <h2 id="issue-approval-title"></h2>
+                    <p id="issue-approval-message"></p>
+                    <details id="issue-approval-raw" class="issue-approval-raw" hidden>
+                      <summary data-i18n="gateRawDetails">原始请求（来自 Agent，英文原文）</summary>
+                      <p id="issue-approval-raw-text"></p>
+                    </details>
+                  </div>
+                </div>
+                <div class="issue-approval-effects">
+                  <section data-tone="approve" aria-labelledby="issue-approval-approve-label">
+                    <strong id="issue-approval-approve-label" data-i18n="afterApprove">批准后</strong>
+                    <p id="issue-approval-approve-effect"></p>
+                  </section>
+                  <section data-tone="reject" aria-labelledby="issue-approval-reject-label">
+                    <strong id="issue-approval-reject-label" data-i18n="afterReject">拒绝后</strong>
+                    <p id="issue-approval-reject-effect"></p>
+                  </section>
+                </div>
+                <p id="issue-approval-recommendation" class="issue-approval-recommendation"></p>
+                <label class="note-field issue-approval-note" for="issue-approval-note">
+                  <span data-i18n="approvalNote">审批备注</span>
+                  <textarea id="issue-approval-note" rows="2" maxlength="1000" data-i18n-placeholder="approvalNotePlaceholder"></textarea>
+                </label>
+                <div class="issue-approval-actions">
+                  <button id="issue-approval-reject" class="danger-button" type="button" data-i18n="reject">拒绝</button>
+                  <button id="issue-approval-approve" class="primary-button" type="button" data-i18n="approve">批准</button>
+                </div>
+              </section>
+
+              <div id="issue-decision-card" class="issue-decision-card" role="status" hidden></div>
+
+              <details id="issue-description-panel" class="issue-description-panel" open>
+                <summary>
+                  <h2 data-i18n="issueDescription">Issue 描述</h2>
+                  <span id="issue-number" class="issue-number"></span>
+                </summary>
+                <div id="issue-description" class="issue-description markdown-body"></div>
+              </details>
+
+              <section id="issue-brief" class="issue-brief" aria-labelledby="issue-brief-title">
+                <div class="issue-brief__head">
+                  <h2 id="issue-brief-title" data-i18n="summaryTitle">最新进展</h2>
+                  <span id="issue-summary-meta" class="issue-brief__meta"></span>
+                </div>
+                <div id="issue-summary" class="issue-summary markdown-body"></div>
+                <details id="issue-tech" class="issue-tech">
+                  <summary data-i18n="techDetailsTitle">技术详情</summary>
+                  <ul id="issue-facts" class="issue-facts"></ul>
+                </details>
+                <p id="issue-error" class="issue-error" role="alert" hidden></p>
+              </section>
+            </section>
+
+            <div id="issue-splitter" class="issue-splitter" role="separator" aria-orientation="vertical" aria-label="调整详情和时间线宽度" title="调整详情和时间线宽度" data-i18n-title="resizeIssueColumns" tabindex="0"></div>
+
+            <section id="issue-timeline" class="issue-timeline" aria-labelledby="timeline-title">
+              <header class="timeline-header">
+                <h2 id="timeline-title" data-i18n="timelineTitle">运行时间线</h2>
+                <span id="timeline-scope" class="timeline-scope"></span>
+              </header>
+              <div id="log-scroll" class="log-scroll">
+                <div id="log-empty" class="log-empty">
+                  <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h12M4 18h8"/></svg>
+                  <p id="log-empty-text" data-i18n="noLogs">暂无运行事件</p>
+                </div>
+                <ol id="log-list" class="log-list" role="log" aria-live="off" aria-relevant="additions"></ol>
+              </div>
+              <button id="new-events" class="new-events" type="button" hidden title="滚动到最新输出" data-i18n-title="newEvents">
+                <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                <span class="sr-only" data-i18n="newEvents">滚动到最新输出</span>
+              </button>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="intake-dialog" class="dialog dialog--wide" aria-labelledby="intake-dialog-title">
+    <form id="intake-confirm-form" method="dialog">
+      <header class="dialog__header">
+        <div>
+          <span class="eyebrow" data-i18n="confirmTask">确认任务</span>
+          <h2 id="intake-dialog-title"></h2>
+        </div>
+        <button class="icon-button dialog-close" type="button" title="关闭" data-i18n-title="close">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+          <span class="sr-only" data-i18n="close">关闭</span>
+        </button>
+      </header>
+      <div class="dialog__body">
+        <dl class="preview-facts">
+          <div><dt data-i18n="repository">仓库</dt><dd id="preview-repository">--</dd></div>
+          <div><dt data-i18n="workspace">工作区</dt><dd id="preview-workspace">--</dd></div>
+          <div><dt data-i18n="model">模型</dt><dd id="preview-model">--</dd></div>
+          <div><dt data-i18n="imageCapability">图片能力</dt><dd id="preview-images">--</dd></div>
+        </dl>
+        <section aria-labelledby="candidate-title">
+          <div class="section-heading">
+            <h3 id="candidate-title" data-i18n="items">Issue / PR</h3>
+            <span id="candidate-count">0</span>
+            <label class="candidate-select-all">
+              <input id="candidate-select-all" type="checkbox" />
+              <span data-i18n="selectAll">全选</span>
+            </label>
+          </div>
+          <div id="candidate-list" class="candidate-list"></div>
+        </section>
+        <section aria-labelledby="permission-title">
+          <div class="section-heading">
+            <h3 id="permission-title" data-i18n="permissions">本次权限</h3>
+            <span data-i18n="explicitGrant">逐项授权</span>
+          </div>
+          <div id="permission-list" class="permission-list"></div>
+        </section>
+        <div id="intake-warning" class="dialog-warning" role="status" hidden></div>
+      </div>
+      <footer class="dialog__footer">
+        <button class="text-button dialog-close" type="button" data-i18n="cancel">取消</button>
+        <button id="create-button" class="primary-button" type="submit" data-i18n="createTasks">创建所选任务</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="retry-dialog" class="dialog" aria-labelledby="retry-dialog-title">
+    <form method="dialog">
+      <header class="dialog__header">
+        <div>
+          <span class="eyebrow" data-i18n="newAttempt">新尝试</span>
+          <h2 id="retry-dialog-title" data-i18n="terminalExists">已有终态任务</h2>
+        </div>
+      </header>
+      <div class="dialog__body">
+        <p id="retry-message"></p>
+      </div>
+      <footer class="dialog__footer">
+        <button id="retry-cancel" class="text-button" type="button" data-i18n="cancel">取消</button>
+        <button id="retry-confirm" class="primary-button" type="submit" data-i18n="confirmNewAttempt">确认新尝试</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="repository-resume-dialog" class="dialog" aria-labelledby="repository-resume-title">
+    <form method="dialog">
+      <header class="dialog__header">
+        <div>
+          <span class="eyebrow" data-i18n="batchAction">批量操作</span>
+          <h2 id="repository-resume-title" data-i18n="resumeRepositoryTitle">继续此仓库的任务</h2>
+        </div>
+      </header>
+      <div class="dialog__body">
+        <p id="repository-resume-message"></p>
+      </div>
+      <footer class="dialog__footer">
+        <button id="repository-resume-cancel" class="text-button" type="button" data-i18n="cancel">取消</button>
+        <button id="repository-resume-confirm" class="primary-button" type="submit" data-i18n="confirmContinue">确认继续</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="reset-loopx-dialog" class="dialog" aria-labelledby="reset-loopx-title">
+    <form method="dialog">
+      <header class="dialog__header">
+        <div>
+          <span class="eyebrow" data-i18n="destructiveAction">危险操作</span>
+          <h2 id="reset-loopx-title" data-i18n="resetLoopxTitle">清空并重新开始</h2>
+        </div>
+      </header>
+      <div class="dialog__body">
+        <p id="reset-loopx-message"></p>
+        <p class="dialog-note" data-i18n="resetLoopxRetained">模型配置、GitHub 登录和 MiniApp 设置会保留。</p>
+      </div>
+      <footer class="dialog__footer">
+        <button id="reset-loopx-cancel" class="text-button" type="button" data-i18n="cancel">取消</button>
+        <button id="reset-loopx-confirm" class="danger-button" type="submit" data-i18n="resetLoopxConfirm">清空并重新开始</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="ui.js"></script>
+</body>
+</html>

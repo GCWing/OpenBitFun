@@ -100,6 +100,7 @@ pub enum ToolStateEventKind {
         chunks_received: usize,
     },
     Completed {
+        params: Option<serde_json::Value>,
         result: serde_json::Value,
         result_for_assistant: Option<String>,
         image_attachments: Option<Vec<ToolImageAttachment>>,
@@ -110,6 +111,7 @@ pub enum ToolStateEventKind {
         execution_ms: Option<u64>,
     },
     Failed {
+        params: Option<serde_json::Value>,
         error: String,
         duration_ms: Option<u64>,
         queue_wait_ms: Option<u64>,
@@ -119,6 +121,7 @@ pub enum ToolStateEventKind {
     },
     Rejected,
     Cancelled {
+        params: Option<serde_json::Value>,
         reason: String,
         duration_ms: Option<u64>,
         queue_wait_ms: Option<u64>,
@@ -287,6 +290,7 @@ pub fn tool_state_event_data(facts: ToolStateEventFacts) -> ToolEventData {
             chunks_received,
         },
         ToolStateEventKind::Completed {
+            params,
             result,
             result_for_assistant,
             image_attachments,
@@ -297,6 +301,7 @@ pub fn tool_state_event_data(facts: ToolStateEventFacts) -> ToolEventData {
             execution_ms,
         } => ToolEventData::Completed {
             identity,
+            params,
             result: sanitize_tool_result_for_event(&result),
             result_for_assistant,
             image_attachments,
@@ -307,6 +312,7 @@ pub fn tool_state_event_data(facts: ToolStateEventFacts) -> ToolEventData {
             execution_ms,
         },
         ToolStateEventKind::Failed {
+            params,
             error,
             duration_ms,
             queue_wait_ms,
@@ -315,6 +321,7 @@ pub fn tool_state_event_data(facts: ToolStateEventFacts) -> ToolEventData {
             execution_ms,
         } => ToolEventData::Failed {
             identity,
+            params,
             error,
             duration_ms,
             queue_wait_ms,
@@ -324,6 +331,7 @@ pub fn tool_state_event_data(facts: ToolStateEventFacts) -> ToolEventData {
         },
         ToolStateEventKind::Rejected => ToolEventData::Rejected { identity },
         ToolStateEventKind::Cancelled {
+            params,
             reason,
             duration_ms,
             queue_wait_ms,
@@ -332,6 +340,7 @@ pub fn tool_state_event_data(facts: ToolStateEventFacts) -> ToolEventData {
             execution_ms,
         } => ToolEventData::Cancelled {
             identity,
+            params,
             reason,
             duration_ms,
             queue_wait_ms,
@@ -374,6 +383,7 @@ mod tests {
         let data = tool_state_event_data(ToolStateEventFacts {
             identity: ToolEventIdentity::direct("tool-image-1", "view_image"),
             state: ToolStateEventKind::Completed {
+                params: None,
                 result: json!({ "path": "preview.png" }),
                 result_for_assistant: Some("Image attached".to_string()),
                 image_attachments: Some(vec![openbitfun_events::ToolImageAttachment {
@@ -404,6 +414,7 @@ mod tests {
         let data = tool_state_event_data(ToolStateEventFacts {
             identity: ToolEventIdentity::direct("tool-1", "Screenshot"),
             state: ToolStateEventKind::Completed {
+                params: None,
                 result: json!({
                     "data_url": "data:image/png;base64,AAAA",
                     "nested": [{ "data_url": "data:image/png;base64,BBBB" }]

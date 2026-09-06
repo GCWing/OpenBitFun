@@ -953,9 +953,9 @@ test('contract and AI adapter tests keep reviewed feature and failure-domain top
       requiredFeatures: ['miniapp'],
     },
     {
-      name: 'legacy_migration_contracts',
-      path: 'tests/legacy_migration_contracts.rs',
-      requiredFeatures: ['legacy-migration'],
+      name: 'loopx_contracts',
+      path: 'tests/loopx_contracts.rs',
+      requiredFeatures: ['miniapp'],
     },
     {
       name: 'plugin_source_contracts',

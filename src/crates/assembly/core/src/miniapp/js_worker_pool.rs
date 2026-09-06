@@ -29,11 +29,13 @@ impl JsWorkerPool {
     pub fn new(
         path_manager: Arc<crate::infrastructure::PathManager>,
         worker_host_path: PathBuf,
+        resource_dir: Option<PathBuf>,
     ) -> OpenBitFunResult<Self> {
         let event_sink: SharedMiniAppWorkerEventSink = Arc::new(CoreMiniAppWorkerEventSink);
         ServiceJsWorkerPool::new(
             path_manager.miniapps_dir(),
             worker_host_path,
+            resource_dir,
             Some(event_sink),
         )
         .map(|inner| Self { inner })
@@ -183,6 +185,7 @@ impl JsWorkerPool {
             inner: ServiceJsWorkerPool::from_runtime(
                 path_manager.miniapps_dir(),
                 worker_host_path,
+                None,
                 runtime,
                 Some(Arc::new(CoreMiniAppWorkerEventSink)),
             ),

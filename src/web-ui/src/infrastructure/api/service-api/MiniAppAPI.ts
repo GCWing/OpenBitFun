@@ -166,6 +166,407 @@ export interface AgentCancelStaleRunsResult {
   cancelledRuns: number;
 }
 
+// ─── LoopX controller types ──────────────────────────────────────────────────
+
+export type LoopxItemKind = 'issue' | 'pr';
+
+export interface LoopxRepositoryKey {
+  host: string;
+  owner: string;
+  repository: string;
+}
+
+export interface LoopxIssueKey {
+  repository: LoopxRepositoryKey;
+  kind: LoopxItemKind;
+  number: number;
+}
+
+export type LoopxIntakeTarget =
+  | { targetType: 'repository'; repository: LoopxRepositoryKey }
+  | { targetType: 'item'; item: LoopxIssueKey };
+
+export type LoopxRemoteItemState = 'unknown' | 'open' | 'closed' | 'merged';
+
+export interface LoopxIntakeCandidate {
+  key: LoopxIssueKey;
+  url: string;
+  title: string;
+  state: LoopxRemoteItemState;
+  stateReason: string | null;
+  fromRepository: boolean;
+  hasImages: boolean;
+  defaultSelected: boolean;
+}
+
+export type LoopxWorkspaceDisposition =
+  | 'existing_worktree'
+  | 'new_worktree'
+  | 'clone_required'
+  | 'unavailable';
+
+export interface LoopxWorkspacePreview {
+  disposition: LoopxWorkspaceDisposition;
+  path: string | null;
+  repositoryVerified: boolean;
+}
+
+export interface LoopxModelCapability {
+  modelId: string;
+  available: boolean;
+  supportsImages: boolean;
+}
+
+export type LoopxPermissionScope =
+  | 'workspace_read'
+  | 'workspace_write'
+  | 'git_local'
+  | 'github_read'
+  | 'agent_execution'
+  | 'publish'
+  | 'public_comment'
+  | 'pull_request'
+  | 'merge'
+  | 'production_action';
+
+export interface LoopxIntakePreview {
+  fingerprint: string;
+  target: LoopxIntakeTarget;
+  repository: LoopxRepositoryKey;
+  workspace: LoopxWorkspacePreview;
+  candidates: LoopxIntakeCandidate[];
+  truncated: boolean;
+  model: LoopxModelCapability;
+  permissionScopes: LoopxPermissionScope[];
+  resolvedAt: number;
+  expiresAt: number | null;
+}
+
+export type LoopxEnvironmentFactStatus =
+  | 'unknown'
+  | 'checking'
+  | 'available'
+  | 'degraded'
+  | 'unavailable';
+
+export interface LoopxEnvironmentFact {
+  status: LoopxEnvironmentFactStatus;
+  version: string | null;
+  detail: string | null;
+  remediation: string | null;
+  remediationAction: 'none' | 'install_loopx';
+  checkedAt: number | null;
+}
+
+export interface LoopxCoreEnvironmentFacts {
+  sidecar: LoopxEnvironmentFact;
+  gitWorktree: LoopxEnvironmentFact;
+  agentModel: LoopxEnvironmentFact;
+}
+
+export interface LoopxOptionalEnvironmentFacts {
+  pythonFallback: LoopxEnvironmentFact;
+  githubAuth: LoopxEnvironmentFact;
+}
+
+export type LoopxEnvironmentStatus = 'unknown' | 'checking' | 'ready' | 'degraded' | 'blocked';
+
+export interface LoopxEnvironmentSnapshot {
+  revision: number;
+  status: LoopxEnvironmentStatus;
+  core: LoopxCoreEnvironmentFacts;
+  optional: LoopxOptionalEnvironmentFacts;
+  checkedAt: number | null;
+}
+
+export type LoopxTaskState =
+  | 'preparing'
+  | 'queued'
+  | 'running'
+  | 'waiting_for_user'
+  | 'retry_wait'
+  | 'cancelling'
+  | 'stopped'
+| 'aborted'
+  | 'recovery_required'
+  | 'completed'
+  | 'failed'
+  | 'archived';
+
+export type LoopxGoalState =
+  | 'unknown'
+  | 'active'
+  | 'waiting_for_user'
+  | 'completed'
+  | 'failed'
+  | 'archived';
+
+export type LoopxPhase =
+  | 'unknown'
+  | 'validating_environment'
+  | 'resolving_intake'
+  | 'preparing_workspace'
+  | 'creating_goal'
+  | 'queued'
+  | 'inspecting_goal'
+  | 'building_turn'
+  | 'starting_agent'
+  | 'agent_running'
+  | 'validating_progress'
+  | 'settling_turn'
+  | 'waiting_for_approval'
+  | 'retry_backoff'
+  | 'cancelling'
+  | 'recovering'
+  | 'finished';
+
+export interface LoopxTaskIdentity {
+  item: LoopxIssueKey;
+  attempt: number;
+  /** Issue / PR title captured at task creation; empty for legacy records. */
+  title?: string;
+}
+
+export interface LoopxSettlementSummary {
+  turnId: string | null;
+  receiptId: string | null;
+  durableRevision: string | null;
+  settledAt: number | null;
+}
+
+export interface LoopxTaskSnapshot {
+  taskId: string;
+  batchId: string | null;
+  identity: LoopxTaskIdentity;
+  generation: number;
+  revision: number;
+  goalId: string | null;
+  /** Authoritative Goal lifecycle projected from LoopX. */
+  goalState: LoopxGoalState | null;
+  agentId: string | null;
+  /** BitFun host-job lifecycle, not the Goal authority. */
+  state: LoopxTaskState;
+  phase: LoopxPhase;
+  pendingGateId?: string | null;
+  pendingGateMessage?: string | null;
+  pendingGateActionKind?: string | null;
+  workspacePath: string | null;
+  modelId: string | null;
+  grantedScopes: LoopxPermissionScope[];
+  currentTurnId: string | null;
+  currentTool: string | null;
+  lastOutputAt: number | null;
+  deadlineAt: number | null;
+  retryAt: number | null;
+  error: string | null;
+  settlement: LoopxSettlementSummary;
+  autonomousTurnsSinceReview?: number;
+  autonomyReviewBaselineReceipts?: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type LoopxExecutionDomain =
+  | 'unknown'
+  | 'local_desktop'
+  | 'remote_workspace'
+  | 'peer_device'
+  | 'remote_control'
+  | 'detached_dispatch';
+
+export type LoopxExecutionSupport = 'supported' | 'unsupported_execution_domain';
+
+export interface LoopxSnapshot {
+  schemaVersion: number;
+  streamId: string;
+  cursor: number;
+  revision: number;
+  executionDomain: LoopxExecutionDomain;
+  executionSupport: LoopxExecutionSupport;
+  unsupportedReason: string | null;
+  environment: LoopxEnvironmentSnapshot;
+  tasks: LoopxTaskSnapshot[];
+  generatedAt: number;
+}
+
+export type LoopxEventLevel = 'trace' | 'debug' | 'info' | 'warning' | 'error';
+export type LoopxEventSource = 'controller' | 'sidecar' | 'agent' | 'git' | 'github' | 'system';
+export type LoopxEventKind =
+  | 'progress'
+  | 'task_created'
+  | 'state_changed'
+  | 'phase_changed'
+  | 'log'
+  | 'approval_required'
+  | 'settlement_recorded'
+  | 'environment_changed'
+  | 'operation_cancelled'
+  | 'snapshot_invalidated';
+
+export interface LoopxEvent {
+  streamId: string;
+  cursor: number;
+  taskId: string | null;
+  generation: number | null;
+  revision: number | null;
+  kind: LoopxEventKind;
+  level: LoopxEventLevel;
+  source: LoopxEventSource;
+  phase: LoopxPhase | null;
+  message: string;
+  important: boolean;
+  toolName: string | null;
+  deadlineAt: number | null;
+  details: Record<string, string>;
+  occurredAt: number;
+}
+
+export interface LoopxAttachRequest {
+  knownStreamId?: string;
+  afterCursor?: number;
+  resumeDetected?: boolean;
+}
+
+export interface LoopxAttachResponse {
+  snapshot: LoopxSnapshot;
+}
+
+export interface LoopxResolveIntakeRequest {
+  input: string;
+  modelId: string;
+}
+
+export interface LoopxResolveIntakeResponse {
+  preview: LoopxIntakePreview;
+}
+
+export interface LoopxCreateTaskRequest {
+  clientRequestId: string;
+  previewFingerprint: string;
+  selectedItems: LoopxIssueKey[];
+  modelId: string;
+  grantedScopes: LoopxPermissionScope[];
+  retryTerminal: boolean;
+}
+
+export type LoopxCreateTaskOutcomeKind =
+  | 'created'
+  | 'opened_existing'
+  | 'retry_confirmation_required'
+  | 'closed_noop'
+  | 'needs_live_verification';
+
+export interface LoopxCreateTaskOutcome {
+  item: LoopxIssueKey;
+  kind: LoopxCreateTaskOutcomeKind;
+  taskId: string | null;
+  attempt: number | null;
+  message: string | null;
+}
+
+export interface LoopxCreateTaskResponse {
+  outcomes: LoopxCreateTaskOutcome[];
+  snapshotRevision: number;
+}
+
+export type LoopxActionKind =
+  | 'pause'
+| 'abort'
+  | 'resume'
+  | 'resume_repository'
+  | 'reset_all'
+  | 'approve'
+  | 'reject'
+  | 'archive'
+  | 'restore'
+  | 'install_loopx'
+  | 'retry_environment';
+
+export interface LoopxActionRequest {
+  taskId?: string;
+  repository?: LoopxRepositoryKey;
+  action: LoopxActionKind;
+  clientRequestId: string;
+  expectedRevision: number;
+  gateId?: string;
+  note?: string;
+}
+
+export type LoopxActionStatus = 'applied' | 'duplicate' | 'revision_conflict' | 'rejected';
+
+export interface LoopxActionResponse {
+  status: LoopxActionStatus;
+  currentRevision: number;
+  task: LoopxTaskSnapshot | null;
+  message: string | null;
+}
+
+export interface LoopxEventsSinceRequest {
+  streamId: string;
+  afterCursor: number;
+  limit?: number;
+}
+
+export type LoopxEventsPageStatus = 'current' | 'snapshot_required';
+
+export interface LoopxEventsSinceResponse {
+  status: LoopxEventsPageStatus;
+  streamId: string;
+  events: LoopxEvent[];
+  nextCursor: number;
+  hasMore: boolean;
+}
+
+export type LoopxTurnOutputStatus =
+  | 'current'
+  | 'task_not_found'
+  | 'not_running'
+  | 'stale_turn'
+  | 'output_unavailable';
+
+export type LoopxTurnOutputEventKind =
+  | 'text'
+  | 'thinking'
+  | 'model_round_started'
+  | 'model_round_completed'
+  | 'tool';
+
+export interface LoopxTurnOutputEvent {
+  cursor: number;
+  turnId: string;
+  roundId: string | null;
+  kind: LoopxTurnOutputEventKind;
+  text: string | null;
+  toolName: string | null;
+  toolState: string | null;
+  isEnd: boolean;
+}
+
+export interface LoopxTurnOutputSinceRequest {
+  taskId: string;
+  turnId?: string;
+  streamId?: string;
+  afterCursor: number;
+  limit?: number;
+}
+
+export interface LoopxTurnOutputSinceResponse {
+  status: LoopxTurnOutputStatus;
+  taskId: string;
+  turnId: string | null;
+  streamId: string | null;
+  events: LoopxTurnOutputEvent[];
+  nextCursor: number;
+  hasMore: boolean;
+  message: string | null;
+}
+
+export interface LoopxExistingTask {
+  taskId: string;
+  identity: LoopxTaskIdentity;
+  state: LoopxTaskState;
+}
+
 export interface MiniAppRuntimeState {
   source_revision: string;
   content_hash: string;

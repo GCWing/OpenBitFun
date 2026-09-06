@@ -230,7 +230,16 @@ pub fn plan_agent_workspace(
 }
 
 pub fn default_agent_run_id(app_id: &str, sequence: u64) -> String {
-    format!("miniapp-agent-{}-{}", app_id, sequence)
+    // The process-local sequence resets on restart while a reused hidden
+    // session keeps its persisted dialog_turn_ids. A restarted host would
+    // otherwise regenerate "miniapp-agent-{app_id}-1" and collide with a turn
+    // already recorded on that session ("Dialog turn already exists"). Anchor
+    // the id to wall-clock time so it stays unique across restarts.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    format!("miniapp-agent-{}-{}-{}", app_id, sequence, stamp)
 }
 
 pub fn agent_run_id_from_request(
@@ -474,9 +483,10 @@ mod tests {
             agent_run_id_from_request("app-1", Some(" run-1 "), 9),
             "run-1"
         );
-        assert_eq!(
-            agent_run_id_from_request("app-1", Some("   "), 9),
-            "miniapp-agent-app-1-9"
+        let generated = agent_run_id_from_request("app-1", Some("   "), 9);
+        assert!(
+            generated.starts_with("miniapp-agent-app-1-9-"),
+            "expected a restart-unique run id, got: {generated}"
         );
 
         let plan = build_agent_submission_plan(

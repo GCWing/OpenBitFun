@@ -154,6 +154,7 @@ pub fn project_agentic_frontend_event(event: AgenticEvent) -> Option<AgenticFron
                 "attemptId": attempt_id,
                 "attemptIndex": attempt_index,
                 "text": text,
+                "contentType": "text",
             }),
         )),
         AgenticEvent::ThinkingChunk {

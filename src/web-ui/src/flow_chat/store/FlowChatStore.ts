@@ -5052,6 +5052,38 @@ export class FlowChatStore {
     });
   }
 
+  public updateSessionLifetime(
+    sessionId: string,
+    updates: {
+      isTransient: boolean;
+      agentBackedTransient?: boolean;
+      sessionKind?: SessionKind;
+    }
+  ): void {
+    this.setState(prev => {
+      const session = prev.sessions.get(sessionId);
+      if (!session) return prev;
+      if (
+        session.isTransient === updates.isTransient
+        && session.agentBackedTransient === (updates.agentBackedTransient ?? session.agentBackedTransient)
+        && session.sessionKind === (updates.sessionKind ?? session.sessionKind)
+      ) {
+        return prev;
+      }
+
+      const next: Session = {
+        ...session,
+        isTransient: updates.isTransient,
+        agentBackedTransient:
+          updates.agentBackedTransient ?? session.agentBackedTransient,
+        sessionKind: updates.sessionKind ?? session.sessionKind,
+      };
+      const sessions = new Map(prev.sessions);
+      sessions.set(sessionId, next);
+      return { ...prev, sessions };
+    });
+  }
+
   public updateSessionBtwOrigin(
     sessionId: string,
     origin: Session['btwOrigin'],

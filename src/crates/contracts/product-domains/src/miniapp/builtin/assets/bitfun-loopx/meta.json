@@ -1,0 +1,49 @@
+{
+  "id": "builtin-bitfun-loopx",
+  "name": "bitfun-loopx",
+  "description": "bitfun-loopx：提交 GitHub Issue 或 PR，由 BitFun 宿主持久调度 LoopX，并集中查看环境、审批与模型实时输出。",
+  "icon": "rocket",
+  "category": "developer",
+  "tags": [
+    "loopx",
+    "agent",
+    "scheduler",
+    "monitor"
+  ],
+  "version": 15,
+  "created_at": 0,
+  "updated_at": 0,
+  "permissions": {
+    "node": {
+      "enabled": false
+    },
+    "notifications": {
+      "system": true
+    }
+  },
+  "ai_context": null,
+  "i18n": {
+    "locales": {
+      "zh-CN": {
+        "name": "bitfun-loopx",
+        "description": "bitfun-loopx：提交 GitHub Issue 或 PR，由 BitFun 宿主持久调度 LoopX，并集中查看环境、审批与模型实时输出。",
+        "tags": [
+          "loopx",
+          "智能体",
+          "调度",
+          "监控"
+        ]
+      },
+      "en-US": {
+        "name": "bitfun-loopx",
+        "description": "bitfun-loopx: submit a GitHub issue or PR, let the BitFun host schedule LoopX durably, and monitor environment, approvals, and live model output in one place.",
+        "tags": [
+          "loopx",
+          "agent",
+          "scheduler",
+          "monitor"
+        ]
+      }
+    }
+  }
+}

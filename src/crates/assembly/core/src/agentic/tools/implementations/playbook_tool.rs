@@ -144,6 +144,11 @@ impl PlaybookTool {
     /// Try to parse a string as a native JSON type (number / bool), falling
     /// back to a JSON string.
     fn parse_typed_value(s: &str) -> Value {
+        if let Ok(value) = serde_json::from_str::<Value>(s) {
+            if value.is_array() || value.is_object() || value.is_null() {
+                return value;
+            }
+        }
         if let Ok(n) = s.parse::<u64>() {
             return json!(n);
         }

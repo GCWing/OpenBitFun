@@ -4483,6 +4483,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                         tool_call_id.clone(),
                                         TASK_TOOL_NAME,
                                     ),
+                                    params: None,
                                     result: data.clone(),
                                     result_for_assistant: Some(assistant_text.clone()),
                                     image_attachments: None,
@@ -4505,6 +4506,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                     tool_call_id.clone(),
                                     TASK_TOOL_NAME,
                                 ),
+                                params: None,
                                 reason: error_text.clone(),
                                 duration_ms: Some(duration_ms),
                                 queue_wait_ms: None,
@@ -4518,6 +4520,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                     tool_call_id.clone(),
                                     TASK_TOOL_NAME,
                                 ),
+                                params: None,
                                 error: error_text.clone(),
                                 duration_ms: Some(duration_ms),
                                 queue_wait_ms: None,
@@ -6180,28 +6183,29 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     .or(remote_ssh_host.as_deref()),
             )
             .await?;
-            match self
-                .restore_session_from_storage_path(&restore_path, &session_id)
-                .await
-            {
-                Ok(_) => {
-                    let restored_messages = self
-                        .session_manager
-                        .get_context_messages(&session_id)
-                        .await?;
-                    info!(
-                        "Session history restored from persistence: session_id={}, messages: {} -> {}",
-                        session_id,
-                        context_messages.len(),
-                        restored_messages.len()
-                    );
-                }
-                Err(e) => {
-                    debug!(
-                        "Failed to restore session history (may be new session): session_id={}, error={}",
-                        session_id, e
-                    );
-                }
+            let persisted_metadata = self
+                .session_manager
+                .persistence_manager()
+                .load_session_metadata(&restore_path, &session_id)
+                .await?;
+            if persisted_metadata.is_none() {
+                debug!(
+                    "Session history restore skipped for new session: session_id={}",
+                    session_id
+                );
+            } else {
+                self.restore_session_from_storage_path(&restore_path, &session_id)
+                    .await?;
+                let restored_messages = self
+                    .session_manager
+                    .get_context_messages(&session_id)
+                    .await?;
+                info!(
+                    "Session history restored from persistence: session_id={}, messages: {} -> {}",
+                    session_id,
+                    context_messages.len(),
+                    restored_messages.len()
+                );
             }
         }
 
