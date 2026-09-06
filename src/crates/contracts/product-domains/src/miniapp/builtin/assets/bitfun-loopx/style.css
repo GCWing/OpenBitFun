@@ -2,45 +2,45 @@
 
 :root {
   color-scheme: dark;
-  --lx-bg: var(--bitfun-bg, #111316);
-  --lx-surface: var(--bitfun-bg-secondary, #181b20);
-  --lx-elevated: var(--bitfun-bg-elevated, #20242a);
-  --lx-muted-surface: var(--bitfun-bg-tertiary, #15181c);
-  --lx-element: var(--bitfun-element-bg, rgba(255, 255, 255, .055));
-  --lx-hover: var(--bitfun-element-hover, rgba(255, 255, 255, .085));
-  --lx-border: var(--bitfun-border-subtle, rgba(255, 255, 255, .10));
-  --lx-border-strong: var(--bitfun-border, rgba(255, 255, 255, .17));
-  --lx-text: var(--bitfun-text, #eef0f3);
-  --lx-text-soft: var(--bitfun-text-secondary, #b7bbc3);
-  --lx-text-muted: var(--bitfun-text-muted, #858b95);
-  --lx-accent: var(--bitfun-accent, #5b8def);
-  --lx-accent-hover: var(--bitfun-accent-hover, #477de8);
-  --lx-success: var(--bitfun-success, #35b779);
-  --lx-warning: var(--bitfun-warning, #e7a83c);
-  --lx-error: var(--bitfun-error, #e45b63);
-  --lx-info: var(--bitfun-info, #42a5c6);
-  --lx-radius: min(var(--bitfun-radius, 8px), 8px);
-  --lx-font: var(--bitfun-font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
-  --lx-mono: var(--bitfun-font-mono, "Cascadia Mono", Consolas, monospace);
+  --lx-bg: var(--openbitfun-bg, #111316);
+  --lx-surface: var(--openbitfun-bg-secondary, #181b20);
+  --lx-elevated: var(--openbitfun-bg-elevated, #20242a);
+  --lx-muted-surface: var(--openbitfun-bg-tertiary, #15181c);
+  --lx-element: var(--openbitfun-element-bg, rgba(255, 255, 255, .055));
+  --lx-hover: var(--openbitfun-element-hover, rgba(255, 255, 255, .085));
+  --lx-border: var(--openbitfun-border-subtle, rgba(255, 255, 255, .10));
+  --lx-border-strong: var(--openbitfun-border, rgba(255, 255, 255, .17));
+  --lx-text: var(--openbitfun-text, #eef0f3);
+  --lx-text-soft: var(--openbitfun-text-secondary, #b7bbc3);
+  --lx-text-muted: var(--openbitfun-text-muted, #858b95);
+  --lx-accent: var(--openbitfun-accent, #5b8def);
+  --lx-accent-hover: var(--openbitfun-accent-hover, #477de8);
+  --lx-success: var(--openbitfun-success, #35b779);
+  --lx-warning: var(--openbitfun-warning, #e7a83c);
+  --lx-error: var(--openbitfun-error, #e45b63);
+  --lx-info: var(--openbitfun-info, #42a5c6);
+  --lx-radius: min(var(--openbitfun-radius, 8px), 8px);
+  --lx-font: var(--openbitfun-font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+  --lx-mono: var(--openbitfun-font-mono, "Cascadia Mono", Consolas, monospace);
 }
 
-[data-bf-appearance-mode="light"] {
+[data-bf-appearance-mode="light"], [data-openbitfun-appearance-mode="light"] {
   color-scheme: light;
-  --lx-bg: var(--bitfun-bg, #f5f6f8);
-  --lx-surface: var(--bitfun-bg-secondary, #ffffff);
-  --lx-elevated: var(--bitfun-bg-elevated, #ffffff);
-  --lx-muted-surface: var(--bitfun-bg-tertiary, #eef0f3);
-  --lx-element: var(--bitfun-element-bg, rgba(18, 24, 34, .045));
-  --lx-hover: var(--bitfun-element-hover, rgba(18, 24, 34, .07));
-  --lx-border: var(--bitfun-border-subtle, rgba(18, 24, 34, .11));
-  --lx-border-strong: var(--bitfun-border, rgba(18, 24, 34, .18));
-  --lx-text: var(--bitfun-text, #20242a);
-  --lx-text-soft: var(--bitfun-text-secondary, #505866);
-  --lx-text-muted: var(--bitfun-text-muted, #727b89);
-  --lx-success: var(--bitfun-success, #218c5b);
-  --lx-warning: var(--bitfun-warning, #b97818);
-  --lx-error: var(--bitfun-error, #cf4650);
-  --lx-info: var(--bitfun-info, #237f9c);
+  --lx-bg: var(--openbitfun-bg, #f5f6f8);
+  --lx-surface: var(--openbitfun-bg-secondary, #ffffff);
+  --lx-elevated: var(--openbitfun-bg-elevated, #ffffff);
+  --lx-muted-surface: var(--openbitfun-bg-tertiary, #eef0f3);
+  --lx-element: var(--openbitfun-element-bg, rgba(18, 24, 34, .045));
+  --lx-hover: var(--openbitfun-element-hover, rgba(18, 24, 34, .07));
+  --lx-border: var(--openbitfun-border-subtle, rgba(18, 24, 34, .11));
+  --lx-border-strong: var(--openbitfun-border, rgba(18, 24, 34, .18));
+  --lx-text: var(--openbitfun-text, #20242a);
+  --lx-text-soft: var(--openbitfun-text-secondary, #505866);
+  --lx-text-muted: var(--openbitfun-text-muted, #727b89);
+  --lx-success: var(--openbitfun-success, #218c5b);
+  --lx-warning: var(--openbitfun-warning, #b97818);
+  --lx-error: var(--openbitfun-error, #cf4650);
+  --lx-info: var(--openbitfun-info, #237f9c);
 }
 
 html, body { width: 100%; height: 100%; margin: 0; }

@@ -125,8 +125,9 @@ const COPY = {
     summaryVerdictWontFix: '🚫 无需修复',
     summaryVerdictNeedsInfo: '❓ 信息不足',
     summaryReproductionReproduced: '🔁 已复现',
-    summaryReproductionNotReproduced: '🔁 未复现',
+    summaryReproductionNotReproduced: '🔁 未复现（未执行复现环节）',
     summaryReproductionNotApplicable: '🔁 不适用',
+    summaryBadgeNote: '徽标表示对该 Issue 的定性（是否需要修复、上游是否已修复等），与任务处理完成度相互独立；代理只负责本地实现与验证，不会自动提交 PR，提交、合并与关闭由你决定。',
     summarySegmentEvidence: '调查取证',
     summarySegmentRouteDecision: '方案决策',
     summarySegmentImplementation: '实现修复',
@@ -257,11 +258,11 @@ const COPY = {
     publishApprovalApprove: '批准并创建 PR',
     publishApprovalReject: '暂不发布',
     genericApprovalTitle: '是否继续处理这个 Issue？',
-    genericApprovalSummary: 'Agent 在执行任务时请求一个决定。具体内容见下方原始请求；不确定时可以先在时间线里确认它做了什么再决定。',
-    genericApprovalApproveEffect: '执行当前操作，然后继续后续处理；完成后会再次汇报结果。',
-    genericApprovalRejectEffect: '本次不执行该操作，任务不会继续进入后续步骤。现有修改、调查结果和工作区都会保留。',
-    genericApprovalRecommendation: '建议：确认下面的操作符合预期后再继续；不确定时可以暂不执行，并在备注中说明需要补充的信息。',
-    gateRawDetails: '原始请求（来自 Agent，英文原文）',
+    genericApprovalSummary: 'Agent 在执行任务时请求一个决定。需要你批准的是超出只读边界的动作（写入/提交、构建、安装、发布、真实运行验证等）；仅在本地文件内修改不需要审批。具体内容见下方原始请求，不确定时可以先在时间线里确认它做了什么再决定。',
+    genericApprovalApproveEffect: '批准后：按下方「原始请求」执行其中的具体操作（含对仓库的写入/提交，以及构建、安装、发布、真实运行验证等外部动作），完成后会再次汇报结果。',
+    genericApprovalRejectEffect: '拒绝后：不执行该操作，任务保持等待、不会继续推进；现有修改、调查结果和工作区都会保留。',
+    genericApprovalRecommendation: '建议：先展开「原始请求」确认要执行的每个动作——需要你批准的是写入/提交、构建、安装、真实运行验证等会改变仓库或产生外部副作用的步骤；文件内的普通修改不需要审批。确认符合预期后再继续，不确定时暂不执行并在备注中说明需要补充的信息。',
+    gateRawDetails: '原始请求（来自 Agent）',
     gateGrantAuthorityScopes: '需要的权限：{scopes}。',
     gateGatedReadTitle: '允许读取 Issue 正文与维护者评论？',
     gateGatedReadSummary: 'Agent 目前只能看到这条 Issue 的元数据（标题、标签、状态）。要判断它是否值得修复、是否已经有人处理过，需要进一步读取正文和评论内容。这些内容仅用于本任务的分析，不会原样写入公开状态。',
@@ -487,8 +488,9 @@ const COPY = {
     summaryVerdictWontFix: '🚫 Won\'t fix',
     summaryVerdictNeedsInfo: '❓ Needs info',
     summaryReproductionReproduced: '🔁 Reproduced',
-    summaryReproductionNotReproduced: '🔁 Not reproduced',
+    summaryReproductionNotReproduced: '🔁 Not reproduced (no repro step)',
     summaryReproductionNotApplicable: '🔁 Not applicable',
+    summaryBadgeNote: 'Badges qualify the issue (needs fix / fixed upstream / wont-fix) and are independent of task completion state; the agent only implements and validates locally, never opens a PR - submit, merge and close stay host actions.',
     summarySegmentEvidence: 'Evidence',
     summarySegmentRouteDecision: 'Route decision',
     summarySegmentImplementation: 'Implementation',
@@ -619,10 +621,10 @@ const COPY = {
     publishApprovalApprove: 'Approve and create PR',
     publishApprovalReject: 'Keep local only',
     genericApprovalTitle: 'Continue handling this Issue?',
-    genericApprovalSummary: 'The agent requested a decision while working. See the original request below; when unsure, check the timeline first to see what it did.',
-    genericApprovalApproveEffect: 'Perform the current operation and continue processing. Results will be reported again afterward.',
-    genericApprovalRejectEffect: 'Do not perform this operation or continue to later steps. Keep existing changes, investigation results, and the workspace.',
-    genericApprovalRecommendation: 'Recommendation: continue only when the operation below matches your expectation. Otherwise pause and note what information is missing.',
+    genericApprovalSummary: 'The agent requested a decision while working. What needs your approval are actions beyond the read-only boundary (writes/commits, builds, installs, publishing, real-run validation); plain local file edits do not need approval. See the original request below; when unsure, check the timeline first to see what it did.',
+    genericApprovalApproveEffect: 'Approve = perform the concrete operation described in the "Original request" below (writes/commits in the repo, plus external actions such as building, installing, publishing, or real-run validation), then report results again afterward.',
+    genericApprovalRejectEffect: 'Reject = do not perform that operation; the task stays waiting and does not move forward. Existing changes, investigation results, and the workspace are kept.',
+    genericApprovalRecommendation: 'Recommendation: expand the "Original request" and confirm each step. Only steps that change the repo or produce external side effects (write/commit, build, install, real-run validation) need your approval; ordinary local file edits do not. Continue when it matches your expectation; otherwise pause and note what information is missing.',
     gateRawDetails: 'Original request (from agent)',
     gateGrantAuthorityScopes: 'Required scopes: {scopes}.',
     gateGatedReadTitle: 'Allow reading the issue body and maintainer comments?',
@@ -2557,8 +2559,9 @@ function renderIssueStatus(task) {
     : (planExhausted ? 'decisionCardTitlePlanExhausted' : 'decisionCardTitleRecovery'));
   const body = document.createElement('p');
   body.className = 'issue-decision-card__message';
-  const recoveryHint = String(task.pendingGateMessage || '').trim()
-    || text(waiting ? 'decisionCardGateHint' : (planExhausted ? 'decisionCardPlanExhaustedHint' : 'decisionCardRecoveryHint'));
+  const recoveryHint = !waiting
+    ? (String(task.pendingGateMessage || '').trim() || text(planExhausted ? 'decisionCardPlanExhaustedHint' : 'decisionCardRecoveryHint'))
+    : text('decisionCardGateHint');
   body.textContent = recoveryHint;
   card.append(heading, body);
   const reasonKey = !waiting && task.recoveryReason
@@ -2624,6 +2627,13 @@ function renderStructuredBrief(container, s, raw, task) {
     badges.append(reproduction);
   }
   container.append(badges);
+
+  if (s.issue_verdict) {
+    const badgeNote = document.createElement('p');
+    badgeNote.className = 'summary-pending';
+    badgeNote.textContent = text('summaryBadgeNote');
+    container.append(badgeNote);
+  }
 
   if (task && task.state === 'waiting_for_user') {
     const pending = document.createElement('p');

@@ -70,6 +70,7 @@ url = { workspace = true, optional = true }
 which = { workspace = true, optional = true }
 zip = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
+encoding_rs = { workspace = true, optional = true }
 russh = { workspace = true, optional = true }
 russh-sftp = { workspace = true, optional = true }
 russh-keys = { workspace = true, optional = true }
@@ -208,6 +209,7 @@ miniapp-loopx = [
     "openbitfun-services-core/tls-provider",
     "dep:openbitfun-product-domains",
     "dunce",
+    "dep:encoding_rs",
     "hex",
     "reqwest",
     "reqwest/json",

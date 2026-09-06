@@ -156,6 +156,39 @@ impl LoopxProcessObserver for NoopLoopxProcessObserver {
     fn on_progress(&self, _progress: LoopxProcessProgress) {}
 }
 
+/// Forces UTF-8 stdio for the packaged LoopX sidecar.
+///
+/// The bundled `loopx.exe` is a PyInstaller-built Python CLI. On Windows hosts
+/// whose ANSI code page is not UTF-8 (e.g. zh-CN / cp936), Python's stdio
+/// encoding for a piped child defaults to the locale code page, so JSON output
+/// containing non-ASCII text is emitted as GBK bytes. The host captures stdout
+/// as UTF-8 (lossy), which replaces those bytes with U+FFFD and persists
+/// mojibake in gate messages and readbacks. `PYTHONUTF8` / `PYTHONIOENCODING`
+/// make the CPython runtime use UTF-8 for stdio regardless of the host code
+/// page, keeping the durable readback and gate messages intact.
+fn with_utf8_stdio(mut environment: BTreeMap<OsString, OsString>) -> BTreeMap<OsString, OsString> {
+    environment.insert(OsString::from("PYTHONUTF8"), OsString::from("1"));
+    environment.insert(OsString::from("PYTHONIOENCODING"), OsString::from("utf-8"));
+    environment
+}
+
+/// Decodes LoopX process output as UTF-8 with a GBK fallback.
+///
+/// The packaged `loopx.exe` is a PyInstaller bundle whose Python runtime keeps
+/// its stdio on the host ANSI code page (cp936 on zh-CN hosts) even when
+/// `PYTHONUTF8=1` / `PYTHONIOENCODING=utf-8` are set; the managed-source
+/// Python entrypoint does honor those variables. Decoding the bundle's GBK
+/// bytes as UTF-8 lossily turns every non-ASCII character into U+FFFD, which
+/// then lands in gate messages, todo text and readbacks. Try strict UTF-8
+/// first, fall back to GBK, and only then apply the lossy decode.
+fn decode_loopx_output(bytes: &[u8]) -> String {
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        return text.to_string();
+    }
+    let (decoded, _, _) = encoding_rs::GBK.decode(bytes);
+    decoded.into_owned()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoopxProcessOutput {
     pub stdout: String,
@@ -337,7 +370,7 @@ impl LoopxProcessRunner for SystemLoopxProcessRunner {
                         code: status.code(),
                         stdout_tail: output_tail(&stdout_capture.bytes),
                         stderr_tail,
-                        payload: serde_json::from_slice(&stdout_capture.bytes).ok(),
+                        payload: serde_json::from_str(&decode_loopx_output(&stdout_capture.bytes)).ok(),
                     });
                 }
                 if stdout_capture.exceeded_limit {
@@ -346,7 +379,7 @@ impl LoopxProcessRunner for SystemLoopxProcessRunner {
                     });
                 }
                 Ok(LoopxProcessOutput {
-                    stdout: String::from_utf8_lossy(&stdout_capture.bytes).into_owned(),
+                    stdout: decode_loopx_output(&stdout_capture.bytes),
                     stderr_tail,
                     elapsed: started.elapsed(),
                 })
@@ -778,7 +811,7 @@ impl LoopxCliProcessAdapter {
         let verified = VerifiedLoopxCommand {
             executable: candidate.executable,
             prefix_args: candidate.prefix_args,
-            environment: candidate.environment,
+            environment: with_utf8_stdio(candidate.environment),
             source: candidate.source,
             version: LOOPX_PINNED_VERSION.to_string(),
             bundle_manifest_schema: candidate.bundle_manifest_schema,
@@ -4451,7 +4484,7 @@ fn python_version_supported(output: &str) -> bool {
 }
 
 fn output_tail(bytes: &[u8]) -> Vec<String> {
-    let lines = String::from_utf8_lossy(bytes)
+    let lines = decode_loopx_output(bytes)
         .lines()
         .rev()
         .take(20)
@@ -4658,7 +4691,7 @@ fn record_stderr_line(
     if raw.is_empty() {
         return;
     }
-    let line = String::from_utf8_lossy(&raw[..raw.len().min(MAX_PROGRESS_LINE_BYTES)]).into_owned();
+    let line = decode_loopx_output(&raw[..raw.len().min(MAX_PROGRESS_LINE_BYTES)]);
     let _ = line_sender.try_send(line.clone());
     *tail_bytes += line.len();
     tail.push_back(line);
