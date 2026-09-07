@@ -52,8 +52,9 @@ const LOOPX_AGENT_ENVIRONMENT_BOUNDARY_NOTE: &str = "\n\n---\n[BitFun environmen
 
 /// Host-side compensation for the pinned sidecar: the pinned LoopX CLI does
 /// not bundle the workflow-skill markdown, so this exact CLI reference (help
-/// output of the pinned version, captured at build time) ships with every
-/// agent turn to keep the agent from reverse-engineering commands.
+/// output of the pinned version, captured at build time) is seeded into each
+/// worktree as `.loopx/pinned-loopx-reference.md`; the agent reads it once
+/// per session instead of the host reverse-engineering commands.
 const LOOPX_PINNED_CLI_REFERENCE: &str =
     include_str!("resources/loopx-pinned-cli-reference.md");
 
@@ -63,9 +64,10 @@ const LOOPX_PINNED_CLI_REFERENCE: &str =
 /// the codex path) loads at session start - it is the ROOT-CAUSE fix for the
 /// agent inventing packet shapes: the official docs contain the exact
 /// `goal_vision_replan_contract_v0` / `vision_patch` schema and the
-/// refresh-state closure flags, which `--help` output does not. Injecting the
-/// upstream bytes is not a host-authored workflow mirror; it is documentation
-/// parity with the codex reference run (2026-09-07).
+/// refresh-state closure flags, which `--help` output does not. Seeded into
+/// each worktree alongside the CLI reference; the agent reads the file once
+/// per session (mirroring the codex skill-loading mechanism) instead of the
+/// host pasting the bytes into every instruction.
 const LOOPX_PINNED_SKILLS_REFERENCE: &str =
     include_str!("resources/loopx-pinned-skills-reference.md");
 
@@ -75,65 +77,42 @@ const LOOPX_PINNED_SKILLS_REFERENCE: &str =
 /// the quota-spend receipt already exist, and the guard demanded the sequence
 /// refresh-state -> quota spend-slot -> terminal. Without this note the agent
 /// retries the completion with slightly different argv and loops on exit 1.
-const LOOPX_CLOSING_CEREMONY_NOTE: &str = "\n\n---\n[Closing ceremony order - follow exactly]\n\
-1. Write the acceptance evidence and `loopx refresh-state` FIRST; confirm the durable writeback receipt.\n\
-2. Then spend quota with the SAME turn identity (`loopx quota spend-slot`); keep the receipt.\n\
-3. Only after both receipts exist, issue the typed terminal no-follow-up completion\n\
-   (for wont_fix/no-op: `loopx todo update --no-follow-up` then the goal-lifecycle terminal).\n\
-4. Every ceremony command must carry the SAME `--goal-id`, `--agent-id`, and `--turn-instance-id`\n\
-   as the current turn envelope; a mismatched identity is the most common typed-refusal cause.\n\
-5. If the CLI returns a TYPED refusal, read its `recommended_action`/`error` and perform exactly\n\
-   that missing step - do not retry the previous argv, do not reorder steps, and do not loop.\n\
-6. If a step is structurally impossible after two ordered attempts, stop and report the blocker\n\
-   instead of continuing to retry.\n\n\
-- The typed `no_followup` refresh-state REQUIRES, together: `--progress-result-class no_followup`\n\
-  `--progress-coverage-scope-id <scope>` `--progress-surface-id <surface>`\n\
-  `--progress-hypothesis-id <hypothesis>` `--progress-probe-kind <kind>`\n\
-  `--progress-evidence-id <evidence-id>` `--progress-coverage-complete` plus\n\
-  `--agent-vision-json <file>` carrying `state=no_followup` and `path_delta.outcome=stop`.\n\
-- Settlement binding uses the guard-bound todo id (never the replan-obligation-id); an\n\
-  agent-lane scope cannot update the durable `Next Action` text.\n\
-- Quota spend-slot binds the same todo + turn identity as the ceremony; on a typed identity\n\
-  mismatch, re-run with the todo binding the error names.\n\
-- Every ceremony invocation also carries `--runtime-root <worktree>/.loopx/runtime`; the\n\
-  project registry `common_runtime_root` points there. Never write to the shared\n\
-  `~/.codex/loopx` global registry.\n\n---\n[Execution efficiency]\n\
-- Once the evidence is sufficient for the verdict, settle immediately; do not run extra checks\n\
-  for completeness.\n\
-- For a visibly non-actionable issue, call `loopx issue-fix feasibility` EARLY; if the route\n\
-  is `triage_only`, settle with the minimal evidence already verified (owner-authored issue,\n\
-  empty body, 0 comments, 0 pull requests) instead of collecting the full metadata set.";
+/// Minimal host facts for the closing ceremony. The authoritative semantics
+/// (refresh-state / todo / quota / vision packet schemas and ordering) come
+/// from the pinned official skill document the agent reads once per session
+/// (`.loopx/pinned-loopx-reference.md`); this note only carries host facts no
+/// document states (2026-09-07 review: the previous long hand-written recipe
+/// duplicated the official docs and its "minimal evidence" guidance caused
+/// repository_context = not_provided drift, so the assertions were removed).
+const LOOPX_CLOSING_CEREMONY_NOTE: &str = "\n\n---\n[BitFun host facts - closing ceremony]\n\
+- Read `.loopx/pinned-loopx-reference.md` once per session and follow its official\n\
+  refresh-state / todo / quota / vision packet guidance (schemas and flags are authoritative there).\n\
+- On a TYPED refusal, apply exactly the parameter the CLI error names and retry ONCE;\n\
+  do not retry the same argv, do not reorder steps, and report a blocker after two ordered attempts.\n\
+- The runtime is project-local (`<worktree>/.loopx/runtime`); never write to `~/.codex/loopx`.";
 
 /// Composes the final agent turn instruction: the CLI-provided turn
-/// instruction, then the always-on environment boundary, then the pinned
-/// LoopX CLI reference + verbatim workflow-skill documents (host-side
-/// compensation for the workflow skills the pinned sidecar does not bundle),
-/// then the one-shot host note (if any) last so corrective guidance stays
-/// closest to the end.
-///
-/// The pinned references (~130KB combined) are attached only when
-/// `include_pinned_reference` is set: a LoopX codex-style host loads its
-/// workflow skills once at session start and reuses them from context, so the
-/// first turn of an agent session carries the full documents and every later
-/// turn carries only a short pointer. This keeps per-turn instruction cost and
-/// prompt-cache churn low while preserving documentation parity.
+/// instruction, then the always-on environment boundary, then a short pointer
+/// to the pinned LoopX reference file seeded in the worktree (the agent reads
+/// it once per session, mirroring how a LoopX codex-style host loads its
+/// workflow skills), then the minimal closing-ceremony host facts, then the
+/// one-shot host note (if any) last so corrective guidance stays closest to
+/// the end.
 fn compose_agent_turn_instruction(
     instruction: String,
     host_note: Option<&str>,
-    include_pinned_reference: bool,
+    pinned_reference_path: Option<&str>,
 ) -> String {
     let mut composed = instruction;
     composed.push_str(LOOPX_AGENT_ENVIRONMENT_BOUNDARY_NOTE);
-    if include_pinned_reference {
-        composed.push_str("\n\n---\n[Pinned LoopX CLI reference]\n");
-        composed.push_str(LOOPX_PINNED_CLI_REFERENCE);
-        composed.push_str("\n\n---\n[Pinned LoopX skills reference - same first-party docs a LoopX agent host loads]\n");
-        composed.push_str(LOOPX_PINNED_SKILLS_REFERENCE);
-    } else {
+    if let Some(reference_path) = pinned_reference_path {
+        composed.push_str("\n\n---\n[Pinned LoopX reference - read once per session]\n");
+        composed.push_str("Read `");
+        composed.push_str(reference_path);
         composed.push_str(
-            "\n\n[Pinned LoopX CLI + skills references were provided at the first turn of this \
-agent session; they are already in this conversation's context above - reuse them; do not \
-re-read files for them.]\n",
+            "` (official LoopX CLI reference + workflow-skill documents) BEFORE acting; it is \
+already copied into this worktree. Reuse it from conversation context afterwards; re-read only \
+if this conversation was compacted.\n",
         );
     }
     composed.push_str(LOOPX_CLOSING_CEREMONY_NOTE);
@@ -2080,26 +2059,18 @@ impl LoopxController {
                         task.task_id,
                     );
                 }
-                // Inject the pinned references only on the first turn of this
-                // task's agent session (runtime record resets with the
-                // controller, so a fresh session after restart re-injects once,
-                // mirroring codex-style skill loading at session start).
-                let include_pinned_reference = {
-                    let runtime = self.runtime(&task.task_id).await;
-                    !runtime.pinned_reference_injected
-                };
+                // The pinned LoopX reference is seeded into the worktree
+                // (`.loopx/pinned-loopx-reference.md`) and the agent is
+                // pointed at it; it reads the documents once per session like
+                // a LoopX codex-style host loads its workflow skills.
+                let pinned_reference_path = task.workspace_path.as_deref().map(|workspace| {
+                    format!("{workspace}\\.loopx\\pinned-loopx-reference.md")
+                });
                 let agent_instruction = compose_agent_turn_instruction(
                     turn.agent_instruction,
                     host_note.as_deref(),
-                    include_pinned_reference,
+                    pinned_reference_path.as_deref(),
                 );
-                if include_pinned_reference {
-                    let _ = self
-                        .mutate_task(&task.task_id, None, |_snapshot, runtime| {
-                            runtime.pinned_reference_injected = true;
-                        })
-                        .await;
-                }
                 log::info!(
                     "LoopX turn built, starting agent: task_id={} goal={} turn={} deadline_ms={:?} instruction_bytes={}",
                     task.task_id,
@@ -3536,6 +3507,22 @@ impl LoopxController {
             task.phase = LoopxPhase::CreatingGoal;
             task.revision = task.revision.saturating_add(1);
             runtime.registry_path = workspace.registry_path.clone();
+            // Seed the pinned LoopX reference (CLI help reference + official
+            // workflow-skill documents, compiled into this binary) into the
+            // worktree so the agent reads it ONCE per session exactly like a
+            // LoopX codex-style host loads its workflow skills: the turn
+            // instruction only points at the file (small, cache-friendly)
+            // and the model pulls the documents as a file read.
+            if let Some(registry_root) = Path::new(&runtime.registry_path).parent() {
+                let pinned_reference = format!(
+                    "{}\n\n{}\n",
+                    LOOPX_PINNED_CLI_REFERENCE, LOOPX_PINNED_SKILLS_REFERENCE
+                );
+                let _ = std::fs::write(
+                    registry_root.join("pinned-loopx-reference.md"),
+                    pinned_reference,
+                );
+            }
         })
         .await
         .map(|_| ())
@@ -4564,7 +4551,7 @@ mod tests {
         // The pinned LoopX runtime must not be steered by LoopX source
         // checkouts that happen to exist on the user's machine: the boundary
         // note is part of every turn instruction, first turn included.
-        let composed = compose_agent_turn_instruction("turn body".to_string(), None, true);
+        let composed = compose_agent_turn_instruction("turn body".to_string(), None, None);
         assert!(composed.starts_with("turn body"));
         assert!(composed.contains("[BitFun environment boundary]"));
         assert!(composed.contains("loopx/pyproject.toml"));
@@ -4574,7 +4561,7 @@ mod tests {
     #[test]
     fn agent_turn_instruction_keeps_host_note_after_the_boundary() {
         let composed =
-            compose_agent_turn_instruction("turn body".to_string(), Some("corrective guidance"), true);
+            compose_agent_turn_instruction("turn body".to_string(), Some("corrective guidance"), None);
         let boundary = composed
             .find("[BitFun environment boundary]")
             .expect("boundary note present");

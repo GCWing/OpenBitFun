@@ -57,12 +57,6 @@ pub struct LoopxTaskRuntimeRecord {
     /// One-shot host note appended to the next agent instruction (used by the
     /// durable-writeback compensation turn).
     pub pending_host_note: Option<String>,
-    /// One-shot flag: the pinned LoopX references (CLI help reference and the
-    /// official workflow-skill documents) are injected only on the FIRST agent
-    /// turn of the session (mirroring how a LoopX codex-style host loads its
-    /// workflow skills once at session start), so later turns stay a small,
-    /// cache-friendly instruction prefix instead of re-sending ~130KB.
-    pub pinned_reference_injected: bool,
 }
 
 impl Default for LoopxPersistedState {

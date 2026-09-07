@@ -196,7 +196,13 @@ controller、environment DTO 或 UI。
   loopx 遗留的 `.codex/goals/<id>/ACTIVE_GOAL_STATE.md` 改为
   `.loopx/goals/<id>/ACTIVE_GOAL_STATE.md`（文件随之搬移）——worktree 完全
   `.loopx` 命名。BitFun 与 codex 是独立 agent，`.codex` 只是 loopx 的旧默认路径
-  命名，不是 BitFun/Codex 耦合。注入配方携带上述必填参数清单。
+  命名，不是 BitFun/Codex 耦合。
+- 文档加载与 codex 对齐（2026-09-07）：pinned CLI 参考 + 官方 SKILL 文档以
+  `.loopx/pinned-loopx-reference.md` 种子进 worktree；每回合指令只带**小指针**
+  （"先 Read 一次，之后复用上下文"），由代理像 codex 加载技能一样主动读取——
+  不再 139KB 塞进指令（token/缓存友好，模型遵循度更高）。注入配方已大幅瘦身：
+  只保留宿主事实（类型化拒绝→精确修正一次、两次即 blocker；runtime 本地化），
+  自创断言与"最小证据"提示已删除（其曾导致 repository_context=not_provided 漂移）。
 - 回退信号：若某次改动后又出现「exit=1 循环 + 状态文件不动」模式，先跑一次
   codex 标准答案对照，再对比 argv/路径，不要先怀疑模型或判定逻辑。
 
