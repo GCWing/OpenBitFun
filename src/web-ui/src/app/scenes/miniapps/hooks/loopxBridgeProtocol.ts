@@ -66,6 +66,8 @@ const ACTION_KINDS = new Set<LoopxActionKind>([
   'resume',
   'resume_repository',
   'reset_all',
+  'pause_all',
+  'resume_all',
   'approve',
   'reject',
   'archive',

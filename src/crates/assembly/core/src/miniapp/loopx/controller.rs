@@ -37,6 +37,113 @@ const TURN_CONFLICT_RETRY_MS: u64 = 5_000;
 /// fabricates goal state on the agent's behalf.
 const LOOPX_DURABLE_COMPENSATION_NOTE: &str = "The previous turn finished, but LoopX settlement reported no validated durable progress. Re-submit the pending vision and resolution artifacts through the LoopX CLI write boundary (`loopx refresh-state`) so they are recorded inside the goal workspace; do not write these artifacts to paths outside the workspace such as the system temp directory. If the previous turn modified product source files under the worktree but did not commit them, commit those product changes to the task branch with a descriptive message before ending the turn (leave `.loopx`/`.codex` bookkeeping out of the commit). When the writeback receipts are confirmed, end the turn so settlement can validate them.";
 
+/// Environment boundary appended to every LoopX agent turn instruction.
+///
+/// The pinned LoopX CLI provided by the host is the only authoritative source
+/// for LoopX behavior, commands, flags, and schemas. Users may have LoopX
+/// source checkouts elsewhere on the machine (any tree containing
+/// `loopx/pyproject.toml`, a `loopx/capabilities/` layout, and so on); those
+/// trees can be a different version than the pinned runtime, so treating them
+/// as documentation derails the turn (observed as a LoopX 0.5.3 checkout
+/// steering a turn executed by the pinned 0.5.1 CLI, including a hallucinated
+/// capability path retried over a hundred times). The runtime must work
+/// identically whether or not such a checkout exists.
+const LOOPX_AGENT_ENVIRONMENT_BOUNDARY_NOTE: &str = "\n\n---\n[BitFun environment boundary] The LoopX runtime on this machine is the CLI binary provided by the BitFun host at a pinned version; it is the only authoritative source for LoopX behavior, commands, flags, and schemas. Consult `loopx --help`, the help of the exact subcommand, or artifacts inside the goal workspace instead. Do not read, grep, or follow any LoopX source checkout on this machine (for example any directory containing `loopx/pyproject.toml`, a `loopx/capabilities/` tree, or a similar source layout): such trees may be a different version than the pinned runtime and are not documentation. If a file path you assumed does not exist, do not retry the same path; re-derive it from CLI help output or goal-workspace artifacts.";
+
+/// Host-side compensation for the pinned sidecar: the pinned LoopX CLI does
+/// not bundle the workflow-skill markdown, so this exact CLI reference (help
+/// output of the pinned version, captured at build time) ships with every
+/// agent turn to keep the agent from reverse-engineering commands.
+const LOOPX_PINNED_CLI_REFERENCE: &str =
+    include_str!("resources/loopx-pinned-cli-reference.md");
+
+/// Verbatim LoopX workflow-skill documents from the pinned v0.5.1 source
+/// (`skills/loopx-project/SKILL.md` + `skills/loopx-self-repair/SKILL.md`).
+/// This is the same first-party documentation a LoopX-style agent host (e.g.
+/// the codex path) loads at session start - it is the ROOT-CAUSE fix for the
+/// agent inventing packet shapes: the official docs contain the exact
+/// `goal_vision_replan_contract_v0` / `vision_patch` schema and the
+/// refresh-state closure flags, which `--help` output does not. Injecting the
+/// upstream bytes is not a host-authored workflow mirror; it is documentation
+/// parity with the codex reference run (2026-09-07).
+const LOOPX_PINNED_SKILLS_REFERENCE: &str =
+    include_str!("resources/loopx-pinned-skills-reference.md");
+
+/// Closing-ceremony order gleaned from live guard rejections on the pinned
+/// v0.5.1 (observed 2026-09-07): a terminal no-follow-up completion request is
+/// rejected with a typed refusal unless an accountable durable writeback and
+/// the quota-spend receipt already exist, and the guard demanded the sequence
+/// refresh-state -> quota spend-slot -> terminal. Without this note the agent
+/// retries the completion with slightly different argv and loops on exit 1.
+const LOOPX_CLOSING_CEREMONY_NOTE: &str = "\n\n---\n[Closing ceremony order - follow exactly]\n\
+1. Write the acceptance evidence and `loopx refresh-state` FIRST; confirm the durable writeback receipt.\n\
+2. Then spend quota with the SAME turn identity (`loopx quota spend-slot`); keep the receipt.\n\
+3. Only after both receipts exist, issue the typed terminal no-follow-up completion\n\
+   (for wont_fix/no-op: `loopx todo update --no-follow-up` then the goal-lifecycle terminal).\n\
+4. Every ceremony command must carry the SAME `--goal-id`, `--agent-id`, and `--turn-instance-id`\n\
+   as the current turn envelope; a mismatched identity is the most common typed-refusal cause.\n\
+5. If the CLI returns a TYPED refusal, read its `recommended_action`/`error` and perform exactly\n\
+   that missing step - do not retry the previous argv, do not reorder steps, and do not loop.\n\
+6. If a step is structurally impossible after two ordered attempts, stop and report the blocker\n\
+   instead of continuing to retry.\n\n\
+- The typed `no_followup` refresh-state REQUIRES, together: `--progress-result-class no_followup`\n\
+  `--progress-coverage-scope-id <scope>` `--progress-surface-id <surface>`\n\
+  `--progress-hypothesis-id <hypothesis>` `--progress-probe-kind <kind>`\n\
+  `--progress-evidence-id <evidence-id>` `--progress-coverage-complete` plus\n\
+  `--agent-vision-json <file>` carrying `state=no_followup` and `path_delta.outcome=stop`.\n\
+- Settlement binding uses the guard-bound todo id (never the replan-obligation-id); an\n\
+  agent-lane scope cannot update the durable `Next Action` text.\n\
+- Quota spend-slot binds the same todo + turn identity as the ceremony; on a typed identity\n\
+  mismatch, re-run with the todo binding the error names.\n\
+- Every ceremony invocation also carries `--runtime-root <worktree>/.loopx/runtime`; the\n\
+  project registry `common_runtime_root` points there. Never write to the shared\n\
+  `~/.codex/loopx` global registry.\n\n---\n[Execution efficiency]\n\
+- Once the evidence is sufficient for the verdict, settle immediately; do not run extra checks\n\
+  for completeness.\n\
+- For a visibly non-actionable issue, call `loopx issue-fix feasibility` EARLY; if the route\n\
+  is `triage_only`, settle with the minimal evidence already verified (owner-authored issue,\n\
+  empty body, 0 comments, 0 pull requests) instead of collecting the full metadata set.";
+
+/// Composes the final agent turn instruction: the CLI-provided turn
+/// instruction, then the always-on environment boundary, then the pinned
+/// LoopX CLI reference + verbatim workflow-skill documents (host-side
+/// compensation for the workflow skills the pinned sidecar does not bundle),
+/// then the one-shot host note (if any) last so corrective guidance stays
+/// closest to the end.
+///
+/// The pinned references (~130KB combined) are attached only when
+/// `include_pinned_reference` is set: a LoopX codex-style host loads its
+/// workflow skills once at session start and reuses them from context, so the
+/// first turn of an agent session carries the full documents and every later
+/// turn carries only a short pointer. This keeps per-turn instruction cost and
+/// prompt-cache churn low while preserving documentation parity.
+fn compose_agent_turn_instruction(
+    instruction: String,
+    host_note: Option<&str>,
+    include_pinned_reference: bool,
+) -> String {
+    let mut composed = instruction;
+    composed.push_str(LOOPX_AGENT_ENVIRONMENT_BOUNDARY_NOTE);
+    if include_pinned_reference {
+        composed.push_str("\n\n---\n[Pinned LoopX CLI reference]\n");
+        composed.push_str(LOOPX_PINNED_CLI_REFERENCE);
+        composed.push_str("\n\n---\n[Pinned LoopX skills reference - same first-party docs a LoopX agent host loads]\n");
+        composed.push_str(LOOPX_PINNED_SKILLS_REFERENCE);
+    } else {
+        composed.push_str(
+            "\n\n[Pinned LoopX CLI + skills references were provided at the first turn of this \
+agent session; they are already in this conversation's context above - reuse them; do not \
+re-read files for them.]\n",
+        );
+    }
+    composed.push_str(LOOPX_CLOSING_CEREMONY_NOTE);
+    if let Some(note) = host_note {
+        composed.push_str("\n\n---\n[BitFun host note] ");
+        composed.push_str(note);
+    }
+    composed
+}
+
 /// `recovery_reason` for a Goal that is still Active after its plan ran dry:
 /// no open todo, no waiting user decision, and no selected action remain, so
 /// the host contract forbids fabricating a terminal transition. The task
@@ -219,6 +326,9 @@ impl LoopxController {
             let mut state = self.state.write().await;
             let start_cursor = state.cursor;
             state.revision = state.revision.saturating_add(1);
+            // A host resume is an implicit suite continue: the user is back and
+            // the run should re-arm, so the durable stop flag clears here.
+            state.suspended = false;
             state.append_event(LoopxEvent {
                 kind: LoopxEventKind::SnapshotInvalidated,
                 level: LoopxEventLevel::Info,
@@ -648,6 +758,9 @@ impl LoopxController {
         if request.client_request_id.trim().is_empty() {
             return Err("clientRequestId is required".to_string());
         }
+        if self.state.read().await.suspended {
+            return Err("LoopX is stopped; resume the suite before creating tasks".to_string());
+        }
         let selected = request
             .selected_items
             .iter()
@@ -887,6 +1000,12 @@ impl LoopxController {
         if request.action == LoopxActionKind::ResetAll {
             return self.reset_all(&request).await;
         }
+        if request.action == LoopxActionKind::PauseAll {
+            return self.pause_all(&request).await;
+        }
+        if request.action == LoopxActionKind::ResumeAll {
+            return self.resume_all(&request).await;
+        }
         if request.action == LoopxActionKind::Unsupported {
             return Err("Unsupported LoopX action".to_string());
         }
@@ -953,6 +1072,8 @@ impl LoopxController {
             LoopxActionKind::Resume => self.resume_task(&task, &request.client_request_id).await,
             LoopxActionKind::ResumeRepository
             | LoopxActionKind::ResetAll
+            | LoopxActionKind::PauseAll
+            | LoopxActionKind::ResumeAll
             | LoopxActionKind::InstallLoopx => unreachable!(),
             LoopxActionKind::Approve | LoopxActionKind::Reject => {
                 self.answer_gate(&task, &runtime, &request).await
@@ -1396,6 +1517,11 @@ impl LoopxController {
     }
 
     async fn drive_task(self: &Arc<Self>, task_id: String) -> Result<(), String> {
+        if self.state.read().await.suspended {
+            // Suite is stopped: leave the task parked in its queue slot. The
+            // resume path re-enqueues parked tasks.
+            return Ok(());
+        }
         let task = self.task(&task_id).await?;
         if !matches!(
             task.state,
@@ -1947,15 +2073,32 @@ impl LoopxController {
                 };
                 self.record_progress(progress.take()).await?;
                 self.bind_turn(&task, &turn).await?;
-                let mut agent_instruction = turn.agent_instruction;
-                if let Some(note) = self.take_pending_host_note(&task.task_id).await {
+                let host_note = self.take_pending_host_note(&task.task_id).await;
+                if host_note.is_some() {
                     log::info!(
-                        "LoopX host note appended to turn instruction: task_id={} note_bytes={}",
+                        "LoopX host note appended to turn instruction: task_id={}",
                         task.task_id,
-                        note.len()
                     );
-                    agent_instruction.push_str("\n\n---\n[BitFun host note] ");
-                    agent_instruction.push_str(&note);
+                }
+                // Inject the pinned references only on the first turn of this
+                // task's agent session (runtime record resets with the
+                // controller, so a fresh session after restart re-injects once,
+                // mirroring codex-style skill loading at session start).
+                let include_pinned_reference = {
+                    let runtime = self.runtime(&task.task_id).await;
+                    !runtime.pinned_reference_injected
+                };
+                let agent_instruction = compose_agent_turn_instruction(
+                    turn.agent_instruction,
+                    host_note.as_deref(),
+                    include_pinned_reference,
+                );
+                if include_pinned_reference {
+                    let _ = self
+                        .mutate_task(&task.task_id, None, |_snapshot, runtime| {
+                            runtime.pinned_reference_injected = true;
+                        })
+                        .await;
                 }
                 log::info!(
                     "LoopX turn built, starting agent: task_id={} goal={} turn={} deadline_ms={:?} instruction_bytes={}",
@@ -2040,6 +2183,140 @@ impl LoopxController {
                 error
             );
         }
+    }
+
+    /// Suite-level stop: pauses every active agent turn held by this host and
+    /// sets the durable suspension flag so intake and scheduling hold until the
+    /// user explicitly resumes the suite. Waiting-for-user gates are left
+    /// intact: they reflect a decision the owner still owes, and resume re-arms
+    /// them. There is deliberately no per-task stop; stopping is suite-scoped.
+    async fn pause_all(
+        self: &Arc<Self>,
+        request: &LoopxActionRequest,
+    ) -> Result<LoopxActionResponse, String> {
+        self.ensure_writable().await?;
+        let paused_task_ids = {
+            let state = self.state.read().await;
+            state
+                .tasks
+                .iter()
+                .filter(|task| {
+                    matches!(
+                        task.state,
+                        LoopxTaskState::Preparing
+                            | LoopxTaskState::Queued
+                            | LoopxTaskState::Running
+                    )
+                })
+                .map(|task| task.task_id.clone())
+                .collect::<Vec<_>>()
+        };
+        let mut paused = 0usize;
+        for task_id in paused_task_ids {
+            let (task, runtime) = {
+                let state = self.state.read().await;
+                let Some(task) = state.tasks.iter().find(|t| t.task_id == task_id).cloned()
+                else {
+                    continue;
+                };
+                (
+                    task,
+                    state.runtime.get(&task_id).cloned().unwrap_or_default(),
+                )
+            };
+            if task.state == LoopxTaskState::Running {
+                if self
+                    .pause_task(&task, &runtime, &request.client_request_id)
+                    .await
+                    .is_ok()
+                {
+                    paused += 1;
+                }
+            } else {
+                // Queued/Preparing: nothing is executing yet; park them without
+                // touching any agent run so resume can re-arm them per task.
+                self.transition_task(
+                    &task.task_id,
+                    task.generation,
+                    LoopxTaskState::Stopped,
+                    LoopxPhase::Finished,
+                    "Suite stopped before the task started",
+                )
+                .await?;
+                paused += 1;
+            }
+        }
+        {
+            let _mutation = self.mutation_lock.lock().await;
+            let mut state = self.state.write().await;
+            let start_cursor = state.cursor;
+            if !state.suspended {
+                state.suspended = true;
+                state.revision = state.revision.saturating_add(1);
+                state.append_event(LoopxEvent {
+                    kind: LoopxEventKind::SnapshotInvalidated,
+                    level: LoopxEventLevel::Info,
+                    source: LoopxEventSource::Controller,
+                    message: format!(
+                        "LoopX suite stopped; intake and scheduling are held until resume (paused {paused} task(s))"
+                    ),
+                    occurred_at: now_ms(),
+                    ..LoopxEvent::default()
+                });
+                let persisted = state.clone();
+                drop(state);
+                self.store.save(&persisted).await?;
+                self.broadcast_new_events(&persisted, start_cursor);
+            }
+        }
+        Ok(LoopxActionResponse {
+            status: LoopxActionStatus::Applied,
+            current_revision: self.state.read().await.revision,
+            message: Some("LoopX suite stopped".to_string()),
+            ..LoopxActionResponse::default()
+        })
+    }
+
+    /// Suite-level continue: clears the durable suspension flag, refreshes
+    /// host projections exactly like a host resume, and re-enqueues tasks that
+    /// were parked by the stop.
+    async fn resume_all(
+        self: &Arc<Self>,
+        _request: &LoopxActionRequest,
+    ) -> Result<LoopxActionResponse, String> {
+        self.ensure_writable().await?;
+        {
+            let _mutation = self.mutation_lock.lock().await;
+            let mut state = self.state.write().await;
+            let start_cursor = state.cursor;
+            if state.suspended {
+                state.suspended = false;
+                state.revision = state.revision.saturating_add(1);
+                state.append_event(LoopxEvent {
+                    kind: LoopxEventKind::SnapshotInvalidated,
+                    level: LoopxEventLevel::Info,
+                    source: LoopxEventSource::Controller,
+                    message: "LoopX suite resumed; intake and scheduling re-enabled".to_string(),
+                    occurred_at: now_ms(),
+                    ..LoopxEvent::default()
+                });
+                let persisted = state.clone();
+                drop(state);
+                self.store.save(&persisted).await?;
+                self.broadcast_new_events(&persisted, start_cursor);
+            }
+        }
+        if let Err(error) = self.refresh_environment().await {
+            log::warn!("LoopX environment refresh after suite resume failed: {error}");
+        }
+        self.reconcile_goal_projections(true).await;
+        self.enqueue_ready_tasks_after_load().await;
+        Ok(LoopxActionResponse {
+            status: LoopxActionStatus::Applied,
+            current_revision: self.state.read().await.revision,
+            message: Some("LoopX suite resumed".to_string()),
+            ..LoopxActionResponse::default()
+        })
     }
 
     async fn pause_task(
@@ -2139,6 +2416,14 @@ impl LoopxController {
         task: &LoopxTaskSnapshot,
         request_id: &str,
     ) -> Result<LoopxActionResponse, String> {
+        if self.state.read().await.suspended {
+            return Ok(LoopxActionResponse {
+                status: LoopxActionStatus::Rejected,
+                current_revision: task.revision,
+                task: Some(task.clone()),
+                message: Some("LoopX suite is stopped; resume the suite first".to_string()),
+            });
+        }
         if !matches!(
             task.state,
             LoopxTaskState::Stopped | LoopxTaskState::Failed | LoopxTaskState::RecoveryRequired
@@ -3671,6 +3956,9 @@ impl LoopxController {
                 active.remove(repository_id);
             }
         }
+        if self.state.read().await.suspended {
+            return false;
+        }
         let next = {
             let state = self.state.read().await;
             state
@@ -3699,6 +3987,9 @@ impl LoopxController {
 
     async fn enqueue_ready_tasks_after_load(&self) {
         if self.load_error.read().await.is_some() {
+            return;
+        }
+        if self.state.read().await.suspended {
             return;
         }
         let task_ids = {
@@ -4267,6 +4558,32 @@ fn preserve_unanswered_local_gate(task: &LoopxTaskSnapshot, goal: &LoopxCliGoalS
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn agent_turn_instruction_always_carries_the_environment_boundary() {
+        // The pinned LoopX runtime must not be steered by LoopX source
+        // checkouts that happen to exist on the user's machine: the boundary
+        // note is part of every turn instruction, first turn included.
+        let composed = compose_agent_turn_instruction("turn body".to_string(), None, true);
+        assert!(composed.starts_with("turn body"));
+        assert!(composed.contains("[BitFun environment boundary]"));
+        assert!(composed.contains("loopx/pyproject.toml"));
+        assert!(!composed.contains("[BitFun host note]"));
+    }
+
+    #[test]
+    fn agent_turn_instruction_keeps_host_note_after_the_boundary() {
+        let composed =
+            compose_agent_turn_instruction("turn body".to_string(), Some("corrective guidance"), true);
+        let boundary = composed
+            .find("[BitFun environment boundary]")
+            .expect("boundary note present");
+        let host_note = composed
+            .find("[BitFun host note]")
+            .expect("host note present");
+        assert!(boundary < host_note);
+        assert!(composed.ends_with("corrective guidance"));
+    }
 
     #[test]
     fn run_now_with_a_selected_todo_is_not_a_frontier_contradiction() {

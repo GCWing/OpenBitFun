@@ -468,6 +468,9 @@ pub struct LoopxSnapshot {
     pub environment: LoopxEnvironmentSnapshot,
     pub tasks: Vec<LoopxTaskSnapshot>,
     pub generated_at: i64,
+    /// True while the whole LoopX run is stopped by the user (suite-level
+    /// pause). Intake and scheduling are held until `ResumeAll` is applied.
+    pub suspended: bool,
 }
 
 impl Default for LoopxSnapshot {
@@ -483,6 +486,7 @@ impl Default for LoopxSnapshot {
             environment: LoopxEnvironmentSnapshot::default(),
             tasks: Vec::new(),
             generated_at: 0,
+            suspended: false,
         }
     }
 }
@@ -638,6 +642,12 @@ pub enum LoopxActionKind {
     Resume,
     ResumeRepository,
     ResetAll,
+    /// Suite-level stop: cancels active agent turns and holds intake and
+    /// scheduling while the whole LoopX run is suspended.
+    PauseAll,
+    /// Suite-level continue: clears the suite stop and refreshes host
+    /// projections exactly like a host resume.
+    ResumeAll,
     Approve,
     Reject,
     Archive,

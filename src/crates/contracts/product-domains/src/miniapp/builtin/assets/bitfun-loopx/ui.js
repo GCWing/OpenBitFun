@@ -54,6 +54,10 @@ const COPY = {
     resolve: '分析链接',
     resolving: '正在实时复核链接',
     resetLoopx: '重置 LoopX',
+    pauseAll: '停止全部任务',
+    pauseAllHint: '停止整个 LoopX 运行：正在执行的任务会被中断，仍处排队/等待的任务保持原地，新任务不再受理，直到你点「继续」。等待你审批的门禁不受影响。',
+    resumeAll: '继续任务',
+    resumeAllHint: '恢复整个 LoopX 运行：重新受理新任务并推进排队中的任务。',
     resettingLoopxBackground: '正在后台清理任务与工作进展；窗口可以继续使用，完成后会自动刷新。',
     destructiveAction: '危险操作',
     resetLoopxTitle: '清空并重新开始',
@@ -117,7 +121,7 @@ const COPY = {
     decisionCardTitleRecovery: '工作段被中断，需要恢复',
     decisionCardTitlePlanExhausted: '修复计划已执行完毕，等待收尾方式',
     decisionResume: '恢复重试',
-    decisionCardGateHint: '请在下方审批面板中批准或拒绝该请求。',
+    decisionCardGateHint: '请在上方审批面板中批准或拒绝该请求。',
     decisionCardRecoveryHint: '本段工作已结束，但结算未能确认持久进展；可恢复重试一次，结论详情见下方最新进展。',
     decisionCardPlanExhaustedHint: '流程的待办已全部执行完，但没有留下可继续的待办、待批门禁或收尾声明，宿主不会伪造收尾。已产生的提交、未提交改动与证据均保留在任务工作区。你可以：从任务分支手动推送并开 PR / 在 issue 上评论说明；或等 goal 出现新待办（例如上游 PR 合并、新的监控结论）后再点“恢复重试”。',
     summaryVerdictNeedsFix: '🛠️ 需要修复',
@@ -417,6 +421,10 @@ const COPY = {
     resolve: 'Analyze URL',
     resolving: 'Verifying URL against the live source',
     resetLoopx: 'Reset LoopX',
+    pauseAll: 'Stop all tasks',
+    pauseAllHint: 'Stops the whole LoopX run: running agents are interrupted, queued and preparing tasks stay parked, new tasks are not accepted until you press Continue. Approval gates you already owe are not affected.',
+    resumeAll: 'Continue tasks',
+    resumeAllHint: 'Resumes the whole LoopX run: new tasks are accepted again and parked tasks may advance.',
     resettingLoopxBackground: 'Cleaning tasks and saved progress in the background. You can keep using this window; it refreshes when cleanup finishes.',
     destructiveAction: 'Destructive action',
     resetLoopxTitle: 'Clear and start over',
@@ -480,7 +488,7 @@ const COPY = {
     decisionCardTitleRecovery: 'Work segment was interrupted and needs recovery',
     decisionCardTitlePlanExhausted: 'Fix plan completed; choose how to finish',
     decisionResume: 'Resume retry',
-    decisionCardGateHint: 'Approve or reject the request in the approval panel below.',
+    decisionCardGateHint: 'Approve or reject the request in the approval panel above.',
     decisionCardRecoveryHint: 'This segment finished but settlement could not validate durable progress. You can retry recovery once; see the summary below for the conclusion.',
     decisionCardPlanExhaustedHint: 'All plan todos are done, but the flow left no open todo, approval gate, or terminal declaration, and the host will not fabricate one. Commits, uncommitted changes, and evidence are preserved in the task worktree. You can push the task branch and open a PR / comment on the issue yourself, or wait until the goal gains a new todo or gate (for example after an upstream PR merge) and then use Resume retry.',
     summaryVerdictNeedsFix: '🛠️ Needs fix',
@@ -773,6 +781,8 @@ const view = {
   modelSelect: byId('model-select'),
   resolveButton: byId('resolve-button'),
   resetLoopx: byId('reset-loopx'),
+  pauseAllLoopx: byId('pause-all-loopx'),
+  resumeAllLoopx: byId('resume-all-loopx'),
   notice: byId('notice'),
   unsupportedBanner: byId('unsupported-banner'),
   unsupportedReason: byId('unsupported-reason'),
@@ -1741,6 +1751,15 @@ function renderExecutionSupport() {
   view.retryEnvironment.disabled = !supported
     || environmentStatus === 'checking'
     || state.environmentInstallPending;
+  const anyActive = Boolean(snapshot)
+    && snapshot.tasks.some((task) =>
+      ['preparing', 'queued', 'running'].includes(task.state)
+    );
+  const suspended = Boolean(snapshot && snapshot.suspended);
+  view.pauseAllLoopx.hidden = !anyActive || suspended || state.resetPending;
+  view.resumeAllLoopx.hidden = !suspended || state.resetPending;
+  view.pauseAllLoopx.title = text('pauseAllHint');
+  view.resumeAllLoopx.title = suspended ? text('resumeAllHint') : text('resumeAll');
 }
 
 function environmentFact(name, label, fact) {
@@ -2601,6 +2620,10 @@ function stripSummaryBlock(raw) {
 }
 
 function renderStructuredBrief(container, s, raw, task) {
+  // The brief is rebuilt on every snapshot attach; capture the user's open
+  // state of the technical-receipt <details> BEFORE clearing children so a
+  // re-render does not collapse it while the user is reading.
+  const receiptsWereOpen = Boolean(container.querySelector('.summary-receipts')?.open);
   container.replaceChildren();
   const badges = document.createElement('div');
   badges.className = 'summary-badges';
@@ -2715,8 +2738,12 @@ function renderStructuredBrief(container, s, raw, task) {
 
   const receiptSource = stripSummaryBlock(raw);
   if (receiptSource) {
+    // Re-renders replace the whole brief, which would recreate this <details>
+    // closed on every event. Preserve the user's open state across renders so
+    // the receipt does not unexpectedly collapse while they are reading it.
     const receipts = document.createElement('details');
     receipts.className = 'summary-receipts';
+    receipts.open = receiptsWereOpen;
     const summaryLine = document.createElement('summary');
     summaryLine.textContent = text('summaryTechReceipts');
     receipts.append(summaryLine);
@@ -3754,6 +3781,32 @@ function openResetLoopxDialog() {
   view.resetLoopxDialog.showModal();
 }
 
+async function suiteAction(action) {
+  if (!state.snapshot || state.suitePending) return;
+  state.suitePending = true;
+  const button = action.startsWith('pause') ? view.pauseAllLoopx : view.resumeAllLoopx;
+  setButtonBusy(button, true);
+  view.root.setAttribute('aria-busy', 'true');
+  try {
+    const response = await app.loopx.action({
+      action,
+      clientRequestId: requestId(),
+      expectedRevision: Number((state.snapshot && state.snapshot.revision) || 0),
+    });
+    showNotice(
+      response && response.message ? response.message : text(action.startsWith('pause') ? 'pauseAll' : 'resumeAll'),
+      'success'
+    );
+  } catch (error) {
+    showNotice(errorMessage(error), 'error');
+  } finally {
+    setButtonBusy(button, false);
+    view.root.setAttribute('aria-busy', 'false');
+    state.suitePending = false;
+    await attachSnapshot(false);
+  }
+}
+
 async function resetLoopx() {
   if (!state.snapshot || state.resetPending) return;
   state.resetPending = true;
@@ -4287,6 +4340,8 @@ function bindEvents() {
     updateCreateButton();
   });
   view.resetLoopx.addEventListener('click', openResetLoopxDialog);
+  view.pauseAllLoopx.addEventListener('click', () => { void suiteAction('pause_all'); });
+  view.resumeAllLoopx.addEventListener('click', () => { void suiteAction('resume_all'); });
   view.resetLoopxCancel.addEventListener('click', () => {
     view.resetLoopxDialog.close();
   });

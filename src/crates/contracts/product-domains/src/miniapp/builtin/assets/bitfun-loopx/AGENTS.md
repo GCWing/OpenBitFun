@@ -162,6 +162,61 @@ controller、environment DTO 或 UI。
 - persisted DTO 新字段必须有默认值；旧字段/旧 action 要宽容读取并明确降级，不能通过删除
   registry、task snapshot 或 worktree 来“修复”升级问题。
 
+### 对照方法论：LoopX 适配的是 Codex，不是 Codex 适配 LoopX（2026-09-07 实测）
+
+方向事实：LoopX 官方把 Codex 作为一等宿主——`runtime-profile codex_cli`、
+`-A/--codex-app` 别名、bootstrap 的 `--codex-app-heartbeat`、`quota should-run`
+返回的 `codex_app` scheduler hints 都是 LoopX 自带的 Codex 适配面。**Codex 不去
+适配 LoopX；是 LoopX 去适配 Codex。** BitFun 是反向的「BitFun 适配 LoopX」，
+所以遇到不确定的 LoopX 语义时，正确参考物是 LoopX 对 Codex 的既定行为
+（源码 `loopx-src`、官方 custom-agent-runner-integration 文档、scheduler hint 投影），
+而不是自己猜。
+
+方法论（已在本仓实证）：**对某个 LoopX 行为/收尾语义不确定时，在独立克隆上用
+同一 issue 跑一遍「loopx 0.5.1 源码运行 + codex exec」作为标准答案对照**。
+实例（2026-09-07，同一条 no-op issue #1 双跑，BitFun 侧 vs codex 侧）：
+- BitFun：约 30 分钟、9 次 exit=1、goal 状态文件长时不动，最终靠宿主投影
+  completed（结算写回未验证）。
+- codex：约 12 分钟、零失败循环，bootstrap→feasibility(triage_only)→todo 闭环→
+  refresh-state(no_followup+vision)→quota should-run 返回 `terminal_no_followup /
+  no spend`，干净关闭；GitHub 零触碰。
+- 结论：判定逻辑（triage_only/no_followup）两边一致且正确；差异在
+  ① runtime 路径：loopx 默认 `common_runtime_root` 指向共享 `~/.codex/loopx`
+  （源码 bootstrap.py `setdefault("common_runtime_root", runtime_root)`、
+  cli.py `--runtime-root` 全局覆盖），共享路径带来跨宿主锁竞争/写拒绝；
+  ② 收尾必填参数清单：`--progress-result-class no_followup` 要求同时提供
+  `--progress-coverage-scope-id / --progress-surface-id / --progress-hypothesis-id /
+  --progress-probe-kind / --progress-evidence-id / --progress-coverage-complete` +
+  `--agent-vision-json`（含 state=no_followup、path_delta.outcome=stop）；
+  settlement 绑定 guard-bound todo id（不是 replan-obligation-id）；agent-lane 作用域
+  不能更新 durable Next Action；quota spend-slot 绑定同 todo+turn 身份。
+- 适配层已按此采纳：bootstrap 加 `--no-global-sync`；所有 CLI 调用注入
+  `--runtime-root <worktree>/.loopx/runtime`；bootstrap 后把 registry
+  `common_runtime_root` 补丁为本地 runtime；并把各 goal 的默认 `state_file` 从
+  loopx 遗留的 `.codex/goals/<id>/ACTIVE_GOAL_STATE.md` 改为
+  `.loopx/goals/<id>/ACTIVE_GOAL_STATE.md`（文件随之搬移）——worktree 完全
+  `.loopx` 命名。BitFun 与 codex 是独立 agent，`.codex` 只是 loopx 的旧默认路径
+  命名，不是 BitFun/Codex 耦合。注入配方携带上述必填参数清单。
+- 回退信号：若某次改动后又出现「exit=1 循环 + 状态文件不动」模式，先跑一次
+  codex 标准答案对照，再对比 argv/路径，不要先怀疑模型或判定逻辑。
+
+### Sidecar 打包：frozen 环境的 skills 数据（2026-09-07 实测定论）
+
+- BitFun 用 PyInstaller onefile 把 pinned loopx 打包为 sidecar，用户零安装。loopx 上游
+  只对 pip/wheel 声明 `share/loopx/skills/**`（pyproject package-data）；PyInstaller
+  只收 import 分析能看到的东西，**技能数据必须由 `build-loopx.mjs` 显式
+  `--add-data "<src>\\skills;skills"` 打进解包根**。
+- 目标目录是解包根下的 `skills`（不是 `share/loopx/skills`）：loopx
+  `workflow_skill_install.resolve_workflow_skill_source()` 第一步检查
+  `Path(__file__).parents[1]/skills`，冻结环境下 `parents[1]` 即 `sys._MEIPASS`。
+  若 pinned 上游改动该布局，构建脚本注释与这里需同步更新。
+- 未打包 skills 时的真实代价（实测）：两种宿主（BitFun、Codex）都只能靠
+  `--help`/读源码反推 CLI → exit 1 振荡、收尾仪式拖沓（一次 no-op issue 的关闭
+  花费约 11 分钟）；宿主侧补偿 = 每回合注入 pinned CLI 参考
+  （`loopx-pinned-cli-reference.md`，从 pinned 源码 `--help` 生成）+ 环境边界 note。
+- 结论：**不依赖上游**（上游 feature request 可作愿望单，不必保持开启）；frozen
+  场景可本地完全闭环；文档里不要声称 exe 内 `workflow-skills --install` 不可用。
+
 ## 设计原则：单一事实源，非必要不新增（用户要求，不可违背）
 
 新增任何功能、字段、按钮、面板之前，先确认现有实现是否已覆盖同一需求；能复用或派生的必须复用或派生。

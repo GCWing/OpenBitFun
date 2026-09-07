@@ -130,6 +130,17 @@ export async function buildLoopx({
     writeFileSync(entry, 'from loopx.entrypoint import main\nraise SystemExit(main())\n', 'utf8');
 
     console.log('build-loopx: compiling onefile binary (PyInstaller)');
+    // The workflow skills live in the loopx source tree at `skills/` and are
+    // shipped for pip wheels via package-data. PyInstaller only bundles what
+    // import analysis sees, so the skills data must be added explicitly.
+    // Under PyInstaller the modules resolve under the extraction root
+    // (sys._MEIPASS) and `workflow_skill_install.resolve_workflow_skill_source()`
+    // checks `<extraction root>/skills` first (Path(__file__).parents[1]/skills),
+    // so the destination must be the `skills` directory at the extraction root,
+    // not `share/loopx/skills`. If the pinned upstream layout ever changes this
+    // branch, keep the two in sync.
+    const addDataSeparator = process.platform === 'win32' ? ';' : ':';
+    const skillsAddData = `${path.join(src, 'skills')}${addDataSeparator}skills`;
     sh(pyinstaller, [
       '--onefile',
       '--name', 'loopx',
@@ -138,6 +149,7 @@ export async function buildLoopx({
       '--distpath', dist,
       '--workpath', path.join(work, 'build'),
       '--specpath', path.join(work, 'build'),
+      '--add-data', skillsAddData,
       path.basename(entry),
     ], { cwd: src });
 

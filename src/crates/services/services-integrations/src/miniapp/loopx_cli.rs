@@ -621,11 +621,23 @@ impl LoopxCliProcessAdapter {
             )
             .await?;
         let mut args = verified.prefix_args.clone();
+        // `--runtime-root` is a global LoopX option: it overrides the runtime
+        // root resolved from the registry so every controller + agent-side CLI
+        // invocation stays inside this project's `.loopx/runtime` instead of
+        // the shared `~/.codex/loopx` (2026-09-07 codex comparison: global
+        // runtime root caused cross-session lock contention and write
+        // denials; localizing it removed the failure loop entirely).
+        let runtime_root_arg = registry_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("runtime");
         args.extend([
             OsString::from("--format"),
             OsString::from("json"),
             OsString::from("--registry"),
             registry_path.as_os_str().to_owned(),
+            OsString::from("--runtime-root"),
+            runtime_root_arg.as_os_str().to_owned(),
         ]);
         args.extend(command_args);
         let output = self
@@ -1665,6 +1677,16 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 run_port_command(self, &request.context, bootstrap_args(&request), &observer)
                     .await?;
             require_payload_ok(&bootstrap.payload, operation_id)?;
+            // 2026-09-07 codex comparison: LoopX defaults `common_runtime_root`
+            // to the shared `~/.codex/loopx`; that global file is the root of
+            // the write-denial / lock-contention failure loop seen in both
+            // hosts. Point the project registry at the local runtime root
+            // right after bootstrap so every later CLI call (controller and
+            // agent side) stays project-local and never touches the shared
+            // global registry.
+            let _ = patch_registry_local_runtime_root(Path::new(
+                &request.context.registry_path,
+            ));
             let state_action = bootstrap
                 .payload
                 .get("state_action")
@@ -3173,6 +3195,14 @@ fn bootstrap_args(request: &loopx_contract::LoopxCliCreateGoalRequest) -> Vec<Os
         "--no-onboarding-scan".to_string(),
         "--codex-app-heartbeat".to_string(),
         "no".to_string(),
+        // With `--runtime-root <worktree>/.loopx/runtime` (injected by
+        // run_json_command) bootstrap's shared-registry merge already targets
+        // the project-local runtime, so it CREATES
+        // `<runtime>/registry.global.json` there instead of touching the
+        // shared `~/.codex/loopx`. Do NOT pass `--no-global-sync` here:
+        // skipping it leaves the local global registry missing and the next
+        // command that merges (e.g. register-agent) fails with "global
+        // registry does not exist" (2026-09-07 observed).
     ];
     if request
         .granted_scopes
@@ -3180,6 +3210,22 @@ fn bootstrap_args(request: &loopx_contract::LoopxCliCreateGoalRequest) -> Vec<Os
     {
         args.extend(["--write-scope".to_string(), "write".to_string()]);
     }
+    // Place the goal state file under the project-local `.loopx` area from the
+    // start. LoopX's legacy default is `<project>/.codex/goals/<goal-id>/...`;
+    // passing --state-file here means the `.codex` directory is never created
+    // in the worktree at all (BitFun and Codex are independent agents; the
+    // `.codex` name is only LoopX's legacy default, not a BitFun/Codex
+    // coupling). Verified: `bootstrap --help` supports `--state-file`.
+    args.extend([
+        "--state-file".to_string(),
+        Path::new(&request.context.worktree_path)
+            .join(".loopx")
+            .join("goals")
+            .join(&request.goal_id)
+            .join("ACTIVE_GOAL_STATE.md")
+            .display()
+            .to_string(),
+    ]);
     args.into_iter().map(OsString::from).collect()
 }
 
@@ -3195,6 +3241,108 @@ fn register_agent_args(request: &loopx_contract::LoopxCliCreateGoalRequest) -> V
     .into_iter()
     .map(OsString::from)
     .collect()
+}
+
+/// Best-effort rewrite of the project registry's `common_runtime_root` to the
+/// project-local runtime directory. LoopX v0.5.1 defaults that field to the
+/// shared `~/.codex/loopx`; pointing it at `<registry dir>/runtime` keeps all
+/// later CLI calls (controller and agent side) project-local and avoids the
+/// shared-global-registry write denial / lock contention observed with both
+/// the BitFun sidecar and the codex reference run (2026-09-07).
+///
+/// Also re-points each goal's default `state_file` from the legacy
+/// `.codex/goals/<goal-id>/ACTIVE_GOAL_STATE.md` to
+/// `.loopx/goals/<goal-id>/ACTIVE_GOAL_STATE.md` and copies the file over, so
+/// the worktree stays fully `.loopx`-namespaced. BitFun and Codex are
+/// independent agents; the `.codex` name in these paths is only LoopX's
+/// legacy default, not a BitFun/Codex coupling, and this removes the last
+/// trace of it from the worktree.
+fn patch_registry_local_runtime_root(registry_path: &Path) -> std::io::Result<()> {
+    if !registry_path.exists() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(registry_path)?;
+    let mut registry: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    let project_dir = registry_path.parent().unwrap_or_else(|| Path::new("."));
+    let local_runtime = project_dir.join("runtime");
+    let local = local_runtime.to_string_lossy().replace('\\', "\\\\");
+    let registry_obj = registry.as_object_mut().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::InvalidData, "registry is not a JSON object")
+    })?;
+    let already_local = registry_obj
+        .get("common_runtime_root")
+        .and_then(serde_json::Value::as_str)
+        .map(|current| Path::new(current) == local_runtime)
+        .unwrap_or(false);
+    if !already_local {
+        registry_obj.insert(
+            "common_runtime_root".to_string(),
+            serde_json::Value::String(local),
+        );
+    }
+    // Re-point each goal's state_file from the legacy `.codex/goals/...` path
+    // to the project-local `.loopx/goals/...` path, copying the file over so
+    // the goal stays readable at its new location.
+    if let Some(goals) = registry_obj.get_mut("goals").and_then(serde_json::Value::as_array_mut) {
+        for goal in goals.iter_mut() {
+            let goal_obj = match goal.as_object_mut() {
+                Some(goal_obj) => goal_obj,
+                None => continue,
+            };
+            let goal_id = match goal_obj.get("id").and_then(serde_json::Value::as_str) {
+                Some(goal_id) => goal_id,
+                None => continue,
+            };
+            let state_file = match goal_obj.get("state_file").and_then(serde_json::Value::as_str) {
+                Some(state_file) => state_file,
+                None => continue,
+            };
+            let state_path = Path::new(state_file);
+            let is_legacy_codex_path = state_path
+                .components()
+                .any(|component| component.as_os_str() == ".codex");
+            if !is_legacy_codex_path {
+                continue;
+            }
+            let new_state = project_dir
+                .join(".loopx")
+                .join("goals")
+                .join(goal_id)
+                .join("ACTIVE_GOAL_STATE.md");
+            let new_state_escaped = new_state.to_string_lossy().replace('\\', "\\\\");
+            if let Some(parent) = new_state.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let source_abs = if state_path.is_absolute() {
+                state_path.to_path_buf()
+            } else {
+                project_dir.join(state_path)
+            };
+            if source_abs.exists() {
+                let _ = std::fs::copy(&source_abs, &new_state);
+            }
+            goal_obj.insert(
+                "state_file".to_string(),
+                serde_json::Value::String(new_state_escaped),
+            );
+        }
+    }
+    let rewritten = serde_json::to_string_pretty(&registry)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+    std::fs::write(registry_path, rewritten)?;
+    // Safety net: some commands merge against `<runtime>/registry.global.json`
+    // (the shared registry projected into the local runtime root). If it is
+    // missing (e.g. an older goal created before this fix), create an empty
+    // one so later commands do not fail with "global registry does not exist".
+    let global_registry = local_runtime.join("registry.global.json");
+    if !global_registry.exists() {
+        if let Some(parent) = global_registry.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&global_registry, "{}\n");
+    }
+    Ok(())
 }
 
 fn list_todos_args(goal_id: &str) -> Vec<OsString> {

@@ -1057,9 +1057,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .summary-receipts { margin-top: 4px; color: var(--lx-text-muted); font-size: 10.5px; }
 .summary-receipts summary { cursor: pointer; }
 .summary-receipts__body {
-  margin: 6px 0 0; padding: 8px; max-height: 220px; overflow: auto; white-space: pre-wrap;
+  margin: 6px 0 0; padding: 10px 12px; max-height: 42dvh; overflow: auto; white-space: pre-wrap;
   border: 1px solid var(--lx-border); border-radius: 7px; background: var(--lx-muted-surface);
-  color: var(--lx-text-soft); font-size: 10px;
+  color: var(--lx-text-soft); font-size: 10px; line-height: 1.5;
 }
 .dialog__footer { border-top: 1px solid var(--lx-border); }
 .dialog__footer--split > div { display: flex; gap: 6px; }
