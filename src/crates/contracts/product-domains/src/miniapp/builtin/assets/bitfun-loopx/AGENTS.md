@@ -58,7 +58,11 @@ durable readback 为准，禁止用本地计数、transcript 或 UI 状态覆盖
 
 ### 每轮执行合同
 
-每次唤醒必须从 durable state 重新开始，不能依赖上一轮模型记忆：
+每次唤醒的**控制事实**必须从 durable state 重新推导：re-entry instruction 每轮都从当前
+TurnEnvelope 重建，settlement 只认 LoopX durable evidence，与对话内容无关。goal 的
+agent session 可以跨 turn 续接（2026-09-08 起，codex exec resume 的同等机制，见后文
+修复批次），但续接的只是**对话上下文**（已读文档、已完成工作），不是权威状态——
+会话里的任何记忆都不得替代下列步骤的 CLI 读写与核验：
 
 1. controller 用只读 `turn plan` 对账当前 Goal、user channel 和 cadence；该读取不启动 Agent。
 2. 只有 LoopX 投影 `RunNow` 时，adapter 以宿主生成的稳定 Turn id 调用一次
@@ -68,10 +72,13 @@ durable readback 为准，禁止用本地计数、transcript 或 UI 状态覆盖
    也不消费 quota。
 4. re-entry instruction 只能携带当前 TurnEnvelope 的 selected action、user channel、
    required reads、boundary、execution policy、writeback、replan/task orchestration contract、
-   detail refs、CLI prefix、registry 和 Turn identity。
+   detail refs、CLI prefix、registry 和 Turn identity；writeback/spend 的 copy-ready 命令
+   由宿主镜像 v0.5.1 canonical 模板生成（见 2026-09-08 修复批次），不属于自造合同。
 5. Agent 在 write-capable 工作前 claim selected todo，只执行一个有界动作，读取真实
    repository/test/CI/provider 结果进行验证，然后 complete/update/block/defer 或创建明确的
-   successor，执行 `refresh-state`，最后才以同一 identity spend quota。
+   successor，执行 `refresh-state`（用指令中宿主给出的 copy-ready 命令，含必填
+   accountable delivery-outcome，agent 只填占位符，不自拼其它 argv 形态），
+   最后才以同一 identity spend quota。
 6. Agent terminal 后，宿主只读 `turn plan` 与 history，核验完全匹配的
    `goal_id + agent_id + turn_id + selected todo/replan obligation` durable writeback 和 quota
    receipt。durable writeback 缺失或错绑进入显式 recovery（NoDurableProgress 先走一次
@@ -197,14 +204,121 @@ controller、environment DTO 或 UI。
   `.loopx/goals/<id>/ACTIVE_GOAL_STATE.md`（文件随之搬移）——worktree 完全
   `.loopx` 命名。BitFun 与 codex 是独立 agent，`.codex` 只是 loopx 的旧默认路径
   命名，不是 BitFun/Codex 耦合。
-- 文档加载与 codex 对齐（2026-09-07）：pinned CLI 参考 + 官方 SKILL 文档以
-  `.loopx/pinned-loopx-reference.md` 种子进 worktree；每回合指令只带**小指针**
-  （"先 Read 一次，之后复用上下文"），由代理像 codex 加载技能一样主动读取——
+- 文档加载与 codex 对齐（2026-09-07）：pinned CLI 参考 + 官方 SKILL 文档（核心两篇合一 +
+  4 篇兄弟技能文档，清单见 2026-09-08 批次）以 `.loopx/pinned-loopx-skill.md` 等种子进
+  worktree；每回合指令只带**小指针**，由代理像 codex 加载技能一样主动读取
+  （2026-09-08 起：**读取策略只归指针节所有**——首 turn 指针为“读一次”并枚举全部
+  兄弟文档，session 续接后的 turn 改带“已加载，复用上下文”指针；closing note
+  只命名文档、不下发读指令，防止续接会话每轮重读 59KB，见后文修复批次）——
   不再 139KB 塞进指令（token/缓存友好，模型遵循度更高）。注入配方已大幅瘦身：
   只保留宿主事实（类型化拒绝→精确修正一次、两次即 blocker；runtime 本地化），
   自创断言与"最小证据"提示已删除（其曾导致 repository_context=not_provided 漂移）。
 - 回退信号：若某次改动后又出现「exit=1 循环 + 状态文件不动」模式，先跑一次
   codex 标准答案对照，再对比 argv/路径，不要先怀疑模型或判定逻辑。
+
+### 2026-09-08 修复批次：turn 内三处浪费根因（live 观测，dynamic-workflows-lab #1）
+
+同日观测一次完整 run（4 turn / 20 分钟仍未关闭），定位三个 turn 内浪费根因并修复：
+
+1. **指令引用陈旧文件名**：closing note 仍指 `.loopx/pinned-loopx-reference.md`（改名前旧名），
+   agent 每 turn 开场必吃一次 failed Read + 一轮自恢复推理。已统一为
+   `.loopx/pinned-loopx-skill.md`，并由测试锁死旧名不回归。同批把读取策略收敛到
+   指针节单一事实源：closing note 首条改为只命名文档（agent 实测会字面执行
+   note 里的读指令，若保留双入口，续接会话每轮都会重读 59KB）；测试锁死
+   “fresh 恰好一处、续接零处 Read 指令”。
+2. **agent 自拼 settlement 命令 → typed refusal 循环**：v0.5.1 对 turn-scoped
+   refresh-state（带 --todo-id / --replan-obligation-id / --turn-instance-id 任一）
+   强制要求 **accountable** delivery-outcome（仅 `outcome_progress` /
+   `primary_goal_outcome`，`surface_only` 不算），且 typed progress-result-class
+   需至少一个稳定标识符；而 outer_controller 路径的 envelope 只给裸模板
+   `--classification <validated_progress>`（完整 settlement plan 仅
+   CODEX_APP_HEARTBEAT profile 生成）。agent 靠 help 文本拼命令 → 连续 typed
+   refusal（surface_only 被拒两次）→ 遵守“两次即 blocker”报障 → 无 run
+   record → NoDurableProgress → 追加纠正轮。修复：宿主在 re-entry
+   instruction 里镜像 v0.5.1 canonical 模板（`effect_program.py` 与
+   `autonomous_replan_obligation.py`，replan 轮含 `--progress-scope agent_lane
+   --classification bounded_replan_progress`），agent 只填占位符。这是当前
+   “agent 自写回”路径下最小修复；终态方案见下方 run-once 迁移立项。
+3. **每 turn 新建 agent session**：codex 侧 host 用 `codex exec resume` 跨 turn
+   复用同一会话（session binding 按 goal lineage 存 runtime），BitFun 侧
+   每 turn 新建+丢弃导致 59KB 技能文档每轮重读、上下文/缓存全丢。修复：
+   settlement 后按终态决策——Queued/WaitingForUser 保留 session（下一
+   turn `reuse_session_id` 续会话，指针改“已加载，复用上下文”）；
+   Completed/Recovery/Failed 丢弃；pause/abort/resume 路径同步清绑定，
+   失效 session id 由端口自动回退新建会话。
+
+同批修复：agent-onboard 包改在 register-agent 之后拉取（提前拉取时
+`agent_id: null`，agent 会不信任自己的身份 flags）；环境边界 note 扩展两项
+禁令（见下）。
+
+### Skill 版本漂移防护（2026-09-08）与上游 issue #4082
+
+本机 `~/.codex/skills` 存有另一版本 loopx 安装的 `loopx-*` 技能，而 pinned
+sidecar 是 0.5.1；**安装出的技能树不带任何版本标记**（SKILL.md frontmatter
+只有 name+description，readback manifest 只有 digest/installed_at），agent
+加载时无从发现不匹配，session 复用后还会把漂移文档带进后续所有 turn。
+环境边界 note 因此追加两条禁令：禁止加载 skill catalog / 用户级目录里的
+`loopx-*` 条目（跨技能引用一律读 worktree 内 seed 的同名文件）；禁止执行
+pinned 文档描述的安装/自更新流程（`loopx update`、install-*.ps1/sh）。已提
+上游 https://github.com/huangruiteng/loopx/issues/4082（版本标记进
+SKILL.md/readback）；上游修复并升级 pin 后，可回归官方 `workflow-skills
+--install` 投递。另实测：v0.5.1 侧车 `workflow-skills --install --execute` 在
+Windows 上因 `import fcntl` 崩溃（v0.5.2+ 已改用带 msvcrt 回退的
+`file_lock.exclusive_file_lock`），本仓 seed 方案对该 pin 是必需的。
+
+### run-once 迁移立项（未实施，终态方向）
+
+v0.5.1 官方 `turn run-once --host generic-cli` 把 settlement 全部收归 loopx
+自身（argv 校验、writeback/spend/scheduler 编程执行、typed
+`loopx_turn_result_v0` 收敛、turn journal 幂等重放），agent 只需回一个
+schema 约束的结果 JSON（stdin host request → stdout result）。这是根治
+“agent 拼 CLI 命令”类浪费的结构解，也是 custom host 的官方姿势；代价是
+需要 host-adapter 桥（stdin/stdout 驱动 agent）+ controller 核心循环重构。
+前置条件见「当前能力边界」。升级 pinned 版本时一并评估。
+
+### 标准答案复现手册：codex + loopx 跑同一 issue（2026-09-07 实证流程）
+
+在独立实验目录（本机为 `C:\codeagent\loopx-codex-lab-experiment`）按以下步骤可复现
+"同一 issue 的 codex 标准答案"。**只读边界**：codex 侧一律不 push/不建 PR/不关
+issue/GitHub 零触碰；lab-repo 每轮清理，改动为可丢弃。
+
+1. 准备（一次性）：
+   - `loopx-src` = pinned 0.5.1 源码 worktree（可 `git worktree` 挂上）；包装脚本
+     `bin\loopx.cmd`=`python -c "from loopx.entrypoint import main; main()"`（PYTHONPATH=loopx-src，
+     避免 PyInstaller frozen 的 fcntl 缺陷）。
+   - `~/.codex/skills` 已有 loopx 系列技能（`loopx-project` 等；用任一 host 的
+     `workflow-skills --install` 或直接拷贝 skills 目录）。
+   - `~/.codex/config.toml`：任一可用 model provider（示例：DeepSeek——base_url
+     https://api.deepseek.com/、wire_api="responses"、experimental_bearer_token=…）；
+     `models.json` 含所选模型 id（示例 `deepseek-v4-flash`，context 1048576）。
+     **模型可自由更换**——对照要求 BitFun 与 codex 侧使用**同一模型**才有同口径
+     结论；换模型时按本文档第 4 节重新标定基线。gh 已登录 xielixing。
+2. 每 issue 一次：
+   - 清场：`git checkout .` + `git clean -fdq -e .gitignore` + 删 `.loopx/.codex`。
+   - 生成引导包：`loopx start-goal --guided --project . --goal-id lab-repo-goal
+     --goal-text "<issue 目标>" --host-surface codex-cli-tui --capability-route issue-fix
+     > evidence\packet-issueN.txt`。
+   - 组 prompt = packet + operator note（边界禁 push/PR/close；环境事实：source-run 0.5.1、
+     sandbox 使 `~/.codex`/`.codex` 只读→必须本地化：`.loopx\registry.json` + `--runtime-root`
+      + `--no-global-sync` + bootstrap `--state-file`、技能可读、勿反复环境检查）。
+   - 跑：`codex exec <模型id> --sandbox workspace-write --prompt <prompt文件>`
+     （runner-issueN.ps1 包装；**坑**：PowerShell 单引号字符串不插值——用 `-f` 生成
+     `runner-issue{0}.ps1`；顺序跑多个 issue 用 runner-issue23.ps1 依次调用）。
+   - 产出：`evidence\codex-run-issueN.log`（含 session id、每步 exec、最终 summary 与
+     tokens used）。
+3. 记录口径（与 BitFun 对齐比较）：
+   - **每 issue 独立 session**（session id 全不同）+ 独立清理克隆（与 BitFun 每任务独立
+     worktree/goal/session 一致——BitFun 已对齐）。
+   - 阶段拆分：bootstrap→register-agent→workflow-plan→feasibility→todo add/complete→
+     refresh-state(vision)→quota should-run→terminal_no_followup；记录每阶段耗时与工具调用数。
+   - **判定/收尾对照**：verdict 与 transition 是否一致；BitFun 侧对同一 issue 的
+     rollout 事件、feasibility 记录、durable 写回是否同构；差异优先怀疑
+     argv/路径/文档加载方式（2026-09-07 结论：判定一致；差异=common_runtime_root 默认
+     共享路径、no_followup 必填参数、文档"注入 vs 读取"方式）。
+4. 实测基线（2026-09-07，**当时所用模型：deepseek-v4-flash**——仅作历史事实，非固定
+   配置）：#1 no-op 12分17秒/230K tokens；#2 真修复 6分40秒；#3 认可 ~9分30秒；
+   全程零 exit-1 循环、GitHub 零触碰。⚠️ #1 偏长属冷跑（首轮读技能+摸清本地化手法）；
+   同条件热跑以 6.5-10 分钟为基准；**更换模型后需重新标定**（记录模型 id + 耗时）。
 
 ### Sidecar 打包：frozen 环境的 skills 数据（2026-09-07 实测定论）
 
@@ -425,3 +539,4 @@ controller、environment DTO 或 UI。
 - 不要在每次代码改动后主动跑测试套件（见上）。
 - 不要直接修改 `%APPDATA%/bitfun/data/miniapps/builtin-bitfun-loopx/**` 当源码。
 - 不要用 `git add .` 或把运行目录/生成物（`compiled.html`、`~/.bitfun/bitfun-loopx/**`）提交。
+

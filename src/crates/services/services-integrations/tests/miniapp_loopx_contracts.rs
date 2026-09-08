@@ -23,7 +23,7 @@ use openbitfun_services_integrations::miniapp::loopx_workspace::{
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, VecDeque};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -654,7 +654,18 @@ async fn item_plan_uses_structured_registry_and_worktree_arguments() {
     assert_eq!(plan.todos.len(), 1);
     let command = runner.plans().pop().unwrap();
     assert_eq!(command.current_dir.as_deref(), Some(worktree.as_path()));
-    assert!(command.environment.is_empty());
+    // The sidecar env intentionally forces UTF-8 stdio for the PyInstaller
+    // bundle (8cf71c7bf): the command is not environment-clean, it carries
+    // exactly the UTF-8 pair.
+    assert_eq!(
+        command.environment.get(OsStr::new("PYTHONUTF8")),
+        Some(&OsString::from("1"))
+    );
+    assert_eq!(
+        command.environment.get(OsStr::new("PYTHONIOENCODING")),
+        Some(&OsString::from("utf-8"))
+    );
+    assert_eq!(command.environment.len(), 2);
     assert_eq!(command.deadline, Duration::from_secs(9));
     assert_eq!(
         command.args,
@@ -663,6 +674,15 @@ async fn item_plan_uses_structured_registry_and_worktree_arguments() {
             OsString::from("json"),
             OsString::from("--registry"),
             registry.as_os_str().to_owned(),
+            // Project-local runtime root (cc7f0b426): every CLI call stays
+            // inside the worktree's `.loopx` namespace and never touches the
+            // shared `~/.codex/loopx` global.
+            OsString::from("--runtime-root"),
+            worktree
+                .join(".loopx")
+                .join("runtime")
+                .as_os_str()
+                .to_owned(),
             OsString::from("issue-fix"),
             OsString::from("workflow-plan"),
             OsString::from("--url"),
@@ -740,6 +760,102 @@ async fn item_plan_process_failure_preserves_the_stderr_cause() {
     assert_eq!(error.kind, LoopxCliErrorKind::Process);
     assert!(error.message.contains("metadata projection failed"));
     assert!(error.message.contains("status Some(1)"));
+}
+
+#[tokio::test]
+async fn waiting_goal_without_typed_gate_projects_owner_action_summary() {
+    // A7 regression (live 2026-09-08, issue 2): LoopX projected a user wait
+    // whose open user todo is a plain owner review/merge queue entry
+    // (`task_class: user_action`, not a typed `user_gate`). The old
+    // projection failed the whole inspection with SchemaMismatch and parked
+    // a fully finished task (PR already opened) as recovery_required. The
+    // projection must return no gate plus a human summary instead.
+    let temporary = tempfile::tempdir().unwrap();
+    stage_bundle(temporary.path(), "v0.5.1", 1);
+    let worktree = temporary.path().join("worktree");
+    std::fs::create_dir_all(&worktree).unwrap();
+    let registry = worktree.join(".loopx").join("registry.json");
+    let turn_plan = json!({
+        "ok": true,
+        "status": "operator_gate_notify",
+        "schema_version": "loopx_turn_plan_v0",
+        "turn_envelope": {
+            "should_run": true,
+            "state": "active",
+            "effective_action": "operator_gate_notify",
+            "open_count": 1,
+            "user": {
+                "action_required": true,
+                "open_count": 1
+            },
+            "action_signature": {
+                "source_decision_hash": "sha256:owner-action-revision"
+            }
+        }
+    });
+    let todos = json!({
+        "ok": true,
+        "todos": [{
+            "todo_id": "todo_owner_review",
+            "role": "user",
+            "task_class": "user_action",
+            "status": "open",
+            "done": false,
+            "text": "Review and merge the open pull request that fixes issue 2"
+        }]
+    });
+    let runner = Arc::new(FakeRunner::with_results(
+        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+            .into_iter()
+            .chain([output(turn_plan.to_string()), output(todos.to_string())]),
+    ));
+    let adapter = adapter_with_runner(
+        temporary.path(),
+        runner.clone(),
+        Arc::new(FakeLocator::new(None)),
+    );
+
+    let snapshot = adapter
+        .inspect_goal(
+            LoopxCliInspectGoalRequest {
+                context: LoopxCliGoalContext {
+                    call: LoopxCliCallContext {
+                        operation_id: "inspect-owner-action".to_string(),
+                        deadline_at: None,
+                    },
+                    task_id: "task-42".to_string(),
+                    generation: 3,
+                    worktree_path: worktree.to_string_lossy().into_owned(),
+                    registry_path: registry.to_string_lossy().into_owned(),
+                    available_capabilities: [
+                        "filesystem_read",
+                        "filesystem_write",
+                        "shell",
+                        "network",
+                        "external_evidence_poll",
+                    ]
+                    .into_iter()
+                    .map(str::to_string)
+                    .collect(),
+                },
+                goal_id: "goal-42".to_string(),
+                agent_id: "bitfun-agent".to_string(),
+            },
+            &RecordingProgressSink::default(),
+        )
+        .await
+        .unwrap();
+
+    // `should_run=true` keeps driving independent safe work (same policy as
+    // the typed-gate test above); the owner-action wait is projected
+    // alongside as a summary, not a host-answerable gate.
+    assert_eq!(snapshot.run_decision, LoopxCliRunDecision::RunNow);
+    assert!(snapshot.pending_user_gate.is_none());
+    let summary = snapshot
+        .waiting_user_summary
+        .as_deref()
+        .expect("owner action summary projected");
+    assert!(summary.contains("Review and merge"));
 }
 
 #[tokio::test]
@@ -1293,7 +1409,19 @@ async fn create_goal_recovery_does_not_duplicate_an_existing_planned_todo() {
         .into_iter()
         .chain([
             output(json!({"ok": true, "state_action": "kept"}).to_string()),
+            // register-agent acknowledgment.
             output(json!({"ok": true}).to_string()),
+            // agent-onboard pack (fetched after registration so the pack
+            // carries the registered agent id).
+            output(
+                json!({
+                    "ok": true,
+                    "schema_version": "loopx_agent_onboarding_v0",
+                    "agent_type": "other-agent",
+                    "agent_id": "bitfun-agent"
+                })
+                .to_string(),
+            ),
             output(
                 json!({
                     "ok": true,
@@ -1368,7 +1496,14 @@ async fn create_goal_recovery_does_not_duplicate_an_existing_planned_todo() {
         .skip(2)
         .map(|plan| plan.args)
         .collect::<Vec<_>>();
-    assert_eq!(commands.len(), 4);
+    // bootstrap + register-agent + agent-onboard + todo list + turn-plan
+    // inspection: the onboard pack fetch (after registration so it carries
+    // the registered agent id) adds exactly one command.
+    assert_eq!(commands.len(), 5);
+    assert!(commands.iter().any(|args| {
+        args.windows(2)
+            .any(|pair| pair[0] == OsString::from("agent-onboard"))
+    }));
     assert!(!commands.iter().any(|args| {
         args.windows(2)
             .any(|pair| pair[0] == OsString::from("todo") && pair[1] == OsString::from("add"))

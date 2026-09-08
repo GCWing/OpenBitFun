@@ -131,7 +131,13 @@ const COPY = {
     summaryReproductionReproduced: '🔁 已复现',
     summaryReproductionNotReproduced: '🔁 未复现（未执行复现环节）',
     summaryReproductionNotApplicable: '🔁 不适用',
-    summaryBadgeNote: '徽标表示对该 Issue 的定性（是否需要修复、上游是否已修复等），与任务处理完成度相互独立；代理只负责本地实现与验证，不会自动提交 PR，提交、合并与关闭由你决定。',
+    summaryWontFixReasonDuplicateOf: '重复议题',
+    summaryWontFixReasonByDesign: '设计如此，无需改动',
+    summaryWontFixReasonInvalid: '议题无效或无法操作',
+    summaryMissingInfo: '判断所需信息',
+    summaryCompletedTitlePlain: '处理结果',
+    summaryCompletedNoFollowup: '该 Issue 的处理已完成，系统不再自动跟进。GitHub 上的新评论或 PR 更新不会自动重启处理；如需继续，请使用「重新尝试」提交新任务。',
+    issueDescriptionEmpty: '（该 Issue 没有正文描述）',
     summarySegmentEvidence: '调查取证',
     summarySegmentRouteDecision: '方案决策',
     summarySegmentImplementation: '实现修复',
@@ -139,7 +145,6 @@ const COPY = {
     summarySegmentDelivery: '交付',
     summaryCompletedTitle: '本段完成',
     summaryDecisionTitle: '已定方案',
-    summaryRejectedTitle: '已否决选项',
     summaryNextStep: '下一步',
     summaryBlockers: '阻塞',
     summaryTechReceipts: '技术回执',
@@ -498,7 +503,13 @@ const COPY = {
     summaryReproductionReproduced: '🔁 Reproduced',
     summaryReproductionNotReproduced: '🔁 Not reproduced (no repro step)',
     summaryReproductionNotApplicable: '🔁 Not applicable',
-    summaryBadgeNote: 'Badges qualify the issue (needs fix / fixed upstream / wont-fix) and are independent of task completion state; the agent only implements and validates locally, never opens a PR - submit, merge and close stay host actions.',
+    summaryWontFixReasonDuplicateOf: 'Duplicate issue',
+    summaryWontFixReasonByDesign: 'Works as designed',
+    summaryWontFixReasonInvalid: 'Invalid or not actionable',
+    summaryMissingInfo: 'Information needed to decide',
+    summaryCompletedTitlePlain: 'Outcome',
+    summaryCompletedNoFollowup: 'Handling for this issue is finished and the system will not follow up automatically. New GitHub comments or PR updates do not restart it; use Retry to submit a new task if you want to continue.',
+    issueDescriptionEmpty: '(This issue has no body text.)',
     summarySegmentEvidence: 'Evidence',
     summarySegmentRouteDecision: 'Route decision',
     summarySegmentImplementation: 'Implementation',
@@ -506,7 +517,6 @@ const COPY = {
     summarySegmentDelivery: 'Delivery',
     summaryCompletedTitle: 'This segment',
     summaryDecisionTitle: 'Decided',
-    summaryRejectedTitle: 'Rejected options',
     summaryNextStep: 'Next step',
     summaryBlockers: 'Blockers',
     summaryTechReceipts: 'Technical receipts',
@@ -1998,7 +2008,11 @@ function taskButton(task) {
   compact.className = 'task-item__compact';
   compact.textContent = item && item.number ? `#${item.number}` : shortId(task.taskId);
   button.append(main, compact, taskState);
-  button.addEventListener('click', () => selectTask(task.taskId));
+  button.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    selectTask(task.taskId);
+  });
   return button;
 }
 
@@ -2640,6 +2654,21 @@ function renderStructuredBrief(container, s, raw, task) {
     fixed.textContent = s.fixed_by;
     badges.append(fixed);
   }
+  // Verdict-specific reason replaces the old static badge note: the reader
+  // gets WHY this issue was qualified this way, not boilerplate repeated on
+  // every summary.
+  if (s.issue_verdict === 'wont_fix' && s.wont_fix_reason) {
+    const reason = document.createElement('span');
+    reason.className = 'summary-badge';
+    reason.textContent = summaryEnumLabel('summaryWontFixReason', s.wont_fix_reason) || s.wont_fix_reason;
+    badges.append(reason);
+  }
+  if (s.issue_verdict === 'needs_info' && Array.isArray(s.missing_info) && s.missing_info.length) {
+    const reason = document.createElement('p');
+    reason.className = 'summary-pending';
+    reason.textContent = `${text('summaryMissingInfo')}：${s.missing_info.join('；')}`;
+    container.append(reason);
+  }
   if (s.reproduction && s.reproduction !== 'not_applicable') {
     // Only reproduced / not-reproduced carry signal for the reader;
     // `not_applicable` (monitoring or analysis segments) adds no information
@@ -2651,12 +2680,6 @@ function renderStructuredBrief(container, s, raw, task) {
   }
   container.append(badges);
 
-  if (s.issue_verdict) {
-    const badgeNote = document.createElement('p');
-    badgeNote.className = 'summary-pending';
-    badgeNote.textContent = text('summaryBadgeNote');
-    container.append(badgeNote);
-  }
 
   if (task && task.state === 'waiting_for_user') {
     const pending = document.createElement('p');
@@ -2692,23 +2715,24 @@ function renderStructuredBrief(container, s, raw, task) {
     const route = document.createElement('p');
     route.textContent = decision.route + (decision.reason ? `（${decision.reason}）` : '');
     section.append(route);
-    if (Array.isArray(decision.rejected) && decision.rejected.length) {
-      const rejected = document.createElement('details');
-      rejected.className = 'summary-rejected';
-      const summaryLine = document.createElement('summary');
-      summaryLine.textContent = text('summaryRejectedTitle');
-      rejected.append(summaryLine);
-      decision.rejected.forEach((item) => {
-        const line = document.createElement('div');
-        line.textContent = `✗ ${item.route}${item.why ? `：${item.why}` : ''}`;
-        rejected.append(line);
-      });
-      section.append(rejected);
-    }
     container.append(section);
   }
 
-  if (s.next_step) {
+  if (task && task.state === 'completed') {
+    // A completed goal's agent-written "next step" is control-plane ceremony
+    // wording, not user-facing information. Explain the stopped automation in
+    // plain language instead: no new work is registered, so polling stops;
+    // GitHub activity (comments, PR updates) does not restart it by itself.
+    const section = document.createElement('div');
+    section.className = 'summary-section';
+    const title = document.createElement('strong');
+    title.textContent = `🏁 ${text('summaryCompletedTitlePlain')}`;
+    section.append(title);
+    const body = document.createElement('p');
+    body.textContent = text('summaryCompletedNoFollowup');
+    section.append(body);
+    container.append(section);
+  } else if (s.next_step) {
     const section = document.createElement('div');
     section.className = 'summary-section';
     const title = document.createElement('strong');
@@ -2720,7 +2744,16 @@ function renderStructuredBrief(container, s, raw, task) {
     container.append(section);
   }
 
-  if (Array.isArray(s.blockers) && s.blockers.length) {
+  // Blockers only matter while the task can still act on them. For a
+  // completed goal the agent's trailing "blockers" (observed live 2026-09-08:
+  // a quota-spend refusal that just restates the goal is fully closed) carry
+  // no user-actionable meaning - fold them into the technical receipt below
+  // instead of rendering a warning card on a finished task.
+  if (
+    Array.isArray(s.blockers)
+    && s.blockers.length
+    && !(task && task.state === 'completed')
+  ) {
     const section = document.createElement('div');
     section.className = 'summary-section';
     const title = document.createElement('strong');
@@ -2877,16 +2910,19 @@ function renderIssueView() {
 
   const description = identityDescriptionOf(task);
   const metadataKey = itemKey(item);
-  const loadingDescription = state.metadataRequests.has(metadataKey);
-  const descriptionUnavailable = (state.itemMetadata.get(metadataKey) || {}).unavailable === true;
+  const metadataResolved = state.itemMetadata.has(metadataKey);
+  const metadataUnavailable = (state.itemMetadata.get(metadataKey) || {}).unavailable === true;
+  const loadingDescription = !metadataResolved;
   view.issueDescriptionPanel.hidden = false;
-  renderMarkdown(
-    view.issueDescription,
-    description || (descriptionUnavailable
+  // Distinguish "not resolved yet" (loading), "resolution failed"
+  // (unavailable), and "resolved but the issue simply has no body" (empty
+  // placeholder). A successfully hydrated empty body used to fall through to
+  // the loading placeholder forever.
+  const descriptionText = description
+    || (metadataUnavailable
       ? text('issueDescriptionUnavailable')
-      : text('loadingIssueDescription')),
-    url,
-  );
+      : (loadingDescription ? text('loadingIssueDescription') : text('issueDescriptionEmpty')));
+  renderMarkdown(view.issueDescription, descriptionText, url);
   renderTaskActions(task);
 }
 
@@ -3374,8 +3410,18 @@ function selectTask(taskId) {
   state.selectedTaskId = taskId || null;
   if (changed) view.issueApprovalNote.value = '';
   renderTasks();
-  renderIssueView();
-  renderTimeline();
+  // A panel render exception must never block switching to another task:
+  // keep the selection authoritative and surface the panel error on console.
+  try {
+    renderIssueView();
+  } catch (error) {
+    console.error('renderIssueView failed:', error);
+  }
+  try {
+    renderTimeline();
+  } catch (error) {
+    console.error('renderTimeline failed:', error);
+  }
   if (taskId) void hydrateTaskMetadata(taskId);
 }
 

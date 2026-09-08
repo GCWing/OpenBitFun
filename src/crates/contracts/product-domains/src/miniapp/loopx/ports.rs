@@ -330,6 +330,14 @@ pub struct LoopxCliGoalSnapshot {
     pub open_todo_count: u32,
     pub waiting_user_todo_count: u32,
     pub pending_user_gate: Option<LoopxCliUserGate>,
+    /// One-line summary of the first open USER todo when LoopX projects a
+    /// user decision WITHOUT a typed `user_gate` (for example an owner
+    /// review/merge queue entry written as a plain `user_action` todo after
+    /// the agent opened a PR). Such a wait is an owner action OUTSIDE the
+    /// host: the host parks the task as waiting without an approval card,
+    /// and the summary is the human-facing explanation. Absent when a typed
+    /// gate exists or no user todo is open.
+    pub waiting_user_summary: Option<String>,
     /// Read-only projection of the frontier todo selected by the same LoopX
     /// envelope. Absent when LoopX did not select a todo; never authoritative.
     pub selected_todo: Option<LoopxCurrentTodo>,
@@ -777,6 +785,15 @@ pub struct LoopxAgentStartRequest {
     pub model_id: String,
     pub granted_scopes: Vec<LoopxPermissionScope>,
     pub metadata: LoopxAgentTurnMetadata,
+    /// Live agent session to continue this turn in, when the host kept one
+    /// for the goal (codex-parity: one agent conversation per LoopX goal, so
+    /// the workflow-skill document, project context, and prior turn outcomes
+    /// stay in context instead of being re-read every turn). Empty / `None`
+    /// starts a fresh transient session. When the referenced session no longer
+    /// exists (for example after a host restart), the port falls back to a
+    /// fresh transient session instead of failing the turn.
+    #[serde(default)]
+    pub reuse_session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

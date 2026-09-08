@@ -122,10 +122,66 @@ impl LoopxAgentPort for CoreLoopxAgentPort {
                     &request.operation_id,
                 ));
             }
-            let session_id = format!("loopx-{}", uuid::Uuid::new_v4());
             let turn_id = format!("loopx-turn-{}", uuid::Uuid::new_v4());
             let task_id = request.task_id.clone();
             let metadata = loopx_session_metadata(&request);
+            // Codex-parity session reuse: continue the goal's live agent
+            // conversation when the host kept one, so the pinned skill
+            // document, project context, and prior turn outcomes stay in the
+            // conversation instead of being re-read every turn. A missing
+            // session (host restart, discarded session) falls back to a fresh
+            // transient session; transient sessions are memory-resident and
+            // `submit_message` fails fast with NotFound in that case.
+            let reuse_session_id = request
+                .reuse_session_id
+                .as_deref()
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string();
+            if !reuse_session_id.is_empty() {
+                match AgentSubmissionPort::submit_message(
+                    self.coordinator.as_ref(),
+                    AgentSubmissionRequest {
+                        session_id: reuse_session_id.clone(),
+                        message: request.instruction.clone(),
+                        turn_id: Some(turn_id.clone()),
+                        source: Some(AgentSubmissionSource::DesktopApi),
+                        attachments: Vec::new(),
+                        metadata: metadata.clone(),
+                    },
+                )
+                .await
+                {
+                    Ok(submitted) if submitted.accepted => {
+                        log::info!(
+                            "LoopX Agent turn accepted in reused session: task_id={}, session_id={}, turn_id={}",
+                            task_id,
+                            reuse_session_id,
+                            submitted.turn_id
+                        );
+                        return Ok(LoopxAgentStartResult {
+                            session_id: reuse_session_id,
+                            turn_id: submitted.turn_id,
+                        });
+                    }
+                    Ok(_) => {
+                        log::warn!(
+                            "LoopX Agent session reuse was not accepted; starting a fresh transient session: task_id={}, session_id={}",
+                            task_id,
+                            reuse_session_id
+                        );
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "LoopX Agent session reuse failed; starting a fresh transient session: task_id={}, session_id={}, error={}",
+                            task_id,
+                            reuse_session_id,
+                            error
+                        );
+                    }
+                }
+            }
+            let session_id = format!("loopx-{}", uuid::Uuid::new_v4());
             let created = AgentSubmissionPort::create_transient_session_with_id(
                 self.coordinator.as_ref(),
                 session_id.clone(),

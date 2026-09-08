@@ -48,15 +48,14 @@ const LOOPX_DURABLE_COMPENSATION_NOTE: &str = "The previous turn finished, but L
 /// steering a turn executed by the pinned 0.5.1 CLI, including a hallucinated
 /// capability path retried over a hundred times). The runtime must work
 /// identically whether or not such a checkout exists.
-const LOOPX_AGENT_ENVIRONMENT_BOUNDARY_NOTE: &str = "\n\n---\n[BitFun environment boundary] The LoopX runtime on this machine is the CLI binary provided by the BitFun host at a pinned version; it is the only authoritative source for LoopX behavior, commands, flags, and schemas. Consult `loopx --help`, the help of the exact subcommand, or artifacts inside the goal workspace instead. Do not read, grep, or follow any LoopX source checkout on this machine (for example any directory containing `loopx/pyproject.toml`, a `loopx/capabilities/` tree, or a similar source layout): such trees may be a different version than the pinned runtime and are not documentation. If a file path you assumed does not exist, do not retry the same path; re-derive it from CLI help output or goal-workspace artifacts.";
+const LOOPX_AGENT_ENVIRONMENT_BOUNDARY_NOTE: &str = "\n\n---\n[BitFun environment boundary] The LoopX runtime on this machine is the CLI binary provided by the BitFun host at a pinned version; it is the only authoritative source for LoopX behavior, commands, flags, and schemas. Consult `loopx --help`, the help of the exact subcommand, or artifacts inside the goal workspace instead. Do not read, grep, or follow any LoopX source checkout on this machine (for example any directory containing `loopx/pyproject.toml`, a `loopx/capabilities/` tree, or a similar source layout): such trees may be a different version than the pinned runtime and are not documentation. Do not load, read, or follow any `loopx` or `loopx-*` entries from your skill catalog or from user-level skill directories (`~/.codex/skills`, `~/.agents/skills`): other LoopX installations of a different version may have placed them there, and the authoritative LoopX workflow documents for this task are ONLY the pinned files under this worktree's `.loopx/` directory that this instruction names - when a LoopX document tells you to load another `loopx-*` skill, read the matching seeded `.loopx/` file instead of resolving the skill name through the catalog. Never install, update, self-update, or repair the LoopX installation (for example `loopx update`, `loopx self-repair` install flows, `scripts/install-local.sh`, or `scripts/install-windows.ps1`): the BitFun host owns the pinned binary, and installation repair is a host concern, never a task action. GitHub EXTERNAL WRITES are owner-gated: do NOT run `git push` to a remote, `gh pr create`, `gh issue comment`, `gh pr merge/close`, or any other GitHub write unless this turn's contract explicitly carries that approval. LoopX plans external writes behind a user gate (`requires_user_gate_before_external_write`); a todo's text (for example \"open a PR\") is a plan description, NOT an authorization. Prepare the branch and local validation, record the publish recommendation in your report, and stop - the owner approves publication from the host UI. GitHub reads stay allowed, but use the `gh` CLI for ALL GitHub data (issues, PRs, comments, releases): direct WebFetch calls to github.com / api.github.com are rejected with HTTP 403 (observed repeatedly). If a file path you assumed does not exist, do not retry the same path; re-derive it from CLI help output or goal-workspace artifacts.";
 
 /// Host-side compensation for the pinned sidecar: the pinned LoopX CLI does
 /// not bundle the workflow-skill markdown, so this exact CLI reference (help
 /// output of the pinned version, captured at build time) is seeded into each
 /// worktree as `.loopx/pinned-loopx-reference.md`; the agent reads it once
 /// per session instead of the host reverse-engineering commands.
-const LOOPX_PINNED_CLI_REFERENCE: &str =
-    include_str!("resources/loopx-pinned-cli-reference.md");
+const LOOPX_PINNED_CLI_REFERENCE: &str = include_str!("resources/loopx-pinned-cli-reference.md");
 
 /// Verbatim LoopX workflow-skill documents from the pinned v0.5.1 source
 /// (`skills/loopx-project/SKILL.md` + `skills/loopx-self-repair/SKILL.md`).
@@ -71,22 +70,37 @@ const LOOPX_PINNED_CLI_REFERENCE: &str =
 const LOOPX_PINNED_SKILLS_REFERENCE: &str =
     include_str!("resources/loopx-pinned-skills-reference.md");
 
+/// Additional official workflow-skill documents delivered per the custom-host
+/// integration guide ("deliver loopx-project, loopx-pr-program, loopx-pr-review,
+/// loopx-doc-registry and loopx-self-repair from the same LoopX revision");
+/// change-quality is additional and activated by goal policy, so it is seeded
+/// but the agent reads it only when a quality-qualified step applies.
+const LOOPX_PINNED_SKILL_DOC_REGISTRY: &str =
+    include_str!("resources/pinned-skill-loopx-doc-registry.md");
+const LOOPX_PINNED_SKILL_PR_PROGRAM: &str =
+    include_str!("resources/pinned-skill-loopx-pr-program.md");
+const LOOPX_PINNED_SKILL_PR_REVIEW: &str =
+    include_str!("resources/pinned-skill-loopx-pr-review.md");
+const LOOPX_PINNED_SKILL_CHANGE_QUALITY: &str =
+    include_str!("resources/pinned-skill-loopx-change-quality.md");
+
 /// Closing-ceremony order gleaned from live guard rejections on the pinned
 /// v0.5.1 (observed 2026-09-07): a terminal no-follow-up completion request is
 /// rejected with a typed refusal unless an accountable durable writeback and
 /// the quota-spend receipt already exist, and the guard demanded the sequence
-/// refresh-state -> quota spend-slot -> terminal. Without this note the agent
-/// retries the completion with slightly different argv and loops on exit 1.
-/// Minimal host facts for the closing ceremony. The authoritative semantics
-/// (refresh-state / todo / quota / vision packet schemas and ordering) come
-/// from the pinned official skill document the agent reads once per session
-/// (`.loopx/pinned-loopx-reference.md`); this note only carries host facts no
-/// document states (2026-09-07 review: the previous long hand-written recipe
-/// duplicated the official docs and its "minimal evidence" guidance caused
-/// repository_context = not_provided drift, so the assertions were removed).
+/// refresh-state -> quota spend-slot -> terminal. Minimal host facts for the
+/// closing ceremony. The authoritative semantics (refresh-state / todo /
+/// quota / vision packet schemas and ordering) come from the pinned official
+/// skill document seeded in the worktree. Single source of truth (observed
+/// 2026-09-08): agents actively execute a read directive in this note — it
+/// must therefore only NAME the document and defer to the pointer section
+/// above, which alone owns the read-once policy (fresh session: read once;
+/// continued session: already loaded, reuse context). A read verb here would
+/// re-read the 59KB document every turn of a reused session.
 const LOOPX_CLOSING_CEREMONY_NOTE: &str = "\n\n---\n[BitFun host facts - closing ceremony]\n\
-- Read `.loopx/pinned-loopx-reference.md` once per session and follow its official\n\
-  refresh-state / todo / quota / vision packet guidance (schemas and flags are authoritative there).\n\
+- Closing-ceremony semantics (refresh-state / todo / quota / vision packet\n\
+  schemas and ordering) are authoritative in `.loopx/pinned-loopx-skill.md`;\n\
+  when to read that document is governed only by the pointer section above.\n\
 - On a TYPED refusal, apply exactly the parameter the CLI error names and retry ONCE;\n\
   do not retry the same argv, do not reorder steps, and report a blocker after two ordered attempts.\n\
 - The runtime is project-local (`<worktree>/.loopx/runtime`); never write to `~/.codex/loopx`.";
@@ -97,23 +111,54 @@ const LOOPX_CLOSING_CEREMONY_NOTE: &str = "\n\n---\n[BitFun host facts - closing
 /// it once per session, mirroring how a LoopX codex-style host loads its
 /// workflow skills), then the minimal closing-ceremony host facts, then the
 /// one-shot host note (if any) last so corrective guidance stays closest to
-/// the end.
+/// the end. `session_continuation` marks turns that continue the goal's live
+/// agent session: the pointer then reminds the agent the references are
+/// already in its conversation instead of asking for a fresh read.
 fn compose_agent_turn_instruction(
     instruction: String,
     host_note: Option<&str>,
     pinned_reference_path: Option<&str>,
+    session_continuation: bool,
 ) -> String {
     let mut composed = instruction;
     composed.push_str(LOOPX_AGENT_ENVIRONMENT_BOUNDARY_NOTE);
     if let Some(reference_path) = pinned_reference_path {
-        composed.push_str("\n\n---\n[Pinned LoopX reference - read once per session]\n");
-        composed.push_str("Read `");
-        composed.push_str(reference_path);
-        composed.push_str(
-            "` (official LoopX CLI reference + workflow-skill documents) BEFORE acting; it is \
-already copied into this worktree. Reuse it from conversation context afterwards; re-read only \
-if this conversation was compacted.\n",
-        );
+        if session_continuation {
+            composed.push_str("\n\n---\n[Pinned LoopX references - already loaded]\n");
+            composed.push_str(
+                "This conversation continues an earlier turn of the same goal; the \
+pinned LoopX skill document you already read from `",
+            );
+            composed.push_str(reference_path);
+            composed.push_str(
+                "` - and its sibling documents seeded under the same `.loopx/` \
+directory - remain the authoritative LoopX workflow references for this host. \
+Reuse them from your conversation context; re-read a file only if this \
+conversation was compacted and its content is no longer present.\n",
+            );
+        } else {
+            composed.push_str("\n\n---\n[Pinned LoopX references - read exactly once]\n");
+            composed.push_str("Read `");
+            composed.push_str(reference_path);
+            composed.push_str(
+                "` ONCE before acting - it is the authoritative LoopX skill document \
+(refresh-state / todo / quota / vision packet schemas and ordering). Use it from your \
+conversation context afterwards; re-read only if this conversation was compacted. \
+A separate CLI help file (`.loopx/pinned-loopx-cli-help.md`) exists ONLY for verifying a \
+specific flag/argument when needed - do not read it up front. \
+Sibling skill documents of the same pinned revision are seeded alongside it: \
+`.loopx/loopx-doc-registry.md`, `.loopx/loopx-pr-program.md`, \
+`.loopx/loopx-pr-review.md`, and `.loopx/loopx-change-quality.md`; when a skill \
+document tells you to load another `loopx-*` skill, read the matching seeded file - \
+never resolve loopx skill names through your skill catalog or user-level skill \
+directories (they may hold a different LoopX version).\n\
+- This host runs the `generic-cli / outer_controller / isolated-headless` runtime profile. \
+Any `codex_app` scheduler/ACK fields the skill document mentions are CONCEPTUAL ONLY for this \
+host; your actual scheduler hint comes from the packet you received - apply it as-is. \
+- `.loopx/agent-onboard-pack.json` (fresh per goal) holds your agent-type's canonical \
+doctor/bootstrap/quota/recheck command templates - prefer those forms over re-deriving them.\n",
+            );
+        }
     }
     composed.push_str(LOOPX_CLOSING_CEREMONY_NOTE);
     if let Some(note) = host_note {
@@ -1346,59 +1391,19 @@ impl LoopxController {
             ),
         }
         self.record_progress(progress.take()).await?;
-        let finish_result = if let (Some(session_id), Some(agent_turn_id)) =
-            (runtime.session_id.clone(), runtime.agent_turn_id.clone())
-        {
-            self.agent
-                .finish(LoopxAgentFinishRequest {
-                    operation_id: format!("finish-agent-{}", uuid::Uuid::new_v4()),
-                    task_id: task.task_id.clone(),
-                    generation: task.generation,
-                    worktree_path: task.workspace_path.clone().unwrap_or_default(),
-                    session_id,
-                    turn_id: agent_turn_id,
-                })
-                .await
-                .map_err(|error| error.to_string())
-        } else {
-            Ok(LoopxAgentFinishResult::default())
-        };
-        match &finish_result {
-            Ok(finish) => log::info!(
-                "LoopX transient Agent session finished: task_id={}, session_id={}, discarded={}",
-                task.task_id,
-                finish.session_id,
-                finish.discarded
-            ),
-            Err(error) => log::warn!(
-                "LoopX transient Agent session cleanup failed: task_id={}, error={}",
-                task.task_id,
-                error
-            ),
-        }
-        match (result, finish_result) {
-            (Ok(settlement), Ok(_)) => {
-                self.apply_settlement(
-                    &task,
-                    settlement,
-                    status,
-                    summary.as_deref(),
-                    blocks_repository,
-                )
-                .await
+        // Codex-parity session policy: the agent session is NOT discarded
+        // unconditionally after a turn. `apply_settlement` decides from the
+        // final task state whether the goal's live agent session is kept for
+        // the next turn (the same conversation continues, mirroring how the
+        // LoopX codex host resumes `codex exec` sessions across turns of one
+        // goal) or discarded. Only a settlement-verification failure discards
+        // it here, because the task fails outright in that path.
+        match result {
+            Err(error) => {
+                self.discard_agent_session(&task, &runtime).await;
+                self.fail_task(&task.task_id, error.to_string()).await
             }
-            (Err(error), _) => self.fail_task(&task.task_id, error.to_string()).await,
-            (Ok(settlement), Err(error)) => {
-                // A settled turn already fulfilled every LoopX contract
-                // obligation (durable writeback + quota receipt). Transient
-                // agent session teardown is host-side hygiene; a cleanup
-                // failure (for example the coordination store schema guard on
-                // a shared data root) must not discard the durable outcome.
-                log::warn!(
-                    "LoopX transient Agent session cleanup failed after successful settlement; keeping the durable result: task_id={} error={}",
-                    task.task_id,
-                    error
-                );
+            Ok(settlement) => {
                 self.apply_settlement(
                     &task,
                     settlement,
@@ -1725,9 +1730,18 @@ impl LoopxController {
                 Ok(())
             }
             LoopxCliRunDecision::WaitingForUser => {
-                let gate = inspected.pending_user_gate.ok_or_else(|| {
-                    "LoopX requested a user decision without an answerable gate".to_string()
-                })?;
+                let Some(gate) = inspected.pending_user_gate else {
+                    // Owner action outside the host (live 2026-09-08, issue 2:
+                    // the agent opened PR #4 and LoopX projected the owner
+                    // review/merge queue as an open user todo without a typed
+                    // user_gate). The old behavior failed the whole inspection
+                    // and parked a fully finished task as recovery_required.
+                    // Park as waiting instead: no approval card, the owner
+                    // acts on the external surface, the slot yields.
+                    return self
+                        .park_waiting_owner_action(&task, inspected.waiting_user_summary.as_deref())
+                        .await;
+                };
                 if is_read_only_user_gate(gate.action_kind.as_deref()) {
                     match self
                         .auto_answer_gate(
@@ -2059,17 +2073,22 @@ impl LoopxController {
                         task.task_id,
                     );
                 }
-                // The pinned LoopX reference is seeded into the worktree
-                // (`.loopx/pinned-loopx-reference.md`) and the agent is
-                // pointed at it; it reads the documents once per session like
-                // a LoopX codex-style host loads its workflow skills.
-                let pinned_reference_path = task.workspace_path.as_deref().map(|workspace| {
-                    format!("{workspace}\\.loopx\\pinned-loopx-reference.md")
-                });
+                // The pinned LoopX skill document is seeded into the worktree
+                // (`.loopx/pinned-loopx-skill.md`) and the agent is pointed at
+                // it; it reads the authoritative skill doc once per session
+                // like a LoopX codex-style host, and consults the separate
+                // CLI help file on demand.
+                let pinned_reference_path = task
+                    .workspace_path
+                    .as_deref()
+                    .map(|workspace| format!("{workspace}\\.loopx\\pinned-loopx-skill.md"));
                 let agent_instruction = compose_agent_turn_instruction(
                     turn.agent_instruction,
                     host_note.as_deref(),
                     pinned_reference_path.as_deref(),
+                    // A kept session continues the same conversation, so the
+                    // reference pointer must not ask for a fresh read.
+                    runtime.session_id.is_some(),
                 );
                 log::info!(
                     "LoopX turn built, starting agent: task_id={} goal={} turn={} deadline_ms={:?} instruction_bytes={}",
@@ -2089,6 +2108,12 @@ impl LoopxController {
                         instruction: agent_instruction,
                         model_id: task.model_id.clone().unwrap_or_else(|| "auto".to_string()),
                         granted_scopes: task.granted_scopes.clone(),
+                        // Codex-parity: continue the goal's live agent session
+                        // when the previous settled turn kept it (the runtime
+                        // record clears the id whenever the session is
+                        // discarded, and a stale id falls back to a fresh
+                        // session inside the port).
+                        reuse_session_id: runtime.session_id.clone(),
                         metadata: LoopxAgentTurnMetadata {
                             goal_id: task.goal_id.clone().unwrap_or_default(),
                             loopx_turn_id: turn.turn_id,
@@ -2100,6 +2125,54 @@ impl LoopxController {
                     .map_err(|error| error.to_string())?;
                 self.bind_agent_run(&task, started).await
             }
+        }
+    }
+
+    /// Best-effort discard of a task's live agent session: clears the
+    /// runtime record's session binding (so the next started turn opens a
+    /// fresh transient session instead of trying to reuse a discarded one)
+    /// and tears the session itself down. Failures are logged only; LoopX
+    /// durable state is never affected by host-side session hygiene.
+    async fn discard_agent_session(
+        self: &Arc<Self>,
+        task: &LoopxTaskSnapshot,
+        runtime: &LoopxTaskRuntimeRecord,
+    ) {
+        let Some(session_id) = runtime.session_id.clone() else {
+            return;
+        };
+        let generation = task.generation;
+        let _ = self
+            .mutate_task(&task.task_id, None, |current, runtime| {
+                if current.generation != generation {
+                    return;
+                }
+                runtime.session_id = None;
+            })
+            .await;
+        let finish_result = self
+            .agent
+            .finish(LoopxAgentFinishRequest {
+                operation_id: format!("finish-agent-{}", uuid::Uuid::new_v4()),
+                task_id: task.task_id.clone(),
+                generation: task.generation,
+                worktree_path: task.workspace_path.clone().unwrap_or_default(),
+                session_id,
+                turn_id: runtime.agent_turn_id.clone().unwrap_or_default(),
+            })
+            .await;
+        match &finish_result {
+            Ok(finish) => log::info!(
+                "LoopX transient Agent session finished: task_id={}, session_id={}, discarded={}",
+                task.task_id,
+                finish.session_id,
+                finish.discarded
+            ),
+            Err(error) => log::warn!(
+                "LoopX transient Agent session cleanup failed: task_id={}, error={}",
+                task.task_id,
+                error
+            ),
         }
     }
 
@@ -2118,6 +2191,17 @@ impl LoopxController {
         else {
             return;
         };
+        // The session is being torn down: drop the record binding too, so a
+        // later requeue cannot hand the stale id to the session-reuse path.
+        let generation = task.generation;
+        let _ = self
+            .mutate_task(&task.task_id, None, |current, runtime| {
+                if current.generation != generation {
+                    return;
+                }
+                runtime.session_id = None;
+            })
+            .await;
         if let Err(error) = self
             .agent
             .cancel(LoopxAgentCancelRequest {
@@ -2186,8 +2270,7 @@ impl LoopxController {
         for task_id in paused_task_ids {
             let (task, runtime) = {
                 let state = self.state.read().await;
-                let Some(task) = state.tasks.iter().find(|t| t.task_id == task_id).cloned()
-                else {
+                let Some(task) = state.tasks.iter().find(|t| t.task_id == task_id).cloned() else {
                     continue;
                 };
                 (
@@ -2936,6 +3019,23 @@ impl LoopxController {
             )
         };
         let phase = phase_after_settlement(final_state);
+        // Codex-parity session policy: a healthy completed turn whose task
+        // continues (more turns queued for this goal, or a user gate the
+        // session itself asked about) keeps the agent session so the next
+        // turn continues the same conversation — the pinned skill document
+        // and project context stay loaded instead of being re-read every
+        // turn. Terminal (Completed), recovery, and failed turns discard
+        // the session: a fresh context is the safer recovery surface and
+        // nothing durable is lost (LoopX goal state remains authoritative).
+        let keep_agent_session = agent_status == LoopxAgentTurnStatus::Completed
+            && matches!(
+                final_state,
+                LoopxTaskState::Queued | LoopxTaskState::WaitingForUser
+            );
+        // Captured before the mutation below: when the session is not kept,
+        // the mutation clears `runtime.session_id` first, and the discard
+        // call still needs the id to tear the live session down.
+        let session_runtime = self.runtime(&task.task_id).await;
         let updated = self
             .mutate_task(&task.task_id, None, |task, runtime| {
                 task.state = final_state;
@@ -2972,7 +3072,9 @@ impl LoopxController {
                     durable_revision: Some(settlement.after_revision.clone()),
                     settled_at: Some(now_ms()),
                 };
-                runtime.session_id = None;
+                if !keep_agent_session {
+                    runtime.session_id = None;
+                }
                 runtime.agent_turn_id = None;
                 if compensate_durable_writeback {
                     runtime.durable_compensation_pending = true;
@@ -3005,6 +3107,15 @@ impl LoopxController {
             updated.phase,
             settlement.status
         );
+        if keep_agent_session {
+            log::info!(
+                "LoopX Agent session kept for the goal's next turn: task_id={}, session_id={:?}",
+                task.task_id,
+                session_runtime.session_id
+            );
+        } else {
+            self.discard_agent_session(&task, &session_runtime).await;
+        }
         // Loud, auditable degradation for the false-negative settlement:
         // the durable writeback validated and the Goal projection decided
         // the next state, but the turn's quota spend receipt is permanently
@@ -3040,12 +3151,23 @@ impl LoopxController {
             }
         } else {
             if final_state == LoopxTaskState::WaitingForUser {
-                let gate = post_settlement_goal
+                let Some(gate) = post_settlement_goal
                     .as_ref()
                     .and_then(|goal| goal.pending_user_gate.as_ref())
-                    .ok_or_else(|| {
-                        "LoopX projected waiting_for_user without an answerable gate".to_string()
-                    })?;
+                else {
+                    // Owner action outside the host: park as waiting with a
+                    // human explanation instead of failing a finished task
+                    // (live 2026-09-08, issue 2: PR opened, review/merge
+                    // queue projected without a typed user_gate).
+                    return self
+                        .park_waiting_owner_action(
+                            &updated,
+                            post_settlement_goal
+                                .as_ref()
+                                .and_then(|goal| goal.waiting_user_summary.as_deref()),
+                        )
+                        .await;
+                };
                 // Read-only gates are policy answers, not consent: the owner
                 // decided that reading public issue content never needs a
                 // human, so answer them here exactly like the drive-turn
@@ -3188,6 +3310,54 @@ impl LoopxController {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Parks a task whose LoopX goal waits on an OWNER ACTION outside the
+    /// host: an open user todo without a typed `user_gate` (for example the
+    /// owner review/merge queue entry recorded after the agent opened a PR).
+    /// There is no host-answerable approval card - the owner acts on the
+    /// external surface (GitHub) and the goal gains new work (or is resumed)
+    /// afterwards. The repository slot yields to queued siblings while the
+    /// task waits.
+    async fn park_waiting_owner_action(
+        self: &Arc<Self>,
+        task: &LoopxTaskSnapshot,
+        summary: Option<&str>,
+    ) -> Result<(), String> {
+        let message = match summary {
+            Some(text) => format!(
+                "LoopX is waiting for an owner action outside this host: {text}. Finish that action (for example review or merge the pull request on GitHub); the task continues when the goal gains new work, or use Resume after acting."
+            ),
+            None => "LoopX is waiting for an owner action outside this host. Finish the pending owner decision on the external surface (for example GitHub); the task continues when the goal gains new work, or use Resume after acting."
+                .to_string(),
+        };
+        let generation = task.generation;
+        let updated = self
+            .mutate_task(&task.task_id, None, |current, _| {
+                if current.generation != generation {
+                    return;
+                }
+                current.state = LoopxTaskState::WaitingForUser;
+                current.phase = LoopxPhase::WaitingForApproval;
+                current.pending_gate_id = None;
+                current.pending_gate_message = Some(message.clone());
+                current.pending_gate_action_kind = None;
+                current.revision = current.revision.saturating_add(1);
+            })
+            .await?;
+        log::info!(
+            "LoopX goal waits on an owner action outside the host; task parked: task_id={} summary={:?}",
+            task.task_id,
+            summary
+        );
+        self.append_task_event(&updated, LoopxEventKind::StateChanged, &message, true)
+            .await?;
+        self.schedule_next_for_repository(
+            &task.identity.item.repository.canonical_id(),
+            Some(&task.task_id),
+        )
+        .await;
         Ok(())
     }
 
@@ -3507,22 +3677,48 @@ impl LoopxController {
             task.phase = LoopxPhase::CreatingGoal;
             task.revision = task.revision.saturating_add(1);
             runtime.registry_path = workspace.registry_path.clone();
-            // Seed the pinned LoopX reference (CLI help reference + official
-            // workflow-skill documents, compiled into this binary) into the
-            // worktree so the agent reads it ONCE per session exactly like a
-            // LoopX codex-style host loads its workflow skills: the turn
-            // instruction only points at the file (small, cache-friendly)
-            // and the model pulls the documents as a file read.
-            if let Some(registry_root) = Path::new(&runtime.registry_path).parent() {
-                let pinned_reference = format!(
-                    "{}\n\n{}\n",
-                    LOOPX_PINNED_CLI_REFERENCE, LOOPX_PINNED_SKILLS_REFERENCE
-                );
-                let _ = std::fs::write(
-                    registry_root.join("pinned-loopx-reference.md"),
-                    pinned_reference,
-                );
-            }
+            // Seed the pinned LoopX references into the worktree as TWO files
+            // so the agent loads only the authoritative skill document up
+            // front and consults the CLI help text on demand:
+            // - pinned-loopx-skill.md: official workflow-skill documents (the
+            //   exact schemas/flags; must-read once per session).
+            // - pinned-loopx-cli-help.md: generator `--help` text (only when
+            //   the agent needs to verify a specific flag; NOT preloaded).
+            // 2026-09-08: a single 125KB blob caused the agent to read it 3x
+            // and bloat the context (skill text after the help text, so the
+            // helpful part was buried), which made each turn slower.
+            // NOTE: create the `.loopx` directory first - at this point of the
+            // prepare flow bootstrap has not run yet, so it may not exist.
+            let reference_dir = std::path::Path::new(&workspace.worktree_path).join(".loopx");
+            let _ = std::fs::create_dir_all(&reference_dir);
+            let _ = std::fs::write(
+                reference_dir.join("pinned-loopx-skill.md"),
+                LOOPX_PINNED_SKILLS_REFERENCE,
+            );
+            let _ = std::fs::write(
+                reference_dir.join("pinned-loopx-cli-help.md"),
+                LOOPX_PINNED_CLI_REFERENCE,
+            );
+            // Deliver the remaining official workflow-skill documents of the
+            // pinned revision (custom-host guide: the host delivers the full
+            // skill set from the same revision; the agent reads the one that
+            // applies to the active step).
+            let _ = std::fs::write(
+                reference_dir.join("loopx-doc-registry.md"),
+                LOOPX_PINNED_SKILL_DOC_REGISTRY,
+            );
+            let _ = std::fs::write(
+                reference_dir.join("loopx-pr-program.md"),
+                LOOPX_PINNED_SKILL_PR_PROGRAM,
+            );
+            let _ = std::fs::write(
+                reference_dir.join("loopx-pr-review.md"),
+                LOOPX_PINNED_SKILL_PR_REVIEW,
+            );
+            let _ = std::fs::write(
+                reference_dir.join("loopx-change-quality.md"),
+                LOOPX_PINNED_SKILL_CHANGE_QUALITY,
+            );
         })
         .await
         .map(|_| ())
@@ -4391,7 +4587,11 @@ fn sticky_continue_after_settlement(
 /// a host-side convergence counter.
 fn monitor_recheck_hold_ms(settled_at: Option<i64>, now: i64) -> Option<u64> {
     let settled_at = settled_at?;
-    let elapsed = now.saturating_sub(settled_at);
+    // Clamp at zero: a settlement timestamp in the future (clock skew)
+    // must hold the full interval, not interval + skew (`saturating_sub`
+    // only saturates at the i64 boundary, so the explicit `.max(0)` is
+    // required; caught by monitor_recheck_hold_anchors_on_last_settlement).
+    let elapsed = now.saturating_sub(settled_at).max(0);
     if elapsed < MONITOR_COMPAT_INTERVAL_MS as i64 {
         Some((MONITOR_COMPAT_INTERVAL_MS as i64 - elapsed).max(0) as u64)
     } else {
@@ -4551,7 +4751,7 @@ mod tests {
         // The pinned LoopX runtime must not be steered by LoopX source
         // checkouts that happen to exist on the user's machine: the boundary
         // note is part of every turn instruction, first turn included.
-        let composed = compose_agent_turn_instruction("turn body".to_string(), None, None);
+        let composed = compose_agent_turn_instruction("turn body".to_string(), None, None, false);
         assert!(composed.starts_with("turn body"));
         assert!(composed.contains("[BitFun environment boundary]"));
         assert!(composed.contains("loopx/pyproject.toml"));
@@ -4560,8 +4760,12 @@ mod tests {
 
     #[test]
     fn agent_turn_instruction_keeps_host_note_after_the_boundary() {
-        let composed =
-            compose_agent_turn_instruction("turn body".to_string(), Some("corrective guidance"), None);
+        let composed = compose_agent_turn_instruction(
+            "turn body".to_string(),
+            Some("corrective guidance"),
+            None,
+            false,
+        );
         let boundary = composed
             .find("[BitFun environment boundary]")
             .expect("boundary note present");
@@ -4570,6 +4774,73 @@ mod tests {
             .expect("host note present");
         assert!(boundary < host_note);
         assert!(composed.ends_with("corrective guidance"));
+    }
+
+    #[test]
+    fn fresh_session_turn_instruction_asks_for_a_one_time_reference_read() {
+        let composed = compose_agent_turn_instruction(
+            "turn body".to_string(),
+            None,
+            Some(r"C:\wt\.loopx\pinned-loopx-skill.md"),
+            false,
+        );
+        assert!(composed.contains("[Pinned LoopX references - read exactly once]"));
+        assert!(composed.contains("pinned-loopx-skill.md"));
+        // The stale filename from the 2026-09-08 run must not come back: it
+        // cost every turn one failed Read plus a recovery reasoning round.
+        assert!(!composed.contains("pinned-loopx-reference.md"));
+        // Cross-skill references resolve to the seeded sibling files, never
+        // through the skill catalog (user-level `~/.codex/skills` may hold a
+        // different LoopX version - observed 0.5.3 copies on this machine).
+        assert!(composed.contains(".loopx/loopx-doc-registry.md"));
+        assert!(composed.contains(".loopx/loopx-pr-program.md"));
+        assert!(composed.contains(".loopx/loopx-pr-review.md"));
+        assert!(composed.contains(".loopx/loopx-change-quality.md"));
+        assert!(composed.contains("never resolve loopx skill names through your skill catalog"));
+        // Single source of truth for the read policy: exactly one read
+        // directive per fresh instruction (the pointer). The closing-ceremony
+        // note below names the same file but must not issue its own read
+        // instruction - agents execute it literally (observed 2026-09-08)
+        // and a reused session would re-read the 59KB document every turn.
+        assert_eq!(composed.matches("Read `").count(), 1);
+        assert!(composed.contains("[BitFun host facts - closing ceremony]"));
+        assert!(composed.contains("governed only by the pointer section above"));
+    }
+
+    #[test]
+    fn continued_session_turn_instruction_reuses_the_loaded_reference() {
+        let composed = compose_agent_turn_instruction(
+            "turn body".to_string(),
+            None,
+            Some(r"C:\wt\.loopx\pinned-loopx-skill.md"),
+            true,
+        );
+        assert!(composed.contains("[Pinned LoopX references - already loaded]"));
+        assert!(composed.contains("remain the authoritative"));
+        assert!(composed.contains("sibling documents"));
+        assert!(!composed.contains("read exactly once]"));
+        // No read directive at all on a continued turn: the document is
+        // already in the conversation, and the closing-ceremony note defers
+        // to the pointer instead of re-issuing a read.
+        assert_eq!(composed.matches("Read `").count(), 0);
+        assert!(composed.contains("pinned-loopx-skill.md"));
+    }
+
+    #[test]
+    fn turn_instruction_blocks_loopx_skill_catalog_and_installer_drift() {
+        // Version-drift guard: the environment boundary must forbid (a) the
+        // user-level loopx-* skill copies a different LoopX install may have
+        // placed in ~/.codex/skills / ~/.agents/skills, and (b) installer /
+        // self-update flows the pinned skill documents describe - the host
+        // owns the pinned binary. Without this, a session can load 0.5.3
+        // docs against a 0.5.1 runtime and, with session reuse, carry the
+        // contradiction across every following turn.
+        let composed = compose_agent_turn_instruction("turn body".to_string(), None, None, false);
+        assert!(composed.contains("[BitFun environment boundary]"));
+        assert!(composed.contains("loopx-*` entries from your skill catalog"));
+        assert!(composed.contains("~/.codex/skills"));
+        assert!(composed
+            .contains("Never install, update, self-update, or repair the LoopX installation"));
     }
 
     #[test]
