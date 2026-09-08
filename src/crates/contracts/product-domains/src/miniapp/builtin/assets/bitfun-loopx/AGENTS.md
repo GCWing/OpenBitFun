@@ -288,6 +288,10 @@ Windows 上因 `import fcntl` 崩溃（v0.5.2+ 已改用带 msvcrt 回退的
   上游 #3687）→ 宿主显式报错并带原因，不再落到泛化 schema 错误。
 - **pinned 资源已按 v1.0.1 再生成**：CLI help 全量；skill 文档仅 self-repair（+in_flight
   continuation 语义）与 pr-review 有内容变化，其余零变化。
+- **v1.0.1 codex 对照基线**（2026-09-08，deepseek-v4-flash）：issue #2 真修复 7.6 分钟
+  /204K tokens/58 exec，精确改 README +2 行，停在 owner gate，零外部写。BitFun 同
+  issue 9.1 分钟——差距 1.5 分钟，主要来自宿主 per-turn 调度开销（inspect→build→settle
+  各 ~30-60s），非 agent 执行差距。
 - `workflow-skills --install` 在 v1.0.1 Windows 已可用（fcntl 修复），但 #4082
   （skill 版本标记）仍 OPEN，继续 seed 投递不变。
 
@@ -301,16 +305,17 @@ schema 约束的结果 JSON（stdin host request → stdout result）。这是�
 需要 host-adapter 桥（stdin/stdout 驱动 agent）+ controller 核心循环重构。
 前置条件见「当前能力边界」。升级 pinned 版本时一并评估。
 
-### 标准答案复现手册：codex + loopx 跑同一 issue（2026-09-07 实证流程）
+### 标准答案复现手册：codex + loopx 跑同一 issue（2026-09-07 建立流程，2026-09-08 补 v1.0.1 基线）
 
 在独立实验目录（本机为 `C:\codeagent\loopx-codex-lab-experiment`）按以下步骤可复现
 "同一 issue 的 codex 标准答案"。**只读边界**：codex 侧一律不 push/不建 PR/不关
 issue/GitHub 零触碰；lab-repo 每轮清理，改动为可丢弃。
 
 1. 准备（一次性）：
-   - `loopx-src` = pinned 0.5.1 源码 worktree（可 `git worktree` 挂上）；包装脚本
-     `bin\loopx.cmd`=`python -c "from loopx.entrypoint import main; main()"`（PYTHONPATH=loopx-src，
-     避免 PyInstaller frozen 的 fcntl 缺陷）。
+   - `loopx-src` = pinned 源码 worktree（当前 v1.0.1；早期实验用 0.5.1，v0.5.1 的
+     PyInstaller frozen 有 fcntl 缺陷但 v1.0.1 已修）；包装脚本
+     `bin\loopx.cmd`=`python -c "import sys; sys.path.insert(0, r'<worktree>'); from loopx.entrypoint import main; main()"`。
+     ⚠️ v1.0.1 需要 **Node.js ≥22.6** 在 PATH 上（TS 控制面运行时）。
    - `~/.codex/skills` 已有 loopx 系列技能（`loopx-project` 等；用任一 host 的
      `workflow-skills --install` 或直接拷贝 skills 目录）。
    - `~/.codex/config.toml`：任一可用 model provider（示例：DeepSeek——base_url
@@ -326,24 +331,35 @@ issue/GitHub 零触碰；lab-repo 每轮清理，改动为可丢弃。
    - 组 prompt = packet + operator note（边界禁 push/PR/close；环境事实：source-run 0.5.1、
      sandbox 使 `~/.codex`/`.codex` 只读→必须本地化：`.loopx\registry.json` + `--runtime-root`
       + `--no-global-sync` + bootstrap `--state-file`、技能可读、勿反复环境检查）。
-   - 跑：`codex exec <模型id> --sandbox workspace-write --prompt <prompt文件>`
-     （runner-issueN.ps1 包装；**坑**：PowerShell 单引号字符串不插值——用 `-f` 生成
-     `runner-issue{0}.ps1`；顺序跑多个 issue 用 runner-issue23.ps1 依次调用）。
+   - 跑：`codex exec <模型id> --sandbox danger-full-access --prompt <prompt文件>`
+     （runner-issueN.ps1 包装；**坑 1**：`workspace-write` 沙箱在 Windows 下
+     `CreateProcessAsUserW failed: 5` 拒绝所有命令——改用 `danger-full-access`
+     并在 operator note 里显式写安全边界；**坑 2**：PowerShell 单引号字符串不
+     插值——用 `-f` 生成脚本；**坑 3**：codex exec 需要 `.cmd` 后缀的完整路径）。
    - 产出：`evidence\codex-run-issueN.log`（含 session id、每步 exec、最终 summary 与
      tokens used）。
 3. 记录口径（与 BitFun 对齐比较）：
    - **每 issue 独立 session**（session id 全不同）+ 独立清理克隆（与 BitFun 每任务独立
-     worktree/goal/session 一致——BitFun 已对齐）。
+     worktree/goal/session 一致——BitFun 已对齐）。v1.0.1 实测 codex exec 单次 457s
+     （issue #2 真修复），BitFun 同 issue 9.1 分钟。
    - 阶段拆分：bootstrap→register-agent→workflow-plan→feasibility→todo add/complete→
      refresh-state(vision)→quota should-run→terminal_no_followup；记录每阶段耗时与工具调用数。
    - **判定/收尾对照**：verdict 与 transition 是否一致；BitFun 侧对同一 issue 的
      rollout 事件、feasibility 记录、durable 写回是否同构；差异优先怀疑
      argv/路径/文档加载方式（2026-09-07 结论：判定一致；差异=common_runtime_root 默认
      共享路径、no_followup 必填参数、文档"注入 vs 读取"方式）。
-4. 实测基线（2026-09-07，**当时所用模型：deepseek-v4-flash**——仅作历史事实，非固定
-   配置）：#1 no-op 12分17秒/230K tokens；#2 真修复 6分40秒；#3 认可 ~9分30秒；
-   全程零 exit-1 循环、GitHub 零触碰。⚠️ #1 偏长属冷跑（首轮读技能+摸清本地化手法）；
-   同条件热跑以 6.5-10 分钟为基准；**更换模型后需重新标定**（记录模型 id + 耗时）。
+4. 实测基线：
+   - **v0.5.1**（2026-09-07，deepseek-v4-flash，exec 注入）：#1 no-op 12分17秒/230K tokens
+     （冷跑）；#2 真修复 6分40秒；#3 认可 ~9分30秒；全程零 exit-1 循环、GitHub 零触碰。
+   - **v1.0.1**（2026-09-08，deepseek-v4-flash，exec 注入 + danger-full-access）：
+     #2 真修复 **7分37秒/204K tokens/58 次 exec**，README +2 行精确修复，停在 owner
+     gate（direction:action:publish_issue2_fix_pr），零 push/PR；与 BitFun v1.0.1
+     的 9.1 分钟差距 ≈1.5 分钟（主要来自宿主 per-turn inspect→build→settle 调度开销）。
+     #1 no-op 对照未完成（codex exec 在 register-agent 后 hang 17 分钟无输出，杀掉；
+     需要复跑或改用 TUI 模式确认）。
+   - ⚠️ exec 注入不是 loopx 官方 codex 路径（官方走 TUI + skill 发现 + heartbeat
+     循环），但作为对照实验数据有效——packet 结构足够驱动完整 issue-fix 闭环。
+   - 更换模型后需重新标定（记录模型 id + 耗时）。
 
 ### Sidecar 打包：frozen 环境的 skills 数据（2026-09-07 实测定论）
 
