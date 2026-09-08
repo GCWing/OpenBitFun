@@ -125,7 +125,7 @@ impl LoopxProcessRunner for ManagedInstallFakeRunner {
         } else if plan.args == [OsString::from("--version")] {
             "Python 3.12.8\n".to_string()
         } else if plan.args.last() == Some(&OsString::from("--version")) {
-            "loopx 0.5.1\n".to_string()
+            "loopx 1.0.1\n".to_string()
         } else if plan.args.last() == Some(&OsString::from("commands")) {
             json!({"ok": true, "schema_version": LOOPX_COMMAND_REFERENCE_SCHEMA}).to_string()
         } else {
@@ -319,7 +319,7 @@ fn stage_managed_source(root: &Path) -> PathBuf {
     std::fs::write(source.join(".git").join("HEAD"), LOOPX_PINNED_SOURCE_COMMIT).unwrap();
     std::fs::write(
         source.join("pyproject.toml"),
-        "[project]\nversion = \"0.5.1\"\n",
+        "[project]\nversion = \"1.0.1\"\n",
     )
     .unwrap();
     std::fs::write(
@@ -332,9 +332,9 @@ fn stage_managed_source(root: &Path) -> PathBuf {
         serde_json::to_vec_pretty(&json!({
             "schema_version": 1,
             "source_repository": LOOPX_SOURCE_REPOSITORY,
-            "source_tag": "v0.5.1",
+            "source_tag": "v1.0.1",
             "source_commit": LOOPX_PINNED_SOURCE_COMMIT,
-            "loopx_version": "0.5.1"
+            "loopx_version": "1.0.1"
         }))
         .unwrap(),
     )
@@ -359,6 +359,9 @@ fn adapter_with_runner(
 ) -> LoopxCliProcessAdapter {
     let mut config = LoopxCliAdapterConfig::packaged(resource_dir);
     config.system_fallback = LoopxSystemFallbackPolicy::ExactPinned;
+    // Hermetic harness: the Node.js handshake probe must not consume scripted
+    // runner results (or depend on the host having Node installed).
+    config.probe_node_runtime = false;
     config.startup_deadline = Duration::from_secs(3);
     config.command_deadline = Duration::from_secs(9);
     LoopxCliProcessAdapter::with_dependencies(
@@ -390,9 +393,9 @@ fn packaged_startup_budget_covers_measured_windows_onefile_cold_start() {
 #[tokio::test]
 async fn packaged_bundle_is_preferred_and_exactly_handshaken() {
     let temporary = tempfile::tempdir().unwrap();
-    let bundled = stage_bundle(temporary.path(), "v0.5.1", 1);
+    let bundled = stage_bundle(temporary.path(), "v1.0.1", 1);
     let runner = Arc::new(FakeRunner::with_results(handshake_results(
-        "loopx 0.5.1",
+        "loopx 1.0.1",
         LOOPX_COMMAND_REFERENCE_SCHEMA,
     )));
     let locator = Arc::new(FakeLocator::new(Some(PathBuf::from("system-loopx"))));
@@ -407,7 +410,7 @@ async fn packaged_bundle_is_preferred_and_exactly_handshaken() {
         .unwrap();
 
     assert_eq!(manifest.executable.source, LoopxCliSource::Bundled);
-    assert_eq!(manifest.loopx_version, "0.5.1");
+    assert_eq!(manifest.loopx_version, "1.0.1");
     assert_eq!(manifest.schema_version, 1);
     assert_eq!(
         manifest.executable.path.as_deref(),
@@ -441,12 +444,13 @@ async fn managed_github_source_is_preferred_before_the_system_fallback() {
     // status --porcelain`) before the version handshake, so the first result
     // is the probe's clean empty stdout.
     let runner = Arc::new(FakeRunner::with_results([output("")].into_iter().chain(
-        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA),
+        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA),
     )));
     let system_locator = Arc::new(FakeLocator::new(Some(PathBuf::from("old-system-loopx"))));
     let mut config = LoopxCliAdapterConfig::packaged(temporary.path().join("missing-resources"))
         .with_managed_source_dir(&source);
     config.system_fallback = LoopxSystemFallbackPolicy::ExactPinned;
+    config.probe_node_runtime = false;
     let adapter = LoopxCliProcessAdapter::with_dependencies(
         config,
         runner.clone(),
@@ -487,7 +491,7 @@ async fn managed_github_source_is_preferred_before_the_system_fallback() {
 #[tokio::test]
 async fn managed_source_install_clones_the_pinned_github_revision_and_activates_it() {
     let temporary = tempfile::tempdir().unwrap();
-    let target = temporary.path().join("runtime").join("loopx-source-v0.5.1");
+    let target = temporary.path().join("runtime").join("loopx-source-v1.0.1");
     let runner = Arc::new(ManagedInstallFakeRunner::default());
     let config = LoopxCliAdapterConfig::packaged(temporary.path().join("missing-resources"))
         .with_managed_source_dir(&target);
@@ -530,7 +534,7 @@ async fn managed_source_install_clones_the_pinned_github_revision_and_activates_
     assert!(clone
         .args
         .contains(&OsString::from(LOOPX_SOURCE_REPOSITORY)));
-    assert!(clone.args.contains(&OsString::from("v0.5.1")));
+    assert!(clone.args.contains(&OsString::from("v1.0.1")));
     assert!(clone.args.contains(&OsString::from("--filter=blob:none")));
     assert!(clone.args.contains(&OsString::from("--sparse")));
     assert!(plans.iter().any(|plan| {
@@ -552,7 +556,7 @@ async fn managed_source_install_clones_the_pinned_github_revision_and_activates_
 #[tokio::test]
 async fn runtime_version_mismatch_is_a_non_retryable_typed_error() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let runner = Arc::new(FakeRunner::with_results([output("loopx 0.2.12\n")]));
     let adapter = adapter_with_runner(temporary.path(), runner, Arc::new(FakeLocator::new(None)));
 
@@ -571,9 +575,9 @@ async fn runtime_version_mismatch_is_a_non_retryable_typed_error() {
 #[tokio::test]
 async fn command_reference_schema_mismatch_is_rejected() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let runner = Arc::new(FakeRunner::with_results(handshake_results(
-        "loopx 0.5.1",
+        "loopx 1.0.1",
         "future_schema_v99",
     )));
     let adapter = adapter_with_runner(temporary.path(), runner, Arc::new(FakeLocator::new(None)));
@@ -592,7 +596,7 @@ async fn command_reference_schema_mismatch_is_rejected() {
 #[tokio::test]
 async fn item_plan_uses_structured_registry_and_worktree_arguments() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
@@ -607,7 +611,7 @@ async fn item_plan_uses_structured_registry_and_worktree_arguments() {
         }]
     });
     let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
             .chain([output(workflow.to_string())]),
     ));
@@ -707,12 +711,12 @@ async fn item_plan_uses_structured_registry_and_worktree_arguments() {
 #[tokio::test]
 async fn item_plan_process_failure_preserves_the_stderr_cause() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
     let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
             .chain([Err(LoopxProcessError::Exited {
                 code: Some(1),
@@ -771,7 +775,7 @@ async fn waiting_goal_without_typed_gate_projects_owner_action_summary() {
     // a fully finished task (PR already opened) as recovery_required. The
     // projection must return no gate plus a human summary instead.
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
@@ -805,7 +809,7 @@ async fn waiting_goal_without_typed_gate_projects_owner_action_summary() {
         }]
     });
     let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
             .chain([output(turn_plan.to_string()), output(todos.to_string())]),
     ));
@@ -861,7 +865,7 @@ async fn waiting_goal_without_typed_gate_projects_owner_action_summary() {
 #[tokio::test]
 async fn waiting_goal_projects_the_concrete_open_user_gate() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
@@ -896,7 +900,7 @@ async fn waiting_goal_projects_the_concrete_open_user_gate() {
         }]
     });
     let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
             .chain([output(turn_plan.to_string()), output(todos.to_string())]),
     ));
@@ -977,7 +981,7 @@ async fn waiting_goal_projects_the_concrete_open_user_gate() {
 #[tokio::test]
 async fn inspect_goal_salvages_the_replan_lineage_contract_error() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
@@ -1001,7 +1005,7 @@ async fn inspect_goal_salvages_the_replan_lineage_contract_error() {
         }
     });
     let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
             .chain([Err(LoopxProcessError::Exited {
                 code: Some(1),
@@ -1062,7 +1066,7 @@ async fn inspect_goal_salvages_the_replan_lineage_contract_error() {
 #[tokio::test]
 async fn settle_turn_survives_the_replan_lineage_contract_error() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
@@ -1125,7 +1129,7 @@ async fn settle_turn_survives_the_replan_lineage_contract_error() {
         }]
     });
     let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
             .chain([
                 Err(LoopxProcessError::Exited {
@@ -1191,7 +1195,7 @@ async fn settle_turn_survives_the_replan_lineage_contract_error() {
 #[tokio::test]
 async fn inspect_goal_keeps_other_process_failures() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
@@ -1206,7 +1210,7 @@ async fn inspect_goal_keeps_other_process_failures() {
         }
     });
     let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
             .chain([Err(LoopxProcessError::Exited {
                 code: Some(1),
@@ -1245,7 +1249,7 @@ async fn inspect_goal_keeps_other_process_failures() {
 #[tokio::test]
 async fn ordinary_monitor_wait_does_not_require_a_user_gate() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
@@ -1266,7 +1270,7 @@ async fn ordinary_monitor_wait_does_not_require_a_user_gate() {
         }
     });
     let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
             .chain([output(turn_plan.to_string())]),
     ));
@@ -1306,7 +1310,7 @@ async fn ordinary_monitor_wait_does_not_require_a_user_gate() {
 #[tokio::test]
 async fn build_turn_accepts_a_fresh_guard_revision_as_the_agent_contract() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
@@ -1329,7 +1333,7 @@ async fn build_turn_accepts_a_fresh_guard_revision_as_the_agent_contract() {
         "action_signature": {"source_hash": "sha256:durable-revision"}
     });
     let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
             .chain([output(envelope.to_string())]),
     ));
@@ -1394,7 +1398,7 @@ async fn build_turn_accepts_a_fresh_guard_revision_as_the_agent_contract() {
 #[tokio::test]
 async fn create_goal_recovery_does_not_duplicate_an_existing_planned_todo() {
     let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v0.5.1", 1);
+    stage_bundle(temporary.path(), "v1.0.1", 1);
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
@@ -1405,7 +1409,7 @@ async fn create_goal_recovery_does_not_duplicate_an_existing_planned_todo() {
         text: "[P1] Fix issue #42".to_string(),
         target_key: None,
     };
-    let results = handshake_results("loopx 0.5.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
+    let results = handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
         .into_iter()
         .chain([
             output(json!({"ok": true, "state_action": "kept"}).to_string()),

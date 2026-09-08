@@ -351,6 +351,7 @@ const COPY = {
     fromRepository: '仓库候选',
     taskNumber: '任务 {value}',
     sidecar: 'LoopX 引擎',
+    nodeRuntime: 'Node.js 运行时',
     gitWorktree: 'Git / Worktree',
     agentModel: 'Agent 模型',
     pythonFallback: 'Python 备用',
@@ -723,6 +724,7 @@ const COPY = {
     fromRepository: 'Repository candidate',
     taskNumber: 'Task {value}',
     sidecar: 'LoopX engine',
+    nodeRuntime: 'Node.js runtime',
     gitWorktree: 'Git / Worktree',
     agentModel: 'Agent model',
     pythonFallback: 'Python fallback',
@@ -1843,6 +1845,7 @@ function renderEnvironment() {
   renderEnvironmentRemediation(core.sidecar);
   view.coreEnvironmentList.replaceChildren(
     environmentFact('sidecar', text('sidecar'), core.sidecar),
+    environmentFact('nodeRuntime', text('nodeRuntime'), core.node_runtime),
     environmentFact('gitWorktree', text('gitWorktree'), core.gitWorktree),
     environmentFact('agentModel', text('agentModel'), core.agentModel),
   );

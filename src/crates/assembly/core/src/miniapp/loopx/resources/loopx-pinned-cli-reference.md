@@ -1,12 +1,14 @@
-# LoopX v0.5.1 pinned CLI reference (host-provided)
+# LoopX v1.0.1 pinned CLI reference (host-provided)
 
 > Generated from the exact pinned CLI supplied by the BitFun host. This is authoritative for LoopX behavior, commands, flags, and schemas on this machine; do not consult other LoopX source checkouts or installed versions.
+
 
 ## loopx bootstrap --help
 
 usage: -c bootstrap [-h] [--project PROJECT] [--goal-id GOAL_ID]
                     [--fork-goal FORK_GOAL] [--objective OBJECTIVE]
-                    [--domain DOMAIN] [--role {controller,subagent}]
+                    [--display-name DISPLAY_NAME] [--domain DOMAIN]
+                    [--role {controller,subagent}]
                     [--parent-goal-id PARENT_GOAL_ID]
                     [--state-file STATE_FILE] [--goal-doc GOAL_DOC]
                     [--adapter-kind ADAPTER_KIND]
@@ -22,7 +24,9 @@ usage: -c bootstrap [-h] [--project PROJECT] [--goal-id GOAL_ID]
                     [--execution-surface-only-hint EXECUTION_SURFACE_ONLY_HINT]
                     [--execution-surface-streak-threshold EXECUTION_SURFACE_STREAK_THRESHOLD]
                     [--execution-outcome-must-advance EXECUTION_OUTCOME_MUST_ADVANCE]
-                    [--no-onboarding-scan] [--accept-onboarding-agent-todos]
+                    [--no-onboarding-scan]
+                    [--onboarding-connection-validation {agent,provider-prevalidated}]
+                    [--accept-onboarding-agent-todos]
                     [--begin-autonomous-advance]
                     [--codex-app-heartbeat {ask,yes,no}]
                     [--onboarding-max-commits ONBOARDING_MAX_COMMITS]
@@ -40,6 +44,10 @@ options:
                         existing global goal route.
   --objective OBJECTIVE
                         Initial goal objective.
+  --display-name DISPLAY_NAME
+                        Public display title for the goal. When omitted, a
+                        public-safe title is derived from the objective; the
+                        project name remains the fallback.
   --domain DOMAIN       Goal domain label.
   --role {controller,subagent}
   --parent-goal-id PARENT_GOAL_ID
@@ -85,6 +93,11 @@ options:
                         advance. Repeatable.
   --no-onboarding-scan  Skip the fast first-connect repository scan and todo
                         candidate proposal.
+  --onboarding-connection-validation {agent,provider-prevalidated}
+                        Choose who validates the project connection. The
+                        default 'agent' may create a loopx-check Todo;
+                        'provider-prevalidated' records provider ownership and
+                        omits that agent Todo.
   --accept-onboarding-agent-todos
                         Write all proposed onboarding agent todos into the
                         initial active state.
@@ -114,6 +127,7 @@ options:
   --no-global-sync      Do not merge this project registry into the shared
                         global registry.
 
+
 ## loopx register-agent --help
 
 usage: -c register-agent [-h] --goal-id GOAL_ID --agent-id AGENT_ID
@@ -131,11 +145,14 @@ options:
   --execute            Write the source registry and sync it globally. Without
                        this flag, preview only.
 
+
 ## loopx todo --help
 
 usage: -c todo [-h] [--format {markdown,json}] --goal-id GOAL_ID
                [--role {user,agent}] [--text TEXT] [--follow-up FOLLOWUPS]
-               [--todo-id TODO_ID] [--turn-instance-id TURN_INSTANCE_ID]
+               [--todo-id TODO_ID] [--claim-operation-id CLAIM_OPERATION_ID]
+               [--turn-instance-id TURN_INSTANCE_ID]
+               [--completion-identity-key COMPLETION_IDENTITY_KEY]
                [--replan-obligation-id REPLAN_OBLIGATION_ID]
                [--status {open,done,blocked,deferred}] [--note NOTE]
                [--evidence EVIDENCE] [--validation-command VALIDATION_COMMAND]
@@ -182,18 +199,18 @@ usage: -c todo [-h] [--format {markdown,json}] --goal-id GOAL_ID
                [--next-excluded-agent NEXT_EXCLUDED_AGENTS]
                [--max-active-done MAX_ACTIVE_DONE] [--agent-id AGENT_ID]
                [--from {recent-repo,issues-prs,failing-checks,todo-markers,complexity-hotspots,loopx-deferred,docs-smokes}]
-               [--limit TODO_LIMIT]
+               [--limit TODO_LIMIT] [--thin]
                [--trigger {user-requested,post-connect,no-runnable-todo,repo-changed,quality-watch}]
                [--project PROJECT] [--state-file STATE_FILE] [--dry-run]
-               [--execute]
-               [{add,list,claim,update,complete,supersede,archive-completed,suggest,capture-followups}]
+               [--execute] [--provider-revision PROVIDER_REVISION]
+               [{add,list,claim,update,complete,supersede,archive-completed,suggest,capture-followups,project-markdown}]
 
 Manage goal todos. The options below are the union for every todo command;
 each option's help names the commands that accept it, and unsupported
 combinations fail before state is read or written.
 
 positional arguments:
-  {add,list,claim,update,complete,supersede,archive-completed,suggest,capture-followups}
+  {add,list,claim,update,complete,supersede,archive-completed,suggest,capture-followups,project-markdown}
                         Use add to append a checkbox todo, claim to soft-claim
                         by registered agent id, list to read projected todos,
                         update/complete/supersede to transition by todo_id, or
@@ -219,10 +236,22 @@ options:
                         follow-up todo. Repeat up to the requested batch.
   --todo-id TODO_ID     Structured todo id from status/quota, such as
                         todo_ab12cd34ef56.
+  --claim-operation-id CLAIM_OPERATION_ID
+                        For todo claim on promoted canonical authority only,
+                        reuse this public-safe operation id across retries.
+                        Changed intent with the same id is rejected; receipt
+                        replay proves historical acceptance, not current lease
+                        ownership. Omit to retain a fresh operation id per
+                        invocation.
   --turn-instance-id TURN_INSTANCE_ID
                         For todo complete, bind the lifecycle receipt to the
                         original turn-scoped quota guard and reuse it on
                         retries.
+  --completion-identity-key COMPLETION_IDENTITY_KEY
+                        For todo complete --no-follow-up lifecycle reentry,
+                        reuse the exact completion identity projected by
+                        LoopX. This is not a quota turn id and cannot be
+                        combined with --turn-instance-id.
   --replan-obligation-id REPLAN_OBLIGATION_ID
                         For todo add, bind one newly selected runnable
                         advancement successor to the exact open replan
@@ -336,13 +365,15 @@ options:
                         commands still require --agent-id. User todos use
                         --bound-agent or --goal-bound instead.
   --task-lease-idempotency-key TASK_LEASE_IDEMPOTENCY_KEY
-                        For todo complete and todo supersede, prove the
-                        execution instance that owns an active hard task
-                        lease. Required when that todo has an effective lease.
+                        For todo claim on promoted hard-lease authority,
+                        atomically acquire the canonical lease and claim; for
+                        complete and supersede, prove the execution instance
+                        that owns the active lease.
   --task-lease-expected-version TASK_LEASE_EXPECTED_VERSION
-                        For todo complete and todo supersede, optionally CAS
-                        the active hard task lease version. Requires --task-
-                        lease-idempotency-key.
+                        For promoted todo claim, optionally compare-and-set
+                        the canonical lease version; for complete and
+                        supersede, supply the active lease version when it is
+                        effective.
   --bound-agent BOUND_AGENT
                         For user todo add/update, bind reminder delivery and
                         post-response continuation to one registered agent
@@ -379,12 +410,16 @@ options:
                         todo to the current todo. Repeat for multiple
                         successors.
   --resume-when RESUME_WHEN
-                        For deferred todo add/update, declare a machine-
-                        readable resume condition such as
-                        todo_done:todo_ab12cd34ef56, pr_merged:#532, or
-                        capacity_available:short_pool. Capacity keys are
-                        resolved from quota --available-capability
-                        declarations.
+                        For deferred todo add/update, or for an open
+                        advancement todo update paired with --successor-todo-
+                        id, declare a machine-readable resume condition such
+                        as todo_done:todo_ab12cd34ef56,
+                        monitor_changed:todo_monitor123, pr_merged:#532, or
+                        capacity_available:short_pool. monitor_changed binds
+                        the monitor's current material-change generation and
+                        resumes only after it advances; the waiting
+                        advancement todo must remain status=open and pair with
+                        an independent runnable --successor-todo-id.
   --clear-resume-when   For todo update, remove the existing resume condition
                         after its successor replan has made the todo runnable.
   --target-key MONITOR_TARGET_KEY, --monitor-target-key MONITOR_TARGET_KEY
@@ -472,6 +507,10 @@ options:
                         role section after filtering; must be an integer >= 1,
                         and the payload discloses the truncation via
                         explicit_limit.
+  --thin                For todo list, return the explicit field-only
+                        projection and omit detail lanes; returns at most two
+                        items per role, and --limit can lower but not expand
+                        that bound.
   --trigger {user-requested,post-connect,no-runnable-todo,repo-changed,quality-watch}
                         For todo suggest, why this candidate queue is being
                         requested.
@@ -480,7 +519,12 @@ options:
                         Active goal state path. Defaults to the registry goal
                         state_file.
   --dry-run             Preview the active-state edit without writing.
-  --execute             For archive-completed, write the active-state edit.
+  --execute             For archive-completed or project-markdown, write the
+                        active-state edit.
+  --provider-revision PROVIDER_REVISION
+                        For project-markdown, exact canonical authority
+                        revision rendered into the Todo section markers.
+
 
 ## loopx refresh-state --help
 
@@ -491,6 +535,7 @@ usage: -c refresh-state [-h] [--format {markdown,json}] --goal-id GOAL_ID
                         [--next-action NEXT_ACTION]
                         [--delivery-batch-scale {test_only,single_surface,multi_surface,implementation,single_segment,bounded_segment}]
                         [--delivery-outcome {surface_only,outcome_gap,outcome_progress,primary_goal_outcome}]
+                        [--delivery-boundary {in_flight_continuation,semantic_closeout}]
                         [--delivery-workspace-path DELIVERY_WORKSPACE_PATH]
                         [--todo-id TODO_ID]
                         [--replan-obligation-id REPLAN_OBLIGATION_ID]
@@ -519,7 +564,9 @@ usage: -c refresh-state [-h] [--format {markdown,json}] --goal-id GOAL_ID
                         [--agent-id AGENT_ID]
                         [--available-capability AVAILABLE_CAPABILITIES]
                         [--agent-lane AGENT_LANE]
-                        [--progress-scope {goal,agent_lane}] [--dry-run]
+                        [--progress-scope {goal,agent_lane}]
+                        [--usage-codex-session USAGE_CODEX_SESSION]
+                        [--usage-json USAGE_JSON] [--dry-run]
                         [--no-global-sync] [--suppress-external-sinks]
 
 options:
@@ -546,13 +593,18 @@ options:
                         flag, --recommended-action only describes the run
                         record.
   --delivery-batch-scale {test_only,single_surface,multi_surface,implementation,single_segment,bounded_segment}
-                        Optional explicit delivery scale for this refresh run,
-                        overriding classification-name inference. Accepts
-                        canonical scales plus single_segment/bounded_segment
-                        aliases for single_surface.
+                        Explicit delivery scale for this refresh run; missing
+                        scale stays unknown. Accepts canonical scales plus
+                        single_segment/bounded_segment aliases for
+                        single_surface.
   --delivery-outcome {surface_only,outcome_gap,outcome_progress,primary_goal_outcome}
                         Optional explicit outcome-floor signal for this
                         refresh run.
+  --delivery-boundary {in_flight_continuation,semantic_closeout}
+                        Typed semantic boundary for vision checkpointing.
+                        Defaults to semantic_closeout; in_flight_continuation
+                        is valid only for an open agent-bound Todo reporting
+                        outcome_progress.
   --delivery-workspace-path DELIVERY_WORKSPACE_PATH
                         Local git worktree that produced this accountable
                         delivery. Use when refresh-state must run from a
@@ -645,6 +697,22 @@ options:
                         for per-agent runnable status, or goal with any
                         registered peer for durable goal-level status/Next
                         Action.
+  --usage-codex-session USAGE_CODEX_SESSION
+                        Path to the local Codex session rollout JSONL that
+                        produced this run. Only aggregate token_count totals,
+                        the model id, and event timestamps are read; prompts,
+                        completions, and tool output never enter run history.
+                        The session must be bound explicitly; when the rollout
+                        is unknown, omit the flag and usage stays unknown.
+                        Cannot be combined with --usage-json.
+  --usage-json USAGE_JSON
+                        Inline JSON object with a provider-neutral per-run
+                        usage measurement: input_tokens, output_tokens,
+                        provider, model, source_snapshot_id, plus optional
+                        cache_tokens/cost_usd/duration_ms. Must be strict
+                        JSON; malformed, negative, or non-finite usage fails
+                        the refresh closed. Cannot be combined with --usage-
+                        codex-session.
   --dry-run             Print the refresh payload without appending.
   --no-global-sync      Do not refresh the shared global registry after
                         writing the state run.
@@ -652,6 +720,7 @@ options:
                         Keep enabled local projections active but suppress
                         configured external sink writes for this refresh.
                         Pending sink digests remain retryable.
+
 
 ## loopx quota --help
 
@@ -666,7 +735,8 @@ usage: -c quota [-h] [--goal-id GOAL_ID] [--agent-id AGENT_ID]
                 [-O {host_automation,agent_cli_loop,goal_runtime,outer_controller,none}]
                 [-M {interactive,isolated_headless,hosted_automation}]
                 [--turn-envelope] [--turn-instance-id TURN_INSTANCE_ID]
-                [--replan-obligation-id REPLAN_OBLIGATION_ID] [--slots SLOTS]
+                [--begin-turn] [--replan-obligation-id REPLAN_OBLIGATION_ID]
+                [--slots SLOTS]
                 [--source {adapter,controller,heartbeat,visible-goal}]
                 [--void-generated-at VOID_GENERATED_AT]
                 [--reason-summary REASON_SUMMARY] [--todo-id TODO_ID]
@@ -755,10 +825,16 @@ options:
                         unchanged.
   --turn-instance-id TURN_INSTANCE_ID
                         Stable heartbeat settlement id for `quota should-run`,
-                        `quota monitor-poll`, and `quota spend-slot`. The
-                        guard persists one idempotent receipt; reuse the same
-                        id through monitor writeback, refresh-state, spend,
+                        `quota monitor-poll`, scheduler ACK/failure follow-
+                        ups, and `quota spend-slot`. The guard persists one
+                        idempotent receipt; reuse the same id through monitor
+                        writeback, scheduler handoff, refresh-state, spend,
                         and retries.
+  --begin-turn          For an initial Codex App `quota should-run`, mint and
+                        persist one new Turn identity. Any explicit Todo-
+                        selection command returned by the guard reuses the
+                        minted identity. Cannot be combined with --turn-
+                        instance-id or --todo-id.
   --replan-obligation-id REPLAN_OBLIGATION_ID
                         Typed autonomous replan obligation binding for `quota
                         spend-slot`. Use the exact value projected by the
@@ -772,8 +848,10 @@ options:
                         void.
   --reason-summary REASON_SUMMARY
                         Public-safe reason for `quota void-slot`.
-  --todo-id TODO_ID     Monitor todo id for `quota monitor-poll` metadata
-                        writeback.
+  --todo-id TODO_ID     For Codex App `quota should-run`, select one currently
+                        projected eligible action through typed same-turn
+                        qualification; otherwise name the accountable Todo
+                        settlement target.
   --target-key TARGET_KEY
                         Stable monitor target key for `quota monitor-poll`
                         metadata writeback.
@@ -787,8 +865,9 @@ options:
   --next-due-at NEXT_DUE_AT
                         Explicit ISO timestamp for the next monitor poll.
   --next-agent-todo NEXT_AGENT_TODO
-                        Agent follow-up todo to add when `--material-change`
-                        is set.
+                        Independent runnable advancement_task emitted when a
+                        monitor poll uses --material-change; the
+                        continuous_monitor remains observe-only.
   --next-action-kind NEXT_ACTION_KIND
                         Explicit action kind for a material monitor's --next-
                         agent-todo successor.
@@ -870,6 +949,7 @@ options:
                         to 120 seconds.
   --limit LIMIT
 
+
 ## loopx issue-fix --help
 
 usage: -c issue-fix [-h]
@@ -946,6 +1026,7 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
 
+
 ## loopx status --help
 
 usage: -c status [-h] [--format {markdown,json}] [--scan-root SCAN_ROOT]
@@ -992,12 +1073,13 @@ options:
                         Freshness window for --use-projection-cache. Defaults
                         to 120 seconds.
 
+
 ## loopx start-goal --help
 
 usage: -c start-goal [-h] [--guided] [--project PROJECT] [--goal-id GOAL_ID]
-                     [--agent-id AGENT_ID] [--thread-id THREAD_ID]
-                     [--new-peer] [--cli-bin CLI_BIN]
-                     [--host-surface {codex-app,codex-app-ssh,codex-ide-plugin,codex-cli-tui,claude-code,opencode,opencode2,traex-cli,pi,gemini-cli,cursor-agent,deepseek-harness,ark-managed-agent,shell,other-agent}]
+                     [--display-name DISPLAY_NAME] [--agent-id AGENT_ID]
+                     [--thread-id THREAD_ID] [--new-peer] [--cli-bin CLI_BIN]
+                     [--host-surface {codex-app,codex-app-ssh,codex-ide-plugin,codex-cli-tui,claude-code,opencode,opencode2,traex-cli,pi,gemini-cli,cursor-agent,zcode,agy,deepseek-harness,deepseek-harness-native,ark-managed-agent,shell,other-agent}]
                      [--available-capability AVAILABLE_CAPABILITIES]
                      [--capability-route {issue-fix}] [--fine-grained]
                      (--goal-text GOAL_TEXT | --slash-command-arguments SLASH_COMMAND_ARGUMENTS)
@@ -1009,6 +1091,10 @@ options:
                         transaction packet.
   --project PROJECT     Project directory to inspect.
   --goal-id GOAL_ID     Goal id. Defaults to <project-name>-goal.
+  --display-name DISPLAY_NAME
+                        Public display title for the goal. When omitted, a
+                        public-safe title is derived from the goal text; the
+                        project name only remains as a fallback.
   --agent-id AGENT_ID   Explicit registered LoopX identity for an ongoing
                         session or exact user-requested takeover. When
                         omitted, a bound thread identity is reused when
@@ -1021,7 +1107,7 @@ options:
   --new-peer            Explicitly request a fresh agent identity for this
                         host thread.
   --cli-bin CLI_BIN     LoopX CLI binary name embedded in generated commands.
-  --host-surface {codex-app,codex-app-ssh,codex-ide-plugin,codex-cli-tui,claude-code,opencode,opencode2,traex-cli,pi,gemini-cli,cursor-agent,deepseek-harness,ark-managed-agent,shell,other-agent}
+  --host-surface {codex-app,codex-app-ssh,codex-ide-plugin,codex-cli-tui,claude-code,opencode,opencode2,traex-cli,pi,gemini-cli,cursor-agent,zcode,agy,deepseek-harness,deepseek-harness-native,ark-managed-agent,shell,other-agent}
                         Exact host surface that will own loop activation after
                         todo writeback. When omitted, start-goal returns a
                         read-only host selection gate.
@@ -1046,4 +1132,3 @@ options:
                         Include the complete nested bootstrap command pack.
                         The default guided projection keeps the actionable
                         transaction and advertises this cold path.
-

@@ -3497,6 +3497,7 @@ impl LoopxController {
         state.environment.status = LoopxEnvironmentStatus::Checking;
         state.environment.checked_at = checked_at;
         state.environment.core.sidecar = checking_environment_fact(checked_at);
+        state.environment.core.node_runtime = checking_environment_fact(checked_at);
         state.environment.core.git_worktree = checking_environment_fact(checked_at);
         state.environment.core.agent_model = checking_environment_fact(checked_at);
         state.environment.optional.github_auth = checking_environment_fact(checked_at);
@@ -3528,8 +3529,9 @@ impl LoopxController {
         let _mutation = self.mutation_lock.lock().await;
         let mut state = self.state.write().await;
         let checked_at = Some(now_ms());
-        let (sidecar, python_fallback) = match handshake {
+        let (sidecar, python_fallback, node_runtime) = match handshake {
             Ok(manifest) => {
+                let node_runtime = loopx_node_environment_fact(&manifest.node_runtime, checked_at);
                 let python_fallback =
                     if manifest.executable.source == LoopxCliSource::PythonFallback {
                         LoopxEnvironmentFact {
@@ -3558,6 +3560,7 @@ impl LoopxController {
                         ..LoopxEnvironmentFact::default()
                     },
                     python_fallback,
+                    node_runtime,
                 )
             }
             Err(error)
@@ -3569,11 +3572,13 @@ impl LoopxController {
                 (
                     unavailable_loopx_environment_fact(error.to_string(), checked_at),
                     LoopxEnvironmentFact::default(),
+                    checking_environment_fact(checked_at),
                 )
             }
             Err(error) => (
                 unavailable_environment_fact(error.to_string(), checked_at),
                 LoopxEnvironmentFact::default(),
+                checking_environment_fact(checked_at),
             ),
         };
         let git_worktree = match workspace {
@@ -3605,6 +3610,7 @@ impl LoopxController {
         state.environment.revision = state.environment.revision.saturating_add(1);
         state.environment.checked_at = checked_at;
         state.environment.core.sidecar = sidecar;
+        state.environment.core.node_runtime = node_runtime;
         state.environment.core.git_worktree = git_worktree;
         state.environment.core.agent_model = agent_model;
         state.environment.optional.python_fallback = python_fallback;
@@ -4690,6 +4696,31 @@ fn github_auth_fact_status(probe: &LoopxGithubAuthProbe) -> LoopxEnvironmentFact
         LoopxEnvironmentFactStatus::Degraded
     } else {
         LoopxEnvironmentFactStatus::Unavailable
+    }
+}
+
+/// Maps the CLI adapter's Node.js probe onto the environment fact surface.
+/// A missing or too-old Node BLOCKS the environment (the pinned v1.0.x control
+/// plane fail-closes bootstrap without it), with a concrete remediation that
+/// names the minimum version instead of a generic failure.
+fn loopx_node_environment_fact(
+    probe: &openbitfun_product_domains::miniapp::loopx::LoopxNodeRuntimeFact,
+    checked_at: Option<i64>,
+) -> LoopxEnvironmentFact {
+    LoopxEnvironmentFact {
+        status: if probe.available {
+            LoopxEnvironmentFactStatus::Available
+        } else {
+            LoopxEnvironmentFactStatus::Unavailable
+        },
+        version: probe.version.clone(),
+        detail: probe.detail.clone(),
+        remediation: (!probe.available).then(|| {
+            "Install Node.js from https://nodejs.org (or via your package manager),              then re-check this environment"
+                .to_string()
+        }),
+        checked_at,
+        ..LoopxEnvironmentFact::default()
     }
 }
 

@@ -1,5 +1,3 @@
-<!-- Generated from the pinned LoopX v0.5.1 source skills/loopx-change-quality/SKILL.md (verbatim). Do not edit by hand. -->
-
 ---
 name: loopx-change-quality
 description: Qualify the exact final diff for a LoopX-managed goal. Use when goal policy enables change_quality_qualification, before a non-trivial delivery or merge, and when producing or repairing an exact-scope quality receipt. The workflow is language-neutral, permits at most one policy-authorized safe-fix pass, and never grants merge or repository authority.
@@ -203,4 +201,3 @@ Report:
 
 Stop before delivery when strict policy requires a receipt and the receipt is
 missing, invalid, stale, or contains an unresolved blocker.
-

@@ -1,5 +1,3 @@
-<!-- Generated from the pinned LoopX v0.5.1 source skills/loopx-pr-review/SKILL.md (verbatim). Do not edit by hand. -->
-
 ---
 name: loopx-pr-review
 description: Use for `/loopx-pr-review` or evidence-backed PR queue review. Run `loopx pr-review` first, execute the capability-owned review plan for each selected exact head, then publish full bilingual PR reviews (complete Chinese five-block review plus one concise English verdict) that match the verified findings. Use `loopx-pr-merge` for approval or merge actions.
@@ -57,22 +55,31 @@ reviewing.
 Review `review_groups.unmerged` first, then `review_groups.merged`. For every
 selected PR:
 
-1. Record the packet's exact head and run its `evidence_commands`, plus focused
-   repository-native validation when applicable.
-2. Fill `review_plan.result_template` using the shared
-   `agent_response_contract.review_execution_contract`. Preserve `unverified`
-   for missing evidence and give the reason; never infer `verified` from title,
-   labels, metadata risk, changed-file counts, or green CI alone.
-3. Apply `completion_gate` literally. If an applicable requirement is missing,
-   do not manufacture a detailed verdict; name the evidence gap.
+1. Record the packet's exact head. Start with the capability's
+   `review_execution_contract.decision_procedure`, including on re-review;
+   then run `evidence_commands` and relevant repository-native validation.
+2. Fill `review_plan.result_template` from the shared execution contract;
+   preserve missing evidence as `unverified`. Execute its repository-reuse,
+   default-off, authority and real-path counterfactual requirements rather than
+   repeating them as prose. Never infer `verified` from metadata or CI.
+3. Apply `completion_gate` literally. Save the filled result and check it before
+   publication:
+
+   ```bash
+   loopx --format json pr-review --check-result review-result.json --packet review-packet.json
+   ```
+
+   Fix contradictory verdicts, not evidence labels to obtain a pass. This local
+   check cannot verify evidence truth, architecture judgment, or remote freshness.
+   Missing material evidence needs a concrete hold/request-changes explanation,
+   not an invented bug or approval inherited from the previous round.
 4. Render the verified result through `review_template`. The five sections are
    output structure, while the execution contract is the evidence authority.
 5. Re-read the remote head immediately before verdict and publication. Restart
    the evidence pass if it changed.
 
-Each PR gets an independent evidence pass and standalone card. A queue table is
-only a preface. For large queues, finish fewer complete cards and name the
-remainder instead of compressing every review into metadata prose.
+Each PR gets an independent evidence pass and standalone card; a queue table is
+only a preface. Finish fewer complete cards rather than metadata-only reviews.
 
 ## Publish And Read Back
 
@@ -119,20 +126,11 @@ artifacts back.
 
 ## Full PR Interpretation Depth
 
-A complete review is a whole-PR interpretation, not a checklist or findings
-summary. For each selected PR:
-
-1. Read every changed file and map each file to its responsibility, inputs,
-   outputs, and key symbols.
-2. Pick 2-5 behavior-bearing symbols and explain before/after behavior,
-   critical branches, callers/callees, side effects, and failure paths.
-3. Walk one positive path from user/host action to observable result.
-4. Walk one negative path (invalid input, permission, timeout, corrupt state,
-   private boundary, or rollback) and show where it fails closed.
-5. Cover all changed surfaces in the five sections: motivation, approach,
-   concrete changes, main risk, overall judgment.
-6. List validation per surface and name anything not independently verified.
-7. State overall judgment for the entire PR, not only for the top finding.
+Use the packet's `repository_reuse`, `symbol_map`, `walkthroughs`, and
+`validation_matrix` evidence across the whole PR, including unchanged callers
+and sibling implementations. Walk one positive path to the observable result.
+Walk one negative path and explain its failure owner. Render the verified
+evidence in the five sections; do not maintain a second checklist here.
 
 A review that only repeats the PR body, only discusses one blocker, or omits
 whole files/modules is incomplete and must be reworked.
@@ -161,23 +159,22 @@ necessary but not enough.
 
 ## Autonomous Queue
 
-For recurring observation, use the same capability:
+For recurring observation, keep one ignored checkpoint and use the same capability:
 
 ```bash
 loopx --format json pr-review --repo owner/repo --state open \
-  --autonomous-observation \
-  [--observation-state-file .local/pr-review-monitor.json] \
-  [--handled-exact-head NUMBER@HEAD_OID]
+  --autonomous-observation --observation-state-file .local/pr-review-monitor.json \
+  [--projected-exact-head NUMBER@HEAD_OID] [--handled-exact-head NUMBER@HEAD_OID]
 ```
 
-Treat `not_observed`, `observed_unchanged`, and `material_transition`
-literally. Prefer the stable ignored checkpoint across tasks; it carries the age-fair
-cursor but grants no external authority. Supply `--handled-exact-head` only after exact-head readback proves completion. Stateless callers may use
-`--previous-observation-json` instead.
+Treat `candidate` as a preview, not a durable projection. Follow this order: durable
+Todo target-key readback -> `--projected-exact-head` -> exact-head review/comment
+readback -> `--handled-exact-head`. Never send the projection ACK before the Todo
+exists, or the handled ACK before readback at that head. Observation states remain literal;
+the checkpoint grants no authority. Stateless callers may use `--previous-observation-json` instead.
 
 ## Failure
 
 If `loopx pr-review` is unavailable, repair the LoopX install or use the
 intended checked-out CLI. Do not reconstruct the queue manually and call it a
 successful `/loopx-pr-review` run.
-

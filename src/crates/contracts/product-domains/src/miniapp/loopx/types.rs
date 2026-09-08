@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const LOOPX_BUILTIN_APP_ID: &str = "builtin-bitfun-loopx";
-pub const LOOPX_PINNED_VERSION: &str = "0.5.1";
+pub const LOOPX_PINNED_VERSION: &str = "1.0.1";
 pub const LOOPX_CLI_SCHEMA_VERSION: u32 = 1;
 
 pub type LoopxEventCursor = u64;
@@ -221,6 +221,11 @@ pub struct LoopxEnvironmentFact {
 #[serde(default, rename_all = "camelCase")]
 pub struct LoopxCoreEnvironmentFacts {
     pub sidecar: LoopxEnvironmentFact,
+    /// Node.js runtime required by the pinned LoopX control plane (v1.0.x
+    /// TypeScript effect runtime; bootstrap fails closed without it). Absent
+    /// (`Unknown`) on persisted snapshots written before the field existed.
+    #[serde(default)]
+    pub node_runtime: LoopxEnvironmentFact,
     pub git_worktree: LoopxEnvironmentFact,
     pub agent_model: LoopxEnvironmentFact,
 }

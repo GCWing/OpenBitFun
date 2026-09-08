@@ -22,11 +22,47 @@ use tokio::process::Command;
 use tokio::sync::{mpsc, Mutex};
 use tokio_util::sync::CancellationToken;
 
-pub const LOOPX_PINNED_VERSION: &str = "0.5.1";
-pub const LOOPX_PINNED_VERSION_TAG: &str = "v0.5.1";
-pub const LOOPX_PINNED_VERSION_OUTPUT: &str = "loopx 0.5.1";
+pub const LOOPX_PINNED_VERSION: &str = "1.0.1";
+pub const LOOPX_PINNED_VERSION_TAG: &str = "v1.0.1";
+pub const LOOPX_PINNED_VERSION_OUTPUT: &str = "loopx 1.0.1";
 pub const LOOPX_SOURCE_REPOSITORY: &str = "https://github.com/huangruiteng/loopx.git";
-pub const LOOPX_PINNED_SOURCE_COMMIT: &str = "1bb42f4cb3e329dcb71c64654228f951098cead1";
+pub const LOOPX_PINNED_SOURCE_COMMIT: &str = "7f2a020b18d1b5bb00da4044403ae72ddce2d743";
+
+/// Minimum Node.js the pinned LoopX v1.0.x control plane requires. LoopX moved
+/// coordination state, turn envelopes, and vision checkpoints to a managed
+/// TypeScript effect runtime (`loopx/control_plane/**.ts`) that the sidecar
+/// starts on demand via `node --experimental-strip-types`; its
+/// `effect_runtime.py` fail-closes bootstrap with
+/// "LoopX Effect runtime requires Node.js <min> or newer" below this version
+/// (verified live against the v1.0.1 source run). The host deliberately does
+/// NOT bundle Node; the environment surface reports this as a core fact with a
+/// remediation hint instead.
+pub const LOOPX_MINIMUM_NODE_VERSION: (u64, u64, u64) = (22, 6, 0);
+
+/// Parses a Node `--version` output (`v22.6.0`, possibly with prerelease
+/// suffixes) into comparable components. Mirrors LoopX's own parser
+/// (`effect_runtime._NODE_VERSION_RE`).
+fn parse_node_version(output: &str) -> Option<(u64, u64, u64)> {
+    let trimmed = output.trim();
+    let digits = trimmed.strip_prefix('v').unwrap_or(trimmed);
+    let mut parts = digits.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts
+        .next()?
+        .split(|c: char| !c.is_ascii_digit())
+        .next()
+        .filter(|s| !s.is_empty())?
+        .parse()
+        .ok()?;
+    let patch = parts
+        .next()?
+        .split(|c: char| !c.is_ascii_digit())
+        .next()
+        .filter(|s| !s.is_empty())?
+        .parse()
+        .ok()?;
+    Some((major, minor, patch))
+}
 pub const LOOPX_BUNDLE_MANIFEST_SCHEMA: u32 = 1;
 pub const LOOPX_COMMAND_REFERENCE_SCHEMA: &str = "loopx_command_reference_v0";
 
@@ -53,6 +89,11 @@ pub struct LoopxCliAdapterConfig {
     pub command_deadline: Duration,
     pub install_deadline: Duration,
     pub terminate_grace: Duration,
+    /// Probe the Node.js runtime during the sidecar handshake (pinned v1.0.x
+    /// control plane requirement). Hermetic test harnesses disable this so the
+    /// probe does not consume a scripted runner result or depend on the host
+    /// having Node installed; the parse/mapping logic is unit-tested instead.
+    pub probe_node_runtime: bool,
 }
 
 impl LoopxCliAdapterConfig {
@@ -65,6 +106,7 @@ impl LoopxCliAdapterConfig {
             command_deadline: Duration::from_secs(180),
             install_deadline: Duration::from_secs(10 * 60),
             terminate_grace: Duration::from_secs(2),
+            probe_node_runtime: true,
         }
     }
 
@@ -669,6 +711,67 @@ impl LoopxCliProcessAdapter {
         })
     }
 
+    /// Probes the Node.js runtime the pinned LoopX control plane requires
+    /// (v1.0.x TypeScript effect runtime). Best-effort by design: the sidecar
+    /// handshake itself stays about the sidecar; a missing or too-old Node is
+    /// reported as a manifest fact so the environment surface can show the
+    /// precise remediation instead of a generic sidecar failure.
+    async fn probe_node_runtime(
+        &self,
+        operation_id: &str,
+        cancellation: CancellationToken,
+        observer: &dyn LoopxProcessObserver,
+    ) -> loopx_contract::LoopxNodeRuntimeFact {
+        let minimum = LOOPX_MINIMUM_NODE_VERSION;
+        let minimum_text = format!("{}.{}.{}", minimum.0, minimum.1, minimum.2);
+        let unavailable = |detail: String| loopx_contract::LoopxNodeRuntimeFact {
+            available: false,
+            version: None,
+            minimum_version: minimum_text.clone(),
+            detail: Some(detail),
+        };
+        let Some(node) = which::which("node").ok() else {
+            return unavailable(format!(
+                "Node.js {minimum_text} or newer is required by the LoopX control plane but was not found on PATH"
+            ));
+        };
+        let plan = LoopxCommandPlan {
+            operation_id: format!("{operation_id}-node-version"),
+            executable: node,
+            args: vec![OsString::from("--version")],
+            current_dir: None,
+            environment: BTreeMap::new(),
+            deadline: self.config.startup_deadline,
+            terminate_grace: self.config.terminate_grace,
+        };
+        let output = match self.runner.run(plan, cancellation, observer).await {
+            Ok(output) => output,
+            Err(error) => {
+                return unavailable(format!(
+                    "Node.js was found but the version probe failed: {error}"
+                ))
+            }
+        };
+        let Some(version) = parse_node_version(&output.stdout) else {
+            return unavailable(format!(
+                "Node.js was found but its version output could not be parsed: {}",
+                output.stdout.trim()
+            ));
+        };
+        let version_text = output.stdout.trim().to_string();
+        if version < minimum {
+            return unavailable(format!(
+                "Node.js {version_text} is too old for the LoopX control plane; Node.js {minimum_text} or newer is required"
+            ));
+        }
+        loopx_contract::LoopxNodeRuntimeFact {
+            available: true,
+            version: Some(version_text),
+            minimum_version: minimum_text,
+            detail: Some("Node.js runtime for the LoopX TypeScript control plane".to_string()),
+        }
+    }
+
     async fn run_global_json_command(
         &self,
         operation_id: &str,
@@ -1053,7 +1156,7 @@ impl LoopxCliProcessAdapter {
             operation_id,
             None,
             loopx_contract::LoopxCliProgressStage::InstallingRuntime,
-            "Downloading LoopX v0.5.1 source from GitHub",
+            "Downloading LoopX v1.0.1 source from GitHub",
         );
         let clone_output = self
             .runner
@@ -1446,7 +1549,7 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
             let verified = self
                 .ensure_verified(
                     &request.call.operation_id,
-                    cancellation,
+                    cancellation.clone(),
                     deadline,
                     &observer,
                 )
@@ -1463,10 +1566,17 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
             if self.intake_metadata_configured {
                 capabilities.push("intake_metadata_provider_v1".to_string());
             }
+            let node_runtime = if self.config.probe_node_runtime {
+                self.probe_node_runtime(&request.call.operation_id, cancellation.clone(), &observer)
+                    .await
+            } else {
+                loopx_contract::LoopxNodeRuntimeFact::default()
+            };
             Ok(loopx_contract::LoopxCliManifest {
                 adapter_version: env!("CARGO_PKG_VERSION").to_string(),
                 loopx_version: verified.version,
                 schema_version: loopx_contract::LOOPX_CLI_SCHEMA_VERSION,
+                node_runtime,
                 executable: loopx_contract::LoopxCliExecutableIdentity {
                     source: match verified.source {
                         LoopxCommandSource::PackagedBundle => {
@@ -1481,13 +1591,13 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                     },
                     identity: match verified.source {
                         LoopxCommandSource::PackagedBundle => {
-                            "bitfun-bundled-loopx-v0.5.1".to_string()
+                            "bitfun-bundled-loopx-v1.0.1".to_string()
                         }
                         LoopxCommandSource::ManagedSource => {
-                            "bitfun-managed-github-source-loopx-v0.5.1".to_string()
+                            "bitfun-managed-github-source-loopx-v1.0.1".to_string()
                         }
                         LoopxCommandSource::FixedSystemCommand => {
-                            "fixed-system-loopx-v0.5.1".to_string()
+                            "fixed-system-loopx-v1.0.1".to_string()
                         }
                     },
                     path: Some(verified.executable.to_string_lossy().into_owned()),
@@ -1891,6 +2001,28 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
             let guard = run_port_command(self, &request.context, guard_args, &observer).await?;
             require_payload_ok(&guard.payload, operation_id)?;
             require_schema(&guard.payload, "loopx_turn_envelope_v0", operation_id)?;
+            // v1.0.x: when the pinned CLI's TypeScript envelope renderer
+            // returns a typed rejection, `quota should-run --turn-envelope`
+            // degrades to the bare decision payload with a
+            // `turn_envelope_skipped` reason instead of crashing (upstream
+            // issue #3687). That payload has no action signature and no agent
+            // contract, so the turn cannot be built from it. Fail loudly with
+            // the skip reason instead of a generic schema error.
+            if let Some(skip_reason) = guard
+                .payload
+                .get("turn_envelope_skipped")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+            {
+                return Err(port_error(
+                    loopx_contract::LoopxCliErrorKind::SchemaMismatch,
+                    operation_id,
+                    format!(
+                        "LoopX could not render the turn envelope for this goal state: {skip_reason}"
+                    ),
+                    false,
+                ));
+            }
             let durable_revision = extract_durable_revision(&guard.payload, operation_id)?;
             if durable_revision != request.expected_durable_revision {
                 // `turn plan` and `quota should-run` are two different LoopX
@@ -2873,7 +3005,7 @@ fn render_agent_reentry_instruction(
         .collect::<Vec<_>>()
         .join(" ");
     // Copy-ready refresh-state writeback command. The shapes mirror the
-    // pinned v0.5.1 canonical settlement templates (`effect_program.py`
+    // pinned v1.0.1 canonical settlement templates (`effect_program.py`
     // writeback and `autonomous_replan_obligation.py` with
     // `replan_settlement_bound=True`): a turn-scoped refresh-state (any of
     // --todo-id / --replan-obligation-id / --turn-instance-id) is rejected
@@ -2900,7 +3032,7 @@ fn render_agent_reentry_instruction(
                 agent_shell_value(obligation_id),
                 agent_shell_value(turn_id),
             ),
-            // Guidance (single source: the pinned v0.5.1 validation code in
+            // Guidance (single source: the pinned v1.0.1 validation code in
             // loopx/control_plane/goals/goal_vision.py and
             // work_items/progress_observation.py). A live 2026-09-08 replan
             // turn burned 42 typed refusals re-deriving this schema from
@@ -3086,7 +3218,7 @@ fn process_error_json(error: &LoopxCliAdapterError) -> Option<Value> {
     serde_json::from_str(&stdout_tail.join("\n")).ok()
 }
 
-/// The pinned LoopX v0.5.1 CLI renders its plan-exhausted replan frontier
+/// The pinned LoopX v1.0.1 CLI renders its plan-exhausted replan frontier
 /// (every todo done or blocked, an open autonomous replan obligation, and no
 /// selected todo) as `route.kind=contract_error` on `turn plan`: host-bound
 /// routes demand a goal/agent/todo/action-hash lineage that a todo-less
@@ -3335,7 +3467,7 @@ fn register_agent_args(request: &loopx_contract::LoopxCliCreateGoalRequest) -> V
 }
 
 /// Best-effort rewrite of the project registry's `common_runtime_root` to the
-/// project-local runtime directory. LoopX v0.5.1 defaults that field to the
+/// project-local runtime directory. LoopX v1.0.1 defaults that field to the
 /// shared `~/.codex/loopx`; pointing it at `<registry dir>/runtime` keeps all
 /// later CLI calls (controller and agent side) project-local and avoids the
 /// shared-global-registry write denial / lock contention observed with both
@@ -3479,7 +3611,7 @@ fn add_todo_args(
         return Err(port_error(
             loopx_contract::LoopxCliErrorKind::InvalidInput,
             operation_id,
-            "todo task_class is not supported by LoopX v0.5.1",
+            "todo task_class is not supported by LoopX v1.0.1",
             false,
         ));
     }
@@ -3623,6 +3755,32 @@ fn archive_runtime_args(goal_id: &str) -> Vec<OsString> {
 }
 
 #[cfg(test)]
+mod node_runtime_tests {
+    use super::*;
+
+    #[test]
+    fn node_version_parser_accepts_release_and_prerelease_shapes() {
+        // Mirrors loopx effect_runtime._NODE_VERSION_RE (v22.6.0, nightly
+        // suffixes, missing leading v).
+        assert_eq!(parse_node_version("v22.6.0"), Some((22, 6, 0)));
+        assert_eq!(parse_node_version("v24.14.1"), Some((24, 14, 1)));
+        assert_eq!(parse_node_version("22.11.0"), Some((22, 11, 0)));
+        assert_eq!(parse_node_version("v23.0.0-nightly.1"), Some((23, 0, 0)));
+        assert_eq!(parse_node_version(""), None);
+        assert_eq!(parse_node_version("not-a-version"), None);
+        assert_eq!(parse_node_version("v22.6"), None);
+    }
+
+    #[test]
+    fn minimum_node_version_meets_the_pinned_control_plane_floor() {
+        // v1.0.1 effect_runtime.MINIMUM_NODE_VERSION = (22, 6, 0); the
+        // `--experimental-strip-types` flag this runtime depends on landed in
+        // Node 22.6. Keep the host floor in lockstep when the pin moves.
+        assert_eq!(LOOPX_MINIMUM_NODE_VERSION, (22, 6, 0));
+    }
+}
+
+#[cfg(test)]
 mod custom_runner_contract_tests {
     use super::{
         answer_gate_args, compact_objective, loopx_contract, matching_durable_progress,
@@ -3723,7 +3881,7 @@ mod custom_runner_contract_tests {
             prefix_args: Vec::new(),
             environment: BTreeMap::new(),
             source: LoopxCommandSource::FixedSystemCommand,
-            version: "0.5.1".to_string(),
+            version: "1.0.1".to_string(),
             bundle_manifest_schema: None,
             command_reference_schema: "loopx_command_reference_v0".to_string(),
             sha256: None,
@@ -3769,7 +3927,7 @@ mod custom_runner_contract_tests {
         assert!(instruction.contains("Approve publication"));
         assert!(instruction.contains("a prose claim is not evidence"));
         // The turn-scoped refresh-state writeback must be copy-ready with the
-        // accountable delivery outcome baked in: the pinned v0.5.1 CLI rejects
+        // accountable delivery outcome baked in: the pinned v1.0.1 CLI rejects
         // a turn-scoped refresh without an accountable --delivery-outcome and
         // the agent cannot discover the accepted enum values from help text
         // alone (live observation 2026-09-08).
@@ -3798,7 +3956,7 @@ mod custom_runner_contract_tests {
         // Live regression (2026-09-08, dynamic-workflows-lab issue #1 turn 3):
         // the envelope's agent-facing writeback template for an outer-
         // controller replan turn carries neither the accountable delivery
-        // outcome nor the agent-lane scope, and the pinned v0.5.1 CLI then
+        // outcome nor the agent-lane scope, and the pinned v1.0.1 CLI then
         // rejects every agent-composed refresh-state ("turn-scoped refresh-
         // state requires an accountable --delivery-outcome"; surface_only is
         // not accountable) until the turn is lost. The host must hand the
@@ -3808,7 +3966,7 @@ mod custom_runner_contract_tests {
             prefix_args: Vec::new(),
             environment: BTreeMap::new(),
             source: LoopxCommandSource::FixedSystemCommand,
-            version: "0.5.1".to_string(),
+            version: "1.0.1".to_string(),
             bundle_manifest_schema: None,
             command_reference_schema: "loopx_command_reference_v0".to_string(),
             sha256: None,
@@ -4669,7 +4827,7 @@ fn validate_github_item(
         return Err(port_error(
             loopx_contract::LoopxCliErrorKind::InvalidInput,
             operation_id,
-            "LoopX v0.5.1 issue-fix planning requires a canonical GitHub item",
+            "LoopX v1.0.1 issue-fix planning requires a canonical GitHub item",
             false,
         ));
     }

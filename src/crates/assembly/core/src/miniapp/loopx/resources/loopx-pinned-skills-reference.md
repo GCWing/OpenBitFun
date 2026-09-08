@@ -1,6 +1,6 @@
-<!-- Generated from the pinned LoopX v0.5.1 source skills/ (verbatim; same document content a LoopX-style agent host loads at session start). Sections: [1] loopx-project/SKILL.md, [2] loopx-self-repair/SKILL.md. Do not edit by hand; regenerate when the pin changes. -->
-
 # [1] loopx-project/SKILL.md
+---
+
 ---
 name: loopx-project
 description: Use when connecting a repository or project goal document to LoopX, maintaining project-local goal state, refreshing stale dashboard status, syncing local projects into the shared global registry, or diagnosing LoopX CLI/PATH/status/history issues across multiple repos. For registering durable project materials such as Lark/wiki/design docs, prefer the narrower loopx-doc-registry skill.
@@ -1050,8 +1050,9 @@ Report in Chinese when the user is reviewing:
 Never include credentials, private docs, raw internal links, production task
 ids, or raw local evidence in public repo docs or examples.
 
-
 # [2] loopx-self-repair/SKILL.md
+---
+
 ---
 name: loopx-self-repair
 description: Diagnose and repair LoopX control-plane drift or agent behavior drift. Use when a LoopX task makes unexpectedly small progress, follows a stale or contradictory recommended_action, ignores a higher-priority blocked item while doing fallback work, reports vague owner/user gates, loses todo projection, misaligns benchmark treatment with the real product path, mixes temporary artifacts into commits, or when the user asks for root-cause analysis, self-repair, or why the harness/agent behaved unexpectedly.
@@ -1174,7 +1175,13 @@ close the required checkpoint with `--vision-unchanged-reason` instead of
 writing a fake patch. If a material `refresh-state` lacks both a patch and an
 unchanged/no-follow-up decision, LoopX should preserve a per-agent
 `vision_checkpoint_v0` with `decision=missing_required` so the same agent's
-next quota check can enter replan.
+next quota check can enter replan. A scheduler wake alone is not a material
+vision boundary: when quota explicitly projects a normally admitted open
+advancement Todo as `delivery_boundary=in_flight_continuation`, use the
+projected settlement command and do not invent a vision patch. The next
+heartbeat keeps that same Todo selected only after accountable
+`outcome_progress`; Todo completion, blocker/gap, durable Next Action change,
+replan, or terminal closeout must return to the strict semantic checkpoint.
 
 ## Evidence Discipline
 
@@ -1203,4 +1210,3 @@ next quota check can enter replan.
   `../../docs/quota-allocation.md` and
   `../../docs/heartbeat-automation-prompt.md`.
 - For commit/PR hygiene failures, read `../../AGENTS.md`.
-

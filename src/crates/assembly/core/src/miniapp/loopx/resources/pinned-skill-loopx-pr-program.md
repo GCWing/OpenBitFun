@@ -1,5 +1,3 @@
-<!-- Generated from the pinned LoopX v0.5.1 source skills/loopx-pr-program/SKILL.md (verbatim). Do not edit by hand. -->
-
 ---
 name: loopx-pr-program
 description: "Use when LoopX must manage a multi-PR or multi-MR delivery program across one or more repositories: inventory current change requests, reconcile new/merged/closed or retargeted work, preserve requirement and dependency priorities, maintain a roadmap document, or monitor material lifecycle/check/review changes over time. Use provider-neutral snapshots and one grouped continuous monitor; do not use for deep per-PR code review, approval, commenting, or merge actions."
@@ -163,4 +161,3 @@ document ids, snapshots, and organization-specific prioritization outside the
 public repository. Before staging changes to this skill or its resources, scan
 the exact paths for private hostnames, executable names, credentials, local
 absolute paths, and raw operating context.
-

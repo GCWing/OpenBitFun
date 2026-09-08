@@ -1,5 +1,3 @@
-<!-- Generated from the pinned LoopX v0.5.1 source skills/loopx-doc-registry/SKILL.md (verbatim). Do not edit by hand. -->
-
 ---
 name: loopx-doc-registry
 description: Use when a connected LoopX project is asked to read, remember, record, index, register, or use a durable project material such as a Lark/wiki/design doc, research note, SOP, owner packet, migration report, benchmark paper, or external material source. Use even when the user does not mention LoopX or doc registry.
@@ -66,4 +64,3 @@ Stop and write a project-local todo or blocker instead of registering when:
   permitted;
 - the source conflicts with a newer owner-approved material and the conflict
   rule is unclear.
-

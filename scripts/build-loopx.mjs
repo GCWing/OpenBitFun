@@ -21,6 +21,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -32,9 +33,9 @@ import { fileURLToPath } from 'node:url';
 // Keep in sync with the pin constants in openbitfun-services-integrations::miniapp::loopx_cli (LOOPX_PINNED_VERSION_TAG / LOOPX_PINNED_SOURCE_COMMIT):
 // loopx's CLI JSON contract is the app's interface surface, so the bundled
 // binary and the runtime vendor fallback must pin the same version.
-export const LOOPX_VERSION = 'v0.5.1';
+export const LOOPX_VERSION = 'v1.0.1';
 const LOOPX_REPO = 'https://github.com/huangruiteng/loopx.git';
-const LOOPX_COMMIT = '1bb42f4cb3e329dcb71c64654228f951098cead1';
+const LOOPX_COMMIT = '7f2a020b18d1b5bb00da4044403ae72ddce2d743';
 const OUT_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
@@ -115,6 +116,12 @@ export async function buildLoopx({
     ) {
       throw new Error('checkout is missing compliance files or loopx/entrypoint.py');
     }
+    // Compliance files shipped next to the binary. The pinned revision decides
+    // which files exist (v1.0.x dropped TRADEMARKS.md), so stage what the
+    // checkout carries instead of hard-coding the full list.
+    const complianceFiles = readdirSync(src)
+      .filter((name) => /^(LICENSE|NOTICE|TRADEMARKS)/i.test(name))
+      .map((name) => path.join(src, name));
 
     console.log('build-loopx: creating build venv and installing PyInstaller');
     sh(python.exe, ['-m', 'venv', venv]);
@@ -141,6 +148,39 @@ export async function buildLoopx({
     // branch, keep the two in sync.
     const addDataSeparator = process.platform === 'win32' ? ';' : ':';
     const skillsAddData = `${path.join(src, 'skills')}${addDataSeparator}skills`;
+    // LoopX v1.0.x moved the control plane core (coordination state, turn
+    // envelopes, vision checkpoints) to a managed TypeScript effect runtime.
+    // The Python sidecar starts it on demand with
+    // `node --experimental-strip-types effect_runtime_server.ts` and computes
+    // a source fingerprint by walking `loopx/control_plane/**` for .ts/.json
+    // files (effect_runtime._scan_runtime_source_files); a missing tree fails
+    // bootstrap with `packaged_runtime_source_unreadable`. PyInstaller import
+    // analysis cannot see data-only sources, so stage the .ts/.json subset
+    // into a shadow tree and add it as data at the same destination - staging
+    // a subset (not the whole directory) keeps compiled .py modules out of the
+    // data area, where loose sources could shadow the frozen modules.
+    const controlPlaneSrc = path.join(src, 'loopx', 'control_plane');
+    const controlPlaneStage = path.join(work, 'control_plane_runtime');
+    rmSync(controlPlaneStage, { recursive: true, force: true });
+    let stagedRuntimeFiles = 0;
+    const stageRuntimeSources = (dir, rel) => {
+      mkdirSync(path.join(controlPlaneStage, rel), { recursive: true });
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const relEntry = rel ? path.join(rel, entry.name) : entry.name;
+        if (entry.isDirectory()) {
+          stageRuntimeSources(path.join(dir, entry.name), relEntry);
+        } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.json')) {
+          copyFileSync(path.join(dir, entry.name), path.join(controlPlaneStage, relEntry));
+          stagedRuntimeFiles += 1;
+        }
+      }
+    };
+    stageRuntimeSources(controlPlaneSrc, '');
+    if (stagedRuntimeFiles === 0) {
+      throw new Error('pinned LoopX source has no control-plane TypeScript runtime files');
+    }
+    console.log(`build-loopx: staged ${stagedRuntimeFiles} TypeScript runtime files`);
+    const runtimeAddData = `${controlPlaneStage}${addDataSeparator}${path.join('loopx', 'control_plane')}`;
     sh(pyinstaller, [
       '--onefile',
       '--name', 'loopx',
@@ -150,6 +190,7 @@ export async function buildLoopx({
       '--workpath', path.join(work, 'build'),
       '--specpath', path.join(work, 'build'),
       '--add-data', skillsAddData,
+      '--add-data', runtimeAddData,
       path.basename(entry),
     ], { cwd: src });
 
@@ -159,10 +200,9 @@ export async function buildLoopx({
     console.log('build-loopx: staging into', outDir);
     mkdirSync(outDir, { recursive: true });
     copyFileSync(binary, path.join(outDir, path.basename(binary)));
-    copyFileSync(path.join(src, 'LICENSE'), path.join(outDir, 'LICENSE'));
-    copyFileSync(path.join(src, 'NOTICE'), path.join(outDir, 'NOTICE'));
-    copyFileSync(path.join(src, 'LICENSE-MIT'), path.join(outDir, 'LICENSE-MIT'));
-    copyFileSync(path.join(src, 'TRADEMARKS.md'), path.join(outDir, 'TRADEMARKS.md'));
+    for (const file of complianceFiles) {
+      copyFileSync(file, path.join(outDir, path.basename(file)));
+    }
 
     const pyinstallerVersion = shOut(pyinstaller, ['--version']);
     const manifest = {

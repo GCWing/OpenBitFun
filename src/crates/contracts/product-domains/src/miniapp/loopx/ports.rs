@@ -176,6 +176,26 @@ pub struct LoopxCliManifest {
     pub schema_version: u32,
     pub executable: LoopxCliExecutableIdentity,
     pub capabilities: Vec<String>,
+    /// Node.js runtime the pinned LoopX control plane requires (v1.0.x moved
+    /// coordination, turn envelopes, and vision checkpoints to a managed
+    /// TypeScript effect runtime started on demand by the sidecar; bootstrap
+    /// fails closed without Node >= the sidecar's minimum). Probed by the CLI
+    /// adapter during the handshake so the environment surface reports the
+    /// dependency alongside the sidecar itself.
+    #[serde(default)]
+    pub node_runtime: LoopxNodeRuntimeFact,
+}
+
+/// Host-side probe result for the Node.js runtime the pinned LoopX sidecar
+/// needs. `minimum_version` is what the pinned sidecar requires; `version` is
+/// what was found on PATH (`None` when Node was not found at all).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxNodeRuntimeFact {
+    pub available: bool,
+    pub version: Option<String>,
+    pub minimum_version: String,
+    pub detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

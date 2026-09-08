@@ -588,6 +588,11 @@ pub fn derive_environment_status(
 ) -> LoopxEnvironmentStatus {
     let core_statuses = [
         core.sidecar.status,
+        // v1.0.x pinned control plane hard-fails bootstrap without Node, so
+        // the Node fact gates the environment exactly like the sidecar itself.
+        // Legacy persisted snapshots predate the field (Unknown); the next
+        // validation pass replaces it with a probed fact.
+        core.node_runtime.status,
         core.git_worktree.status,
         core.agent_model.status,
     ];

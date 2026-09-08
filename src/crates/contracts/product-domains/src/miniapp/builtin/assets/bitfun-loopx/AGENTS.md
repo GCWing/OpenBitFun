@@ -266,6 +266,31 @@ SKILL.md/readback）；上游修复并升级 pin 后，可回归官方 `workflow
 Windows 上因 `import fcntl` 崩溃（v0.5.2+ 已改用带 msvcrt 回退的
 `file_lock.exclusive_file_lock`），本仓 seed 方案对该 pin 是必需的。
 
+### 2026-09-08 pin 升级 v0.5.1 → v1.0.1（含 Node 运行时硬依赖）
+
+- **Node.js ≥22.6 成为 sidecar 硬依赖**：v1.0.x 把协调状态、turn envelope、
+  vision checkpoint 迁到 TS 效果运行时（`loopx/control_plane/**.ts`），sidecar 按需
+  `node --experimental-strip-types` 拉起守护进程；干净环境实测 bootstrap 无 Node 直接
+  失败（"LoopX Effect runtime requires Node.js 22.6.0 or newer"）。宿主不捆绑 Node
+  （体积），握手期探测（`probe_node_runtime`，随 `LoopxCliManifest.node_runtime`
+  返回）并作为**核心环境事实**展示；缺失→环境 Blocked + 安装指引。
+  测试用 `LoopxCliAdapterConfig::probe_node_runtime=false` 保持密闭。
+- **构建脚本**：`--add-data` 新增 control_plane 的 `.ts/.json` 子集（暂存目录方式，
+  避免 .py 落数据区遮蔽冻结模块）；v1.0.1 无 TRADEMARKS.md，合规文件按 checkout
+  实际内容动态暂存。sidecar 16MB（v0.5.1 同量级）。
+- **兼容性结论（逐项实测 v1.0.1）**：BitFun 全部 argv/解析面兼容；schema 全部不变
+  （turn_plan/envelope/workflow_plan packet/settlement identity v0+v1/vision v0/progress
+  v0）；`register-agent` 新形态恰好等于 BitFun 现有 argv；refresh-state turn-scoped
+  校验文案变了但语义等价（outcome_progress 仍算 accountable）；lineage 错误文案不变；
+  vision 预算逐项一致；终局语义不变。冻结 exe 全链路（bootstrap→register→todo→
+  turn plan→guard→refresh-state→spend→complete→history）实测通过。
+- **新增降级识别**：guard 的 `turn_envelope_skipped`（TS 渲染拒绝时 CLI 不再崩溃，
+  上游 #3687）→ 宿主显式报错并带原因，不再落到泛化 schema 错误。
+- **pinned 资源已按 v1.0.1 再生成**：CLI help 全量；skill 文档仅 self-repair（+in_flight
+  continuation 语义）与 pr-review 有内容变化，其余零变化。
+- `workflow-skills --install` 在 v1.0.1 Windows 已可用（fcntl 修复），但 #4082
+  （skill 版本标记）仍 OPEN，继续 seed 投递不变。
+
 ### run-once 迁移立项（未实施，终态方向）
 
 v0.5.1 官方 `turn run-once --host generic-cli` 把 settlement 全部收归 loopx
