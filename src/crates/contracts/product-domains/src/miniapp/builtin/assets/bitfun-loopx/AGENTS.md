@@ -356,10 +356,10 @@ issue/GitHub 零触碰；lab-repo 每轮清理，改动为可丢弃。
      #2 真修复 **7分37秒/204K tokens/58 exec**，README +2 行精确修复，停在 owner
      gate（direction:action:publish_issue2_fix_pr），零 push/PR；#3 致谢
      **10分37秒/234K tokens/114 exec**（triage_only/no_followup 干净关闭，零改动）。
-     全程 GitHub 零触碰、三 issue 全部成功。与 BitFun v1.0.1（#1 9.8min / #2 9.1min /
-     #3 ~10.5min）对比：总时长 25.2 vs 29.4 分钟，差距 ≈4 分钟，主要来自宿主
-     per-turn inspect→build→settle 调度开销（每轮 30-60s）与 turn 数差异，非 agent
-     执行差距。
+     全程 GitHub 零触碰、三 issue 全部成功。与 BitFun 对照：⚠️ 下述 BitFun 数字
+     （#1 9.8min / #2 9.1min / #3 ~10.5min）来自 **v0.5.1 + codex-parity 修复批**
+     的跑测（2026-09-08 下午），非 v1.0.1；v1.0.1 BitFun 验证待跑（sidecar 已重建
+     为 v1.0.1，desktop 二进制已编译，待三 issue 完整验证后更新此表）。
    - ⚠️ exec 注入不是 loopx 官方 codex 路径（官方走 TUI + skill 发现 + heartbeat
      循环），但作为对照实验数据有效——packet 结构足够驱动完整 issue-fix 闭环。
    - 更换模型后需重新标定（记录模型 id + 耗时）。
