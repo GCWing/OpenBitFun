@@ -352,11 +352,14 @@ issue/GitHub 零触碰；lab-repo 每轮清理，改动为可丢弃。
    - **v0.5.1**（2026-09-07，deepseek-v4-flash，exec 注入）：#1 no-op 12分17秒/230K tokens
      （冷跑）；#2 真修复 6分40秒；#3 认可 ~9分30秒；全程零 exit-1 循环、GitHub 零触碰。
    - **v1.0.1**（2026-09-08，deepseek-v4-flash，exec 注入 + danger-full-access）：
-     #2 真修复 **7分37秒/204K tokens/58 次 exec**，README +2 行精确修复，停在 owner
-     gate（direction:action:publish_issue2_fix_pr），零 push/PR；与 BitFun v1.0.1
-     的 9.1 分钟差距 ≈1.5 分钟（主要来自宿主 per-turn inspect→build→settle 调度开销）。
-     #1 no-op 对照未完成（codex exec 在 register-agent 后 hang 17 分钟无输出，杀掉；
-     需要复跑或改用 TUI 模式确认）。
+     #1 no-op **7分0秒/202K tokens/135 exec**（terminal_no_followup 干净关闭，零改动）；
+     #2 真修复 **7分37秒/204K tokens/58 exec**，README +2 行精确修复，停在 owner
+     gate（direction:action:publish_issue2_fix_pr），零 push/PR；#3 致谢
+     **10分37秒/234K tokens/114 exec**（triage_only/no_followup 干净关闭，零改动）。
+     全程 GitHub 零触碰、三 issue 全部成功。与 BitFun v1.0.1（#1 9.8min / #2 9.1min /
+     #3 ~10.5min）对比：总时长 25.2 vs 29.4 分钟，差距 ≈4 分钟，主要来自宿主
+     per-turn inspect→build→settle 调度开销（每轮 30-60s）与 turn 数差异，非 agent
+     执行差距。
    - ⚠️ exec 注入不是 loopx 官方 codex 路径（官方走 TUI + skill 发现 + heartbeat
      循环），但作为对照实验数据有效——packet 结构足够驱动完整 issue-fix 闭环。
    - 更换模型后需重新标定（记录模型 id + 耗时）。
