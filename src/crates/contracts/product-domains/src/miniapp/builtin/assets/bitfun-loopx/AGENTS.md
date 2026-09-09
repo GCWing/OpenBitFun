@@ -64,31 +64,43 @@ agent session 可以跨 turn 续接（2026-09-08 起，codex exec resume 的同�
 修复批次），但续接的只是**对话上下文**（已读文档、已完成工作），不是权威状态——
 会话里的任何记忆都不得替代下列步骤的 CLI 读写与核验：
 
-1. controller 用只读 `turn plan` 对账当前 Goal、user channel 和 cadence；该读取不启动 Agent。
+1. controller 用只读 `quota should-run --turn-envelope`（不带 turn 身份，不铸造
+   heartbeat receipt）对账当前 Goal、user channel 和 cadence——这是 codex/pi 宿主
+   对等的续跑探针，且没有 turn plan 的 8192 字节 envelope 预算门（超预算的 goal
+   仍能投影 should_run/selected todo，不会被 `contract_error` 搁置）；该读取不启动 Agent。
 2. 只有 LoopX 投影 `RunNow` 时，adapter 以宿主生成的稳定 Turn id 调用一次
    `quota should-run --turn-envelope`。这一次调用同时是执行 gate 和 Agent packet，禁止先
-   缓存一个 packet、再用另一个 packet 放行执行。
+   缓存一个 packet、再用另一个 packet 放行执行。若 guard 投影
+   `writeback.selection_required`（frontier 有多个候选 todo，loopx 拒绝单方面给出
+   结算身份并扣留写回命令），宿主执行两阶段选择：按 envelope 推荐的 todo 以同一
+   turn id 带 `--todo-id` 重跑 guard 绑定 receipt，再确认一次拿到完整合同；绑定的是
+   envelope 自己的推荐，宿主不自行挑选（2026-09-09 实测三步协议）。
 3. `should_run=false`、wait、quiet、monitor-only、user-only 或 failed 状态不调用模型，
    也不消费 quota。
 4. re-entry instruction 只能携带当前 TurnEnvelope 的 selected action、user channel、
    required reads、boundary、execution policy、writeback、replan/task orchestration contract、
    detail refs、CLI prefix、registry 和 Turn identity；writeback/spend 的 copy-ready 命令
-   由宿主镜像 v0.5.1 canonical 模板生成（见 2026-09-08 修复批次），不属于自造合同。
+   由宿主镜像 v1.0.1 canonical 模板生成（见 2026-09-08 修复批次），不属于自造合同。
 5. Agent 在 write-capable 工作前 claim selected todo，只执行一个有界动作，读取真实
    repository/test/CI/provider 结果进行验证，然后 complete/update/block/defer 或创建明确的
    successor，执行 `refresh-state`（用指令中宿主给出的 copy-ready 命令，含必填
    accountable delivery-outcome，agent 只填占位符，不自拼其它 argv 形态），
    最后才以同一 identity spend quota。
-6. Agent terminal 后，宿主只读 `turn plan` 与 history，核验完全匹配的
-   `goal_id + agent_id + turn_id + selected todo/replan obligation` durable writeback 和 quota
-   receipt。durable writeback 缺失或错绑进入显式 recovery（NoDurableProgress 先走一次
-   corrective turn）；cancelled/interrupted turn 的 RetryRequired 同样进显式 recovery，
+6. Agent terminal 后，宿主只读 quota 探针与 history，核验完全匹配的
+   `goal_id + agent_id + turn_id + 结算绑定` durable writeback 和 quota receipt。期望的
+   结算 token 必须从 envelope 的 `replan_settlement_contract` 推导（与 loopx heartbeat
+   receipt 同源）：replan 义务与 selected todo 共存时结算走 todo 绑定
+   （`todo_bound_writeback`，义务只决定写回命令的参数形状），只有无 todo 的 frontier
+   才直接绑义务——凭义务推导 token 会把已验证的写回误判成 NoDurableProgress
+   （2026-09-09 实测：agent 的写回与 spend 均按 todo 记账，宿主却期望
+   autonomous_replan effect id，任务陷入假阴性补偿循环）。durable writeback 缺失或
+   错绑进入显式 recovery（NoDurableProgress 先走一次 corrective turn）；cancelled/interrupted turn 的 RetryRequired 同样进显式 recovery，
    宿主不得在 owner 打断后静默续跑。只有 Completed turn 的 RetryRequired（写回已验证、
    仅 quota 回执缺失，即 CLI 假阴性结算；终局 frontier 下 guard 拒绝放行、无法补跑
    turn）例外：宿主按结算后 Goal 投影决定下一状态，并落一条重要 task event 记录回执
    缺失；宿主不补写、不伪造回执，也不得静默丢弃该记录。
 7. 只有 LoopX 投影 `Complete` 或 `Archived` 时，host task 才能 Completed。
-   计划耗尽时（无 open todo、无 selected todo、无 waiting gate）CLI v0.5.1 会投影
+   计划耗尽时（无 open todo、无 selected todo、无 waiting gate）CLI（v1.0.1 实测）会投影
    `should_run=true` 并携带 `replan_action_packet.obligation_id`：宿主必须驱动一轮绑定该
    obligation 的 autonomous replan turn（quota guard 放行，settlement 按
    `autonomous_replan` effect id 核验），由 agent 写回 successor todo、typed 终局
@@ -107,22 +119,24 @@ re-entry instruction 必须稳定且轻量，不得缓存 todo 列表、cadence�
   gate 投影到 UI；不能因为一个 gate 阻塞整个 frontier。
 - BitFun 是 `generic-cli / outer_controller / isolated-headless` runner。统一 scheduler
   管所有 task，不得每 issue 创建 timer，也不得调用 Codex App automation API。
-- LoopX `v0.5.1` 的 bootstrap 参数 `--codex-app-heartbeat no` 只是关闭上游遗留的
+- LoopX 的 bootstrap 参数 `--codex-app-heartbeat no` 只是关闭上游遗留的
   Codex 专用 onboarding 分支，不代表 OpenBitFun 模拟 Codex App。
-- scheduler hint 有数值时按数值调度；当前 outer-controller packet 只有 cadence label 时，
-  使用代码中明确的兼容间隔。只有 packet 要求 ACK 时才按 packet 的 exact argv ACK。
+- scheduler hint 有数值时按数值调度；v1.0.1 的压缩 envelope 只携带 cadence label
+  （`scheduler.cadence_class`），宿主把 label 映射到 pin 内 scheduler 自己的初始
+  间隔（active_work 3m、monitor_wait 15m、human_gate 30m、quiet_wait 30m、
+  unchanged_noop 60m、agent_scope_wait 10m；见 `wait_requeue_delay_ms`）。只有
+  packet 要求 ACK 时才按 packet 的 exact argv ACK。
 - PR 生命周期监控（`continuous_monitor` / `issue_fix_pr_state_*_monitor` /
   `issue_fix_track_*` todo）由 LoopX packet 驱动、agent 在轮内执行；宿主不调用
   `issue-fix pr-lifecycle`，也不压缩 maintainer correction。宿主只把 turn plan
   envelope 的 selected todo 投影为任务快照 `currentTodo`（有界、非权威、Goal
-  终局清除），UI 据此区分「PR 监控等待中」。当前 pin `v0.5.1` 不返回数值调度
-  hint（60s 兼容间隔）；上游 ≥v0.5.x 的 monitor_wait 数值 cadence（[15,30,60] 分钟，
-  宿主下限 15 分钟）在升级 pin 后经既有 `scheduler_hint_ms` 路径自动生效。
-- v0.5.1 下 monitor 类 todo（`*_monitor` 与 `issue_fix_track_*`，见 policy.rs
-  `is_loopx_monitor_action`）即使投影 `RunNow`，宿主也按 15 分钟兼容下限把
-  re-check 驻留排队（锚点是该 goal 上一次 durable settlement 时间，不是新增宿主
-  收敛计数），期间让出 repository slot 给同仓库排队 issue；深度优先 sticky 续跑
-  对 monitor successor 不适用。该分类与 UI `isMonitorTodo` 镜像，修改需双侧同步。
+  终局清除），UI 据此区分「PR 监控等待中」。
+- v1.0.1 自己拥有 monitor 节拍：monitor todo 只在其 `next_due_at` 到期时投影
+  `RunNow`（`monitor_due`），未到期的 quiet 轮投影 `monitor_wait` cadence 等待，
+  且未推进 schedule 的 unchanged monitor 写回会被 fail-closed 拒绝。宿主不再
+  叠加第二套 hold 时钟，按 LoopX 投影原样驱动；深度优先 sticky 续跑对 monitor
+  successor 也无需特例（`RunNow` 即到期、`Wait` 即让位）。`is_loopx_monitor_action`
+  （policy.rs）仅用于 UI `isMonitorTodo` 投影，修改需双侧同步。
 - runner 重启从 LoopX registry、host task snapshot 和 workspace readback 恢复，不能 replay
   transcript 重建控制状态。结果不确定时保留数据并进入 recovery，不自动重试外部副作用。
 
@@ -180,7 +194,7 @@ controller、environment DTO 或 UI。
 而不是自己猜。
 
 方法论（已在本仓实证）：**对某个 LoopX 行为/收尾语义不确定时，在独立克隆上用
-同一 issue 跑一遍「loopx 0.5.1 源码运行 + codex exec」作为标准答案对照**。
+同一 issue 跑一遍「pinned loopx 源码运行 + codex exec」作为标准答案对照**。
 实例（2026-09-07，同一条 no-op issue #1 双跑，BitFun 侧 vs codex 侧）：
 - BitFun：约 30 分钟、9 次 exit=1、goal 状态文件长时不动，最终靠宿主投影
   completed（结算写回未验证）。
@@ -197,13 +211,15 @@ controller、environment DTO 或 UI。
   `--agent-vision-json`（含 state=no_followup、path_delta.outcome=stop）；
   settlement 绑定 guard-bound todo id（不是 replan-obligation-id）；agent-lane 作用域
   不能更新 durable Next Action；quota spend-slot 绑定同 todo+turn 身份。
-- 适配层已按此采纳：bootstrap 加 `--no-global-sync`；所有 CLI 调用注入
-  `--runtime-root <worktree>/.loopx/runtime`；bootstrap 后把 registry
-  `common_runtime_root` 补丁为本地 runtime；并把各 goal 的默认 `state_file` 从
-  loopx 遗留的 `.codex/goals/<id>/ACTIVE_GOAL_STATE.md` 改为
-  `.loopx/goals/<id>/ACTIVE_GOAL_STATE.md`（文件随之搬移）——worktree 完全
-  `.loopx` 命名。BitFun 与 codex 是独立 agent，`.codex` 只是 loopx 的旧默认路径
-  命名，不是 BitFun/Codex 耦合。
+- 适配层已按此采纳（v1.0.1 原生路径，2026-09-09 起不再做宿主侧 registry JSON
+  手术）：所有 CLI 调用注入 `--runtime-root <worktree>/.loopx/runtime`，bootstrap
+  收到同一 flag 后**原生**把 registry `common_runtime_root` 持久化为本地 runtime
+  （bootstrap.py `registry["common_runtime_root"] = str(runtime_root)`），其全局
+  同步也在本地 runtime 下创建 `registry.global.json`；goal `state_file` 通过
+  `--state-file` 从创建起就落在 `.loopx/goals/<id>/ACTIVE_GOAL_STATE.md`，
+  `.codex` 目录从不出现。不传 `--no-global-sync`：跳过它会让本地全局注册表
+  缺失，后续 merge（如 register-agent）失败。BitFun 与 codex 是独立 agent，
+  `.codex` 只是 loopx 的旧默认路径命名，不是 BitFun/Codex 耦合。
 - 文档加载与 codex 对齐（2026-09-07）：pinned CLI 参考 + 官方 SKILL 文档（核心两篇合一 +
   4 篇兄弟技能文档，清单见 2026-09-08 批次）以 `.loopx/pinned-loopx-skill.md` 等种子进
   worktree；每回合指令只带**小指针**，由代理像 codex 加载技能一样主动读取
@@ -253,8 +269,9 @@ controller、environment DTO 或 UI。
 
 ### Skill 版本漂移防护（2026-09-08）与上游 issue #4082
 
-本机 `~/.codex/skills` 存有另一版本 loopx 安装的 `loopx-*` 技能，而 pinned
-sidecar 是 0.5.1；**安装出的技能树不带任何版本标记**（SKILL.md frontmatter
+本机 `~/.codex/skills` 存有另一版本 loopx 安装的 `loopx-*` 技能（发现时
+pin 还是 0.5.1，现 pin v1.0.1 同样无版本标记）；**安装出的技能树不带任何
+版本标记**（SKILL.md frontmatter
 只有 name+description，readback manifest 只有 digest/installed_at），agent
 加载时无从发现不匹配，session 复用后还会把漂移文档带进后续所有 turn。
 环境边界 note 因此追加两条禁令：禁止加载 skill catalog / 用户级目录里的
@@ -297,7 +314,7 @@ Windows 上因 `import fcntl` 崩溃（v0.5.2+ 已改用带 msvcrt 回退的
 
 ### run-once 迁移立项（未实施，终态方向）
 
-v0.5.1 官方 `turn run-once --host generic-cli` 把 settlement 全部收归 loopx
+LoopX 官方 `turn run-once --host generic-cli`（v0.5.1 起提供，v1.0.1 保持）把 settlement 全部收归 loopx
 自身（argv 校验、writeback/spend/scheduler 编程执行、typed
 `loopx_turn_result_v0` 收敛、turn journal 幂等重放），agent 只需回一个
 schema 约束的结果 JSON（stdin host request → stdout result）。这是根治
@@ -561,17 +578,14 @@ issue/GitHub 零触碰；lab-repo 每轮清理，改动为可丢弃。
      （stall observation → autonomous replan obligation → 持续卡住 pause；
      agent 主动 user_gate），外部写入（创建 PR）保持天然 owner 审批。
 
-10. **2026-09-02 envelope 超预算复盘（升级 loopx 版本不解决）**：turn plan 返回
-   `route=contract_error`（`turn_envelope.compaction.within_budget=false`）时，
-   Goal 无法被计划，且 **v0.5.1 / v0.5.2 / v0.5.3 / main 行为完全一致**——实测
-   同一 goal 在全部版本下 envelope 均超 8192 字节预算（8279/8192，仅超 87 字节，
-   源 46KB）。压缩增强（#2190 text_ref 去重）已在 pin 内仍不够；
-   `todo archive-completed` 不影响 envelope。宿主正确姿势是**响亮降级**：
-   `LoopxCliGoalSnapshot.envelope_over_budget` → Queued + 诊断事件 + 退避重试，
-   绝不 fail 进 recovery 死循环。立即解套手段：`todo update --text` 精简超长
-   todo 文本（实测 8279→7762，回到预算内）。根治需上游：提高 envelope 预算、
-   渐进截断 recommended_action/suggested_actions 长文本、或提供 goal compact
-   自愈命令（loopx 仓库议题）。
+10. **2026-09-02 envelope 超预算复盘；2026-09-09 根治**：turn plan 在 envelope
+   超过 8192 字节预算时返回 `route=contract_error`，且 v0.5.1~main 行为一致
+   （实测同一 goal 8279/8192）。**根治不是降级而是换决策源**：宿主的续跑对账
+   已改用 `quota should-run --turn-envelope`（rule 1），该探针没有压缩预算门，
+   超预算 goal 仍投影完整决策（2026-09-09 实测 9078/8192 的 goal 照常
+   should_run=true + selected_todo 在）。`envelope_over_budget` 保留为遥测标志，
+   不再阻塞驱动；`todo update --text` 精简与上游压缩增强（提高预算、渐进截断、
+   goal compact 自愈）仍是降低状态体积的正道。
 
 
 ## 禁止事项

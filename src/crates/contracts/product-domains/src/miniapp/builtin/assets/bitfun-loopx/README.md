@@ -187,7 +187,8 @@ built-in source、非本地覆盖和本地执行域。伪造 id、draft、市场
 ## 平台支持
 
 - Desktop 安装包携带固定版本的 LoopX sidecar；资源缺失或系统版本不匹配时，用户可从
-  环境卡片显式触发安装：宿主从官方 GitHub 仓库 clone 固定 `v0.5.1`/commit 到
+  环境卡片显式触发安装：宿主从官方 GitHub 仓库 clone 固定 pin 版本（当前
+  `v1.0.1`）/commit 到
   OpenBitFun 管理目录并用 Python 3.11+ 直接运行源码。不会覆盖系统 `loopx`，也不会修改
   用户的全局 Python 环境；没有 Python/Git 时返回明确前置条件错误。安装 action 只负责
   持久化进行中状态并立即返回，下载在宿主后台执行；clone 使用 blobless sparse checkout，
@@ -246,7 +247,7 @@ built-in source、非本地覆盖和本地执行域。伪造 id、draft、市场
   `bfx-owner-repo-issue-N`，重试追加 `-attempt` 后缀），每个 item 有独立
   worktree 与 `.loopx/registry.json`；todo 是 **goal 内部** 的推进项/审批门禁
   （`todo add --goal-id` 强绑定单一 goal），不用一串 todo 把多个 issue 串在
-  一个 goal 下。依据：loopx v0.5.x 的 goal 是「单一 objective 的持续 turn 载体」，
+  一个 goal 下。依据：loopx 的 goal 是「单一 objective 的持续 turn 载体」，
   quota/心跳/审批/结算都以 goal 为域，registry 本身支持多 goal 列表——
   多 issue 的"批量管理"由本应用 task/batch 层聚合，不压平到 loopx goal。
 - **Custom Agent Runner 合同**：OpenBitFun 采用 LoopX 官方 mainstream 路径，不转发或改写
@@ -258,9 +259,10 @@ built-in source、非本地覆盖和本地执行域。伪造 id、draft、市场
   收束为 Completed。若 LoopX 返回 `RunNow` 却没有开放 todo，宿主进入显式 recovery，
   保留 registry 与 worktree，绝不代写 `goal-lifecycle stop` 或伪造终局。
 - **心跳调度**：本应用维护一个统一的 task 调度循环（非每 issue 一个独立
-  定时器）；`inspect_goal` 读取 LoopX cadence。当前 `v0.5.1` 的 `outer_controller`
-  profile 不返回数值间隔时，宿主使用明确的 60 秒兼容间隔；未来 packet 提供数值 hint
-  时优先按 hint 重新排队。同一仓库的多个 goal 串行推进（
+  定时器）；`inspect_goal` 读取 LoopX cadence。v1.0.1 的压缩 envelope 只携带
+  `scheduler.cadence_class` 标签（数值间隔在 quota decision detail 里），宿主把
+  标签映射到 pin 内 scheduler 自己的初始间隔（见 `wait_requeue_delay_ms`），
+  无标签的降级快照退回有界轮询。同一仓库的多个 goal 串行推进（
   `active_repositories` + `schedule_next_for_repository`）。每次 durable settlement
   是公平轮转边界：有其他排队 Issue 时先让出仓库槽，不把当前 task 标记为 pending
   并在同一 worker 内自重入；轮到其他 Issue 结算后再回到当前 Goal。
@@ -313,14 +315,14 @@ built-in source、非本地覆盖和本地执行域。伪造 id、draft、市场
 
 - **内置编译二进制（随安装包分发）**：打包流程（`scripts/desktop-tauri-build.mjs`，
   即 `pnpm run desktop:build*` 的 bundle 路径）会先执行 `scripts/build-loopx.mjs`：
-  构建期拉取 pin `v0.5.1` 的 loopx 源码并用 PyInstaller 编译单文件二进制，随
+  构建期拉取 pinned loopx 源码（当前 `v1.0.1`）并用 PyInstaller 编译单文件二进制，随
   tauri `bundle.resources` 作为 sidecar 分发（`resources/loopx/`）。桌面宿主把
   资源目录由 Desktop 启动 wiring 传给 `LoopxCliProcessAdapter`，探测时内置二进制
   优先，用户机器零依赖。资源缺失时依次使用经 commit 校验的 OpenBitFun 托管源码、版本
   完全匹配的系统命令；托管源码安装只由用户点击触发，不在启动时静默下载。
   生成的 `resources/loopx/` 目录在 `.gitignore` 中，二进制不进仓库；`manifest.json`
   记录版本、commit、内容哈希与构建工具链。
-- **Apache-2.0 再分发义务**：loopx v0.5.1 为 Apache-2.0（Copyright 2026 LoopX
+- **Apache-2.0 再分发义务**：loopx（含 v1.0.1）为 Apache-2.0（Copyright 2026 LoopX
   contributors）。`resources/loopx/` 随包携带上游 `LICENSE`、`NOTICE`、历史
   `LICENSE-MIT` 与 `TRADEMARKS.md`；运行时托管源码保留完整 checkout。
   `THIRD_PARTY_NOTICES.md` 已收录对应条目。名称按 loopx

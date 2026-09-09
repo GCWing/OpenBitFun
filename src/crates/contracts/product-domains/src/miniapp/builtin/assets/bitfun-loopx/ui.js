@@ -74,13 +74,13 @@ const COPY = {
     optional: '可选',
     retryEnvironment: '重新检查环境',
     installLoopx: '安装兼容版本',
-    loopxInstallStarted: '正在从官方 GitHub 源仓库下载并校验 LoopX v0.5.1…',
+    loopxInstallStarted: '正在从官方 GitHub 源仓库下载并校验 LoopX {version}…',
     loopxInstallQueued: '安装已在后台开始，可以继续使用当前窗口。',
-    loopxInstallComplete: 'LoopX v0.5.1 已安装，环境检查已更新。',
+    loopxInstallComplete: 'LoopX {version} 已安装，环境检查已更新。',
     loopxInstallFailed: 'LoopX 安装失败：{message}',
     loopxRepairTitle: 'LoopX 版本需要修复',
-    loopxRepairDetail: '当前 {current}，此功能需要 0.5.1。安装到 BitFun 管理目录，不会修改系统版本。',
-    loopxInstallingTitle: '正在准备 LoopX 0.5.1',
+    loopxRepairDetail: '当前 {current}，此功能需要 {version}。安装到 BitFun 管理目录，不会修改系统版本。',
+    loopxInstallingTitle: '正在准备 LoopX {version}',
     loopxInstallingDetail: '仅下载运行所需源码并校验版本，完成后会自动重新检查环境。',
     tasks: '任务',
     collapseTasks: '收起任务栏',
@@ -447,13 +447,13 @@ const COPY = {
     optional: 'Optional',
     retryEnvironment: 'Check environment again',
     installLoopx: 'Install compatible version',
-    loopxInstallStarted: 'Downloading and verifying LoopX v0.5.1 from the official GitHub source repository...',
+    loopxInstallStarted: 'Downloading and verifying LoopX {version} from the official GitHub source repository...',
     loopxInstallQueued: 'Installation started in the background. You can keep using this window.',
-    loopxInstallComplete: 'LoopX v0.5.1 is installed and the environment check is up to date.',
+    loopxInstallComplete: 'LoopX {version} is installed and the environment check is up to date.',
     loopxInstallFailed: 'LoopX installation failed: {message}',
     loopxRepairTitle: 'LoopX needs a compatible version',
-    loopxRepairDetail: 'Current: {current}. This feature requires 0.5.1. Installation stays inside BitFun and does not change the system version.',
-    loopxInstallingTitle: 'Preparing LoopX 0.5.1',
+    loopxRepairDetail: 'Current: {current}. This feature requires {version}. Installation stays inside BitFun and does not change the system version.',
+    loopxInstallingTitle: 'Preparing LoopX {version}',
     loopxInstallingDetail: 'Downloading only the runtime source and verifying it. The environment will be checked automatically when finished.',
     tasks: 'Tasks',
     collapseTasks: 'Collapse task rail',
@@ -1610,7 +1610,7 @@ function applySnapshot(snapshot) {
       emitInstallDiagnostic('environment_available');
       state.environmentInstallObserved = false;
       state.environmentInstallRequestId = null;
-      showNotice(text('loopxInstallComplete'), 'success');
+      showNotice(text('loopxInstallComplete', { version: sidecar.version || '' }), 'success');
     } else if (
       previousSidecarStatus === 'checking'
       && sidecar
@@ -1803,10 +1803,12 @@ function environmentFact(name, label, fact) {
 }
 
 function renderEnvironmentRemediation(sidecar) {
+  // A checking sidecar fact carries the install target version only for the
+  // managed-source install flow; plain environment probes check without one.
   const installChecking = Boolean(
     sidecar
     && sidecar.status === 'checking'
-    && sidecar.version === '0.5.1'
+    && sidecar.version
   );
   const installAvailable = Boolean(
     sidecar
@@ -1817,14 +1819,18 @@ function renderEnvironmentRemediation(sidecar) {
   if (view.environmentRemediation.hidden) return;
 
   view.environmentRemediation.dataset.state = installing ? 'installing' : 'blocked';
-  view.environmentRemediationTitle.textContent = text(
-    installing ? 'loopxInstallingTitle' : 'loopxRepairTitle',
-  );
   const detail = String(sidecar && sidecar.detail || '');
   const currentVersion = (detail.match(/got loopx\s+([^\s]+)/i) || [])[1] || statusLabel('unavailable');
+  const targetVersion = (detail.match(/expected loopx\s+([^\s,]+)/i) || [])[1]
+    || (sidecar && sidecar.version)
+    || '';
+  view.environmentRemediationTitle.textContent = text(
+    installing ? 'loopxInstallingTitle' : 'loopxRepairTitle',
+    { version: targetVersion },
+  );
   view.environmentRemediationDetail.textContent = installing
     ? text('loopxInstallingDetail')
-    : text('loopxRepairDetail', { current: currentVersion });
+    : text('loopxRepairDetail', { current: currentVersion, version: targetVersion });
   view.environmentRemediationProgress.hidden = !installing;
   view.installLoopx.hidden = installing;
   view.installLoopx.disabled = installing;
@@ -4081,7 +4087,15 @@ function installLoopxFromGithub() {
   state.environmentInstallObserved = true;
   renderExecutionSupport();
   renderEnvironment();
-  showNotice(text('loopxInstallStarted'));
+  const installSidecar = state.snapshot
+    && state.snapshot.environment
+    && state.snapshot.environment.core
+    && state.snapshot.environment.core.sidecar;
+  const installTargetVersion = (String(installSidecar && installSidecar.detail || '')
+    .match(/expected loopx\s+([^\s,]+)/i) || [])[1]
+    || (installSidecar && installSidecar.version)
+    || '';
+  showNotice(text('loopxInstallStarted', { version: installTargetVersion }));
   emitInstallDiagnostic('ui_pending_rendered');
   window.setTimeout(() => {
     emitInstallDiagnostic('request_task_started');

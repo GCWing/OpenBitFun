@@ -346,7 +346,14 @@ pub struct LoopxCliGoalSnapshot {
     pub state: LoopxCliGoalState,
     pub durable_revision: String,
     pub run_decision: LoopxCliRunDecision,
-    pub scheduler_hint_ms: Option<u64>,
+    /// Cadence class the pinned LoopX envelope projects for this decision
+    /// (`scheduler.cadence_class`: `active_work`, `quiet_wait`,
+    /// `monitor_wait`, `human_gate`, `unchanged_noop`, `agent_scope_wait`).
+    /// The compacted v1.0.x envelope deliberately omits numeric intervals -
+    /// they live in the quota decision detail - so the host maps this label
+    /// onto the pinned scheduler's own initial interval when no explicit
+    /// numeric hint is present.
+    pub scheduler_cadence: Option<String>,
     pub open_todo_count: u32,
     pub waiting_user_todo_count: u32,
     pub pending_user_gate: Option<LoopxCliUserGate>,
@@ -477,7 +484,6 @@ pub struct LoopxCliSettleTurnResult {
     pub before_revision: String,
     pub after_revision: String,
     pub validation_succeeded: bool,
-    pub scheduler_hint_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

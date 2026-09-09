@@ -17,7 +17,7 @@ use openbitfun_product_domains::miniapp::loopx::{
     LoopxRepositoryKey, LoopxResolveIntakeRequest, LoopxRestartDecision, LoopxSnapshot,
     LoopxTaskIdentity, LoopxTaskSnapshot, LoopxTaskState, LoopxTransitionDecision,
     LoopxWorkspacePort, LoopxWorkspacePrepareRequest, LOOPX_CLI_SCHEMA_VERSION,
-    LOOPX_PINNED_VERSION,
+    LOOPX_PINNED_VERSION, LOOPX_REQUIRED_PERMISSION_SCOPES,
 };
 
 fn issue(owner: &str, repository: &str, number: u64) -> LoopxIssueKey {
@@ -459,6 +459,7 @@ fn workspace_agent_and_gate_ports_keep_routes_typed() {
         model_id: "primary".to_string(),
         granted_scopes: LOOPX_REQUIRED_PERMISSION_SCOPES.to_vec(),
         metadata: Default::default(),
+        reuse_session_id: None,
     };
     let agent_json = serde_json::to_value(agent).unwrap();
     assert_eq!(agent_json["generation"], 3);
@@ -526,7 +527,11 @@ fn optional_environment_failures_degrade_without_blocking_core_readiness() {
     let core = LoopxCoreEnvironmentFacts {
         sidecar: available.clone(),
         git_worktree: available.clone(),
-        agent_model: available,
+        agent_model: available.clone(),
+        // Node is a core fact on the v1.0.x pin (bootstrap fail-closes
+        // without it); the test's intent is "all core facts available",
+        // so it must not leave the Node fact at its legacy Unknown default.
+        node_runtime: available,
     };
     let optional = LoopxOptionalEnvironmentFacts {
         python_fallback: LoopxEnvironmentFact {
@@ -719,10 +724,10 @@ fn structured_summary_parses_valid_block_and_rejects_contract_violations() {
 
 #[test]
 fn monitor_action_classification_covers_track_and_monitor_kinds() {
-    // The pinned v0.5.1 issue-fix workflow emits the merge-readiness tracker
-    // as `issue_fix_track_pr_merge_readiness`; the older watch family uses the
-    // `_monitor` suffix. Both are monitor-class for the host compatibility
-    // cadence and the UI "PR monitor waiting" projection.
+    // The pinned issue-fix workflow emits the merge-readiness tracker as
+    // `issue_fix_track_pr_merge_readiness`; the watch family uses the
+    // `_monitor` suffix. Both are monitor-class for the UI "PR monitor
+    // waiting" projection.
     assert!(is_loopx_monitor_action(
         "issue_fix_track_pr_merge_readiness"
     ));

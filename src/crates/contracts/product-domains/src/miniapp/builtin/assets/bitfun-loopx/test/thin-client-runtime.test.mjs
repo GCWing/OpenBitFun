@@ -112,7 +112,7 @@ function controllerSnapshot(now, task) {
       revision: 4,
       status: 'degraded',
       core: {
-        sidecar: available('0.5.1', 'Pinned adapter ready'),
+        sidecar: available('1.0.1', 'Pinned adapter ready'),
         gitWorktree: available('2.51.0', 'Worktree service ready'),
         agentModel: available('primary', 'Model available'),
       },
@@ -344,7 +344,7 @@ test('thin client boots from host state and completes the confirmed intake flow'
     assert.equal(window.document.querySelector('#task-count').textContent, '1');
     assert.match(window.document.querySelector('#task-items').textContent, /GCWing\/BitFun · Issue #2382/);
     assert.equal(window.document.querySelector('#environment-status').textContent, 'Degraded');
-    assert.match(window.document.querySelector('#core-environment-list').textContent, /0\.5\.1/);
+    assert.match(window.document.querySelector('#core-environment-list').textContent, /1\.0\.1/);
     assert.match(window.document.querySelector('#log-list').textContent, /Issue #2382/);
     assert.match(window.document.querySelector('#log-list').textContent, /Inspecting the issue/);
     assert.match(window.document.querySelector('#log-list').textContent, /cargo test -p bitfun-core/);
@@ -646,9 +646,16 @@ test('task rail is flat and exposes one repository recovery action', async () =>
       window.document.querySelector('#issue-decision-card').textContent,
       /Needs your decision/i,
     );
-    assert.match(
+    // Since 8cf71c7bf the decision card intentionally does NOT duplicate the
+    // gate request; it points at the approval panel, and the raw request text
+    // is asserted there (issue-approval-raw-text below).
+    assert.doesNotMatch(
       window.document.querySelector('#issue-decision-card').textContent,
       /Approve repository write scope for the issue repair/i,
+    );
+    assert.match(
+      window.document.querySelector('#issue-decision-card').textContent,
+      /Approve or reject the request in the approval panel/i,
     );
     assert.equal(window.document.querySelector('#issue-description-panel').hidden, false);
     await waitFor(
@@ -671,8 +678,11 @@ test('task rail is flat and exposes one repository recovery action', async () =>
       window.document.querySelector('#issue-approval-raw-text').textContent,
       /Approve repository write scope for the issue repair/,
     );
-    assert.match(window.document.querySelector('#issue-approval-approve-effect').textContent, /perform the current operation and continue processing/i);
-    assert.match(window.document.querySelector('#issue-approval-reject-effect').textContent, /do not perform this operation or continue to later steps/i);
+    // 8cf71c7bf rewrote the generic approval effects to name the concrete
+    // boundary (repo writes/commits plus external actions) instead of the
+    // vague "current operation" phrasing.
+    assert.match(window.document.querySelector('#issue-approval-approve-effect').textContent, /writes\/commits in the repo, plus external actions/i);
+    assert.match(window.document.querySelector('#issue-approval-reject-effect').textContent, /the task stays waiting and does not move forward/i);
     assert.doesNotMatch(window.document.querySelector('#issue-view').textContent, /Root cause|todo_|settlement_result|durable_writeback|bounded stage/i);
 
     const resolvedButton = window.document.querySelector('[data-task-id="task-resolved-upstream"]');

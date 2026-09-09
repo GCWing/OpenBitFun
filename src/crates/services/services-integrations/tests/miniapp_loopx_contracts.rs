@@ -779,22 +779,19 @@ async fn waiting_goal_without_typed_gate_projects_owner_action_summary() {
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
-    let turn_plan = json!({
+    let quota_decision = json!({
         "ok": true,
-        "status": "operator_gate_notify",
-        "schema_version": "loopx_turn_plan_v0",
-        "turn_envelope": {
-            "should_run": true,
-            "state": "active",
-            "effective_action": "operator_gate_notify",
-            "open_count": 1,
-            "user": {
-                "action_required": true,
-                "open_count": 1
-            },
-            "action_signature": {
-                "source_decision_hash": "sha256:owner-action-revision"
-            }
+        "schema_version": "loopx_turn_envelope_v0",
+        "should_run": true,
+        "state": "active",
+        "effective_action": "operator_gate_notify",
+        "open_count": 1,
+        "user": {
+            "action_required": true,
+            "open_count": 1
+        },
+        "action_signature": {
+            "source_decision_hash": "sha256:owner-action-revision"
         }
     });
     let todos = json!({
@@ -811,7 +808,10 @@ async fn waiting_goal_without_typed_gate_projects_owner_action_summary() {
     let runner = Arc::new(FakeRunner::with_results(
         handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
-            .chain([output(turn_plan.to_string()), output(todos.to_string())]),
+            .chain([
+                output(quota_decision.to_string()),
+                output(todos.to_string()),
+            ]),
     ));
     let adapter = adapter_with_runner(
         temporary.path(),
@@ -869,22 +869,23 @@ async fn waiting_goal_projects_the_concrete_open_user_gate() {
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
-    let turn_plan = json!({
+    let quota_decision = json!({
         "ok": true,
-        "status": "operator_gate_notify",
-        "schema_version": "loopx_turn_plan_v0",
-        "turn_envelope": {
-            "should_run": true,
-            "state": "active",
-            "effective_action": "operator_gate_notify",
-            "open_count": 1,
-            "user": {
-                "action_required": true,
-                "open_count": 1
-            },
-            "action_signature": {
-                "source_decision_hash": "sha256:user-gate-revision"
-            }
+        "schema_version": "loopx_turn_envelope_v0",
+        "should_run": true,
+        "state": "active",
+        "effective_action": "operator_gate_notify",
+        "open_count": 1,
+        "scheduler": {
+            "action": "backoff_waiting_for_user",
+            "cadence_class": "human_gate"
+        },
+        "user": {
+            "action_required": true,
+            "open_count": 1
+        },
+        "action_signature": {
+            "source_decision_hash": "sha256:user-gate-revision"
         }
     });
     let todos = json!({
@@ -902,7 +903,10 @@ async fn waiting_goal_projects_the_concrete_open_user_gate() {
     let runner = Arc::new(FakeRunner::with_results(
         handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
-            .chain([output(turn_plan.to_string()), output(todos.to_string())]),
+            .chain([
+                output(quota_decision.to_string()),
+                output(todos.to_string()),
+            ]),
     ));
     let adapter = adapter_with_runner(
         temporary.path(),
@@ -947,6 +951,9 @@ async fn waiting_goal_projects_the_concrete_open_user_gate() {
     // `RunNow` with the concrete open user gate still attached.
     assert_eq!(snapshot.run_decision, LoopxCliRunDecision::RunNow);
     assert_eq!(snapshot.waiting_user_todo_count, 1);
+    // The v1.0.x envelope's cadence label is projected so the controller can
+    // map a waiting goal onto the pinned scheduler's own interval.
+    assert_eq!(snapshot.scheduler_cadence.as_deref(), Some("human_gate"));
     let gate = snapshot.pending_user_gate.expect("projected user gate");
     assert_eq!(gate.gate_id, "todo_release_approval");
     assert_eq!(gate.message, "Approve creating the draft pull request");
@@ -958,6 +965,15 @@ async fn waiting_goal_projects_the_concrete_open_user_gate() {
         .map(|plan| plan.args)
         .collect::<Vec<_>>();
     assert_eq!(commands.len(), 2);
+    // The inspection probes the live quota decision (codex/pi host parity)
+    // with the execution capabilities attached, so the projected decision is
+    // identical to the guard's.
+    assert!(commands[0]
+        .windows(2)
+        .any(|args| { args == [OsString::from("quota"), OsString::from("should-run")] }));
+    assert!(commands[0]
+        .iter()
+        .any(|arg| arg == &OsString::from("--turn-envelope")));
     for capability in ["filesystem_read", "filesystem_write", "shell", "network"] {
         assert!(commands[0].windows(2).any(|args| {
             args == [
@@ -971,227 +987,8 @@ async fn waiting_goal_projects_the_concrete_open_user_gate() {
         .any(|args| { args == [OsString::from("todo"), OsString::from("list")] }));
 }
 
-/// The pinned CLI answers `turn plan` for its plan-exhausted replan frontier
-/// (all todos done or blocked, open replan obligation, no selected todo) with
-/// `ok:false`, the `host-bound routes require ... lineage` error, and exit 1.
-/// `inspect_goal` must salvage the typed payload into the equivalent
-/// read-only `RunNow`-without-todo snapshot so the controller parks the task
-/// instead of failing it with a raw process error (observed live on task
-/// anywhere-labs/dsh-desktop#827).
-#[tokio::test]
-async fn inspect_goal_salvages_the_replan_lineage_contract_error() {
-    let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v1.0.1", 1);
-    let worktree = temporary.path().join("worktree");
-    std::fs::create_dir_all(&worktree).unwrap();
-    let registry = worktree.join(".loopx").join("registry.json");
-    let turn_plan = json!({
-        "ok": false,
-        "schema_version": "loopx_turn_plan_v0",
-        "error": "host-bound routes require goal, agent, todo, and action-hash lineage",
-        "route": {"kind": "contract_error"},
-        "turn_envelope": {
-            "should_run": true,
-            "state": "active",
-            "effective_action": "autonomous_replan_required",
-            "open_count": 0,
-            "user": {"action_required": false, "open_count": 0},
-            "action": {"selected_todo": null},
-            "replan_action_packet": {"obligation_id": "replan-1"},
-            "compaction": {"within_budget": true},
-            "action_signature": {
-                "source_decision_hash": "sha256:replan-lineage-revision"
-            }
-        }
-    });
-    let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
-            .into_iter()
-            .chain([Err(LoopxProcessError::Exited {
-                code: Some(1),
-                stdout_tail: Vec::new(),
-                stderr_tail: Vec::new(),
-                payload: Some(turn_plan),
-            })]),
-    ));
-    let adapter = adapter_with_runner(
-        temporary.path(),
-        runner.clone(),
-        Arc::new(FakeLocator::new(None)),
-    );
-
-    let snapshot = adapter
-        .inspect_goal(
-            LoopxCliInspectGoalRequest {
-                context: LoopxCliGoalContext {
-                    call: LoopxCliCallContext {
-                        operation_id: "inspect-replan-lineage".to_string(),
-                        deadline_at: None,
-                    },
-                    task_id: "task-827".to_string(),
-                    generation: 6,
-                    worktree_path: worktree.to_string_lossy().into_owned(),
-                    registry_path: registry.to_string_lossy().into_owned(),
-                    available_capabilities: vec!["shell".to_string()],
-                },
-                goal_id: "goal-827".to_string(),
-                agent_id: "bitfun-agent".to_string(),
-            },
-            &RecordingProgressSink::default(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(snapshot.run_decision, LoopxCliRunDecision::RunNow);
-    assert_eq!(snapshot.open_todo_count, 0);
-    assert_eq!(snapshot.waiting_user_todo_count, 0);
-    assert_eq!(snapshot.selected_todo, None);
-    assert_eq!(snapshot.durable_revision, "sha256:replan-lineage-revision");
-    // The open obligation must ride along so the controller drives the
-    // replan turn instead of parking the task.
-    assert_eq!(
-        snapshot.pending_replan_obligation_id.as_deref(),
-        Some("replan-1")
-    );
-    assert!(!snapshot.envelope_over_budget);
-    // The salvaged projection performs no follow-up todo list command.
-    assert_eq!(runner.plans().len(), 3);
-}
-
-/// A turn that completed its writeback and quota spend must still settle when
-/// the CLI answers the settlement inspection with the replan-lineage contract
-/// error: durable evidence comes from `history`, and the salvaged snapshot
-/// feeds `after_revision` (observed live: task #827's final onboarding turn
-/// failed settlement purely because of this inspection error).
-#[tokio::test]
-async fn settle_turn_survives_the_replan_lineage_contract_error() {
-    let temporary = tempfile::tempdir().unwrap();
-    stage_bundle(temporary.path(), "v1.0.1", 1);
-    let worktree = temporary.path().join("worktree");
-    std::fs::create_dir_all(&worktree).unwrap();
-    let registry = worktree.join(".loopx").join("registry.json");
-    let turn_plan = json!({
-        "ok": false,
-        "schema_version": "loopx_turn_plan_v0",
-        "error": "host-bound routes require goal, agent, todo, and action-hash lineage",
-        "turn_envelope": {
-            "should_run": true,
-            "state": "active",
-            "effective_action": "autonomous_replan_required",
-            "open_count": 0,
-            "user": {"action_required": false, "open_count": 0},
-            "action": {"selected_todo": null},
-            "replan_action_packet": {"obligation_id": "replan-1"},
-            "compaction": {"within_budget": true},
-            "action_signature": {
-                "source_decision_hash": "sha256:replan-lineage-revision"
-            }
-        }
-    });
-    let effect_id = "goal-827:bitfun-agent:todo-1:turn-827";
-    let history = json!({
-        "ok": true,
-        "goals": [{
-            "id": "goal-827",
-            "latest_runs": [
-                {
-                    "goal_id": "goal-827",
-                    "agent_id": "bitfun-agent",
-                    "todo_id": "todo-1",
-                    "turn_instance_id": "turn-827",
-                    "classification": "quota_slot_spent",
-                    "settlement_identity": {
-                        "schema_version": "quota_settlement_identity_v0",
-                        "effect_id": effect_id,
-                        "goal_id": "goal-827",
-                        "agent_id": "bitfun-agent",
-                        "todo_id": "todo-1",
-                        "turn_instance_id": "turn-827"
-                    }
-                },
-                {
-                    "goal_id": "goal-827",
-                    "agent_id": "bitfun-agent",
-                    "todo_id": "todo-1",
-                    "turn_instance_id": "turn-827",
-                    "classification": "validated_progress",
-                    "delivery_outcome": "outcome_progress",
-                    "settlement_identity": {
-                        "schema_version": "quota_settlement_identity_v0",
-                        "effect_id": effect_id,
-                        "goal_id": "goal-827",
-                        "agent_id": "bitfun-agent",
-                        "todo_id": "todo-1",
-                        "turn_instance_id": "turn-827"
-                    }
-                }
-            ]
-        }]
-    });
-    let runner = Arc::new(FakeRunner::with_results(
-        handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
-            .into_iter()
-            .chain([
-                Err(LoopxProcessError::Exited {
-                    code: Some(1),
-                    stdout_tail: Vec::new(),
-                    stderr_tail: Vec::new(),
-                    payload: Some(turn_plan),
-                }),
-                output(history.to_string()),
-            ]),
-    ));
-    let adapter = adapter_with_runner(
-        temporary.path(),
-        runner.clone(),
-        Arc::new(FakeLocator::new(None)),
-    );
-
-    let settlement = adapter
-        .verify_turn_settlement(
-            LoopxCliSettleTurnRequest {
-                context: LoopxCliGoalContext {
-                    call: LoopxCliCallContext {
-                        operation_id: "settle-replan-lineage".to_string(),
-                        deadline_at: None,
-                    },
-                    task_id: "task-827".to_string(),
-                    generation: 6,
-                    worktree_path: worktree.to_string_lossy().into_owned(),
-                    registry_path: registry.to_string_lossy().into_owned(),
-                    available_capabilities: vec![],
-                },
-                goal_id: "goal-827".to_string(),
-                agent_id: "bitfun-agent".to_string(),
-                turn_id: "turn-827".to_string(),
-                settlement_token: effect_id.to_string(),
-                expected_durable_revision: "sha256:replan-lineage-revision".to_string(),
-                agent_status: LoopxAgentTurnStatus::Completed,
-            },
-            &RecordingProgressSink::default(),
-        )
-        .await
-        .unwrap();
-
-    assert_eq!(settlement.status, LoopxCliSettlementStatus::Settled);
-    assert_eq!(settlement.receipt_id, effect_id);
-    assert_eq!(settlement.after_revision, "sha256:replan-lineage-revision");
-    // The settlement must still consult durable history evidence.
-    let commands = runner
-        .plans()
-        .into_iter()
-        .skip(2)
-        .map(|plan| plan.args)
-        .collect::<Vec<_>>();
-    assert!(commands.iter().any(|args| {
-        args.windows(2)
-            .any(|w| w == [OsString::from("history"), OsString::from("--goal-id")])
-    }));
-}
-
-/// Only the exact replan-lineage contract error is salvaged; other non-zero
-/// exits keep their typed process error so unrelated CLI failures still
-/// surface.
+/// Unrelated non-zero exits keep their typed process error so unrelated CLI
+/// failures still surface.
 #[tokio::test]
 async fn inspect_goal_keeps_other_process_failures() {
     let temporary = tempfile::tempdir().unwrap();
@@ -1201,13 +998,8 @@ async fn inspect_goal_keeps_other_process_failures() {
     let registry = worktree.join(".loopx").join("registry.json");
     let unrelated = json!({
         "ok": false,
-        "schema_version": "loopx_turn_plan_v0",
-        "error": "some other CLI failure",
-        "turn_envelope": {
-            "should_run": true,
-            "action": {"selected_todo": null},
-            "replan_action_packet": {"obligation_id": "replan-1"}
-        }
+        "schema_version": "loopx_turn_envelope_v0",
+        "error": "some other CLI failure"
     });
     let runner = Arc::new(FakeRunner::with_results(
         handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
@@ -1253,26 +1045,24 @@ async fn ordinary_monitor_wait_does_not_require_a_user_gate() {
     let worktree = temporary.path().join("worktree");
     std::fs::create_dir_all(&worktree).unwrap();
     let registry = worktree.join(".loopx").join("registry.json");
-    let turn_plan = json!({
+    let quota_decision = json!({
         "ok": true,
-        "schema_version": "loopx_turn_plan_v0",
-        "turn_envelope": {
-            "should_run": false,
-            "state": "waiting",
+        "schema_version": "loopx_turn_envelope_v0",
+        "should_run": false,
+        "state": "waiting",
+        "action_required": false,
+        "user": {
             "action_required": false,
-            "user": {
-                "action_required": false,
-                "open_count": 0
-            },
-            "action_signature": {
-                "source_decision_hash": "sha256:monitor-wait-revision"
-            }
+            "open_count": 0
+        },
+        "action_signature": {
+            "source_decision_hash": "sha256:monitor-wait-revision"
         }
     });
     let runner = Arc::new(FakeRunner::with_results(
         handshake_results("loopx 1.0.1", LOOPX_COMMAND_REFERENCE_SCHEMA)
             .into_iter()
-            .chain([output(turn_plan.to_string())]),
+            .chain([output(quota_decision.to_string())]),
     ));
     let adapter = adapter_with_runner(
         temporary.path(),
@@ -1441,11 +1231,8 @@ async fn create_goal_recovery_does_not_duplicate_an_existing_planned_todo() {
             output(
                 json!({
                     "ok": true,
-                    "schema_version": "loopx_turn_plan_v0",
-                    "turn_envelope": {
-                        "action_signature": {"source_decision_hash": "sha256:durable-revision"}
-                    },
-                    "transaction": {"turn_key": "sha256:turn"}
+                    "schema_version": "loopx_turn_envelope_v0",
+                    "action_signature": {"source_decision_hash": "sha256:durable-revision"}
                 })
                 .to_string(),
             ),

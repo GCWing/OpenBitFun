@@ -1788,14 +1788,12 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 run_port_command(self, &request.context, bootstrap_args(&request), &observer)
                     .await?;
             require_payload_ok(&bootstrap.payload, operation_id)?;
-            // 2026-09-07 codex comparison: LoopX defaults `common_runtime_root`
-            // to the shared `~/.codex/loopx`; that global file is the root of
-            // the write-denial / lock-contention failure loop seen in both
-            // hosts. Point the project registry at the local runtime root
-            // right after bootstrap so every later CLI call (controller and
-            // agent side) stays project-local and never touches the shared
-            // global registry.
-            let _ = patch_registry_local_runtime_root(Path::new(&request.context.registry_path));
+            // The project registry's `common_runtime_root` is localized
+            // natively: bootstrap persists the `--runtime-root` this adapter
+            // injects into every CLI invocation (including bootstrap itself),
+            // and its global sync creates the project-local
+            // `<runtime>/registry.global.json`. No host-side registry JSON
+            // surgery is needed or wanted.
             let state_action = bootstrap
                 .payload
                 .get("state_action")
@@ -1901,9 +1899,9 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 require_payload_ok(&result.payload, operation_id)?;
             }
 
-            let mut inspection_args = turn_plan_args(&request.goal_id, &request.agent_id, None);
-            extend_available_capability_args(
-                &mut inspection_args,
+            let inspection_args = quota_probe_args(
+                &request.goal_id,
+                &request.agent_id,
                 &request.context.available_capabilities,
                 operation_id,
             )?;
@@ -1940,9 +1938,16 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 loopx_contract::LoopxCliProgressStage::InspectingGoal,
                 "Inspecting durable LoopX goal state",
             );
-            let mut args = turn_plan_args(&request.goal_id, &request.agent_id, None);
-            extend_available_capability_args(
-                &mut args,
+            // The continuation authority is the live quota decision rendered
+            // as the turn envelope - the same surface LoopX's own host
+            // adapters probe (`pi_goal_mode` runs `quota should-run` on every
+            // idle tick). Unlike `turn plan`, the quota decision has no
+            // 8192-byte compaction gate: a large goal state keeps projecting
+            // should_run/selected_todo/user gates instead of degrading to
+            // `contract_error` and stranding the task.
+            let args = quota_probe_args(
+                &request.goal_id,
+                &request.agent_id,
                 &request.context.available_capabilities,
                 operation_id,
             )?;
@@ -2001,28 +2006,7 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
             let guard = run_port_command(self, &request.context, guard_args, &observer).await?;
             require_payload_ok(&guard.payload, operation_id)?;
             require_schema(&guard.payload, "loopx_turn_envelope_v0", operation_id)?;
-            // v1.0.x: when the pinned CLI's TypeScript envelope renderer
-            // returns a typed rejection, `quota should-run --turn-envelope`
-            // degrades to the bare decision payload with a
-            // `turn_envelope_skipped` reason instead of crashing (upstream
-            // issue #3687). That payload has no action signature and no agent
-            // contract, so the turn cannot be built from it. Fail loudly with
-            // the skip reason instead of a generic schema error.
-            if let Some(skip_reason) = guard
-                .payload
-                .get("turn_envelope_skipped")
-                .and_then(Value::as_str)
-                .filter(|value| !value.is_empty())
-            {
-                return Err(port_error(
-                    loopx_contract::LoopxCliErrorKind::SchemaMismatch,
-                    operation_id,
-                    format!(
-                        "LoopX could not render the turn envelope for this goal state: {skip_reason}"
-                    ),
-                    false,
-                ));
-            }
+            require_envelope_rendered(&guard.payload, operation_id)?;
             let durable_revision = extract_durable_revision(&guard.payload, operation_id)?;
             if durable_revision != request.expected_durable_revision {
                 // `turn plan` and `quota should-run` are two different LoopX
@@ -2054,6 +2038,118 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                     true,
                 ));
             }
+            // Two-phase action selection (loopx `action_portfolio` contract,
+            // verified live against the pinned v1.0.1): when the frontier
+            // holds more than one eligible candidate the guard refuses to
+            // name a settlement identity (`writeback.selection_required`,
+            // `spend_allowed_now=false`) and withholds the writeback
+            // commands. The heartbeat receipt binds only through an explicit
+            // `--todo-id` re-run carrying the SAME turn identity; a third
+            // guard then returns the bound contract with the writeback
+            // commands restored. The picked todo is the envelope's own
+            // recommendation (`action.selected_todo`), never a host-side
+            // guess, so recommendation order cannot become hidden
+            // settlement authority.
+            let guard = if guard
+                .payload
+                .pointer("/writeback/selection_required")
+                .and_then(Value::as_bool)
+                == Some(true)
+            {
+                let picked_todo_id = guard
+                    .payload
+                    .pointer("/action/selected_todo/todo_id")
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| {
+                        guard
+                            .payload
+                            .pointer("/writeback/suggested_todo_ids/0")
+                            .and_then(Value::as_str)
+                            .filter(|value| !value.is_empty())
+                            .map(str::to_string)
+                    })
+                    .ok_or_else(|| {
+                        port_error(
+                            loopx_contract::LoopxCliErrorKind::Conflict,
+                            operation_id,
+                            "LoopX guard demanded an explicit action selection but projected no candidate",
+                            true,
+                        )
+                    })?;
+                log::info!(
+                    "LoopX guard requires an explicit action selection; binding the recommended todo and re-reading the contract: task_id={} goal={} turn_instance={} todo={}",
+                    request.context.task_id,
+                    request.goal_id,
+                    turn_id,
+                    picked_todo_id,
+                );
+                let mut bind_args = quota_guard_args(
+                    &request.goal_id,
+                    &request.agent_id,
+                    Some(&SettlementBinding::Todo {
+                        todo_id: picked_todo_id,
+                    }),
+                    &turn_id,
+                );
+                bind_args.push(OsString::from("--turn-envelope"));
+                extend_available_capability_args(
+                    &mut bind_args,
+                    &request.context.available_capabilities,
+                    operation_id,
+                )?;
+                run_port_command(self, &request.context, bind_args, &observer)
+                    .await
+                    .map_err(|error| {
+                        // The picked todo lost eligibility between the two
+                        // guards (a concurrent writeback or gate answer). The
+                        // next drive re-inspects fresh state, so requeue
+                        // instead of failing the host job.
+                        if error.retryable {
+                            error
+                        } else {
+                            port_error(
+                                loopx_contract::LoopxCliErrorKind::Conflict,
+                                operation_id,
+                                format!(
+                                    "LoopX action selection re-run was rejected ({}); requeueing to re-inspect fresh state",
+                                    error.message
+                                ),
+                                true,
+                            )
+                        }
+                    })?;
+                let mut confirm_args =
+                    quota_guard_args(&request.goal_id, &request.agent_id, None, &turn_id);
+                confirm_args.push(OsString::from("--turn-envelope"));
+                extend_available_capability_args(
+                    &mut confirm_args,
+                    &request.context.available_capabilities,
+                    operation_id,
+                )?;
+                let confirmed =
+                    run_port_command(self, &request.context, confirm_args, &observer).await?;
+                require_payload_ok(&confirmed.payload, operation_id)?;
+                require_schema(&confirmed.payload, "loopx_turn_envelope_v0", operation_id)?;
+                require_turn_owner(
+                    &confirmed.payload,
+                    &request.goal_id,
+                    &request.agent_id,
+                    operation_id,
+                )?;
+                if confirmed.payload.get("should_run").and_then(Value::as_bool) != Some(true) {
+                    return Err(port_error(
+                        loopx_contract::LoopxCliErrorKind::Conflict,
+                        operation_id,
+                        "LoopX quota guard no longer permits host execution after the action selection",
+                        true,
+                    ));
+                }
+                confirmed
+            } else {
+                guard
+            };
             let settlement_binding = planned_settlement_binding(&guard.payload);
             log::info!(
                 "LoopX turn guard accepted: task_id={} goal={} turn_instance={} should_run=true revision={} binding={:?}",
@@ -2083,12 +2179,14 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                     true,
                 )
             })?;
+            let semantic_obligation = semantic_replan_obligation_id(&guard.payload);
             let agent_instruction = render_agent_reentry_instruction(
                 &guard.payload,
                 &verified,
                 &request.context.registry_path,
                 &turn_id,
                 settlement_binding.as_ref(),
+                semantic_obligation.as_deref(),
                 &request.context.available_capabilities,
                 operation_id,
             )?;
@@ -2144,9 +2242,9 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
             )
             .await?;
             require_payload_ok(&decision.payload, operation_id)?;
-            let mut inspection_args = turn_plan_args(&request.goal_id, &request.agent_id, None);
-            extend_available_capability_args(
-                &mut inspection_args,
+            let inspection_args = quota_probe_args(
+                &request.goal_id,
+                &request.agent_id,
                 &request.context.available_capabilities,
                 operation_id,
             )?;
@@ -2194,67 +2292,27 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 task_id: Some(request.context.task_id.clone()),
                 stage: loopx_contract::LoopxCliProgressStage::SettlingTurn,
             };
-            let mut inspection_args =
-                turn_plan_args(&request.goal_id, &request.agent_id, Some(&request.turn_id));
-            extend_available_capability_args(
-                &mut inspection_args,
+            // Read-only post-turn snapshot from the same live quota decision
+            // the drive path uses. No turn identity is passed: settlement
+            // verification must not mint a new heartbeat receipt, and the
+            // durable evidence below comes from `history`. Unlike `turn plan`
+            // this projection has no 8192-byte envelope budget, so a large
+            // goal state cannot strand the settlement of a turn that already
+            // completed its writeback and spend.
+            let inspection_args = quota_probe_args(
+                &request.goal_id,
+                &request.agent_id,
                 &request.context.available_capabilities,
                 operation_id,
             )?;
-            // The settlement inspection is read-only bookkeeping: its snapshot
-            // feeds `after_revision` and the terminal-state check, while the
-            // durable evidence below comes from `history`. When the pinned CLI
-            // answers this inspection with the plan-exhausted replan-lineage
-            // contract error (all todos done or blocked, open replan
-            // obligation, no selected todo), salvage the typed payload instead
-            // of failing the settlement of a turn that did complete its
-            // writeback and quota spend: the post-settlement goal projection
-            // then drives one autonomous replan turn bound to the obligation
-            // (or parks the task if no obligation remains) through the normal
-            // frontier handling.
-            let (snapshot, inspection_payload) = match run_port_command_raw(
+            let snapshot = inspect_goal_snapshot(
                 self,
+                &request.goal_id,
                 &request.context,
                 inspection_args,
                 &observer,
             )
-            .await
-            {
-                Ok(inspection) => {
-                    require_payload_ok(&inspection.payload, operation_id)?;
-                    require_schema(&inspection.payload, "loopx_turn_plan_v0", operation_id)?;
-                    (
-                        project_goal_snapshot(&request.goal_id, &inspection.payload, operation_id)?,
-                        Some(inspection.payload),
-                    )
-                }
-                Err(RawPortError::Port(error)) => return Err(error),
-                Err(RawPortError::Adapter(error)) => {
-                    let Some(payload) = salvage_replan_lineage_payload(&error) else {
-                        return Err(map_port_error(error, operation_id));
-                    };
-                    log::warn!(
-                            "LoopX settlement inspection hit the plan-exhausted replan lineage contract error; continuing settlement from durable history evidence: task_id={} goal={} turn={} error=\"{}\"",
-                            request.context.task_id,
-                            request.goal_id,
-                            request.turn_id,
-                            LOOPX_REPLAN_LINEAGE_ERROR
-                        );
-                    (
-                        salvaged_replan_lineage_snapshot(&request.goal_id, &payload, operation_id)
-                            .map(|(snapshot, _)| snapshot)
-                            .ok_or_else(|| map_port_error(error, operation_id))?,
-                        None,
-                    )
-                }
-            };
-            if is_legacy_turn_key(&request.settlement_token) {
-                if let Some(receipt) = inspection_payload.as_ref().and_then(|payload| {
-                    matching_settlement_receipt(payload, &request.settlement_token)
-                }) {
-                    return project_legacy_settlement(&request, &snapshot, receipt, operation_id);
-                }
-            }
+            .await?;
             let history = run_port_command(
                 self,
                 &request.context,
@@ -2295,7 +2353,6 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                     status,
                     before_revision: request.expected_durable_revision,
                     after_revision: snapshot.durable_revision,
-                    scheduler_hint_ms: snapshot.scheduler_hint_ms,
                     ..loopx_contract::LoopxCliSettleTurnResult::default()
                 });
             };
@@ -2313,7 +2370,6 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                     status: loopx_contract::LoopxCliSettlementStatus::RetryRequired,
                     before_revision: request.expected_durable_revision,
                     after_revision: snapshot.durable_revision,
-                    scheduler_hint_ms: snapshot.scheduler_hint_ms,
                     ..loopx_contract::LoopxCliSettleTurnResult::default()
                 });
             }
@@ -2336,7 +2392,6 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 before_revision: request.expected_durable_revision,
                 after_revision: snapshot.durable_revision,
                 validation_succeeded: true,
-                scheduler_hint_ms: snapshot.scheduler_hint_ms,
             })
         })
     }
@@ -2490,17 +2545,6 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
     }
 }
 
-fn matching_settlement_receipt<'a>(payload: &'a Value, turn_key: &str) -> Option<&'a Value> {
-    payload
-        .pointer("/transaction/receipts")
-        .and_then(Value::as_array)?
-        .iter()
-        .find(|receipt| {
-            receipt.get("turn_key").and_then(Value::as_str) == Some(turn_key)
-                || receipt.get("settlement_token").and_then(Value::as_str) == Some(turn_key)
-        })
-}
-
 fn turn_envelope<'a>(
     payload: &'a Value,
     operation_id: &str,
@@ -2545,56 +2589,72 @@ fn planned_settlement_token(
     turn_id: &str,
     operation_id: &str,
 ) -> loopx_contract::LoopxCliResult<String> {
-    if let Some(binding) = planned_settlement_binding(payload) {
-        return Ok(binding.effect_id(goal_id, agent_id, turn_id));
-    }
-
-    payload
-        .pointer("/transaction/turn_key")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
+    planned_settlement_binding(payload)
+        .map(|binding| binding.effect_id(goal_id, agent_id, turn_id))
         .ok_or_else(|| {
             port_error(
                 loopx_contract::LoopxCliErrorKind::SchemaMismatch,
                 operation_id,
-                "LoopX turn packet did not contain a selected Todo or transaction.turn_key",
+                "LoopX turn guard did not project a settlement binding for this turn",
                 false,
             )
         })
 }
 
+/// Derives the settlement identity the pinned CLI will record for this turn,
+/// mirroring `quota_rollout_settlement_binding` (the heartbeat-receipt
+/// authority): the typed `replan_settlement_contract` wins, then the selected
+/// todo, and only a todo-less frontier settles through the autonomous replan
+/// obligation. An open semantic replan obligation may coexist with a Todo
+/// binding (`todo_bound_writeback` in loopx's
+/// `projectReplanSettlementContract`): the obligation shapes the writeback
+/// flags while the settlement is recorded through the Todo. Deriving the
+/// token from the obligation instead made every such turn settle as
+/// NoDurableProgress even though the agent's writeback and spend validated
+/// (live 2026-09-09: both were recorded todo-bound while the host expected
+/// the autonomous-replan effect id).
 fn planned_settlement_binding(payload: &Value) -> Option<SettlementBinding> {
-    let route_kind = payload.pointer("/route/kind").and_then(Value::as_str);
-    if route_kind == Some("replan_required") {
-        let obligation_id = payload
-            .pointer("/turn_envelope/replan_action_packet/obligation_id")
+    if let Some(binding) =
+        payload.pointer("/writeback/replan_settlement_contract/settlement_binding")
+    {
+        let kind = binding.get("kind").and_then(Value::as_str);
+        let id = binding
+            .get("id")
             .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())?;
-        return Some(SettlementBinding::AutonomousReplan {
-            obligation_id: obligation_id.to_string(),
+            .filter(|value| !value.is_empty());
+        match (kind, id) {
+            (Some("todo"), Some(todo_id)) => {
+                return Some(SettlementBinding::Todo {
+                    todo_id: todo_id.to_string(),
+                });
+            }
+            (Some("autonomous_replan"), Some(obligation_id)) => {
+                return Some(SettlementBinding::AutonomousReplan {
+                    obligation_id: obligation_id.to_string(),
+                });
+            }
+            _ => {}
+        }
+    }
+    if let Some(todo_id) = planned_todo_id(payload) {
+        return Some(SettlementBinding::Todo {
+            todo_id: todo_id.to_string(),
         });
     }
+    semantic_replan_obligation_id(payload)
+        .map(|obligation_id| SettlementBinding::AutonomousReplan { obligation_id })
+}
 
-    if let Some(obligation_id) = [
-        "/replan_action_packet/obligation_id",
-        "/turn_envelope/replan_action_packet/obligation_id",
-    ]
-    .into_iter()
-    .find_map(|pointer| {
-        payload
-            .pointer(pointer)
-            .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
-    }) {
-        return Some(SettlementBinding::AutonomousReplan {
-            obligation_id: obligation_id.to_string(),
-        });
-    }
-
-    planned_todo_id(payload).map(|todo_id| SettlementBinding::Todo {
-        todo_id: todo_id.to_string(),
-    })
+/// The open semantic replan obligation projected by the decision. Unlike the
+/// settlement binding this survives a coexisting selected todo: the
+/// obligation's typed delta still shapes the writeback flags while the
+/// settlement itself is recorded through the todo.
+fn semantic_replan_obligation_id(payload: &Value) -> Option<String> {
+    payload
+        .pointer("/replan_action_packet/obligation_id")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
 }
 
 fn planned_todo_id(payload: &Value) -> Option<&str> {
@@ -2815,52 +2875,6 @@ fn is_legacy_turn_key(value: &str) -> bool {
     })
 }
 
-fn project_legacy_settlement(
-    request: &loopx_contract::LoopxCliSettleTurnRequest,
-    snapshot: &loopx_contract::LoopxCliGoalSnapshot,
-    receipt: &Value,
-    operation_id: &str,
-) -> loopx_contract::LoopxCliResult<loopx_contract::LoopxCliSettleTurnResult> {
-    let receipt_id = receipt
-        .get("receipt_id")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            port_error(
-                loopx_contract::LoopxCliErrorKind::SchemaMismatch,
-                operation_id,
-                "matching LoopX settlement receipt has no receipt_id",
-                false,
-            )
-        })?
-        .to_string();
-    let validation_succeeded = receipt
-        .get("validation_succeeded")
-        .and_then(Value::as_bool)
-        .or_else(|| {
-            receipt
-                .pointer("/validation/succeeded")
-                .and_then(Value::as_bool)
-        })
-        .unwrap_or(false);
-    Ok(loopx_contract::LoopxCliSettleTurnResult {
-        goal_id: request.goal_id.clone(),
-        turn_id: request.turn_id.clone(),
-        receipt_id,
-        status: if !validation_succeeded {
-            loopx_contract::LoopxCliSettlementStatus::NoDurableProgress
-        } else if snapshot.state == loopx_contract::LoopxCliGoalState::Completed {
-            loopx_contract::LoopxCliSettlementStatus::GoalCompleted
-        } else {
-            loopx_contract::LoopxCliSettlementStatus::AlreadySettled
-        },
-        before_revision: request.expected_durable_revision.clone(),
-        after_revision: snapshot.durable_revision.clone(),
-        validation_succeeded,
-        scheduler_hint_ms: snapshot.scheduler_hint_ms,
-    })
-}
-
 fn agent_shell_command(command: &VerifiedLoopxCommand) -> String {
     let display = command.executable.to_string_lossy().replace('"', "\\\"");
     let arguments = command
@@ -2952,6 +2966,7 @@ fn render_agent_reentry_instruction(
     registry_path: &str,
     turn_id: &str,
     binding: Option<&SettlementBinding>,
+    semantic_obligation: Option<&str>,
     available_capabilities: &[String],
     operation_id: &str,
 ) -> loopx_contract::LoopxCliResult<String> {
@@ -3017,8 +3032,28 @@ fn render_agent_reentry_instruction(
     // 2026-09-08: a replan turn failed twice on
     // "turn-scoped refresh-state requires an accountable --delivery-outcome"
     // and the settlement then saw no writeback at all).
-    let (writeback_command, writeback_guidance) = match binding {
-        Some(SettlementBinding::Todo { todo_id }) => (
+    // The writeback flavor follows the SEMANTIC obligation, not the
+    // settlement binding: when an open replan obligation coexists with a
+    // selected todo, loopx records the settlement through the todo
+    // (`todo_bound_writeback`) but still requires the typed semantic delta
+    // flags - the replan-flavored command reconciles against the todo-bound
+    // receipt (verified live 2026-09-09: the server accepted the replan
+    // flags and recorded a todo-bound settlement identity).
+    enum WritebackFlavor<'a> {
+        Todo(&'a str),
+        AutonomousReplan(&'a str),
+        Unbound,
+    }
+    let writeback_flavor = if let Some(obligation_id) = semantic_obligation {
+        WritebackFlavor::AutonomousReplan(obligation_id)
+    } else {
+        match binding {
+            Some(SettlementBinding::Todo { todo_id }) => WritebackFlavor::Todo(todo_id),
+            _ => WritebackFlavor::Unbound,
+        }
+    };
+    let (writeback_command, writeback_guidance) = match writeback_flavor {
+        WritebackFlavor::Todo(todo_id) => (
             format!(
                 "{cli_prefix} refresh-state {goal_id_arg} --classification <validated_progress> --delivery-batch-scale single_surface --delivery-outcome outcome_progress --todo-id {} --turn-instance-id {} {agent_id_arg} {capability_args}",
                 agent_shell_value(todo_id),
@@ -3026,7 +3061,7 @@ fn render_agent_reentry_instruction(
             ),
             "Fill the <placeholders> from your validated evidence (classification is a short public-safe label of what this run validated); substitute `--delivery-outcome primary_goal_outcome` only when this turn completed the goal's primary result. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags.".to_string(),
         ),
-        Some(SettlementBinding::AutonomousReplan { obligation_id }) => (
+        WritebackFlavor::AutonomousReplan(obligation_id) => (
             format!(
                 "{cli_prefix} refresh-state {goal_id_arg} --progress-scope agent_lane --classification bounded_replan_progress --delivery-batch-scale single_surface --delivery-outcome outcome_progress --progress-result-class <advanced|blocked|exploration_exhausted|no_followup> --progress-surface-id <surface-id> --progress-hypothesis-id <hypothesis-id> --progress-probe-kind <probe-kind> --progress-evidence-id <evidence-id> --replan-obligation-id {} --turn-instance-id {} --autonomous-replan-recorded --repair-delta-kind <delta-kind> {agent_id_arg} {capability_args}",
                 agent_shell_value(obligation_id),
@@ -3042,7 +3077,7 @@ fn render_agent_reentry_instruction(
 {\"schema_version\": \"goal_vision_replan_contract_v0\", \"goal_id\": \"<GOAL_ID>\", \"agent_id\": \"<AGENT_ID>\", \"state\": \"no_followup\", \"vision_summary\": \"<what the goal set out to achieve, <=420 chars>\", \"acceptance_summary\": \"<what evidence closes it, <=420 chars>\", \"path_delta\": {\"outcome\": \"stop\", \"prior_assumption\": \"<the assumption before this turn, <=220 chars>\", \"observed_reality\": \"<what this turn verified, <=220 chars>\", \"stopped\": [\"<the work path stopped by this terminal, <=120 chars>\"]}}
 Consistency is enforced across the ACK: a `no_followup` result class requires vision `state=no_followup` AND `path_delta.outcome=stop` together; `prior_assumption` and `observed_reality` are mandatory; at least one `retained`/`changed`/`stopped` item must be present (max 3 per list, <=120 chars each; `unresolved_questions` max 2; `evidence_refs` max 4). A non-terminal replan (successor todo or concrete blocker) does NOT need the vision packet - use the successor/blocker path instead.".to_string(),
         ),
-        None => (String::new(), String::new()),
+        WritebackFlavor::Unbound => (String::new(), String::new()),
     };
     // The typed quota guard resolves the scheduler execution context from the
     // invocation flags. Without an explicit declaration the context is missing
@@ -3071,14 +3106,17 @@ Consistency is enforced across the ACK: a `no_followup` result class requires vi
             "After the writeback validates, run this exact quota spend command once:\n`{spend_command}`\nRun it verbatim: do not add, remove, or reorder flags, and do not substitute the todo or turn ids. If it returns a typed rejection naming `repair_scheduler_execution_context` or an advanced guard, stop and report the rejection verbatim; do not retry with modified arguments. EXCEPTION: a rejection saying the goal is terminal / fully closed / recurring automation must stop is NOT a blocker - it means your terminal writeback already completed the goal and the quota accounting is intentionally closed; skip the spend, mention it in one plain sentence in `completed`, and never put it in `blockers`."
         )
     };
-    // Replan turns have no selected todo: the replan obligation itself is the
-    // work item, so the generic "claim the selected todo" clause would point
-    // the agent at a todo that does not exist.
-    let work_clause = match binding {
-        Some(SettlementBinding::AutonomousReplan { .. }) => {
+    // The replan work clause is keyed on the SEMANTIC obligation: it applies
+    // both to a todo-less replan frontier and to a replan obligation that
+    // settles through a selected todo.
+    let work_clause = if semantic_obligation.is_some() {
+        if matches!(binding, Some(SettlementBinding::Todo { .. })) {
+            "This turn carries an open autonomous replan obligation and settles through the selected todo: apply the `replan_action_packet` from the contract, execute the selected todo's bounded work, then record exactly one required semantic outcome through the refresh-state writeback flags below - a concrete runnable successor todo only when an executable target is known, otherwise a typed terminal outcome or a new concrete blocker with evidence. The replan ACK must carry a matching typed `--repair-delta-kind` (for example `no_followup`, `blocker`, `successor_or_supersede`, `goal_vision_patch`, or `exploration_exhausted`): an ACK without a delta is stored as a no-op and does not clear the obligation.".to_string()
+        } else {
             "This turn is an autonomous replan turn: no todo is selected and you must not invent a todo claim. Apply the `replan_action_packet` from the contract: first re-read the durable goal state and current evidence, then record exactly one required semantic outcome through the refresh-state writeback flags below — a concrete runnable successor todo only when an executable target is known, otherwise a typed terminal outcome (for example a coverage-backed `no_followup` with the goal vision closed) or a new concrete blocker with evidence. The replan ACK must carry a matching typed `--repair-delta-kind` (for example `no_followup`, `blocker`, `successor_or_supersede`, `goal_vision_patch`, or `exploration_exhausted`): an ACK without a delta is stored as a no-op and does not clear the obligation.".to_string()
         }
-        _ => "Claim the selected executable todo before write-capable work. Execute only the selected action in the current worktree. Then use the LoopX CLI prefix to complete, update, block, or defer the selected todo and create a successor only when concrete follow-up remains.".to_string(),
+    } else {
+        "Claim the selected executable todo before write-capable work. Execute only the selected action in the current worktree. Then use the LoopX CLI prefix to complete, update, block, or defer the selected todo and create a successor only when concrete follow-up remains.".to_string()
     };
     let writeback_instruction = if writeback_command.is_empty() {
         "This turn has no settlement binding; do not run a turn-scoped refresh-state and do not spend quota.".to_string()
@@ -3098,42 +3136,12 @@ async fn run_port_command(
     args: Vec<OsString>,
     observer: &dyn LoopxProcessObserver,
 ) -> loopx_contract::LoopxCliResult<LoopxJsonOutput> {
-    run_port_command_raw(adapter, context, args, observer)
-        .await
-        .map_err(|error| raw_port_error_into(error, &context.call.operation_id))
-}
-
-/// Error surface of [`run_port_command_raw`]: either an already-typed port
-/// error (preflight/deadline) or the raw adapter error, which keeps the CLI's
-/// typed `ok:false` payload attached to a non-zero exit.
-enum RawPortError {
-    Port(loopx_contract::LoopxCliError),
-    Adapter(LoopxCliAdapterError),
-}
-
-fn raw_port_error_into(error: RawPortError, operation_id: &str) -> loopx_contract::LoopxCliError {
-    match error {
-        RawPortError::Port(error) => error,
-        RawPortError::Adapter(error) => map_port_error(error, operation_id),
-    }
-}
-
-/// Raw-error variant of [`run_port_command`]: callers that need to inspect the
-/// underlying [`LoopxCliAdapterError`] (for example to salvage a typed
-/// `ok:false` payload from a non-zero exit) use this instead.
-async fn run_port_command_raw(
-    adapter: &LoopxCliProcessAdapter,
-    context: &loopx_contract::LoopxCliGoalContext,
-    args: Vec<OsString>,
-    observer: &dyn LoopxProcessObserver,
-) -> Result<LoopxJsonOutput, RawPortError> {
     let operation_id = &context.call.operation_id;
     let deadline = effective_deadline(
         context.call.deadline_at,
         adapter.config.command_deadline,
         operation_id,
-    )
-    .map_err(RawPortError::Port)?;
+    )?;
     adapter
         .run_json_command(
             operation_id,
@@ -3144,7 +3152,7 @@ async fn run_port_command_raw(
             observer,
         )
         .await
-        .map_err(RawPortError::Adapter)
+        .map_err(|error| map_port_error(error, operation_id))
 }
 
 /// Runs a `turn plan` inspection and projects its goal snapshot. When the
@@ -3161,24 +3169,8 @@ async fn inspect_goal_snapshot(
     args: Vec<OsString>,
     observer: &dyn LoopxProcessObserver,
 ) -> loopx_contract::LoopxCliResult<loopx_contract::LoopxCliGoalSnapshot> {
-    let operation_id = &context.call.operation_id;
-    match run_port_command_raw(adapter, context, args, observer).await {
-        Ok(output) => project_goal_snapshot(goal_id, &output.payload, operation_id),
-        Err(RawPortError::Port(error)) => Err(error),
-        Err(RawPortError::Adapter(error)) => {
-            let Some(payload) = salvage_replan_lineage_payload(&error) else {
-                return Err(map_port_error(error, operation_id));
-            };
-            log::warn!(
-                "LoopX turn plan projected the plan-exhausted replan frontier without a todo lineage; salvaging the typed payload: operation_id={} error=\"{}\"",
-                operation_id,
-                LOOPX_REPLAN_LINEAGE_ERROR
-            );
-            salvaged_replan_lineage_snapshot(goal_id, &payload, operation_id)
-                .map(|(snapshot, _)| snapshot)
-                .ok_or_else(|| map_port_error(error, operation_id))
-        }
-    }
+    let output = run_port_command(adapter, context, args, observer).await?;
+    project_goal_snapshot(goal_id, &output.payload, &context.call.operation_id)
 }
 
 async fn run_idempotent_global_command(
@@ -3218,131 +3210,6 @@ fn process_error_json(error: &LoopxCliAdapterError) -> Option<Value> {
     serde_json::from_str(&stdout_tail.join("\n")).ok()
 }
 
-/// The pinned LoopX v1.0.1 CLI renders its plan-exhausted replan frontier
-/// (every todo done or blocked, an open autonomous replan obligation, and no
-/// selected todo) as `route.kind=contract_error` on `turn plan`: host-bound
-/// routes demand a goal/agent/todo/action-hash lineage that a todo-less
-/// frontier cannot provide, so the CLI prints the typed `ok:false` payload and
-/// exits 1. This is the exact pinned-string marker for that projection.
-const LOOPX_REPLAN_LINEAGE_ERROR: &str =
-    "host-bound routes require goal, agent, todo, and action-hash lineage";
-
-/// Salvages the typed `turn plan` payload from the pinned CLI's
-/// replan-without-todo lineage contract error. Returns `None` for any other
-/// process failure so unrelated errors still surface unchanged. The caller
-/// must treat the result as read-only: the CLI already refused to execute, so
-/// nothing here writes goal state or fabricates a settlement.
-fn salvage_replan_lineage_payload(error: &LoopxCliAdapterError) -> Option<Value> {
-    let LoopxCliAdapterError::Process(LoopxProcessError::Exited {
-        payload: Some(payload),
-        ..
-    }) = error
-    else {
-        return None;
-    };
-    if payload.get("error").and_then(Value::as_str) != Some(LOOPX_REPLAN_LINEAGE_ERROR) {
-        return None;
-    }
-    let envelope = payload.get("turn_envelope")?;
-    // Salvage every lineage failure that still prints a typed turn envelope.
-    // The strict replan-frontier shape (should_run + obligation, no selected
-    // todo) was the only recognized shape until 2026-09-08, when a live
-    // settlement inspection for an open blocker todo failed the whole task
-    // with this error: the CLI refuses to PLAN a host-bound route whose todo
-    // lacks an action-hash lineage, but the caller (settlement verification,
-    // post-settlement projection) only needs the read-only snapshot; the
-    // durable evidence itself comes from `history`. Shape-specific guards
-    // stay in the snapshot projection below.
-    let _ = envelope;
-    Some(payload.clone())
-}
-
-/// Projects the salvaged replan-lineage payload into the same read-only goal
-/// snapshot vocabulary `turn plan` uses on success. The frontier is actionable
-/// only through an autonomous replan, so the snapshot keeps `RunNow` with no
-/// open todo, no waiting user decision, no selected todo, and the open replan
-/// obligation id: the host's frontier handling then drives one bounded
-/// autonomous replan turn bound to that obligation.
-fn salvaged_replan_lineage_snapshot(
-    goal_id: &str,
-    payload: &Value,
-    operation_id: &str,
-) -> Option<(loopx_contract::LoopxCliGoalSnapshot, String)> {
-    let envelope = payload.get("turn_envelope")?;
-    let durable_revision = extract_durable_revision(payload, operation_id).ok()?;
-    let open_todo_count = envelope
-        .get("open_count")
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let waiting_user_todo_count = envelope
-        .pointer("/user/open_count")
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let obligation_id = envelope
-        .pointer("/replan_action_packet/obligation_id")
-        .and_then(Value::as_str)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
-    // Frontier projection from the salvaged envelope: `should_run=true` keeps
-    // the historical replan shape (RunNow; the host's frontier handling then
-    // drives a replan turn when the obligation is present, or parks a true
-    // contradiction); a `should_run=false` envelope (for example a terminal
-    // no-follow-up or a wait) maps onto the same read-only decision
-    // vocabulary the normal inspection uses, so settlement verification and
-    // post-settlement projection keep working instead of failing the task.
-    let should_run = envelope
-        .get("should_run")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    let state_text = envelope
-        .get("state")
-        .or_else(|| envelope.get("effective_action"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_lowercase();
-    let run_decision = if should_run {
-        loopx_contract::LoopxCliRunDecision::RunNow
-    } else if state_text.contains("terminal")
-        || state_text.contains("no_followup")
-        || state_text.contains("complete")
-    {
-        loopx_contract::LoopxCliRunDecision::Complete
-    } else {
-        loopx_contract::LoopxCliRunDecision::Wait
-    };
-    let state = if run_decision == loopx_contract::LoopxCliRunDecision::Complete {
-        loopx_contract::LoopxCliGoalState::Completed
-    } else if waiting_user_todo_count > 0 {
-        loopx_contract::LoopxCliGoalState::WaitingForUser
-    } else {
-        loopx_contract::LoopxCliGoalState::Active
-    };
-    Some((
-        loopx_contract::LoopxCliGoalSnapshot {
-            goal_id: goal_id.to_string(),
-            state,
-            durable_revision,
-            run_decision,
-            scheduler_hint_ms: scheduler_hint_ms(payload),
-            open_todo_count: open_todo_count.try_into().unwrap_or(u32::MAX),
-            waiting_user_todo_count: waiting_user_todo_count.try_into().unwrap_or(u32::MAX),
-            pending_user_gate: None,
-            waiting_user_summary: None,
-            selected_todo: None,
-            pending_replan_obligation_id: obligation_id.clone(),
-            envelope_over_budget: envelope
-                .pointer("/compaction/within_budget")
-                .and_then(Value::as_bool)
-                == Some(false),
-        },
-        obligation_id.unwrap_or_default(),
-    ))
-}
-
-/// Maps the host-resolved remote state onto the state vocabulary LoopX's
-/// metadata projection accepts (`open` | `closed` | `unknown`). LoopX has no
-/// `merged` metadata state; a merged PR is already terminal, so `closed` is
-/// the truthful projection.
 fn metadata_state(state: loopx_contract::LoopxRemoteItemState) -> &'static str {
     use loopx_contract::LoopxRemoteItemState;
     match state {
@@ -3466,117 +3333,6 @@ fn register_agent_args(request: &loopx_contract::LoopxCliCreateGoalRequest) -> V
     .collect()
 }
 
-/// Best-effort rewrite of the project registry's `common_runtime_root` to the
-/// project-local runtime directory. LoopX v1.0.1 defaults that field to the
-/// shared `~/.codex/loopx`; pointing it at `<registry dir>/runtime` keeps all
-/// later CLI calls (controller and agent side) project-local and avoids the
-/// shared-global-registry write denial / lock contention observed with both
-/// the BitFun sidecar and the codex reference run (2026-09-07).
-///
-/// Also re-points each goal's default `state_file` from the legacy
-/// `.codex/goals/<goal-id>/ACTIVE_GOAL_STATE.md` to
-/// `.loopx/goals/<goal-id>/ACTIVE_GOAL_STATE.md` and copies the file over, so
-/// the worktree stays fully `.loopx`-namespaced. BitFun and Codex are
-/// independent agents; the `.codex` name in these paths is only LoopX's
-/// legacy default, not a BitFun/Codex coupling, and this removes the last
-/// trace of it from the worktree.
-fn patch_registry_local_runtime_root(registry_path: &Path) -> std::io::Result<()> {
-    if !registry_path.exists() {
-        return Ok(());
-    }
-    let text = std::fs::read_to_string(registry_path)?;
-    let mut registry: serde_json::Value = serde_json::from_str(&text)
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-    let project_dir = registry_path.parent().unwrap_or_else(|| Path::new("."));
-    let local_runtime = project_dir.join("runtime");
-    let local = local_runtime.to_string_lossy().replace('\\', "\\\\");
-    let registry_obj = registry.as_object_mut().ok_or_else(|| {
-        std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "registry is not a JSON object",
-        )
-    })?;
-    let already_local = registry_obj
-        .get("common_runtime_root")
-        .and_then(serde_json::Value::as_str)
-        .map(|current| Path::new(current) == local_runtime)
-        .unwrap_or(false);
-    if !already_local {
-        registry_obj.insert(
-            "common_runtime_root".to_string(),
-            serde_json::Value::String(local),
-        );
-    }
-    // Re-point each goal's state_file from the legacy `.codex/goals/...` path
-    // to the project-local `.loopx/goals/...` path, copying the file over so
-    // the goal stays readable at its new location.
-    if let Some(goals) = registry_obj
-        .get_mut("goals")
-        .and_then(serde_json::Value::as_array_mut)
-    {
-        for goal in goals.iter_mut() {
-            let goal_obj = match goal.as_object_mut() {
-                Some(goal_obj) => goal_obj,
-                None => continue,
-            };
-            let goal_id = match goal_obj.get("id").and_then(serde_json::Value::as_str) {
-                Some(goal_id) => goal_id,
-                None => continue,
-            };
-            let state_file = match goal_obj
-                .get("state_file")
-                .and_then(serde_json::Value::as_str)
-            {
-                Some(state_file) => state_file,
-                None => continue,
-            };
-            let state_path = Path::new(state_file);
-            let is_legacy_codex_path = state_path
-                .components()
-                .any(|component| component.as_os_str() == ".codex");
-            if !is_legacy_codex_path {
-                continue;
-            }
-            let new_state = project_dir
-                .join(".loopx")
-                .join("goals")
-                .join(goal_id)
-                .join("ACTIVE_GOAL_STATE.md");
-            let new_state_escaped = new_state.to_string_lossy().replace('\\', "\\\\");
-            if let Some(parent) = new_state.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            let source_abs = if state_path.is_absolute() {
-                state_path.to_path_buf()
-            } else {
-                project_dir.join(state_path)
-            };
-            if source_abs.exists() {
-                let _ = std::fs::copy(&source_abs, &new_state);
-            }
-            goal_obj.insert(
-                "state_file".to_string(),
-                serde_json::Value::String(new_state_escaped),
-            );
-        }
-    }
-    let rewritten = serde_json::to_string_pretty(&registry)
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
-    std::fs::write(registry_path, rewritten)?;
-    // Safety net: some commands merge against `<runtime>/registry.global.json`
-    // (the shared registry projected into the local runtime root). If it is
-    // missing (e.g. an older goal created before this fix), create an empty
-    // one so later commands do not fail with "global registry does not exist".
-    let global_registry = local_runtime.join("registry.global.json");
-    if !global_registry.exists() {
-        if let Some(parent) = global_registry.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let _ = std::fs::write(&global_registry, "{}\n");
-    }
-    Ok(())
-}
-
 fn list_todos_args(goal_id: &str) -> Vec<OsString> {
     ["todo", "list", "--goal-id", goal_id]
         .into_iter()
@@ -3656,26 +3412,62 @@ fn add_todo_args(
     Ok(args.into_iter().map(OsString::from).collect())
 }
 
-fn turn_plan_args(goal_id: &str, agent_id: &str, turn_id: Option<&str>) -> Vec<OsString> {
-    let mut args = vec![
-        "turn".to_string(),
-        "plan".to_string(),
-        "--goal-id".to_string(),
-        goal_id.to_string(),
-        "--agent-id".to_string(),
-        agent_id.to_string(),
-        "--host".to_string(),
-        "generic-cli".to_string(),
-        "--execution-mode".to_string(),
-        "isolated-headless".to_string(),
-        "--scheduler-owner".to_string(),
-        "outer_controller".to_string(),
-        "--include-transaction-detail".to_string(),
-    ];
-    if let Some(turn_id) = turn_id {
-        args.extend(["--turn-instance-id".to_string(), turn_id.to_string()]);
+/// Read-only continuation probe over the live quota decision, rendered as
+/// the turn envelope. This is the same surface LoopX's own host adapters use
+/// for continuation (`pi_goal_mode` runs `quota should-run` on every idle
+/// tick), and unlike `turn plan` it has no 8192-byte envelope-budget gate: a
+/// goal whose compacted envelope is over budget still projects
+/// should_run/selected todo/user gates, so the host keeps driving instead of
+/// stranding the task. No turn identity is passed, so the probe never mints
+/// or mutates a heartbeat receipt. Capabilities are included to keep the
+/// projected decision identical to the execution gate's.
+fn quota_probe_args(
+    goal_id: &str,
+    agent_id: &str,
+    capabilities: &[String],
+    operation_id: &str,
+) -> loopx_contract::LoopxCliResult<Vec<OsString>> {
+    let mut args: Vec<OsString> = [
+        "quota",
+        "should-run",
+        "--goal-id",
+        goal_id,
+        "--agent-id",
+        agent_id,
+        "--runtime-profile",
+        "outer_controller",
+        "--turn-envelope",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    extend_available_capability_args(&mut args, capabilities, operation_id)?;
+    Ok(args)
+}
+
+/// v1.0.x: when the pinned CLI's TypeScript envelope renderer returns a typed
+/// rejection, `quota should-run --turn-envelope` degrades to the bare
+/// decision payload with a `turn_envelope_skipped` reason instead of crashing
+/// (upstream issue #3687). That payload has no envelope view, so no
+/// continuation decision can be projected from it. Fail loudly with the skip
+/// reason instead of a generic schema error.
+fn require_envelope_rendered(
+    payload: &Value,
+    operation_id: &str,
+) -> loopx_contract::LoopxCliResult<()> {
+    if let Some(skip_reason) = payload
+        .get("turn_envelope_skipped")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+    {
+        return Err(port_error(
+            loopx_contract::LoopxCliErrorKind::SchemaMismatch,
+            operation_id,
+            format!("LoopX could not render the turn envelope for this goal state: {skip_reason}"),
+            false,
+        ));
     }
-    args.into_iter().map(OsString::from).collect()
+    Ok(())
 }
 
 fn quota_guard_args(
@@ -3784,9 +3576,10 @@ mod node_runtime_tests {
 mod custom_runner_contract_tests {
     use super::{
         answer_gate_args, compact_objective, loopx_contract, matching_durable_progress,
-        metadata_state, plan_item_args, planned_settlement_token, project_goal_snapshot,
-        quota_guard_args, render_agent_reentry_instruction, LoopxCommandSource, SettlementBinding,
-        VerifiedLoopxCommand,
+        metadata_state, plan_item_args, planned_settlement_binding, planned_settlement_token,
+        project_goal_snapshot, quota_guard_args, quota_probe_args,
+        render_agent_reentry_instruction, semantic_replan_obligation_id, LoopxCommandSource,
+        SettlementBinding, VerifiedLoopxCommand,
     };
     use openbitfun_product_domains::miniapp::loopx::{
         LoopxCliPlanItemRequest, LoopxIssueKey, LoopxItemKind, LoopxRemoteItemState,
@@ -3828,6 +3621,156 @@ mod custom_runner_contract_tests {
         assert_eq!(payload["labels"], json!(["bug", "needs-repro"]));
         assert_eq!(payload["number"], 42);
         assert_eq!(payload["kind"], "issue");
+    }
+
+    #[test]
+    fn settlement_binding_follows_the_replan_settlement_contract_first() {
+        // Root-cause regression (live 2026-09-09): a goal carrying an open
+        // semantic replan obligation AND a selected todo settles through the
+        // TODO binding (loopx `projectReplanSettlementContract`,
+        // `todo_bound_writeback`). The old derivation keyed on the obligation
+        // alone and expected the autonomous_replan effect id, so every such
+        // turn settled as NoDurableProgress even though the writeback and
+        // spend validated todo-bound on the server.
+        let payload = json!({
+            "writeback": {
+                "replan_settlement_contract": {
+                    "settlement_binding": {
+                        "kind": "todo",
+                        "id": "todo_impl",
+                        "cli_argument": "--todo-id"
+                    },
+                    "semantic_obligation": {
+                        "kind": "autonomous_replan",
+                        "id": "replan-open",
+                        "settlement_bound": false,
+                        "discharge": "todo_bound_writeback"
+                    }
+                }
+            },
+            "action": {"selected_todo": {"todo_id": "todo_impl"}},
+            "replan_action_packet": {"obligation_id": "replan-open"}
+        });
+        assert_eq!(
+            planned_settlement_binding(&payload),
+            Some(SettlementBinding::Todo {
+                todo_id: "todo_impl".to_string()
+            })
+        );
+        // The obligation still shapes the writeback flavor while the
+        // settlement records through the todo.
+        assert_eq!(
+            semantic_replan_obligation_id(&payload).as_deref(),
+            Some("replan-open")
+        );
+        // The settlement token must be the todo-bound effect id.
+        let token = planned_settlement_token(&payload, "goal-1", "agent-1", "turn-1", "op-1")
+            .expect("settlement token");
+        assert_eq!(token, "goal-1:agent-1:todo_impl:turn-1");
+    }
+
+    #[test]
+    fn settlement_binding_falls_back_to_selected_todo_then_obligation() {
+        // No typed contract: the selected todo wins before the obligation.
+        let with_todo = json!({
+            "action": {"selected_todo": {"todo_id": "todo_a"}},
+            "replan_action_packet": {"obligation_id": "replan-x"}
+        });
+        assert_eq!(
+            planned_settlement_binding(&with_todo),
+            Some(SettlementBinding::Todo {
+                todo_id: "todo_a".to_string()
+            })
+        );
+        // Todo-less frontier settles through the obligation.
+        let obligation_only = json!({
+            "action": {"selected_todo": null},
+            "replan_action_packet": {"obligation_id": "replan-y"}
+        });
+        assert_eq!(
+            planned_settlement_binding(&obligation_only),
+            Some(SettlementBinding::AutonomousReplan {
+                obligation_id: "replan-y".to_string()
+            })
+        );
+        // Direct autonomous_replan contract wins over a selected todo.
+        let direct = json!({
+            "writeback": {
+                "replan_settlement_contract": {
+                    "settlement_binding": {
+                        "kind": "autonomous_replan",
+                        "id": "replan-z"
+                    }
+                }
+            },
+            "action": {"selected_todo": {"todo_id": "todo_b"}}
+        });
+        assert_eq!(
+            planned_settlement_binding(&direct),
+            Some(SettlementBinding::AutonomousReplan {
+                obligation_id: "replan-z".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn quota_probe_is_read_only_and_carries_capabilities() {
+        // The continuation probe must never mint a heartbeat receipt: no
+        // --turn-instance-id and no --todo-id, unlike the execution guard.
+        let args = quota_probe_args(
+            "goal-1",
+            "agent-1",
+            &["shell".to_string(), "network".to_string()],
+            "op-1",
+        )
+        .expect("probe args");
+        let text: Vec<String> = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            text[..6],
+            [
+                "quota",
+                "should-run",
+                "--goal-id",
+                "goal-1",
+                "--agent-id",
+                "agent-1"
+            ]
+        );
+        assert!(text.contains(&"--runtime-profile".to_string()));
+        assert!(text.contains(&"outer_controller".to_string()));
+        assert!(text.contains(&"--turn-envelope".to_string()));
+        assert!(!text.contains(&"--turn-instance-id".to_string()));
+        assert!(!text.contains(&"--todo-id".to_string()));
+        assert!(text
+            .windows(2)
+            .any(|w| w == ["--available-capability".to_string(), "shell".to_string()]));
+    }
+
+    #[test]
+    fn guard_args_bind_the_todo_for_action_selection() {
+        // Two-phase action selection: the binding re-run carries --todo-id
+        // plus the SAME turn identity, matching the loopx receipt contract.
+        let args = quota_guard_args(
+            "goal-1",
+            "agent-1",
+            Some(&SettlementBinding::Todo {
+                todo_id: "todo_pick".to_string(),
+            }),
+            "turn-9",
+        );
+        let text: Vec<String> = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        assert!(text
+            .windows(2)
+            .any(|w| w == ["--todo-id".to_string(), "todo_pick".to_string()]));
+        assert!(text
+            .windows(2)
+            .any(|w| w == ["--turn-instance-id".to_string(), "turn-9".to_string()]));
     }
 
     #[test]
@@ -3913,6 +3856,7 @@ mod custom_runner_contract_tests {
             ".loopx/registry.json",
             "turn-1",
             Some(&binding),
+            None,
             &["filesystem_read".to_string(), "shell".to_string()],
             "build-turn",
         )
@@ -3994,6 +3938,7 @@ mod custom_runner_contract_tests {
             ".loopx/registry.json",
             "turn-1",
             Some(&binding),
+            Some("replan-1"),
             &["shell".to_string()],
             "build-turn",
         )
@@ -4027,8 +3972,8 @@ mod custom_runner_contract_tests {
     fn selected_todo_builds_the_exact_settlement_effect_identity() {
         let token = planned_settlement_token(
             &json!({
-                "route": {"selected_todo": {"todo_id": "todo-1"}},
-                "transaction": {"turn_key": "sha256:legacy"}
+                "schema_version": "loopx_turn_envelope_v0",
+                "action": {"selected_todo": {"todo_id": "todo-1"}}
             }),
             "goal-1",
             "agent-1",
@@ -4041,17 +3986,12 @@ mod custom_runner_contract_tests {
     }
 
     #[test]
-    fn replan_route_builds_the_autonomous_replan_effect_identity() {
+    fn todo_less_replan_frontier_builds_the_autonomous_replan_effect_identity() {
         let token = planned_settlement_token(
             &json!({
-                "route": {
-                    "kind": "replan_required",
-                    "selected_todo": {"todo_id": "todo-1"}
-                },
-                "turn_envelope": {
-                    "replan_action_packet": {"obligation_id": "replan-1"}
-                },
-                "transaction": {"turn_key": "sha256:legacy"}
+                "schema_version": "loopx_turn_envelope_v0",
+                "action": {"selected_todo": null},
+                "replan_action_packet": {"obligation_id": "replan-1"}
             }),
             "goal-1",
             "agent-1",
@@ -4525,15 +4465,8 @@ fn project_goal_snapshot(
     operation_id: &str,
 ) -> loopx_contract::LoopxCliResult<loopx_contract::LoopxCliGoalSnapshot> {
     require_payload_ok(payload, operation_id)?;
-    require_schema(payload, "loopx_turn_plan_v0", operation_id)?;
-    let envelope = payload.get("turn_envelope").ok_or_else(|| {
-        port_error(
-            loopx_contract::LoopxCliErrorKind::SchemaMismatch,
-            operation_id,
-            "turn plan did not contain turn_envelope",
-            false,
-        )
-    })?;
+    require_envelope_rendered(payload, operation_id)?;
+    let envelope = turn_envelope(payload, operation_id)?;
     let should_run = envelope.get("should_run").and_then(Value::as_bool) == Some(true);
     let user_action_required = envelope
         .pointer("/user/action_required")
@@ -4548,15 +4481,10 @@ fn project_goal_snapshot(
         .get("effective_action")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let control_status = payload
-        .get("status")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
     let operator_gate_notify = matches!(
         effective_action,
         "operator_gate" | "operator_gate_notify" | "waiting_for_user"
-    ) || matches!(state_text, "operator_gate" | "operator_gate_notify")
-        || control_status == "operator_gate_notify";
+    ) || matches!(state_text, "operator_gate" | "operator_gate_notify");
     let run_decision = if should_run {
         loopx_contract::LoopxCliRunDecision::RunNow
     } else if user_action_required || operator_gate_notify {
@@ -4595,7 +4523,7 @@ fn project_goal_snapshot(
         state,
         durable_revision: extract_durable_revision(payload, operation_id)?,
         run_decision,
-        scheduler_hint_ms: scheduler_hint_ms(payload),
+        scheduler_cadence: scheduler_cadence(payload),
         open_todo_count: envelope
             .get("open_count")
             .and_then(Value::as_u64)
@@ -4726,16 +4654,23 @@ fn stable_turn_id(request: &loopx_contract::LoopxCliBuildTurnRequest) -> String 
     format!("bitfun-{}", &digest[..32])
 }
 
-fn scheduler_hint_ms(payload: &Value) -> Option<u64> {
+/// Cadence class the compacted v1.0.x turn envelope projects for this
+/// decision (`scheduler.cadence_class`). The envelope deliberately omits
+/// numeric intervals, so the host maps this label onto the pinned scheduler's
+/// own initial interval when no explicit numeric hint is present.
+fn scheduler_cadence(payload: &Value) -> Option<String> {
     [
-        "/scheduler/hint_ms",
-        "/scheduler/next_poll_ms",
-        "/turn_envelope/scheduler/hint_ms",
-        "/turn_envelope/scheduler/next_poll_ms",
-        "/scheduler_hint_ms",
+        "/turn_envelope/scheduler/cadence_class",
+        "/scheduler/cadence_class",
     ]
     .into_iter()
-    .find_map(|pointer| payload.pointer(pointer).and_then(Value::as_u64))
+    .find_map(|pointer| {
+        payload
+            .pointer(pointer)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
 }
 
 fn require_payload_ok(payload: &Value, operation_id: &str) -> loopx_contract::LoopxCliResult<()> {

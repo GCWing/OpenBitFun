@@ -471,10 +471,12 @@ pub fn task_summary_resolves_upstream(summary: Option<&str>) -> bool {
 /// external event the agent cannot advance itself (PR merge readiness, PR
 /// state watches, continuous monitoring). Covers `continuous_monitor`, the
 /// `*_monitor` family, and the `issue_fix_track_*` merge-readiness trackers.
-/// The host holds monitor re-checks back with the compatibility cadence
-/// instead of driving back-to-back turns, and the MiniApp UI projects the
-/// "PR monitor waiting" state with the same rule (`isMonitorTodo` in the
-/// bitfun-loopx UI); keep the two in sync.
+/// The MiniApp UI projects the "PR monitor waiting" state with this rule
+/// (`isMonitorTodo` in the bitfun-loopx UI); keep the two in sync. The
+/// controller itself does NOT pace monitor re-checks with it: the pinned
+/// v1.0.x runtime owns the monitor cadence (`monitor_due` only when
+/// `next_due_at` has passed, unchanged writebacks must advance the
+/// schedule), so the host follows the LoopX projection as-is.
 pub fn is_loopx_monitor_action(action_kind: &str) -> bool {
     let kind = action_kind.trim();
     !kind.is_empty() && (kind.ends_with("_monitor") || kind.starts_with("issue_fix_track_"))

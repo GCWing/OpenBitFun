@@ -81,9 +81,17 @@ slices that are outside pure product logic but still platform-neutral.
   writes, marker IO, storage/import bundle filesystem IO, and JS worker process/pool
   lifecycle. Manager workflow orchestration remains outside this crate until
   reviewed owner migration.
-- LoopX v0.5.1 `turn plan --include-transaction-detail` is a prospective plan,
-  not a completed-receipt query. External-host settlement must verify the
-  exact goal/agent/Todo/turn identity through the supported compact `history`
+- LoopX continuation inspections probe the live `quota should-run
+  --turn-envelope` decision (codex/pi host parity), never `turn plan`: the
+  quota decision has no 8192-byte envelope-budget gate and keeps projecting
+  should_run/selected todo past it, while `turn plan` degrades to
+  `contract_error` and strands the goal. Probes carry no turn identity so
+  they never mint a heartbeat receipt. The settlement binding derives from
+  the envelope's `replan_settlement_contract` (receipt parity): a replan
+  obligation with a selected todo settles through the TODO
+  (`todo_bound_writeback`), and only a todo-less frontier settles through the
+  obligation. External-host settlement must verify the exact
+  goal/agent/Todo/turn identity through the supported compact `history`
   projection and require both typed `validated_progress` and the matching
   `quota_slot_spent` event. A legacy `validated_progress` without
   `progress_observation` is accountable only when it carries an explicit

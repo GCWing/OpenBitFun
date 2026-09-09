@@ -677,10 +677,15 @@ pub async fn run() {
     ));
 
     let loopx_resource_dir = api::app_state::resolve_bundled_loopx_dir();
+    // Derived from the pinned version tag so a pin bump can never leave the
+    // adapter looking at a stale managed-source directory.
     let managed_loopx_source_dir = path_manager
         .miniapp_dir(openbitfun_product_domains::miniapp::loopx::LOOPX_BUILTIN_APP_ID)
         .join("runtime")
-        .join("loopx-source-v0.5.1");
+        .join(format!(
+            "loopx-source-{}",
+            openbitfun_services_integrations::miniapp::loopx_cli::LOOPX_PINNED_VERSION_TAG
+        ));
     let mut loopx_cli_config =
         openbitfun_services_integrations::miniapp::loopx_cli::LoopxCliAdapterConfig::packaged(
             loopx_resource_dir.clone().unwrap_or_else(|| {

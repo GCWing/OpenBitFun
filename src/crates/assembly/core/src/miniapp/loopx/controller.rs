@@ -15,19 +15,12 @@ const MAX_INTAKE_PREVIEWS: usize = 64;
 const MAX_AGENT_SUMMARY_CHARS: usize = 16_000;
 const GOAL_RECONCILE_TTL_MS: i64 = 30_000;
 const GOAL_RECONCILE_DEADLINE_MS: i64 = 30_000;
-/// LoopX 0.5.1 exposes only cadence labels for the outer-controller profile,
-/// so the host supplies the concrete wait interval for waiting goals.
-const WAIT_RESCHEDULE_FALLBACK_MS: u64 = 60_000;
-/// Minimum spacing between consecutive monitor-class re-check turns for one
-/// goal. The pinned LoopX v0.5.1 envelope carries no numeric monitor_wait
-/// cadence, so a freshly created successor tracking todo is immediately
-/// `RunNow`; without this floor the host would drive back-to-back re-check
-/// turns that re-verify an external state that cannot have changed. The
-/// anchor is the goal's last durable settlement time, not a new host counter.
-/// Matches the documented upstream monitor_wait host floor (15 minutes);
-/// numeric scheduler hints from a newer pin still take priority through the
-/// `Wait` branch's `scheduler_hint_ms` path.
-const MONITOR_COMPAT_INTERVAL_MS: u64 = 15 * 60 * 1000;
+/// Default requeue delay for a waiting goal when the envelope projects no
+/// cadence label at all (degraded or salvaged snapshots). Bounded so a task
+/// can never sleep forever, but far above LoopX's own minimum cadence
+/// (`active_work` wakes after 3 minutes) so an unlabeled wait never becomes a
+/// hot poll of the control plane.
+const WAIT_RESCHEDULE_FALLBACK_MS: u64 = 5 * 60 * 1000;
 /// Backoff before re-driving after a retryable turn-build conflict.
 const TURN_CONFLICT_RETRY_MS: u64 = 5_000;
 
@@ -44,10 +37,10 @@ const LOOPX_DURABLE_COMPENSATION_NOTE: &str = "The previous turn finished, but L
 /// source checkouts elsewhere on the machine (any tree containing
 /// `loopx/pyproject.toml`, a `loopx/capabilities/` layout, and so on); those
 /// trees can be a different version than the pinned runtime, so treating them
-/// as documentation derails the turn (observed as a LoopX 0.5.3 checkout
-/// steering a turn executed by the pinned 0.5.1 CLI, including a hallucinated
-/// capability path retried over a hundred times). The runtime must work
-/// identically whether or not such a checkout exists.
+/// as documentation derails the turn (observed live as a different-version
+/// LoopX checkout steering a turn executed by the pinned CLI, including a
+/// hallucinated capability path retried over a hundred times). The runtime
+/// must work identically whether or not such a checkout exists.
 const LOOPX_AGENT_ENVIRONMENT_BOUNDARY_NOTE: &str = "\n\n---\n[BitFun environment boundary] The LoopX runtime on this machine is the CLI binary provided by the BitFun host at a pinned version; it is the only authoritative source for LoopX behavior, commands, flags, and schemas. Consult `loopx --help`, the help of the exact subcommand, or artifacts inside the goal workspace instead. Do not read, grep, or follow any LoopX source checkout on this machine (for example any directory containing `loopx/pyproject.toml`, a `loopx/capabilities/` tree, or a similar source layout): such trees may be a different version than the pinned runtime and are not documentation. Do not load, read, or follow any `loopx` or `loopx-*` entries from your skill catalog or from user-level skill directories (`~/.codex/skills`, `~/.agents/skills`): other LoopX installations of a different version may have placed them there, and the authoritative LoopX workflow documents for this task are ONLY the pinned files under this worktree's `.loopx/` directory that this instruction names - when a LoopX document tells you to load another `loopx-*` skill, read the matching seeded `.loopx/` file instead of resolving the skill name through the catalog. Never install, update, self-update, or repair the LoopX installation (for example `loopx update`, `loopx self-repair` install flows, `scripts/install-local.sh`, or `scripts/install-windows.ps1`): the BitFun host owns the pinned binary, and installation repair is a host concern, never a task action. GitHub EXTERNAL WRITES are owner-gated: do NOT run `git push` to a remote, `gh pr create`, `gh issue comment`, `gh pr merge/close`, or any other GitHub write unless this turn's contract explicitly carries that approval. LoopX plans external writes behind a user gate (`requires_user_gate_before_external_write`); a todo's text (for example \"open a PR\") is a plan description, NOT an authorization. Prepare the branch and local validation, record the publish recommendation in your report, and stop - the owner approves publication from the host UI. GitHub reads stay allowed, but use the `gh` CLI for ALL GitHub data (issues, PRs, comments, releases): direct WebFetch calls to github.com / api.github.com are rejected with HTTP 403 (observed repeatedly). If a file path you assumed does not exist, do not retry the same path; re-derive it from CLI help output or goal-workspace artifacts.";
 
 /// Host-side compensation for the pinned sidecar: the pinned LoopX CLI does
@@ -57,7 +50,7 @@ const LOOPX_AGENT_ENVIRONMENT_BOUNDARY_NOTE: &str = "\n\n---\n[BitFun environmen
 /// per session instead of the host reverse-engineering commands.
 const LOOPX_PINNED_CLI_REFERENCE: &str = include_str!("resources/loopx-pinned-cli-reference.md");
 
-/// Verbatim LoopX workflow-skill documents from the pinned v0.5.1 source
+/// Verbatim LoopX workflow-skill documents from the pinned v1.0.1 source
 /// (`skills/loopx-project/SKILL.md` + `skills/loopx-self-repair/SKILL.md`).
 /// This is the same first-party documentation a LoopX-style agent host (e.g.
 /// the codex path) loads at session start - it is the ROOT-CAUSE fix for the
@@ -85,7 +78,7 @@ const LOOPX_PINNED_SKILL_CHANGE_QUALITY: &str =
     include_str!("resources/pinned-skill-loopx-change-quality.md");
 
 /// Closing-ceremony order gleaned from live guard rejections on the pinned
-/// v0.5.1 (observed 2026-09-07): a terminal no-follow-up completion request is
+/// CLI (observed 2026-09-07): a terminal no-follow-up completion request is
 /// rejected with a typed refusal unless an accountable durable writeback and
 /// the quota-spend receipt already exist, and the guard demanded the sequence
 /// refresh-state -> quota spend-slot -> terminal. Minimal host facts for the
@@ -1374,13 +1367,12 @@ impl LoopxController {
             .await;
         match &result {
             Ok(settlement) => log::info!(
-                "LoopX turn settlement completed: task_id={}, goal_id={}, loopx_turn_id={}, status={:?}, duration_ms={}, scheduler_hint_ms={:?}",
+                "LoopX turn settlement completed: task_id={}, goal_id={}, loopx_turn_id={}, status={:?}, duration_ms={}",
                 task.task_id,
                 task.goal_id.as_deref().unwrap_or("unknown"),
                 settlement.turn_id,
                 settlement.status,
                 settlement_started.elapsed().as_millis(),
-                settlement.scheduler_hint_ms
             ),
             Err(error) => log::warn!(
                 "LoopX turn settlement failed: task_id={}, goal_id={}, duration_ms={}, error={}",
@@ -1676,7 +1668,7 @@ impl LoopxController {
         self.record_progress(progress.take()).await?;
         let selected = inspected.selected_todo.as_ref();
         log::info!(
-            "LoopX inspect goal: task_id={} goal={} decision={:?} state={:?} open_todos={} waiting_user={} selected_todo={} selected_kind={} claimed_by={} revision={} hint_ms={:?} over_budget={}",
+            "LoopX inspect goal: task_id={} goal={} decision={:?} state={:?} open_todos={} waiting_user={} selected_todo={} selected_kind={} claimed_by={} revision={} cadence={} over_budget={}",
             task.task_id,
             inspected.goal_id,
             inspected.run_decision,
@@ -1687,7 +1679,7 @@ impl LoopxController {
             selected.map(|t| t.action_kind.as_str()).unwrap_or("-"),
             selected.map(|t| t.claimed_by.as_str()).unwrap_or("-"),
             inspected.durable_revision,
-            inspected.scheduler_hint_ms,
+            inspected.scheduler_cadence.as_deref().unwrap_or("-"),
             inspected.envelope_over_budget,
         );
         self.record_goal_state(&task, inspected.state).await?;
@@ -1713,13 +1705,15 @@ impl LoopxController {
                     Some(&task_id),
                 )
                 .await;
-                // loopx 0.5.1 never emits a numeric scheduler hint, and a
-                // waiting goal with no requeue would sleep forever. The host
-                // owns the heartbeat cadence: honor an explicit hint when one
-                // exists, otherwise fall back to a bounded polling interval.
-                let delay = inspected
-                    .scheduler_hint_ms
-                    .unwrap_or(WAIT_RESCHEDULE_FALLBACK_MS);
+                // The compacted v1.0.x envelope deliberately carries only
+                // cadence labels, not numeric intervals (those live in the
+                // quota decision detail), so the host owns translating the
+                // label into a concrete requeue delay: an explicit numeric
+                // hint wins when a future pin emits one, otherwise the
+                // cadence class maps onto the pinned scheduler's own initial
+                // interval, and a label-less snapshot falls back to a bounded
+                // poll that can never sleep forever.
+                let delay = wait_requeue_delay_ms(&inspected);
                 log::info!(
                     "LoopX wait requeue: task_id={} goal={} delay_ms={}",
                     task_id,
@@ -1730,135 +1724,8 @@ impl LoopxController {
                 Ok(())
             }
             LoopxCliRunDecision::WaitingForUser => {
-                let Some(gate) = inspected.pending_user_gate else {
-                    // Owner action outside the host (live 2026-09-08, issue 2:
-                    // the agent opened PR #4 and LoopX projected the owner
-                    // review/merge queue as an open user todo without a typed
-                    // user_gate). The old behavior failed the whole inspection
-                    // and parked a fully finished task as recovery_required.
-                    // Park as waiting instead: no approval card, the owner
-                    // acts on the external surface, the slot yields.
-                    return self
-                        .park_waiting_owner_action(&task, inspected.waiting_user_summary.as_deref())
-                        .await;
-                };
-                if is_read_only_user_gate(gate.action_kind.as_deref()) {
-                    match self
-                        .auto_answer_gate(
-                            &task,
-                            &runtime,
-                            &gate,
-                            LoopxCliGateDecision::Approve,
-                            "Auto-approved by BitFun: read-only public issue metadata access."
-                                .to_string(),
-                            format!(
-                                "Read-only user gate auto-approved by BitFun: {}",
-                                gate.message
-                            ),
-                        )
-                        .await
-                    {
-                        Ok(()) => return Ok(()),
-                        Err(error) => {
-                            // Interactive approval stays available as the
-                            // fallback when the automatic answer fails.
-                            log::warn!(
-                                "LoopX read-only gate auto-approval failed, falling back to interactive approval: task_id={} gate={} error={}",
-                                task.task_id,
-                                gate.gate_id,
-                                error
-                            );
-                        }
-                    }
-                }
-                if is_reuse_merge_user_gate(gate.action_kind.as_deref(), &gate.message) {
-                    let repository = task.identity.item.repository.clone();
-                    match self
-                        .cli
-                        .viewer_merge_authority(&self.goal_context(&task, &runtime), &repository)
-                        .await
-                    {
-                        // Authority confirmed or unknown: leave the decision
-                        // to the owner.
-                        Ok(Some(true)) | Ok(None) => {}
-                        Ok(Some(false)) => {
-                            let pr_label = reuse_merge_pr_label(&gate.message);
-                            match self
-                                .auto_answer_gate(
-                                    &task,
-                                    &runtime,
-                                    &gate,
-                                    LoopxCliGateDecision::Reject,
-                                    format!(
-                                        "Auto-rejected by BitFun: the authenticated GitHub identity has no merge authority for {}; the agent must propose an alternative route (track the upstream PR, or an independent patch).",
-                                        repository.label()
-                                    ),
-                                    format!(
-                                        "Merge gate auto-rejected: no merge authority for {} ({}); the agent will need an alternative route",
-                                        repository.label(),
-                                        pr_label
-                                    ),
-                                )
-                                .await
-                            {
-                                Ok(()) => return Ok(()),
-                                Err(error) => log::warn!(
-                                    "LoopX merge-gate auto-reject failed, falling back to interactive: task_id={} gate={} error={}",
-                                    task.task_id,
-                                    gate.gate_id,
-                                    error
-                                ),
-                            }
-                        }
-                        Err(error) => {
-                            log::warn!(
-                                "LoopX merge authority probe failed, surfacing gate interactively: task_id={} gate={} error={}",
-                                task.task_id,
-                                gate.gate_id,
-                                error
-                            );
-                        }
-                    }
-                }
-                let LoopxCliUserGate {
-                    gate_id,
-                    message,
-                    action_kind,
-                } = gate;
-                let durable_revision = inspected.durable_revision.clone();
-                let updated = self
-                    .mutate_task(&task_id, None, |current, current_runtime| {
-                        if current.generation != task.generation {
-                            return;
-                        }
-                        current.state = LoopxTaskState::WaitingForUser;
-                        current.phase = LoopxPhase::WaitingForApproval;
-                        current.pending_gate_id = Some(gate_id.clone());
-                        current.pending_gate_message = Some(message.clone());
-                        current.pending_gate_action_kind = action_kind.clone();
-                        current.revision = current.revision.saturating_add(1);
-                        current_runtime.expected_durable_revision = Some(durable_revision.clone());
-                    })
-                    .await?;
-                let mut details = BTreeMap::new();
-                details.insert("gateId".to_string(), gate_id.clone());
-                if let Some(action_kind) = action_kind.clone() {
-                    details.insert("actionKind".to_string(), action_kind);
-                }
-                self.append_task_event_with_details(
-                    &updated,
-                    LoopxEventKind::ApprovalRequired,
-                    &message,
-                    true,
-                    details,
-                )
-                .await?;
-                self.schedule_next_for_repository(
-                    &task.identity.item.repository.canonical_id(),
-                    Some(&task_id),
-                )
-                .await;
-                Ok(())
+                self.waiting_user_frontier(&task, &runtime, &inspected)
+                    .await
             }
             LoopxCliRunDecision::Complete => {
                 return self
@@ -1873,13 +1740,12 @@ impl LoopxController {
                 self.sync_concurrent_user_gate(&task, inspected.pending_user_gate.as_ref())
                     .await?;
                 // The contradiction witness is the envelope's own action
-                // projection, not the `open_count` scalar: in the pinned
-                // v0.5.1 outer-controller payload that counter comes from the
-                // agent-claim-scoped hot-lane summary and can legitimately be
-                // zero while `action.selected_todo` still names an open,
-                // claimed todo. Only refuse when the envelope itself asserts
-                // there is nothing to do; `quota should-run --turn-envelope`
-                // remains the authoritative execution gate either way.
+                // projection, not the `open_count` scalar: the counter is a
+                // claim-scoped summary that can legitimately be zero while
+                // `action.selected_todo` still names an open, claimed todo.
+                // Only refuse when the envelope itself asserts there is
+                // nothing to do; `quota should-run --turn-envelope` remains
+                // the authoritative execution gate either way.
                 let has_selected_todo = inspected
                     .selected_todo
                     .as_ref()
@@ -1889,9 +1755,10 @@ impl LoopxController {
                     inspected.waiting_user_todo_count,
                     has_selected_todo,
                 ) {
-                    // Runtime-data correction (2026-09-05 five-issue run): the
-                    // pinned CLI v0.5.1 does NOT treat a todo-less `RunNow`
-                    // frontier as terminal. When every todo is done or blocked
+                    // Runtime-data correction (2026-09-05 five-issue run,
+                    // re-verified against the pinned v1.0.1): the CLI does NOT
+                    // treat a todo-less `RunNow` frontier as terminal. When
+                    // every todo is done or blocked
                     // and the goal vision is still open, it projects
                     // `should_run=true` plus an autonomous replan obligation
                     // and expects the host to drive one bounded replan turn
@@ -1934,26 +1801,40 @@ impl LoopxController {
                         return self.park_plan_exhausted(&task, &inspected.goal_id).await;
                     }
                 }
+                // An over-budget envelope no longer gates driving: the
+                // continuation authority is the live quota decision (see
+                // `quota_probe_args`), which keeps projecting should_run and
+                // the selected todo past the 8192-byte compaction budget.
+                // The flag stays informational for telemetry.
                 if inspected.envelope_over_budget {
-                    let message = "LoopX turn envelope exceeded its compaction budget (route contract_error); the Goal durable state for this Issue must shrink before work can resume. BitFun keeps the task queued and retries with backoff.";
-                    let updated = self
-                        .transition_task(
-                            &task_id,
-                            task.generation,
-                            LoopxTaskState::Queued,
-                            LoopxPhase::Queued,
-                            message,
-                        )
-                        .await?;
-                    self.append_task_event(&updated, LoopxEventKind::StateChanged, message, true)
-                        .await?;
-                    self.schedule_next_for_repository(
-                        &updated.identity.item.repository.canonical_id(),
-                        Some(&updated.task_id),
-                    )
-                    .await;
-                    self.enqueue_task(task_id, Duration::from_millis(WAIT_RESCHEDULE_FALLBACK_MS))?;
-                    return Ok(());
+                    log::warn!(
+                        "LoopX turn envelope is over the compaction budget; continuing from the quota decision: task_id={} goal={}",
+                        task.task_id,
+                        inspected.goal_id,
+                    );
+                }
+                // User-gated frontier (live 2026-09-09, issue 3): the envelope
+                // projects should_run=true through the `agent_with_user_gate`
+                // fallback (the agent is asked to surface the owner decision),
+                // but no agent work item remains - no selected todo and no
+                // replan obligation, so the guard correctly refuses a
+                // settlement binding and a turn cannot be built. The BitFun
+                // UI already surfaces the gate, so driving a model turn just
+                // to repeat the request is waste: park as waiting for the
+                // owner instead of failing the task.
+                if inspected.selected_todo.is_none()
+                    && inspected.pending_replan_obligation_id.is_none()
+                    && inspected.waiting_user_todo_count > 0
+                {
+                    log::info!(
+                        "LoopX frontier is user-gated with no agent work item; parking for the owner decision: task_id={} goal={} waiting_user={}",
+                        task.task_id,
+                        inspected.goal_id,
+                        inspected.waiting_user_todo_count,
+                    );
+                    return self
+                        .waiting_user_frontier(&task, &runtime, &inspected)
+                        .await;
                 }
                 if task.state == LoopxTaskState::RecoveryRequired {
                     // Restart-interrupted runs land here; the owner decides
@@ -1961,47 +1842,11 @@ impl LoopxController {
                     // silent, nothing forged, worktree and evidence kept).
                     return Ok(());
                 }
-                if let Some(todo) = inspected.selected_todo.as_ref() {
-                    if is_loopx_monitor_action(&todo.action_kind) {
-                        if let Some(hold_ms) =
-                            monitor_recheck_hold_ms(task.settlement.settled_at, now_ms())
-                        {
-                            // v0.5.1 compatibility cadence: the monitor todo
-                            // is projected RunNow, but the external state it
-                            // watches was verified by the turn that just
-                            // settled. Park the re-check (yielding the
-                            // repository slot to queued sibling issues) and
-                            // re-drive after the remaining interval.
-                            let message = format!(
-                                "LoopX monitor re-check held back by the host compatibility cadence; next re-check in {} seconds",
-                                hold_ms / 1000
-                            );
-                            log::info!(
-                                "LoopX monitor recheck held: task_id={} goal={} action={} hold_ms={}",
-                                task_id,
-                                inspected.goal_id,
-                                todo.action_kind,
-                                hold_ms,
-                            );
-                            let updated = self
-                                .transition_task(
-                                    &task_id,
-                                    task.generation,
-                                    LoopxTaskState::Queued,
-                                    LoopxPhase::Queued,
-                                    &message,
-                                )
-                                .await?;
-                            self.schedule_next_for_repository(
-                                &updated.identity.item.repository.canonical_id(),
-                                Some(&task_id),
-                            )
-                            .await;
-                            self.enqueue_task(task_id, Duration::from_millis(hold_ms))?;
-                            return Ok(());
-                        }
-                    }
-                }
+                // v1.0.1 owns the monitor cadence itself: a monitor todo is
+                // projected RunNow only when its `next_due_at` has passed
+                // (`monitor_due`), and an unchanged monitor writeback is
+                // rejected unless it advances the schedule. The host must not
+                // interpose a second hold clock on top of that decision.
                 let progress = BufferedProgress::default();
                 let built = self
                     .cli
@@ -2126,6 +1971,148 @@ impl LoopxController {
                 self.bind_agent_run(&task, started).await
             }
         }
+    }
+
+    /// Handles a frontier whose next unlock is an owner decision: either a
+    /// typed user gate (approval card, with read-only/reuse-merge
+    /// auto-answers) or an owner action outside the host (external review
+    /// queue). Reached both from the explicit `WaitingForUser` decision and
+    /// from the user-gated `RunNow` fallback that has no agent work item.
+    async fn waiting_user_frontier(
+        self: &Arc<Self>,
+        task: &LoopxTaskSnapshot,
+        runtime: &LoopxTaskRuntimeRecord,
+        inspected: &LoopxCliGoalSnapshot,
+    ) -> Result<(), String> {
+        let task_id = task.task_id.clone();
+        let task_generation = task.generation;
+        let repository_id = task.identity.item.repository.canonical_id();
+        let Some(gate) = inspected.pending_user_gate.clone() else {
+            // Owner action outside the host (live 2026-09-08, issue 2: the
+            // agent opened PR #4 and LoopX projected the owner review/merge
+            // queue as an open user todo without a typed user_gate). Park as
+            // waiting: no approval card, the owner acts on the external
+            // surface, the slot yields.
+            return self
+                .park_waiting_owner_action(task, inspected.waiting_user_summary.as_deref())
+                .await;
+        };
+        if is_read_only_user_gate(gate.action_kind.as_deref()) {
+            match self
+                .auto_answer_gate(
+                    &task,
+                    &runtime,
+                    &gate,
+                    LoopxCliGateDecision::Approve,
+                    "Auto-approved by BitFun: read-only public issue metadata access.".to_string(),
+                    format!(
+                        "Read-only user gate auto-approved by BitFun: {}",
+                        gate.message
+                    ),
+                )
+                .await
+            {
+                Ok(()) => return Ok(()),
+                Err(error) => {
+                    // Interactive approval stays available as the
+                    // fallback when the automatic answer fails.
+                    log::warn!(
+                        "LoopX read-only gate auto-approval failed, falling back to interactive approval: task_id={} gate={} error={}",
+                        task.task_id,
+                        gate.gate_id,
+                        error
+                    );
+                }
+            }
+        }
+        if is_reuse_merge_user_gate(gate.action_kind.as_deref(), &gate.message) {
+            let repository = task.identity.item.repository.clone();
+            match self
+                .cli
+                .viewer_merge_authority(&self.goal_context(&task, &runtime), &repository)
+                .await
+            {
+                // Authority confirmed or unknown: leave the decision
+                // to the owner.
+                Ok(Some(true)) | Ok(None) => {}
+                Ok(Some(false)) => {
+                    let pr_label = reuse_merge_pr_label(&gate.message);
+                    match self
+                        .auto_answer_gate(
+                            &task,
+                            &runtime,
+                            &gate,
+                            LoopxCliGateDecision::Reject,
+                            format!(
+                                "Auto-rejected by BitFun: the authenticated GitHub identity has no merge authority for {}; the agent must propose an alternative route (track the upstream PR, or an independent patch).",
+                                repository.label()
+                            ),
+                            format!(
+                                "Merge gate auto-rejected: no merge authority for {} ({}); the agent will need an alternative route",
+                                repository.label(),
+                                pr_label
+                            ),
+                        )
+                        .await
+                    {
+                        Ok(()) => return Ok(()),
+                        Err(error) => log::warn!(
+                            "LoopX merge-gate auto-reject failed, falling back to interactive: task_id={} gate={} error={}",
+                            task.task_id,
+                            gate.gate_id,
+                            error
+                        ),
+                    }
+                }
+                Err(error) => {
+                    log::warn!(
+                        "LoopX merge authority probe failed, surfacing gate interactively: task_id={} gate={} error={}",
+                        task.task_id,
+                        gate.gate_id,
+                        error
+                    );
+                }
+            }
+        }
+        let LoopxCliUserGate {
+            gate_id,
+            message,
+            action_kind,
+        } = gate;
+        let durable_revision = inspected.durable_revision.clone();
+        let updated = self
+            .mutate_task(&task_id, None, |current, current_runtime| {
+                if current.generation != task.generation {
+                    return;
+                }
+                current.state = LoopxTaskState::WaitingForUser;
+                current.phase = LoopxPhase::WaitingForApproval;
+                current.pending_gate_id = Some(gate_id.clone());
+                current.pending_gate_message = Some(message.clone());
+                current.pending_gate_action_kind = action_kind.clone();
+                current.revision = current.revision.saturating_add(1);
+                current_runtime.expected_durable_revision = Some(durable_revision.clone());
+            })
+            .await?;
+        let mut details = BTreeMap::new();
+        details.insert("gateId".to_string(), gate_id.clone());
+        if let Some(action_kind) = action_kind.clone() {
+            details.insert("actionKind".to_string(), action_kind);
+        }
+        self.append_task_event_with_details(
+            &updated,
+            LoopxEventKind::ApprovalRequired,
+            &message,
+            true,
+            details,
+        )
+        .await?;
+        self.schedule_next_for_repository(
+            &task.identity.item.repository.canonical_id(),
+            Some(&task_id),
+        )
+        .await;
+        Ok(())
     }
 
     /// Best-effort discard of a task's live agent session: clears the
@@ -3250,10 +3237,6 @@ impl LoopxController {
             if sticky_continue_after_settlement(
                 final_state,
                 post_settlement_goal.as_ref().map(|goal| goal.run_decision),
-                post_settlement_goal
-                    .as_ref()
-                    .and_then(|goal| goal.selected_todo.as_ref())
-                    .map(|todo| todo.action_kind.as_str()),
             ) {
                 // Depth-first repository lane: the segment settled cleanly and
                 // the Goal is still runnable (RunNow), so the same task keeps
@@ -3305,8 +3288,9 @@ impl LoopxController {
                 }
                 if should_requeue_after_settlement(final_state, yielded_repository) {
                     let task_id = task.task_id.clone();
-                    let delay = settlement.scheduler_hint_ms.unwrap_or(0);
-                    self.enqueue_task(task_id, Duration::from_millis(delay))?;
+                    // The next bounded turn is admitted by the quota guard,
+                    // so a parked-and-requeued task re-drives immediately.
+                    self.enqueue_task(task_id, Duration::ZERO)?;
                 }
             }
         }
@@ -4479,8 +4463,9 @@ fn run_now_is_frontier_contradiction(
 }
 
 /// What the host does with a todo-less `RunNow` frontier. Runtime-data
-/// correction (2026-09-05 five-issue run): the pinned CLI v0.5.1 projects
-/// `should_run=true` with an autonomous replan obligation when the plan runs
+/// correction (2026-09-05 five-issue run, re-verified against v1.0.1): the
+/// pinned CLI projects `should_run=true` with an autonomous replan obligation
+/// when the plan runs
 /// dry, and expects the host to drive one bounded replan turn bound to that
 /// obligation — parking there stranded every task of that run. Only a
 /// todo-less frontier WITHOUT an open obligation is a contract contradiction.
@@ -4564,19 +4549,14 @@ fn should_requeue_after_settlement(final_state: LoopxTaskState, yielded_reposito
 /// next queued issue only when the Goal actually paused (user gate, cadence
 /// wait, terminal, recovery) or the post-settlement inspection failed to
 /// project a decision — a re-drive re-inspects and parks at the gate, so
-/// treating an unknown decision as runnable is self-correcting. A monitor-
-/// class successor always yields: it waits on an external event the agent
-/// cannot advance, so holding the slot would starve sibling issues while the
-/// drive-time compatibility cadence spaces the re-checks.
+/// treating an unknown decision as runnable is self-correcting. A monitor
+/// successor needs no special case on v1.0.1: LoopX projects it RunNow only
+/// when the monitor is actually due, and as a cadence wait otherwise.
 fn sticky_continue_after_settlement(
     final_state: LoopxTaskState,
     post_settlement_run_decision: Option<LoopxCliRunDecision>,
-    post_settlement_selected_action: Option<&str>,
 ) -> bool {
     if final_state != LoopxTaskState::Queued {
-        return false;
-    }
-    if post_settlement_selected_action.is_some_and(is_loopx_monitor_action) {
         return false;
     }
     match post_settlement_run_decision {
@@ -4585,23 +4565,25 @@ fn sticky_continue_after_settlement(
     }
 }
 
-/// v0.5.1 compatibility cadence for monitor-class re-checks: when the goal's
-/// last durable settlement happened less than [`MONITOR_COMPAT_INTERVAL_MS`]
-/// ago, hold the re-check back for the remaining interval. `None` means run
-/// now (no settlement anchor yet — e.g. a resumed or fresh goal — or the
-/// interval already elapsed). The anchor is durable settlement evidence, not
-/// a host-side convergence counter.
-fn monitor_recheck_hold_ms(settled_at: Option<i64>, now: i64) -> Option<u64> {
-    let settled_at = settled_at?;
-    // Clamp at zero: a settlement timestamp in the future (clock skew)
-    // must hold the full interval, not interval + skew (`saturating_sub`
-    // only saturates at the i64 boundary, so the explicit `.max(0)` is
-    // required; caught by monitor_recheck_hold_anchors_on_last_settlement).
-    let elapsed = now.saturating_sub(settled_at).max(0);
-    if elapsed < MONITOR_COMPAT_INTERVAL_MS as i64 {
-        Some((MONITOR_COMPAT_INTERVAL_MS as i64 - elapsed).max(0) as u64)
-    } else {
-        None
+/// Requeue delay for a waiting goal, translated from the pinned LoopX v1.0.1
+/// scheduler projection. The compacted turn envelope carries the decision's
+/// `cadence_class` label but omits numeric intervals (they live in the quota
+/// decision detail the envelope compacts away), so the host maps the label
+/// onto the pinned scheduler's own initial intervals
+/// (`loopx/control_plane/scheduler/scheduler_hint.py`: active_work 3m,
+/// monitor_wait 15m host floor, human_gate 30m, quiet_wait 30m,
+/// unchanged_noop 60m, agent_scope_wait 10m). Unknown or missing labels fall
+/// back to a bounded poll so a waiting goal can never sleep forever or
+/// hot-poll.
+fn wait_requeue_delay_ms(snapshot: &LoopxCliGoalSnapshot) -> u64 {
+    match snapshot.scheduler_cadence.as_deref() {
+        Some("active_work") => 3 * 60 * 1000,
+        Some("monitor_wait") => 15 * 60 * 1000,
+        Some("human_gate") => 30 * 60 * 1000,
+        Some("quiet_wait") => 30 * 60 * 1000,
+        Some("unchanged_noop") => 60 * 60 * 1000,
+        Some("agent_scope_wait") => 10 * 60 * 1000,
+        _ => WAIT_RESCHEDULE_FALLBACK_MS,
     }
 }
 
@@ -4863,9 +4845,9 @@ mod tests {
         // user-level loopx-* skill copies a different LoopX install may have
         // placed in ~/.codex/skills / ~/.agents/skills, and (b) installer /
         // self-update flows the pinned skill documents describe - the host
-        // owns the pinned binary. Without this, a session can load 0.5.3
-        // docs against a 0.5.1 runtime and, with session reuse, carry the
-        // contradiction across every following turn.
+        // owns the pinned binary. Without this, a session can load
+        // different-version docs against the pinned runtime and, with session
+        // reuse, carry the contradiction across every following turn.
         let composed = compose_agent_turn_instruction("turn body".to_string(), None, None, false);
         assert!(composed.contains("[BitFun environment boundary]"));
         assert!(composed.contains("loopx-*` entries from your skill catalog"));
@@ -4876,7 +4858,7 @@ mod tests {
 
     #[test]
     fn run_now_with_a_selected_todo_is_not_a_frontier_contradiction() {
-        // Regression: the pinned v0.5.1 outer-controller turn plan can report
+        // Regression: the outer-controller turn plan can report
         // open_count = 0 while `action.selected_todo` still names an open,
         // agent-claimed todo (observed on the huangruiteng/loopx issue-3859
         // goal). The contradiction witness is the envelope's action
@@ -5036,92 +5018,79 @@ mod tests {
         assert!(sticky_continue_after_settlement(
             LoopxTaskState::Queued,
             Some(LoopxCliRunDecision::RunNow),
-            Some("issue_fix_collect_candidate_evidence"),
         ));
         // Unknown post-settlement decision (inspection failed): continue — the
         // re-drive re-inspects and parks at a gate, so this is self-correcting.
         assert!(sticky_continue_after_settlement(
             LoopxTaskState::Queued,
-            None,
-            None,
+            None
         ));
         // Cadence wait: yield the slot to the next queued issue.
         assert!(!sticky_continue_after_settlement(
             LoopxTaskState::Queued,
             Some(LoopxCliRunDecision::Wait),
-            None,
         ));
         assert!(!sticky_continue_after_settlement(
             LoopxTaskState::Queued,
             Some(LoopxCliRunDecision::WaitingForUser),
-            None,
         ));
         // Terminal or parked states always yield.
         assert!(!sticky_continue_after_settlement(
             LoopxTaskState::Completed,
             Some(LoopxCliRunDecision::RunNow),
-            None,
         ));
         assert!(!sticky_continue_after_settlement(
             LoopxTaskState::RecoveryRequired,
             Some(LoopxCliRunDecision::RunNow),
-            None,
         ));
         assert!(!sticky_continue_after_settlement(
             LoopxTaskState::WaitingForUser,
             None,
-            None,
         ));
     }
 
     #[test]
-    fn depth_first_sticky_yields_monitor_successors_even_when_runnable() {
-        // v0.5.1 projects a freshly created successor tracking todo RunNow
-        // immediately; the sticky lane must not let it hold the repository
-        // slot. It yields and the drive-time compatibility cadence spaces the
-        // re-checks.
-        assert!(!sticky_continue_after_settlement(
-            LoopxTaskState::Queued,
-            Some(LoopxCliRunDecision::RunNow),
-            Some("issue_fix_track_pr_merge_readiness"),
-        ));
-        assert!(!sticky_continue_after_settlement(
-            LoopxTaskState::Queued,
-            None,
-            Some("issue_fix_pr_state_open_monitor"),
-        ));
-        // Real work successors still keep the slot and continue deep.
-        assert!(sticky_continue_after_settlement(
-            LoopxTaskState::Queued,
-            Some(LoopxCliRunDecision::RunNow),
-            Some("issue_fix_implementation"),
-        ));
-    }
-
-    #[test]
-    fn monitor_recheck_hold_anchors_on_last_settlement() {
-        let now = 10_000_000_i64;
-        // No settlement anchor (fresh or resumed goal): run now.
-        assert_eq!(monitor_recheck_hold_ms(None, now), None);
-        // Settled 3 seconds ago: hold back the remaining interval.
+    fn wait_requeue_delay_follows_the_pinned_cadence_labels() {
+        let snapshot = |cadence: Option<&str>| LoopxCliGoalSnapshot {
+            scheduler_cadence: cadence.map(str::to_string),
+            ..LoopxCliGoalSnapshot::default()
+        };
+        // v1.0.1 cadence labels map onto the pinned scheduler's initial
+        // intervals (scheduler_hint.py: active 3m, monitor floor 15m, human
+        // gate 30m, quiet 30m, unchanged 60m, agent-scope 10m).
         assert_eq!(
-            monitor_recheck_hold_ms(Some(now - 3_000), now),
-            Some(MONITOR_COMPAT_INTERVAL_MS - 3_000)
-        );
-        // Exactly one interval old (or older): run now.
-        assert_eq!(
-            monitor_recheck_hold_ms(Some(now - MONITOR_COMPAT_INTERVAL_MS as i64), now),
-            None
+            wait_requeue_delay_ms(&snapshot(Some("active_work"))),
+            3 * 60 * 1000
         );
         assert_eq!(
-            monitor_recheck_hold_ms(Some(now - 60 * MONITOR_COMPAT_INTERVAL_MS as i64), now),
-            None
+            wait_requeue_delay_ms(&snapshot(Some("monitor_wait"))),
+            15 * 60 * 1000
         );
-        // Clock skew (settlement timestamp in the future): hold the full
-        // interval instead of spinning.
         assert_eq!(
-            monitor_recheck_hold_ms(Some(now + 5_000), now),
-            Some(MONITOR_COMPAT_INTERVAL_MS)
+            wait_requeue_delay_ms(&snapshot(Some("human_gate"))),
+            30 * 60 * 1000
+        );
+        assert_eq!(
+            wait_requeue_delay_ms(&snapshot(Some("quiet_wait"))),
+            30 * 60 * 1000
+        );
+        assert_eq!(
+            wait_requeue_delay_ms(&snapshot(Some("unchanged_noop"))),
+            60 * 60 * 1000
+        );
+        assert_eq!(
+            wait_requeue_delay_ms(&snapshot(Some("agent_scope_wait"))),
+            10 * 60 * 1000
+        );
+        // Label-less degraded snapshots fall back to the bounded poll.
+        assert_eq!(
+            wait_requeue_delay_ms(&snapshot(None)),
+            WAIT_RESCHEDULE_FALLBACK_MS
+        );
+        // Unknown labels fall back instead of guessing.
+        assert_eq!(
+            wait_requeue_delay_ms(&snapshot(Some("future_cadence"))),
+            WAIT_RESCHEDULE_FALLBACK_MS
         );
     }
 

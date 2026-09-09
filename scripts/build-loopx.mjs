@@ -10,7 +10,7 @@
 // bitfun-loopx MiniApp worker prefers the bundled binary at runtime, so end
 // users need neither Python nor git nor network access to use loopx.
 //
-// loopx v0.5.1 is Apache-2.0 (Copyright 2026 LoopX contributors), pure-stdlib Python
+// loopx v1.0.1 is Apache-2.0 (Copyright 2026 LoopX contributors), pure-stdlib Python
 // >= 3.11; PyInstaller's bootloader exception permits the bundled binary.
 
 import { execFileSync } from 'node:child_process';
