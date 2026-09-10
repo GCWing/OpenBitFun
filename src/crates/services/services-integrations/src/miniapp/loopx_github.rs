@@ -2,7 +2,7 @@ use super::loopx_cli::LoopxIntakeMetadataProvider;
 use async_trait::async_trait;
 use openbitfun_product_domains::miniapp::loopx as loopx_contract;
 use reqwest::header::{HeaderMap, ETAG, IF_NONE_MATCH, RETRY_AFTER};
-use reqwest::{Client, StatusCode};
+use reqwest::StatusCode;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashMap};
@@ -150,7 +150,7 @@ struct GithubRateState {
 
 #[derive(Clone)]
 pub struct GithubLoopxIntakeMetadataProvider {
-    client: Client,
+    client: reqwest::Client,
     credential: Arc<Mutex<Option<CachedCredential>>>,
     responses: Arc<Mutex<HashMap<String, CachedGithubResponse>>>,
     rate: Arc<Mutex<GithubRateState>>,
@@ -159,7 +159,7 @@ pub struct GithubLoopxIntakeMetadataProvider {
 
 impl GithubLoopxIntakeMetadataProvider {
     pub fn new() -> Result<Self, String> {
-        let client = Client::builder()
+        let client = crate::reqwest_client_builder()
             .user_agent("BitFun LoopX MiniApp")
             .build()
             .map_err(|error| format!("Failed to build GitHub client: {error}"))?;

@@ -1349,6 +1349,7 @@ export const coreClosedFeatureProfileRules = [
       'openbitfun-product-domains/appearance-market',
       'openbitfun-product-domains/miniapp',
       'openbitfun-services-integrations/miniapp-runtime',
+      'openbitfun-services-integrations/miniapp-loopx',
       'openbitfun-services-integrations/miniapp-market',
       'runtime-services',
       'dep:reqwest',

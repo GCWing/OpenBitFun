@@ -33,6 +33,57 @@ where
         .collect()
 }
 
+fn deserialize_datetime_millis_or_rfc3339<'de, D>(
+    deserializer: D,
+) -> Result<chrono::DateTime<chrono::Utc>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum CompatibleTimestamp {
+        Milliseconds(i64),
+        Rfc3339(String),
+    }
+
+    match CompatibleTimestamp::deserialize(deserializer)? {
+        CompatibleTimestamp::Milliseconds(value) => {
+            chrono::DateTime::<chrono::Utc>::from_timestamp_millis(value).ok_or_else(|| {
+                <D::Error as serde::de::Error>::custom(format!(
+                    "last_modified timestamp is out of range: {value}"
+                ))
+            })
+        }
+        CompatibleTimestamp::Rfc3339(value) => chrono::DateTime::parse_from_rfc3339(&value)
+            .map(|timestamp| timestamp.with_timezone(&chrono::Utc))
+            .map_err(|error| {
+                <D::Error as serde::de::Error>::custom(format!(
+                    "last_modified must be Unix milliseconds or RFC3339: {error}"
+                ))
+            }),
+    }
+}
+
+/// Tolerant reader for optional string maps.
+///
+/// Older documents persisted `""` for an unset map instead of omitting the key,
+/// which a plain `Option<HashMap>` reader rejects as a type error. Treat a blank
+/// string as absent and keep rejecting genuinely malformed values.
+fn deserialize_optional_string_map<'de, D>(
+    deserializer: D,
+) -> Result<Option<HashMap<String, String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    match Option::<serde_json::Value>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(serde_json::Value::String(value)) if value.trim().is_empty() => Ok(None),
+        Some(value) => serde_json::from_value(value)
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
+}
+
 /// Web UI font preferences (settings → basics). Keys match `FontPreference` in the frontend (camelCase).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1579,7 +1630,7 @@ pub struct AIModelConfig {
     pub inline_think_in_text: bool,
 
     /// Custom HTTP request headers.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_optional_string_map")]
     pub custom_headers: Option<std::collections::HashMap<String, String>>,
 
     /// Custom header mode: "replace" (default, full replacement) or "merge" (merge; apply

@@ -6,6 +6,7 @@
 #[cfg(any(
     feature = "account-identity",
     feature = "mcp",
+    feature = "miniapp-loopx",
     feature = "miniapp-market",
     feature = "miniapp-runtime",
     feature = "models-dev",
