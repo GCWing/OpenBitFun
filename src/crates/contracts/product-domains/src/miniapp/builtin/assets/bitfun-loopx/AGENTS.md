@@ -111,7 +111,9 @@ agent session 可以跨 turn 续接（2026-09-08 起，codex exec resume 的同�
    的耗尽态一律当矛盾处理，导致 0/5 全部停在 recovery，goal 无法自主收尾。）
 
 re-entry instruction 必须稳定且轻量，不得缓存 todo 列表、cadence、project policy、上一轮
-摘要或 raw transcript。`last_agent_summary` 仅用于 UI，不参与执行、settlement 或恢复判断。
+摘要或 raw transcript。`last_agent_summary` 不参与执行、settlement 和 durable progress 判定；它只有
+两个消费点：UI 展示，以及 `decide_repository_recovery_candidate` 用它把 agent 已判定「上游已
+修复」的任务从仓库恢复候选里剔除（正则解析 `loopx_summary_v1`，见 policy.rs）。
 
 ### Gate、调度和恢复
 
@@ -324,9 +326,16 @@ schema 约束的结果 JSON（stdin host request → stdout result）。这是�
 
 ### 标准答案复现手册：codex + loopx 跑同一 issue（2026-09-07 建立流程，2026-09-08 补 v1.0.1 基线）
 
-在独立实验目录（本机为 `C:\codeagent\loopx-codex-lab-experiment`）按以下步骤可复现
-"同一 issue 的 codex 标准答案"。**只读边界**：codex 侧一律不 push/不建 PR/不关
-issue/GitHub 零触碰；lab-repo 每轮清理，改动为可丢弃。
+**实验目的（owner 明确）**：用 LoopX 原生一等宿主（codex + loopx）跑**同一条 issue**，
+取得可对照的「标准答案」两条观测轴——① LoopX 自己的推理/控制轨迹
+（bootstrap→register-agent→workflow-plan→feasibility→todo→refresh-state(vision)→
+quota should-run→终局），② 模型修这条 issue 的表现（墙钟耗时、token 消耗、exec/工具
+调用数、是否触碰 GitHub、停在哪个 owner gate）。BitFun 侧出现差异时先与这条基线对齐，
+再判断是适配层 argv/路径/文档加载问题，还是模型/判定逻辑问题。
+
+在**独立实验目录**（位于本仓工作区之外，避免与本机 LoopX runtime/registry 交叉污染）
+按以下步骤可复现「同一 issue 的 codex 标准答案」。**只读边界**：codex 侧一律不 push/
+不建 PR/不关 issue/GitHub 零触碰；lab-repo 每轮清理，改动为可丢弃。
 
 1. 准备（一次性）：
    - `loopx-src` = pinned 源码 worktree（当前 v1.0.1；早期实验用 0.5.1，v0.5.1 的
@@ -377,9 +386,46 @@ issue/GitHub 零触碰；lab-repo 每轮清理，改动为可丢弃。
      （#1 9.8min / #2 9.1min / #3 ~10.5min）来自 **v0.5.1 + codex-parity 修复批**
      的跑测（2026-09-08 下午），非 v1.0.1；v1.0.1 BitFun 验证待跑（sidecar 已重建
      为 v1.0.1，desktop 二进制已编译，待三 issue 完整验证后更新此表）。
+   - **v1.0.1 + deepseek-v4.1-flash**（2026-09-09，同一**冻结 sidecar**
+     `resources\loopx\loopx.exe` 经 `bin\loopx.cmd` 暴露 + codex-cli 0.145.0）：
+     换模型后的重标定，同时消除了「源码运行 vs 冻结 exe」变量。**终态与 2026-09-08
+     完全一致**：#1 no-op `no_followup` 零改动 **23分34秒 / 8.07M 累计输入（96% 缓存命中）
+     / 146 ok + 28 fail exec**；#2 真修复 README +2 行、停在 owner 门 **16分40秒 /
+     6.30M / 117 ok + 19 fail**；#3 致谢 `no_followup` 零改动、未花 quota 槽
+     **18分46秒 / 7.30M / 135 ok + 28 fail**。全程 GitHub 零触碰（`gh` 仅读，5/11/10 次）。
+     - ⚠️ **token 口径不可与上表直接比**：上表 202K/204K/234K 更像「最后一次请求的
+       上下文规模」，本次 `input_tokens` 是**整轮累计**；本次未缓存输入
+       322K/291K/209K，输出 71K/61K/61K。
+     - 墙钟 1.8–3.4×：#3 的毫秒时间线实测**模型侧占 62.4%、工具执行占 37.6%**
+       （163 次调用、均值 3.23s/次，每次含 Python + Node 控制面冷启动）——差异主因是
+       模型自身延迟，不是 loopx CLI。
+     - **失败调用簇（换模型后放大）**：收尾仪式是主要浪费点——#1 `refresh-state`
+       11 次调用里 8 次失败、`todo complete` 2 次失败、`todo claim` 1 次失败；
+       #2 `workflow-plan` 8 次里 6 次失败；`--help` 反推 12/4/16 次。逐条按输出归类后
+       **失败与 LoopX 协议无关**：`ok=true` 但 exit 1（`UserWarning: periodic-report
+       subscription for goal … failed to resolve`）占 9/2/4 次——shell 驱动的 agent 把
+       成功误判为失败并重试；`usage: loopx.exe …`（自拼 argv）2/2/4 次；CLI 缺陷
+       `the JSON object must be str, bytes or bytearray, not NoneType` 2/4/0 次；
+       agent 侧工具摩擦（`gh --json merged` 字段不存在、`rg` glob、PowerShell
+       `Thread-7 (_readerthread)`、Python traceback）8/8/13 次；空输出 5/2/3 次。
+       这组数字是 2026-09-08 修复批次第 2 条（宿主镜像 canonical 模板）与 typed adapter
+       「解析 JSON 而非看 exit code」两条设计的直接对照。
+     - **三次都去本机 LoopX 源码检出 grep schema**（观测到的是 v0.5.1 树，与 pinned
+       v1.0.1 异版本）：#1 引用 46 处；#2 找 `issue_fix_candidate_resolution_v0`（该字段
+       只存在于源码 `loopx/capabilities/issue_fix/**`，v1.0.1 的 `skills/**` 全文不含）；
+       #3 找 `INLINE_VISION_FIELDS`。即 agent 对 capability 级 schema 的需求真实且反复，
+       而官方 skill 文档不覆盖——必须由宿主供给（见「Skill 版本漂移防护」与环境边界 note）。
+     - 另两个口径事实：guided packet 不传 `--state-file` 时 goal 状态落
+       `<repo>\.codex\goals\<goal-id>\ACTIVE_GOAL_STATE.md`（BitFun 传 `--state-file`，
+       故 `.codex` 不出现，与上文一致）；`loopx status` 在 `ok=true` 时仍 exit 1
+       （stderr `periodic_report.timezone is unknown`），三次都消耗了排查轮次。
+     - 三个 issue 的 packet 第 8 步 `activate_host_loop` 在 headless codex 下不可满足
+       （无 Codex App heartbeat/TUI）→ 均报 host-tool gate，与「BitFun 不模拟 Codex App」
+       的既定边界一致。
    - ⚠️ exec 注入不是 loopx 官方 codex 路径（官方走 TUI + skill 发现 + heartbeat
      循环），但作为对照实验数据有效——packet 结构足够驱动完整 issue-fix 闭环。
-   - 更换模型后需重新标定（记录模型 id + 耗时）。
+   - 更换模型后需重新标定（记录模型 id + 耗时）；阶段耗时口径建议用 `--json` 事件流
+     逐行加毫秒前缀时间戳（工具区间并集 vs 工具间隙），比事后从 stderr 反推可靠。
 
 ### Sidecar 打包：frozen 环境的 skills 数据（2026-09-07 实测定论）
 
@@ -586,6 +632,32 @@ issue/GitHub 零触碰；lab-repo 每轮清理，改动为可丢弃。
    should_run=true + selected_todo 在）。`envelope_over_budget` 保留为遥测标志，
    不再阻塞驱动；`todo update --text` 精简与上游压缩增强（提高预算、渐进截断、
    goal compact 自愈）仍是降低状态体积的正道。
+
+11. **2026-09-10 运行时配置改动误走 `desktop:dev` 复盘（≈17 分钟全量重编）**：起因是
+   「新增一个模型配置」这类**运行时配置**改动被当成「重启 dev 实例」处理，走了
+   `pnpm run desktop:dev`。三条实测事实：
+
+   - **配置不进编译图，但必须重启才生效**：模型/供应商配置在
+     `%APPDATA%\openbitfun\config\app.json`（product `openbitfun` 的 Tauri config dir，
+     与 `BITFUN_USER_ROOT` 的数据根是两回事）。改它不产生任何编译；但
+     `initialize_global_config()` 只在启动时读一次，配置服务**没有文件监听器**，
+     外部改文件不会热加载。
+   - **顺序陷阱**：应用运行期间在界面里保存任何设置，会把**内存里的整份配置**
+     pretty-print 写回 `app.json`（`service/config/manager.rs::persist_config`），
+     从而覆盖外部手改。所以「改配置文件」与「退出应用」有硬顺序：先退出，再改文件，
+     或改完后在动任何设置之前重启。
+   - **重启代价**：`scripts/dev.cjs` 的 `desktop` 分支以 `tauri dev` 拉起，并注入显式
+     `CARGO_PROFILE_DEV_CODEGEN_UNITS`（同时注入 `OPENBITFUN_MOBILE_WEB_DIR`），
+     **不是**本文件「统一构建配方」的指纹；实测一次重建 `Building 1055/1168`
+     （cargo 22:42:48 起、应用窗口 22:59:27 才出现，≈17 分钟）。根因未逐项隔离
+     （与该配方混用、被中断的增量状态都可能是触发条件），但结论明确：**配置类改动
+     一律不要走 `desktop:dev`**，按「快速循环约定」用常驻 Vite + 直接起已有的
+     `target/debug/openbitfun-desktop.exe`，代价为 0 编译。
+
+   附带事实：杀掉正在运行的 app **同时**终止整条 dev 链——实测 cargo/tauri/Vite
+   7 个进程全部退出、1422 也不再监听——所以「杀 app」不能当作重启手段；要重启就按
+   上面的已有 exe 路径，并先按既有规则确认 1422 已监听。来源事故：用户只要求加一个
+   模型配置，却因走错重启路径付出一次全量重编。
 
 
 ## 禁止事项

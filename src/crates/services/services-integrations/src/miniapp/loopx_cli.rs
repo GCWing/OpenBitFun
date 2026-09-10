@@ -252,10 +252,10 @@ pub enum LoopxProcessError {
         /// Full JSON payload the CLI printed on stdout before the non-zero
         /// exit, when it parses. The pinned CLI renders typed `ok:false`
         /// failures as a complete payload followed by exit 1 (for example the
-        /// `RunNow`-without-todo replan frontier, whose host-bound route
-        /// lineage check fails); callers can salvage that projection instead
-        /// of failing on the raw process exit. `None` when stdout was not a
-        /// single JSON document.
+        /// plan-exhausted replan frontier); `process_error_json` hands that
+        /// payload to the callers that salvage it instead of failing on the
+        /// raw process exit. `None` when stdout was not a single JSON
+        /// document.
         payload: Option<Value>,
     },
     #[error("LoopX process timed out after {deadline_ms} ms")]
@@ -1895,30 +1895,35 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
             // registration the pack reports `agent_id: null` and the agent
             // then distrusts its own identity flags (live observation
             // 2026-09-08).
-            let onboard = run_port_command(
-                self,
-                &request.context,
-                [
-                    "agent-onboard".to_string(),
-                    "--agent-type".to_string(),
-                    "other-agent".to_string(),
-                    "--project".to_string(),
-                    request.context.worktree_path.clone(),
-                    "--goal-id".to_string(),
-                    request.goal_id.clone(),
-                    "--agent-id".to_string(),
-                    request.agent_id.clone(),
-                    "--cli-bin".to_string(),
-                    "loopx".to_string(),
-                    "--available-capability".to_string(),
-                    "shell".to_string(),
-                ]
-                .into_iter()
-                .map(OsString::from)
-                .collect(),
-                &observer,
-            )
-            .await;
+            let mut onboard_args: Vec<OsString> = [
+                "agent-onboard".to_string(),
+                "--agent-type".to_string(),
+                "other-agent".to_string(),
+                "--project".to_string(),
+                request.context.worktree_path.clone(),
+                "--goal-id".to_string(),
+                request.goal_id.clone(),
+                "--agent-id".to_string(),
+                request.agent_id.clone(),
+                "--cli-bin".to_string(),
+                "loopx".to_string(),
+            ]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+            // Advertise exactly the technical capabilities the Agent host
+            // reports through the goal context. This used to be a hard-coded
+            // `shell`, so the pack contradicted every other CLI call in the
+            // turn (guard/envelope advertise filesystem_read,
+            // filesystem_write, shell, network, external_evidence_poll) and the
+            // agent distrusted its own capability surface (live observation
+            // 2026-09-10).
+            append_agent_capability_args(
+                &mut onboard_args,
+                &request.context.available_capabilities,
+                operation_id,
+            )?;
+            let onboard = run_port_command(self, &request.context, onboard_args, &observer).await;
             if let Ok(onboard_payload) = onboard {
                 if let Some(registry_root) =
                     std::path::Path::new(&request.context.registry_path).parent()
@@ -1927,6 +1932,62 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                         registry_root.join("agent-onboard-pack.json"),
                         serde_json::to_string_pretty(&onboard_payload.payload).unwrap_or_default(),
                     );
+                }
+            }
+
+            // Capability-level contracts that the official workflow-skill
+            // documents do NOT cover: the candidate-evidence receipt shapes
+            // (repo/issue_ref/query_scope/complete/truncated/rows per receipt),
+            // the resolution outcome enums, and the decision rule that gates a
+            // new implementation. The pinned CLI can describe them itself - its
+            // bootstrap command pack embeds the active capability route
+            // contract - so fetching them here keeps the contract version-bound
+            // to the pinned sidecar instead of a hand-written copy that drifts.
+            // Without this file the agent has no local source for those schemas:
+            // it probes `--help` (which does not print field shapes), guesses
+            // argv shapes, and - observed live on a codex control run
+            // 2026-09-10 - ends up unpacking the frozen binary and reading the
+            // executable bytes for an enum the host could have handed over in
+            // one file. Non-fatal, exactly like the onboard pack: plain
+            // bootstrap still works when this preview fails.
+            let mut capability_args: Vec<OsString> = [
+                "bootstrap-command-pack".to_string(),
+                "--project".to_string(),
+                request.context.worktree_path.clone(),
+                "--goal-id".to_string(),
+                request.goal_id.clone(),
+                "--agent-id".to_string(),
+                request.agent_id.clone(),
+                "--cli-bin".to_string(),
+                "loopx".to_string(),
+                "--host-surface".to_string(),
+                "other-agent".to_string(),
+                "--capability-route".to_string(),
+                "issue-fix".to_string(),
+            ]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
+            append_agent_capability_args(
+                &mut capability_args,
+                &request.context.available_capabilities,
+                operation_id,
+            )?;
+            let capability_pack =
+                run_port_command(self, &request.context, capability_args, &observer).await;
+            if let Ok(capability_pack) = capability_pack {
+                if let Some(registry_root) =
+                    std::path::Path::new(&request.context.registry_path).parent()
+                {
+                    if let Some(contract) = capability_pack
+                        .payload
+                        .pointer("/goal_start_contract/selected_capability_route")
+                    {
+                        let _ = std::fs::write(
+                            registry_root.join("capability-contracts.json"),
+                            serde_json::to_string_pretty(contract).unwrap_or_default(),
+                        );
+                    }
                 }
             }
 
@@ -3612,13 +3673,17 @@ async fn run_port_command(
         .map_err(|error| map_port_error(error, operation_id))
 }
 
-/// Runs a `turn plan` inspection and projects its goal snapshot. When the
-/// pinned CLI exits 1 with the plan-exhausted replan-lineage contract error,
-/// the typed payload it printed is salvaged into the equivalent read-only
-/// `RunNow`-without-todo snapshot (with the open replan obligation id)
-/// instead of failing the operation: the host then drives one autonomous
-/// replan turn bound to that obligation, or parks the task when no
-/// obligation remains. Any other failure maps to the standard port error.
+/// Runs the read-only continuation probe the caller passed in (a
+/// `quota should-run --turn-envelope` invocation built by `quota_probe_args`)
+/// and projects its goal snapshot.
+///
+/// The probe carries no turn identity, so it never mints a heartbeat receipt,
+/// and unlike `turn plan` it has no 8192-byte envelope budget: a large goal
+/// keeps projecting should_run / selected todo instead of degrading to
+/// `contract_error` (2026-09-09 root cause). A non-zero exit whose stdout
+/// still carried a typed `ok:false` payload is salvaged through
+/// `process_error_json` by the call sites that need the plan-exhausted replan
+/// frontier; every other failure maps to the standard port error.
 async fn inspect_goal_snapshot(
     adapter: &LoopxCliProcessAdapter,
     goal_id: &str,
@@ -3661,10 +3726,21 @@ async fn run_idempotent_global_command(
 }
 
 fn process_error_json(error: &LoopxCliAdapterError) -> Option<Value> {
-    let LoopxCliAdapterError::Process(LoopxProcessError::Exited { stdout_tail, .. }) = error else {
+    let LoopxCliAdapterError::Process(LoopxProcessError::Exited {
+        payload,
+        stdout_tail,
+        ..
+    }) = error
+    else {
         return None;
     };
-    serde_json::from_str(&stdout_tail.join("\n")).ok()
+    // Prefer the payload parsed once when the process error was built; fall
+    // back to re-parsing the captured tail for errors that were constructed
+    // without it. Both describe the same typed `ok:false` document the pinned
+    // CLI prints before exiting 1.
+    payload
+        .clone()
+        .or_else(|| serde_json::from_str(&stdout_tail.join("\n")).ok())
 }
 
 fn metadata_state(state: loopx_contract::LoopxRemoteItemState) -> &'static str {
@@ -4038,6 +4114,30 @@ fn extend_available_capability_args(
         args.push(OsString::from(capability));
     }
     Ok(())
+}
+
+/// Appends the host's declared execution capabilities to a preview command.
+///
+/// Single source of truth for "which capabilities does this host advertise":
+/// every command that takes repeatable `--available-capability` flags must
+/// report the same list the goal context carries, otherwise the agent sees two
+/// contradictory capability surfaces in one turn. LoopX treats an agent with no
+/// declared capability as shell-only, so an empty host list keeps the previous
+/// `shell` fallback instead of sending no flag at all.
+fn append_agent_capability_args(
+    args: &mut Vec<OsString>,
+    capabilities: &[String],
+    operation_id: &str,
+) -> loopx_contract::LoopxCliResult<()> {
+    if capabilities
+        .iter()
+        .all(|capability| capability.trim().is_empty())
+    {
+        args.push(OsString::from("--available-capability"));
+        args.push(OsString::from("shell"));
+        return Ok(());
+    }
+    extend_available_capability_args(args, capabilities, operation_id)
 }
 
 fn settlement_history_args(goal_id: &str) -> Vec<OsString> {

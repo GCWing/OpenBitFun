@@ -216,8 +216,10 @@ built-in source、非本地覆盖和本地执行域。伪造 id、draft、市场
   截断的历史事件回放。升级前的 `WaitingForUser` 记录若缺少该投影，普通 attach 只做
   一次 CLI reconciliation 补齐，之后重新进入等待态免轮询路径。
 - 每轮 turn 由专用 `LoopxAgentPort` 通过通用 `AgentSubmissionPort` 启动临时 OpenBitFun
-  Agent session。通用 Agent loop 不包含 LoopX 分支；`LoopxCliPort` 用只读 `turn plan`
-  做状态对账，真正执行前只调用一次 `quota should-run --turn-envelope`，并把其中的
+  Agent session。通用 Agent loop 不包含 LoopX 分支；`LoopxCliPort` 用**不带 turn 身份的只读
+  `quota should-run --turn-envelope`** 做状态对账（适配器已不再调用 `turn plan`：后者有
+  8192 字节 envelope 预算门，超预算会 `contract_error` 搁置 goal），真正执行前在同一 turn id
+  上再调用一次 `quota should-run --turn-envelope` 作为执行 gate，并把其中的
   selected todo、boundary、required reads、execution policy 和 writeback contract
   投影给 Agent。Agent 技术能力由 assembly 显式声明，services adapter 只负责协议翻译；
   permission grant 始终是另一条独立边界。
@@ -263,15 +265,18 @@ built-in source、非本地覆盖和本地执行域。伪造 id、draft、市场
   `scheduler.cadence_class` 标签（数值间隔在 quota decision detail 里），宿主把
   标签映射到 pin 内 scheduler 自己的初始间隔（见 `wait_requeue_delay_ms`），
   无标签的降级快照退回有界轮询。同一仓库的多个 goal 串行推进（
-  `active_repositories` + `schedule_next_for_repository`）。每次 durable settlement
-  是公平轮转边界：有其他排队 Issue 时先让出仓库槽，不把当前 task 标记为 pending
-  并在同一 worker 内自重入；轮到其他 Issue 结算后再回到当前 Goal。
+  `active_repositories` + `schedule_next_for_repository`）。**同仓库任务串行，但结算后默认
+  深度优先续跑**：只要 Goal 仍投影 `RunNow`（含到期的 monitor successor），当前 task 不释放
+  仓库槽、在同一 worker 内自重入（`sticky_continue_after_settlement`），队列里的其他 Issue
+  继续等待；只有 task 进入等待/终态/recovery 时才把仓库槽交给下一个 Issue。长 Issue 因此会
+  推迟同仓排队的其它 Issue——这是已知取舍（2026-09-10 实测：一个 3-turn 的 no-op issue 让两个
+  排队 issue 等了 15 分钟），不是公平轮转。
 - **PR 生命周期监控投影**：PR 发布后 LoopX 用 `continuous_monitor` /
   `issue_fix_pr_state_*_monitor` todo 继续持有 Goal，pr-lifecycle 的四种转移
   （runnable_successor / monitor_continuation / user_gate / no_followup）全部在
   pinned CLI 内决策。宿主不调用 `issue-fix pr-lifecycle`，也不压缩 maintainer
   correction——两者都是 agent 轮内按 TurnEnvelope / packet 的职责。宿主只把
-  turn plan envelope 的 selected todo 投影为任务快照 `currentTodo`（有界、非权威、
+  quota envelope 的 selected todo 投影为任务快照 `currentTodo`（有界、非权威、
   Goal 终局清除），UI 据此把排队态区分为「PR 监控等待中」并展示下次检查时间，
   避免等待 CI/review 被误读为卡住。
 - **worktree 成本**：同仓库所有 task 共享一份裸仓库对象库
