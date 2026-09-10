@@ -471,10 +471,12 @@ export interface LoopxCreateTaskResponse {
 
 export type LoopxActionKind =
   | 'pause'
-| 'abort'
+  | 'abort'
   | 'resume'
   | 'resume_repository'
   | 'reset_all'
+  | 'pause_all'
+  | 'resume_all'
   | 'approve'
   | 'reject'
   | 'archive'
