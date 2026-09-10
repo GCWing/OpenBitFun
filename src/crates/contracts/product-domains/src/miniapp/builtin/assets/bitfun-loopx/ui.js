@@ -117,6 +117,7 @@ const COPY = {
     outputUnavailable: '实时输出暂不可用',
     outputThinking: '思考',
     outputThinkingSummary: '思考过程 · {value} 字（点击展开）',
+    outputToolSummary: '工具详情（点击展开）',
     decisionCardTitle: '需要你的决策',
     decisionCardTitleRecovery: '工作段被中断，需要恢复',
     decisionCardTitlePlanExhausted: '修复计划已执行完毕，等待收尾方式',
@@ -490,6 +491,7 @@ const COPY = {
     outputUnavailable: 'Live output is unavailable',
     outputThinking: 'Thinking',
     outputThinkingSummary: 'Thinking · {value} chars (click to expand)',
+    outputToolSummary: 'Tool details (click to expand)',
     decisionCardTitle: 'Needs your decision',
     decisionCardTitleRecovery: 'Work segment was interrupted and needs recovery',
     decisionCardTitlePlanExhausted: 'Fix plan completed; choose how to finish',
@@ -897,6 +899,7 @@ const state = {
   selectedTaskId: null,
   followLogs: true,
   expandedThinking: new Set(),
+  expandedTool: new Set(),
   preview: null,
   pendingCreate: null,
   pendingRetry: null,
@@ -3197,6 +3200,32 @@ function turnOutputBlockRow(block) {
     });
     const summary = document.createElement('summary');
     summary.textContent = text('outputThinkingSummary', { value: (block.text || '').length });
+    const content = document.createElement('div');
+    content.className = 'output-block__message';
+    content.textContent = block.text || outputKindLabel(block.kind);
+    details.append(summary, content);
+    row.append(header, details);
+    return row;
+  }
+
+  if (block.kind === 'tool') {
+    // Raw tool input (the executed shell command with host-internal absolute
+    // paths, a file path, a grep pattern) is developer telemetry: it is long,
+    // it leaks the host layout, and it does not help a human decide anything.
+    // Keep the header line (issue, tool, state, round) visible and put the raw
+    // text behind a collapsed expander - the same pattern thinking blocks use.
+    const detailKey = outputBlockDomKey(block);
+    const details = document.createElement('details');
+    details.className = 'output-block__thinking';
+    // Expansion is remembered across re-renders: streaming regrows the block
+    // and would otherwise collapse it under the reader.
+    if (state.expandedTool.has(detailKey)) details.open = true;
+    details.addEventListener('toggle', () => {
+      if (details.open) state.expandedTool.add(detailKey);
+      else state.expandedTool.delete(detailKey);
+    });
+    const summary = document.createElement('summary');
+    summary.textContent = text('outputToolSummary');
     const content = document.createElement('div');
     content.className = 'output-block__message';
     content.textContent = block.text || outputKindLabel(block.kind);

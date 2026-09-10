@@ -645,6 +645,75 @@ impl LoopxCliProcessAdapter {
         }
     }
 
+    /// Latest agent vision LoopX has recorded for this goal and agent, read
+    /// through the pinned CLI's own `status` projection
+    /// (`run_history.goals[].semantic_history.agents[].latest_agent_vision_run
+    /// .agent_vision`). Best-effort by design: a missing vision is a normal
+    /// state (none recorded yet) and a projection failure must not break the
+    /// turn build - the terminal guidance simply falls back to the
+    /// first-vision template.
+    async fn latest_recorded_agent_vision(
+        &self,
+        context: &loopx_contract::LoopxCliGoalContext,
+        goal_id: &str,
+        agent_id: &str,
+        observer: &dyn LoopxProcessObserver,
+    ) -> Option<Value> {
+        let status_args: Vec<OsString> = [
+            "status",
+            "--goal-id",
+            goal_id,
+            "--agent-id",
+            agent_id,
+        ]
+        .into_iter()
+        .map(OsString::from)
+        .collect();
+        let status = match run_port_command(self, context, status_args, observer).await {
+            Ok(status) => status,
+            Err(error) => {
+                log::warn!(
+                    "LoopX agent-vision status projection failed; the replan turn will not embed the recorded vision: goal={}, agent={}, error={}",
+                    goal_id,
+                    agent_id,
+                    error
+                );
+                return None;
+            }
+        };
+        let goals = status
+            .payload
+            .pointer("/run_history/goals")
+            .and_then(Value::as_array)?;
+        let goal_entry = goals.iter().find(|goal| {
+            goal.get("goal_id")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == goal_id)
+        })?;
+        let agents = goal_entry
+            .pointer("/semantic_history/agents")
+            .and_then(Value::as_array)?;
+        let agent_entry = agents.iter().find(|agent| {
+            agent
+                .get("agent_id")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == agent_id)
+        })?;
+        let vision = agent_entry
+            .pointer("/latest_agent_vision_run/agent_vision")
+            .cloned()?;
+        // Only a vision with a non-empty patch counts as recorded: an empty
+        // projection cannot seed the verbatim-copy requirement.
+        let has_patch = vision
+            .get("vision_patch")
+            .and_then(Value::as_object)
+            .is_some_and(|patch| !patch.is_empty());
+        if !has_patch {
+            return None;
+        }
+        Some(vision)
+    }
+
     async fn run_json_command(
         &self,
         operation_id: &str,
@@ -2180,6 +2249,26 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 )
             })?;
             let semantic_obligation = semantic_replan_obligation_id(&guard.payload);
+            // A replan turn that closes the goal with a coverage-backed
+            // terminal must reuse the ALREADY RECORDED vision's durable fields
+            // verbatim (see the guidance in `render_agent_reentry_instruction`);
+            // the CLI refuses a terminal packet that changes them. Resolve
+            // the recorded vision through the pinned CLI's own `status`
+            // projection so the agent does not have to discover it by burning
+            // rounds on typed refusals (live 2026-09-10: the replan turn
+            // hand-wrote a fresh vision packet, was refused, and settled with
+            // no durable progress, which re-drove the replan obligation).
+            let recorded_agent_vision = if semantic_obligation.is_some() {
+                self.latest_recorded_agent_vision(
+                    &request.context,
+                    &request.goal_id,
+                    &request.agent_id,
+                    &observer,
+                )
+                .await
+            } else {
+                None
+            };
             let agent_instruction = render_agent_reentry_instruction(
                 &guard.payload,
                 &verified,
@@ -2187,6 +2276,7 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 &turn_id,
                 settlement_binding.as_ref(),
                 semantic_obligation.as_deref(),
+                recorded_agent_vision.as_ref(),
                 &request.context.available_capabilities,
                 operation_id,
             )?;
@@ -2329,7 +2419,7 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 &request.settlement_token,
                 operation_id,
             )?;
-            let Some(evidence) = evidence else {
+            let Some(mut evidence) = evidence else {
                 report_port_progress(
                     progress,
                     operation_id,
@@ -2357,21 +2447,113 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 });
             };
             if !evidence.quota_spent {
+                // Host-side spend compensation (live 2026-09-10 three-issue
+                // experiment, issue #2 turn 4: the agent's writeback validated
+                // but it ended the turn without the quota spend, so an
+                // otherwise-healthy task stranded in recovery with
+                // `settlement_unverified` / "写入已验证，花费回执缺失").
+                // The spend is mechanical, idempotent bookkeeping (same
+                // effect id, `--source heartbeat`, exact binding flags the
+                // turn instruction already projected), not a semantic
+                // claim, so the host compensates it directly instead of
+                // asking a fresh agent turn to re-derive it. Prompt guidance
+                // reduces the probability; only host compensation removes
+                // the failure class.
                 report_port_progress(
                     progress,
                     operation_id,
                     Some(request.context.task_id.clone()),
                     loopx_contract::LoopxCliProgressStage::SettlingTurn,
-                    "Matching durable LoopX writeback exists, but its quota settlement is missing",
+                    "Matching writeback found without its quota spend; compensating the spend host-side",
                 );
-                return Ok(loopx_contract::LoopxCliSettleTurnResult {
-                    goal_id: request.goal_id,
-                    turn_id: request.turn_id,
-                    status: loopx_contract::LoopxCliSettlementStatus::RetryRequired,
-                    before_revision: request.expected_durable_revision,
-                    after_revision: snapshot.durable_revision,
-                    ..loopx_contract::LoopxCliSettleTurnResult::default()
-                });
+                let spend_args = quota_spend_compensation_args(
+                    &request.goal_id,
+                    &request.agent_id,
+                    &evidence.binding,
+                    &request.turn_id,
+                );
+                let spend_result =
+                    run_port_command(self, &request.context, spend_args, &observer).await;
+                // A terminal-closed quota is not an error: the goal already
+                // reached its terminal outcome and LoopX intentionally
+                // closed the accounting, so settlement continues and the
+                // authoritative goal projection decides the task state.
+                let (compensated, terminal_closed) = match &spend_result {
+                    Ok(result) => {
+                        let ok = result
+                            .payload
+                            .get("ok")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false);
+                        let appended = result
+                            .payload
+                            .get("appended")
+                            .and_then(Value::as_bool)
+                            .unwrap_or(false);
+                        log::info!(
+                            "LoopX host-compensated quota spend for turn {}: ok={} appended={}",
+                            request.turn_id,
+                            ok,
+                            appended
+                        );
+                        let reason = result
+                            .payload
+                            .get("reason")
+                            .or_else(|| result.payload.get("error"))
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_ascii_lowercase();
+                        let terminal_closed = reason.contains("terminal")
+                            || reason.contains("automation")
+                            || reason.contains("must stop");
+                        (ok || appended, terminal_closed)
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "LoopX host-side quota spend compensation failed for turn {}: {}",
+                            request.turn_id,
+                            error
+                        );
+                        (false, false)
+                    }
+                };
+                if !compensated && !terminal_closed {
+                    report_port_progress(
+                        progress,
+                        operation_id,
+                        Some(request.context.task_id.clone()),
+                        loopx_contract::LoopxCliProgressStage::SettlingTurn,
+                        "Matching durable LoopX writeback exists, but its quota settlement is missing",
+                    );
+                    return Ok(loopx_contract::LoopxCliSettleTurnResult {
+                        goal_id: request.goal_id.clone(),
+                        turn_id: request.turn_id.clone(),
+                        status: loopx_contract::LoopxCliSettlementStatus::RetryRequired,
+                        before_revision: request.expected_durable_revision.clone(),
+                        after_revision: snapshot.durable_revision.clone(),
+                        ..loopx_contract::LoopxCliSettleTurnResult::default()
+                    });
+                }
+                // Re-read the history so the settlement decision below
+                // reflects the compensated (or intentionally closed) spend.
+                let history = run_port_command(
+                    self,
+                    &request.context,
+                    settlement_history_args(&request.goal_id),
+                    &observer,
+                )
+                .await?;
+                require_payload_ok(&history.payload, operation_id)?;
+                if let Some(verified) = matching_durable_progress(
+                    &history.payload,
+                    &request.goal_id,
+                    &request.agent_id,
+                    &request.turn_id,
+                    &request.settlement_token,
+                    operation_id,
+                )? {
+                    evidence = verified;
+                }
             }
             report_port_progress(
                 progress,
@@ -2967,6 +3149,7 @@ fn render_agent_reentry_instruction(
     turn_id: &str,
     binding: Option<&SettlementBinding>,
     semantic_obligation: Option<&str>,
+    recorded_agent_vision: Option<&Value>,
     available_capabilities: &[String],
     operation_id: &str,
 ) -> loopx_contract::LoopxCliResult<String> {
@@ -3061,22 +3244,90 @@ fn render_agent_reentry_instruction(
             ),
             "Fill the <placeholders> from your validated evidence (classification is a short public-safe label of what this run validated); substitute `--delivery-outcome primary_goal_outcome` only when this turn completed the goal's primary result. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags.".to_string(),
         ),
-        WritebackFlavor::AutonomousReplan(obligation_id) => (
-            format!(
-                "{cli_prefix} refresh-state {goal_id_arg} --progress-scope agent_lane --classification bounded_replan_progress --delivery-batch-scale single_surface --delivery-outcome outcome_progress --progress-result-class <advanced|blocked|exploration_exhausted|no_followup> --progress-surface-id <surface-id> --progress-hypothesis-id <hypothesis-id> --progress-probe-kind <probe-kind> --progress-evidence-id <evidence-id> --replan-obligation-id {} --turn-instance-id {} --autonomous-replan-recorded --repair-delta-kind <delta-kind> {agent_id_arg} {capability_args}",
-                agent_shell_value(obligation_id),
-                agent_shell_value(turn_id),
-            ),
+        WritebackFlavor::AutonomousReplan(obligation_id) => {
             // Guidance (single source: the pinned v1.0.1 validation code in
             // loopx/control_plane/goals/goal_vision.py and
             // work_items/progress_observation.py). A live 2026-09-08 replan
             // turn burned 42 typed refusals re-deriving this schema from
             // error messages and finally wrote a blocker asking the host to
             // document it - so the host documents the exact accepted shape.
-            "Fill the <placeholders>: choose the `--progress-result-class` and a matching `--repair-delta-kind` for the one semantic outcome you recorded, and fill at least one stable identifier (`--progress-surface-id`, `--progress-hypothesis-id`, `--progress-probe-kind`, or `--progress-evidence-id`) - a bare result class is rejected as unattributable. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags. When the existing goal vision is still correct, also append `--vision-unchanged-reason \"<compact reason>\"` instead of writing a patch. For a coverage-backed terminal (`no_followup` or `exploration_exhausted`) the CLI additionally requires `--agent-vision-json <file>` holding a `goal_vision_replan_contract_v0` packet; write it with exactly this shape (char budgets are enforced, including the 220-char scalars and the 1200-char total):
-{\"schema_version\": \"goal_vision_replan_contract_v0\", \"goal_id\": \"<GOAL_ID>\", \"agent_id\": \"<AGENT_ID>\", \"state\": \"no_followup\", \"vision_summary\": \"<what the goal set out to achieve, <=420 chars>\", \"acceptance_summary\": \"<what evidence closes it, <=420 chars>\", \"path_delta\": {\"outcome\": \"stop\", \"prior_assumption\": \"<the assumption before this turn, <=220 chars>\", \"observed_reality\": \"<what this turn verified, <=220 chars>\", \"stopped\": [\"<the work path stopped by this terminal, <=120 chars>\"]}}
-Consistency is enforced across the ACK: a `no_followup` result class requires vision `state=no_followup` AND `path_delta.outcome=stop` together; `prior_assumption` and `observed_reality` are mandatory; at least one `retained`/`changed`/`stopped` item must be present (max 3 per list, <=120 chars each; `unresolved_questions` max 2; `evidence_refs` max 4). A non-terminal replan (successor todo or concrete blocker) does NOT need the vision packet - use the successor/blocker path instead.".to_string(),
-        ),
+            //
+            // The terminal (`no_followup`) path carries its own complete
+            // command because it is NOT the generic template plus one flag:
+            // that result class hard-requires `--progress-coverage-scope-id`
+            // AND at least one `--progress-evidence-id` (verified live
+            // 2026-09-10 against the pinned CLI: first
+            // `--progress-result-class no_followup requires
+            // --progress-coverage-scope-id`, then, with only the generic
+            // identifiers, `this writeback does not change an accepted ...
+            // coverage-backed terminal`), and neither flag is part of the
+            // generic four-identifier list.
+            let terminal_command = format!(
+                "{cli_prefix} refresh-state {goal_id_arg} --progress-scope agent_lane --classification bounded_replan_progress --delivery-batch-scale single_surface --delivery-outcome outcome_progress --progress-result-class no_followup --progress-surface-id <surface-id> --progress-coverage-scope-id <coverage-scope-id> --progress-evidence-id <evidence-id> --replan-obligation-id {} --turn-instance-id {} --autonomous-replan-recorded --repair-delta-kind no_followup --agent-vision-json <vision-file> {agent_id_arg} {capability_args}",
+                agent_shell_value(obligation_id),
+                agent_shell_value(turn_id),
+            );
+            // When LoopX has already recorded an agent vision for this goal,
+            // a coverage-backed terminal MUST reuse its durable fields
+            // verbatim: `prepareVisionRefresh` refuses a packet that changes
+            // `vision_summary`/`role_scope`/`acceptance_summary`/
+            // `advancement_policy` unless `path_delta.outcome=replan`, while
+            // the `no_followup` result class refuses anything except
+            // `path_delta.outcome=stop` - reworded text is an unsatisfiable
+            // pair (live 2026-09-10: the replan turn wrote a fresh terminal
+            // packet, hit exactly this pair, and settled with no durable
+            // progress, which re-drove the replan obligation every cycle).
+            // The host embeds the recorded fields so the agent copies them;
+            // a genuinely changed direction is a successor or blocker
+            // outcome, never a terminal.
+            let vision_clause =
+                match recorded_agent_vision.and_then(|vision| {
+                    vision
+                        .get("vision_patch")
+                        .and_then(Value::as_object)
+                        .filter(|patch| !patch.is_empty())
+                }) {
+                    Some(recorded_patch) => {
+                        let recorded_json = serde_json::to_string(recorded_patch)
+                            .unwrap_or_else(|_| "<recorded vision unavailable>".to_string());
+                        format!(
+                            "A vision is ALREADY RECORDED for this goal and agent. Your --agent-vision-json packet MUST copy these exact field values verbatim (do not reword, translate, summarize, or trim them):\n{recorded_json}\nOnly `state` and `path_delta` are new in your packet: set `state` to `no_followup` and write `path_delta` with `outcome: stop`, fresh `prior_assumption` and `observed_reality`, at least one `stopped` item, and `evidence_refs` citing your validation evidence. BEFORE submitting, re-read your packet file and compare each copied field against the recorded values above character by character - any difference in vision_summary, role_scope, acceptance_summary, or advancement_policy makes the CLI demand `path_delta.outcome=replan`, which the `no_followup` result class then rejects - an unsatisfiable pair that burns the turn (a live agent reworded the summary and lost the turn to exactly this refusal). If the recorded vision text is genuinely wrong for the outcome you observed, do NOT choose the terminal path and do NOT paraphrase: record a successor todo or a concrete blocker instead."
+                        )
+                    }
+                    None => {
+                        "No vision is recorded for this goal yet, so your packet authors the vision fields fresh."
+                            .to_string()
+                    }
+                };
+            let mut writeback_guidance = String::from(
+                "Fill the <placeholders>: choose the `--progress-result-class` and a matching `--repair-delta-kind` for the one semantic outcome you recorded, and fill at least one stable identifier (`--progress-surface-id`, `--progress-hypothesis-id`, `--progress-probe-kind`, or `--progress-evidence-id`) - a bare result class is rejected as unattributable. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags. When the existing goal vision is still correct and you are NOT closing the goal, also append `--vision-unchanged-reason \"<compact reason>\"` instead of writing a patch.",
+            );
+            writeback_guidance.push_str(
+                "\n\nFor the coverage-backed TERMINAL (`--progress-result-class no_followup`, the normal close when the goal ends without further agent work) do NOT use the command above: use exactly this terminal command instead (that result class additionally requires `--progress-coverage-scope-id` and at least one `--progress-evidence-id` - the generic four-identifier list is not enough):\n`",
+            );
+            writeback_guidance.push_str(&terminal_command);
+            writeback_guidance.push_str(
+                "`\nThe terminal additionally requires `--agent-vision-json <vision-file>` holding a `goal_vision_replan_contract_v0` packet. ",
+            );
+            writeback_guidance.push_str(&vision_clause);
+            writeback_guidance.push_str(
+                " The packet shape (char budgets are enforced, including the 220-char scalars and the 1200-char total):\n",
+            );
+            writeback_guidance.push_str(
+                "{\"schema_version\": \"goal_vision_replan_contract_v0\", \"goal_id\": \"<GOAL_ID>\", \"agent_id\": \"<AGENT_ID>\", \"state\": \"no_followup\", \"vision_summary\": \"<what the goal set out to achieve, <=420 chars>\", \"acceptance_summary\": \"<what evidence closes it, <=420 chars>\", \"path_delta\": {\"outcome\": \"stop\", \"prior_assumption\": \"<the assumption before this turn, <=220 chars>\", \"observed_reality\": \"<what this turn verified, <=220 chars>\", \"stopped\": [\"<the work path stopped by this terminal, <=120 chars>\"], \"evidence_refs\": [\"<evidence reference, <=140 chars>\"]}}\n",
+            );
+            writeback_guidance.push_str(
+                "Consistency is enforced across the ACK: a `no_followup` result class requires vision `state=no_followup` AND `path_delta.outcome=stop` together; `prior_assumption` and `observed_reality` are mandatory; at least one `retained`/`changed`/`stopped` item must be present (max 3 per list, <=120 chars each; `unresolved_questions` max 2; `evidence_refs` max 4). A non-terminal replan (successor todo or concrete blocker) does NOT need the vision packet - use the successor/blocker path instead.",
+            );
+            (
+                format!(
+                    "{cli_prefix} refresh-state {goal_id_arg} --progress-scope agent_lane --classification bounded_replan_progress --delivery-batch-scale single_surface --delivery-outcome outcome_progress --progress-result-class <advanced|blocked|exploration_exhausted|no_followup> --progress-surface-id <surface-id> --progress-hypothesis-id <hypothesis-id> --progress-probe-kind <probe-kind> --progress-evidence-id <evidence-id> --replan-obligation-id {} --turn-instance-id {} --autonomous-replan-recorded --repair-delta-kind <delta-kind> {agent_id_arg} {capability_args}",
+                    agent_shell_value(obligation_id),
+                    agent_shell_value(turn_id),
+                ),
+                writeback_guidance,
+            )
+        }
         WritebackFlavor::Unbound => (String::new(), String::new()),
     };
     // The typed quota guard resolves the scheduler execution context from the
@@ -3103,7 +3354,7 @@ Consistency is enforced across the ACK: a `no_followup` result class requires vi
         "This turn has no settlement binding; do not spend quota.".to_string()
     } else {
         format!(
-            "After the writeback validates, run this exact quota spend command once:\n`{spend_command}`\nRun it verbatim: do not add, remove, or reorder flags, and do not substitute the todo or turn ids. If it returns a typed rejection naming `repair_scheduler_execution_context` or an advanced guard, stop and report the rejection verbatim; do not retry with modified arguments. EXCEPTION: a rejection saying the goal is terminal / fully closed / recurring automation must stop is NOT a blocker - it means your terminal writeback already completed the goal and the quota accounting is intentionally closed; skip the spend, mention it in one plain sentence in `completed`, and never put it in `blockers`."
+            "MANDATORY SECOND STEP - after the writeback validates, run this exact quota spend command once, in the SAME turn, before ending your response:\n`{spend_command}`\nRun it verbatim: do not add, remove, or reorder flags, and do not substitute the todo or turn ids. Skipping it fails the turn's settlement (the host has to compensate the bookkeeping and the task lands in recovery), so never end the turn between the writeback and this spend. If it returns a typed rejection naming `repair_scheduler_execution_context` or an advanced guard, stop and report the rejection verbatim; do not retry with modified arguments. EXCEPTION: a rejection saying the goal is terminal / fully closed / recurring automation must stop is NOT a blocker - it means your terminal writeback already completed the goal and the quota accounting is intentionally closed; skip the spend, mention it in one plain sentence in `completed`, and never put it in `blockers`."
         )
     };
     // The replan work clause is keyed on the SEMANTIC obligation: it applies
@@ -3111,9 +3362,9 @@ Consistency is enforced across the ACK: a `no_followup` result class requires vi
     // settles through a selected todo.
     let work_clause = if semantic_obligation.is_some() {
         if matches!(binding, Some(SettlementBinding::Todo { .. })) {
-            "This turn carries an open autonomous replan obligation and settles through the selected todo: apply the `replan_action_packet` from the contract, execute the selected todo's bounded work, then record exactly one required semantic outcome through the refresh-state writeback flags below - a concrete runnable successor todo only when an executable target is known, otherwise a typed terminal outcome or a new concrete blocker with evidence. The replan ACK must carry a matching typed `--repair-delta-kind` (for example `no_followup`, `blocker`, `successor_or_supersede`, `goal_vision_patch`, or `exploration_exhausted`): an ACK without a delta is stored as a no-op and does not clear the obligation.".to_string()
+            "This turn carries an open autonomous replan obligation and settles through the selected todo: apply the `replan_action_packet` from the contract, execute the selected todo's bounded work, then record exactly one required semantic outcome through the refresh-state writeback flags below - a concrete runnable successor todo only when an executable target is known, otherwise a typed terminal outcome or a new concrete blocker with evidence. The replan ACK must carry a matching typed `--repair-delta-kind` (for example `no_followup`, `blocker`, `successor_or_supersede`, `goal_vision_patch`, or `exploration_exhausted`): an ACK without a delta is stored as a no-op and does not clear the obligation. Turn-scoped settlement binding rule: THIS turn's writeback and spend must use exactly the todo or replan obligation the quota guard bound at turn start (the flags in the commands below). If you create a successor todo during this turn, it becomes selectable only by the NEXT turn's guard - do not pass its id to this turn's refresh-state or spend; that is rejected as `settlement binding does not match the original quota guard`.".to_string()
         } else {
-            "This turn is an autonomous replan turn: no todo is selected and you must not invent a todo claim. Apply the `replan_action_packet` from the contract: first re-read the durable goal state and current evidence, then record exactly one required semantic outcome through the refresh-state writeback flags below — a concrete runnable successor todo only when an executable target is known, otherwise a typed terminal outcome (for example a coverage-backed `no_followup` with the goal vision closed) or a new concrete blocker with evidence. The replan ACK must carry a matching typed `--repair-delta-kind` (for example `no_followup`, `blocker`, `successor_or_supersede`, `goal_vision_patch`, or `exploration_exhausted`): an ACK without a delta is stored as a no-op and does not clear the obligation.".to_string()
+            "This turn is an autonomous replan turn: no todo is selected and you must not invent a todo claim. Apply the `replan_action_packet` from the contract: first re-read the durable goal state and current evidence, then record exactly one required semantic outcome through the refresh-state writeback flags below — a concrete runnable successor todo only when an executable target is known, otherwise a typed terminal outcome (for example a coverage-backed `no_followup` with the goal vision closed) or a new concrete blocker with evidence. The replan ACK must carry a matching typed `--repair-delta-kind` (for example `no_followup`, `blocker`, `successor_or_supersede`, `goal_vision_patch`, or `exploration_exhausted`): an ACK without a delta is stored as a no-op and does not clear the obligation. Turn-scoped settlement binding rule: THIS turn's writeback and spend must use exactly the replan obligation the quota guard bound at turn start (the flags in the commands below). If you create a successor todo during this turn, it becomes selectable only by the NEXT turn's guard - do not pass its id to this turn's refresh-state or spend; that is rejected as `settlement binding does not match the original quota guard`.".to_string()
         }
     } else {
         "Claim the selected executable todo before write-capable work. Execute only the selected action in the current worktree. Then use the LoopX CLI prefix to complete, update, block, or defer the selected todo and create a successor only when concrete follow-up remains.".to_string()
@@ -3283,6 +3534,19 @@ fn bootstrap_args(request: &loopx_contract::LoopxCliCreateGoalRequest) -> Vec<Os
         "--adapter-status".to_string(),
         "connected-read-only".to_string(),
         "--no-onboarding-scan".to_string(),
+        // `--no-onboarding-scan` alone still leaves LoopX's connection
+        // validation todo in the plan, because bootstrap defaults
+        // `onboarding_connection_validation` to `agent` and
+        // `include_connection_validation = (value == "agent")`. That leftover
+        // todo costs one whole agent turn (observed live 2026-09-10, issue #1
+        // turn 3: a full turn spent on `[P1] Run loopx check ...` for a check
+        // the host had already done). `provider-prevalidated` is LoopX's own
+        // opt-out for hosts that validated the connection themselves, which is
+        // exactly what `refresh_environment` does before a task is created
+        // (sidecar handshake, Node runtime, Git workspace root, Agent model,
+        // GitHub auth).
+        "--onboarding-connection-validation".to_string(),
+        "provider-prevalidated".to_string(),
         "--codex-app-heartbeat".to_string(),
         "no".to_string(),
         // With `--runtime-root <worktree>/.loopx/runtime` (injected by
@@ -3470,6 +3734,57 @@ fn require_envelope_rendered(
     Ok(())
 }
 
+/// Host-side quota spend compensation for a turn whose durable writeback
+/// validated but whose spend receipt is missing. Mirrors the exact spend
+/// command shape the turn instruction projected (`--source heartbeat`,
+/// `--runtime-profile outer_controller`, the guard's own settlement
+/// binding), because the CLI validates the spend against the same turn
+/// identity: a drifted flag set would be rejected as a different settlement.
+/// The spend is idempotent - re-running it for an already-spent effect is
+/// refused by the CLI - so compensation can never double-book a slot.
+fn quota_spend_compensation_args(
+    goal_id: &str,
+    agent_id: &str,
+    binding: &SettlementBinding,
+    turn_id: &str,
+) -> Vec<OsString> {
+    let mut args: Vec<OsString> = [
+        "quota",
+        "spend-slot",
+        "--goal-id",
+        goal_id,
+        "--slots",
+        "1",
+        "--source",
+        "heartbeat",
+        "--execute",
+        "--turn-instance-id",
+        turn_id,
+        "--agent-id",
+        agent_id,
+        "--runtime-profile",
+        "outer_controller",
+    ]
+    .into_iter()
+    .map(OsString::from)
+    .collect();
+    match binding {
+        SettlementBinding::Todo { todo_id } => {
+            args.extend([
+                OsString::from("--todo-id"),
+                OsString::from(todo_id),
+            ]);
+        }
+        SettlementBinding::AutonomousReplan { obligation_id } => {
+            args.extend([
+                OsString::from("--replan-obligation-id"),
+                OsString::from(obligation_id),
+            ]);
+        }
+    }
+    args
+}
+
 fn quota_guard_args(
     goal_id: &str,
     agent_id: &str,
@@ -3578,8 +3893,8 @@ mod custom_runner_contract_tests {
         answer_gate_args, compact_objective, loopx_contract, matching_durable_progress,
         metadata_state, plan_item_args, planned_settlement_binding, planned_settlement_token,
         project_goal_snapshot, quota_guard_args, quota_probe_args,
-        render_agent_reentry_instruction, semantic_replan_obligation_id, LoopxCommandSource,
-        SettlementBinding, VerifiedLoopxCommand,
+        quota_spend_compensation_args, render_agent_reentry_instruction,
+        semantic_replan_obligation_id, LoopxCommandSource, SettlementBinding, VerifiedLoopxCommand,
     };
     use openbitfun_product_domains::miniapp::loopx::{
         LoopxCliPlanItemRequest, LoopxIssueKey, LoopxItemKind, LoopxRemoteItemState,
@@ -3857,6 +4172,7 @@ mod custom_runner_contract_tests {
             "turn-1",
             Some(&binding),
             None,
+            None,
             &["filesystem_read".to_string(), "shell".to_string()],
             "build-turn",
         )
@@ -3939,6 +4255,7 @@ mod custom_runner_contract_tests {
             "turn-1",
             Some(&binding),
             Some("replan-1"),
+            None,
             &["shell".to_string()],
             "build-turn",
         )
@@ -3957,6 +4274,13 @@ mod custom_runner_contract_tests {
         assert!(instruction.contains("--autonomous-replan-recorded"));
         assert!(instruction.contains("--repair-delta-kind <delta-kind>"));
         assert!(instruction.contains("--vision-unchanged-reason"));
+        // The terminal (no_followup) close is a separate complete command: the
+        // generic template alone is refused by that result class because it
+        // lacks the coverage-scope and evidence identifiers the CLI requires.
+        assert!(instruction.contains("--progress-result-class no_followup"));
+        assert!(instruction.contains("--progress-coverage-scope-id <coverage-scope-id>"));
+        assert!(instruction.contains("--agent-vision-json <vision-file>"));
+        assert!(instruction.contains("No vision is recorded for this goal yet"));
         // The spend command for a replan binding stays bound to the
         // obligation, not to a todo.
         assert!(instruction.contains("--replan-obligation-id"));
@@ -3966,6 +4290,67 @@ mod custom_runner_contract_tests {
             .expect("spend command present");
         assert!(spend.contains("--replan-obligation-id"));
         assert!(!spend.contains("--todo-id"));
+    }
+
+    #[test]
+    fn replan_instruction_embeds_the_recorded_vision_for_verbatim_reuse() {
+        let command = VerifiedLoopxCommand {
+            executable: PathBuf::from("loopx"),
+            prefix_args: Vec::new(),
+            environment: BTreeMap::new(),
+            source: LoopxCommandSource::FixedSystemCommand,
+            version: "1.0.1".to_string(),
+            bundle_manifest_schema: None,
+            command_reference_schema: "loopx_command_reference_v0".to_string(),
+            sha256: None,
+        };
+        let packet = json!({
+            "schema_version": "loopx_turn_envelope_v0",
+            "goal_id": "goal-1",
+            "agent_id": "agent-1",
+            "decision": "run",
+            "state": "eligible",
+            "effective_action": "autonomous_replan_required",
+            "action": {"selected_todo": null},
+            "user": {"action_required": false, "open_count": 0, "notify": "NOTIFY"},
+            "replan_action_packet": {"obligation_id": "replan-1"},
+            "required_reads": [],
+            "boundary": {"rule": "stay_in_scope_or_stop"},
+            "execution_policy": {"normal_delivery_allowed": false},
+            "writeback": {"spend_after_validation": true},
+            "contract_capsule": {"schema_version": "loopx_contract_capsule_v0"}
+        });
+        let binding = SettlementBinding::AutonomousReplan {
+            obligation_id: "replan-1".to_string(),
+        };
+        let recorded_vision = json!({
+            "schema_version": "goal_vision_replan_contract_v0",
+            "agent_id": "agent-1",
+            "state": "vision_patch_proposed",
+            "vision_patch": {
+                "vision_summary": "recorded summary that must be reused verbatim",
+                "acceptance_summary": "recorded acceptance that must be reused verbatim"
+            }
+        });
+        let instruction = render_agent_reentry_instruction(
+            &packet,
+            &command,
+            ".loopx/registry.json",
+            "turn-1",
+            Some(&binding),
+            Some("replan-1"),
+            Some(&recorded_vision),
+            &["shell".to_string()],
+            "build-turn",
+        )
+        .expect("replan runner instruction with recorded vision");
+
+        assert!(instruction.contains("A vision is ALREADY RECORDED"));
+        assert!(instruction.contains("recorded summary that must be reused verbatim"));
+        assert!(instruction.contains("recorded acceptance that must be reused verbatim"));
+        // The first-vision fallback must not appear once a vision exists.
+        assert!(!instruction.contains("No vision is recorded for this goal yet"));
+        assert!(instruction.contains("path_delta.outcome=replan"));
     }
 
     #[test]
@@ -4055,6 +4440,48 @@ mod custom_runner_contract_tests {
         .expect("settlement evidence");
         assert_eq!(evidence.effect_id, effect_id);
         assert!(evidence.quota_spent);
+    }
+
+    #[test]
+    fn quota_spend_compensation_args_mirror_the_turn_instruction_shape() {
+        // The compensated spend must carry the exact flags the turn
+        // instruction projected: the CLI validates the spend against the
+        // same turn identity, so a drifted flag set would settle as a
+        // different effect and the receipt would still be missing.
+        let todo_args = quota_spend_compensation_args(
+            "goal-1",
+            "agent-1",
+            &SettlementBinding::Todo {
+                todo_id: "todo-1".to_string(),
+            },
+            "turn-1",
+        );
+        let joined = todo_args
+            .iter()
+            .map(|value| value.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(joined.contains("quota spend-slot --goal-id goal-1"));
+        assert!(joined.contains("--source heartbeat --execute"));
+        assert!(joined.contains("--todo-id todo-1 --turn-instance-id turn-1"));
+        assert!(joined.contains("--agent-id agent-1 --runtime-profile outer_controller"));
+        assert!(!joined.contains("--replan-obligation-id"));
+
+        let replan_args = quota_spend_compensation_args(
+            "goal-1",
+            "agent-1",
+            &SettlementBinding::AutonomousReplan {
+                obligation_id: "replan-1".to_string(),
+            },
+            "turn-1",
+        );
+        let joined = replan_args
+            .iter()
+            .map(|value| value.to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(joined.contains("--replan-obligation-id replan-1 --turn-instance-id turn-1"));
+        assert!(!joined.contains("--todo-id"));
     }
 
     #[test]

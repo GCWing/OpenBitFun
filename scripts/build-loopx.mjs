@@ -186,6 +186,34 @@ export async function buildLoopx({
       '--name', 'loopx',
       '--clean',
       '--noconfirm',
+      // The pinned CLI shells out to `gh` with `subprocess.run(..., text=True)`
+      // and no explicit `encoding=`, so Python decodes the child's UTF-8 output
+      // with `locale.getpreferredencoding(False)`. On a Windows host whose ANSI
+      // code page is not UTF-8 (zh-CN / cp936) that raises
+      // `UnicodeDecodeError: 'gbk' codec can't decode byte 0x80`, the reader
+      // thread dies, `stdout` becomes None, and the caller surfaces the
+      // misleading `the JSON object must be str, bytes or bytearray, not
+      // NoneType`. `issue-fix workflow-plan --fetch-metadata` /
+      // `--fetch-candidate-evidence` fail on any non-ASCII GitHub content.
+      //
+      // `PYTHONUTF8=1` in the child environment cannot fix it: the PyInstaller
+      // bootloader pins `Py_UTF8Mode = 0` before `Py_Initialize()` and thereby
+      // overrides the environment variable (verified live 2026-09-10 - the
+      // frozen sidecar fails identically with and without those vars, while a
+      // normal CPython flips `getpreferredencoding` to utf-8 under
+      // `PYTHONUTF8=1`). Enabling UTF-8 mode in the frozen interpreter is the
+      // only build-side fix.
+      //
+      // Verified by rebuilding and re-running the repro below on a cp936 host;
+      // it must switch from exit=1 with the GBK traceback to the normal
+      // `{"ok": true, "schema_version": "issue_fix_workflow_plan_packet_v0"}`:
+      //   loopx issue-fix workflow-plan \
+      //     --url "https://github.com/<owner>/<repo>/issues/<n-with-cjk-title>" \
+      //     --fetch-metadata --format json --no-write-domain-state
+      // The upstream complement (explicit `encoding="utf-8", errors="replace"`
+      // on those subprocess calls) is tracked separately; neither replaces the
+      // other, because this one also covers the other sites.
+      '--python-option', 'X utf8=1',
       '--distpath', dist,
       '--workpath', path.join(work, 'build'),
       '--specpath', path.join(work, 'build'),

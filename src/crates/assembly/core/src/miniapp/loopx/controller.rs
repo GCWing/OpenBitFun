@@ -77,6 +77,43 @@ const LOOPX_PINNED_SKILL_PR_REVIEW: &str =
 const LOOPX_PINNED_SKILL_CHANGE_QUALITY: &str =
     include_str!("resources/pinned-skill-loopx-change-quality.md");
 
+/// The pinned issue-fix capability reference: the CLI and payload contract for
+/// every `loopx issue-fix` subcommand, including the `--*-json` inputs the
+/// caller must supply (`issue_fix_candidate_resolution_v0`,
+/// `issue_fix_repository_context_input_v0`, ...).
+///
+/// This is a SECOND documentation layer, distinct from the workflow skills
+/// above: the skills describe how to drive a goal, this describes the payload
+/// schemas a caller has to author. Delivering only the skill layer leaves the
+/// agent able to discover a required schema one field at a time from the CLI's
+/// typed refusals (observed live 2026-09-10: eight rounds spent hand-editing a
+/// `--candidate-resolution-json` payload because `rows[].kind` is documented
+/// here and nowhere else the agent is permitted to read - the environment
+/// boundary note forbids it from reading the LoopX source tree).
+const LOOPX_PINNED_ISSUE_FIX_REFERENCE: &str =
+    include_str!("resources/loopx-pinned-issue-fix-reference.md");
+
+/// The pinned issue-fix workflow contract: the ordered capability contract
+/// (evidence -> admission -> feasibility -> plan) plus the route vocabulary
+/// (`fix_pr` / `comment_only` / `triage_only`). Companion to the reference
+/// above; the two are the capability-protocol layer for issue-fix goals.
+const LOOPX_PINNED_ISSUE_FIX_WORKFLOW_CONTRACT: &str =
+    include_str!("resources/loopx-pinned-issue-fix-workflow-contract.md");
+
+/// Host-authored extract of the issue-fix JSON payload contracts, because LoopX
+/// documents part of them ONLY in source code: the `rows[].kind` vocabulary and
+/// its per-kind `outcome` sets live in
+/// `loopx/capabilities/issue_fix/candidate_preflight.py:25-29` and appear in no
+/// markdown file - not even in the capability README.
+///
+/// Seeding only LoopX's own documents therefore leaves the agent unable to
+/// author a valid `--candidate-resolution-json`, which is exactly what happened
+/// live on 2026-09-10 (eight rounds of typed refusals, each revealing one
+/// field). This file carries the anchors it was taken from so a pin bump can be
+/// re-verified.
+const LOOPX_PINNED_ISSUE_FIX_PAYLOAD_CONTRACT: &str =
+    include_str!("resources/loopx-pinned-issue-fix-payload-contract.md");
+
 /// Closing-ceremony order gleaned from live guard rejections on the pinned
 /// CLI (observed 2026-09-07): a terminal no-follow-up completion request is
 /// rejected with a typed refusal unless an accountable durable writeback and
@@ -94,8 +131,14 @@ const LOOPX_CLOSING_CEREMONY_NOTE: &str = "\n\n---\n[BitFun host facts - closing
 - Closing-ceremony semantics (refresh-state / todo / quota / vision packet\n\
   schemas and ordering) are authoritative in `.loopx/pinned-loopx-skill.md`;\n\
   when to read that document is governed only by the pointer section above.\n\
-- On a TYPED refusal, apply exactly the parameter the CLI error names and retry ONCE;\n\
-  do not retry the same argv, do not reorder steps, and report a blocker after two ordered attempts.\n\
+- On a TYPED refusal, apply exactly the parameter the CLI error names, then retry ONCE.\n\
+  The budget is per COMMAND FAMILY, not per literal argv: re-running the same subcommand\n\
+  with a progressively edited `--*-json` payload, or with one flag value changed to probe\n\
+  what the CLI accepts, is still the same retry and still consumes the budget. Two ordered\n\
+  attempts is the limit; after that, stop and report a blocker quoting the exact CLI error\n\
+  text instead of continuing to guess. If the schema you need is not documented in the pinned\n\
+  files this instruction names, say so in the blocker - that is a host documentation gap, not\n\
+  something to brute-force.\n\
 - The runtime is project-local (`<worktree>/.loopx/runtime`); never write to `~/.codex/loopx`.";
 
 /// Composes the final agent turn instruction: the CLI-provided turn
@@ -145,6 +188,17 @@ Sibling skill documents of the same pinned revision are seeded alongside it: \
 document tells you to load another `loopx-*` skill, read the matching seeded file - \
 never resolve loopx skill names through your skill catalog or user-level skill \
 directories (they may hold a different LoopX version).\n\
+- Issue-fix payload contracts are seeded as `.loopx/loopx-issue-fix-payload-contract.md` \
+(the exact `--candidate-resolution-json` / `--candidate-preflight-json` / \
+`--repository-context-json` shapes, including the `rows[].kind` vocabulary that LoopX documents \
+only in source), `.loopx/loopx-issue-fix-reference.md` (the `loopx issue-fix` command map) and \
+`.loopx/loopx-issue-fix-workflow-contract.md` (the ordered contract and the `fix_pr` / \
+`comment_only` / `triage_only` routes). READ THE PAYLOAD CONTRACT BEFORE YOU HAND-AUTHOR ANY \
+PAYLOAD, and prefer the machine-readable `candidate_preflight.input_contract` and \
+`repository_context_input_contract` blocks that the live `workflow-plan` packet projects. Do not \
+reverse-engineer a payload from CLI refusals one field at a time; if a schema you need is absent \
+from both the live packet and these seeded files, that is a host documentation gap - report it as \
+a blocker rather than guessing.\n\
 - This host runs the `generic-cli / outer_controller / isolated-headless` runtime profile. \
 Any `codex_app` scheduler/ACK fields the skill document mentions are CONCEPTUAL ONLY for this \
 host; your actual scheduler hint comes from the packet you received - apply it as-is. \
@@ -154,6 +208,18 @@ doctor/bootstrap/quota/recheck command templates - prefer those forms over re-de
         }
     }
     composed.push_str(LOOPX_CLOSING_CEREMONY_NOTE);
+    // Host-resolved input the agent must not spend rounds re-deriving. Kept
+    // separate from the closing-ceremony note so the pointer section stays the
+    // single owner of the read-once policy.
+    composed.push_str(
+        "\n\n---\n[BitFun host fact - item metadata]\n\
+The host already resolved this item's public metadata (number, state, title, labels, kind, url) \
+into `.loopx/issue-metadata.json` in this worktree. Reuse that file - for example as the \
+argument to `issue-fix workflow-plan --metadata-json` - instead of re-fetching the same metadata \
+with `gh issue view`. This is host-resolved input, not LoopX authority: LoopX still owns the \
+workflow plan and candidate admission, and anything you act on must be verified against the live \
+repository.",
+    );
     if let Some(note) = host_note {
         composed.push_str("\n\n---\n[BitFun host note] ");
         composed.push_str(note);
@@ -3310,8 +3376,14 @@ impl LoopxController {
         summary: Option<&str>,
     ) -> Result<(), String> {
         let message = match summary {
+            // The todo text is the authoritative description of the action, so
+            // do not append a PR-shaped example here: a parked goal may be
+            // waiting on something that has no pull request at all (observed
+            // live 2026-09-10, issue #3: the owner was asked to add `.loopx/`
+            // to `.gitignore` and the message told them to "review or merge the
+            // pull request on GitHub", which does not exist).
             Some(text) => format!(
-                "LoopX is waiting for an owner action outside this host: {text}. Finish that action (for example review or merge the pull request on GitHub); the task continues when the goal gains new work, or use Resume after acting."
+                "LoopX is waiting for an owner action outside this host: {text}. Finish that action on the surface it names; the task continues when the goal gains new work, or use Resume after acting."
             ),
             None => "LoopX is waiting for an owner action outside this host. Finish the pending owner decision on the external surface (for example GitHub); the task continues when the goal gains new work, or use Resume after acting."
                 .to_string(),
@@ -3709,6 +3781,59 @@ impl LoopxController {
                 reference_dir.join("loopx-change-quality.md"),
                 LOOPX_PINNED_SKILL_CHANGE_QUALITY,
             );
+            // The capability-protocol layer for issue-fix goals. Seeded next to
+            // the workflow skills because the two answer different questions:
+            // the skills say what to do, these say what shape the CLI accepts.
+            // Both are named by the turn instruction - the environment boundary
+            // note scopes document authority to the pinned files this
+            // instruction names, so seeding without naming would be inert.
+            let _ = std::fs::write(
+                reference_dir.join("loopx-issue-fix-reference.md"),
+                LOOPX_PINNED_ISSUE_FIX_REFERENCE,
+            );
+            let _ = std::fs::write(
+                reference_dir.join("loopx-issue-fix-workflow-contract.md"),
+                LOOPX_PINNED_ISSUE_FIX_WORKFLOW_CONTRACT,
+            );
+            // The host-authored half of the capability-payload layer: the
+            // schemas LoopX keeps only in source code.
+            let _ = std::fs::write(
+                reference_dir.join("loopx-issue-fix-payload-contract.md"),
+                LOOPX_PINNED_ISSUE_FIX_PAYLOAD_CONTRACT,
+            );
+            // The host already resolved this item's public metadata through its
+            // own GitHub intake provider, which uses a Rust HTTP client and is
+            // therefore unaffected by the sidecar's locale-dependent `gh`
+            // decoding. Persist the exact object shape
+            // `issue-fix workflow-plan --metadata-json` accepts, so the agent
+            // does not spend one round on `gh issue view` and a further round
+            // plumbing the JSON back in (observed live 2026-09-10: issue #2's
+            // first turn ran 65 tool calls across 52 model rounds).
+            //
+            // This is host-resolved INPUT, not LoopX authority: LoopX still owns
+            // the workflow plan, candidate admission, and every todo. The agent
+            // must re-verify anything it acts on against the live repository;
+            // the file only saves it from re-deriving metadata the host already
+            // has. Absent title/labels (legacy or partial intakes) are written
+            // empty rather than fabricated.
+            let item_metadata = serde_json::json!({
+                "number": task.identity.item.number,
+                "state": match task.identity.state {
+                    LoopxRemoteItemState::Open => "open",
+                    LoopxRemoteItemState::Closed | LoopxRemoteItemState::Merged => "closed",
+                    LoopxRemoteItemState::Unknown => "unknown",
+                },
+                "title": task.identity.title.clone(),
+                "labels": task.identity.labels.clone(),
+                "kind": match task.identity.item.kind {
+                    LoopxItemKind::Issue => "issue",
+                    LoopxItemKind::PullRequest => "pull_request",
+                },
+                "url": task.identity.item.canonical_url(),
+            });
+            if let Ok(serialized) = serde_json::to_vec_pretty(&item_metadata) {
+                let _ = std::fs::write(reference_dir.join("issue-metadata.json"), serialized);
+            }
         })
         .await
         .map(|_| ())
@@ -4659,16 +4784,16 @@ fn now_ms() -> i64 {
 }
 
 fn bounded_agent_summary(summary: &str) -> String {
-    let mut chars = summary.chars();
-    let bounded = chars
-        .by_ref()
-        .take(MAX_AGENT_SUMMARY_CHARS)
-        .collect::<String>();
-    if chars.next().is_some() {
-        format!("{bounded}\n\n[Summary truncated by LoopX host]")
-    } else {
-        bounded
+    let total = summary.chars().count();
+    if total <= MAX_AGENT_SUMMARY_CHARS {
+        return summary.to_string();
     }
+    // Keep the tail: the structured summary contract places its fenced
+    // `loopx_summary_v1` JSON at the end of the response, and a head-keeping
+    // bound would decapitate exactly that block (see the subscriber's
+    // `append_bounded_text` for the matching tail-keeping rule).
+    let tail: String = summary.chars().skip(total - MAX_AGENT_SUMMARY_CHARS).collect();
+    format!("[Summary truncated by LoopX host; head cut]\n\n{tail}")
 }
 
 fn github_auth_fact_status(probe: &LoopxGithubAuthProbe) -> LoopxEnvironmentFactStatus {
@@ -4992,7 +5117,10 @@ mod tests {
         let summary = "界".repeat(MAX_AGENT_SUMMARY_CHARS + 1);
         let bounded = bounded_agent_summary(&summary);
 
-        assert!(bounded.ends_with("[Summary truncated by LoopX host]"));
+        // The bound keeps the TAIL (the structured summary fence lives at the
+        // end of the response), so the marker leads and the full quota of
+        // characters survives behind it.
+        assert!(bounded.starts_with("[Summary truncated by LoopX host; head cut]"));
         assert_eq!(bounded.matches('界').count(), MAX_AGENT_SUMMARY_CHARS);
     }
 

@@ -891,16 +891,55 @@ impl LoopxWorkspaceService {
             .parent()
             .expect("validated workspace root parent");
         let detached_root = parent.join(format!(".{root_name}.reset-{}", uuid::Uuid::new_v4()));
-        tokio::fs::rename(&canonical_root, &detached_root)
-            .await
-            .map_err(|error| {
-                host_error(
+        // A freshly cancelled agent turn may still hold handles inside the
+        // workspace tree when the reset runs: the turn-cancel path signals
+        // cancellation tokens and the tool implementations terminate their
+        // child processes (shells, git, gh, the LoopX sidecar) asynchronously,
+        // and on Windows a directory rename fails immediately with access
+        // denied while ANY such handle or CWD reference exists - handle
+        // release after process termination is itself asynchronous (live
+        // 2026-09-10: stopping a running task failed the reset with
+        // `failed to detach LoopX workspace root for cleanup: 拒绝访问。 (os
+        // error 5)` even though the agent cancel had returned). Retry the
+        // detach with bounded backoff instead of failing the whole reset.
+        let mut rename_error = None;
+        for attempt in 0..12u32 {
+            match tokio::fs::rename(&canonical_root, &detached_root).await {
+                Ok(()) => {
+                    rename_error = None;
+                    break;
+                }
+                Err(error) if is_transient_dir_rename_error(&error) => {
+                    log::warn!(
+                        "LoopX workspace root detach is blocked by a lingering handle; retrying: attempt={}, next_delay_ms={}, error={}",
+                        attempt + 1,
+                        rename_retry_delay_ms(attempt),
+                        error
+                    );
+                    rename_error = Some(error);
+                    tokio::time::sleep(std::time::Duration::from_millis(rename_retry_delay_ms(
+                        attempt,
+                    )))
+                    .await;
+                }
+                Err(error) => return Err(host_error(
                     loopx_contract::LoopxHostPortErrorKind::Io,
                     &request.operation_id,
                     format!("failed to detach LoopX workspace root for cleanup: {error}"),
                     true,
-                )
-            })?;
+                )),
+            }
+        }
+        if let Some(error) = rename_error {
+            return Err(host_error(
+                loopx_contract::LoopxHostPortErrorKind::Io,
+                &request.operation_id,
+                format!(
+                    "failed to detach LoopX workspace root for cleanup after retries: {error}"
+                ),
+                true,
+            ));
+        }
         if let Err(error) = tokio::fs::create_dir_all(&canonical_root).await {
             let _ = tokio::fs::rename(&detached_root, &canonical_root).await;
             return Err(host_error(
@@ -1550,5 +1589,29 @@ fn host_error(
         message: message.into(),
         operation_id: Some(operation_id.to_string()),
         retryable,
+    }
+}
+
+/// Backoff for the workspace-root detach retry, in milliseconds. Twelve
+/// attempts at this schedule wait roughly 13.5s in total, which covers the
+/// observed teardown tail (agent turn drain, child-process termination, and
+/// asynchronous Windows handle release) without making the reset feel stuck.
+fn rename_retry_delay_ms(attempt: u32) -> u64 {
+    (250 * u64::from(attempt + 1)).min(2_000)
+}
+
+/// Windows rename-transient errors that a lingering handle can produce:
+/// ERROR_ACCESS_DENIED (5) when a process still holds the tree or uses it as
+/// its CWD, ERROR_SHARING_VIOLATION (32) when a file inside is open without
+/// FILE_SHARE_DELETE. Everything else (bad path, permissions, disk state) is
+/// reported immediately instead of being retried.
+fn is_transient_dir_rename_error(error: &std::io::Error) -> bool {
+    if cfg!(windows) {
+        matches!(error.raw_os_error(), Some(5) | Some(32))
+    } else {
+        // POSIX renames within one filesystem do not fail transiently on open
+        // handles; only EACCES from a concurrent mutation is worth one more
+        // attempt.
+        matches!(error.raw_os_error(), Some(13))
     }
 }

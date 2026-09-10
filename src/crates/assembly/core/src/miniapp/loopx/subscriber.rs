@@ -286,15 +286,43 @@ impl EventSubscriber for LoopxEventSubscriber {
 }
 
 fn append_bounded_text(buffer: &mut String, text: &str, max_chars: usize) {
-    let remaining = max_chars.saturating_sub(buffer.chars().count());
-    if remaining > 0 {
-        buffer.extend(text.chars().take(remaining));
+    buffer.push_str(text);
+    let total = buffer.chars().count();
+    if total > max_chars {
+        // Keep the TAIL, not the head: the agent's structured summary
+        // contract (`loopx_summary_v1`) emits its fenced JSON at the END of
+        // the final response, so a head-keeping bound would cut exactly the
+        // part the structured parser and the UI need (live 2026-09-10: the
+        // issue-closeout summary rendered as a truncated raw JSON fragment
+        // like `"rejected": [{"route": ...` because the fenced block never
+        // survived the bound).
+        let skip = total - max_chars;
+        let mut kept = String::with_capacity(max_chars);
+        kept.extend(buffer.chars().skip(skip));
+        *buffer = kept;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_text_keeps_the_tail_for_structured_summaries() {
+        // The `loopx_summary_v1` fenced JSON lands at the END of an agent's
+        // final response; the bound must keep the tail so the structured
+        // parser can find a complete fence (live 2026-09-10: head-keeping
+        // bounds rendered the closeout summary as `"rejected": ...` raw
+        // fragments).
+        let mut buffer = String::new();
+        append_bounded_text(&mut buffer, &"x".repeat(120), 100);
+        append_bounded_text(&mut buffer, &"\n```loopx_summary_v1\n{}\n```", 100);
+
+        assert_eq!(buffer.chars().count(), 100);
+        assert!(buffer.starts_with('x'));
+        assert!(buffer.contains("loopx_summary_v1"));
+        assert!(buffer.trim_end().ends_with("```"));
+    }
 
     #[test]
     fn activity_gate_coalesces_stream_chunks_but_allows_forced_boundaries() {

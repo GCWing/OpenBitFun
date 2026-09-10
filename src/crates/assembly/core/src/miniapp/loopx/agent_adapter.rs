@@ -255,15 +255,27 @@ impl LoopxAgentPort for CoreLoopxAgentPort {
         request: LoopxAgentCancelRequest,
     ) -> LoopxHostFuture<'_, LoopxAgentCancelResult> {
         Box::pin(async move {
+            // Deliberately leave `turn_id` empty so the port takes the
+            // active-turn path: the turn-id path only signals cancellation
+            // tokens and returns after a hardcoded 1.5s in-memory drain, while
+            // the active-turn path waits (bounded by `wait_timeout_ms`) until
+            // the execution engine reports the turn as fully stopped. The
+            // LoopX host tears the whole task down, so cancelling whichever
+            // turn is currently active for the session is exactly the target
+            // set; a task whose turn already settled reports no active turn
+            // and proceeds. Waiting matters because the workspace reset that
+            // follows renames the workspace root, and on Windows that fails
+            // with access denied while any agent child process still holds a
+            // handle or CWD inside the tree (live 2026-09-10).
             let result = AgentTurnCancellationPort::cancel_turn(
                 self.coordinator.as_ref(),
                 AgentTurnCancellationRequest {
                     session_id: request.session_id,
-                    turn_id: Some(request.turn_id),
+                    turn_id: None,
                     source: Some(AgentSubmissionSource::DesktopApi),
                     requester_session_id: None,
                     reason: Some("LoopX task paused by the user".to_string()),
-                    wait_timeout_ms: Some(5_000),
+                    wait_timeout_ms: Some(10_000),
                     cancel_descendants: true,
                 },
             )

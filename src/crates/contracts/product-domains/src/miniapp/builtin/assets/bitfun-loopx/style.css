@@ -501,12 +501,22 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lx-info) 45%, transparent);
   color: var(--lx-text);
 }
+/* "Running" and "selected" answer two different questions, so they must not be
+   drawn on the same visual channel:
+     - selected = "the detail pane and timeline are showing THIS task"
+     - running  = "this task is doing work right now"
+   Previously both drew a blue border plus a blue glow, so a running task and a
+   selected task looked equally focused and the reader could not tell which one
+   the log pane belonged to (observed in a live run where a running task and a
+   different selected task both rendered with blue frames).
+   The frame and the inner ring are now reserved for selection; the live state
+   is carried by the tinted background, the left accent bar and the sweep. */
 .task-item[data-state="running"] {
   position: relative;
   overflow: hidden;
-  border-color: color-mix(in srgb, var(--lx-info) 42%, var(--lx-border));
+  border-color: transparent;
   background: color-mix(in srgb, var(--lx-info) 10%, var(--lx-element));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--lx-info) 16%, transparent);
+  box-shadow: none;
 }
 .task-item[data-state="running"]::before {
   content: "";
@@ -525,9 +535,12 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   background: linear-gradient(90deg, transparent, var(--lx-info), transparent);
   animation: running-sweep 1.7s linear infinite;
 }
+/* A task that is both running and selected keeps the selection ring, so the
+   frame still means exactly one thing: "this is what the pane is showing". */
 .task-item[data-state="running"].is-selected {
   border-color: color-mix(in srgb, var(--lx-info) 58%, var(--lx-border));
   background: color-mix(in srgb, var(--lx-info) 14%, var(--lx-elevated));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--lx-info) 45%, transparent);
 }
 .task-item[data-state="cancelling"], .task-item[data-pending] {
   position: relative;
