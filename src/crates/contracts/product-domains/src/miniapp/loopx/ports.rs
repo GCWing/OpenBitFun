@@ -440,6 +440,84 @@ pub struct LoopxCliAnswerGateResult {
     pub goal_state: LoopxCliGoalState,
 }
 
+/// Registers one durable agent todo for a goal. The host uses this only to
+/// materialize a decision the owner already made explicitly in the UI (an
+/// approved gate whose promised action has no successor todo left behind by
+/// the agent); it never authors progress, completions, or terminals, and
+/// never rewrites an existing todo.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxCliAddTodoRequest {
+    #[serde(flatten)]
+    pub context: LoopxCliGoalContext,
+    pub goal_id: String,
+    pub agent_id: String,
+    /// Owner-facing todo text. The host derives it from the approved gate's
+    /// own message so the agent reads the owner's decision, not host-invented
+    /// semantics.
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxCliAddTodoResult {
+    pub goal_id: String,
+    pub applied: bool,
+    pub durable_revision: String,
+}
+
+/// One durable todo projected by `loopx todo list` (typed summary only; the
+/// host never re-derives control facts from the todo text).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxCliTodoSummary {
+    pub todo_id: String,
+    pub role: String,
+    pub status: String,
+    pub task_class: String,
+    pub action_kind: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxCliListTodosRequest {
+    #[serde(flatten)]
+    pub context: LoopxCliGoalContext,
+    pub goal_id: String,
+    pub agent_id: String,
+    /// Optional lifecycle filter (`open`, `blocked`, ...). `None` lists all.
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxCliListTodosResult {
+    pub todos: Vec<LoopxCliTodoSummary>,
+}
+
+/// Unblocks one durable todo the agent blocked pending the owner's decision.
+/// Used only after an explicit owner approval in the host UI; the note
+/// attributes the lifecycle change to that decision.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxCliUnblockTodoRequest {
+    #[serde(flatten)]
+    pub context: LoopxCliGoalContext,
+    pub goal_id: String,
+    pub agent_id: String,
+    pub todo_id: String,
+    pub note: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxCliUnblockTodoResult {
+    pub goal_id: String,
+    pub applied: bool,
+    pub durable_revision: String,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoopxAgentTurnStatus {
@@ -576,6 +654,29 @@ pub trait LoopxCliPort: Send + Sync {
         request: LoopxCliAnswerGateRequest,
         progress: &'a dyn LoopxCliProgressSink,
     ) -> LoopxCliFuture<'a, LoopxCliAnswerGateResult>;
+
+    /// Registers one durable agent todo (see [`LoopxCliAddTodoRequest`] for
+    /// the narrow owner-decision-materialization contract).
+    fn add_todo<'a>(
+        &'a self,
+        request: LoopxCliAddTodoRequest,
+        progress: &'a dyn LoopxCliProgressSink,
+    ) -> LoopxCliFuture<'a, LoopxCliAddTodoResult>;
+
+    /// Lists a goal's durable todos (typed summaries; read-only).
+    fn list_todos<'a>(
+        &'a self,
+        request: LoopxCliListTodosRequest,
+        progress: &'a dyn LoopxCliProgressSink,
+    ) -> LoopxCliFuture<'a, LoopxCliListTodosResult>;
+
+    /// Unblocks a todo the agent blocked pending the owner's decision (see
+    /// [`LoopxCliUnblockTodoRequest`]).
+    fn unblock_todo<'a>(
+        &'a self,
+        request: LoopxCliUnblockTodoRequest,
+        progress: &'a dyn LoopxCliProgressSink,
+    ) -> LoopxCliFuture<'a, LoopxCliUnblockTodoResult>;
 
     /// Probes whether the authenticated GitHub identity can merge pull
     /// requests in the goal's repository. `Ok(None)` means unknown (no

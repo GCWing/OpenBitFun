@@ -2356,6 +2356,198 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
         })
     }
 
+    fn add_todo<'a>(
+        &'a self,
+        request: loopx_contract::LoopxCliAddTodoRequest,
+        progress: &'a dyn loopx_contract::LoopxCliProgressSink,
+    ) -> loopx_contract::LoopxCliFuture<'a, loopx_contract::LoopxCliAddTodoResult> {
+        Box::pin(async move {
+            validate_goal_context(&request.context)?;
+            let operation_id = &request.context.call.operation_id;
+            let observer = PortProcessObserver {
+                progress,
+                fallback: self.observer.as_ref(),
+                task_id: Some(request.context.task_id.clone()),
+                stage: loopx_contract::LoopxCliProgressStage::AnsweringGate,
+            };
+            report_port_progress(
+                progress,
+                operation_id,
+                Some(request.context.task_id.clone()),
+                loopx_contract::LoopxCliProgressStage::AnsweringGate,
+                "Materializing the approved gate action as a durable todo",
+            );
+            let decision = run_port_command(
+                self,
+                &request.context,
+                gate_successor_todo_args(&request)?,
+                &observer,
+            )
+            .await?;
+            require_payload_ok(&decision.payload, operation_id)?;
+            if decision.payload.get("dry_run").and_then(Value::as_bool) == Some(true) {
+                return Err(port_error(
+                    loopx_contract::LoopxCliErrorKind::Backend,
+                    operation_id,
+                    "todo add was recorded as a dry run; the durable todo was not created",
+                    false,
+                ));
+            }
+            let inspection_args = quota_probe_args(
+                &request.goal_id,
+                &request.agent_id,
+                &request.context.available_capabilities,
+                operation_id,
+            )?;
+            let snapshot = inspect_goal_snapshot(
+                self,
+                &request.goal_id,
+                &request.context,
+                inspection_args,
+                &observer,
+            )
+            .await?;
+            Ok(loopx_contract::LoopxCliAddTodoResult {
+                goal_id: request.goal_id,
+                applied: true,
+                durable_revision: snapshot.durable_revision,
+            })
+        })
+    }
+
+    fn list_todos<'a>(
+        &'a self,
+        request: loopx_contract::LoopxCliListTodosRequest,
+        progress: &'a dyn loopx_contract::LoopxCliProgressSink,
+    ) -> loopx_contract::LoopxCliFuture<'a, loopx_contract::LoopxCliListTodosResult> {
+        Box::pin(async move {
+            validate_goal_context(&request.context)?;
+            let operation_id = &request.context.call.operation_id;
+            let observer = PortProcessObserver {
+                progress,
+                fallback: self.observer.as_ref(),
+                task_id: Some(request.context.task_id.clone()),
+                stage: loopx_contract::LoopxCliProgressStage::InspectingGoal,
+            };
+            report_port_progress(
+                progress,
+                operation_id,
+                Some(request.context.task_id.clone()),
+                loopx_contract::LoopxCliProgressStage::InspectingGoal,
+                "Reading the durable todo list",
+            );
+            let decision = run_port_command(
+                self,
+                &request.context,
+                goal_todo_list_args(&request)?,
+                &observer,
+            )
+            .await?;
+            require_payload_ok(&decision.payload, operation_id)?;
+            let todos = decision
+                .payload
+                .get("todos")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(|item| {
+                            let text = item
+                                .get("todo")
+                                .or_else(|| item.get("text"))
+                                .and_then(Value::as_str)
+                                .unwrap_or_default();
+                            Some(loopx_contract::LoopxCliTodoSummary {
+                                todo_id: item.get("todo_id").and_then(Value::as_str)?.to_string(),
+                                role: item
+                                    .get("role")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                status: item
+                                    .get("status")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                task_class: item
+                                    .get("task_class")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                action_kind: item
+                                    .get("action_kind")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string(),
+                                text: text.to_string(),
+                            })
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(loopx_contract::LoopxCliListTodosResult { todos })
+        })
+    }
+
+    fn unblock_todo<'a>(
+        &'a self,
+        request: loopx_contract::LoopxCliUnblockTodoRequest,
+        progress: &'a dyn loopx_contract::LoopxCliProgressSink,
+    ) -> loopx_contract::LoopxCliFuture<'a, loopx_contract::LoopxCliUnblockTodoResult> {
+        Box::pin(async move {
+            validate_goal_context(&request.context)?;
+            let operation_id = &request.context.call.operation_id;
+            let observer = PortProcessObserver {
+                progress,
+                fallback: self.observer.as_ref(),
+                task_id: Some(request.context.task_id.clone()),
+                stage: loopx_contract::LoopxCliProgressStage::AnsweringGate,
+            };
+            report_port_progress(
+                progress,
+                operation_id,
+                Some(request.context.task_id.clone()),
+                loopx_contract::LoopxCliProgressStage::AnsweringGate,
+                "Applying the owner's decision to the blocked todo",
+            );
+            let decision = run_port_command(
+                self,
+                &request.context,
+                unblock_todo_args(&request)?,
+                &observer,
+            )
+            .await?;
+            require_payload_ok(&decision.payload, operation_id)?;
+            if decision.payload.get("dry_run").and_then(Value::as_bool) == Some(true) {
+                return Err(port_error(
+                    loopx_contract::LoopxCliErrorKind::Backend,
+                    operation_id,
+                    "todo update was recorded as a dry run; the todo was not unblocked",
+                    false,
+                ));
+            }
+            let inspection_args = quota_probe_args(
+                &request.goal_id,
+                &request.agent_id,
+                &request.context.available_capabilities,
+                operation_id,
+            )?;
+            let snapshot = inspect_goal_snapshot(
+                self,
+                &request.goal_id,
+                &request.context,
+                inspection_args,
+                &observer,
+            )
+            .await?;
+            Ok(loopx_contract::LoopxCliUnblockTodoResult {
+                goal_id: request.goal_id,
+                applied: true,
+                durable_revision: snapshot.durable_revision,
+            })
+        })
+    }
+
     fn verify_turn_settlement<'a>(
         &'a self,
         request: loopx_contract::LoopxCliSettleTurnRequest,
@@ -2451,7 +2643,7 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 // experiment, issue #2 turn 4: the agent's writeback validated
                 // but it ended the turn without the quota spend, so an
                 // otherwise-healthy task stranded in recovery with
-                // `settlement_unverified` / "写入已验证，花费回执缺失").
+                // `settlement_receipt_missing` / "写入已验证，花费回执缺失").
                 // The spend is mechanical, idempotent bookkeeping (same
                 // effect id, `--source heartbeat`, exact binding flags the
                 // turn instruction already projected), not a semantic
@@ -3302,6 +3494,20 @@ fn render_agent_reentry_instruction(
             let mut writeback_guidance = String::from(
                 "Fill the <placeholders>: choose the `--progress-result-class` and a matching `--repair-delta-kind` for the one semantic outcome you recorded, and fill at least one stable identifier (`--progress-surface-id`, `--progress-hypothesis-id`, `--progress-probe-kind`, or `--progress-evidence-id`) - a bare result class is rejected as unattributable. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags. When the existing goal vision is still correct and you are NOT closing the goal, also append `--vision-unchanged-reason \"<compact reason>\"` instead of writing a patch.",
             );
+            // Verified live 2026-09-11 (dynamic-workflows-lab issue #1, replan
+            // turn bitfun-2c03fe0d vs the corrective bitfun-95c3217c): a
+            // coverage-backed terminal is refused with
+            // `todo_no_followup_settlement_required` while the goal's todo
+            // lifecycle still ends on a completed todo with an active-goal
+            // continuation. The corrective turn closed it by re-entering
+            // `todo complete --no-follow-up` for that todo FIRST
+            // (`completion_recovery=lifecycle_reentry_terminal_closeout`),
+            // after which the identical terminal refresh-state was accepted.
+            // Teaching the order removes the whole first-attempt refusal
+            // class without pattern-matching any error string.
+            writeback_guidance.push_str(&format!(
+                "\n\nBefore a TERMINAL close, settle the todo lifecycle first when the goal still has a completed todo recorded with an active-goal continuation (the normal state after a settled work turn): run `{cli_prefix} todo complete {goal_id_arg} --todo-id <completed-todo-id> --no-follow-up {agent_id_arg} --execute` for that todo, THEN the terminal command below - a coverage-backed terminal cannot replace Todo lifecycle settlement and is refused otherwise.",
+            ));
             writeback_guidance.push_str(
                 "\n\nFor the coverage-backed TERMINAL (`--progress-result-class no_followup`, the normal close when the goal ends without further agent work) do NOT use the command above: use exactly this terminal command instead (that result class additionally requires `--progress-coverage-scope-id` and at least one `--progress-evidence-id` - the generic four-identifier list is not enough):\n`",
             );
@@ -4845,6 +5051,99 @@ fn answer_gate_args(
         }
         args.extend(["--note".to_string(), note.clone()]);
     }
+    Ok(args.into_iter().map(OsString::from).collect())
+}
+
+/// Argv for the owner-decision todo materialization (see
+/// [`crate::miniapp::loopx_contract::LoopxCliAddTodoRequest`]). Mirrors the
+/// pinned CLI's documented minimal `todo add` shape: `--role` and `--text`
+/// are required by `validate_todo_add_options`, and `--execute` makes the
+/// write durable (without it the command is a dry run).
+fn gate_successor_todo_args(
+    request: &loopx_contract::LoopxCliAddTodoRequest,
+) -> loopx_contract::LoopxCliResult<Vec<OsString>> {
+    let operation_id = &request.context.call.operation_id;
+    validate_nonempty("goal_id", &request.goal_id, operation_id)?;
+    validate_nonempty("text", &request.text, operation_id)?;
+    if request.text.chars().count() > 480 {
+        return Err(port_error(
+            loopx_contract::LoopxCliErrorKind::InvalidInput,
+            operation_id,
+            "todo text exceeds the 480-char adapter limit",
+            false,
+        ));
+    }
+    let args = vec![
+        "todo".to_string(),
+        "add".to_string(),
+        "--goal-id".to_string(),
+        request.goal_id.clone(),
+        "--role".to_string(),
+        "agent".to_string(),
+        // The pinned CLI rejects `--agent-id` on agent todo add ("use
+        // --claimed-by to assign execution"); the soft claim names the
+        // execution lane, matching how the agent's own todos are claimed.
+        "--claimed-by".to_string(),
+        request.agent_id.clone(),
+        "--text".to_string(),
+        request.text.clone(),
+        "--execute".to_string(),
+    ];
+    Ok(args.into_iter().map(OsString::from).collect())
+}
+
+/// Argv for the durable todo list read (`loopx todo list`). Read-only; the
+/// optional status filter maps 1:1 to the CLI's own `--status` choices.
+fn goal_todo_list_args(
+    request: &loopx_contract::LoopxCliListTodosRequest,
+) -> loopx_contract::LoopxCliResult<Vec<OsString>> {
+    let operation_id = &request.context.call.operation_id;
+    validate_nonempty("goal_id", &request.goal_id, operation_id)?;
+    let mut args = vec![
+        "todo".to_string(),
+        "list".to_string(),
+        "--goal-id".to_string(),
+        request.goal_id.clone(),
+    ];
+    if let Some(status) = request.status.as_deref() {
+        validate_nonempty("status", status, operation_id)?;
+        args.extend(["--status".to_string(), status.to_string()]);
+    }
+    Ok(args.into_iter().map(OsString::from).collect())
+}
+
+/// Argv for unblocking a todo the agent blocked pending the owner's
+/// decision: `todo update --status open` with an attributed note, executed
+/// durably. The CLI attributes lifecycle actors via `--agent-id` on update.
+fn unblock_todo_args(
+    request: &loopx_contract::LoopxCliUnblockTodoRequest,
+) -> loopx_contract::LoopxCliResult<Vec<OsString>> {
+    let operation_id = &request.context.call.operation_id;
+    validate_nonempty("goal_id", &request.goal_id, operation_id)?;
+    validate_nonempty("todo_id", &request.todo_id, operation_id)?;
+    if request.note.len() > 500 {
+        return Err(port_error(
+            loopx_contract::LoopxCliErrorKind::InvalidInput,
+            operation_id,
+            "unblock note exceeds the 500-byte adapter limit",
+            false,
+        ));
+    }
+    let args = vec![
+        "todo".to_string(),
+        "update".to_string(),
+        "--goal-id".to_string(),
+        request.goal_id.clone(),
+        "--todo-id".to_string(),
+        request.todo_id.clone(),
+        "--status".to_string(),
+        "open".to_string(),
+        "--agent-id".to_string(),
+        request.agent_id.clone(),
+        "--note".to_string(),
+        request.note.clone(),
+        "--execute".to_string(),
+    ];
     Ok(args.into_iter().map(OsString::from).collect())
 }
 

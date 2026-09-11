@@ -122,6 +122,8 @@ const COPY = {
     decisionCardTitleRecovery: '工作段被中断，需要恢复',
     decisionCardTitlePlanExhausted: '修复计划已执行完毕，等待收尾方式',
     decisionResume: '恢复重试',
+    decisionContinueAfterOwnerAction: '我已完成，继续任务',
+    approvalContextTitle: '本次决策的背景',
     decisionCardGateHint: '请在上方审批面板中批准或拒绝该请求。',
     decisionCardRecoveryHint: '本段工作已结束，但结算未能确认持久进展；可恢复重试一次，结论详情见下方最新进展。',
     decisionCardPlanExhaustedHint: '流程的待办已全部执行完，但没有留下可继续的待办、待批门禁或收尾声明，宿主不会伪造收尾。已产生的提交、未提交改动与证据均保留在任务工作区。你可以：从任务分支手动推送并开 PR / 在 issue 上评论说明；或等 goal 出现新待办（例如上游 PR 合并、新的监控结论）后再点“恢复重试”。',
@@ -146,6 +148,7 @@ const COPY = {
     summarySegmentDelivery: '交付',
     summaryCompletedTitle: '本段完成',
     summaryDecisionTitle: '已定方案',
+    summaryRejectedTitle: '已否决的其他方案',
     summaryNextStep: '下一步',
     summaryBlockers: '阻塞',
     summaryTechReceipts: '技术回执',
@@ -153,7 +156,9 @@ const COPY = {
     recoveryReasonHostRestart: '中断原因：应用异常关闭导致执行中断',
     recoveryReasonExecutionFailure: '中断原因：执行过程失败',
     recoveryReasonPlanExhausted: '中断原因：计划用尽——无待办、无待批门禁、无终局声明',
-    recoveryReasonSettlementUnverified: '中断原因：结算未能确认持久进展（写入已验证，花费回执缺失）',
+    recoveryReasonSettlementUnverified: '中断原因：结算未能确认持久进展，详情见下方技术回执',
+    recoveryReasonSettlementNoProgress: '中断原因：本段收尾写回未被 LoopX 接受，未形成结算认可的持久进展',
+    recoveryReasonSettlementReceiptMissing: '中断原因：本段写入已验证，但配额花费回执缺失，结算未完成',
     recoveryReasonRepositoryPaused: '中断原因：同仓库其他任务失败后暂停队列',
     recoveryReasonManualRestore: '中断原因：手动恢复的归档任务',
     outputTool: '工具',
@@ -261,7 +266,7 @@ const COPY = {
     publishApprovalTitle: '是否发布修复并创建 Pull Request？',
     publishApprovalSummary: '修复已在分支 {branch} 的提交 {commit} 中准备完成，目标仓库为 {repository}。现在需要你决定是否发布。',
     publishApprovalSummaryGeneric: '修复和发布材料已经准备完成，目标仓库为 {repository}。现在需要你决定是否发布为 Pull Request。',
-    publishApprovalApproveEffect: '推送修复分支并创建 Pull Request，随后进入 macOS 真机验证。批准不会自动合并代码。',
+    publishApprovalApproveEffect: '推送修复分支并创建 Pull Request。批准不会自动合并代码，合并由你决定。',
     publishApprovalRejectEffect: '不推送分支，也不创建 Pull Request；本地分支、提交和验证结果会保留，任务停在当前步骤。',
     publishApprovalRecommendationReady: '建议批准：当前修改已有验证结果，批准后仍可在 Pull Request 中继续评审，并不会自动合并。',
     publishApprovalRecommendationReview: '建议先确认修改和验证结果；批准只会发布 Pull Request，不会自动合并。',
@@ -496,6 +501,8 @@ const COPY = {
     decisionCardTitleRecovery: 'Work segment was interrupted and needs recovery',
     decisionCardTitlePlanExhausted: 'Fix plan completed; choose how to finish',
     decisionResume: 'Resume retry',
+    decisionContinueAfterOwnerAction: 'I finished the step — continue',
+    approvalContextTitle: 'Why this decision',
     decisionCardGateHint: 'Approve or reject the request in the approval panel above.',
     decisionCardRecoveryHint: 'This segment finished but settlement could not validate durable progress. You can retry recovery once; see the summary below for the conclusion.',
     decisionCardPlanExhaustedHint: 'All plan todos are done, but the flow left no open todo, approval gate, or terminal declaration, and the host will not fabricate one. Commits, uncommitted changes, and evidence are preserved in the task worktree. You can push the task branch and open a PR / comment on the issue yourself, or wait until the goal gains a new todo or gate (for example after an upstream PR merge) and then use Resume retry.',
@@ -520,6 +527,7 @@ const COPY = {
     summarySegmentDelivery: 'Delivery',
     summaryCompletedTitle: 'This segment',
     summaryDecisionTitle: 'Decided',
+    summaryRejectedTitle: 'Rejected alternatives',
     summaryNextStep: 'Next step',
     summaryBlockers: 'Blockers',
     summaryTechReceipts: 'Technical receipts',
@@ -527,7 +535,9 @@ const COPY = {
     recoveryReasonHostRestart: 'Interrupted by an abnormal app shutdown',
     recoveryReasonExecutionFailure: 'Interrupted by an execution failure',
     recoveryReasonPlanExhausted: 'Interrupted because the plan ran dry: no open todo, no approval gate, no terminal declaration',
-    recoveryReasonSettlementUnverified: 'Interrupted because settlement could not validate durable progress (writeback verified, quota spend receipt missing)',
+    recoveryReasonSettlementUnverified: 'Interrupted because settlement could not validate durable progress; see the technical receipts below',
+    recoveryReasonSettlementNoProgress: 'Interrupted because this segment\'s closing writeback was rejected, so no settlement-recognized durable progress was recorded',
+    recoveryReasonSettlementReceiptMissing: 'Interrupted because the writeback was verified but the quota spend receipt is missing, so settlement did not complete',
     recoveryReasonRepositoryPaused: 'Interrupted because the repository queue paused after another task failed',
     recoveryReasonManualRestore: 'Interrupted because an archived task was manually restored',
     outputTool: 'Tool',
@@ -635,7 +645,7 @@ const COPY = {
     publishApprovalTitle: 'Publish the fix and create a pull request?',
     publishApprovalSummary: 'The fix is prepared on branch {branch} at commit {commit} for {repository}. Your approval is required before publishing it.',
     publishApprovalSummaryGeneric: 'The fix and publishing materials are ready for {repository}. Your approval is required before creating the pull request.',
-    publishApprovalApproveEffect: 'Push the fix branch, create a pull request, then continue with macOS host verification. Approval does not merge code automatically.',
+    publishApprovalApproveEffect: 'Push the fix branch and create a pull request. Approval does not merge code automatically; merging stays your decision.',
     publishApprovalRejectEffect: 'Do not push the branch or create a pull request. Keep the local branch, commit, and validation results, and stop at this step.',
     publishApprovalRecommendationReady: 'Recommended: approve. The change has validation results and remains reviewable in the pull request; it will not be merged automatically.',
     publishApprovalRecommendationReview: 'Review the change and validation results first. Approval publishes a pull request but does not merge it automatically.',
@@ -840,6 +850,8 @@ const view = {
   issueSplitter: byId('issue-splitter'),
   issueApprovalPanel: byId('issue-approval-panel'),
   issueApprovalRaw: byId('issue-approval-raw'),
+  issueApprovalContext: byId('issue-approval-context'),
+  issueApprovalContextList: byId('issue-approval-context-list'),
   issueApprovalRawText: byId('issue-approval-raw-text'),
   issueApprovalKind: byId('issue-approval-kind'),
   issueApprovalTitle: byId('issue-approval-title'),
@@ -1269,6 +1281,64 @@ function itemUrl(item) {
   if (!host || !owner || !repository || !item.number) return '';
   const path = item.kind === 'pr' ? 'pull' : 'issues';
   return `https://${host}/${owner}/${repository}/${path}/${item.number}`;
+}
+
+/// Turns plain narrative text into DOM nodes with clickable GitHub
+/// references ("PR #6", "pull request #6", "#2", short commit shas).
+/// Builds elements only — no innerHTML — so agent-authored text can never
+/// inject markup. Used by the brief sections and the approval context so
+/// the owner can jump straight from a narrative mention to the artifact.
+function linkifiedText(value, repository) {
+  const raw = String(value || '');
+  const fragment = document.createDocumentFragment();
+  const base = repository && repository.host && repository.owner && repository.repository
+    ? `https://${repository.host}/${repository.owner}/${repository.repository}`
+    : '';
+  const pattern = /\b(?:PR|pull request|pull)\s*#(\d+)\b|\bpull\/(\d+)\b|\b#(\d+)\b|\bcommit\s+([0-9a-f]{7,10})\b|\b([0-9a-f]{7,10})\b/g;
+  let cursor = 0;
+  let match;
+  while ((match = pattern.exec(raw)) !== null) {
+    const [full, prA, prB, issue, shaA, shaB] = match;
+    let url = '';
+    let label = full;
+    if (prA) {
+      url = `${base}/pull/${prA}`;
+      label = `PR #${prA}`;
+    } else if (prB) {
+      url = `${base}/pull/${prB}`;
+      label = `PR #${prB}`;
+    } else if (issue) {
+      url = `${base}/issues/${issue}`;
+      label = `#${issue}`;
+    } else {
+      const sha = shaA || shaB;
+      // Bare hex words only link when a repository is known and they are
+      // not pure digits (avoids linking ordinary numbers as commits).
+      if (!base || /^\d+$/.test(sha)) {
+        continue;
+      }
+      url = `${base}/commit/${sha}`;
+      label = sha;
+    }
+    if (match.index > cursor) {
+      fragment.append(raw.slice(cursor, match.index));
+    }
+    const anchor = document.createElement('a');
+    if (!url) {
+      fragment.append(full);
+    } else {
+      anchor.href = url;
+      anchor.target = '_blank';
+      anchor.rel = 'noreferrer';
+      anchor.textContent = label;
+      fragment.append(anchor);
+    }
+    cursor = match.index + full.length;
+  }
+  if (cursor < raw.length) {
+    fragment.append(raw.slice(cursor));
+  }
+  return fragment;
 }
 
 function identityTitleOf(task) {
@@ -2056,6 +2126,16 @@ function latestGate(taskId) {
       },
     };
   }
+  // A waiting task WITHOUT a live gate id but WITH a wait message is the
+  // owner-action park (the decision happens outside this host, e.g. merge
+  // a PR on GitHub): never fall back to history here, or the latest
+  // ANSWERED approval event would be rendered as if it were live again
+  // (observed live 2026-09-11: the answered publish gate popped up over
+  // the merge wait). The legacy event fallback below only serves snapshots
+  // that project neither field.
+  if (task && String(task.pendingGateMessage || '').trim()) {
+    return null;
+  }
   for (let index = state.events.length - 1; index >= 0; index -= 1) {
     const event = state.events[index];
     if (event.taskId !== taskId || event.kind !== 'approval_required') continue;
@@ -2078,7 +2158,15 @@ function currentApprovalAttention() {
     : [];
   const task = tasks.find((candidate) => candidate.state === 'waiting_for_user') || null;
   if (!task) return null;
-  return { task, gate: latestGate(task.taskId) };
+  const gate = latestGate(task.taskId);
+  // The approval alert is the interactive approve/reject surface: it only
+  // applies to a live typed gate. A waiting task without one is parked on
+  // an owner action outside this host (merge a PR on GitHub, answer on the
+  // external surface); that is surfaced by the task rail, the decision
+  // card, and the timeline event instead — never by an approve/reject popup
+  // that would re-ask an already-answered question.
+  if (!gate) return null;
+  return { task, gate };
 }
 
 function gateRawMessage(gate) {
@@ -2308,6 +2396,19 @@ function renderTaskActions(task) {
   }
   if (['recovery_required', 'failed', 'stopped'].includes(task.state)) {
     fragment.append(makeActionButton(text('resume'), 'resume', task));
+  }
+  // The owner-action park (waiting without a live typed gate) is resumed
+  // manually after the owner finishes the external step it names (merge a
+  // PR on GitHub, answer on the external surface): the park message itself
+  // says "use Resume after acting", so the button must exist here. The
+  // label says "continue", not "resume": the task is healthy, not broken.
+  // Live typed gates keep approve/reject as the single actionable entry.
+  if (task.state === 'waiting_for_user' && !task.pendingGateId) {
+    fragment.append(makeActionButton(
+      text('decisionContinueAfterOwnerAction'),
+      'resume',
+      task,
+    ));
   }
   if (['stopped', 'completed', 'failed'].includes(task.state)) {
     fragment.append(makeActionButton(text('archive'), 'archive', task));
@@ -2575,6 +2676,36 @@ function renderIssueApproval(task) {
   view.issueApprovalApproveEffect.textContent = presentation.approveEffect;
   view.issueApprovalRejectEffect.textContent = presentation.rejectEffect;
   view.issueApprovalRecommendation.textContent = presentation.recommendation;
+  // Decision context: the owner approves faster when the latest segment's
+  // narrative (who asked for what on the external surface, what the agent
+  // did about it, what happens next) is quoted right at the decision point
+  // instead of only inside the folded brief below (observed live
+  // 2026-09-11: the owner was asked to publish the follow-up fix without
+  // seeing the review comment that triggered it).
+  const structured = task.structuredSummary && typeof task.structuredSummary === 'object'
+    ? task.structuredSummary
+    : null;
+  const contextItems = [];
+  if (structured && Array.isArray(structured.completed)) {
+    structured.completed.slice(0, 2).forEach((item) => {
+      const line = String(item || '').trim();
+      if (line) contextItems.push(line);
+    });
+  }
+  if (structured && structured.next_step) {
+    const line = String(structured.next_step).trim();
+    if (line) contextItems.push(line);
+  }
+  const repository = task.identity && task.identity.item
+    && task.identity.item.repository;
+  view.issueApprovalContextList.replaceChildren(
+    ...contextItems.map((line) => {
+      const li = document.createElement('li');
+      li.append(linkifiedText(line, repository));
+      return li;
+    }),
+  );
+  view.issueApprovalContext.hidden = contextItems.length === 0;
   const pending = Boolean(pendingActionFor(task));
   view.issueApprovalApprove.textContent = pending ? text('approvalSubmittingShort') : presentation.approveLabel;
   view.issueApprovalReject.textContent = presentation.rejectLabel;
@@ -2604,9 +2735,35 @@ function renderIssueStatus(task) {
     : (planExhausted ? 'decisionCardTitlePlanExhausted' : 'decisionCardTitleRecovery'));
   const body = document.createElement('p');
   body.className = 'issue-decision-card__message';
-  const recoveryHint = !waiting
-    ? (String(task.pendingGateMessage || '').trim() || text(planExhausted ? 'decisionCardPlanExhaustedHint' : 'decisionCardRecoveryHint'))
-    : text('decisionCardGateHint');
+  let recoveryHint;
+  if (waiting) {
+    // With a live typed gate the actionable surface is the approval panel
+    // above; the owner-action park (no gate id, message names an external
+    // step like merging a PR on GitHub) carries its own instruction in the
+    // message — show that instead of pointing at a panel that is hidden.
+    const waitMessage = String(task.pendingGateMessage || '').trim();
+    recoveryHint = (!task.pendingGateId && waitMessage)
+      ? waitMessage
+      : text('decisionCardGateHint');
+  } else if (String(task.pendingGateMessage || '').trim()) {
+    recoveryHint = String(task.pendingGateMessage).trim();
+  } else if (planExhausted) {
+    recoveryHint = text('decisionCardPlanExhaustedHint');
+  } else {
+    // The agent's structured "next step" is the single most owner-relevant
+    // fact on a settlement-parked task (for example: "wait for PR #5 to be
+    // merged or closed, then run the final settlement"). Surface it here
+    // instead of boilerplate so the card alone answers "what now?". It is
+    // rendered from the same `structuredSummary` source as the summary
+    // section below - a projection, not a second fact.
+    const structured = task.structuredSummary && typeof task.structuredSummary === 'object'
+      ? task.structuredSummary
+      : null;
+    const nextStep = structured && structured.next_step
+      ? String(structured.next_step).trim()
+      : '';
+    recoveryHint = nextStep || text('decisionCardRecoveryHint');
+  }
   body.textContent = recoveryHint;
   card.append(heading, body);
   const reasonKey = !waiting && task.recoveryReason
@@ -2625,6 +2782,23 @@ function renderIssueStatus(task) {
   actions.className = 'issue-decision-card__actions';
   if (recovery) {
     actions.append(makeActionButton(text('decisionResume'), 'resume', task, 'primary'));
+  }
+  // Owner-action park (waiting without a live typed gate): the card is the
+  // attention surface, so the "Resume after acting" button the message
+  // promises must live HERE, not only in the header's task-actions strip
+  // (observed live 2026-09-11: the owner read this exact card and found no
+  // button). The label states the SEMANTICS of this state — the task is
+  // healthy and waiting on an external owner step, not broken — instead of
+  // the recovery word "Resume", which reads like a bug (same live date:
+  // the owner asked whether the product was broken). A live typed gate
+  // keeps approve/reject as the single entry.
+  if (waiting && !task.pendingGateId) {
+    actions.append(makeActionButton(
+      text('decisionContinueAfterOwnerAction'),
+      'resume',
+      task,
+      'primary',
+    ));
   }
   card.append(actions);
 }
@@ -2646,10 +2820,17 @@ function stripSummaryBlock(raw) {
 }
 
 function renderStructuredBrief(container, s, raw, task) {
+  // GitHub references in the narrative (PR #6, issue #2, commit shas) are
+  // linkified against the task's own repository so the owner can jump to
+  // the artifact directly from the story (display-only projection).
+  const narrativeRepository = task && task.identity && task.identity.item
+    ? task.identity.item.repository
+    : null;
   // The brief is rebuilt on every snapshot attach; capture the user's open
   // state of the technical-receipt <details> BEFORE clearing children so a
   // re-render does not collapse it while the user is reading.
   const receiptsWereOpen = Boolean(container.querySelector('.summary-receipts')?.open);
+  const blockersWereOpen = Boolean(container.querySelector('.summary-blockers')?.open);
   container.replaceChildren();
   const badges = document.createElement('div');
   badges.className = 'summary-badges';
@@ -2710,7 +2891,7 @@ function renderStructuredBrief(container, s, raw, task) {
     const list = document.createElement('ul');
     s.completed.forEach((item) => {
       const li = document.createElement('li');
-      li.textContent = String(item);
+      li.append(linkifiedText(item, narrativeRepository));
       list.append(li);
     });
     section.append(list);
@@ -2725,8 +2906,37 @@ function renderStructuredBrief(container, s, raw, task) {
     title.textContent = `📌 ${text('summaryDecisionTitle')}`;
     section.append(title);
     const route = document.createElement('p');
-    route.textContent = decision.route + (decision.reason ? `（${decision.reason}）` : '');
+    route.append(linkifiedText(
+      decision.route + (decision.reason ? `（${decision.reason}）` : ''),
+      narrativeRepository,
+    ));
     section.append(route);
+    // Rejected alternatives come from the STRUCTURED summary, not the raw
+    // turn output: the timeline's model-output block is middle-truncated at
+    // a character budget, which previously cut a rejected route's "why" in
+    // half while the full text was only reachable through the folded
+    // receipts. Rendering them here keeps the decision rationale complete
+    // and independent of output size.
+    if (Array.isArray(decision.rejected) && decision.rejected.length) {
+      const list = document.createElement('ul');
+      decision.rejected.forEach((item) => {
+        if (!item || typeof item !== 'object') return;
+        const routeText = String(item.route || '').trim();
+        if (!routeText) return;
+        const li = document.createElement('li');
+        li.append(linkifiedText(
+          item.why ? `${routeText}——${String(item.why).trim()}` : routeText,
+          narrativeRepository,
+        ));
+        list.append(li);
+      });
+      if (list.childNodes.length) {
+        const rejectedTitle = document.createElement('strong');
+        rejectedTitle.textContent = text('summaryRejectedTitle');
+        rejectedTitle.className = 'summary-section__subtitle';
+        section.append(rejectedTitle, list);
+      }
+    }
     container.append(section);
   }
 
@@ -2751,7 +2961,7 @@ function renderStructuredBrief(container, s, raw, task) {
     title.textContent = `⏭️ ${text('summaryNextStep')}`;
     section.append(title);
     const body = document.createElement('p');
-    body.textContent = String(s.next_step);
+    body.append(linkifiedText(s.next_step, narrativeRepository));
     section.append(body);
     container.append(section);
   }
@@ -2766,19 +2976,43 @@ function renderStructuredBrief(container, s, raw, task) {
     && s.blockers.length
     && !(task && task.state === 'completed')
   ) {
-    const section = document.createElement('div');
-    section.className = 'summary-section';
-    const title = document.createElement('strong');
-    title.textContent = `⚠️ ${text('summaryBlockers')}`;
-    section.append(title);
-    const list = document.createElement('ul');
-    s.blockers.forEach((item) => {
-      const li = document.createElement('li');
-      li.textContent = String(item);
-      list.append(li);
-    });
-    section.append(list);
-    container.append(section);
+    // On a settlement-parked (recovery) task the blocker items are
+    // settlement mechanics - typed writeback refusals, missing receipts,
+    // host-projection gaps - that the owner needs only on demand. Collapse
+    // them behind the same pattern as the technical receipts so the key
+    // sections (done / decided / next step) stay the focus; the decision
+    // card already carries the actionable "what now". Other states keep
+    // blockers visible as today.
+    if (task && task.state === 'recovery_required') {
+      const details = document.createElement('details');
+      details.className = 'summary-blockers';
+      details.open = blockersWereOpen;
+      const blockersLine = document.createElement('summary');
+      blockersLine.textContent = `⚠️ ${text('summaryBlockers')}`;
+      details.append(blockersLine);
+      const list = document.createElement('ul');
+      s.blockers.forEach((item) => {
+        const li = document.createElement('li');
+        li.textContent = String(item);
+        list.append(li);
+      });
+      details.append(list);
+      container.append(details);
+    } else {
+      const section = document.createElement('div');
+      section.className = 'summary-section';
+      const title = document.createElement('strong');
+      title.textContent = `⚠️ ${text('summaryBlockers')}`;
+      section.append(title);
+      const list = document.createElement('ul');
+      s.blockers.forEach((item) => {
+        const li = document.createElement('li');
+        li.textContent = String(item);
+        list.append(li);
+      });
+      section.append(list);
+      container.append(section);
+    }
   }
 
   const receiptSource = stripSummaryBlock(raw);

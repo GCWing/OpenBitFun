@@ -422,8 +422,12 @@ pub struct LoopxTaskSnapshot {
     /// falls back to the raw text in that case.
     pub structured_summary: Option<serde_json::Value>,
     /// Why the task currently needs recovery (host_restart, execution_failure,
-    /// settlement_unverified, plan_exhausted, repository_paused, manual_restore).
-    /// Absent for legacy records and for tasks that are not in RecoveryRequired.
+    /// settlement_unverified, settlement_no_progress, settlement_receipt_missing,
+    /// plan_exhausted, repository_paused, manual_restore). Absent for legacy
+    /// records and for tasks that are not in RecoveryRequired.
+    /// `settlement_no_progress` = closing writeback rejected/missing (no
+    /// validated durable progress); `settlement_receipt_missing` = writeback
+    /// validated but the quota spend receipt is missing.
     pub recovery_reason: Option<String>,
     pub deadline_at: Option<i64>,
     pub retry_at: Option<i64>,

@@ -1852,11 +1852,19 @@ impl LoopxController {
                     } else {
                         // True contradiction: no open todo, no waiting user
                         // decision, no selected action, and no replan
-                        // obligation the CLI would let the host drive. Park
-                        // with an explicit reason so the recovery card can
-                        // explain the plan is exhausted and guide the owner.
-                        // The task keeps its worktree, evidence, and commits,
-                        // and the repository slot yields to queued siblings.
+                        // obligation the CLI would let the host drive. Before
+                        // parking, check the durable todos for an owner-
+                        // decision wait the agent encoded as a BLOCKED
+                        // publication todo (observed live 2026-09-11: the
+                        // agent prepared the publish step, blocked its own
+                        // todo with reason "publishing needs the repository
+                        // owner's explicit decision", and the frontier then
+                        // projected empty — the CLI counts neither blocked
+                        // todos nor them as user gates, so the task parked
+                        // plan-exhausted with the fix ready and no way to
+                        // approve it). A blocked publication todo IS an
+                        // owner decision: project it as the publish approval
+                        // card instead of the plan-exhausted error.
                         if task.state == LoopxTaskState::RecoveryRequired
                             && task.recovery_reason.as_deref() == Some(LOOPX_PLAN_EXHAUSTED_REASON)
                         {
@@ -1864,6 +1872,18 @@ impl LoopxController {
                             // churn another transition/event on a re-drive.
                             return Ok(());
                         }
+                        if let Some(todo) = self
+                            .find_blocked_publication_todo(&task, &runtime, &inspected.goal_id)
+                            .await
+                        {
+                            return self
+                                .park_publication_approval(&task, &inspected.goal_id, &todo)
+                                .await;
+                        }
+                        // Park with an explicit reason so the recovery card can
+                        // explain the plan is exhausted and guide the owner.
+                        // The task keeps its worktree, evidence, and commits,
+                        // and the repository slot yields to queued siblings.
                         return self.park_plan_exhausted(&task, &inspected.goal_id).await;
                     }
                 }
@@ -2533,14 +2553,17 @@ impl LoopxController {
         }
         if !matches!(
             task.state,
-            LoopxTaskState::Stopped | LoopxTaskState::Failed | LoopxTaskState::RecoveryRequired
+            LoopxTaskState::Stopped
+                | LoopxTaskState::Failed
+                | LoopxTaskState::RecoveryRequired
+                | LoopxTaskState::WaitingForUser
         ) {
             return Ok(LoopxActionResponse {
                 status: LoopxActionStatus::Rejected,
                 current_revision: task.revision,
                 task: Some(task.clone()),
                 message: Some(
-                    "Only stopped, failed, or recovery-required tasks can resume".to_string(),
+                    "Only stopped, failed, recovery-required, or waiting tasks can resume".to_string(),
                 ),
             });
         }
@@ -2840,6 +2863,125 @@ impl LoopxController {
         })
     }
 
+    /// Applies the owner's decision to a blocked publication todo projected
+    /// as the publish approval. See [`Self::park_publication_approval`] for
+    /// why this cannot reuse the typed gate answer.
+    async fn answer_blocked_publication(
+        self: &Arc<Self>,
+        task: &LoopxTaskSnapshot,
+        runtime: &LoopxTaskRuntimeRecord,
+        request: &LoopxActionRequest,
+        todo: &LoopxCliTodoSummary,
+    ) -> Result<LoopxActionResponse, String> {
+        if request.action == LoopxActionKind::Approve {
+            let progress = BufferedProgress::default();
+            let unblocked = self
+                .cli
+                .unblock_todo(
+                    LoopxCliUnblockTodoRequest {
+                        context: self.goal_context(task, runtime),
+                        goal_id: task.goal_id.clone().unwrap_or_default(),
+                        agent_id: task
+                            .agent_id
+                            .clone()
+                            .unwrap_or_else(|| DEFAULT_AGENT_ID.to_string()),
+                        todo_id: todo.todo_id.clone(),
+                        note: "Owner approved publishing from the BitFun host UI; the blocked publication todo is re-opened for execution.".to_string(),
+                    },
+                    &progress,
+                )
+                .await;
+            self.record_progress(progress.take()).await?;
+            let unblocked = unblocked.map_err(|error| error.to_string())?;
+            if !unblocked.applied {
+                return Ok(LoopxActionResponse {
+                    status: LoopxActionStatus::Rejected,
+                    current_revision: task.revision,
+                    task: Some(task.clone()),
+                    message: Some("LoopX did not apply the unblock".to_string()),
+                });
+            }
+            log::info!(
+                "LoopX owner approved the blocked publication todo; re-opening it and requeueing: task_id={} todo={}",
+                task.task_id,
+                todo.todo_id
+            );
+            let generation = task.generation;
+            self.mutate_task(&task.task_id, None, |current, current_runtime| {
+                if current.generation != generation {
+                    return;
+                }
+                current.revision = current.revision.saturating_add(1);
+                current.pending_gate_id = None;
+                current.pending_gate_message = None;
+                current.pending_gate_action_kind = None;
+                current_runtime.expected_durable_revision =
+                    Some(unblocked.durable_revision.clone());
+            })
+            .await?;
+            let updated = self.task(&task.task_id).await?;
+            self.append_task_event(
+                &updated,
+                LoopxEventKind::StateChanged,
+                "Owner approved publishing; the publication todo was re-opened and the task requeued",
+                true,
+            )
+            .await?;
+            let response = self
+                .transition_action(
+                    &task.task_id,
+                    LoopxTaskState::Queued,
+                    LoopxPhase::Queued,
+                    &request.client_request_id,
+                )
+                .await?;
+            self.enqueue_task(task.task_id.clone(), Duration::ZERO)?;
+            return Ok(response);
+        }
+        // Reject: the todo stays blocked (the agent's own encoding of the
+        // undelivered publication), the decline is remembered so the
+        // approval never resurfaces on later drives, and the task parks with
+        // a clear owner-action message.
+        log::info!(
+            "LoopX owner declined the blocked publication todo: task_id={} todo={}",
+            task.task_id,
+            todo.todo_id
+        );
+        let generation = task.generation;
+        self.mutate_task(&task.task_id, Some(&request.client_request_id), |current, current_runtime| {
+            if current.generation != generation {
+                return;
+            }
+            current.revision = current.revision.saturating_add(1);
+            current.pending_gate_id = None;
+            current.pending_gate_message = None;
+            current.pending_gate_action_kind = None;
+            current_runtime.declined_publication_todo_id = Some(todo.todo_id.clone());
+        })
+        .await?;
+        let updated = self.task(&task.task_id).await?;
+        self.append_task_event(
+            &updated,
+            LoopxEventKind::StateChanged,
+            "Owner declined publishing; the prepared fix stays on the local task branch",
+            true,
+        )
+        .await?;
+        let parked = self
+            .park_waiting_owner_action(
+                &updated,
+                Some("The owner declined publication. The prepared fix and its branch are preserved in the task workspace; resume or archive the task when you decide differently"),
+            )
+            .await;
+        parked?;
+        Ok(LoopxActionResponse {
+            status: LoopxActionStatus::Applied,
+            current_revision: updated.revision,
+            task: Some(updated),
+            ..LoopxActionResponse::default()
+        })
+    }
+
     async fn answer_gate(
         self: &Arc<Self>,
         task: &LoopxTaskSnapshot,
@@ -2859,6 +3001,46 @@ impl LoopxController {
             .gate_id
             .clone()
             .ok_or_else(|| "gateId is required".to_string())?;
+        // A blocked publication todo projected as the publish approval (see
+        // `park_publication_approval`) reaches this handler with the blocked
+        // todo's id. It is not a typed user gate, so `todo complete
+        // --decision-outcome` would be rejected by the CLI
+        // ("decision_outcome is only valid when completing a user_gate").
+        // Approve = unblock the todo with an attributed note and requeue; the
+        // unblocked todo IS the successor, so no materialization is needed.
+        // Reject = record the decline (never re-raise the same approval) and
+        // park with a clear owner-action message.
+        if task.pending_gate_id.as_deref() == Some(gate_id.as_str()) {
+            let progress = BufferedProgress::default();
+            let listed = self
+                .cli
+                .list_todos(
+                    LoopxCliListTodosRequest {
+                        context: self.goal_context(task, runtime),
+                        goal_id: task.goal_id.clone().unwrap_or_default(),
+                        agent_id: task
+                            .agent_id
+                            .clone()
+                            .unwrap_or_else(|| DEFAULT_AGENT_ID.to_string()),
+                        status: Some("blocked".to_string()),
+                    },
+                    &progress,
+                )
+                .await;
+            self.record_progress(progress.take()).await?;
+            let blocked = listed
+                .ok()
+                .and_then(|result| {
+                    blocked_publication_todo(&result.todos, None)
+                        .filter(|todo| todo.todo_id == gate_id)
+                        .cloned()
+                });
+            if let Some(todo) = blocked {
+                return self
+                    .answer_blocked_publication(&task, &runtime, &request, &todo)
+                    .await;
+            }
+        }
         let progress = BufferedProgress::default();
         let result = self
             .cli
@@ -2901,6 +3083,107 @@ impl LoopxController {
             current_runtime.expected_durable_revision = Some(result.durable_revision.clone());
         })
         .await?;
+        // An approved gate is an owner instruction to act. When answering it
+        // leaves the goal with nothing runnable — the agent authored the
+        // gate without a successor todo (observed live 2026-09-11 on
+        // xielixing/dynamic-workflows-lab#2: the publish gate was approved,
+        // the frontier went empty, and the task parked plan-exhausted with
+        // the promised PR never created) — the host materializes the
+        // approved decision as one durable agent todo so the promised
+        // action actually gets driven. The todo text quotes the gate's own
+        // message with the approval prefix: the agent reads the owner's
+        // decision, not host-invented semantics. The host never fabricates
+        // progress, completions, or terminal state; a rejected gate needs
+        // no successor because the owner asked for the opposite branch.
+        if request.action == LoopxActionKind::Approve {
+            let gate_message = task
+                .pending_gate_message
+                .clone()
+                .unwrap_or_else(|| "execute the approved action from the decision request".to_string());
+            let inspect_progress = BufferedProgress::default();
+            let inspected = self
+                .cli
+                .inspect_goal(
+                    LoopxCliInspectGoalRequest {
+                        context: self.goal_context(task, runtime),
+                        goal_id: task.goal_id.clone().unwrap_or_default(),
+                        agent_id: task
+                            .agent_id
+                            .clone()
+                            .unwrap_or_else(|| DEFAULT_AGENT_ID.to_string()),
+                    },
+                    &inspect_progress,
+                )
+                .await;
+            self.record_progress(inspect_progress.take()).await?;
+            let needs_materialization = match inspected {
+                Ok(goal) => approved_gate_needs_materialized_successor(&goal),
+                Err(error) => {
+                    log::warn!(
+                        "LoopX post-approval Goal inspection failed; skipping approved-action materialization: task_id={} error={}",
+                        task.task_id,
+                        error
+                    );
+                    false
+                }
+            };
+            if needs_materialization {
+                let text = approved_action_todo_text(&gate_message);
+                let add_progress = BufferedProgress::default();
+                let added = self
+                    .cli
+                    .add_todo(
+                        LoopxCliAddTodoRequest {
+                            context: self.goal_context(task, runtime),
+                            goal_id: task.goal_id.clone().unwrap_or_default(),
+                            agent_id: task
+                                .agent_id
+                                .clone()
+                                .unwrap_or_else(|| DEFAULT_AGENT_ID.to_string()),
+                            text,
+                        },
+                        &add_progress,
+                    )
+                    .await;
+                self.record_progress(add_progress.take()).await?;
+                match added {
+                    Ok(added) if added.applied => {
+                        log::info!(
+                            "LoopX approved gate had no successor; materialized the approved action as a durable todo: task_id={} goal={} revision={}",
+                            task.task_id,
+                            added.goal_id,
+                            added.durable_revision
+                        );
+                        self.append_task_event(
+                            task,
+                            LoopxEventKind::StateChanged,
+                            "Approved gate had no successor todo; the approved action was registered as the next agent todo",
+                            false,
+                        )
+                        .await?;
+                        self.mutate_task(&task.task_id, None, |current, current_runtime| {
+                            if current.generation != task.generation {
+                                return;
+                            }
+                            current_runtime.expected_durable_revision =
+                                Some(added.durable_revision.clone());
+                        })
+                        .await?;
+                    }
+                    Ok(_) => {
+                        // Not applied: fall through; the next drive parks with
+                        // the plan-exhausted guidance for the owner.
+                    }
+                    Err(error) => {
+                        log::warn!(
+                            "LoopX approved-action todo materialization failed; the task may park plan-exhausted: task_id={} error={}",
+                            task.task_id,
+                            error
+                        );
+                    }
+                }
+            }
+        }
         let response = self
             .transition_action(
                 &task.task_id,
@@ -3055,15 +3338,37 @@ impl LoopxController {
         // turn that re-submits the pending writebacks before parking the task
         // for interactive recovery. The corrective turn is a normal turn with
         // an explicit host note; nothing is forged and every step is recorded
-        // as a task event.
-        let compensate_durable_writeback = agent_status != LoopxAgentTurnStatus::Failed
-            && settlement.status == LoopxCliSettlementStatus::NoDurableProgress
-            && !self
-                .runtime(&task.task_id)
-                .await
-                .durable_compensation_pending;
+        // as a task event. The authoritative Goal projection outranks this
+        // receipt-driven path: when it already reports a user gate, a
+        // terminal completion, or a goal failure, there is nothing durable
+        // left to re-submit and the task settles from the projection
+        // instead (single decision rule for every settlement status).
+        let compensation_already_attempted = self
+            .runtime(&task.task_id)
+            .await
+            .durable_compensation_pending;
+        let compensate_durable_writeback = should_compensate_durable_writeback(
+            agent_status,
+            settlement.status,
+            compensation_already_attempted,
+            post_settlement_goal.as_ref(),
+        );
         let final_state = if compensate_durable_writeback {
             LoopxTaskState::Queued
+        } else if parks_after_failed_compensation(
+            agent_status,
+            settlement.status,
+            compensation_already_attempted,
+            post_settlement_goal.as_ref(),
+        ) {
+            // The one-shot compensation turn already ran and still could not
+            // produce validated durable progress, while the projection shows
+            // the frontier unchanged (RunNow/Wait). Park for interactive
+            // recovery instead of requeueing: an automatic re-drive here
+            // could loop forever without an owner decision. When the
+            // projection DOES decide (gate/terminal/failed), the branch
+            // below settles from it.
+            LoopxTaskState::RecoveryRequired
         } else {
             task_state_after_settlement(
                 agent_status,
@@ -3094,7 +3399,14 @@ impl LoopxController {
                 task.state = final_state;
                 task.phase = phase;
                 task.recovery_reason = if final_state == LoopxTaskState::RecoveryRequired {
-                    Some("settlement_unverified".to_string())
+                    Some(
+                        recovery_reason_after_settlement(
+                            agent_status,
+                            settlement.status,
+                            post_settlement_goal.as_ref(),
+                        )
+                        .to_string(),
+                    )
                 } else {
                     None
                 };
@@ -4209,6 +4521,106 @@ impl LoopxController {
         Ok(())
     }
 
+    /// Reads the goal's durable todos and returns the blocked publication
+    /// todo waiting on the owner's decision, if any. Typed match only
+    /// (`status=blocked`, agent advancement todo, publish-family
+    /// `action_kind`); declined todos are excluded so a rejected approval
+    /// does not resurface forever. Read failures degrade to `None` (the
+    /// caller then parks plan-exhausted as before).
+    async fn find_blocked_publication_todo(
+        self: &Arc<Self>,
+        task: &LoopxTaskSnapshot,
+        runtime: &LoopxTaskRuntimeRecord,
+        goal_id: &str,
+    ) -> Option<LoopxCliTodoSummary> {
+        let declined = runtime.declined_publication_todo_id.clone();
+        let progress = BufferedProgress::default();
+        let listed = self
+            .cli
+            .list_todos(
+                LoopxCliListTodosRequest {
+                    context: self.goal_context(task, runtime),
+                    goal_id: goal_id.to_string(),
+                    agent_id: task
+                        .agent_id
+                        .clone()
+                        .unwrap_or_else(|| DEFAULT_AGENT_ID.to_string()),
+                    status: Some("blocked".to_string()),
+                },
+                &progress,
+            )
+            .await;
+        self.record_progress(progress.take()).await.ok()?;
+        let todos = match listed {
+            Ok(result) => result.todos,
+            Err(error) => {
+                log::warn!(
+                    "LoopX blocked-todo read failed; parking plan-exhausted without the publication projection: task_id={} error={}",
+                    task.task_id,
+                    error
+                );
+                return None;
+            }
+        };
+        blocked_publication_todo(&todos, declined.as_deref()).cloned()
+    }
+
+    /// Parks a task whose plan ran dry on a BLOCKED publication todo as the
+    /// publish approval wait: the durable todo's own text becomes the
+    /// approval message and its typed ids become the pending-gate projection
+    /// so the console renders the same publish approval card a typed user
+    /// gate gets. Approve unblocks the todo (see `answer_gate`); Reject
+    /// records the decline and parks with a clear message.
+    async fn park_publication_approval(
+        self: &Arc<Self>,
+        task: &LoopxTaskSnapshot,
+        goal_id: &str,
+        todo: &LoopxCliTodoSummary,
+    ) -> Result<(), String> {
+        let message = blocked_publication_approval_message(&todo.text);
+        log::info!(
+            "LoopX plan exhausted on a blocked publication todo; projecting the publish approval instead: task_id={} goal={} todo={}",
+            task.task_id,
+            goal_id,
+            todo.todo_id
+        );
+        let generation = task.generation;
+        let updated = self
+            .mutate_task(&task.task_id, None, |current, _| {
+                if current.generation != generation {
+                    return;
+                }
+                current.state = LoopxTaskState::WaitingForUser;
+                current.phase = LoopxPhase::WaitingForApproval;
+                current.recovery_reason = None;
+                current.error = None;
+                current.pending_gate_id = Some(todo.todo_id.clone());
+                current.pending_gate_action_kind = Some(todo.action_kind.clone());
+                current.pending_gate_message = Some(message.clone());
+                current.revision = current.revision.saturating_add(1);
+            })
+            .await?;
+        let mut details = BTreeMap::new();
+        details.insert("gateId".to_string(), todo.todo_id.clone());
+        if !todo.action_kind.is_empty() {
+            details.insert("actionKind".to_string(), todo.action_kind.clone());
+        }
+        self.append_task_event_with_details(
+            &updated,
+            LoopxEventKind::ApprovalRequired,
+            &message,
+            true,
+            details,
+        )
+        .await?;
+        self.schedule_next_for_repository(
+            &updated.identity.item.repository.canonical_id(),
+            Some(&updated.task_id),
+        )
+        .await;
+        Ok(())
+    }
+
     /// Best-effort cleanup of the task's on-disk worktree. Called only from
     /// the explicit Archive action; failure is recorded as an event, never
     /// fatal to the transition.
@@ -4536,11 +4948,151 @@ fn inspects_goal_after_settlement(
         LoopxCliSettlementStatus::Settled | LoopxCliSettlementStatus::AlreadySettled => {
             agent_status != LoopxAgentTurnStatus::Failed
         }
-        LoopxCliSettlementStatus::RetryRequired => agent_status == LoopxAgentTurnStatus::Completed,
-        LoopxCliSettlementStatus::NoDurableProgress | LoopxCliSettlementStatus::GoalCompleted => {
-            false
+        // A completed turn's settlement receipt is bookkeeping; the durable
+        // Goal projection is the authority. NoDurableProgress joins
+        // RetryRequired here (observed live 2026-09-11 on
+        // xielixing/dynamic-workflows-lab): when the writeback landed
+        // durably but receipt validation failed, only the projection can
+        // distinguish "nothing to re-submit" from "work genuinely
+        // missing". Cancelled/interrupted turns keep the explicit
+        // recovery path: the owner interrupted that turn, so the host
+        // does not silently re-drive it from the projection.
+        LoopxCliSettlementStatus::RetryRequired | LoopxCliSettlementStatus::NoDurableProgress => {
+            agent_status == LoopxAgentTurnStatus::Completed
         }
+        LoopxCliSettlementStatus::GoalCompleted => false,
     }
+}
+
+/// Whether the authoritative Goal projection reports an outcome that only
+/// the owner or the goal itself can move past — a user gate, a terminal
+/// completion, or a goal-level failure. Whenever this holds, the projection
+/// decides the task's next state and a receipt-driven compensation turn has
+/// nothing durable left to re-submit (observed live 2026-09-11,
+/// xielixing/dynamic-workflows-lab: closure turns whose writeback landed
+/// durably still got a receipt-level refusal and were re-driven once for
+/// nothing). This is the single decision rule for every settlement status:
+/// the durable projection outranks receipts; receipts are bookkeeping.
+fn projection_decides_next_state(goal: Option<&LoopxCliGoalSnapshot>) -> bool {
+    matches!(
+        goal.map(|goal| goal.run_decision),
+        Some(
+            LoopxCliRunDecision::WaitingForUser
+                | LoopxCliRunDecision::Complete
+                | LoopxCliRunDecision::Failed
+        )
+    )
+}
+
+/// Whether a healthy-turn settlement should schedule the one-shot durable
+/// compensation turn. The Goal projection is consulted first: when it
+/// already reports an owner-facing or terminal outcome there is nothing
+/// durable left to re-submit, so the task settles from the projection
+/// instead of burning another agent turn. A failed agent turn never
+/// compensates (explicit recovery), and the compensation allowance is
+/// one-shot per episode (`durable_compensation_pending`).
+fn should_compensate_durable_writeback(
+    agent_status: LoopxAgentTurnStatus,
+    settlement_status: LoopxCliSettlementStatus,
+    compensation_already_attempted: bool,
+    post_settlement_goal: Option<&LoopxCliGoalSnapshot>,
+) -> bool {
+    if agent_status == LoopxAgentTurnStatus::Failed {
+        return false;
+    }
+    if settlement_status != LoopxCliSettlementStatus::NoDurableProgress {
+        return false;
+    }
+    if compensation_already_attempted {
+        return false;
+    }
+    !projection_decides_next_state(post_settlement_goal)
+}
+
+/// Whether a NoDurableProgress settlement whose one-shot compensation turn
+/// already ran should park the task for interactive recovery instead of
+/// requeueing. An unchanged frontier (RunNow/Wait) must not be re-driven
+/// automatically — that could loop forever without an owner decision —
+/// while a deciding projection (gate/terminal/failed) still settles the
+/// task from the goal state via `task_state_after_settlement`.
+fn parks_after_failed_compensation(
+    agent_status: LoopxAgentTurnStatus,
+    settlement_status: LoopxCliSettlementStatus,
+    compensation_already_attempted: bool,
+    post_settlement_goal: Option<&LoopxCliGoalSnapshot>,
+) -> bool {
+    agent_status != LoopxAgentTurnStatus::Failed
+        && settlement_status == LoopxCliSettlementStatus::NoDurableProgress
+        && compensation_already_attempted
+        && !projection_decides_next_state(post_settlement_goal)
+}
+
+/// Whether an approved gate left the goal with no driver for its promised
+/// action: the CLI projects `RunNow` but no open todo, no user gate, and no
+/// replan obligation remains (observed live 2026-09-11,
+/// xielixing/dynamic-workflows-lab#2: the agent authored the publish gate
+/// without a successor todo, the approval consumed the last todo, and the
+/// task parked plan-exhausted with the promised PR never created). Terminal,
+/// failed, waiting, and monitor-wait projections are left untouched: only
+/// the "runnable but nothing runnable" contradiction needs a materialized
+/// successor for the owner's approved decision.
+fn approved_gate_needs_materialized_successor(goal: &LoopxCliGoalSnapshot) -> bool {
+    goal.run_decision == LoopxCliRunDecision::RunNow
+        && goal.open_todo_count == 0
+        && goal.waiting_user_todo_count == 0
+        && goal.pending_user_gate.is_none()
+        && goal.pending_replan_obligation_id.is_none()
+}
+
+/// Owner-facing text for the materialized successor todo of an approved
+/// gate. Quotes the gate's own message with an approval prefix so the agent
+/// executes the owner's decision verbatim; bounded to keep the pinned CLI's
+/// todo text budget safe.
+fn approved_action_todo_text(gate_message: &str) -> String {
+    let mut text = format!(
+        "[P0] The owner APPROVED this decision request; execute the approved branch of it now: {}",
+        gate_message.trim()
+    );
+    if text.chars().count() > 400 {
+        text = text.chars().take(400).collect();
+    }
+    text
+}
+
+/// The blocked publication todo the plan ran dry on, if any. Typed match
+/// only: a blocked agent advancement todo whose `action_kind` names a
+/// publication/publish step is the agent's own encoding of "publishing needs
+/// the owner's decision" (observed live 2026-09-11,
+/// xielixing/dynamic-workflows-lab#2: `action_kind=issue_fix_pr_publication`,
+/// blocked with reason "publishing upstream is an external write that needs
+/// the repository owner's explicit decision"). Free-text reasons are never
+/// parsed; `declined_todo_id` excludes an approval the owner already turned
+/// down so it does not resurface on every drive.
+fn blocked_publication_todo<'a>(
+    todos: &'a [LoopxCliTodoSummary],
+    declined_todo_id: Option<&str>,
+) -> Option<&'a LoopxCliTodoSummary> {
+    todos.iter().find(|todo| {
+        todo.status.eq_ignore_ascii_case("blocked")
+            && todo.role.eq_ignore_ascii_case("agent")
+            && todo.task_class.eq_ignore_ascii_case("advancement_task")
+            && (todo.action_kind.contains("publication") || todo.action_kind.contains("publish"))
+            && declined_todo_id != Some(todo.todo_id.as_str())
+    })
+}
+
+/// Owner-facing approval message projected from the blocked publication
+/// todo's own text: the owner decides on the step the agent named, not on
+/// host-invented semantics.
+fn blocked_publication_approval_message(todo_text: &str) -> String {
+    let trimmed = todo_text.trim();
+    let mut message = format!(
+        "[P0] Approve publishing the prepared fix: {trimmed}. The agent prepared this step and blocked it pending the repository owner's decision."
+    );
+    if message.chars().count() > 480 {
+        message = message.chars().take(480).collect();
+    }
+    message
 }
 
 /// Decides the task state after a turn settlement. When the post-settlement
@@ -4574,6 +5126,35 @@ fn task_state_after_settlement(
         LoopxCliSettlementStatus::NoDurableProgress | LoopxCliSettlementStatus::RetryRequired => {
             LoopxTaskState::RecoveryRequired
         }
+    }
+}
+
+/// Human-facing recovery reason for a task parked by settlement. Distinct
+/// values keep the console copy honest: a rejected or missing writeback
+/// (`NoDurableProgress`) must not be reported as "writeback verified, quota
+/// receipt missing" (`RetryRequired`). Observed live 2026-09-11 on
+/// xielixing/dynamic-workflows-lab#2: three rejected typed writebacks were
+/// displayed as a missing quota receipt because every settlement-path
+/// `RecoveryRequired` shared one `settlement_unverified` reason. A failed
+/// agent turn reports execution failure (matching the non-settlement
+/// failure path), and a failed Goal projection keeps the generic wording.
+fn recovery_reason_after_settlement(
+    agent_status: LoopxAgentTurnStatus,
+    settlement_status: LoopxCliSettlementStatus,
+    post_settlement_goal: Option<&LoopxCliGoalSnapshot>,
+) -> &'static str {
+    if agent_status == LoopxAgentTurnStatus::Failed {
+        return "execution_failure";
+    }
+    if let Some(goal) = post_settlement_goal {
+        if goal.run_decision == LoopxCliRunDecision::Failed {
+            return "settlement_unverified";
+        }
+    }
+    match settlement_status {
+        LoopxCliSettlementStatus::NoDurableProgress => "settlement_no_progress",
+        LoopxCliSettlementStatus::RetryRequired => "settlement_receipt_missing",
+        _ => "settlement_unverified",
     }
 }
 
@@ -4872,7 +5453,15 @@ fn unavailable_loopx_environment_fact(
 /// answer transitions the host task away from WaitingForUser.
 fn preserve_unanswered_local_gate(task: &LoopxTaskSnapshot, goal: &LoopxCliGoalSnapshot) -> bool {
     task.state == LoopxTaskState::WaitingForUser
-        && task.pending_gate_id.is_some()
+        // Either an unanswered typed gate or the owner-action-wait message
+        // parked by `park_waiting_owner_action` (gate id deliberately None:
+        // the decision happens outside this host, e.g. merging a PR on
+        // GitHub). Without the message arm, reconciliation wiped the parked
+        // wait text whenever the goal projected no typed gate, and the UI
+        // fell back to rendering the latest ANSWERED approval event as if it
+        // were live (observed live 2026-09-11, dynamic-workflows-lab#2:
+        // the answered publish gate popped up again over the merge wait).
+        && (task.pending_gate_id.is_some() || task.pending_gate_message.is_some())
         && goal.pending_user_gate.is_none()
         && !matches!(
             goal.state,
@@ -5044,7 +5633,10 @@ mod tests {
         ));
         // Settled turns keep today's projection-driven handling for any
         // non-failed agent status; failed turns and missing writebacks keep
-        // their existing explicit paths.
+        // their existing explicit paths. A completed turn with
+        // NoDurableProgress now also inspects the projection: only the
+        // durable goal state can distinguish a receipt-level refusal from
+        // genuinely missing work (2026-09-11 live observation).
         assert!(inspects_goal_after_settlement(
             LoopxAgentTurnStatus::Cancelled,
             LoopxCliSettlementStatus::Settled,
@@ -5053,10 +5645,277 @@ mod tests {
             LoopxAgentTurnStatus::Failed,
             LoopxCliSettlementStatus::Settled,
         ));
-        assert!(!inspects_goal_after_settlement(
+        assert!(inspects_goal_after_settlement(
             LoopxAgentTurnStatus::Completed,
             LoopxCliSettlementStatus::NoDurableProgress,
         ));
+        assert!(!inspects_goal_after_settlement(
+            LoopxAgentTurnStatus::Cancelled,
+            LoopxCliSettlementStatus::NoDurableProgress,
+        ));
+    }
+
+    #[test]
+    fn projection_outranks_receipts_across_settlement_statuses() {
+        // The single decision rule: whenever the authoritative Goal
+        // projection reports a user gate, a terminal completion, or a goal
+        // failure, it decides the task's next state and the receipt-driven
+        // compensation turn is skipped — the writeback (or its durable
+        // equivalent) already landed.
+        let complete_goal = LoopxCliGoalSnapshot {
+            run_decision: LoopxCliRunDecision::Complete,
+            ..LoopxCliGoalSnapshot::default()
+        };
+        // First NoDurableProgress episode + terminal projection: no
+        // compensation turn, task completes from the projection.
+        assert!(!should_compensate_durable_writeback(
+            LoopxAgentTurnStatus::Completed,
+            LoopxCliSettlementStatus::NoDurableProgress,
+            false,
+            Some(&complete_goal),
+        ));
+        assert_eq!(
+            task_state_after_settlement(
+                LoopxAgentTurnStatus::Completed,
+                LoopxCliSettlementStatus::NoDurableProgress,
+                Some(&complete_goal),
+            ),
+            LoopxTaskState::Completed
+        );
+        // Same for a user gate.
+        let gate_goal = LoopxCliGoalSnapshot {
+            run_decision: LoopxCliRunDecision::WaitingForUser,
+            ..LoopxCliGoalSnapshot::default()
+        };
+        assert!(!should_compensate_durable_writeback(
+            LoopxAgentTurnStatus::Completed,
+            LoopxCliSettlementStatus::NoDurableProgress,
+            false,
+            Some(&gate_goal),
+        ));
+        // An unchanged frontier (RunNow) still earns the one-shot
+        // compensation turn, and a failed turn never compensates.
+        let run_now_goal = LoopxCliGoalSnapshot {
+            run_decision: LoopxCliRunDecision::RunNow,
+            ..LoopxCliGoalSnapshot::default()
+        };
+        assert!(should_compensate_durable_writeback(
+            LoopxAgentTurnStatus::Completed,
+            LoopxCliSettlementStatus::NoDurableProgress,
+            false,
+            Some(&run_now_goal),
+        ));
+        assert!(!should_compensate_durable_writeback(
+            LoopxAgentTurnStatus::Failed,
+            LoopxCliSettlementStatus::NoDurableProgress,
+            false,
+            Some(&run_now_goal),
+        ));
+        // The allowance is one-shot per episode.
+        assert!(!should_compensate_durable_writeback(
+            LoopxAgentTurnStatus::Completed,
+            LoopxCliSettlementStatus::NoDurableProgress,
+            true,
+            Some(&run_now_goal),
+        ));
+        // After the compensation turn ran, an unchanged frontier parks for
+        // interactive recovery (no automatic re-drive loop) — the pure state
+        // function alone returns Queued for a RunNow snapshot, which is why
+        // `parks_after_failed_compensation` intercepts the exhausted
+        // episode in `apply_settlement` before delegating — while a
+        // deciding projection still settles the task from the goal state.
+        assert!(parks_after_failed_compensation(
+            LoopxAgentTurnStatus::Completed,
+            LoopxCliSettlementStatus::NoDurableProgress,
+            true,
+            Some(&run_now_goal),
+        ));
+        assert!(!parks_after_failed_compensation(
+            LoopxAgentTurnStatus::Completed,
+            LoopxCliSettlementStatus::NoDurableProgress,
+            true,
+            Some(&complete_goal),
+        ));
+        assert!(!parks_after_failed_compensation(
+            LoopxAgentTurnStatus::Completed,
+            LoopxCliSettlementStatus::NoDurableProgress,
+            false,
+            Some(&run_now_goal),
+        ));
+        assert_eq!(
+            task_state_after_settlement(
+                LoopxAgentTurnStatus::Completed,
+                LoopxCliSettlementStatus::NoDurableProgress,
+                Some(&run_now_goal),
+            ),
+            LoopxTaskState::Queued
+        );
+        assert_eq!(
+            task_state_after_settlement(
+                LoopxAgentTurnStatus::Completed,
+                LoopxCliSettlementStatus::NoDurableProgress,
+                Some(&complete_goal),
+            ),
+            LoopxTaskState::Completed
+        );
+        assert_eq!(
+            task_state_after_settlement(
+                LoopxAgentTurnStatus::Completed,
+                LoopxCliSettlementStatus::NoDurableProgress,
+                None,
+            ),
+            LoopxTaskState::RecoveryRequired
+        );
+    }
+
+    #[test]
+    fn approved_gate_materializes_a_successor_only_on_the_undrivable_frontier() {
+        // The observed defect: RunNow + nothing runnable after an approval.
+        let undrivable = LoopxCliGoalSnapshot {
+            run_decision: LoopxCliRunDecision::RunNow,
+            open_todo_count: 0,
+            waiting_user_todo_count: 0,
+            ..LoopxCliGoalSnapshot::default()
+        };
+        assert!(approved_gate_needs_materialized_successor(&undrivable));
+        // A frontier with any driver stays untouched: an open todo, a user
+        // gate, a replan obligation, or a terminal/waiting projection all
+        // either drive a turn on their own or already reflect the owner's
+        // next move.
+        assert!(!approved_gate_needs_materialized_successor(
+            &LoopxCliGoalSnapshot {
+                run_decision: LoopxCliRunDecision::RunNow,
+                open_todo_count: 1,
+                ..LoopxCliGoalSnapshot::default()
+            }
+        ));
+        assert!(!approved_gate_needs_materialized_successor(
+            &LoopxCliGoalSnapshot {
+                run_decision: LoopxCliRunDecision::RunNow,
+                pending_user_gate: Some(LoopxCliUserGate {
+                    gate_id: "todo-owner".to_string(),
+                    message: "Owner decision required".to_string(),
+                    ..LoopxCliUserGate::default()
+                }),
+                ..LoopxCliGoalSnapshot::default()
+            }
+        ));
+        assert!(!approved_gate_needs_materialized_successor(
+            &LoopxCliGoalSnapshot {
+                run_decision: LoopxCliRunDecision::RunNow,
+                pending_replan_obligation_id: Some("replan-1".to_string()),
+                ..LoopxCliGoalSnapshot::default()
+            }
+        ));
+        assert!(!approved_gate_needs_materialized_successor(
+            &LoopxCliGoalSnapshot {
+                run_decision: LoopxCliRunDecision::Complete,
+                ..LoopxCliGoalSnapshot::default()
+            }
+        ));
+        // The materialized text quotes the gate message under an approval
+        // prefix and stays inside the todo text budget.
+        let text = approved_action_todo_text(
+            "Decide whether to publish the fix: push branch codex/issue-2-fix, or ask for changes first.",
+        );
+        assert!(text.starts_with("[P0] The owner APPROVED this decision request;"));
+        assert!(text.contains("push branch codex/issue-2-fix"));
+        assert!(text.chars().count() <= 400);
+        let long = "x".repeat(600);
+        assert_eq!(approved_action_todo_text(&long).chars().count(), 400);
+    }
+
+    #[test]
+    fn blocked_publication_todo_matches_typed_fields_only() {
+        // The observed encoding (2026-09-11, dynamic-workflows-lab#2):
+        // a blocked advancement todo whose action_kind names the publication
+        // step is the agent's "publishing needs the owner" wait.
+        let blocked_publish = LoopxCliTodoSummary {
+            todo_id: "todo_pub".to_string(),
+            role: "agent".to_string(),
+            status: "blocked".to_string(),
+            task_class: "advancement_task".to_string(),
+            action_kind: "issue_fix_pr_publication".to_string(),
+            text: "Publish the validated one-line README greeting fix".to_string(),
+        };
+        assert_eq!(
+            blocked_publication_todo(std::slice::from_ref(&blocked_publish), None),
+            Some(&blocked_publish)
+        );
+        // A declined approval never resurfaces.
+        assert_eq!(
+            blocked_publication_todo(std::slice::from_ref(&blocked_publish), Some("todo_pub")),
+            None
+        );
+        // Open todos, user todos, and non-publish blocked todos are not
+        // owner-decision waits.
+        let open_publish = LoopxCliTodoSummary {
+            status: "open".to_string(),
+            ..blocked_publish.clone()
+        };
+        assert_eq!(blocked_publication_todo(&[open_publish], None), None);
+        let blocked_other = LoopxCliTodoSummary {
+            action_kind: "issue_fix_branch_validation".to_string(),
+            ..blocked_publish.clone()
+        };
+        assert_eq!(blocked_publication_todo(&[blocked_other], None), None);
+        let user_todo = LoopxCliTodoSummary {
+            role: "user".to_string(),
+            ..blocked_publish.clone()
+        };
+        assert_eq!(blocked_publication_todo(&[user_todo], None), None);
+        // The approval message quotes the todo text under the publish prefix.
+        let message = blocked_publication_approval_message("Publish the fix for issue #2");
+        assert!(message.starts_with("[P0] Approve publishing the prepared fix:"));
+        assert!(message.contains("Publish the fix for issue #2"));
+    }
+
+    #[test]
+    fn recovery_reason_distinguishes_rejected_writebacks_from_missing_receipts() {
+        // Observed live 2026-09-11 on xielixing/dynamic-workflows-lab#2: a
+        // NoDurableProgress park (three rejected typed writebacks) was shown
+        // to the user as "writeback verified, quota receipt missing". The
+        // reason must carry the actual failure mode so the console copy can
+        // describe it honestly.
+        assert_eq!(
+            recovery_reason_after_settlement(
+                LoopxAgentTurnStatus::Completed,
+                LoopxCliSettlementStatus::NoDurableProgress,
+                None,
+            ),
+            "settlement_no_progress"
+        );
+        assert_eq!(
+            recovery_reason_after_settlement(
+                LoopxAgentTurnStatus::Completed,
+                LoopxCliSettlementStatus::RetryRequired,
+                None,
+            ),
+            "settlement_receipt_missing"
+        );
+        // A failed agent turn reports execution failure, matching the
+        // non-settlement failure path's reason vocabulary.
+        assert_eq!(
+            recovery_reason_after_settlement(
+                LoopxAgentTurnStatus::Failed,
+                LoopxCliSettlementStatus::Settled,
+                None,
+            ),
+            "execution_failure"
+        );
+        // A failed Goal projection keeps the generic settlement wording.
+        let failed_goal = LoopxCliGoalSnapshot {
+            run_decision: LoopxCliRunDecision::Failed,
+            ..LoopxCliGoalSnapshot::default()
+        };
+        assert_eq!(
+            recovery_reason_after_settlement(
+                LoopxAgentTurnStatus::Completed,
+                LoopxCliSettlementStatus::Settled,
+                Some(&failed_goal),
+            ),
+            "settlement_unverified"
+        );
     }
 
     #[test]
@@ -5305,5 +6164,52 @@ mod tests {
             ..active_goal
         };
         assert!(!preserve_unanswered_local_gate(&task, &completed_goal));
+    }
+
+    #[test]
+    fn reconciliation_cannot_clear_an_owner_action_wait_message() {
+        // The owner-action park (observed live 2026-09-11,
+        // dynamic-workflows-lab#2 after PR #6 was opened): no typed gate id,
+        // but the wait message names the action the owner must take outside
+        // this host. Reconciliation must keep it while the goal stays active
+        // without a typed gate, so the UI shows the real wait instead of
+        // resurrecting the latest answered approval event.
+        let parked = LoopxTaskSnapshot {
+            state: LoopxTaskState::WaitingForUser,
+            phase: LoopxPhase::WaitingForApproval,
+            pending_gate_message: Some(
+                "LoopX is waiting for an owner action outside this host: review and merge PR #6"
+                    .to_string(),
+            ),
+            ..LoopxTaskSnapshot::default()
+        };
+        let active_goal = LoopxCliGoalSnapshot {
+            state: LoopxCliGoalState::Active,
+            ..LoopxCliGoalSnapshot::default()
+        };
+        assert!(preserve_unanswered_local_gate(&parked, &active_goal));
+
+        // A newly projected typed gate wins over the parked message: the
+        // goal now carries the authoritative question.
+        let gated_goal = LoopxCliGoalSnapshot {
+            state: LoopxCliGoalState::Active,
+            pending_user_gate: Some(LoopxCliUserGate {
+                gate_id: "todo-new".to_string(),
+                message: "New decision".to_string(),
+                ..LoopxCliUserGate::default()
+            }),
+            ..active_goal.clone()
+        };
+        assert!(!preserve_unanswered_local_gate(&parked, &gated_goal));
+
+        // A terminal goal clears the wait together with its state change.
+        let completed_goal = LoopxCliGoalSnapshot {
+            state: LoopxCliGoalState::Completed,
+            ..active_goal
+        };
+        assert!(!preserve_unanswered_local_gate(
+            &parked,
+            &completed_goal,
+        ));
     }
 }

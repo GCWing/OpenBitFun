@@ -57,6 +57,11 @@ pub struct LoopxTaskRuntimeRecord {
     /// One-shot host note appended to the next agent instruction (used by the
     /// durable-writeback compensation turn).
     pub pending_host_note: Option<String>,
+    /// A publication todo whose owner approval the owner already DECLINED in
+    /// the host UI (observed live 2026-09-11: the agent blocked its publish
+    /// todo pending the owner decision; after a decline the plan-exhausted
+    /// projection must not re-raise the same approval card forever).
+    pub declined_publication_todo_id: Option<String>,
 }
 
 impl Default for LoopxPersistedState {

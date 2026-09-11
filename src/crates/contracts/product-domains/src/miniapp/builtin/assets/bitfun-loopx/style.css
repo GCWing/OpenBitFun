@@ -752,6 +752,25 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .issue-approval-effects section[data-tone="approve"] strong { color: var(--lx-success); }
 .issue-approval-effects section[data-tone="reject"] strong { color: var(--lx-error); }
 .issue-approval-effects p { margin: 4px 0 0; color: var(--lx-text-soft); font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.issue-approval-context {
+  margin: 10px 0 0 38px;
+  padding: 9px 11px;
+  border: 1px solid var(--lx-border);
+  border-radius: 7px;
+  background: var(--lx-muted-surface);
+}
+.issue-approval-context strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--lx-text-muted);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.issue-approval-context ul { margin: 0; padding-left: 16px; }
+.issue-approval-context li { color: var(--lx-text-soft); font-size: 11.5px; line-height: 1.6; }
+.issue-approval-context li + li { margin-top: 3px; }
+.issue-approval-context a, .summary-section a { color: var(--lx-info); overflow-wrap: anywhere; }
 .issue-approval-recommendation {
   margin: 9px 0 0 38px;
   color: var(--lx-text);
@@ -1060,6 +1079,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .summary-badge--link { color: var(--lx-info); overflow-wrap: anywhere; }
 .summary-section { margin: 0 0 9px; }
 .summary-section strong { display: block; margin-bottom: 3px; font-size: 12px; }
+.summary-section__subtitle { display: block; margin: 6px 0 2px; font-size: 10.5px; color: var(--lx-text-muted); }
 .summary-section p, .summary-section ul { margin: 0; padding-left: 18px; color: var(--lx-text-soft); font-size: 11.5px; }
 .summary-rejected { margin-top: 4px; color: var(--lx-text-muted); font-size: 10.5px; }
 .summary-rejected summary { cursor: pointer; }
@@ -1069,6 +1089,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   background: color-mix(in srgb, var(--lx-warning, #d29922) 10%, transparent); color: var(--lx-text); }
 .summary-receipts { margin-top: 4px; color: var(--lx-text-muted); font-size: 10.5px; }
 .summary-receipts summary { cursor: pointer; }
+.summary-blockers { margin-top: 4px; color: var(--lx-text-muted); font-size: 10.5px; }
+.summary-blockers summary { cursor: pointer; }
+.summary-blockers ul { margin: 4px 0 0; padding-left: 18px; }
 .summary-receipts__body {
   margin: 6px 0 0; padding: 10px 12px; max-height: 42dvh; overflow: auto; white-space: pre-wrap;
   border: 1px solid var(--lx-border); border-radius: 7px; background: var(--lx-muted-surface);
