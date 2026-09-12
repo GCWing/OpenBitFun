@@ -922,21 +922,21 @@ impl LoopxWorkspaceService {
                     )))
                     .await;
                 }
-                Err(error) => return Err(host_error(
-                    loopx_contract::LoopxHostPortErrorKind::Io,
-                    &request.operation_id,
-                    format!("failed to detach LoopX workspace root for cleanup: {error}"),
-                    true,
-                )),
+                Err(error) => {
+                    return Err(host_error(
+                        loopx_contract::LoopxHostPortErrorKind::Io,
+                        &request.operation_id,
+                        format!("failed to detach LoopX workspace root for cleanup: {error}"),
+                        true,
+                    ))
+                }
             }
         }
         if let Some(error) = rename_error {
             return Err(host_error(
                 loopx_contract::LoopxHostPortErrorKind::Io,
                 &request.operation_id,
-                format!(
-                    "failed to detach LoopX workspace root for cleanup after retries: {error}"
-                ),
+                format!("failed to detach LoopX workspace root for cleanup after retries: {error}"),
                 true,
             ));
         }
@@ -1054,7 +1054,12 @@ impl LoopxWorkspaceService {
                         true,
                     )
                 })?;
-            retained.push(destination);
+            // `fresh_root` derives from a canonicalized root, which on
+            // Windows is a verbatim `\\?\` prefix Git cannot open; the
+            // retained paths feed `git worktree prune`, so simplify them
+            // before they reach any Git command (the same treatment the
+            // other git-facing paths get via `git_compatible_path`).
+            retained.push(git_compatible_path(&destination));
         }
         Ok(retained)
     }

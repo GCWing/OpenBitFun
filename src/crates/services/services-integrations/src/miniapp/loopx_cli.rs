@@ -659,16 +659,10 @@ impl LoopxCliProcessAdapter {
         agent_id: &str,
         observer: &dyn LoopxProcessObserver,
     ) -> Option<Value> {
-        let status_args: Vec<OsString> = [
-            "status",
-            "--goal-id",
-            goal_id,
-            "--agent-id",
-            agent_id,
-        ]
-        .into_iter()
-        .map(OsString::from)
-        .collect();
+        let status_args: Vec<OsString> = ["status", "--goal-id", goal_id, "--agent-id", agent_id]
+            .into_iter()
+            .map(OsString::from)
+            .collect();
         let status = match run_port_command(self, context, status_args, observer).await {
             Ok(status) => status,
             Err(error) => {
@@ -4030,7 +4024,18 @@ fn quota_spend_compensation_args(
     binding: &SettlementBinding,
     turn_id: &str,
 ) -> Vec<OsString> {
-    let mut args: Vec<OsString> = [
+    // Flag order mirrors the agent-facing spend command in the turn
+    // instruction (binding id, then turn instance, then agent identity and
+    // runtime profile) so the compensated spend is byte-identical to the
+    // instructed one apart from the CLI prefix; `quota_spend_compensation_args_mirror_the_turn_instruction_shape`
+    // keeps the two shapes from drifting apart again.
+    let (binding_flag, binding_id) = match binding {
+        SettlementBinding::Todo { todo_id } => ("--todo-id", todo_id),
+        SettlementBinding::AutonomousReplan { obligation_id } => {
+            ("--replan-obligation-id", obligation_id)
+        }
+    };
+    [
         "quota",
         "spend-slot",
         "--goal-id",
@@ -4040,6 +4045,8 @@ fn quota_spend_compensation_args(
         "--source",
         "heartbeat",
         "--execute",
+        binding_flag,
+        binding_id,
         "--turn-instance-id",
         turn_id,
         "--agent-id",
@@ -4049,22 +4056,7 @@ fn quota_spend_compensation_args(
     ]
     .into_iter()
     .map(OsString::from)
-    .collect();
-    match binding {
-        SettlementBinding::Todo { todo_id } => {
-            args.extend([
-                OsString::from("--todo-id"),
-                OsString::from(todo_id),
-            ]);
-        }
-        SettlementBinding::AutonomousReplan { obligation_id } => {
-            args.extend([
-                OsString::from("--replan-obligation-id"),
-                OsString::from(obligation_id),
-            ]);
-        }
-    }
-    args
+    .collect()
 }
 
 fn quota_guard_args(
@@ -4198,9 +4190,9 @@ mod custom_runner_contract_tests {
     use super::{
         answer_gate_args, compact_objective, loopx_contract, matching_durable_progress,
         metadata_state, plan_item_args, planned_settlement_binding, planned_settlement_token,
-        project_goal_snapshot, quota_guard_args, quota_probe_args,
-        quota_spend_compensation_args, render_agent_reentry_instruction,
-        semantic_replan_obligation_id, LoopxCommandSource, SettlementBinding, VerifiedLoopxCommand,
+        project_goal_snapshot, quota_guard_args, quota_probe_args, quota_spend_compensation_args,
+        render_agent_reentry_instruction, semantic_replan_obligation_id, LoopxCommandSource,
+        SettlementBinding, VerifiedLoopxCommand,
     };
     use openbitfun_product_domains::miniapp::loopx::{
         LoopxCliPlanItemRequest, LoopxIssueKey, LoopxItemKind, LoopxRemoteItemState,

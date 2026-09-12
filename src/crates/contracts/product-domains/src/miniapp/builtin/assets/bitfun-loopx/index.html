@@ -130,7 +130,7 @@
             <span id="task-count" class="count-badge">0</span>
           </div>
           <button id="collapse-tasks" class="icon-button icon-button--small" type="button" aria-expanded="true" title="收起任务栏" data-i18n-title="collapseTasks">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 17-5-5 5-5"/><path d="m19 17-5-5 5-5"/></svg>
             <span class="sr-only" data-i18n="collapseTasks">收起任务栏</span>
           </button>
         </div>
@@ -167,7 +167,9 @@
               <h1 id="issue-title"></h1>
               <div class="issue-header__meta">
                 <span id="issue-state-pill" class="state-pill" hidden></span>
+                <span id="issue-meta-sep-1" class="issue-header__sep" aria-hidden="true" hidden>·</span>
                 <a id="issue-link" class="issue-link" hidden target="_blank" rel="noopener noreferrer"></a>
+                <span id="issue-meta-sep-2" class="issue-header__sep" aria-hidden="true" hidden>·</span>
                 <span id="issue-updated" class="issue-header__updated"></span>
               </div>
             </div>
@@ -179,18 +181,16 @@
           <div class="issue-columns">
             <section id="issue-detail" class="issue-detail" aria-label="任务详情与进展">
               <section id="issue-approval-panel" class="issue-approval-panel" aria-labelledby="issue-approval-title" hidden>
-                <div class="issue-approval-header">
-                  <span class="issue-approval-signal" aria-hidden="true">!</span>
-                  <div>
-                    <span class="eyebrow"><span data-i18n="decisionRequired">需要你的决定</span> · <span id="issue-approval-kind"></span></span>
+                <div class="issue-approval-head">
+                  <span class="issue-approval-head__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+                  </span>
+                  <div class="issue-approval-head__copy">
+                    <span class="issue-approval-head__kind"><span data-i18n="decisionRequired">需要你的决定</span> · <span id="issue-approval-kind"></span></span>
                     <h2 id="issue-approval-title"></h2>
-                    <p id="issue-approval-message"></p>
-                    <details id="issue-approval-raw" class="issue-approval-raw" open hidden>
-                      <summary data-i18n="gateRawDetails">原始请求（来自 Agent，英文原文）</summary>
-                      <p id="issue-approval-raw-text"></p>
-                    </details>
                   </div>
                 </div>
+                <p id="issue-approval-message" class="issue-approval-message"></p>
                 <div class="issue-approval-effects">
                   <section data-tone="approve" aria-labelledby="issue-approval-approve-label">
                     <strong id="issue-approval-approve-label" data-i18n="afterApprove">批准后</strong>
@@ -206,25 +206,31 @@
                   <ul id="issue-approval-context-list"></ul>
                 </section>
                 <p id="issue-approval-recommendation" class="issue-approval-recommendation"></p>
-                <label class="note-field issue-approval-note" for="issue-approval-note">
-                  <span data-i18n="approvalNote">审批备注</span>
-                  <textarea id="issue-approval-note" rows="2" maxlength="1000" data-i18n-placeholder="approvalNotePlaceholder"></textarea>
-                </label>
                 <div class="issue-approval-actions">
+                  <button id="issue-approval-note-toggle" class="text-button issue-approval-note-toggle" type="button" aria-expanded="false" aria-controls="issue-approval-note" data-i18n="approvalNoteToggle">添加备注</button>
+                  <span class="issue-approval-actions__spacer"></span>
                   <button id="issue-approval-reject" class="danger-button" type="button" data-i18n="reject">拒绝</button>
                   <button id="issue-approval-approve" class="primary-button" type="button" data-i18n="approve">批准</button>
                 </div>
+                <label class="note-field issue-approval-note" for="issue-approval-note" hidden>
+                  <span data-i18n="approvalNote">审批备注</span>
+                  <textarea id="issue-approval-note" rows="2" maxlength="1000" data-i18n-placeholder="approvalNotePlaceholder"></textarea>
+                </label>
+                <details id="issue-approval-raw" class="issue-approval-raw" hidden>
+                  <summary data-i18n="gateRawDetails">原始请求（来自 Agent，英文原文）</summary>
+                  <p id="issue-approval-raw-text"></p>
+                </details>
               </section>
 
-              <div id="issue-decision-card" class="issue-decision-card" role="status" hidden></div>
+              <div id="issue-decision-card" class="issue-decision-card" aria-labelledby="issue-decision-card-title" role="region" hidden></div>
 
-              <details id="issue-description-panel" class="issue-description-panel" open>
-                <summary>
-                  <h2 data-i18n="issueDescription">Issue 描述</h2>
-                  <span id="issue-number" class="issue-number"></span>
-                </summary>
+              <section id="issue-description-panel" class="issue-description-panel" aria-labelledby="issue-description-title" hidden>
+                <header class="issue-description-panel__header">
+                  <h2 id="issue-description-title" data-i18n="issueDescription">Issue 描述</h2>
+                  <span id="issue-number" class="issue-number" hidden></span>
+                </header>
                 <div id="issue-description" class="issue-description markdown-body"></div>
-              </details>
+              </section>
 
               <section id="issue-brief" class="issue-brief" aria-labelledby="issue-brief-title">
                 <div class="issue-brief__head">
@@ -232,10 +238,6 @@
                   <span id="issue-summary-meta" class="issue-brief__meta"></span>
                 </div>
                 <div id="issue-summary" class="issue-summary markdown-body"></div>
-                <details id="issue-tech" class="issue-tech">
-                  <summary data-i18n="techDetailsTitle">技术详情</summary>
-                  <ul id="issue-facts" class="issue-facts"></ul>
-                </details>
                 <p id="issue-error" class="issue-error" role="alert" hidden></p>
               </section>
             </section>

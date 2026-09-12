@@ -8,15 +8,16 @@ const MAX_EVENTS = 2000;
 const MAX_RENDERED_OUTPUT_BLOCKS = 500;
 const MAX_TURN_OUTPUT_EVENTS = 4000;
 const MAX_OUTPUT_HISTORY_EVENTS = 50000;
-const MAX_OUTPUT_EVENT_CHARS = 16000;
-const MAX_OUTPUT_BLOCK_CHARS = 120000;
-const MAX_OUTPUT_HISTORY_CHARS = 8000000;
+const MAX_OUTPUT_HISTORY_CHARS = 16000000;
+const LONG_OUTPUT_BLOCK_CHARS = 12000;
 const MAX_INTAKE_HISTORY = 12;
 const HOST_CLOCK_TICK_MS = 5000;
 const HOST_RESUME_GAP_MS = 30000;
 const STALE_ACTIVE_REATTACH_MS = 30000;
 const MODEL_SELECTION_STORAGE_KEY = 'loopx.modelId';
 const INTAKE_HISTORY_STORAGE_KEY = 'loopx.intakeHistory';
+const METADATA_HYDRATE_TIMEOUT_MS = 8000;
+const AUTO_RECHECK_INTERVAL_MS = 5 * 60 * 1000;
 const HIGH_RISK_SCOPES = new Set([
   'publish',
   'public_comment',
@@ -65,6 +66,7 @@ const COPY = {
     resetLoopxRetained: '模型配置、GitHub 登录、MiniApp 设置和干净的 Git 对象缓存会保留；仍在进行的工作区不会被复用。',
     resetLoopxConfirm: '清空并重新开始',
     resetLoopxApplied: 'LoopX 已清空，可以重新开始测试。',
+    resetLoopxDeferred: 'LoopX 已清空；部分旧工作区仍被占用，正在后台继续清理。',
     unsupportedTitle: '当前执行位置不支持 LoopX',
     unsupportedDefault: 'LoopX 目前只支持本地 Desktop 工作区；远程工作区不会静默改在本机执行。',
     environment: '环境',
@@ -83,6 +85,7 @@ const COPY = {
     loopxInstallingTitle: '正在准备 LoopX {version}',
     loopxInstallingDetail: '仅下载运行所需源码并校验版本，完成后会自动重新检查环境。',
     tasks: '任务',
+    taskCountLabel: '共 {value} 个任务',
     collapseTasks: '收起任务栏',
     resizeTasks: '调整任务栏宽度',
     resizeIssueColumns: '调整详情和时间线宽度',
@@ -119,27 +122,33 @@ const COPY = {
     outputThinkingSummary: '思考过程 · {value} 字（点击展开）',
     outputToolSummary: '工具详情（点击展开）',
     decisionCardTitle: '需要你的决策',
+    decisionCardTitleExternal: '等待外部操作',
     decisionCardTitleRecovery: '工作段被中断，需要恢复',
     decisionCardTitlePlanExhausted: '修复计划已执行完毕，等待收尾方式',
     decisionResume: '恢复重试',
     decisionContinueAfterOwnerAction: '我已完成，继续任务',
+    decisionCardRecheck: '重新检查 PR 状态',
+    decisionCardRecheckRecent: '最近已检查（{time}），外部状态未变化',
+    decisionCardRecheckCooldown: '刚检查过，稍候几秒可再次检查',
+    decisionCardExternalSummary: '在 GitHub 完成 {prs} 的合并或审核后，点下方「重新检查 PR 状态」继续任务。',
+    decisionCardExternalSummaryGeneric: '任务正在等待一个发生在 BitFun 之外的操作；完成后点下方「重新检查 PR 状态」继续任务。',
     approvalContextTitle: '本次决策的背景',
     decisionCardGateHint: '请在上方审批面板中批准或拒绝该请求。',
     decisionCardRecoveryHint: '本段工作已结束，但结算未能确认持久进展；可恢复重试一次，结论详情见下方最新进展。',
     decisionCardPlanExhaustedHint: '流程的待办已全部执行完，但没有留下可继续的待办、待批门禁或收尾声明，宿主不会伪造收尾。已产生的提交、未提交改动与证据均保留在任务工作区。你可以：从任务分支手动推送并开 PR / 在 issue 上评论说明；或等 goal 出现新待办（例如上游 PR 合并、新的监控结论）后再点“恢复重试”。',
-    summaryVerdictNeedsFix: '🛠️ 需要修复',
-    summaryVerdictAlreadyFixedUpstream: '✅ 上游已修复',
-    summaryVerdictWontFix: '🚫 无需修复',
-    summaryVerdictNeedsInfo: '❓ 信息不足',
-    summaryReproductionReproduced: '🔁 已复现',
-    summaryReproductionNotReproduced: '🔁 未复现（未执行复现环节）',
-    summaryReproductionNotApplicable: '🔁 不适用',
+    summaryVerdictNeedsFix: '需要修复',
+    summaryVerdictAlreadyFixedUpstream: '上游已修复',
+    summaryVerdictWontFix: '无需修复',
+    summaryVerdictNeedsInfo: '信息不足',
+    summaryReproductionReproduced: '已复现',
+    summaryReproductionNotReproduced: '未复现（未执行复现环节）',
+    summaryReproductionNotApplicable: '不适用',
     summaryWontFixReasonDuplicateOf: '重复议题',
     summaryWontFixReasonByDesign: '设计如此，无需改动',
-    summaryWontFixReasonInvalid: '议题无效或无法操作',
+    summaryWontFixReasonInvalid: '无需处理（无可执行请求）',
     summaryMissingInfo: '判断所需信息',
     summaryCompletedTitlePlain: '处理结果',
-    summaryCompletedNoFollowup: '该 Issue 的处理已完成，系统不再自动跟进。GitHub 上的新评论或 PR 更新不会自动重启处理；如需继续，请使用「重新尝试」提交新任务。',
+    summaryCompletedNoFollowup: '处理已完成，系统不再自动跟进；如需继续，请使用「重新尝试」提交新任务。',
     issueDescriptionEmpty: '（该 Issue 没有正文描述）',
     summarySegmentEvidence: '调查取证',
     summarySegmentRouteDecision: '方案决策',
@@ -151,8 +160,10 @@ const COPY = {
     summaryRejectedTitle: '已否决的其他方案',
     summaryNextStep: '下一步',
     summaryBlockers: '阻塞',
-    summaryTechReceipts: '技术回执',
-    summaryPendingGate: '⏸️ 等你批准后继续（见上方审批面板）',
+    summaryConclusion: '结论',
+    summaryProcessDetails: '查看过程详情',
+    summaryTechReceipts: '技术回执（原始文本）',
+    summaryPendingGate: '等待你在上方审批面板中处理',
     recoveryReasonHostRestart: '中断原因：应用异常关闭导致执行中断',
     recoveryReasonExecutionFailure: '中断原因：执行过程失败',
     recoveryReasonPlanExhausted: '中断原因：计划用尽——无待办、无待批门禁、无终局声明',
@@ -222,6 +233,7 @@ const COPY = {
     afterApprove: '批准后',
     afterReject: '拒绝后',
     approvalNote: '审批备注',
+    approvalNoteToggle: '添加备注',
     approvalNotePlaceholder: '补充批准或拒绝的原因（可选）',
     reject: '拒绝',
     approve: '批准',
@@ -239,10 +251,12 @@ const COPY = {
     repositoryPausedByModel: '模型请求失败，仓库队列已暂停',
     archive: '归档并清理工作区',
     restore: '还原',
-    updated: '更新于 {duration} 前',
+    updated: '更新于 {duration}前',
+    taskUpdated: '任务更新于 {duration}前',
     openInGithub: '在 GitHub 中打开',
+    openExternalFailed: '无法打开外部链接，请手动复制地址到浏览器。',
     currentWork: '当前',
-    outcomeUpdated: '{duration}前更新',
+    outcomeUpdated: '进展更新于 {duration}前',
     stagePending: '待开始',
     stageActive: '进行中',
     stageComplete: '已完成',
@@ -277,7 +291,7 @@ const COPY = {
     genericApprovalApproveEffect: '批准后：按下方「原始请求」执行其中的具体操作（含对仓库的写入/提交，以及构建、安装、发布、真实运行验证等外部动作），完成后会再次汇报结果。',
     genericApprovalRejectEffect: '拒绝后：不执行该操作，任务保持等待、不会继续推进；现有修改、调查结果和工作区都会保留。',
     genericApprovalRecommendation: '建议：先展开「原始请求」确认要执行的每个动作——需要你批准的是写入/提交、构建、安装、真实运行验证等会改变仓库或产生外部副作用的步骤；文件内的普通修改不需要审批。确认符合预期后再继续，不确定时暂不执行并在备注中说明需要补充的信息。',
-    gateRawDetails: '原始请求（来自 Agent）',
+    gateRawDetails: '技术原文（仅在需要核对时展开）',
     gateGrantAuthorityScopes: '需要的权限：{scopes}。',
     gateGatedReadTitle: '允许读取 Issue 正文与维护者评论？',
     gateGatedReadSummary: 'Agent 目前只能看到这条 Issue 的元数据（标题、标签、状态）。要判断它是否值得修复、是否已经有人处理过，需要进一步读取正文和评论内容。这些内容仅用于本任务的分析，不会原样写入公开状态。',
@@ -373,6 +387,7 @@ const COPY = {
     state_queued: '排队中',
     state_running: '运行中',
     state_waiting_for_user: '待批准',
+    state_waiting_for_external: '等待外部操作',
     state_retry_wait: '等待重试',
     state_cancelling: '正在停止',
     state_stopped: '已暂停',
@@ -444,6 +459,7 @@ const COPY = {
     resetLoopxRetained: 'Model configuration, GitHub login, MiniApp settings, and clean Git object caches are retained. Unsettled worktrees are not reused.',
     resetLoopxConfirm: 'Clear and start over',
     resetLoopxApplied: 'LoopX was cleared. You can start a fresh test.',
+    resetLoopxDeferred: 'LoopX was cleared; some old workspaces are still locked and cleanup continues in the background.',
     unsupportedTitle: 'LoopX is unavailable in this execution location',
     unsupportedDefault: 'LoopX currently supports local Desktop workspaces only. Remote workspaces will not silently run on this device instead.',
     environment: 'Environment',
@@ -462,6 +478,7 @@ const COPY = {
     loopxInstallingTitle: 'Preparing LoopX {version}',
     loopxInstallingDetail: 'Downloading only the runtime source and verifying it. The environment will be checked automatically when finished.',
     tasks: 'Tasks',
+    taskCountLabel: 'Tasks: {value}',
     collapseTasks: 'Collapse task rail',
     resizeTasks: 'Resize task rail',
     resizeIssueColumns: 'Resize detail and timeline',
@@ -498,27 +515,33 @@ const COPY = {
     outputThinkingSummary: 'Thinking · {value} chars (click to expand)',
     outputToolSummary: 'Tool details (click to expand)',
     decisionCardTitle: 'Needs your decision',
+    decisionCardTitleExternal: 'Waiting for an external action',
     decisionCardTitleRecovery: 'Work segment was interrupted and needs recovery',
     decisionCardTitlePlanExhausted: 'Fix plan completed; choose how to finish',
     decisionResume: 'Resume retry',
     decisionContinueAfterOwnerAction: 'I finished the step — continue',
+    decisionCardRecheck: 'Re-check PR status',
+    decisionCardRecheckRecent: 'Last checked at {time}; external state unchanged',
+    decisionCardRecheckCooldown: 'Just checked; try again in a few seconds',
+    decisionCardExternalSummary: 'Finish {prs} on GitHub, then use the re-check button below to continue.',
+    decisionCardExternalSummaryGeneric: 'This task is waiting on an action outside BitFun. Use the re-check button below after you finish it.',
     approvalContextTitle: 'Why this decision',
     decisionCardGateHint: 'Approve or reject the request in the approval panel above.',
     decisionCardRecoveryHint: 'This segment finished but settlement could not validate durable progress. You can retry recovery once; see the summary below for the conclusion.',
     decisionCardPlanExhaustedHint: 'All plan todos are done, but the flow left no open todo, approval gate, or terminal declaration, and the host will not fabricate one. Commits, uncommitted changes, and evidence are preserved in the task worktree. You can push the task branch and open a PR / comment on the issue yourself, or wait until the goal gains a new todo or gate (for example after an upstream PR merge) and then use Resume retry.',
-    summaryVerdictNeedsFix: '🛠️ Needs fix',
-    summaryVerdictAlreadyFixedUpstream: '✅ Already fixed upstream',
-    summaryVerdictWontFix: '🚫 Won\'t fix',
-    summaryVerdictNeedsInfo: '❓ Needs info',
-    summaryReproductionReproduced: '🔁 Reproduced',
-    summaryReproductionNotReproduced: '🔁 Not reproduced (no repro step)',
-    summaryReproductionNotApplicable: '🔁 Not applicable',
+    summaryVerdictNeedsFix: 'Needs fix',
+    summaryVerdictAlreadyFixedUpstream: 'Already fixed upstream',
+    summaryVerdictWontFix: 'Won\'t fix',
+    summaryVerdictNeedsInfo: 'Needs info',
+    summaryReproductionReproduced: 'Reproduced',
+    summaryReproductionNotReproduced: 'Not reproduced (no repro step)',
+    summaryReproductionNotApplicable: 'Not applicable',
     summaryWontFixReasonDuplicateOf: 'Duplicate issue',
     summaryWontFixReasonByDesign: 'Works as designed',
-    summaryWontFixReasonInvalid: 'Invalid or not actionable',
+    summaryWontFixReasonInvalid: 'No action needed (nothing actionable)',
     summaryMissingInfo: 'Information needed to decide',
     summaryCompletedTitlePlain: 'Outcome',
-    summaryCompletedNoFollowup: 'Handling for this issue is finished and the system will not follow up automatically. New GitHub comments or PR updates do not restart it; use Retry to submit a new task if you want to continue.',
+    summaryCompletedNoFollowup: 'Handling is complete; automation stops here. Use the new-attempt action if you want to continue.',
     issueDescriptionEmpty: '(This issue has no body text.)',
     summarySegmentEvidence: 'Evidence',
     summarySegmentRouteDecision: 'Route decision',
@@ -530,8 +553,10 @@ const COPY = {
     summaryRejectedTitle: 'Rejected alternatives',
     summaryNextStep: 'Next step',
     summaryBlockers: 'Blockers',
-    summaryTechReceipts: 'Technical receipts',
-    summaryPendingGate: '⏸️ Waiting for your approval (see the approval panel above)',
+    summaryConclusion: 'Conclusion',
+    summaryProcessDetails: 'View process details',
+    summaryTechReceipts: 'Technical receipts (raw text)',
+    summaryPendingGate: 'Waiting for you in the approval panel above',
     recoveryReasonHostRestart: 'Interrupted by an abnormal app shutdown',
     recoveryReasonExecutionFailure: 'Interrupted by an execution failure',
     recoveryReasonPlanExhausted: 'Interrupted because the plan ran dry: no open todo, no approval gate, no terminal declaration',
@@ -601,6 +626,7 @@ const COPY = {
     afterApprove: 'If approved',
     afterReject: 'If rejected',
     approvalNote: 'Approval note',
+    approvalNoteToggle: 'Add note',
     approvalNotePlaceholder: 'Optional reason for approving or rejecting',
     reject: 'Reject',
     approve: 'Approve',
@@ -619,9 +645,11 @@ const COPY = {
     archive: 'Archive & clean workspace',
     restore: 'Restore',
     updated: 'Updated {duration} ago',
+    taskUpdated: 'Task updated {duration} ago',
     openInGithub: 'Open in GitHub',
+    openExternalFailed: 'Could not open the link. Copy the address into your browser instead.',
     currentWork: 'Current',
-    outcomeUpdated: 'Updated {duration} ago',
+    outcomeUpdated: 'Progress updated {duration} ago',
     stagePending: 'Pending',
     stageActive: 'Active',
     stageComplete: 'Complete',
@@ -656,7 +684,7 @@ const COPY = {
     genericApprovalApproveEffect: 'Approve = perform the concrete operation described in the "Original request" below (writes/commits in the repo, plus external actions such as building, installing, publishing, or real-run validation), then report results again afterward.',
     genericApprovalRejectEffect: 'Reject = do not perform that operation; the task stays waiting and does not move forward. Existing changes, investigation results, and the workspace are kept.',
     genericApprovalRecommendation: 'Recommendation: expand the "Original request" and confirm each step. Only steps that change the repo or produce external side effects (write/commit, build, install, real-run validation) need your approval; ordinary local file edits do not. Continue when it matches your expectation; otherwise pause and note what information is missing.',
-    gateRawDetails: 'Original request (from agent)',
+    gateRawDetails: 'Verbatim request (technical details only)',
     gateGrantAuthorityScopes: 'Required scopes: {scopes}.',
     gateGatedReadTitle: 'Allow reading the issue body and maintainer comments?',
     gateGatedReadSummary: 'The agent can only see metadata (title, labels, state) so far. To judge whether this issue is worth fixing and whether someone already handled it, it needs to read the issue body and comments. That content is only used for this task\'s analysis and is never copied into public state.',
@@ -752,6 +780,7 @@ const COPY = {
     state_queued: 'Queued',
     state_running: 'Running',
     state_waiting_for_user: 'Pending approval',
+    state_waiting_for_external: 'External wait',
     state_retry_wait: 'Retry wait',
     state_cancelling: 'Stopping',
     state_stopped: 'Paused',
@@ -844,7 +873,9 @@ const view = {
   issueView: byId('issue-view'),
   issueTitle: byId('issue-title'),
   issueStatePill: byId('issue-state-pill'),
+  issueMetaSep1: byId('issue-meta-sep-1'),
   issueLink: byId('issue-link'),
+  issueMetaSep2: byId('issue-meta-sep-2'),
   issueUpdated: byId('issue-updated'),
   issueDetail: byId('issue-detail'),
   issueSplitter: byId('issue-splitter'),
@@ -860,12 +891,12 @@ const view = {
   issueApprovalRejectEffect: byId('issue-approval-reject-effect'),
   issueApprovalRecommendation: byId('issue-approval-recommendation'),
   issueApprovalNote: byId('issue-approval-note'),
+  issueApprovalNoteToggle: byId('issue-approval-note-toggle'),
   issueApprovalReject: byId('issue-approval-reject'),
   issueApprovalApprove: byId('issue-approval-approve'),
   issueDecisionCard: byId('issue-decision-card'),
   issueSummaryMeta: byId('issue-summary-meta'),
   issueSummary: byId('issue-summary'),
-  issueFacts: byId('issue-facts'),
   issueError: byId('issue-error'),
   issueDescriptionPanel: byId('issue-description-panel'),
   issueDescription: byId('issue-description'),
@@ -916,6 +947,8 @@ const state = {
   pendingCreate: null,
   pendingRetry: null,
   approvalTaskId: null,
+  ownerActionChecks: new Map(),
+  autoRecheckAt: new Map(),
   promptedGateIds: new Set(),
   pendingApprovalPrompt: false,
   syncing: false,
@@ -1043,6 +1076,17 @@ function taskStateLabel(task) {
   return isWorkspacePreparationFailure(task) ? stateLabel('failed') : stateLabel(task && task.state);
 }
 
+/// A waiting task WITHOUT a live typed gate is parked on an owner action
+/// outside this host (for example merging a PR on GitHub). It is a waiting
+/// status, not an approval request: the rail and the header must not label
+/// it "pending approval" while the approval panel stays hidden.
+function isExternalWait(task) {
+  return Boolean(task)
+    && task.state === 'waiting_for_user'
+    && !task.pendingGateId
+    && String(task.pendingGateMessage || '').trim().length > 0;
+}
+
 function pendingActionFor(task) {
   return task && task.taskId ? state.taskActionPending.get(task.taskId) : '';
 }
@@ -1062,13 +1106,14 @@ function taskStateDisplayLabel(task) {
   if (pending === 'resume' || pending === 'restore') return text('resumePending');
   if (pending === 'archive') return text('archivePending');
   if (pending) return text('actionPending');
+  if (isExternalWait(task)) return text('state_waiting_for_external');
   return taskStateLabel(task);
 }
 
 function taskPhaseLabel(task) {
-  return isWorkspacePreparationFailure(task)
-    ? text('workspacePreparationFailed')
-    : phaseLabel(task && task.phase);
+  if (isWorkspacePreparationFailure(task)) return text('workspacePreparationFailed');
+  if (isExternalWait(task)) return text('state_waiting_for_external');
+  return phaseLabel(task && task.phase);
 }
 
 /// The LoopX frontier-todo projection marks the PR-lifecycle monitoring
@@ -1323,15 +1368,10 @@ function linkifiedText(value, repository) {
     if (match.index > cursor) {
       fragment.append(raw.slice(cursor, match.index));
     }
-    const anchor = document.createElement('a');
     if (!url) {
       fragment.append(full);
     } else {
-      anchor.href = url;
-      anchor.target = '_blank';
-      anchor.rel = 'noreferrer';
-      anchor.textContent = label;
-      fragment.append(anchor);
+      fragment.append(externalAnchor(label, url));
     }
     cursor = match.index + full.length;
   }
@@ -1609,17 +1649,14 @@ async function refreshTurnOutput() {
       const outputKey = `${task.taskId}:${turnId}:${event.cursor}`;
       if (!state.outputKeys.has(outputKey)) {
         const rawText = event.text == null ? '' : String(event.text);
-        const boundedText = rawText.length <= MAX_OUTPUT_EVENT_CHARS
-          ? rawText
-          : `${rawText.slice(0, MAX_OUTPUT_EVENT_CHARS / 2)}\n...\n${rawText.slice(-MAX_OUTPUT_EVENT_CHARS / 2)}`;
         state.outputKeys.add(outputKey);
         state.outputHistory.push({
           ...event,
-          text: boundedText,
+          text: rawText,
           taskId: task.taskId,
           turnId,
         });
-        state.outputCharacters += boundedText.length;
+        state.outputCharacters += rawText.length;
       }
     });
     state.turnOutput.events.sort((left, right) => left.cursor - right.cursor);
@@ -2062,7 +2099,20 @@ function taskButton(task) {
   label.textContent = identityTitle || compactItemLabel(item);
   const meta = document.createElement('small');
   const activity = task.lastOutputAt || task.updatedAt;
-  meta.textContent = `${repositoryLabel(item && item.repository)} · ${compactItemLabel(item)} · ${relativeLabel(activity)}`;
+  const repositoryText = repositoryLabel(item && item.repository);
+  const itemText = compactItemLabel(item);
+  const activityText = relativeLabel(activity);
+  const repositoryNode = document.createElement('span');
+  repositoryNode.className = 'task-item__repo';
+  repositoryNode.textContent = repositoryText;
+  const itemNode = document.createElement('span');
+  itemNode.className = 'task-item__item';
+  itemNode.textContent = itemText;
+  const activityNode = document.createElement('span');
+  activityNode.className = 'task-item__time';
+  activityNode.textContent = activityText;
+  meta.title = `${repositoryText} · ${itemText} · ${activityText}`;
+  meta.append(repositoryNode, ' · ', itemNode, ' · ', activityNode);
   main.append(label, meta);
   if (task.state === 'queued') {
     const reason = latestTaskWaitReason(task);
@@ -2073,9 +2123,12 @@ function taskButton(task) {
   taskState.className = 'task-item__state';
   const pendingAction = pendingActionFor(task);
   const visualState = taskVisualState(task);
+  const externalWait = isExternalWait(task);
   button.dataset.state = visualState;
+  if (externalWait) button.dataset.wait = 'external';
   if (pendingAction) button.dataset.pending = pendingAction;
   taskState.dataset.status = visualState;
+  if (externalWait) taskState.dataset.wait = 'external';
   if (pendingAction) {
     taskState.classList.add('task-item__hint', 'task-item__hint--pending');
     taskState.textContent = taskStateDisplayLabel(task);
@@ -2105,6 +2158,9 @@ function renderTasks() {
   sortedTaskList(tasks).forEach((task) => fragment.append(taskButton(task)));
   view.taskItems.replaceChildren(fragment);
   view.taskCount.textContent = String(tasks.length);
+  const countLabel = text('taskCountLabel', { value: tasks.length });
+  view.taskCount.title = countLabel;
+  view.taskCount.setAttribute('aria-label', countLabel);
   view.taskEmpty.hidden = tasks.length !== 0;
   renderRepositoryActions(tasks);
   syncApprovalAttention(false);
@@ -2337,6 +2393,7 @@ function syncApprovalAttention(autoOpen = false) {
   const attention = currentApprovalAttention();
   state.approvalTaskId = attention ? attention.task.taskId : null;
   view.approvalAlert.hidden = !attention;
+  if (view.taskCount) view.taskCount.classList.toggle('count-badge--attention', Boolean(attention));
   if (!attention) return;
 
   const { task, gate } = attention;
@@ -2397,19 +2454,9 @@ function renderTaskActions(task) {
   if (['recovery_required', 'failed', 'stopped'].includes(task.state)) {
     fragment.append(makeActionButton(text('resume'), 'resume', task));
   }
-  // The owner-action park (waiting without a live typed gate) is resumed
-  // manually after the owner finishes the external step it names (merge a
-  // PR on GitHub, answer on the external surface): the park message itself
-  // says "use Resume after acting", so the button must exist here. The
-  // label says "continue", not "resume": the task is healthy, not broken.
-  // Live typed gates keep approve/reject as the single actionable entry.
-  if (task.state === 'waiting_for_user' && !task.pendingGateId) {
-    fragment.append(makeActionButton(
-      text('decisionContinueAfterOwnerAction'),
-      'resume',
-      task,
-    ));
-  }
+  // The owner-action park (waiting without a live typed gate) is handled by
+  // the decision card, which is the single actionable surface for that
+  // state; do not duplicate the re-check entry here.
   if (['stopped', 'completed', 'failed'].includes(task.state)) {
     fragment.append(makeActionButton(text('archive'), 'archive', task));
   }
@@ -2428,6 +2475,43 @@ function safeMarkdownUrl(rawUrl, baseUrl) {
   }
 }
 
+/// MiniApp iframes cannot navigate blank-target anchors themselves in the
+/// Tauri sandbox; every external link goes through the host opener so a click
+/// actually leaves the webview (observed live: GitHub PR buttons looked
+/// actionable but did nothing).
+function openExternalUrl(url) {
+  const target = String(url || '').trim();
+  if (!target) return;
+  const bridgeOpen = app && app.system && typeof app.system.openExternal === 'function'
+    ? app.system.openExternal
+    : null;
+  if (bridgeOpen) {
+    Promise.resolve(bridgeOpen(target)).catch(() => {
+      showNotice(text('openExternalFailed'), 'error');
+    });
+    return;
+  }
+  if (typeof window.open === 'function') {
+    window.open(target, '_blank', 'noopener');
+    return;
+  }
+  showNotice(text('openExternalFailed'), 'error');
+}
+
+function externalAnchor(label, url, className = '') {
+  const anchor = document.createElement('a');
+  if (className) anchor.className = className;
+  anchor.href = url;
+  anchor.target = '_blank';
+  anchor.rel = 'noopener noreferrer';
+  anchor.textContent = label;
+  anchor.addEventListener('click', (event) => {
+    event.preventDefault();
+    openExternalUrl(url);
+  });
+  return anchor;
+}
+
 function appendInlineMarkdown(parent, source, baseUrl) {
   const pattern = /(`[^`\n]+`|\[[^\]\n]+\]\([^\s)]+\)|\*\*[^*\n]+\*\*|__[^_\n]+__)/g;
   let cursor = 0;
@@ -2442,12 +2526,7 @@ function appendInlineMarkdown(parent, source, baseUrl) {
       const parts = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
       const href = parts ? safeMarkdownUrl(parts[2], baseUrl) : '';
       if (parts && href) {
-        const link = document.createElement('a');
-        link.href = href;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.textContent = parts[1];
-        parent.append(link);
+        parent.append(externalAnchor(parts[1], href));
       } else {
         parent.append(document.createTextNode(token));
       }
@@ -2476,10 +2555,20 @@ function renderMarkdown(target, source, baseUrl) {
       if (code) {
         code = null;
       } else {
+        const fenceInfo = line.replace(/^```\s*/, '').trim().split(/\s+/)[0] || '';
         const pre = document.createElement('pre');
         code = document.createElement('code');
         pre.append(code);
-        fragment.append(pre);
+        if (fenceInfo === 'loopx_summary_v1') {
+          const details = document.createElement('details');
+          details.className = 'markdown-receipt';
+          const summary = document.createElement('summary');
+          summary.textContent = text('summaryTechReceipts');
+          details.append(summary, pre);
+          fragment.append(details);
+        } else {
+          fragment.append(pre);
+        }
       }
       return;
     }
@@ -2592,6 +2681,7 @@ function taskProgressEvidence(task) {
 function currentProgressHeading(task, evidence) {
   if (isResolvedUpstream(task)) return text('progressResolvedUpstream');
   if (task.state === 'completed') return text('progressCompleted');
+  if (isExternalWait(task)) return text('state_waiting_for_external');
   if (task.state === 'waiting_for_user') return text('progressWaiting');
   if (task.state === 'recovery_required' || task.state === 'failed') return text('progressRecovery');
   if (task.phase === 'preparing_workspace') return text('progressPreparing');
@@ -2609,6 +2699,10 @@ function currentProgressDetail(task, events) {
   if (isResolvedUpstream(task)) return text('progressResolvedUpstreamDetail');
   if (task.state === 'queued') {
     return isMonitorTodo(task) ? monitorWaitDetail(task) : latestTaskWaitReason(task);
+  }
+  if (isExternalWait(task)) {
+    const waitMessage = String(task.pendingGateMessage || '').trim();
+    return externalWaitPresentation(waitMessage, taskPullRequestLinks(task, waitMessage));
   }
   if (task.currentTool) {
     const activity = [...events].reverse().find((event) => (
@@ -2661,6 +2755,10 @@ function renderIssueApproval(task) {
     // 新到的 owner 决策自己钉在详情列顶部：把滚动位置带回顶部，
     // 保证审批卡片完整可见（sticky 定位已保证后续滚动时不被淹没）。
     view.issueDetail.scrollTop = 0;
+    // 新决策不带上一决策的备注草稿：收起备注输入，回到默认紧凑形态。
+    const noteField = view.issueApprovalNote.closest('.issue-approval-note');
+    if (noteField) noteField.hidden = true;
+    view.issueApprovalNoteToggle.setAttribute('aria-expanded', 'false');
   }
   if (!gate) return;
   const presentation = approvalPresentation(task, gate);
@@ -2670,9 +2768,9 @@ function renderIssueApproval(task) {
   view.issueApprovalTitle.textContent = presentation.title;
   view.issueApprovalMessage.textContent = presentation.summary;
   const rawBody = String(presentation.rawMessage || '').trim();
-  const rawDiffers = rawBody && rawBody !== presentation.summary;
-  view.issueApprovalRaw.hidden = !rawDiffers;
-  view.issueApprovalRawText.textContent = rawDiffers ? rawBody : '';
+  const showRaw = rawBody && rawBody !== presentation.summary && presentation.kind === 'generic';
+  view.issueApprovalRaw.hidden = !showRaw;
+  view.issueApprovalRawText.textContent = showRaw ? rawBody : '';
   view.issueApprovalApproveEffect.textContent = presentation.approveEffect;
   view.issueApprovalRejectEffect.textContent = presentation.rejectEffect;
   view.issueApprovalRecommendation.textContent = presentation.recommendation;
@@ -2729,19 +2827,37 @@ function renderIssueStatus(task) {
   }
   card.replaceChildren();
   const planExhausted = recovery && task.recoveryReason === 'plan_exhausted';
+  // Owner-action park: waiting WITHOUT a live typed gate, with the park
+  // message naming the external step (merge a PR on GitHub). This is a
+  // "waiting for an external event" STATUS, not a decision: there is
+  // nothing to approve or reject here, so the card must not use decision
+  // wording (observed live 2026-09-12: the park presented itself as
+  // "needs your decision" with a continue button that no-ops until the
+  // external event lands, and the owner clicked it twice with no effect).
+  const waitMessage = String(task.pendingGateMessage || '').trim();
+  const externalWait = waiting && !task.pendingGateId && waitMessage;
+  card.dataset.mode = externalWait ? 'external' : 'decision';
+  const externalLinks = externalWait ? taskPullRequestLinks(task, waitMessage) : [];
+  const externalPresentation = externalWait
+    ? externalWaitPresentation(waitMessage, externalLinks)
+    : null;
   const heading = document.createElement('strong');
-  heading.textContent = text(waiting
-    ? 'decisionCardTitle'
-    : (planExhausted ? 'decisionCardTitlePlanExhausted' : 'decisionCardTitleRecovery'));
+  heading.id = 'issue-decision-card-title';
+  heading.textContent = text(externalWait
+    ? 'decisionCardTitleExternal'
+    : (waiting
+      ? 'decisionCardTitle'
+      : (planExhausted ? 'decisionCardTitlePlanExhausted' : 'decisionCardTitleRecovery')));
   const body = document.createElement('p');
   body.className = 'issue-decision-card__message';
   let recoveryHint;
-  if (waiting) {
+  if (externalWait) {
+    recoveryHint = externalPresentation;
+  } else if (waiting) {
     // With a live typed gate the actionable surface is the approval panel
     // above; the owner-action park (no gate id, message names an external
     // step like merging a PR on GitHub) carries its own instruction in the
     // message — show that instead of pointing at a panel that is hidden.
-    const waitMessage = String(task.pendingGateMessage || '').trim();
     recoveryHint = (!task.pendingGateId && waitMessage)
       ? waitMessage
       : text('decisionCardGateHint');
@@ -2766,6 +2882,19 @@ function renderIssueStatus(task) {
   }
   body.textContent = recoveryHint;
   card.append(heading, body);
+  if (externalWait) {
+    if (externalLinks.length > 0) card.append(externalWaitLinkRow(externalLinks));
+    // A recent re-check with the same park message means the external
+    // state has not changed: say so instead of letting the card look
+    // untouched (the silent no-op that made the owner re-click).
+    const recentCheck = latestOwnerActionCheck(task.taskId, waitMessage);
+    if (recentCheck) {
+      const hint = document.createElement('p');
+      hint.className = 'issue-decision-card__recheck-hint';
+      hint.textContent = text('decisionCardRecheckRecent', { time: clockLabel(recentCheck.at) });
+      card.append(hint);
+    }
+  }
   const reasonKey = !waiting && task.recoveryReason
     ? `recoveryReason${String(task.recoveryReason).split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('')}`
     : null;
@@ -2784,15 +2913,14 @@ function renderIssueStatus(task) {
     actions.append(makeActionButton(text('decisionResume'), 'resume', task, 'primary'));
   }
   // Owner-action park (waiting without a live typed gate): the card is the
-  // attention surface, so the "Resume after acting" button the message
-  // promises must live HERE, not only in the header's task-actions strip
-  // (observed live 2026-09-11: the owner read this exact card and found no
-  // button). The label states the SEMANTICS of this state — the task is
-  // healthy and waiting on an external owner step, not broken — instead of
-  // the recovery word "Resume", which reads like a bug (same live date:
-  // the owner asked whether the product was broken). A live typed gate
-  // keeps approve/reject as the single entry.
-  if (waiting && !task.pendingGateId) {
+  // attention surface. The external step (open/merge the PR) is the primary
+  // action above; the in-host re-check is secondary and labelled with its
+  // real semantics — it re-verifies the external state, it does not
+  // "continue" anything. A live typed gate keeps approve/reject as the
+  // single entry.
+  if (externalWait) {
+    actions.append(makeOwnerActionRecheckButton(task));
+  } else if (waiting && !task.pendingGateId) {
     actions.append(makeActionButton(
       text('decisionContinueAfterOwnerAction'),
       'resume',
@@ -2801,6 +2929,122 @@ function renderIssueStatus(task) {
     ));
   }
   card.append(actions);
+}
+
+const OWNER_ACTION_RECHECK_COOLDOWN_MS = 8000;
+const OWNER_ACTION_RECHECK_RECENT_MS = 10 * 60 * 1000;
+
+function recordOwnerActionCheck(taskId, message) {
+  state.ownerActionChecks.set(taskId, { at: Date.now(), message: String(message || '') });
+}
+
+function clearOwnerActionCheck(taskId) {
+  state.ownerActionChecks.delete(taskId);
+}
+
+function ownerActionCheckCoolingDown(taskId) {
+  const check = state.ownerActionChecks.get(taskId);
+  return Boolean(check) && Date.now() - check.at < OWNER_ACTION_RECHECK_COOLDOWN_MS;
+}
+
+function latestOwnerActionCheck(taskId, currentMessage) {
+  const check = state.ownerActionChecks.get(taskId);
+  if (!check) return null;
+  if (check.message !== String(currentMessage || '')) return null;
+  if (Date.now() - check.at >= OWNER_ACTION_RECHECK_RECENT_MS) return null;
+  return check;
+}
+
+function taskPullRequestLinks(task, message = '') {
+  const structured = task.structuredSummary && typeof task.structuredSummary === 'object'
+    ? task.structuredSummary
+    : null;
+  const artifacts = structured && Array.isArray(structured.artifacts)
+    ? structured.artifacts
+    : [];
+  const seen = new Set();
+  const links = [];
+  artifacts.forEach((raw) => {
+    const url = String(raw || '').trim();
+    const match = url.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/);
+    if (!match || seen.has(url)) return;
+    seen.add(url);
+    links.push({ url, number: match[3], label: `PR #${match[3]}` });
+  });
+  // The park prose names the actionable PR; keep that one first when the
+  // message mentions several (or a stale artifact), so the primary link and
+  // the instruction cannot point at different pull requests.
+  const mentionOrder = new Map();
+  String(message || '').replace(
+    /\b(?:PR|pull request|pull)\s*#(\d+)\b|\bpull\/(\d+)\b/gi,
+    (_match, first, second) => {
+      const number = String(first || second || '');
+      if (number && !mentionOrder.has(number)) mentionOrder.set(number, mentionOrder.size);
+      return '';
+    },
+  );
+  links.sort((left, right) =>
+    (mentionOrder.get(left.number) ?? Number.MAX_SAFE_INTEGER)
+    - (mentionOrder.get(right.number) ?? Number.MAX_SAFE_INTEGER));
+  return links.slice(0, 2);
+}
+
+function externalWaitPresentation(message, links) {
+  const raw = String(message || '').trim();
+  const hasCjk = /[\u3400-\u9fff]/.test(raw);
+  const boilerplate = /outside this host|surface it names|Resume after acting|waiting for an owner action|say what still needs to change/i.test(raw);
+  if (hasCjk && !boilerplate) return raw;
+  if (links.length > 0) {
+    const joiner = localeId() === 'zh-CN' ? '、' : ', ';
+    return text('decisionCardExternalSummary', { prs: links.map((link) => link.label).join(joiner) });
+  }
+  return text('decisionCardExternalSummaryGeneric');
+}
+
+function externalWaitLinkRow(links) {
+  const row = document.createElement('div');
+  row.className = 'issue-decision-card__links';
+  links.forEach((link) => {
+    const anchor = externalAnchor(link.label, link.url, 'issue-decision-card__link');
+    anchor.title = text('openInGithub');
+    row.append(anchor);
+  });
+  return row;
+}
+
+function runOwnerActionRecheck(task) {
+  recordOwnerActionCheck(task.taskId, String(task.pendingGateMessage || '').trim());
+  return performAction('resume', task).then((applied) => {
+    if (!applied) clearOwnerActionCheck(task.taskId);
+    return applied;
+  });
+}
+
+function makeOwnerActionRecheckButton(task, className = 'text-button') {
+  const coolingDown = ownerActionCheckCoolingDown(task.taskId);
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.textContent = text('decisionCardRecheck');
+  button.disabled = Boolean(pendingActionFor(task)) || coolingDown;
+  if (coolingDown) button.title = text('decisionCardRecheckCooldown');
+  button.addEventListener('click', () => {
+    void runOwnerActionRecheck(task);
+  });
+  return button;
+}
+
+/// Owner-action parks can go stale while the user is away (PR closed or
+/// merged on GitHub). Re-check once shortly after the task is shown, with
+/// a floor between attempts so a still-open PR does not loop.
+function maybeAutoRecheckExternalWait(task) {
+  if (!task || !isExternalWait(task) || pendingActionFor(task)) return;
+  if (!canRender() || state.syncing) return;
+  const now = Date.now();
+  const last = state.autoRecheckAt.get(task.taskId) || 0;
+  if (now - last < AUTO_RECHECK_INTERVAL_MS) return;
+  state.autoRecheckAt.set(task.taskId, now);
+  void runOwnerActionRecheck(task);
 }
 
 function summaryEnumLabel(prefix, value) {
@@ -2819,146 +3063,97 @@ function stripSummaryBlock(raw) {
     .trim();
 }
 
-function renderStructuredBrief(container, s, raw, task) {
-  // GitHub references in the narrative (PR #6, issue #2, commit shas) are
-  // linkified against the task's own repository so the owner can jump to
-  // the artifact directly from the story (display-only projection).
+function compactSummaryText(value, max = 110) {
+  const source = String(value || '').trim();
+  if (source.length <= max) return source;
+  return `${source.slice(0, max - 1)}…`;
+}
+
+function renderStructuredBrief(container, s, task) {
   const narrativeRepository = task && task.identity && task.identity.item
     ? task.identity.item.repository
     : null;
-  // The brief is rebuilt on every snapshot attach; capture the user's open
-  // state of the technical-receipt <details> BEFORE clearing children so a
-  // re-render does not collapse it while the user is reading.
-  const receiptsWereOpen = Boolean(container.querySelector('.summary-receipts')?.open);
   const blockersWereOpen = Boolean(container.querySelector('.summary-blockers')?.open);
   container.replaceChildren();
   const badges = document.createElement('div');
   badges.className = 'summary-badges';
   const verdict = document.createElement('span');
   verdict.className = 'summary-badge';
+  verdict.dataset.tone = ({
+    needs_fix: 'warning',
+    already_fixed_upstream: 'success',
+    wont_fix: 'muted',
+    needs_info: 'info',
+  })[s.issue_verdict] || 'muted';
   verdict.textContent = summaryEnumLabel('summaryVerdict', s.issue_verdict) || s.issue_verdict;
   badges.append(verdict);
   if (s.issue_verdict === 'already_fixed_upstream' && s.fixed_by) {
-    const fixed = document.createElement('a');
-    fixed.className = 'summary-badge summary-badge--link';
-    fixed.href = s.fixed_by;
-    fixed.target = '_blank';
-    fixed.rel = 'noreferrer';
-    fixed.textContent = s.fixed_by;
-    badges.append(fixed);
+    badges.append(externalAnchor(s.fixed_by, s.fixed_by, 'summary-badge summary-badge--link'));
   }
-  // Verdict-specific reason replaces the old static badge note: the reader
-  // gets WHY this issue was qualified this way, not boilerplate repeated on
-  // every summary.
   if (s.issue_verdict === 'wont_fix' && s.wont_fix_reason) {
     const reason = document.createElement('span');
     reason.className = 'summary-badge';
     reason.textContent = summaryEnumLabel('summaryWontFixReason', s.wont_fix_reason) || s.wont_fix_reason;
     badges.append(reason);
   }
+  if (s.reproduction && s.reproduction !== 'not_applicable') {
+    const reproduction = document.createElement('span');
+    reproduction.className = 'summary-badge';
+    reproduction.dataset.tone = 'muted';
+    reproduction.textContent = summaryEnumLabel('summaryReproduction', s.reproduction) || s.reproduction;
+    badges.append(reproduction);
+  }
+  container.append(badges);
+
   if (s.issue_verdict === 'needs_info' && Array.isArray(s.missing_info) && s.missing_info.length) {
     const reason = document.createElement('p');
     reason.className = 'summary-pending';
     reason.textContent = `${text('summaryMissingInfo')}：${s.missing_info.join('；')}`;
     container.append(reason);
   }
-  if (s.reproduction && s.reproduction !== 'not_applicable') {
-    // Only reproduced / not-reproduced carry signal for the reader;
-    // `not_applicable` (monitoring or analysis segments) adds no information
-    // and rendered as a badge it reads as duplicated noise.
-    const reproduction = document.createElement('span');
-    reproduction.className = 'summary-badge';
-    reproduction.textContent = summaryEnumLabel('summaryReproduction', s.reproduction) || s.reproduction;
-    badges.append(reproduction);
-  }
-  container.append(badges);
 
-
-  if (task && task.state === 'waiting_for_user') {
+  if (task && task.state === 'waiting_for_user' && task.pendingGateId) {
     const pending = document.createElement('p');
     pending.className = 'summary-pending';
     pending.textContent = text('summaryPendingGate');
     container.append(pending);
   }
 
-  if (Array.isArray(s.completed) && s.completed.length) {
-    const section = document.createElement('div');
-    section.className = 'summary-section';
-    const title = document.createElement('strong');
-    const kind = s.segment_kind ? `（${summaryEnumLabel('summarySegment', s.segment_kind)}）` : '';
-    title.textContent = `📋 ${text('summaryCompletedTitle')}${kind}`;
-    section.append(title);
-    const list = document.createElement('ul');
-    s.completed.forEach((item) => {
-      const li = document.createElement('li');
-      li.append(linkifiedText(item, narrativeRepository));
-      list.append(li);
-    });
-    section.append(list);
-    container.append(section);
-  }
-
   const decision = s.decision && typeof s.decision === 'object' ? s.decision : null;
-  if (decision && decision.route) {
-    const section = document.createElement('div');
-    section.className = 'summary-section';
+  const decisionRoute = decision && typeof decision.route === 'string'
+    ? decision.route.trim()
+    : '';
+  const decisionReason = decision && typeof decision.reason === 'string'
+    ? decision.reason.trim()
+    : '';
+  const decisionText = decisionRoute
+    ? (decisionReason ? `${decisionRoute}（${decisionReason}）` : decisionRoute)
+    : '';
+  const conclusionText = decisionText
+    ? compactSummaryText(decisionText)
+    : (task && task.state === 'completed' ? text('summaryCompletedNoFollowup') : '');
+  if (conclusionText) {
+    const conclusion = document.createElement('div');
+    conclusion.className = 'summary-conclusion';
     const title = document.createElement('strong');
-    title.textContent = `📌 ${text('summaryDecisionTitle')}`;
-    section.append(title);
-    const route = document.createElement('p');
-    route.append(linkifiedText(
-      decision.route + (decision.reason ? `（${decision.reason}）` : ''),
-      narrativeRepository,
-    ));
-    section.append(route);
-    // Rejected alternatives come from the STRUCTURED summary, not the raw
-    // turn output: the timeline's model-output block is middle-truncated at
-    // a character budget, which previously cut a rejected route's "why" in
-    // half while the full text was only reachable through the folded
-    // receipts. Rendering them here keeps the decision rationale complete
-    // and independent of output size.
-    if (Array.isArray(decision.rejected) && decision.rejected.length) {
-      const list = document.createElement('ul');
-      decision.rejected.forEach((item) => {
-        if (!item || typeof item !== 'object') return;
-        const routeText = String(item.route || '').trim();
-        if (!routeText) return;
-        const li = document.createElement('li');
-        li.append(linkifiedText(
-          item.why ? `${routeText}——${String(item.why).trim()}` : routeText,
-          narrativeRepository,
-        ));
-        list.append(li);
-      });
-      if (list.childNodes.length) {
-        const rejectedTitle = document.createElement('strong');
-        rejectedTitle.textContent = text('summaryRejectedTitle');
-        rejectedTitle.className = 'summary-section__subtitle';
-        section.append(rejectedTitle, list);
-      }
-    }
-    container.append(section);
+    title.textContent = text('summaryConclusion');
+    const body = document.createElement('p');
+    body.append(linkifiedText(conclusionText, narrativeRepository));
+    conclusion.append(title, body);
+    container.append(conclusion);
+  }
+  if (task && task.state === 'completed' && decisionRoute) {
+    const note = document.createElement('p');
+    note.className = 'summary-note';
+    note.textContent = text('summaryCompletedNoFollowup');
+    container.append(note);
   }
 
-  if (task && task.state === 'completed') {
-    // A completed goal's agent-written "next step" is control-plane ceremony
-    // wording, not user-facing information. Explain the stopped automation in
-    // plain language instead: no new work is registered, so polling stops;
-    // GitHub activity (comments, PR updates) does not restart it by itself.
+  if (task && task.state !== 'completed' && s.next_step) {
     const section = document.createElement('div');
     section.className = 'summary-section';
     const title = document.createElement('strong');
-    title.textContent = `🏁 ${text('summaryCompletedTitlePlain')}`;
-    section.append(title);
-    const body = document.createElement('p');
-    body.textContent = text('summaryCompletedNoFollowup');
-    section.append(body);
-    container.append(section);
-  } else if (s.next_step) {
-    const section = document.createElement('div');
-    section.className = 'summary-section';
-    const title = document.createElement('strong');
-    title.textContent = `⏭️ ${text('summaryNextStep')}`;
+    title.textContent = text('summaryNextStep');
     section.append(title);
     const body = document.createElement('p');
     body.append(linkifiedText(s.next_step, narrativeRepository));
@@ -2966,29 +3161,17 @@ function renderStructuredBrief(container, s, raw, task) {
     container.append(section);
   }
 
-  // Blockers only matter while the task can still act on them. For a
-  // completed goal the agent's trailing "blockers" (observed live 2026-09-08:
-  // a quota-spend refusal that just restates the goal is fully closed) carry
-  // no user-actionable meaning - fold them into the technical receipt below
-  // instead of rendering a warning card on a finished task.
   if (
     Array.isArray(s.blockers)
     && s.blockers.length
     && !(task && task.state === 'completed')
   ) {
-    // On a settlement-parked (recovery) task the blocker items are
-    // settlement mechanics - typed writeback refusals, missing receipts,
-    // host-projection gaps - that the owner needs only on demand. Collapse
-    // them behind the same pattern as the technical receipts so the key
-    // sections (done / decided / next step) stay the focus; the decision
-    // card already carries the actionable "what now". Other states keep
-    // blockers visible as today.
     if (task && task.state === 'recovery_required') {
       const details = document.createElement('details');
       details.className = 'summary-blockers';
       details.open = blockersWereOpen;
       const blockersLine = document.createElement('summary');
-      blockersLine.textContent = `⚠️ ${text('summaryBlockers')}`;
+      blockersLine.textContent = text('summaryBlockers');
       details.append(blockersLine);
       const list = document.createElement('ul');
       s.blockers.forEach((item) => {
@@ -3002,7 +3185,7 @@ function renderStructuredBrief(container, s, raw, task) {
       const section = document.createElement('div');
       section.className = 'summary-section';
       const title = document.createElement('strong');
-      title.textContent = `⚠️ ${text('summaryBlockers')}`;
+      title.textContent = text('summaryBlockers');
       section.append(title);
       const list = document.createElement('ul');
       s.blockers.forEach((item) => {
@@ -3014,24 +3197,6 @@ function renderStructuredBrief(container, s, raw, task) {
       container.append(section);
     }
   }
-
-  const receiptSource = stripSummaryBlock(raw);
-  if (receiptSource) {
-    // Re-renders replace the whole brief, which would recreate this <details>
-    // closed on every event. Preserve the user's open state across renders so
-    // the receipt does not unexpectedly collapse while they are reading it.
-    const receipts = document.createElement('details');
-    receipts.className = 'summary-receipts';
-    receipts.open = receiptsWereOpen;
-    const summaryLine = document.createElement('summary');
-    summaryLine.textContent = text('summaryTechReceipts');
-    receipts.append(summaryLine);
-    const body = document.createElement('pre');
-    body.className = 'summary-receipts__body';
-    body.textContent = receiptSource;
-    receipts.append(body);
-    container.append(receipts);
-  }
 }
 
 function renderIssueBrief(task) {
@@ -3040,64 +3205,18 @@ function renderIssueBrief(task) {
     ? task.structuredSummary
     : null;
   if (structured) {
-    renderStructuredBrief(view.issueSummary, structured, summary, task);
-    view.issueSummaryMeta.textContent = task.lastAgentSummaryAt
-      ? text('outcomeUpdated', { duration: relativeLabel(task.lastAgentSummaryAt) })
-      : '';
+    renderStructuredBrief(view.issueSummary, structured, task);
   } else if (summary) {
     renderMarkdown(view.issueSummary, summary, itemUrl(task.identity && task.identity.item));
-    view.issueSummaryMeta.textContent = task.lastAgentSummaryAt
-      ? text('outcomeUpdated', { duration: relativeLabel(task.lastAgentSummaryAt) })
-      : '';
   } else {
     view.issueSummary.replaceChildren();
     view.issueSummary.append(text('summaryEmpty'));
-    view.issueSummaryMeta.textContent = '';
   }
-
-  const evidence = taskProgressEvidence(task);
-  const facts = [];
-  if (task.workspacePath) {
-    facts.push({ label: text('factsWorkspace'), value: compactArtifactPath(task.workspacePath) });
-  }
-  if (task.goalId) {
-    facts.push({ label: text('factsTurn'), value: shortId(task.goalId) });
-  }
-  if (task.settlement && task.settlement.receiptId) {
-    facts.push({ label: text('factsReceipt'), value: shortId(task.settlement.receiptId) });
-  }
-  if (task.modelId && task.modelId !== 'auto') {
-    facts.push({ label: text('factsModel'), value: task.modelId });
-  }
-  if (isMonitorTodo(task) && task.currentTodo && task.currentTodo.nextDueAt) {
-    facts.push({
-      label: text('monitor_chip'),
-      value: `${text('monitor_next_check')} ${monitorNextCheckLabel(task)}`,
-    });
-  }
-  if (evidence.artifacts.length > 0) {
-    facts.push({
-      label: text('factsArtifacts'),
-      value: evidence.artifacts.join(' · '),
-    });
-  }
-  if (facts.length === 0) {
-    facts.push({ label: text('factsArtifacts'), value: text('factsArtifactNone') });
-  }
-  const factFragment = document.createDocumentFragment();
-  facts.slice(0, 6).forEach((fact) => {
-    const chip = document.createElement('li');
-    chip.className = 'issue-facts__chip';
-    const label = document.createElement('span');
-    label.className = 'issue-facts__label';
-    label.textContent = fact.label;
-    const value = document.createElement('strong');
-    value.textContent = fact.value;
-    value.title = fact.value;
-    chip.append(label, value);
-    factFragment.append(chip);
-  });
-  view.issueFacts.replaceChildren(factFragment);
+  const showSummaryMeta = Boolean(task.lastAgentSummaryAt) && task.state !== 'completed';
+  view.issueSummaryMeta.textContent = showSummaryMeta
+    ? text('outcomeUpdated', { duration: relativeLabel(task.lastAgentSummaryAt) })
+    : '';
+  view.issueSummaryMeta.title = showSummaryMeta ? clockLabel(task.lastAgentSummaryAt) : '';
 
   const error = String(task.error || '').trim();
   view.issueError.hidden = !error;
@@ -3134,6 +3253,8 @@ function renderIssueView() {
   view.issueTitle.textContent = issueDisplayTitle(task) || itemLabelText;
   view.issueStatePill.hidden = false;
   view.issueStatePill.dataset.state = visualState;
+  if (isExternalWait(task)) view.issueStatePill.dataset.wait = 'external';
+  else delete view.issueStatePill.dataset.wait;
   view.issueStatePill.textContent = taskStateDisplayLabel(task);
   view.issueLink.hidden = !url;
   view.issueLink.textContent = itemLabelText;
@@ -3145,11 +3266,18 @@ function renderIssueView() {
     view.issueLink.removeAttribute('aria-label');
   }
   view.issueUpdated.textContent = task.updatedAt
-    ? text('updated', { duration: relativeLabel(task.updatedAt) })
+    ? text('taskUpdated', { duration: relativeLabel(task.updatedAt) })
     : '';
-  view.issueNumber.textContent = item && item.number
-    ? `${item.kind === 'pr' ? 'PR' : 'Issue'} #${item.number}`
-    : '';
+  view.issueUpdated.title = task.updatedAt ? clockLabel(task.updatedAt) : '';
+  // The header meta already carries repo + item number; do not repeat the
+  // same fact inside the description summary (single source of truth).
+  view.issueNumber.textContent = '';
+  view.issueNumber.hidden = true;
+  const statePillVisible = !view.issueStatePill.hidden;
+  const issueLinkVisible = !view.issueLink.hidden;
+  const updatedVisible = Boolean(view.issueUpdated.textContent);
+  view.issueMetaSep1.hidden = !(statePillVisible && (issueLinkVisible || updatedVisible));
+  view.issueMetaSep2.hidden = !(issueLinkVisible && updatedVisible);
   renderIssueApproval(task);
   renderIssueStatus(task);
   renderIssueBrief(task);
@@ -3159,7 +3287,10 @@ function renderIssueView() {
   const metadataResolved = state.itemMetadata.has(metadataKey);
   const metadataUnavailable = (state.itemMetadata.get(metadataKey) || {}).unavailable === true;
   const loadingDescription = !metadataResolved;
-  view.issueDescriptionPanel.hidden = false;
+  // Keep the panel for "loading"/"unavailable" states (the reader learns why
+  // the body is missing), but do not render an empty section that only adds
+  // a repeating "Issue #2" label once the source confirmed there is no body.
+  view.issueDescriptionPanel.hidden = metadataResolved && !metadataUnavailable && !description;
   // Distinguish "not resolved yet" (loading), "resolution failed"
   // (unavailable), and "resolved but the issue simply has no body" (empty
   // placeholder). A successfully hydrated empty body used to fall through to
@@ -3170,6 +3301,9 @@ function renderIssueView() {
       : (loadingDescription ? text('loadingIssueDescription') : text('issueDescriptionEmpty')));
   renderMarkdown(view.issueDescription, descriptionText, url);
   renderTaskActions(task);
+  if (isExternalWait(task)) {
+    window.setTimeout(() => maybeAutoRecheckExternalWait(taskForId(task.taskId)), 0);
+  }
 }
 
 function eventSourceLabel(source) {
@@ -3213,7 +3347,7 @@ function toolStateLabel(stateValue) {
   return key ? text(key) : stateValue;
 }
 
-function eventMessage(event) {
+function eventMessage(event, includeSummary = true) {
   const activity = event.details && event.details.activity;
   const key = {
     queued: 'toolQueued',
@@ -3229,11 +3363,27 @@ function eventMessage(event) {
   if (key) {
     const label = text(key, { tool: toolLabel(event.toolName || event.details.toolName) });
     // Completed/failed projections carry a redacted input summary (command,
-    // file path, pattern) — show it so tool rows identify what they did.
+    // file path, pattern) — the raw text belongs behind an expander, not
+    // inline, so only append it when a caller explicitly asks for it.
     const summary = event.details && event.details.summary;
-    return summary ? `${label} · ${summary}` : label;
+    return includeSummary && summary ? `${label} · ${summary}` : label;
   }
   return event.message || event.kind || 'event';
+}
+
+function compactToolSummary(toolName, raw) {
+  const value = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!value) return '';
+  if (toolName !== 'ExecCommand') return compactArtifactPath(value);
+  let compact = value
+    .replace(/\$env:[A-Za-z0-9_]+=[^;]*;\s*/g, '')
+    .replace(/cd\s+"[^"]*";\s*/gi, '')
+    .replace(/&?\s*"[A-Za-z]:\\[^"]*?loopx\.exe"\s*/gi, 'loopx.exe ')
+    .replace(/--format\s+json\s+--registry\s+"[^"]*"/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (compact.length > 120) compact = `${compact.slice(0, 117)}…`;
+  return compact;
 }
 
 
@@ -3247,9 +3397,7 @@ function outputKindLabel(kind) {
 function appendOutputText(existing, next) {
   const value = next == null ? '' : String(next);
   if (!value) return existing;
-  const combined = existing ? `${existing}${value}` : value;
-  if (combined.length <= MAX_OUTPUT_BLOCK_CHARS) return combined;
-  return `${combined.slice(0, MAX_OUTPUT_BLOCK_CHARS / 2)}\n...\n${combined.slice(-MAX_OUTPUT_BLOCK_CHARS / 2)}`;
+  return existing ? `${existing}${value}` : value;
 }
 
 function outputEventFallbackText(event) {
@@ -3376,13 +3524,15 @@ function turnOutputBlockRow(block) {
 
   const task = taskForId(block.taskId);
   const item = task && task.identity && task.identity.item;
-  const issue = document.createElement(itemUrl(item) ? 'a' : 'span');
-  issue.className = 'output-block__issue';
-  issue.textContent = item ? compactItemLabel(item) : text('taskNumber', { value: shortId(block.taskId) });
-  if (issue.tagName === 'A') {
-    issue.href = itemUrl(item);
-    issue.target = '_blank';
-    issue.rel = 'noopener noreferrer';
+  const issueUrl = itemUrl(item);
+  const issueLabel = item ? compactItemLabel(item) : text('taskNumber', { value: shortId(block.taskId) });
+  const issue = issueUrl
+    ? externalAnchor(issueLabel, issueUrl, 'output-block__issue')
+    : document.createElement('span');
+  if (!issueUrl) {
+    issue.className = 'output-block__issue';
+    issue.textContent = issueLabel;
+  } else {
     issue.title = issueDisplayTitle(task) || itemLabel(item);
   }
 
@@ -3470,7 +3620,16 @@ function turnOutputBlockRow(block) {
 
   const message = document.createElement('div');
   message.className = 'output-block__message';
-  message.textContent = block.text || outputKindLabel(block.kind);
+  const blockText = String(block.text || '');
+  const taskState = task && task.state ? task.state : '';
+  const canRenderMarkdown = block.kind === 'text' && (block.isEnd || taskState !== 'running');
+  if (canRenderMarkdown) {
+    message.classList.add('output-block__markdown', 'markdown-body');
+    renderMarkdown(message, blockText || outputKindLabel(block.kind), itemUrl(item));
+  } else {
+    message.textContent = blockText || outputKindLabel(block.kind);
+  }
+  if (blockText.length > LONG_OUTPUT_BLOCK_CHARS) message.classList.add('output-block__message--long');
 
   row.append(header, message);
   return row;
@@ -3494,7 +3653,37 @@ function timelineMilestoneRow(event) {
 
   const content = document.createElement('div');
   content.className = 'milestone-row__message';
-  content.textContent = eventMessage(event);
+  const eventDetails = event.details && typeof event.details === 'object' ? event.details : null;
+  const toolName = event.toolName || (eventDetails && eventDetails.toolName) || '';
+  const activity = eventDetails && eventDetails.activity;
+  const rawSummary = eventDetails && eventDetails.summary;
+  if (toolName && activity) {
+    content.classList.add('milestone-row__message--tool');
+    const label = document.createElement('span');
+    label.className = 'milestone-row__tool-label';
+    label.textContent = eventMessage(event, false);
+    content.append(label);
+    const compact = compactToolSummary(toolName, rawSummary);
+    if (compact) {
+      const preview = document.createElement('span');
+      preview.className = 'milestone-row__tool-preview';
+      preview.textContent = compact;
+      preview.title = String(rawSummary || '');
+      content.append(preview);
+    }
+    if (rawSummary) {
+      const details = document.createElement('details');
+      details.className = 'log-tool-details';
+      const detailsSummary = document.createElement('summary');
+      detailsSummary.textContent = text('outputToolSummary');
+      const pre = document.createElement('pre');
+      pre.textContent = String(rawSummary);
+      details.append(detailsSummary, pre);
+      content.append(details);
+    }
+  } else {
+    content.textContent = eventMessage(event);
+  }
 
   row.append(time, source, content);
   return row;
@@ -3526,6 +3715,14 @@ function timelineStageCard(task) {
       : text('worktreeQuiet', { item: compactItemLabel(item) });
   } else if (task.state === 'running' && task.phase === 'agent_running') {
     detail.textContent = text('awaitingFirstOutput');
+  } else if (isExternalWait(task)) {
+    const waitMessage = String(task.pendingGateMessage || '').trim();
+    detail.textContent = externalWaitPresentation(
+      waitMessage,
+      taskPullRequestLinks(task, waitMessage),
+    );
+  } else if (task.state === 'waiting_for_user') {
+    detail.textContent = text('decisionCardGateHint');
   } else {
     detail.textContent = currentProgressDetail(task, taskEvents);
   }
@@ -3655,10 +3852,18 @@ async function hydrateTaskMetadata(taskId) {
   state.metadataRequests.add(metadataKey);
   renderIssueView();
   try {
-    const response = await app.loopx.resolveIntake({
-      input: itemUrl(item),
-      modelId: task.modelId || 'auto',
-    });
+    const response = await Promise.race([
+      app.loopx.resolveIntake({
+        input: itemUrl(item),
+        modelId: task.modelId || 'auto',
+      }),
+      new Promise((_resolve, reject) => {
+        window.setTimeout(
+          () => reject(new Error('metadata timeout')),
+          METADATA_HYDRATE_TIMEOUT_MS,
+        );
+      }),
+    ]);
     const candidates = response && response.preview && Array.isArray(response.preview.candidates)
       ? response.preview.candidates
       : [];
@@ -4157,7 +4362,12 @@ async function resetLoopx() {
       showNotice(response.message || text('actionRejected'), 'error');
     } else {
       clearRunUiState();
-      showNotice(text('resetLoopxApplied'), 'success');
+      const deferredCleanup = Boolean(
+        response
+        && response.message
+        && response.message.includes('cleanup is still running'),
+      );
+      showNotice(text(deferredCleanup ? 'resetLoopxDeferred' : 'resetLoopxApplied'), deferredCleanup ? 'warning' : 'success');
     }
     await attachSnapshot(false);
   } catch (error) {
@@ -4689,8 +4899,21 @@ function bindEvents() {
   view.resumeRepository.addEventListener('click', openRepositoryResumeDialog);
   view.approvalAlertOpen.addEventListener('click', openApprovalAlertGate);
   view.approvalAlertOpenAction.addEventListener('click', openApprovalAlertGate);
+  view.issueLink.addEventListener('click', (event) => {
+    const href = view.issueLink.getAttribute('href');
+    if (!href) return;
+    event.preventDefault();
+    openExternalUrl(href);
+  });
   view.issueApprovalApprove.addEventListener('click', () => answerSelectedTaskGate('approve'));
   view.issueApprovalReject.addEventListener('click', () => answerSelectedTaskGate('reject'));
+  view.issueApprovalNoteToggle.addEventListener('click', () => {
+    const field = view.issueApprovalNote.closest('.issue-approval-note');
+    const expanded = field.hidden;
+    field.hidden = !expanded;
+    view.issueApprovalNoteToggle.setAttribute('aria-expanded', String(expanded));
+    if (expanded) view.issueApprovalNote.focus();
+  });
   view.repositoryResumeCancel.addEventListener('click', () => {
     view.repositoryResumeDialog.close();
   });

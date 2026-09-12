@@ -2564,7 +2564,8 @@ impl LoopxController {
                 current_revision: task.revision,
                 task: Some(task.clone()),
                 message: Some(
-                    "Only stopped, failed, recovery-required, or waiting tasks can resume".to_string(),
+                    "Only stopped, failed, recovery-required, or waiting tasks can resume"
+                        .to_string(),
                 ),
             });
         }
@@ -2783,12 +2784,51 @@ impl LoopxController {
                 .await;
         }
 
-        self.workspace
+        let workspace_reset_deferred = match self
+            .workspace
             .reset(LoopxWorkspaceResetRequest {
                 operation_id: format!("reset-workspaces-{}", uuid::Uuid::new_v4()),
             })
             .await
-            .map_err(|error| error.to_string())?;
+        {
+            Ok(_) => None,
+            Err(error) => {
+                let message = error.to_string();
+                log::warn!(
+                    "LoopX workspace reset is blocked by lingering handles; controller reset will continue and workspace cleanup will retry in the background: {}",
+                    message
+                );
+                let workspace = Arc::clone(&self.workspace);
+                tokio::spawn(async move {
+                    for attempt in 0..60u32 {
+                        let delay_secs = if attempt < 12 { 5 } else { 30 };
+                        tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
+                        let operation_id = format!("reset-workspaces-retry-{}", uuid::Uuid::new_v4());
+                        match workspace
+                            .reset(LoopxWorkspaceResetRequest { operation_id })
+                            .await
+                        {
+                            Ok(_) => {
+                                log::info!(
+                                    "Deferred LoopX workspace cleanup succeeded: attempt={}",
+                                    attempt + 1
+                                );
+                                return;
+                            }
+                            Err(retry_error) => log::warn!(
+                                "Deferred LoopX workspace cleanup is still blocked: attempt={}, error={}",
+                                attempt + 1,
+                                retry_error
+                            ),
+                        }
+                    }
+                    log::warn!(
+                        "Deferred LoopX workspace cleanup exhausted retries; workspaces remain on disk for manual cleanup"
+                    );
+                });
+                Some(message)
+            }
+        };
         let goal_ids = tasks
             .iter()
             .map(|task| goal_id_for(&task.identity))
@@ -2854,12 +2894,20 @@ impl LoopxController {
         });
         Ok(LoopxActionResponse {
             current_revision: fresh.revision,
-            message: Some(format!(
-                "Cleared {} LoopX tasks, {} global goal routes, managed workspaces, runtime state, and persisted controller state",
-                tasks.len(),
-                reset_goals.retired_goal_ids.len()
-                    + reset_goals.already_absent_goal_ids.len()
-            )),
+            message: Some(match workspace_reset_deferred {
+                Some(warning) => format!(
+                    "Cleared {} LoopX tasks, {} global goal routes, runtime state, and persisted controller state; managed workspace cleanup is still running in the background and will retry ({warning})",
+                    tasks.len(),
+                    reset_goals.retired_goal_ids.len()
+                        + reset_goals.already_absent_goal_ids.len()
+                ),
+                None => format!(
+                    "Cleared {} LoopX tasks, {} global goal routes, managed workspaces, runtime state, and persisted controller state",
+                    tasks.len(),
+                    reset_goals.retired_goal_ids.len()
+                        + reset_goals.already_absent_goal_ids.len()
+                ),
+            }),
             ..LoopxActionResponse::default()
         })
     }
@@ -2928,7 +2976,7 @@ impl LoopxController {
                 true,
             )
             .await?;
-            let response = self
+            let mut response = self
                 .transition_action(
                     &task.task_id,
                     LoopxTaskState::Queued,
@@ -2936,6 +2984,10 @@ impl LoopxController {
                     &request.client_request_id,
                 )
                 .await?;
+            response.message = Some(gate_decision_applied_message(
+                true,
+                task.pending_gate_message.as_deref(),
+            ));
             self.enqueue_task(task.task_id.clone(), Duration::ZERO)?;
             return Ok(response);
         }
@@ -2949,16 +3001,20 @@ impl LoopxController {
             todo.todo_id
         );
         let generation = task.generation;
-        self.mutate_task(&task.task_id, Some(&request.client_request_id), |current, current_runtime| {
-            if current.generation != generation {
-                return;
-            }
-            current.revision = current.revision.saturating_add(1);
-            current.pending_gate_id = None;
-            current.pending_gate_message = None;
-            current.pending_gate_action_kind = None;
-            current_runtime.declined_publication_todo_id = Some(todo.todo_id.clone());
-        })
+        self.mutate_task(
+            &task.task_id,
+            Some(&request.client_request_id),
+            |current, current_runtime| {
+                if current.generation != generation {
+                    return;
+                }
+                current.revision = current.revision.saturating_add(1);
+                current.pending_gate_id = None;
+                current.pending_gate_message = None;
+                current.pending_gate_action_kind = None;
+                current_runtime.declined_publication_todo_id = Some(todo.todo_id.clone());
+            },
+        )
         .await?;
         let updated = self.task(&task.task_id).await?;
         self.append_task_event(
@@ -2979,7 +3035,10 @@ impl LoopxController {
             status: LoopxActionStatus::Applied,
             current_revision: updated.revision,
             task: Some(updated),
-            ..LoopxActionResponse::default()
+            message: Some(
+                "Rejection applied; the prepared fix and its branch are preserved in the task workspace"
+                    .to_string(),
+            ),
         })
     }
 
@@ -3029,13 +3088,11 @@ impl LoopxController {
                 )
                 .await;
             self.record_progress(progress.take()).await?;
-            let blocked = listed
-                .ok()
-                .and_then(|result| {
-                    blocked_publication_todo(&result.todos, None)
-                        .filter(|todo| todo.todo_id == gate_id)
-                        .cloned()
-                });
+            let blocked = listed.ok().and_then(|result| {
+                blocked_publication_todo(&result.todos, None)
+                    .filter(|todo| todo.todo_id == gate_id)
+                    .cloned()
+            });
             if let Some(todo) = blocked {
                 return self
                     .answer_blocked_publication(&task, &runtime, &request, &todo)
@@ -3097,10 +3154,9 @@ impl LoopxController {
         // progress, completions, or terminal state; a rejected gate needs
         // no successor because the owner asked for the opposite branch.
         if request.action == LoopxActionKind::Approve {
-            let gate_message = task
-                .pending_gate_message
-                .clone()
-                .unwrap_or_else(|| "execute the approved action from the decision request".to_string());
+            let gate_message = task.pending_gate_message.clone().unwrap_or_else(|| {
+                "execute the approved action from the decision request".to_string()
+            });
             let inspect_progress = BufferedProgress::default();
             let inspected = self
                 .cli
@@ -3185,7 +3241,7 @@ impl LoopxController {
                 }
             }
         }
-        let response = self
+        let mut response = self
             .transition_action(
                 &task.task_id,
                 LoopxTaskState::Queued,
@@ -3193,6 +3249,10 @@ impl LoopxController {
                 &request.client_request_id,
             )
             .await?;
+        response.message = Some(gate_decision_applied_message(
+            request.action == LoopxActionKind::Approve,
+            task.pending_gate_message.as_deref(),
+        ));
         self.enqueue_task(task.task_id.clone(), Duration::ZERO)?;
         Ok(response)
     }
@@ -5045,6 +5105,24 @@ fn approved_gate_needs_materialized_successor(goal: &LoopxCliGoalSnapshot) -> bo
         && goal.pending_replan_obligation_id.is_none()
 }
 
+/// Human-readable confirmation for a user gate answer. The gate's own
+/// message is echoed so the applied notice names the exact decision the
+/// owner just made. Approval only releases the task to run the approved
+/// action (the agent turn performs it afterwards), so the wording states
+/// what happens next instead of claiming an outcome that has not happened
+/// yet.
+fn gate_decision_applied_message(approved: bool, gate_message: Option<&str>) -> String {
+    let subject = gate_message
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("the requested owner decision");
+    if approved {
+        format!("Approval applied; the task will continue with the approved action: {subject}")
+    } else {
+        format!("Rejection applied; the task will continue without the declined action: {subject}")
+    }
+}
+
 /// Owner-facing text for the materialized successor todo of an approved
 /// gate. Quotes the gate's own message with an approval prefix so the agent
 /// executes the owner's decision verbatim; bounded to keep the pinned CLI's
@@ -5374,7 +5452,10 @@ fn bounded_agent_summary(summary: &str) -> String {
     // `loopx_summary_v1` JSON at the end of the response, and a head-keeping
     // bound would decapitate exactly that block (see the subscriber's
     // `append_bounded_text` for the matching tail-keeping rule).
-    let tail: String = summary.chars().skip(total - MAX_AGENT_SUMMARY_CHARS).collect();
+    let tail: String = summary
+        .chars()
+        .skip(total - MAX_AGENT_SUMMARY_CHARS)
+        .collect();
     format!("[Summary truncated by LoopX host; head cut]\n\n{tail}")
 }
 
@@ -6208,9 +6289,27 @@ mod tests {
             state: LoopxCliGoalState::Completed,
             ..active_goal
         };
-        assert!(!preserve_unanswered_local_gate(
-            &parked,
-            &completed_goal,
+        assert!(!preserve_unanswered_local_gate(&parked, &completed_goal,));
+    }
+
+    #[test]
+    fn gate_decision_applied_message_names_the_decision() {
+        // The applied notice must identify the exact decision the owner just
+        // made (observed live 2026-09-12: the approve notice only said
+        // "Action applied", leaving the owner without confirmation of which
+        // production action - publish, merge - had been released).
+        let approved = gate_decision_applied_message(
+            true,
+            Some("Decide whether to merge pull request 7 into main"),
+        );
+        assert!(approved
+            .starts_with("Approval applied; the task will continue with the approved action: ",));
+        assert!(approved.contains("merge pull request 7"));
+
+        let rejected = gate_decision_applied_message(false, Some("  "));
+        assert!(rejected.starts_with(
+            "Rejection applied; the task will continue without the declined action: ",
         ));
+        assert!(rejected.ends_with("the requested owner decision"));
     }
 }
