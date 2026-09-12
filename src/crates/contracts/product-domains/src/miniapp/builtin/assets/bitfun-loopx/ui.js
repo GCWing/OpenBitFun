@@ -2817,9 +2817,14 @@ function renderIssueStatus(task) {
   if (!card) return;
   const waiting = Boolean(task) && task.state === 'waiting_for_user';
   const recovery = Boolean(task) && task.state === 'recovery_required';
+  // A live typed approval panel is the decision surface; repeating the same
+  // request in the lower decision card made the page look like two questions
+  // and pushed the actual summary off-screen. Keep the card for recovery and
+  // owner-action/external waits, not for typed gates already rendered above.
+  const typedGate = Boolean(task && task.pendingGateId);
   const show = Boolean(task)
     && !isResolvedUpstream(task)
-    && (waiting || recovery);
+    && (recovery || (waiting && !typedGate));
   card.hidden = !show;
   if (!show) {
     card.replaceChildren();

@@ -2084,14 +2084,14 @@ impl LoopxController {
                 .park_waiting_owner_action(task, inspected.waiting_user_summary.as_deref())
                 .await;
         };
-        if is_read_only_user_gate(gate.action_kind.as_deref()) {
+        if is_read_only_user_gate(gate.action_kind.as_deref(), Some(gate.message.as_str())) {
             match self
                 .auto_answer_gate(
                     &task,
                     &runtime,
                     &gate,
                     LoopxCliGateDecision::Approve,
-                    "Auto-approved by BitFun: read-only public issue metadata access.".to_string(),
+                    "Auto-approved by BitFun: read-only public issue content access.".to_string(),
                     format!(
                         "Read-only user gate auto-approved by BitFun: {}",
                         gate.message
@@ -2803,7 +2803,8 @@ impl LoopxController {
                     for attempt in 0..60u32 {
                         let delay_secs = if attempt < 12 { 5 } else { 30 };
                         tokio::time::sleep(std::time::Duration::from_secs(delay_secs)).await;
-                        let operation_id = format!("reset-workspaces-retry-{}", uuid::Uuid::new_v4());
+                        let operation_id =
+                            format!("reset-workspaces-retry-{}", uuid::Uuid::new_v4());
                         match workspace
                             .reset(LoopxWorkspaceResetRequest { operation_id })
                             .await
@@ -3599,7 +3600,8 @@ impl LoopxController {
                 // human, so answer them here exactly like the drive-turn
                 // inspector does (same durable boundary, host-attributed
                 // note). Interactive approval stays the fallback on failure.
-                if is_read_only_user_gate(gate.action_kind.as_deref()) {
+                if is_read_only_user_gate(gate.action_kind.as_deref(), Some(gate.message.as_str()))
+                {
                     let runtime = self.runtime(&task.task_id).await;
                     match self
                         .auto_answer_gate(
@@ -3607,7 +3609,7 @@ impl LoopxController {
                             &runtime,
                             gate,
                             LoopxCliGateDecision::Approve,
-                            "Auto-approved by BitFun: read-only public issue metadata access."
+                            "Auto-approved by BitFun: read-only public issue content access."
                                 .to_string(),
                             format!(
                                 "Read-only user gate auto-approved by BitFun after settlement: {}",
@@ -5274,15 +5276,49 @@ fn todoless_run_now_frontier(pending_replan_obligation_id: Option<&str>) -> Todo
     }
 }
 
-/// Read-only LoopX user gates: public issue/comment metadata access is
-/// agent work, not an owner decision. New read-only gate kinds must be
-/// added here deliberately; external-write gates always stay interactive.
-fn is_read_only_user_gate(action_kind: Option<&str>) -> bool {
-    let Some(kind) = action_kind.map(str::trim) else {
+/// Read-only LoopX user gates: public issue/comment reads are agent work,
+/// not an owner decision. LoopX may project these gates without a typed
+/// `action_kind`, so the envelope message is the fallback signal; typed
+/// write/publish/merge gates always stay interactive.
+fn is_read_only_user_gate(action_kind: Option<&str>, message: Option<&str>) -> bool {
+    if let Some(kind) = action_kind.map(str::trim) {
+        if kind == "approve_github_issue_body_or_comment_read"
+            || (kind.starts_with("approve_") && kind.ends_with("_read"))
+        {
+            return true;
+        }
+    }
+    let Some(message) = message.map(str::trim) else {
         return false;
     };
-    kind == "approve_github_issue_body_or_comment_read"
-        || (kind.starts_with("approve_") && kind.ends_with("_read"))
+    if message.is_empty() {
+        return false;
+    }
+    let lower = message.to_ascii_lowercase();
+    let mentions_read = lower.contains("gated read")
+        || lower.contains("读取")
+        || lower
+            .split(|ch: char| !ch.is_ascii_alphanumeric())
+            .any(|word| matches!(word, "read" | "reads" | "reading"));
+    let mentions_public_content = lower.contains("issue body")
+        || lower.contains("comment bod")
+        || lower.contains("maintainer comment")
+        || lower.contains("public issue")
+        || lower.contains("正文")
+        || lower.contains("评论")
+        || lower.contains("议题");
+    let mentions_external_write = lower.contains("publish")
+        || lower.contains("merge")
+        || lower.contains("pull request")
+        || lower.contains("push")
+        || lower.contains("comment on")
+        || lower.contains("close issue")
+        || lower.contains("production")
+        || lower.contains("发布")
+        || lower.contains("合并")
+        || lower.contains("推送")
+        || lower.contains("关闭");
+    mentions_read && mentions_public_content && !mentions_external_write
 }
 
 /// Reuse-existing-PR merge gates. LoopX may project these without a typed
@@ -6311,5 +6347,29 @@ mod tests {
             "Rejection applied; the task will continue without the declined action: ",
         ));
         assert!(rejected.ends_with("the requested owner decision"));
+    }
+    #[test]
+    fn read_only_user_gates_accept_untyped_public_content_reads() {
+        // Live 2026-09-12: the CLI projected a public-content read gate
+        // without a typed action kind; the message is the only signal the
+        // host gets, and reads must not park the task for owner approval.
+        let message = "Approve a gated read before LoopX uses GitHub issue body, comment bodies, timeline events, or raw provider payloads for gcwing/openbitfun issues_2274, so the maintainer-comment disposition can be resolved.";
+        assert!(is_read_only_user_gate(None, Some(message)));
+        assert!(is_read_only_user_gate(
+            Some("approve_github_issue_body_or_comment_read"),
+            None,
+        ));
+        assert!(is_read_only_user_gate(
+            None,
+            Some("读取 Issue 正文与维护者评论"),
+        ));
+        assert!(!is_read_only_user_gate(
+            None,
+            Some("Approve publishing the fix as a pull request"),
+        ));
+        assert!(!is_read_only_user_gate(
+            None,
+            Some("Approve a gated read, then publish the pull request"),
+        ));
     }
 }
