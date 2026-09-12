@@ -50,6 +50,7 @@ export struct AppSidebarSurface {
       onClose: this.actions.onSidebar.close,
       onNewChat: this.actions.onSidebar.newChat,
       onEnterCode: this.actions.onSidebar.enterCode,
+      onOpenMiniApps: this.actions.onRemoteHome.openMiniApps,
       onScanDesktop: this.actions.onSidebar.scanDesktop,
       onOpenViewSettings: this.onOpenRemoteViewSettings,
       onSearchQueryChange: (query: string) => {

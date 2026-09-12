@@ -13,7 +13,7 @@ export default class EntryAbility extends UIAbility {
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     const scenarioId = want.parameters?.['openbitfunDesignPreview'];
-    if (scenarioId === 'connected-conversation' ||
+    if (scenarioId === 'welcome-home' || scenarioId === 'connected-conversation' ||
       scenarioId === 'streaming-dark' ||
       scenarioId === 'reconnecting-wide' || scenarioId === 'narrow-multiline' ||
       scenarioId === 'fold-context' || scenarioId === 'long-reading') {

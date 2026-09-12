@@ -255,6 +255,7 @@ function swiftWeight(weight) {
 
 function swiftTextStyle(name) {
   const styles = {
+    brand_wordmark: 'largeTitle',
     display_large: 'largeTitle',
     display_medium: 'title1',
     display_small: 'title2',

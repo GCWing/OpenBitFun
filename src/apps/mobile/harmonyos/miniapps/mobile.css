@@ -1,0 +1,32 @@
+/* Mobile-only layout adaptation; visual tokens still come from the shared theme. */
+.gomoku .board { touch-action: pan-y; }
+@media (max-width: 720px) {
+  .gomoku { height: auto; min-height: 100vh; }
+  .gomoku .topbar { flex-wrap: wrap; gap: 12px; }
+  .gomoku .layout { flex: none; overflow: visible; grid-template-rows: auto auto; }
+  .gomoku .board-wrap { min-width: 0; }
+  .gomoku .board-frame { width: 100%; }
+  .gomoku .sidepanel { flex-direction: column; overflow: visible; }
+  .gomoku .sidepanel .card { min-width: 0; }
+  .gomoku .seg__btn, .gomoku .btn { min-height: 44px; }
+}
+
+/* The desktop stage clips a fixed-height canvas. Results must keep their
+ * intrinsic height and scroll inside the mobile WebView, including wide hosts. */
+.div-app > .header, .div-app > .footer { flex-shrink: 0; }
+.div-app > .stage { overflow-x: hidden; overflow-y: auto; }
+.div-app .result { flex-shrink: 0; align-self: flex-start; }
+@media (max-width: 720px) {
+  .div-app .result { display: flex; flex-direction: column; gap: 24px; }
+  .div-app .card-front, .div-app .result__panels { width: 100%; flex-shrink: 0; }
+  .div-app > .header { flex-wrap: wrap; gap: 8px; padding: 12px 16px; }
+  .div-app .header__title { font-size: 14px; letter-spacing: 3px; }
+  .div-app .header__date { font-size: 12px; letter-spacing: 1px; }
+  .div-app > .footer { flex-direction: column; align-items: stretch; gap: 8px; padding: 12px 16px; }
+  .div-app .link-btn { min-height: 44px; justify-content: center; flex-shrink: 0; }
+  .div-app .footer__hint { font-size: 11px; letter-spacing: 0; text-align: center; }
+}
+@media (max-width: 880px) {
+  .div-app .lucky__cell:nth-child(3) { grid-column: 1 / -1; }
+  .div-app .lucky__value { white-space: normal; overflow-wrap: anywhere; }
+}

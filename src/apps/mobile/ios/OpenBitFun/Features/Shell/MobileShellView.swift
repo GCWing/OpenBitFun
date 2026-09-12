@@ -106,6 +106,10 @@ struct MobileShellView: View {
 
     }
 
+    private var showsWelcomeHome: Bool {
+        model.surface == .remote && model.accountUser == nil && !model.remoteConnected && model.remoteExpectedDeviceKey == nil
+    }
+
     @ViewBuilder
     private func adaptiveSurface(viewportWidth: CGFloat, viewportHeight: CGFloat) -> some View {
         let width = Int32(max(0, viewportWidth.rounded(.down)))
@@ -322,14 +326,16 @@ struct MobileShellView: View {
         sidebarActionLabel: String
     ) -> some View {
         VStack(spacing: 0) {
+            if !showsWelcomeHome {
             ConversationHeader(
                 model: model,
                 actionsOpen: $sessionActionsOpen,
                 sidebarAction: sidebarAction,
                 sidebarActionLabel: sidebarActionLabel
             )
+            }
             if model.surface == .remote,
-               model.remoteSessionSelected,
+               model.remoteExpectedDeviceKey != nil,
                model.connectionPhase != .connected {
                 ConnectionStatusBar(
                     phase: model.connectionPhase,
@@ -337,11 +343,10 @@ struct MobileShellView: View {
                     onRetry: model.verifyRemoteConnection
                 )
             }
-            if model.surface == .remote && !model.remoteConnected {
-                RemoteHomeView(model: model)
+            if showsWelcomeHome {
+                WelcomeHomeView(model: model)
             } else if model.surface == .remote && !model.remoteSessionSelected {
-                RemoteConnectedHomeView(model: model)
-                ComposerBar(model: model)
+                RemoteConnectedHomeView(model: model, onBrowse: sidebarAction)
             } else {
                 ZStack {
                     ChatTimelineView(model: model)

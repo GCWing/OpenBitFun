@@ -5,67 +5,285 @@
     "signature": "Paper-and-ink conversation chrome with a single blue information accent"
   },
   "colors": {
-    "start_window_background": { "light": "#FFFFFF", "dark": "#000000" },
-    "transparent": { "light": "#00000000", "dark": "#00000000" },
-    "page_bg": { "light": "#FFFFFF", "dark": "#151514" },
-    "page_bg_fade": { "light": "#00FFFFFF", "dark": "#00151514" },
-    "ink": { "light": "#171717", "dark": "#F4F3EF" },
-    "muted": { "light": "#706F6A", "dark": "#AAA8A0" },
-    "subtle": { "light": "#A5A39B", "dark": "#77756E" },
-    "line": { "light": "#E9E7E2", "dark": "#363531" },
-    "card": { "light": "#FFFFFF", "dark": "#252522" },
-    "accent": { "light": "#111111", "dark": "#5B5954" },
-    "file_link": { "light": "#2563EB", "dark": "#60A5FA" },
-    "primary_action": { "light": "#111111", "dark": "#454540" },
-    "content_on_action": { "light": "#FFFFFF", "dark": "#FFFFFF" },
-    "connect_hero_bg": { "light": "#E6EDFF", "dark": "#2B2B29" },
-    "connect_hero_accent": { "light": "#9DB4FF", "dark": "#4A4944" },
-    "connect_hero_secondary": { "light": "#C9C5FF", "dark": "#3C3B38" },
-    "connect_hero_surface": { "light": "#F8FAFF", "dark": "#252522" },
-    "connect_scan_accent": { "light": "#FFD021", "dark": "#FFD021" },
-    "scrim": { "light": "#44000000", "dark": "#44000000" },
-    "shell_scrim": { "light": "#24000000", "dark": "#24000000" },
-    "media_background": { "light": "#FF000000", "dark": "#FF000000" },
-    "media_scrim": { "light": "#B8000000", "dark": "#B8000000" },
-    "media_control_background": { "light": "#8C000000", "dark": "#8C000000" },
-    "toast_background": { "light": "#D1171717", "dark": "#D1171717" },
-    "shadow_faint": { "light": "#08000000", "dark": "#08000000" },
-    "shadow_subtle": { "light": "#12000000", "dark": "#12000000" },
-    "shadow_medium": { "light": "#18000000", "dark": "#18000000" },
-    "shadow_strong": { "light": "#24000000", "dark": "#24000000" },
-    "floating_border": { "light": "#18000000", "dark": "#18000000" },
-    "soft": { "light": "#F4F3F0", "dark": "#2D2C28" },
-    "floating_panel_bg": { "light": "#F7F7F5", "dark": "#1E1E1C" },
-    "status_success": { "light": "#27C46A", "dark": "#3BD47B" },
-    "status_danger": { "light": "#E04F4F", "dark": "#FF6B6B" },
-    "code_line_number": { "light": "#AAA69D", "dark": "#77756E" },
-    "code_keyword": { "light": "#8F3F71", "dark": "#D99AC4" },
-    "code_string": { "light": "#477A4A", "dark": "#9BCB9D" },
-    "code_number": { "light": "#9A5B13", "dark": "#E3B36D" },
-    "code_comment": { "light": "#7A8078", "dark": "#96958D" },
-    "code_function": { "light": "#2C6693", "dark": "#8CBCE0" },
-    "code_type": { "light": "#865A20", "dark": "#D5B27F" },
-    "code_constant": { "light": "#A04444", "dark": "#E79A9A" },
-    "code_property": { "light": "#466D78", "dark": "#9CC8D0" },
-    "code_target_bg": { "light": "#FFF1BE", "dark": "#5A4E24" }
+    "start_window_background": {
+      "light": "#FFFFFF",
+      "dark": "#000000"
+    },
+    "transparent": {
+      "light": "#00000000",
+      "dark": "#00000000"
+    },
+    "page_bg": {
+      "light": "#FFFFFF",
+      "dark": "#151514"
+    },
+    "page_bg_fade": {
+      "light": "#00FFFFFF",
+      "dark": "#00151514"
+    },
+    "ink": {
+      "light": "#171717",
+      "dark": "#F4F3EF"
+    },
+    "muted": {
+      "light": "#706F6A",
+      "dark": "#AAA8A0"
+    },
+    "subtle": {
+      "light": "#A5A39B",
+      "dark": "#77756E"
+    },
+    "line": {
+      "light": "#E9E7E2",
+      "dark": "#363531"
+    },
+    "card": {
+      "light": "#FFFFFF",
+      "dark": "#252522"
+    },
+    "accent": {
+      "light": "#111111",
+      "dark": "#5B5954"
+    },
+    "file_link": {
+      "light": "#2563EB",
+      "dark": "#60A5FA"
+    },
+    "primary_action": {
+      "light": "#111111",
+      "dark": "#454540"
+    },
+    "content_on_action": {
+      "light": "#FFFFFF",
+      "dark": "#FFFFFF"
+    },
+    "connect_hero_bg": {
+      "light": "#E6EDFF",
+      "dark": "#2B2B29"
+    },
+    "connect_hero_accent": {
+      "light": "#9DB4FF",
+      "dark": "#4A4944"
+    },
+    "connect_hero_secondary": {
+      "light": "#C9C5FF",
+      "dark": "#3C3B38"
+    },
+    "connect_hero_surface": {
+      "light": "#F8FAFF",
+      "dark": "#252522"
+    },
+    "connect_scan_accent": {
+      "light": "#FFD021",
+      "dark": "#FFD021"
+    },
+    "scrim": {
+      "light": "#44000000",
+      "dark": "#44000000"
+    },
+    "shell_scrim": {
+      "light": "#24000000",
+      "dark": "#24000000"
+    },
+    "media_background": {
+      "light": "#FF000000",
+      "dark": "#FF000000"
+    },
+    "media_scrim": {
+      "light": "#B8000000",
+      "dark": "#B8000000"
+    },
+    "media_control_background": {
+      "light": "#8C000000",
+      "dark": "#8C000000"
+    },
+    "toast_background": {
+      "light": "#D1171717",
+      "dark": "#D1171717"
+    },
+    "shadow_faint": {
+      "light": "#08000000",
+      "dark": "#08000000"
+    },
+    "shadow_subtle": {
+      "light": "#12000000",
+      "dark": "#12000000"
+    },
+    "shadow_medium": {
+      "light": "#18000000",
+      "dark": "#18000000"
+    },
+    "shadow_strong": {
+      "light": "#24000000",
+      "dark": "#24000000"
+    },
+    "floating_border": {
+      "light": "#18000000",
+      "dark": "#18000000"
+    },
+    "soft": {
+      "light": "#F4F3F0",
+      "dark": "#2D2C28"
+    },
+    "floating_panel_bg": {
+      "light": "#F7F7F5",
+      "dark": "#1E1E1C"
+    },
+    "status_success": {
+      "light": "#27C46A",
+      "dark": "#3BD47B"
+    },
+    "status_danger": {
+      "light": "#E04F4F",
+      "dark": "#FF6B6B"
+    },
+    "code_line_number": {
+      "light": "#AAA69D",
+      "dark": "#77756E"
+    },
+    "code_keyword": {
+      "light": "#8F3F71",
+      "dark": "#D99AC4"
+    },
+    "code_string": {
+      "light": "#477A4A",
+      "dark": "#9BCB9D"
+    },
+    "code_number": {
+      "light": "#9A5B13",
+      "dark": "#E3B36D"
+    },
+    "code_comment": {
+      "light": "#7A8078",
+      "dark": "#96958D"
+    },
+    "code_function": {
+      "light": "#2C6693",
+      "dark": "#8CBCE0"
+    },
+    "code_type": {
+      "light": "#865A20",
+      "dark": "#D5B27F"
+    },
+    "code_constant": {
+      "light": "#A04444",
+      "dark": "#E79A9A"
+    },
+    "code_property": {
+      "light": "#466D78",
+      "dark": "#9CC8D0"
+    },
+    "code_target_bg": {
+      "light": "#FFF1BE",
+      "dark": "#5A4E24"
+    },
+    "brand_dot": {
+      "light": "#16B9CE",
+      "dark": "#16B9CE"
+    },
+    "welcome_dock": {
+      "light": "#171917",
+      "dark": "#171917"
+    },
+    "welcome_button": {
+      "light": "#FFFFFF",
+      "dark": "#FFFFFF"
+    },
+    "welcome_button_label": {
+      "light": "#171917",
+      "dark": "#171917"
+    },
+    "welcome_secondary": {
+      "light": "#B9BCB9",
+      "dark": "#B9BCB9"
+    }
   },
   "typography": {
-    "display_large": { "size": 24, "lineHeight": 30, "weight": 700 },
-    "display_medium": { "size": 22, "lineHeight": 28, "weight": 700 },
-    "display_small": { "size": 20, "lineHeight": 26, "weight": 700 },
-    "headline_large": { "size": 22, "lineHeight": 28, "weight": 700 },
-    "headline_medium": { "size": 20, "lineHeight": 26, "weight": 700 },
-    "headline_small": { "size": 18, "lineHeight": 24, "weight": 700 },
-    "title_large": { "size": 20, "lineHeight": 26, "weight": 700 },
-    "conversation_header_title": { "size": 17, "lineHeight": 22, "weight": 600 },
-    "title_medium": { "size": 17, "lineHeight": 22, "weight": 500 },
-    "title_small": { "size": 15, "lineHeight": 20, "weight": 500 },
-    "body_large": { "size": 16, "lineHeight": 24, "weight": 400 },
-    "body_medium": { "size": 14, "lineHeight": 21, "weight": 400 },
-    "body_small": { "size": 13, "lineHeight": 19, "weight": 400 },
-    "label_large": { "size": 15, "lineHeight": 20, "weight": 500 },
-    "label_medium": { "size": 14, "lineHeight": 18, "weight": 500 },
-    "label_small": { "size": 12, "lineHeight": 16, "weight": 400 }
+    "display_large": {
+      "size": 24,
+      "lineHeight": 30,
+      "weight": 700
+    },
+    "display_medium": {
+      "size": 22,
+      "lineHeight": 28,
+      "weight": 700
+    },
+    "display_small": {
+      "size": 20,
+      "lineHeight": 26,
+      "weight": 700
+    },
+    "headline_large": {
+      "size": 22,
+      "lineHeight": 28,
+      "weight": 700
+    },
+    "headline_medium": {
+      "size": 20,
+      "lineHeight": 26,
+      "weight": 700
+    },
+    "headline_small": {
+      "size": 18,
+      "lineHeight": 24,
+      "weight": 700
+    },
+    "title_large": {
+      "size": 20,
+      "lineHeight": 26,
+      "weight": 700
+    },
+    "conversation_header_title": {
+      "size": 17,
+      "lineHeight": 22,
+      "weight": 600
+    },
+    "title_medium": {
+      "size": 17,
+      "lineHeight": 22,
+      "weight": 500
+    },
+    "title_small": {
+      "size": 15,
+      "lineHeight": 20,
+      "weight": 500
+    },
+    "body_large": {
+      "size": 16,
+      "lineHeight": 24,
+      "weight": 400
+    },
+    "body_medium": {
+      "size": 14,
+      "lineHeight": 21,
+      "weight": 400
+    },
+    "body_small": {
+      "size": 13,
+      "lineHeight": 19,
+      "weight": 400
+    },
+    "label_large": {
+      "size": 15,
+      "lineHeight": 20,
+      "weight": 500
+    },
+    "label_medium": {
+      "size": 14,
+      "lineHeight": 18,
+      "weight": 500
+    },
+    "label_small": {
+      "size": 12,
+      "lineHeight": 16,
+      "weight": 400
+    },
+    "brand_wordmark": {
+      "size": 42,
+      "lineHeight": 56,
+      "weight": 500
+    }
   },
   "geometry": {
     "conversation_header_height": 76,
@@ -126,7 +344,23 @@
     "model_list_top_padding": 10,
     "model_list_bottom_padding": 16,
     "model_empty_account_height": 80,
-    "model_editor_height": 560
+    "model_editor_height": 560,
+    "welcome_max_width": 520,
+    "welcome_gutter": 25,
+    "welcome_header_height": 58,
+    "welcome_button_height": 49,
+    "welcome_button_gap": 11,
+    "welcome_dock_radius": 30,
+    "welcome_dock_bottom": 39,
+    "welcome_mark_size": 92,
+    "welcome_word_size": 34,
+    "welcome_stage_height": 220,
+    "welcome_header_word_size": 17,
+    "recent_home_gutter": 24,
+    "recent_home_mark_size": 132,
+    "recent_home_title_size": 25,
+    "recent_home_max_width": 560,
+    "recent_home_row_padding": 18
   },
   "breakpoints": {
     "wide": 600,
@@ -135,6 +369,7 @@
   },
   "motion": {
     "quick": 180,
-    "structure": 220
+    "structure": 220,
+    "startup_brand": 6800
   }
 }

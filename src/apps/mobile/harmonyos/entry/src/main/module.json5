@@ -68,7 +68,7 @@
         "icon": "$media:openbitfun_app_icon",
         "label": "$string:EntryAbility_label",
         "startWindowIcon": "$media:openbitfun_start_window",
-        "startWindowBackground": "$color:start_window_background",
+        "startWindowBackground": "$color:page_bg",
         "exported": true,
         "skills": [
           {

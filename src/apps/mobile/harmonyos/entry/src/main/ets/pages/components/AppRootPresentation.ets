@@ -1,3 +1,7 @@
+import { RemoteCompactHomePolicy } from '../policy/RemoteCompactHomePolicy';
+import { MiniAppActions, emptyMiniAppActions } from '../../model/MiniAppModels';
+import { MiniAppState } from '../state/MiniAppState';
+import { MiniAppSurface } from './MiniAppSurface';
 import display from '@ohos.display';
 import mediaQuery from '@ohos.mediaquery';
 import { RemoteUiState } from '../../services/RemoteUiState';
@@ -60,6 +64,8 @@ enum WideWorkspacePresentationMode {
 
 @ComponentV2
 export struct AppRootPresentation {
+  @Param miniAppState: MiniAppState = new MiniAppState();
+  @Param miniAppActions: MiniAppActions = emptyMiniAppActions();
   @Param shellState: AppShellState = new AppShellState();
   @Param navigationStack: NavPathStack = new NavPathStack();
   @Param remotePageState: RemotePageState = new RemotePageState();
@@ -131,6 +137,7 @@ export struct AppRootPresentation {
       AppShell({
         shellState: this.shellState,
         useWideLayout: this.isWideLayout(),
+        allowSidebar: !this.showWelcomeHome(),
         settingsPlacement: this.settingsPlacement,
         compactAccountLogin: this.shellState.settingsMode === 'account' &&
           this.remotePageState.accountUserId.trim().length === 0,
@@ -185,6 +192,12 @@ export struct AppRootPresentation {
         Column() { this.WideRouteContent() }
           .width('100%').height('100%').backgroundColor(PAGE_BG)
       }
+
+      // Sidebar destinations belong to the moving content pane. A root-level
+      // overlay would cover the drawer before its closing animation can run.
+      if (this.miniAppState.visible) {
+        MiniAppSurface({ state: this.miniAppState, actions: this.miniAppActions })
+      }
     }
     .width('100%')
     .height('100%')
@@ -205,6 +218,14 @@ export struct AppRootPresentation {
    */
   @Builder
   WideRouteContent() {
+    if (this.showWelcomeHome()) {
+      RemoteSurfaceHost({
+        mode: RemoteSurfaceMode.Placeholder,
+        remotePageState: this.remotePageState,
+        presentationState: this.remoteSurfaceState,
+        actions: this.actions
+      })
+    } else {
     WideConversationHost({
       route: this.shellState.activeRoute,
       shellState: this.shellState,
@@ -233,6 +254,7 @@ export struct AppRootPresentation {
       onToggleFilePreviewExpanded: () => this.toggleFilePreviewExpanded(),
       onOpenRemoteViewSettings: () => { this.showRemoteViewSettings = true; }
     })
+    }
   }
 
   /**
@@ -291,6 +313,11 @@ export struct AppRootPresentation {
     .width(paneWidth > 0 ? paneWidth : '100%')
     .height('100%')
     .backgroundColor(PAGE_BG)
+  }
+
+  private showWelcomeHome(): boolean {
+    return RemoteCompactHomePolicy.shouldShowWelcomeHome(this.remotePageState.controlTargetType,
+      this.remotePageState.connectionState, this.remotePageState.accountUserId.trim().length > 0);
   }
 
   private isWideLayout(): boolean {

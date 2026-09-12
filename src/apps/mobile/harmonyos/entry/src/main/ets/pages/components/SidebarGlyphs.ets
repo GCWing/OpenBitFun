@@ -90,18 +90,12 @@ export struct SidebarGlyph {
 
   @Builder
   private Apps() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) { this.AppDot(); this.AppDot(); }
-      Row({ space: 8 }) { this.AppDot(); this.AppDot(); }
+    Stack({ alignContent: Alignment.Center }) {
+      SymbolGlyph($r('sys.symbol.square_grid_2x2'))
+        .fontSize(24)
+        .fontColor([this.tint])
     }
     .width(24).height(24)
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-  }
-
-  @Builder
-  private AppDot() {
-    Text('').width(8).height(8).borderRadius(4).backgroundColor(INK)
   }
 
   @Builder

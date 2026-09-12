@@ -1,6 +1,10 @@
 package com.openbitfun.mobile.app
 
 import android.os.Bundle
+import androidx.compose.foundation.layout.Box
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import com.openbitfun.mobile.app.ui.shell.StartupBrandReveal
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -17,9 +21,11 @@ import com.openbitfun.mobile.app.viewmodel.AppSettingsViewModel
 import com.openbitfun.mobile.app.viewmodel.AppThemeMode
 
 class MainActivity : ComponentActivity() {
+    private var showStartupBrand by mutableStateOf(true)
     override fun onCreate(savedInstanceState: Bundle?) {
         AppLocaleController.applySaved(this)
         super.onCreate(savedInstanceState)
+        showStartupBrand = savedInstanceState == null
         enableEdgeToEdge()
         setContent {
             if (intent.getBooleanExtra(DESIGN_PREVIEW_EXTRA, false)) {
@@ -35,8 +41,11 @@ class MainActivity : ComponentActivity() {
                 AppThemeMode.DARK -> true
             }
             OpenBitFunTheme(dark = dark) {
-                MobileScreen()
-                com.openbitfun.mobile.app.ui.shell.NotificationOnboarding()
+                Box {
+                    MobileScreen()
+                    if (showStartupBrand) StartupBrandReveal { showStartupBrand = false }
+                }
+                if (!showStartupBrand) com.openbitfun.mobile.app.ui.shell.NotificationOnboarding()
             }
         }
     }
@@ -47,6 +56,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        showStartupBrand = false
         if (!intent.getBooleanExtra(DESIGN_PREVIEW_EXTRA, false)) accountModel().setBackground(true)
         super.onStop()
     }

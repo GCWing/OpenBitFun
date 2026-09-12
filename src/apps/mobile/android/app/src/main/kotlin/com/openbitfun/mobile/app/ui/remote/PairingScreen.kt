@@ -1,6 +1,13 @@
 package com.openbitfun.mobile.app.ui.remote
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.HorizontalDivider
+import com.openbitfun.mobile.app.ui.shell.WelcomeBrandFlow
+import com.openbitfun.mobile.app.ui.theme.generated.MobileDesignGeometry
+import com.openbitfun.mobile.core.feature.session.SessionTimePresentation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,8 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -28,15 +33,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.LifecycleResumeEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.openbitfun.mobile.app.R
 import com.openbitfun.mobile.app.ui.chat.ConversationView
 import com.openbitfun.mobile.app.ui.common.CircleControl
@@ -47,44 +48,6 @@ import com.openbitfun.mobile.core.feature.session.ConversationHeaderPresenter
 import com.openbitfun.mobile.core.feature.session.RemoteSessionUiState
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceIntent
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceUiState
-
-/**
- * The remote surface: pair, then either the session list or one open session.
- *
- * Everything below the seam is a [PairingUiState]; this file decides layout and
- * wording and nothing else. The list and the conversation replace each other
- * rather than stacking, matching `pages/RemoteSurfaceHost.ets` — a transcript
- * needs the whole height and its own scroll.
- */
-@Composable
-internal fun PairingScreen(
-    modifier: Modifier,
-    settingsPlacement: SettingsPlacement,
-    sessionDetailsPlacement: SettingsPlacement,
-    viewSettingsPlacement: SettingsPlacement,
-    onOpenRemoteSettings: () -> Unit,
-    onOpenSidebar: (() -> Unit)? = null,
-    onBack: () -> Unit = {},
-    onOpenAccount: () -> Unit = {},
-    onDeviceLink: (String) -> Unit = {},
-    compact: Boolean = true,
-    requestedSessionId: String? = null,
-    creatingSession: Boolean = false,
-    onOpenSession: (String) -> Unit = {},
-    onCreateSession: () -> Unit = {},
-    onRemoteHome: () -> Unit = {},
-    startScanning: Boolean = false,
-    onScanStarted: () -> Unit = {},
-) {
-    ConnectView(
-        onSubmit = onDeviceLink,
-        onBack = onBack,
-        onOpenAccount = onOpenAccount,
-        startScanning = startScanning,
-        onScanStarted = onScanStarted,
-        modifier = modifier,
-    )
-}
 
 /** The account-device route, which bypasses the QR pairing form entirely. */
 @Composable
@@ -221,135 +184,74 @@ private fun RemoteConnectedScreen(
             onIntent = onSessionIntent,
             modifier = modifier,
         )
-    } else if (compact) {
+    } else {
         RemoteCompactHome(
             remoteState = remoteState,
             desktopName = desktopName,
             onOpenSidebar = onOpenSidebar,
-            onCreate = onCreateSession,
+            onBrowse = onOpenSidebar,
+            onOpen = { id ->
+                onSessionIntent(com.openbitfun.mobile.core.feature.session.RemoteSessionIntent.Open(id))
+                onOpenSession(id)
+            },
             onOpenRemoteSettings = onOpenRemoteSettings,
             modifier = modifier,
         )
-    } else {
-        Column(modifier = modifier.fillMaxSize()) {
-            RemoteShellHeader(onOpenSidebar, onOpenRemoteSettings = onOpenRemoteSettings)
-            RemoteSessionListView(
-                state = remoteState,
-                workspaceState = workspaceState,
-                compact = compact,
-                sessionDetailsPlacement = sessionDetailsPlacement,
-                viewSettingsPlacement = viewSettingsPlacement,
-                connectionDetails = connectionDetails,
-                onIntent = onSessionIntent,
-                onWorkspaceIntent = onWorkspaceIntent,
-                onOpen = onOpenSession,
-                onCreate = onCreateSession,
-                modifier = Modifier.weight(1f),
-            )
-        }
     }
 }
 
 @Composable
-private fun RemoteCompactHome(
+internal fun RemoteCompactHome(
     remoteState: RemoteSessionUiState,
     desktopName: String,
     onOpenSidebar: (() -> Unit)?,
-    onCreate: () -> Unit,
+    onBrowse: (() -> Unit)?,
+    onOpen: (String) -> Unit,
     onOpenRemoteSettings: () -> Unit,
-    modifier: Modifier,
+    modifier: Modifier = Modifier,
 ) {
     val ready = remoteState as? RemoteSessionUiState.Ready
-    val hasSessions = ready?.sessions?.isNotEmpty() == true
-    val loading = remoteState is RemoteSessionUiState.Loading
-    val title = when {
-        loading -> stringResource(R.string.sessions_loading)
-        remoteState is RemoteSessionUiState.Failed -> stringResource(R.string.sessions_failed)
-        hasSessions -> stringResource(R.string.remote_pick_session)
-        else -> stringResource(R.string.remote_empty_title)
-    }
-    val body = if (hasSessions) {
-        stringResource(R.string.remote_pick_session_text)
-    } else {
-        stringResource(R.string.remote_empty_text)
-    }
-
-    Column(modifier = modifier.fillMaxSize()) {
+    val recent = ready?.sessions.orEmpty().filter { it.status != "archived" }.sortedByDescending {
+        SessionTimePresentation.timestampMs(it.updatedAt)?.takeIf { t -> t > 0 }
+            ?: SessionTimePresentation.timestampMs(it.createdAt) ?: 0
+    }.take(3)
+    Column(modifier.fillMaxSize()) {
         RemoteShellHeader(onOpenSidebar, desktopName, onOpenRemoteSettings)
         Column(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth()
-                .padding(start = 24.dp, end = 24.dp, bottom = 56.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            Modifier.weight(1f).align(Alignment.CenterHorizontally)
+                .widthIn(max = MobileDesignGeometry.RecentHomeMaxWidth).fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = MobileDesignGeometry.RecentHomeGutter, vertical = 24.dp),
         ) {
-            if (loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.padding(bottom = 18.dp).size(28.dp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            WelcomeBrandFlow(Modifier.align(Alignment.CenterHorizontally).size(MobileDesignGeometry.RecentHomeMarkSize), sweep = true)
+            Text(stringResource(R.string.home_recent_title), fontSize = 25.sp,
+                fontWeight = FontWeight.Medium, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 32.dp))
+            if (remoteState is RemoteSessionUiState.Loading) CircularProgressIndicator(Modifier.size(24.dp))
+            if (remoteState is RemoteSessionUiState.Failed) {
+                Text(stringResource(R.string.sessions_failed), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(
-                title,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                textAlign = TextAlign.Center,
-            )
-            Text(
-                body,
-                fontSize = 14.sp,
-                lineHeight = 21.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.width(280.dp).padding(top = 10.dp),
-            )
-            if (!loading) {
-                Button(
-                    onClick = onCreate,
-                    shape = RoundedCornerShape(23.dp),
-                    modifier = Modifier.padding(top = 12.dp).width(148.dp).height(46.dp),
-                ) {
-                    Text(stringResource(R.string.remote_start_session), fontSize = 15.sp)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.home_recent_recent), fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                if (onBrowse != null) TextButton(onClick = onBrowse) { Text(stringResource(R.string.home_recent_all), fontSize = 12.sp) }
+            }
+            recent.forEach { session ->
+                Column(Modifier.fillMaxWidth().clickable(enabled = !ready!!.busy) { onOpen(session.id) }
+                    .padding(vertical = MobileDesignGeometry.RecentHomeRowPadding)) {
+                    Text(session.title, fontSize = 15.sp, maxLines = 2)
+                    val workspace = session.workspaceName?.takeIf { it.isNotBlank() }
+                        ?: session.workspacePath.orEmpty().trimEnd('/').substringAfterLast('/')
+                    Text(listOf(desktopName, workspace).filter { it.isNotBlank() }.joinToString(" · "),
+                        fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp), maxLines = 1)
                 }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
-        }
-    }
-}
-
-/** The remote landing page precedes the connection chooser, as on HarmonyOS. */
-@Composable
-internal fun DisconnectedRemoteHome(
-    onOpenSidebar: (() -> Unit)?,
-    onConnect: () -> Unit,
-) {
-    Column(Modifier.fillMaxSize().testTag("remote-disconnected-home")) {
-        RemoteShellHeader(onOpenSidebar = onOpenSidebar, onOpenRemoteSettings = null)
-        Column(
-            modifier = Modifier.weight(1f).fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, bottom = 48.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                modifier = Modifier.size(74.dp),
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(painterResource(R.drawable.ic_symbol_desktop), contentDescription = null,
-                        modifier = Modifier.size(42.dp))
-                }
-            }
-            Text(stringResource(R.string.sidebar_connect_desktop),
-                style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-            Text(stringResource(R.string.remote_connect_description),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-            Button(onClick = onConnect, shape = RoundedCornerShape(22.dp),
-                modifier = Modifier.width(136.dp).height(44.dp)) {
-                Text(stringResource(R.string.pairing_connect), style = MaterialTheme.typography.titleSmall)
+            if (recent.isEmpty() && remoteState !is RemoteSessionUiState.Loading) {
+                Text(stringResource(if (desktopName.isBlank()) R.string.home_recent_connect else R.string.home_recent_empty),
+                    fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 18.dp))
             }
         }
     }

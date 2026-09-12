@@ -24,6 +24,16 @@ interface LoginRequest {
 interface PeerPublicKey { public_key: string; }
 interface RelayErrorResponse { error?: string; }
 
+interface NetworkRequestFailure { code?: number; }
+
+export class CloudAccountTransportError extends Error {
+  readonly code: number;
+  constructor(code: number) {
+    super(`Account transport failed (code=${code}).`);
+    this.code = code;
+  }
+}
+
 export class CloudAccountRequestError extends Error {
   readonly statusCode: number;
 
@@ -337,6 +347,11 @@ export class CloudAccountClient {
       }
       return JSON.parse(text) as T;
     } catch (err) {
+      const code = (err as NetworkRequestFailure).code;
+      if (typeof code === 'number') {
+        RemoteLogger.warn(`relay transport failed method=${method} path=${path} code=${code}`);
+        throw new CloudAccountTransportError(code);
+      }
       throw OhosError.wrap('relay request', err);
     } finally {
       request.destroy();

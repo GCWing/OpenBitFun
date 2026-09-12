@@ -29,3 +29,6 @@
 *.pem
 *.hap
 *.app
+
+# Generated from shared desktop MiniApp sources by entry/hvigorfile.ts
+/entry/src/main/resources/rawfile/miniapps/

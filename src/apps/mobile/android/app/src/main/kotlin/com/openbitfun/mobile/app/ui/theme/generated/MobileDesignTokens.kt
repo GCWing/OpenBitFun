@@ -52,6 +52,11 @@ internal object MobileDesignColors {
         val CodeConstant = Color(0xFFA04444)
         val CodeProperty = Color(0xFF466D78)
         val CodeTargetBg = Color(0xFFFFF1BE)
+        val BrandDot = Color(0xFF16B9CE)
+        val WelcomeDock = Color(0xFF171917)
+        val WelcomeButton = Color(0xFFFFFFFF)
+        val WelcomeButtonLabel = Color(0xFF171917)
+        val WelcomeSecondary = Color(0xFFB9BCB9)
     }
 
     object Dark {
@@ -98,6 +103,11 @@ internal object MobileDesignColors {
         val CodeConstant = Color(0xFFE79A9A)
         val CodeProperty = Color(0xFF9CC8D0)
         val CodeTargetBg = Color(0xFF5A4E24)
+        val BrandDot = Color(0xFF16B9CE)
+        val WelcomeDock = Color(0xFF171917)
+        val WelcomeButton = Color(0xFFFFFFFF)
+        val WelcomeButtonLabel = Color(0xFF171917)
+        val WelcomeSecondary = Color(0xFFB9BCB9)
     }
 }
 
@@ -118,6 +128,7 @@ internal object MobileDesignTypography {
     val LabelLarge = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium)
     val LabelMedium = TextStyle(fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
     val LabelSmall = TextStyle(fontSize = 12.sp, lineHeight = 16.sp, fontWeight = FontWeight.Normal)
+    val BrandWordmark = TextStyle(fontSize = 42.sp, lineHeight = 56.sp, fontWeight = FontWeight.Medium)
 }
 
 internal object MobileDesignGeometry {
@@ -180,6 +191,22 @@ internal object MobileDesignGeometry {
     val ModelListBottomPadding = 16.dp
     val ModelEmptyAccountHeight = 80.dp
     val ModelEditorHeight = 560.dp
+    val WelcomeMaxWidth = 520.dp
+    val WelcomeGutter = 25.dp
+    val WelcomeHeaderHeight = 58.dp
+    val WelcomeButtonHeight = 49.dp
+    val WelcomeButtonGap = 11.dp
+    val WelcomeDockRadius = 30.dp
+    val WelcomeDockBottom = 39.dp
+    val WelcomeMarkSize = 92.dp
+    val WelcomeWordSize = 34.dp
+    val WelcomeStageHeight = 220.dp
+    val WelcomeHeaderWordSize = 17.dp
+    val RecentHomeGutter = 24.dp
+    val RecentHomeMarkSize = 132.dp
+    val RecentHomeTitleSize = 25.dp
+    val RecentHomeMaxWidth = 560.dp
+    val RecentHomeRowPadding = 18.dp
 }
 
 internal object MobileDesignBreakpoints {
@@ -191,4 +218,5 @@ internal object MobileDesignBreakpoints {
 internal object MobileDesignMotion {
     const val Quick: Int = 180
     const val Structure: Int = 220
+    const val StartupBrand: Int = 6800
 }

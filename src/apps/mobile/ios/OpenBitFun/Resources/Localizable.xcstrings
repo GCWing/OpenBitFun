@@ -4146,7 +4146,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Scan to connect a computer"
+            "value": "Scan to connect"
           }
         }
       }
@@ -8033,6 +8033,172 @@
           "stringUnit": {
             "state": "translated",
             "value": "使用 GitHub 登录并连接自己的电脑。\n任务和模型配置保留在被控电脑上。"
+          }
+        }
+      }
+    },
+    "登录账号": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in"
+          }
+        }
+      }
+    },
+    "干点活儿": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get things done"
+          }
+        }
+      }
+    },
+    "玩点花样": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try something fun"
+          }
+        }
+      }
+    },
+    "随你发挥": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Make it yours"
+          }
+        }
+      }
+    },
+    "暂时无法连接，请检查网络后重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to connect. Check your connection and try again."
+          }
+        }
+      }
+    },
+    "连接超时，请检查网络后重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connection timed out. Check your connection and try again."
+          }
+        }
+      }
+    },
+    "登录服务暂时不可用，请稍后重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign-in is temporarily unavailable. Try again later."
+          }
+        }
+      }
+    },
+    "今天，想做点什么？": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What would you like to do today?"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天，想做点什么？"
+          }
+        }
+      }
+    },
+    "最近会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Recent conversations"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最近会话"
+          }
+        }
+      }
+    },
+    "浏览工作区": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Browse workspaces"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "浏览工作区"
+          }
+        }
+      }
+    },
+    "全部会话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All conversations"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全部会话"
+          }
+        }
+      }
+    },
+    "还没有可继续的对话": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No conversations to continue yet"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还没有可继续的对话"
+          }
+        }
+      }
+    },
+    "连接电脑后，继续你的对话。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect a computer to continue your conversations."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接电脑后，继续你的对话。"
           }
         }
       }

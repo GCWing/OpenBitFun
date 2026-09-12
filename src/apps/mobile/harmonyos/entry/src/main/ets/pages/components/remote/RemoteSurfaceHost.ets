@@ -1,3 +1,5 @@
+import { RecentRemoteHome } from '../RecentRemoteHome';
+import { WelcomeHome } from '../WelcomeHome';
 import { MobileDesignTypography } from '../../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../../i18n/RemoteI18n';
 import { REMOTE_CAPABILITY_HARNESS_PROFILES_V1, RemoteSession } from '../../../model/RemoteModels';
@@ -15,7 +17,6 @@ import { RemoteSessionList } from '../RemoteSessionList';
 import { RemoteSessionLoadingView } from '../RemoteSessionLoadingView';
 import { SidebarToggleButton } from '../SidebarToggleButton';
 import { SessionActionPresentation } from '../SessionActionSurface';
-import { HarnessProfileMenu } from '../HarnessProfileMenu';
 import {
   SettingsPlacement,
   SettingsPlacementPolicy,
@@ -64,7 +65,6 @@ export struct RemoteSurfaceHost {
   @Event onOpenSidebar: () => void = () => {};
   @Event onRestoreSidebar: () => void = () => {};
   @Event onCloseSettings: () => void = () => {};
-  @Local showCreateModeMenu: boolean = false;
 
   // The wide layout keeps the master pane inside a routed destination, so a
   // mount here while switching sessions means the navigation stack was torn
@@ -77,7 +77,11 @@ export struct RemoteSurfaceHost {
   }
 
   build() {
-    if (this.mode === RemoteSurfaceMode.Master) {
+    if (this.mode !== RemoteSurfaceMode.Settings &&
+      RemoteCompactHomePolicy.shouldShowWelcomeHome(this.remotePageState.controlTargetType,
+        this.remotePageState.connectionState, this.remotePageState.accountUserId.trim().length > 0)) {
+      this.WelcomeEntry()
+    } else if (this.mode === RemoteSurfaceMode.Master) {
       this.MasterContent();
     } else if (this.mode === RemoteSurfaceMode.CompactHome) {
       this.CompactHomeContent();
@@ -129,7 +133,7 @@ export struct RemoteSurfaceHost {
           onLoadMore: () => this.actions.onRemoteHome.loadMore()
         })
       } else {
-        this.DisconnectedState()
+        this.ConnectionEntry()
       }
     }
     .width('100%')
@@ -182,44 +186,42 @@ export struct RemoteSurfaceHost {
   }
 
   @Builder
-  private DisconnectedState() {
-    Column({ space: 12 }) {
-      Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph($r('sys.symbol.desktop')).fontSize(42).fontColor([INK])
-      }
-      .width(74)
-      .height(74)
-      .backgroundColor(CARD)
-      .borderRadius(24)
-      .border({ width: 1, color: LINE })
-      Text(RemoteI18n.t('remote.connectTitle'))
-        .fontSize(MobileDesignTypography.headlineSmall.size).fontWeight(FontWeight.Bold).fontColor(INK).textAlign(TextAlign.Center)
-      Text(RemoteI18n.t('remote.connectText'))
-        .fontSize(MobileDesignTypography.bodySmall.size).lineHeight(MobileDesignTypography.bodySmall.lineHeight).fontColor(MUTED).textAlign(TextAlign.Center)
-      Text(RemoteI18n.t('connect.connect'))
-        .width(136).height(44).fontSize(MobileDesignTypography.titleSmall.size).fontColor(CONTENT_ON_ACTION)
-        .backgroundColor(PRIMARY_ACTION).textAlign(TextAlign.Center).borderRadius(22)
-        .onClick(() => this.actions.onRemoteHome.connectWorkspace())
+  private WelcomeEntry() {
+    WelcomeHome({
+      signedIn: this.remotePageState.accountUserId.trim().length > 0,
+      onLogin: () => {
+        if (this.remotePageState.accountUserId.trim().length > 0) {
+          this.actions.onRemoteHome.connectWorkspace();
+        } else {
+          this.actions.onSettings.openAccount();
+        }
+      },
+      onScan: this.actions.onSidebar.scanDesktop,
+      onMiniApps: this.actions.onRemoteHome.openMiniApps
+    })
+  }
+
+  @Builder
+  private ConnectionEntry() {
+    if (this.isSyncing()) {
+      RemoteSessionLoadingView()
+    } else {
+      this.CompactEmptyState()
     }
-    .layoutWeight(1)
-    .width('100%')
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .padding({ left: 20, right: 20, bottom: 48 })
   }
 
   @Builder
   private CompactHomeContent() {
     Column() {
       ConversationHeader({
-        title: RemoteI18n.t('remote.title'),
+        title: RemoteI18n.t('app.title'),
         subtitle: this.compactHeaderContext(),
-        titleFallback: RemoteI18n.t('remote.title'),
+        titleFallback: RemoteI18n.t('app.title'),
         showSidebarButton: true,
         onOpenSidebar: this.onOpenSidebar
       })
       if (RemoteCompactHomePolicy.shouldShowConnectHome(this.remotePageState.connectionState)) {
-        this.DisconnectedState()
+        this.ConnectionEntry()
       } else {
         this.CompactEmptyState()
       }
@@ -231,51 +233,15 @@ export struct RemoteSurfaceHost {
 
   @Builder
   private CompactEmptyState() {
-    Column({ space: 10 }) {
-      if (this.isInitialLoading()) {
-        LoadingProgress().width(28).height(28).color(MUTED).margin({ bottom: 8 })
-      }
-      Text(this.compactTitle())
-        .fontSize(MobileDesignTypography.headlineMedium.size).fontWeight(FontWeight.Bold).fontColor(INK).textAlign(TextAlign.Center)
-      Text(this.compactText())
-        .fontSize(MobileDesignTypography.bodyMedium.size).lineHeight(MobileDesignTypography.bodyMedium.lineHeight).fontColor(MUTED).maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis }).textAlign(TextAlign.Center)
-        .constraintSize({ maxWidth: 280 })
-      // Starting a session needs a desktop on the other end, so while the link
-      // is down the button that is actually useful is the one that brings it
-      // back up.
-      if (this.canReconnect()) {
-        Text(RemoteI18n.t('remote.settings.reconnect'))
-          .width(148).height(46).fontSize(MobileDesignTypography.titleSmall.size).fontWeight(FontWeight.Medium)
-          .fontColor(CONTENT_ON_ACTION).backgroundColor(PRIMARY_ACTION)
-          .textAlign(TextAlign.Center).borderRadius(23).margin({ top: 12 })
-          .onClick(() => this.actions.onRemoteHome.reconnect())
-      } else {
-        Text(RemoteI18n.t('remote.startSession'))
-          .width(148).height(46).fontSize(MobileDesignTypography.titleSmall.size).fontWeight(FontWeight.Medium)
-          .fontColor(CONTENT_ON_ACTION).backgroundColor(PRIMARY_ACTION)
-          .textAlign(TextAlign.Center).borderRadius(23).margin({ top: 12 })
-          .bindPopup(this.showCreateModeMenu, {
-            builder: () => {
-              this.CreateModeMenu()
-            },
-            placement: Placement.Top,
-            popupColor: CARD,
-            enableArrow: false,
-            autoCancel: true,
-            mask: true,
-            targetSpace: 8,
-            onStateChange: (event) => {
-              if (!event.isVisible) {
-                this.showCreateModeMenu = false;
-              }
-            }
-          })
-          .onClick(() => this.requestCreateSession())
-      }
-    }
-    .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center).padding({ left: 24, right: 24, bottom: 56 })
+    RecentRemoteHome({
+      sessions: this.remotePageState.sessions,
+      desktopName: this.remotePageState.desktopName,
+      connected: this.remotePageState.connectionState === 'connected',
+      busy: this.isInitialLoading(),
+      onBrowse: () => { if (this.compact) this.onOpenSidebar(); else this.onRestoreSidebar(); },
+      onConnect: () => this.actions.onRemoteHome.connectWorkspace(),
+      onOpen: (session: RemoteSession) => this.openSession(session)
+    }).layoutWeight(1)
   }
 
   @Builder
@@ -298,16 +264,8 @@ export struct RemoteSurfaceHost {
       .width('100%').height(76).padding({ left: 16, right: 16, top: 14, bottom: 12 })
       .border({ width: { bottom: 1 }, color: LINE })
 
-      Column({ space: 8 }) {
-        if (this.isInitialLoading()) {
-          LoadingProgress().width(28).height(28).color(MUTED).margin({ bottom: 8 })
-        }
-        Text(this.placeholderTitle()).fontSize(MobileDesignTypography.headlineLarge.size).fontWeight(FontWeight.Bold).fontColor(INK)
-        Text(this.statusText()).fontSize(MobileDesignTypography.bodyMedium.size).fontColor(MUTED).maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .width('100%').layoutWeight(1).justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center).padding({ left: 24, right: 24, bottom: 48 })
+      this.CompactEmptyState()
+
     }
     .width('100%').height('100%').backgroundColor(PAGE_BG)
   }
@@ -365,24 +323,6 @@ export struct RemoteSurfaceHost {
   }
 
   private createAssistantSession(): void {
-    this.createSession('code');
-  }
-
-  @Builder
-  private CreateModeMenu() {
-    HarnessProfileMenu({
-      onSelect: (agentType: string) => {
-        this.showCreateModeMenu = false;
-        this.createSession(agentType);
-      }
-    })
-  }
-
-  private requestCreateSession(): void {
-    if (this.supportsHarnessProfiles()) {
-      this.showCreateModeMenu = true;
-      return;
-    }
     this.createSession('code');
   }
 
@@ -466,20 +406,4 @@ export struct RemoteSurfaceHost {
       RemoteI18n.t('remote.settings.noDesktop');
   }
 
-  private compactTitle(): string {
-    if (this.isInitialLoading()) return RemoteI18n.t('common.loading');
-    return this.remotePageState.visibleSessions().length > 0 ?
-      RemoteI18n.t('remote.pickSession') : RemoteI18n.t('remote.emptyTitle');
-  }
-
-  private compactText(): string {
-    if (this.isInitialLoading()) return this.statusText();
-    return this.remotePageState.visibleSessions().length > 0 ?
-      RemoteI18n.t('remote.pickSessionText') : RemoteI18n.t('remote.emptyText');
-  }
-
-  private placeholderTitle(): string {
-    if (this.isInitialLoading()) return RemoteI18n.t('common.loading');
-    return this.remotePageState.visibleSessions().length > 0 ? '选择会话' : RemoteI18n.t('remote.emptyTitle');
-  }
 }

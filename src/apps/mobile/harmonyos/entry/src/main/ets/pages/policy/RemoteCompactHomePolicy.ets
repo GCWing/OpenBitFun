@@ -6,6 +6,10 @@
  * cache as a live link: "pick a session" only belongs on a connected desktop.
  */
 export class RemoteCompactHomePolicy {
+  static shouldShowWelcomeHome(controlTargetType: string, connectionState: string, signedIn: boolean = false): boolean {
+    return !signedIn && controlTargetType === 'none' && connectionState !== 'connected';
+  }
+
   static shouldShowConnectHome(connectionState: string): boolean {
     return connectionState !== 'connected';
   }

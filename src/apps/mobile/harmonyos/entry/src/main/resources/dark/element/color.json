@@ -171,6 +171,26 @@
     {
       "name": "code_target_bg",
       "value": "#5A4E24"
+    },
+    {
+      "name": "brand_dot",
+      "value": "#16B9CE"
+    },
+    {
+      "name": "welcome_dock",
+      "value": "#171917"
+    },
+    {
+      "name": "welcome_button",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "welcome_button_label",
+      "value": "#171917"
+    },
+    {
+      "name": "welcome_secondary",
+      "value": "#B9BCB9"
     }
   ]
 }

@@ -13,11 +13,11 @@ enum AccountFailureCopy {
         case "RATE_LIMITED":
             return "登录请求过多，请稍后重试"
         case "RELAY_UNAVAILABLE":
-            return "Relay 服务暂时不可用，请稍后重试"
+            return "登录服务暂时不可用，请稍后重试。"
         case "NETWORK":
-            return "网络连接失败，请检查网络和 relay 地址后重试"
+            return "暂时无法连接，请检查网络后重试。"
         case "TIMEOUT":
-            return "登录超时，请稍后重试"
+            return "连接超时，请检查网络后重试。"
         case "MALFORMED_RESPONSE":
             return "Relay 响应异常，请稍后重试或升级应用"
         case "SECURE_STORAGE":

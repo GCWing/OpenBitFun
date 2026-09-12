@@ -74,13 +74,6 @@ public sealed interface AccountUiState {
             selectedDeviceName: String?,
         ) : this(userId, relayUrl, username, devices, selectedDeviceId, selectedDeviceName, false, null)
 
-        public constructor(
-            userId: String,
-            username: String,
-            devices: List<AccountDeviceUi>,
-            selectedDeviceId: String?,
-            selectedDeviceName: String?,
-        ) : this(userId, username, com.openbitfun.mobile.core.transport.DEFAULT_CLOUD_RELAY_URL, devices, selectedDeviceId, selectedDeviceName)
     }
     public data class Failed public constructor(
         public val reason: AccountFailureReason,

@@ -177,6 +177,26 @@ export const mobileTokens = {
     "code_target_bg": {
       "light": "#FFF1BE",
       "dark": "#5A4E24"
+    },
+    "brand_dot": {
+      "light": "#16B9CE",
+      "dark": "#16B9CE"
+    },
+    "welcome_dock": {
+      "light": "#171917",
+      "dark": "#171917"
+    },
+    "welcome_button": {
+      "light": "#FFFFFF",
+      "dark": "#FFFFFF"
+    },
+    "welcome_button_label": {
+      "light": "#171917",
+      "dark": "#171917"
+    },
+    "welcome_secondary": {
+      "light": "#B9BCB9",
+      "dark": "#B9BCB9"
     }
   },
   "typography": {
@@ -259,6 +279,11 @@ export const mobileTokens = {
       "size": 12,
       "lineHeight": 16,
       "weight": 400
+    },
+    "brand_wordmark": {
+      "size": 42,
+      "lineHeight": 56,
+      "weight": 500
     }
   },
   "geometry": {
@@ -320,7 +345,23 @@ export const mobileTokens = {
     "model_list_top_padding": 10,
     "model_list_bottom_padding": 16,
     "model_empty_account_height": 80,
-    "model_editor_height": 560
+    "model_editor_height": 560,
+    "welcome_max_width": 520,
+    "welcome_gutter": 25,
+    "welcome_header_height": 58,
+    "welcome_button_height": 49,
+    "welcome_button_gap": 11,
+    "welcome_dock_radius": 30,
+    "welcome_dock_bottom": 39,
+    "welcome_mark_size": 92,
+    "welcome_word_size": 34,
+    "welcome_stage_height": 220,
+    "welcome_header_word_size": 17,
+    "recent_home_gutter": 24,
+    "recent_home_mark_size": 132,
+    "recent_home_title_size": 25,
+    "recent_home_max_width": 560,
+    "recent_home_row_padding": 18
   },
   "breakpoints": {
     "wide": 600,
@@ -329,7 +370,8 @@ export const mobileTokens = {
   },
   "motion": {
     "quick": 180,
-    "structure": 220
+    "structure": 220,
+    "startup_brand": 6800
   }
 };
 export const mobileComponents = {
@@ -853,6 +895,114 @@ export const mobileComponents = {
         "soft"
       ],
       "platformNotes": "Placement is shared policy; rendering, file export, and platform-safe dismissal remain native adapters."
+    },
+    "miniapp_navigation": {
+      "purpose": "Opens locally bundled tools from primary sidebar navigation, without requiring account or device access.",
+      "anatomy": [
+        "outlined_apps_glyph",
+        "leading_aligned_label",
+        "full_row_touch_target"
+      ],
+      "states": [
+        "idle",
+        "pressed",
+        "focused",
+        "signed_out",
+        "connected"
+      ],
+      "tokens": [
+        "ink",
+        "body_large",
+        "control_touch_size"
+      ],
+      "platformNotes": "Use a quiet 48vp icon-and-label row in compact and wide sidebars, with 16vp medium-weight navigation text, a 24vp icon slot and a 14vp gap. HarmonyOS uses the native outlined sys.symbol.square_grid_2x2 at 24vp, centered in its slot and tinted with the semantic ink color. Render the catalog inside the shell content pane so selecting it slides the right pane left as the drawer closes, using the existing 250ms ease-out shell motion. Sidebar session selection uses the same shell motion without a second route-push animation. Do not promote this navigation destination to a primary action on remote home."
+    },
+    "miniapp_catalog": {
+      "purpose": "Presents bundled apps with large visual previews that open each app directly.",
+      "anatomy": [
+        "back_control",
+        "centered_page_title",
+        "offline_caption",
+        "square_preview",
+        "app_title"
+      ],
+      "states": [
+        "catalog",
+        "loading",
+        "error",
+        "app_open",
+        "light",
+        "dark"
+      ],
+      "tokens": [
+        "page_bg",
+        "ink",
+        "muted",
+        "soft",
+        "body_large",
+        "title_small",
+        "body_medium",
+        "label_small"
+      ],
+      "platformNotes": "Use a two-column library of square previews on compact screens and three columns when the gallery reaches 600vp. Clip previews to 24vp corners with 14vp column and 20vp row gaps; keep app names below images. The centered gallery caps at 1000vp, while open apps use full width. Reuse established showcase assets. Resize the grid without reloading an open app."
+    },
+    "welcome_home": {
+      "purpose": "Signed-out disconnected home: fixed brand mark, looping desktop phrases, equal login and QR actions.",
+      "anatomy": [
+        "wordmark_header",
+        "fixed_brand_mark",
+        "sliding_phrase",
+        "dark_action_dock",
+        "login",
+        "scan",
+        "optional_bundled_miniapps"
+      ],
+      "states": [
+        "signed_out",
+        "reduce_motion",
+        "compact",
+        "wide"
+      ],
+      "tokens": [
+        "welcome_max_width",
+        "welcome_gutter",
+        "welcome_header_height",
+        "welcome_button_height",
+        "welcome_button_gap",
+        "welcome_dock_radius",
+        "welcome_dock_bottom",
+        "welcome_mark_size",
+        "welcome_word_size",
+        "welcome_stage_height",
+        "welcome_header_word_size",
+        "welcome_dock",
+        "welcome_button",
+        "welcome_button_label",
+        "welcome_secondary",
+        "brand_dot"
+      ],
+      "platformNotes": "A layout with C staggered slide motion. Mark never animates. Per-glyph entry: 180ms + index*55ms, 800ms cubic ease-out, 38px slide with 5px settling overshoot. Exit is 650ms, 30px left. Respect reduced motion and stop work offscreen. Retain real account/scan routing; only show MiniApps on hosts that implement them. Safe-area insets remain native."
+    },
+    "startup_brand_reveal": {
+      "purpose": "Provides a short desktop-inspired identity transition on cold launch without waiting for network or account loading.",
+      "anatomy": [
+        "theme_background",
+        "bouncing_brand_dot",
+        "staggered_wordmark",
+        "desktop_contour_brand_mark"
+      ],
+      "states": [
+        "cold_start",
+        "reduced_motion",
+        "backgrounded"
+      ],
+      "tokens": [
+        "page_bg",
+        "ink",
+        "brand_dot",
+        "startup_brand"
+      ],
+      "platformNotes": "Native cold-start overlay on HarmonyOS, Android and iOS; 6800ms timeline independent of network readiness. A cyan dot hops ahead of ten 42-unit letters with subtle letter bounce. At normalized text time 0.70–0.86 it arcs back to the dotless i, settling at 7.35 units diameter with one fading halo. Text time is min(progress / 0.65 * 0.9, 0.9). Logo expands from 0.65 to 1 with a small overshoot during progress 0.66–0.85 as the word moves down 42 units. Use a centered 280×240 stage, scaled down for narrow windows, 92-unit contour mark on Android/iOS and a 156vp mark on HarmonyOS, with platform-native soft sans typography. HarmonyOS positions the mark at (62, -34) to preserve separation from the settled wordmark. Fade the overlay over the last 3%. Reserve full glyph slots; no layout changes during reveal. Remove on completion or background and do not replay on activity recreation/foreground. Skip for reduced motion. Notification onboarding follows completion. The dedicated brand_dot token preserves identity independently of action/status colors."
     }
   }
 };

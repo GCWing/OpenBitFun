@@ -58,11 +58,11 @@
     <string name="account_invalid_credentials">请输入有效的用户名和密码。</string>
     <string name="account_authentication">用户名或密码被拒绝。</string>
     <string name="account_rate_limited">登录尝试过多，请稍后再试。</string>
-    <string name="account_relay_unavailable">账号中继暂时不可用。</string>
-    <string name="account_network">无法连接账号中继。</string>
+    <string name="account_relay_unavailable">登录服务暂时不可用，请稍后重试。</string>
+    <string name="account_network">暂时无法连接，请检查网络后重试。</string>
     <string name="account_malformed_response">中继返回了无效的账号响应。</string>
     <string name="account_secure_storage">无法恢复安全账号会话。</string>
-    <string name="account_timeout">账号中继没有及时响应。</string>
+    <string name="account_timeout">连接超时，请检查网络后重试。</string>
     <string name="general_chat_title">通用聊天</string>
     <string name="general_chat_menu">更多</string>
     <string name="general_chat_export">复制 Markdown</string>
@@ -444,9 +444,19 @@
     <string name="notification_onboarding_later">稍后</string>
     <string name="notification_onboarding_enable">开启通知</string>
     <string name="notification_onboarding_body">允许 OpenBitFun 在任务完成时发送通知。你可以稍后在系统设置中更改。</string>
-    <string name="remote_connect_description">扫描桌面端显示的二维码，开始远程处理任务。</string>
     <string name="connect_scan_body">在 OpenBitFun 桌面端点击「连接移动端」\n扫描二维码完成连接</string>
     <string name="connect_camera_permission_denied">需要相机权限才能扫码，请在系统设置中允许 OpenBitFun 访问相机，或改为手动配对。</string>
     <string name="connect_camera_unavailable">无法打开相机，请检查权限后重试，或改为手动配对。</string>
     <string name="connect_scan_hint">扫描二维码或粘贴远程连接链接后会显示桌面端连接状态。</string>
+    <string name="welcome_login">登录账号</string>
+    <string name="welcome_scan">扫码连接电脑</string>
+    <string name="welcome_work">干点活儿</string>
+    <string name="welcome_play">玩点花样</string>
+    <string name="welcome_yours">随你发挥</string>
+    <string name="home_recent_title">今天，想做点什么？</string>
+    <string name="home_recent_recent">最近会话</string>
+    <string name="home_recent_browse">浏览工作区</string>
+    <string name="home_recent_all">全部会话</string>
+    <string name="home_recent_empty">还没有可继续的对话</string>
+    <string name="home_recent_connect">连接电脑后，继续你的对话。</string>
 </resources>

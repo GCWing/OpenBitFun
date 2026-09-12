@@ -60,10 +60,10 @@
     <string name="account_invalid_credentials">Enter a valid username and password.</string>
     <string name="account_authentication">The username or password was rejected.</string>
     <string name="account_rate_limited">Too many sign-in attempts. Try again later.</string>
-    <string name="account_relay_unavailable">The account relay is unavailable.</string>
-    <string name="account_network">Could not reach the account relay.</string>
+    <string name="account_relay_unavailable">Sign-in is temporarily unavailable. Try again later.</string>
+    <string name="account_network">Unable to connect. Check your connection and try again.</string>
     <string name="account_malformed_response">The relay returned an invalid account response.</string>
-    <string name="account_timeout">The account relay did not answer in time.</string>
+    <string name="account_timeout">Connection timed out. Check your connection and try again.</string>
     <string name="account_secure_storage">The secure account session could not be restored.</string>
     <string name="general_chat_title">General Chat</string>
     <string name="general_chat_menu">More</string>
@@ -459,9 +459,19 @@
     <string name="notification_onboarding_later">Later</string>
     <string name="notification_onboarding_enable">Enable notifications</string>
     <string name="notification_onboarding_body">Allow OpenBitFun to notify you when tasks finish. You can change this later in system settings.</string>
-    <string name="remote_connect_description">Scan the QR code shown on your desktop to start working remotely.</string>
     <string name="connect_scan_body">On OpenBitFun Desktop, tap Connect mobile\nthen scan the QR code</string>
     <string name="connect_camera_permission_denied">Camera access is required to scan. Allow OpenBitFun to use the camera in system settings, or pair manually.</string>
     <string name="connect_camera_unavailable">The camera could not be opened. Check permissions and retry, or pair manually.</string>
     <string name="connect_scan_hint">Scanning a QR code or pasting a remote connection link will show the desktop connection status.</string>
+    <string name="welcome_login">Sign in</string>
+    <string name="welcome_scan">Scan to connect</string>
+    <string name="welcome_work">Get things done</string>
+    <string name="welcome_play">Try something fun</string>
+    <string name="welcome_yours">Make it yours</string>
+    <string name="home_recent_title">What would you like to do today?</string>
+    <string name="home_recent_recent">Recent conversations</string>
+    <string name="home_recent_browse">Browse workspaces</string>
+    <string name="home_recent_all">All conversations</string>
+    <string name="home_recent_empty">No conversations to continue yet</string>
+    <string name="home_recent_connect">Connect a computer to continue your conversations.</string>
 </resources>

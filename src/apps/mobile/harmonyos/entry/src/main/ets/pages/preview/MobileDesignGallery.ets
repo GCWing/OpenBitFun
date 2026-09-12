@@ -1,3 +1,4 @@
+import { WelcomeHome } from '../components/WelcomeHome';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import {
   MobilePreviewMessage,
@@ -30,6 +31,15 @@ struct MobileDesignGallery {
   }
 
   build() {
+    if (AppStorage.get<string>('scenarioId') === 'welcome-home') {
+      WelcomeHome()
+    } else {
+      this.ConversationPreview()
+    }
+  }
+
+  @Builder
+  private ConversationPreview() {
     Column() {
       this.PlatformLabel()
       ConversationHeader({

@@ -1,3 +1,4 @@
+import { AccountLoginErrorPolicy } from '../policy/AccountLoginErrorPolicy';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { DEFAULT_CLOUD_RELAY_URL } from '../../services/CloudAccountClient';
@@ -112,7 +113,7 @@ export struct OpenBitFunAccountLoginPage {
       await this.cloudLogin();
       this.onLoginSuccess();
     } catch (err) {
-      this.errorText = err instanceof Error ? err.message : RemoteI18n.t('remote.settings.accountLoginFailed');
+      this.errorText = RemoteI18n.t(AccountLoginErrorPolicy.messageKey(err));
     } finally {
       this.isBusy = false;
     }

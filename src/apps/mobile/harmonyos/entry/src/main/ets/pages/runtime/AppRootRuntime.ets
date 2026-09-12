@@ -104,6 +104,7 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
   }
 
   aboutToDisappear(): void {
+    this.miniAppViewModel.close();
     this.settingsController.stopPresencePolling();
     this.watchProvisionController.stop();
     this.taskCompletionNotificationController.stop();

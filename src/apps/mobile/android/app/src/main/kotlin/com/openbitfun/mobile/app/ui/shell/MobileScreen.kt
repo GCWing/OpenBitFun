@@ -50,8 +50,7 @@ import com.openbitfun.mobile.app.ui.common.AdaptiveModalSurface
 import com.openbitfun.mobile.app.ui.remote.AccountRemoteScreen
 import com.openbitfun.mobile.app.ui.remote.ConnectAccountDeviceScreen
 import com.openbitfun.mobile.app.ui.remote.FilePreviewSurface
-import com.openbitfun.mobile.app.ui.remote.DisconnectedRemoteHome
-import com.openbitfun.mobile.app.ui.remote.PairingScreen
+import com.openbitfun.mobile.app.ui.remote.ConnectView
 import com.openbitfun.mobile.app.ui.settings.GeneralSettingsScreen
 import com.openbitfun.mobile.app.ui.settings.SettingsScreen
 import com.openbitfun.mobile.app.ui.shell.sidebar.AppSidebar
@@ -408,23 +407,22 @@ internal fun MobileScreen() {
                         )
 
                         RemoteControlSource.NONE -> if (readyAccount != null) {
-                            ConnectAccountDeviceScreen(
-                                state = readyAccount,
-                                onBack = { shell.openRemoteConnect() },
-                                onRefresh = { accountViewModel.dispatch(AccountIntent.RefreshDevices) },
-                                onSelect = accountViewModel::selectDevice,
-                                onOpenScanner = {
-                                    shell.openRemoteScanner()
-                                },
-                                modifier = Modifier,
+                            com.openbitfun.mobile.app.ui.remote.RemoteCompactHome(
+                                remoteState = RemoteSessionUiState.Idle,
+                                desktopName = "",
+                                onOpenSidebar = { compactDrawerOpen = true },
+                                onBrowse = { shell.openRemoteConnect() },
+                                onOpen = {},
+                                onOpenRemoteSettings = { shell.openRemoteConnect() },
                             )
-                        } else {
-                            DisconnectedRemoteHome(
-                                onOpenSidebar = if (showMenu) { { compactDrawerOpen = true } } else null,
-                                onConnect = shell::openRemoteConnect,
-                            )
-
-                        }
+                        } else WelcomeHome(
+                            signedIn = readyAccount != null,
+                            onLogin = {
+                                if (readyAccount != null) shell.openRemoteConnect() else shell.openAccount()
+                            },
+                            onScan = shell::openRemoteScanner,
+                            modifier = Modifier.fillMaxSize(),
+                        )
                     }
                 }
             }
@@ -586,17 +584,12 @@ internal fun MobileScreen() {
                 onOpenScanner = shell::openRemoteScanner,
                 modifier = sheetModifier,
             )
-        } else PairingScreen(
-            onDeviceLink = connectDeviceLink,
+        } else ConnectView(
+            onSubmit = connectDeviceLink,
             modifier = sheetModifier,
-            settingsPlacement = settingsPlacement,
-            sessionDetailsPlacement = sessionDetailsPlacement,
-            viewSettingsPlacement = remoteViewSettingsPlacement,
-            onOpenRemoteSettings = { shell.openSettings(SettingsMode.REMOTE) },
             onBack = shell::closeRemoteConnect,
             onOpenAccount = { shell.closeRemoteConnect(); shell.openAccount() },
             startScanning = shell.remoteScanRequested,
-
         )
     }
     AdaptiveModalSurface(

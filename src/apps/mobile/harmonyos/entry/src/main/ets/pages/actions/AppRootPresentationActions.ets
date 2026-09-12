@@ -26,6 +26,7 @@ export interface FilePreviewPresentationActions {
 }
 
 export interface RemoteHomePresentationActions {
+  readonly openMiniApps: () => void;
   readonly openSidebar: () => void;
   readonly connectWorkspace: () => void;
   readonly addConnection: () => void;
@@ -112,6 +113,7 @@ export function emptyAppRootPresentationActions(): AppRootPresentationActions {
     onCompactLayoutEntered: () => {},
     onLayoutModeChanged: () => {},
     onRemoteHome: {
+      openMiniApps: () => {},
       openSidebar: () => {}, connectWorkspace: () => {}, addConnection: () => {}, openSettings: () => {},
       refresh: () => {}, showWorkspaces: () => {}, showAssistants: () => {}, selectWorkspace: () => {},
       selectAssistant: () => {}, cancelWorkspace: () => {}, cancelAssistant: () => {}, queryChanged: () => {},

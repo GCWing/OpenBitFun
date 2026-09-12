@@ -54,6 +54,11 @@ export class MobileDesignColors {
   static readonly codeConstant: MobileColorPair = new MobileColorPair("#A04444", "#E79A9A");
   static readonly codeProperty: MobileColorPair = new MobileColorPair("#466D78", "#9CC8D0");
   static readonly codeTargetBg: MobileColorPair = new MobileColorPair("#FFF1BE", "#5A4E24");
+  static readonly brandDot: MobileColorPair = new MobileColorPair("#16B9CE", "#16B9CE");
+  static readonly welcomeDock: MobileColorPair = new MobileColorPair("#171917", "#171917");
+  static readonly welcomeButton: MobileColorPair = new MobileColorPair("#FFFFFF", "#FFFFFF");
+  static readonly welcomeButtonLabel: MobileColorPair = new MobileColorPair("#171917", "#171917");
+  static readonly welcomeSecondary: MobileColorPair = new MobileColorPair("#B9BCB9", "#B9BCB9");
 }
 
 export class MobileTypographyToken {
@@ -85,6 +90,7 @@ export class MobileDesignTypography {
   static readonly labelLarge: MobileTypographyToken = new MobileTypographyToken(15, 20, 500);
   static readonly labelMedium: MobileTypographyToken = new MobileTypographyToken(14, 18, 500);
   static readonly labelSmall: MobileTypographyToken = new MobileTypographyToken(12, 16, 400);
+  static readonly brandWordmark: MobileTypographyToken = new MobileTypographyToken(42, 56, 500);
 }
 
 export class MobileDesignGeometry {
@@ -147,6 +153,22 @@ export class MobileDesignGeometry {
   static readonly modelListBottomPadding: number = 16;
   static readonly modelEmptyAccountHeight: number = 80;
   static readonly modelEditorHeight: number = 560;
+  static readonly welcomeMaxWidth: number = 520;
+  static readonly welcomeGutter: number = 25;
+  static readonly welcomeHeaderHeight: number = 58;
+  static readonly welcomeButtonHeight: number = 49;
+  static readonly welcomeButtonGap: number = 11;
+  static readonly welcomeDockRadius: number = 30;
+  static readonly welcomeDockBottom: number = 39;
+  static readonly welcomeMarkSize: number = 92;
+  static readonly welcomeWordSize: number = 34;
+  static readonly welcomeStageHeight: number = 220;
+  static readonly welcomeHeaderWordSize: number = 17;
+  static readonly recentHomeGutter: number = 24;
+  static readonly recentHomeMarkSize: number = 132;
+  static readonly recentHomeTitleSize: number = 25;
+  static readonly recentHomeMaxWidth: number = 560;
+  static readonly recentHomeRowPadding: number = 18;
 }
 
 export class MobileDesignBreakpoints {
@@ -158,4 +180,5 @@ export class MobileDesignBreakpoints {
 export class MobileDesignMotion {
   static readonly quick: number = 180;
   static readonly structure: number = 220;
+  static readonly startupBrand: number = 6800;
 }

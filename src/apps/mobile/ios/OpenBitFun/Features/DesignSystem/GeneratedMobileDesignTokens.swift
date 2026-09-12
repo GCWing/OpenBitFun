@@ -65,6 +65,11 @@ enum MobileDesignColors {
     static let codeConstant = dynamic(light: 0xFFA04444, dark: 0xFFE79A9A)
     static let codeProperty = dynamic(light: 0xFF466D78, dark: 0xFF9CC8D0)
     static let codeTargetBg = dynamic(light: 0xFFFFF1BE, dark: 0xFF5A4E24)
+    static let brandDot = dynamic(light: 0xFF16B9CE, dark: 0xFF16B9CE)
+    static let welcomeDock = dynamic(light: 0xFF171917, dark: 0xFF171917)
+    static let welcomeButton = dynamic(light: 0xFFFFFFFF, dark: 0xFFFFFFFF)
+    static let welcomeButtonLabel = dynamic(light: 0xFF171917, dark: 0xFF171917)
+    static let welcomeSecondary = dynamic(light: 0xFFB9BCB9, dark: 0xFFB9BCB9)
 
     private static func dynamic(light: UInt32, dark: UInt32) -> Color {
         Color(uiColor: UIColor { traits in
@@ -99,6 +104,7 @@ enum MobileDesignTypography {
     static let labelLarge = MobileTypographyToken(size: 15, lineHeight: 20, weight: .medium, textStyle: .subheadline)
     static let labelMedium = MobileTypographyToken(size: 14, lineHeight: 18, weight: .medium, textStyle: .footnote)
     static let labelSmall = MobileTypographyToken(size: 12, lineHeight: 16, weight: .regular, textStyle: .caption1)
+    static let brandWordmark = MobileTypographyToken(size: 42, lineHeight: 56, weight: .medium, textStyle: .largeTitle)
 }
 
 enum MobileDesignGeometry {
@@ -161,6 +167,22 @@ enum MobileDesignGeometry {
     static let modelListBottomPadding: CGFloat = 16
     static let modelEmptyAccountHeight: CGFloat = 80
     static let modelEditorHeight: CGFloat = 560
+    static let welcomeMaxWidth: CGFloat = 520
+    static let welcomeGutter: CGFloat = 25
+    static let welcomeHeaderHeight: CGFloat = 58
+    static let welcomeButtonHeight: CGFloat = 49
+    static let welcomeButtonGap: CGFloat = 11
+    static let welcomeDockRadius: CGFloat = 30
+    static let welcomeDockBottom: CGFloat = 39
+    static let welcomeMarkSize: CGFloat = 92
+    static let welcomeWordSize: CGFloat = 34
+    static let welcomeStageHeight: CGFloat = 220
+    static let welcomeHeaderWordSize: CGFloat = 17
+    static let recentHomeGutter: CGFloat = 24
+    static let recentHomeMarkSize: CGFloat = 132
+    static let recentHomeTitleSize: CGFloat = 25
+    static let recentHomeMaxWidth: CGFloat = 560
+    static let recentHomeRowPadding: CGFloat = 18
 }
 
 enum MobileDesignBreakpoints {
@@ -172,4 +194,5 @@ enum MobileDesignBreakpoints {
 enum MobileDesignMotion {
     static let quick: CGFloat = 180
     static let structure: CGFloat = 220
+    static let startupBrand: CGFloat = 6800
 }

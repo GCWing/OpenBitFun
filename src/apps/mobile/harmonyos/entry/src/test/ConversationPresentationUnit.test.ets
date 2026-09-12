@@ -1,3 +1,4 @@
+import { AccountLoginErrorPolicy } from '../main/ets/pages/policy/AccountLoginErrorPolicy';
 import { describe, it, expect } from '@ohos/hypium';
 import { RemoteI18n } from '../main/ets/i18n/RemoteI18n';
 import { ChatComposerPolicy, ComposerPrimaryAction } from '../main/ets/services/ChatComposerPolicy';
@@ -49,6 +50,8 @@ import { CONNECT_INTENT_AUTO, CONNECT_INTENT_SCAN } from '../main/ets/pages/stat
 import {
   DetectedUrlAction
 } from '../main/ets/services/ConnectScanDecisionPolicy';
+
+interface LoginFailureFixture { code?: number; statusCode?: number; }
 
 export default function conversationPresentationUnitTest() {
   describe('HarnessProfilePolicy', () => {
@@ -712,7 +715,34 @@ export default function conversationPresentationUnitTest() {
     });
   });
 
+  describe('AccountLoginErrorPolicy', () => {
+    it('uses actionable copy for SDK transport failures', 0, () => {
+      expect(AccountLoginErrorPolicy.messageKey({ code: 2300006 } as LoginFailureFixture)).assertEqual('account.errorNetwork');
+      expect(AccountLoginErrorPolicy.messageKey({ code: 2300028 } as LoginFailureFixture)).assertEqual('account.errorTimeout');
+      expect(AccountLoginErrorPolicy.messageKey({ code: 2300060 } as LoginFailureFixture)).assertEqual('account.errorSecureConnection');
+      expect(AccountLoginErrorPolicy.messageKey({ statusCode: 429 } as LoginFailureFixture)).assertEqual('account.errorRateLimited');
+    });
+    it('does not expose unknown exception text or server bodies', 0, () => {
+      expect(AccountLoginErrorPolicy.messageKey(new Error('raw SDK JSON')))
+        .assertEqual('remote.settings.accountLoginFailed');
+      expect(AccountLoginErrorPolicy.messageKey({ statusCode: 500 } as LoginFailureFixture))
+        .assertEqual('remote.settings.accountLoginFailed');
+    });
+  });
+
   describe('RemoteCompactHomePolicy', () => {
+    it('keeps the welcome entry without replacing a retained control target', 0, () => {
+      expect(RemoteCompactHomePolicy.shouldShowWelcomeHome('none', 'idle')).assertTrue();
+      expect(RemoteCompactHomePolicy.shouldShowWelcomeHome('none', 'idle', true)).assertFalse();
+      expect(RemoteCompactHomePolicy.shouldShowWelcomeHome('none', 'failed', true)).assertFalse();
+      expect(RemoteCompactHomePolicy.shouldShowWelcomeHome('none', 'disconnected')).assertTrue();
+      expect(RemoteCompactHomePolicy.shouldShowWelcomeHome('none', 'failed')).assertTrue();
+      expect(RemoteCompactHomePolicy.shouldShowWelcomeHome('none', 'pairing')).assertTrue();
+      expect(RemoteCompactHomePolicy.shouldShowWelcomeHome('account_device', 'disconnected')).assertFalse();
+      expect(RemoteCompactHomePolicy.shouldShowWelcomeHome('account_device', 'reconnecting')).assertFalse();
+      expect(RemoteCompactHomePolicy.shouldShowWelcomeHome('account_device', 'connected')).assertFalse();
+    });
+
     it('keeps pick-session chrome only while the desktop link is actually connected', 0, () => {
       expect(RemoteCompactHomePolicy.shouldShowConnectHome('connected')).assertFalse();
     });
