@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import {
   configureDesktopWebFontProfile,
+  configureWindowsSigning,
   prepareMacOSFlashgrepForSigning,
   prepareTauriConfig,
   shouldRetryMacDmgBuild,
@@ -514,4 +515,29 @@ test('Desktop release config bundles models.dev notices and provenance', () => {
     ],
     'third-party/models.dev/provenance.json'
   );
+});
+
+
+test('Windows cloud signing uses SHA256 and RFC3161 without changing installer settings', () => {
+  const config = { bundle: { windows: { nsis: { installMode: 'currentUser' } } } };
+  configureWindowsSigning(config, { WINDOWS_CERTIFICATE_THUMBPRINT: 'ab '.repeat(20) }, 'win32');
+  assert.deepEqual(config.bundle.windows, {
+    nsis: { installMode: 'currentUser' },
+    certificateThumbprint: 'AB'.repeat(20),
+    digestAlgorithm: 'sha256',
+    timestampUrl: 'http://time.certum.pl',
+    tsp: true,
+  });
+});
+
+test('Windows signing rejects malformed fingerprints and leaves other platforms unchanged', () => {
+  assert.throws(() => configureWindowsSigning({}, { WINDOWS_CERTIFICATE_THUMBPRINT: 'bad' }, 'win32'), /fingerprint/);
+  for (const platform of ['darwin', 'linux']) {
+    const config = { bundle: { active: true } };
+    configureWindowsSigning(config, { WINDOWS_CERTIFICATE_THUMBPRINT: 'AB'.repeat(20) }, platform);
+    assert.deepEqual(config, { bundle: { active: true } });
+  }
+  const unsigned = {};
+  configureWindowsSigning(unsigned, {}, 'win32');
+  assert.deepEqual(unsigned, {});
 });

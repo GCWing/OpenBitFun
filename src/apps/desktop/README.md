@@ -84,3 +84,58 @@ OPENBITFUN_DEV_PORT=1432 pnpm run desktop:dev
 HMR uses port 1431 in this example; `OPENBITFUN_DEV_HMR_PORT` can override it.
 The launcher supplies the same HTTP URL to Tauri that Vite listens on, and both
 the main window and companion window read that configured URL.
+
+
+## Windows release signing (maintainers)
+
+`Desktop Package` uses Certum SimplySign on the hosted Windows runner. Configure
+these repository Actions secrets before publishing a release:
+
+| Secret | Value |
+| --- | --- |
+| `CERTUM_USERNAME` | SimplySign login account |
+| `CERTUM_OTP_URI` | Full `otpauth://totp/...` provisioning URI, including its original algorithm, digits and period |
+| `CERTUM_KEY_ID` | SHA-1 fingerprint of the activated Code Signing certificate |
+
+The OTP URI is provisioning data from the activation QR code, not a current
+mobile token, an email activation code or the certificate PIN. Do not paste it
+into an issue, PR, log or online QR decoder. Certum's
+[activation instructions](https://support.certum.eu/en/how-to-activate-access-to-simply-sign-application/)
+describe the activation-link email and separate activation-code email used to
+show the QR code. If the original provisioning data is unavailable, contact
+Certum/the reseller about regaining access; do not assume the Desktop login can
+export it. Replacing the provisioning seed also requires updating the CI secret
+and potentially reactivating the mobile app.
+
+The workflow compiles with `--no-bundle`, then opens the SimplySign session.
+`--bundle-only` in the Desktop build wrapper runs `tauri bundle` using the same
+product and updater configuration, without recompiling. Tauri signs the NSIS
+payload and installer before generating updater `.sig` files. Since Tauri
+restores the unsigned raw Desktop EXE after bundling, the workflow separately
+signs that EXE before the custom installer hashes and embeds it. Finally, it
+signs the custom installer. Subsequent release staging copies/renames those
+bytes and generates the existing updater/manual-download signatures.
+
+Verification requires Windows Authenticode trust, the configured signer and a
+timestamp. Any failure blocks artifact upload. A publication run requires all
+three secrets; an artifact-only run with none configured explicitly builds
+unsigned packages. Partial configuration always fails. No PFX/private-key export
+is required, and the existing Tauri updater key remains unchanged.
+
+Login uses a pinned community action, not an official Certum CI API. Its GUI
+login compatibility and any additional certificate PIN prompt must be validated
+with the actual account before the first signed release. Diagnostic screenshots
+are disabled. A timed-out signing step must be investigated rather than bypassed.
+Only trusted release code should receive the secrets. Code signing identifies
+the publisher; it does not guarantee that SmartScreen reputation warnings vanish.
+
+Focused checks:
+
+```sh
+pnpm run check:github-config
+node --test scripts/desktop-tauri-build.test.mjs OpenBitFun-Installer/scripts/build-installer.test.cjs
+pwsh -NoProfile -File scripts/ci/sign-windows.test.ps1
+```
+
+The PowerShell test uses mocked signing results; a Windows build with the real
+certificate is still required to prove cloud signing and timestamp/trust validation.

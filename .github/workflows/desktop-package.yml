@@ -183,23 +183,40 @@ jobs:
           - os: windows-latest
             name: windows-x64
             target: x86_64-pc-windows-msvc
-            build_command: |
-              $ErrorActionPreference = 'Stop'
-              pnpm run desktop:build:nsis --target x86_64-pc-windows-msvc --verbose
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              $desktopExe = "target/x86_64-pc-windows-msvc/release/openbitfun-desktop.exe"
-              if (-not (Test-Path $desktopExe)) {
-                throw "Desktop executable was not found after NSIS build: $desktopExe"
-              }
-              $env:OPENBITFUN_INSTALLER_APP_EXE = $desktopExe
-              pnpm run installer:build:only
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            # Compile before opening the short-lived SimplySign session.
+            build_command: node scripts/desktop-tauri-build.mjs --no-bundle --target x86_64-pc-windows-msvc --verbose
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
         with:
           ref: ${{ needs.prepare.outputs.checkout_ref }}
+
+      - name: Check Windows signing configuration
+        if: runner.os == 'Windows'
+        id: windows-signing
+        shell: pwsh
+        env:
+          CERTUM_USERNAME: ${{ secrets.CERTUM_USERNAME }}
+          CERTUM_OTP_URI: ${{ secrets.CERTUM_OTP_URI }}
+          CERTUM_KEY_ID: ${{ secrets.CERTUM_KEY_ID }}
+          REQUIRE_SIGNING: ${{ needs.prepare.outputs.upload_to_release }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $names = @('CERTUM_USERNAME', 'CERTUM_OTP_URI', 'CERTUM_KEY_ID')
+          $missing = @($names | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) })
+          if ($missing.Count -eq 3 -and $env:REQUIRE_SIGNING -ne 'true') {
+            'enabled=false' >> $env:GITHUB_OUTPUT
+            Write-Host 'Artifact-only build without Authenticode signing; Certum secrets are not configured.'
+          } elseif ($missing.Count -gt 0) {
+            throw "Missing Windows signing secrets: $($missing -join ', '). Release publication requires Authenticode signing."
+          } else {
+            $thumbprint = ($env:CERTUM_KEY_ID -replace '\s', '').ToUpperInvariant()
+            if ($thumbprint -notmatch '^[0-9A-F]{40}$') { throw 'CERTUM_KEY_ID must be a SHA-1 certificate fingerprint.' }
+            if (-not $env:CERTUM_OTP_URI.StartsWith('otpauth://totp/')) { throw 'CERTUM_OTP_URI must be a TOTP otpauth URI.' }
+            'enabled=true' >> $env:GITHUB_OUTPUT
+            "WINDOWS_CERTIFICATE_THUMBPRINT=$thumbprint" >> $env:GITHUB_ENV
+          }
 
       - name: Install NSIS (Windows)
         if: runner.os == 'Windows'
@@ -317,6 +334,50 @@ jobs:
 
       - name: Build desktop app
         run: ${{ matrix.platform.build_command }}
+
+      - name: Connect Certum SimplySign
+        if: runner.os == 'Windows' && steps.windows-signing.outputs.enabled == 'true'
+        timeout-minutes: 10
+        # Pinned immutable revision; this community action automates the Desktop login.
+        uses: dismine/windows-app-signing-setup-action@89ae3b032d4bc7a5b98d1a42a34e61ecb6faad64
+        with:
+          certum-username: ${{ secrets.CERTUM_USERNAME }}
+          certum-otp-uri: ${{ secrets.CERTUM_OTP_URI }}
+          certum-key-id: ${{ env.WINDOWS_CERTIFICATE_THUMBPRINT }}
+          capture-diagnostics: 'false'
+
+      - name: Bundle Windows updater and verify Authenticode
+        if: runner.os == 'Windows'
+        timeout-minutes: 20
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node scripts/desktop-tauri-build.mjs --bundle-only --target x86_64-pc-windows-msvc --bundles nsis --verbose
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:WINDOWS_CERTIFICATE_THUMBPRINT) {
+            # Tauri restores the unsigned raw EXE after bundling; sign it again
+            # before the custom installer snapshots and hashes its payload.
+            & ./scripts/ci/sign-windows.ps1 -Path 'target/x86_64-pc-windows-msvc/release/openbitfun-desktop.exe'
+            $installers = @(Get-ChildItem 'target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe' -File)
+            if ($installers.Count -eq 0) { throw 'NSIS installer was not produced.' }
+            foreach ($installer in $installers) {
+              & ./scripts/ci/sign-windows.ps1 -Path $installer.FullName -VerifyOnly
+            }
+          }
+
+      - name: Build and sign custom Windows installer
+        if: runner.os == 'Windows'
+        timeout-minutes: 60
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # The payload manifest must hash the already signed desktop executable.
+          $env:OPENBITFUN_INSTALLER_APP_EXE = 'target/x86_64-pc-windows-msvc/release/openbitfun-desktop.exe'
+          pnpm run installer:build:only
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($env:WINDOWS_CERTIFICATE_THUMBPRINT) {
+            & ./scripts/ci/sign-windows.ps1 -Path 'OpenBitFun-Installer/src-tauri/target/release/openbitfun-installer.exe'
+          }
 
       - name: Verify Apple signature and notarization
         if: runner.os == 'macOS'
