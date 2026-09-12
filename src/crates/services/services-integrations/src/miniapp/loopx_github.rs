@@ -530,7 +530,7 @@ async fn load_github_credential() -> GithubCredential {
             detail: "GitHub CLI was not found and GH_TOKEN/GITHUB_TOKEN is not set".to_string(),
         };
     };
-    let output = match tokio::process::Command::new(executable)
+    let output = match github_cli_command(executable)
         .args(["auth", "token", "--hostname", "github.com"])
         .output()
         .await
@@ -619,6 +619,23 @@ fn now_unix_seconds() -> u64 {
         .as_secs()
 }
 
+/// `gh auth token` is a short-lived helper process. Without CREATE_NO_WINDOW
+/// Windows flashes a console window whenever a task is hydrated and the
+/// credential cache is cold (observed live: a cmd-like window blinked on task
+/// click). The rest of the LoopX CLI path already hides its children.
+fn github_cli_command(program: PathBuf) -> tokio::process::Command {
+    let command = tokio::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let mut command = command;
+        command.creation_flags(CREATE_NO_WINDOW);
+        command
+    }
+    #[cfg(not(windows))]
+    command
+}
 fn resolve_github_cli() -> Option<PathBuf> {
     if let Ok(path) = which::which("gh") {
         return Some(path);

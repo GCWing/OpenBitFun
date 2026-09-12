@@ -233,7 +233,8 @@ test('LoopX keeps intake history and renders one flat repository task list', asy
 
   assert.match(ui, /app\.storage\.get\s*\(INTAKE_HISTORY_STORAGE_KEY\)/);
   assert.match(ui, /app\.storage\.set\s*\(INTAKE_HISTORY_STORAGE_KEY/);
-  assert.match(ui, /sortedTaskList\(tasks\)\.forEach\(\(task\)\s*=>\s*fragment\.append\(taskButton\(task\)\)\)/);
+  assert.match(ui, /sortedTaskList\(tasks\)\.map\(\(task\)/);
+  assert.match(ui, /function updateTaskButton\(button, task\)/);
   assert.doesNotMatch(ui, /group\.className\s*=\s*['"]task-group['"]/);
   assert.match(ui, /makeActionButton\(text\('resume'\),\s*'resume',\s*task\)/);
   assert.match(ui, /task\.lastAgentSummary/);

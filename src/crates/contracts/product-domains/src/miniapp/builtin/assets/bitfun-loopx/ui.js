@@ -10,6 +10,9 @@ const MAX_TURN_OUTPUT_EVENTS = 4000;
 const MAX_OUTPUT_HISTORY_EVENTS = 50000;
 const MAX_OUTPUT_HISTORY_CHARS = 16000000;
 const LONG_OUTPUT_BLOCK_CHARS = 12000;
+/// A settled run's decision text is often the only place the real reason is
+/// written down, so the compact preview must stay expandable.
+const SUMMARY_CONCLUSION_MAX_CHARS = 110;
 const MAX_INTAKE_HISTORY = 12;
 const HOST_CLOCK_TICK_MS = 5000;
 const HOST_RESUME_GAP_MS = 30000;
@@ -128,10 +131,12 @@ const COPY = {
     decisionResume: '恢复重试',
     decisionContinueAfterOwnerAction: '我已完成，继续任务',
     decisionCardRecheck: '重新检查 PR 状态',
+    decisionCardRecheckGeneric: '重新检查外部状态',
     decisionCardRecheckRecent: '最近已检查（{time}），外部状态未变化',
     decisionCardRecheckCooldown: '刚检查过，稍候几秒可再次检查',
+    decisionCardExternalActionLabel: '需要在 BitFun 之外完成的操作：',
     decisionCardExternalSummary: '在 GitHub 完成 {prs} 的合并或审核后，点下方「重新检查 PR 状态」继续任务。',
-    decisionCardExternalSummaryGeneric: '任务正在等待一个发生在 BitFun 之外的操作；完成后点下方「重新检查 PR 状态」继续任务。',
+    decisionCardExternalSummaryGeneric: '任务正在等待一个发生在 BitFun 之外的操作；完成后点下方「重新检查外部状态」继续任务。',
     approvalContextTitle: '本次决策的背景',
     decisionCardGateHint: '请在上方审批面板中批准或拒绝该请求。',
     decisionCardRecoveryHint: '本段工作已结束，但结算未能确认持久进展；可恢复重试一次，结论详情见下方最新进展。',
@@ -146,6 +151,13 @@ const COPY = {
     summaryWontFixReasonDuplicateOf: '重复议题',
     summaryWontFixReasonByDesign: '设计如此，无需改动',
     summaryWontFixReasonInvalid: '无需处理（无可执行请求）',
+    summaryWontFixReasonEvaluationPending: '评估中，暂不处理',
+    state_completed_needs_fix: '已处理，待发布',
+    summaryShowFullConclusion: '展开完整结论',
+    summaryBackground: '背景',
+    summaryActualFindings: '实际发现',
+    summaryWhyNoFix: '为什么不用自动修复',
+    taskLabelsMore: '+{value}',
     summaryMissingInfo: '判断所需信息',
     summaryCompletedTitlePlain: '处理结果',
     summaryCompletedNoFollowup: '处理已完成，系统不再自动跟进；如需继续，请使用「重新尝试」提交新任务。',
@@ -163,6 +175,7 @@ const COPY = {
     summaryConclusion: '结论',
     summaryProcessDetails: '查看过程详情',
     summaryTechReceipts: '技术回执（原始文本）',
+    localPathRefHint: '本地文件，无法在应用内打开：{path}',
     summaryPendingGate: '等待你在上方审批面板中处理',
     recoveryReasonHostRestart: '中断原因：应用异常关闭导致执行中断',
     recoveryReasonExecutionFailure: '中断原因：执行过程失败',
@@ -521,8 +534,10 @@ const COPY = {
     decisionResume: 'Resume retry',
     decisionContinueAfterOwnerAction: 'I finished the step — continue',
     decisionCardRecheck: 'Re-check PR status',
+    decisionCardRecheckGeneric: 'Re-check external status',
     decisionCardRecheckRecent: 'Last checked at {time}; external state unchanged',
     decisionCardRecheckCooldown: 'Just checked; try again in a few seconds',
+    decisionCardExternalActionLabel: 'Action needed outside BitFun: ',
     decisionCardExternalSummary: 'Finish {prs} on GitHub, then use the re-check button below to continue.',
     decisionCardExternalSummaryGeneric: 'This task is waiting on an action outside BitFun. Use the re-check button below after you finish it.',
     approvalContextTitle: 'Why this decision',
@@ -539,6 +554,13 @@ const COPY = {
     summaryWontFixReasonDuplicateOf: 'Duplicate issue',
     summaryWontFixReasonByDesign: 'Works as designed',
     summaryWontFixReasonInvalid: 'No action needed (nothing actionable)',
+    summaryWontFixReasonEvaluationPending: 'Under evaluation',
+    state_completed_needs_fix: 'Handled, pending release',
+    summaryShowFullConclusion: 'Show full conclusion',
+    summaryBackground: 'Background',
+    summaryActualFindings: 'What was found',
+    summaryWhyNoFix: 'Why this was not auto-fixed',
+    taskLabelsMore: '+{value}',
     summaryMissingInfo: 'Information needed to decide',
     summaryCompletedTitlePlain: 'Outcome',
     summaryCompletedNoFollowup: 'Handling is complete; automation stops here. Use the new-attempt action if you want to continue.',
@@ -556,6 +578,7 @@ const COPY = {
     summaryConclusion: 'Conclusion',
     summaryProcessDetails: 'View process details',
     summaryTechReceipts: 'Technical receipts (raw text)',
+    localPathRefHint: 'Local file - cannot be opened from the app: {path}',
     summaryPendingGate: 'Waiting for you in the approval panel above',
     recoveryReasonHostRestart: 'Interrupted by an abnormal app shutdown',
     recoveryReasonExecutionFailure: 'Interrupted by an execution failure',
@@ -1107,6 +1130,10 @@ function taskStateDisplayLabel(task) {
   if (pending === 'archive') return text('archivePending');
   if (pending) return text('actionPending');
   if (isExternalWait(task)) return text('state_waiting_for_external');
+  if (task && task.state === 'completed') {
+    const completion = completionLabel(task);
+    if (completion) return completion;
+  }
   return taskStateLabel(task);
 }
 
@@ -1399,7 +1426,7 @@ function identityDescriptionOf(task) {
 
 function compactHumanTitle(rawTitle, fallback) {
   const cleaned = String(rawTitle || '')
-    .replace(/^\s*[【[]\s*(?:bug|问题)\s*[】\]]\s*/i, '')
+    .replace(/^\s*[【[]\s*(?:bug|问题)\s*[】\]]\s*[:：\-·]?\s*/i, '')
     .replace(/^\s*\d{1,2}[./-]\d{1,2}日?\s*/, '')
     .trim();
   if (!cleaned) return fallback;
@@ -2083,80 +2110,176 @@ function renderRepositoryActions(tasks) {
     : `${repositoryLabel(repository)} · ${text('repositorySerial')}`;
 }
 
+function completionLabel(task) {
+  const structured = task && task.structuredSummary && typeof task.structuredSummary === 'object'
+    ? task.structuredSummary
+    : null;
+  if (!structured) return '';
+  const verdict = String(structured.issue_verdict || '');
+  if (verdict === 'wont_fix') {
+    const reason = String(structured.wont_fix_reason || '');
+    return reason
+      ? summaryEnumLabel('summaryWontFixReason', reason)
+      : summaryEnumLabel('summaryVerdict', 'wont_fix');
+  }
+  if (verdict === 'already_fixed_upstream') return summaryEnumLabel('summaryVerdict', 'already_fixed_upstream');
+  if (verdict === 'needs_info') return summaryEnumLabel('summaryVerdict', 'needs_info');
+  if (verdict === 'needs_fix') return text('state_completed_needs_fix');
+  return '';
+}
+
+function completionTone(task) {
+  const structured = task && task.structuredSummary && typeof task.structuredSummary === 'object'
+    ? task.structuredSummary
+    : null;
+  const verdict = structured ? String(structured.issue_verdict || '') : '';
+  if (verdict === 'wont_fix') {
+    return String(structured.wont_fix_reason || '') === 'evaluation_pending' ? 'info' : 'muted';
+  }
+  if (verdict === 'needs_info') return 'info';
+  if (verdict === 'already_fixed_upstream' || verdict === 'needs_fix') return 'success';
+  return '';
+}
+
 function taskButton(task) {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'task-item';
-  if (task.taskId === state.selectedTaskId) button.classList.add('is-selected');
   button.dataset.taskId = task.taskId;
-  button.setAttribute('aria-pressed', String(task.taskId === state.selectedTaskId));
 
   const main = document.createElement('span');
   main.className = 'task-item__main';
   const label = document.createElement('strong');
-  const item = task.identity && task.identity.item;
-  const identityTitle = issueDisplayTitle(task);
-  label.textContent = identityTitle || compactItemLabel(item);
   const meta = document.createElement('small');
-  const activity = task.lastOutputAt || task.updatedAt;
-  const repositoryText = repositoryLabel(item && item.repository);
-  const itemText = compactItemLabel(item);
-  const activityText = relativeLabel(activity);
   const repositoryNode = document.createElement('span');
   repositoryNode.className = 'task-item__repo';
-  repositoryNode.textContent = repositoryText;
   const itemNode = document.createElement('span');
   itemNode.className = 'task-item__item';
-  itemNode.textContent = itemText;
   const activityNode = document.createElement('span');
   activityNode.className = 'task-item__time';
-  activityNode.textContent = activityText;
-  meta.title = `${repositoryText} · ${itemText} · ${activityText}`;
   meta.append(repositoryNode, ' · ', itemNode, ' · ', activityNode);
-  main.append(label, meta);
-  if (task.state === 'queued') {
-    const reason = latestTaskWaitReason(task);
-    if (reason) main.title = reason;
-  }
+  const labels = document.createElement('span');
+  labels.className = 'task-item__labels';
+  main.append(label, meta, labels);
 
-  const taskState = document.createElement('span');
-  taskState.className = 'task-item__state';
-  const pendingAction = pendingActionFor(task);
-  const visualState = taskVisualState(task);
-  const externalWait = isExternalWait(task);
-  button.dataset.state = visualState;
-  if (externalWait) button.dataset.wait = 'external';
-  if (pendingAction) button.dataset.pending = pendingAction;
-  taskState.dataset.status = visualState;
-  if (externalWait) taskState.dataset.wait = 'external';
-  if (pendingAction) {
-    taskState.classList.add('task-item__hint', 'task-item__hint--pending');
-    taskState.textContent = taskStateDisplayLabel(task);
-  } else {
-    taskState.classList.add('task-item__hint');
-    if (visualState === 'running') taskState.classList.add('task-item__hint--running');
-    taskState.textContent = taskStateDisplayLabel(task);
-  }
-  taskState.title = taskStateDisplayLabel(task);
-  button.setAttribute('aria-label', `${label.textContent}, ${taskStateDisplayLabel(task)}`);
   const compact = document.createElement('span');
   compact.className = 'task-item__compact';
-  compact.textContent = item && item.number ? `#${item.number}` : shortId(task.taskId);
+
+  const taskState = document.createElement('span');
+  taskState.className = 'task-item__state task-item__hint';
+
   button.append(main, compact, taskState);
   button.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
     selectTask(task.taskId);
   });
+  updateTaskButton(button, task);
   return button;
+}
+
+function updateTaskButton(button, task) {
+  const selected = task.taskId === state.selectedTaskId;
+  button.classList.toggle('is-selected', selected);
+  button.setAttribute('aria-pressed', String(selected));
+
+  const item = task.identity && task.identity.item;
+  const identityTitle = issueDisplayTitle(task);
+  const label = button.querySelector('.task-item__main strong');
+  label.textContent = identityTitle || compactItemLabel(item);
+  label.title = identityTitle || compactItemLabel(item);
+
+  const activity = task.lastOutputAt || task.updatedAt;
+  const repositoryText = repositoryLabel(item && item.repository);
+  const itemText = compactItemLabel(item);
+  const activityText = relativeLabel(activity);
+  button.querySelector('.task-item__repo').textContent = repositoryText;
+  button.querySelector('.task-item__item').textContent = itemText;
+  button.querySelector('.task-item__time').textContent = activityText;
+  const main = button.querySelector('.task-item__main');
+  button.querySelector('.task-item__main small').title = `${repositoryText} · ${itemText} · ${activityText}`;
+  if (task.state === 'queued') {
+    const reason = latestTaskWaitReason(task);
+    if (reason) main.title = reason;
+    else main.removeAttribute('title');
+  } else {
+    main.removeAttribute('title');
+  }
+
+  // The host already fetches GitHub labels, but the rail never showed them, so
+  // the [Bug]/[Feature] signal only existed on github.com.
+  const labels = button.querySelector('.task-item__labels');
+  labels.replaceChildren();
+  const rawLabels = item && Array.isArray(item.labels)
+    ? item.labels.map((value) => String(value || '').trim()).filter(Boolean)
+    : [];
+  rawLabels.slice(0, 3).forEach((value) => {
+    const chip = document.createElement('span');
+    chip.className = 'task-item__label';
+    chip.textContent = value;
+    labels.append(chip);
+  });
+  if (rawLabels.length > 3) {
+    const more = document.createElement('span');
+    more.className = 'task-item__label';
+    more.textContent = text('taskLabelsMore', { value: rawLabels.length - 3 });
+    labels.append(more);
+  }
+  labels.hidden = rawLabels.length === 0;
+
+  const pendingAction = pendingActionFor(task);
+  const visualState = taskVisualState(task);
+  const externalWait = isExternalWait(task);
+  button.dataset.state = visualState;
+  if (externalWait) button.dataset.wait = 'external';
+  else delete button.dataset.wait;
+  if (pendingAction) button.dataset.pending = pendingAction;
+  else delete button.dataset.pending;
+
+  const taskState = button.querySelector('.task-item__state');
+  taskState.className = 'task-item__state task-item__hint';
+  taskState.dataset.status = visualState;
+  if (externalWait) taskState.dataset.wait = 'external';
+  else delete taskState.dataset.wait;
+  if (pendingAction) taskState.classList.add('task-item__hint--pending');
+  else if (visualState === 'running') taskState.classList.add('task-item__hint--running');
+
+  const stateText = taskStateDisplayLabel(task);
+  taskState.textContent = stateText;
+  taskState.title = stateText;
+  const tone = task.state === 'completed' ? completionTone(task) : '';
+  if (tone) taskState.dataset.tone = tone;
+  else delete taskState.dataset.tone;
+  button.setAttribute('aria-label', `${label.textContent}, ${stateText}`);
+
+  const compact = button.querySelector('.task-item__compact');
+  compact.textContent = item && item.number ? `#${item.number}` : shortId(task.taskId);
 }
 
 function renderTasks() {
   if (!canRender()) return;
   const tasks = state.snapshot && Array.isArray(state.snapshot.tasks) ? state.snapshot.tasks : [];
-  const fragment = document.createDocumentFragment();
-  sortedTaskList(tasks).forEach((task) => fragment.append(taskButton(task)));
-  view.taskItems.replaceChildren(fragment);
+  const existing = new Map();
+  [...view.taskItems.children].forEach((node) => {
+    if (node.dataset && node.dataset.taskId) existing.set(node.dataset.taskId, node);
+  });
+  // Rebuilding every button on each snapshot replaced the node between
+  // mousedown and mouseup, so a task row occasionally needed a second click
+  // before it changed selection (observed live on the refresh cadence).
+  const desired = sortedTaskList(tasks).map((task) => {
+    const node = existing.get(task.taskId);
+    if (!node) return taskButton(task);
+    updateTaskButton(node, task);
+    return node;
+  });
+  desired.forEach((node, index) => {
+    const current = view.taskItems.children[index];
+    if (current !== node) view.taskItems.insertBefore(node, current || null);
+  });
+  const keep = new Set(desired);
+  [...view.taskItems.children].forEach((node) => {
+    if (!keep.has(node)) node.remove();
+  });
   view.taskCount.textContent = String(tasks.length);
   const countLabel = text('taskCountLabel', { value: tasks.length });
   view.taskCount.title = countLabel;
@@ -2467,12 +2590,47 @@ function renderTaskActions(task) {
 }
 
 function safeMarkdownUrl(rawUrl, baseUrl) {
+  const source = String(rawUrl || '').trim();
+  if (!source) return '';
+  if (/^[a-z][a-z0-9+.-]*:/i.test(source)) {
+    try {
+      const absolute = new URL(source);
+      return absolute.protocol === 'https:' || absolute.protocol === 'http:' ? absolute.href : '';
+    } catch (_error) {
+      return '';
+    }
+  }
+  if (source.startsWith('//')) return `https:` + source;
+  if (!baseUrl) return '';
+  if (!source.startsWith('#') && !source.startsWith('/')) return '';
   try {
-    const url = new URL(rawUrl, baseUrl || undefined);
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : '';
+    const resolved = new URL(source, baseUrl);
+    return resolved.protocol === 'https:' || resolved.protocol === 'http:' ? resolved.href : '';
   } catch (_error) {
     return '';
   }
+}
+
+/// A markdown target such as `.loopx/issue-fix/report.md` points at a file on
+/// the machine that ran the task, not at a web page. Resolving it against the
+/// GitHub issue URL produced a hyperlink that 404'd (observed live:
+/// issue-2778-pr-packet.md), so it is rendered as a non-clickable file chip.
+function isLocalPathReference(rawUrl) {
+  const source = String(rawUrl || '').trim();
+  if (!source) return false;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(source)) return false;
+  if (source.startsWith('//') || source.startsWith('#') || source.startsWith('/')) return false;
+  return true;
+}
+
+function localPathReferenceChip(label, target) {
+  const chip = document.createElement('span');
+  chip.className = 'local-path-ref';
+  chip.title = text('localPathRefHint', { path: String(target || '') });
+  const name = document.createElement('code');
+  name.textContent = label || target;
+  chip.append(name);
+  return chip;
 }
 
 /// MiniApp iframes cannot navigate blank-target anchors themselves in the
@@ -2527,6 +2685,8 @@ function appendInlineMarkdown(parent, source, baseUrl) {
       const href = parts ? safeMarkdownUrl(parts[2], baseUrl) : '';
       if (parts && href) {
         parent.append(externalAnchor(parts[1], href));
+      } else if (parts && isLocalPathReference(parts[2])) {
+        parent.append(localPathReferenceChip(parts[1], parts[2]));
       } else {
         parent.append(document.createTextNode(token));
       }
@@ -2540,6 +2700,71 @@ function appendInlineMarkdown(parent, source, baseUrl) {
   if (cursor < source.length) parent.append(document.createTextNode(source.slice(cursor)));
 }
 
+function isTableRow(line) {
+  const source = String(line || '').trim();
+  if (!source.includes('|')) return false;
+  return /^\|?[^|]*\|/.test(source);
+}
+
+function splitTableRow(line) {
+  let source = String(line || '').trim();
+  if (source.startsWith('|')) source = source.slice(1);
+  if (source.endsWith('|')) source = source.slice(0, -1);
+  return source.split('|').map((cell) => cell.trim());
+}
+
+function isTableDelimiterRow(line) {
+  const source = String(line || '').trim();
+  if (!source || !source.includes('|')) return false;
+  const cells = splitTableRow(source);
+  if (!cells.length) return false;
+  return cells.every((cell) => /^:?-{2,}:?$/.test(cell));
+}
+
+function tableColumnAlign(delimiterCell) {
+  const cell = String(delimiterCell || '');
+  const left = cell.startsWith(':');
+  const right = cell.endsWith(':');
+  if (left && right) return 'center';
+  if (right) return 'right';
+  return '';
+}
+
+function isTableStart(lines, index) {
+  const header = lines[index];
+  const delimiter = lines[index + 1];
+  if (!isTableRow(header) || !isTableDelimiterRow(delimiter)) return false;
+  return splitTableRow(header).length === splitTableRow(delimiter).length;
+}
+
+function markdownTableElement(header, align, body, baseUrl) {
+  const table = document.createElement('table');
+  const head = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  header.forEach((cell, column) => {
+    const th = document.createElement('th');
+    if (align[column]) th.style.textAlign = align[column];
+    appendInlineMarkdown(th, cell, baseUrl);
+    headerRow.append(th);
+  });
+  head.append(headerRow);
+  table.append(head);
+  if (body.length) {
+    const tbody = document.createElement('tbody');
+    body.forEach((row) => {
+      const tr = document.createElement('tr');
+      row.forEach((cell, column) => {
+        const td = document.createElement('td');
+        if (align[column]) td.style.textAlign = align[column];
+        appendInlineMarkdown(td, cell, baseUrl);
+        tr.append(td);
+      });
+      tbody.append(tr);
+    });
+    table.append(tbody);
+  }
+  return table;
+}
 function renderMarkdown(target, source, baseUrl) {
   const fragment = document.createDocumentFragment();
   const lines = String(source || '').replace(/\r\n?/g, '\n').split('\n');
@@ -2548,7 +2773,8 @@ function renderMarkdown(target, source, baseUrl) {
   let paragraph = null;
   const closeParagraph = () => { paragraph = null; };
   const closeList = () => { list = null; };
-  lines.forEach((line) => {
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
     if (/^```/.test(line)) {
       closeParagraph();
       closeList();
@@ -2563,23 +2789,48 @@ function renderMarkdown(target, source, baseUrl) {
           const details = document.createElement('details');
           details.className = 'markdown-receipt';
           const summary = document.createElement('summary');
-          summary.textContent = text('summaryTechReceipts');
+          summary.append(disclosureChevron(), document.createTextNode(text('summaryTechReceipts')));
           details.append(summary, pre);
           fragment.append(details);
         } else {
           fragment.append(pre);
         }
       }
-      return;
+      continue;
     }
     if (code) {
       code.append(document.createTextNode(`${code.textContent ? '\n' : ''}${line}`));
-      return;
+      continue;
     }
     if (!line.trim()) {
       closeParagraph();
       closeList();
-      return;
+      continue;
+    }
+    if (isTableStart(lines, index)) {
+      closeParagraph();
+      closeList();
+      const header = splitTableRow(line);
+      const align = splitTableRow(lines[index + 1]).map(tableColumnAlign);
+      const body = [];
+      let cursor = index + 2;
+      while (cursor < lines.length && isTableRow(lines[cursor])) {
+        body.push(splitTableRow(lines[cursor]));
+        cursor += 1;
+      }
+      fragment.append(markdownTableElement(header, align, body, baseUrl));
+      index = cursor - 1;
+      continue;
+    }
+    const boldHeading = line.trim().match(/^\*\*([^*]+)\*\*$/);
+    if (boldHeading) {
+      closeParagraph();
+      closeList();
+      const element = document.createElement('h4');
+      element.className = 'markdown-bold-heading';
+      appendInlineMarkdown(element, boldHeading[1], baseUrl);
+      fragment.append(element);
+      continue;
     }
     const heading = line.match(/^(#{1,4})\s+(.+)$/);
     if (heading) {
@@ -2588,7 +2839,7 @@ function renderMarkdown(target, source, baseUrl) {
       const element = document.createElement(`h${Math.min(heading[1].length + 2, 6)}`);
       appendInlineMarkdown(element, heading[2], baseUrl);
       fragment.append(element);
-      return;
+      continue;
     }
     const listItem = line.match(/^\s*(?:[-*+] |\d+\. )(.+)$/);
     if (listItem) {
@@ -2600,7 +2851,7 @@ function renderMarkdown(target, source, baseUrl) {
       const item = document.createElement('li');
       appendInlineMarkdown(item, listItem[1], baseUrl);
       list.append(item);
-      return;
+      continue;
     }
     closeList();
     const quote = line.match(/^>\s?(.*)$/);
@@ -2609,7 +2860,7 @@ function renderMarkdown(target, source, baseUrl) {
       const element = document.createElement('blockquote');
       appendInlineMarkdown(element, quote[1], baseUrl);
       fragment.append(element);
-      return;
+      continue;
     }
     if (!paragraph) {
       paragraph = document.createElement('p');
@@ -2618,7 +2869,7 @@ function renderMarkdown(target, source, baseUrl) {
       paragraph.append(document.createElement('br'));
     }
     appendInlineMarkdown(paragraph, line, baseUrl);
-  });
+  }
   target.replaceChildren(fragment);
 }
 
@@ -2994,11 +3245,34 @@ function taskPullRequestLinks(task, message = '') {
   return links.slice(0, 2);
 }
 
+/// The host parks an owner action behind a fixed English envelope:
+/// "LoopX is waiting for an owner action outside this host: <todo text>.
+/// Finish that action on the surface it names; ...". The todo text is the
+/// only actionable part; the envelope is host boilerplate. Extract it so
+/// the card can answer "what do I have to do?" instead of showing the
+/// generic "action outside BitFun" sentence (observed live 2026-09-12:
+/// the parked screen hid the only actionable text and the owner could not act).
+function ownerActionSummary(message) {
+  const raw = String(message || '').trim();
+  const envelope = raw.match(/outside (?:this|the) host\s*[:：]\s*([\s\S]+)$/i);
+  if (!envelope) return '';
+  return envelope[1]
+    .replace(/\s*(?:Finish that action on the surface it names|Finish the pending owner decision|The task continues when the goal gains new work|Resume after acting)[\s\S]*$/i, '')
+    .replace(/[.。]$/, '')
+    .trim();
+}
+
 function externalWaitPresentation(message, links) {
   const raw = String(message || '').trim();
   const hasCjk = /[\u3400-\u9fff]/.test(raw);
   const boilerplate = /outside this host|surface it names|Resume after acting|waiting for an owner action|say what still needs to change/i.test(raw);
   if (hasCjk && !boilerplate) return raw;
+
+  // The park envelope carries the authoritative owner-action text. Surface
+  // it (with a localized label) instead of the generic sentence that only
+  // said "something outside BitFun" and left the owner unable to act.
+  const ownerAction = ownerActionSummary(raw);
+  if (ownerAction) return text('decisionCardExternalActionLabel') + ownerAction;
   if (links.length > 0) {
     const joiner = localeId() === 'zh-CN' ? '、' : ', ';
     return text('decisionCardExternalSummary', { prs: links.map((link) => link.label).join(joiner) });
@@ -3030,7 +3304,14 @@ function makeOwnerActionRecheckButton(task, className = 'text-button') {
   const button = document.createElement('button');
   button.type = 'button';
   button.className = className;
-  button.textContent = text('decisionCardRecheck');
+  // PR-named parks get the PR-specific label; every other owner action
+  // (manual verification, publish decision, ...) gets the generic one, so
+  // the button never promises a PR check the park cannot perform (observed
+  // live 2026-09-12: the parked task had no pull request at all).
+  const links = taskPullRequestLinks(task, task.pendingGateMessage);
+  button.textContent = links.length > 0
+    ? text('decisionCardRecheck')
+    : text('decisionCardRecheckGeneric');
   button.disabled = Boolean(pendingActionFor(task)) || coolingDown;
   if (coolingDown) button.title = text('decisionCardRecheckCooldown');
   button.addEventListener('click', () => {
@@ -3084,12 +3365,13 @@ function renderStructuredBrief(container, s, task) {
   badges.className = 'summary-badges';
   const verdict = document.createElement('span');
   verdict.className = 'summary-badge';
-  verdict.dataset.tone = ({
+  const verdictTone = ({
     needs_fix: 'warning',
     already_fixed_upstream: 'success',
-    wont_fix: 'muted',
+    wont_fix: s.wont_fix_reason === 'evaluation_pending' ? 'info' : 'muted',
     needs_info: 'info',
   })[s.issue_verdict] || 'muted';
+  verdict.dataset.tone = verdictTone;
   verdict.textContent = summaryEnumLabel('summaryVerdict', s.issue_verdict) || s.issue_verdict;
   badges.append(verdict);
   if (s.issue_verdict === 'already_fixed_upstream' && s.fixed_by) {
@@ -3134,17 +3416,32 @@ function renderStructuredBrief(container, s, task) {
   const decisionText = decisionRoute
     ? (decisionReason ? `${decisionRoute}（${decisionReason}）` : decisionRoute)
     : '';
-  const conclusionText = decisionText
-    ? compactSummaryText(decisionText)
-    : (task && task.state === 'completed' ? text('summaryCompletedNoFollowup') : '');
-  if (conclusionText) {
+  const conclusionSource = decisionText
+    || (task && task.state === 'completed' ? text('summaryCompletedNoFollowup') : '');
+  const conclusionTruncated = conclusionSource.length > SUMMARY_CONCLUSION_MAX_CHARS;
+  if (conclusionSource) {
     const conclusion = document.createElement('div');
     conclusion.className = 'summary-conclusion';
     const title = document.createElement('strong');
     title.textContent = text('summaryConclusion');
     const body = document.createElement('p');
-    body.append(linkifiedText(conclusionText, narrativeRepository));
+    body.append(linkifiedText(
+      conclusionTruncated ? compactSummaryText(conclusionSource) : conclusionSource,
+      narrativeRepository,
+    ));
     conclusion.append(title, body);
+    if (conclusionTruncated) {
+      // The decision text used to be cut at 110 chars with no way to read the
+      // rest, so a real reason could be invisible behind the ellipsis.
+      const details = document.createElement('details');
+      details.className = 'summary-conclusion__full';
+      const fullLabel = document.createElement('summary');
+      fullLabel.append(disclosureChevron(), document.createTextNode(text('summaryShowFullConclusion')));
+      const full = document.createElement('p');
+      full.append(linkifiedText(conclusionSource, narrativeRepository));
+      details.append(fullLabel, full);
+      conclusion.append(details);
+    }
     container.append(conclusion);
   }
   if (task && task.state === 'completed' && decisionRoute) {
@@ -3205,7 +3502,9 @@ function renderStructuredBrief(container, s, task) {
 }
 
 function renderIssueBrief(task) {
-  const summary = String(task.lastAgentSummary || '').trim();
+  // The raw agent report ends with a `loopx_summary_v1` fence; the
+  // structured brief (or the prose above it) already carries that content.
+  const summary = stripSummaryBlock(task.lastAgentSummary || '');
   const structured = task.structuredSummary && typeof task.structuredSummary === 'object'
     ? task.structuredSummary
     : null;
@@ -3514,6 +3813,192 @@ function outputBlockDomVersion(block) {
   return `${block.endCursor}:${block.eventCount}:${block.toolState}:${String(block.text || '').length}`;
 }
 
+/// Event-stream icons. Dense runs of native <details> triangles were hard to
+/// scan, so each row leads with a glyph that says what kind of event it is.
+function outputBlockIconGlyph(block) {
+  if (block.kind === 'thinking') return '✻';
+  if (block.kind === 'tool') {
+    const glyphs = {
+      ExecCommand: '❯',
+      Read: '▤',
+      Write: '✚',
+      Edit: '✎',
+      Grep: '⌕',
+      LS: '☰',
+      WebSearch: '⌕',
+      WebFetch: '⇩',
+    };
+    return glyphs[block.toolName] || '⚙';
+  }
+  if (block.kind === 'model_round_started' || block.kind === 'model_round_completed') return '↻';
+  return '✎';
+}
+
+function outputBlockIcon(block) {
+  const icon = document.createElement('span');
+  icon.className = 'log-icon';
+  icon.dataset.icon = block.kind === 'tool' ? 'tool' : block.kind;
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = outputBlockIconGlyph(block);
+  return icon;
+}
+
+function disclosureChevron() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  svg.classList.add('disclosure-chevron');
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  path.setAttribute('d', 'M6 4l4 4-4 4');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '1.7');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  svg.append(path);
+  return svg;
+}
+
+function outputBlockPreview(block) {
+  const source = String(block.text || '').replace(/\s+/g, ' ').trim();
+  if (!source) return outputKindLabel(block.kind);
+  return source.length > 160 ? `${source.slice(0, 159)}…` : source;
+}
+
+function outputBlockIssueNode(block, className) {
+  const task = taskForId(block.taskId);
+  const item = task && task.identity && task.identity.item;
+  const issueUrl = itemUrl(item);
+  const issueLabel = item ? compactItemLabel(item) : text('taskNumber', { value: shortId(block.taskId) });
+  const issue = issueUrl
+    ? externalAnchor(issueLabel, issueUrl, className)
+    : document.createElement('span');
+  if (!issueUrl) {
+    issue.className = className;
+    issue.textContent = issueLabel;
+  } else {
+    issue.title = issueDisplayTitle(task) || itemLabel(item);
+  }
+  return issue;
+}
+
+function outputBlockMetaNodes(block) {
+  const nodes = [];
+  if (block.roundId) {
+    const round = document.createElement('span');
+    round.className = 'output-block__meta';
+    round.textContent = shortId(block.roundId);
+    round.title = block.roundId;
+    nodes.push(round);
+  }
+  if (block.toolState) {
+    const status = document.createElement('span');
+    status.className = 'output-block__meta';
+    status.textContent = toolStateLabel(block.toolState);
+    nodes.push(status);
+  }
+  if (block.eventCount > 1) {
+    const chunks = document.createElement('span');
+    chunks.className = 'output-block__meta';
+    chunks.textContent = text('outputChunks', { value: block.eventCount });
+    nodes.push(chunks);
+  }
+  return nodes;
+}
+
+function outputBlockHeader(block) {
+  const header = document.createElement('div');
+  header.className = 'output-block__header';
+  const level = document.createElement('span');
+  level.className = 'event-level';
+  level.dataset.level = block.toolState === 'failed' ? 'error' : 'info';
+  level.textContent = outputKindLabel(block.kind);
+  const source = document.createElement('span');
+  source.className = 'output-block__source';
+  source.textContent = block.toolName ? toolLabel(block.toolName) : eventSourceLabel('agent');
+  const cursor = document.createElement('span');
+  cursor.className = 'output-block__cursor';
+  cursor.textContent = cursorRangeLabel(block);
+  header.append(outputBlockIssueNode(block, 'output-block__issue'), level, source, cursor);
+  outputBlockMetaNodes(block).forEach((node) => header.append(node));
+  return header;
+}
+
+/// Streamed assistant text used to stay raw until the block ended, so a run in
+/// progress displayed literal `##`, `**` and fence markers (observed live).
+/// Re-rendering per chunk is safe now that the row is patched in place rather
+/// than rebuilt.
+function outputBlockMarkdownEnabled(block) {
+  return block.kind === 'text';
+}
+
+function outputBlockMessage(block) {
+  const message = document.createElement('div');
+  message.className = 'output-block__message';
+  patchOutputBlockMessage(message, block);
+  return message;
+}
+
+function patchOutputBlockMessage(message, block) {
+  const blockText = String(block.text || '');
+  const source = blockText || outputKindLabel(block.kind);
+  if (outputBlockMarkdownEnabled(block)) {
+    if (!message.classList.contains('markdown-body')) {
+      message.className = 'output-block__message output-block__markdown markdown-body';
+      message.replaceChildren();
+      delete message.dataset.renderedText;
+    }
+    if (message.dataset.renderedText !== source) {
+      message.dataset.renderedText = source;
+      renderMarkdown(message, source, itemUrl((taskForId(block.taskId) || {}).identity?.item));
+    }
+  } else {
+    if (message.classList.contains('markdown-body')) {
+      message.className = 'output-block__message';
+      message.replaceChildren();
+      delete message.dataset.renderedText;
+    }
+    if (message.textContent !== source) message.textContent = source;
+  }
+  if (blockText.length > LONG_OUTPUT_BLOCK_CHARS) message.classList.add('output-block__message--long');
+  else message.classList.remove('output-block__message--long');
+}
+
+/// Thinking and tool blocks are developer telemetry: one line by default,
+/// expanding to the raw payload. That keeps a long stream scannable, which is
+/// what the harness-style event list the owner asked for requires.
+function outputBlockDisclosure(block) {
+  const details = document.createElement('details');
+  details.className = 'output-block__disclosure';
+  const store = block.kind === 'thinking' ? state.expandedThinking : state.expandedTool;
+  const blockKey = outputBlockDomKey(block);
+  const head = document.createElement('summary');
+  head.className = 'output-block__disclosure-head';
+  const kind = document.createElement('span');
+  kind.className = 'output-block__source';
+  kind.textContent = block.toolName ? toolLabel(block.toolName) : outputKindLabel(block.kind);
+  const preview = document.createElement('span');
+  preview.className = 'output-block__preview';
+  preview.textContent = outputBlockPreview(block);
+  const cursor = document.createElement('span');
+  cursor.className = 'output-block__cursor';
+  cursor.textContent = cursorRangeLabel(block);
+  head.append(outputBlockIcon(block), kind, preview, cursor);
+  outputBlockMetaNodes(block).forEach((node) => head.append(node));
+  head.append(disclosureChevron());
+  const body = document.createElement('div');
+  body.className = 'output-block__disclosure-body';
+  body.append(outputBlockIssueNode(block, 'output-block__issue'), outputBlockMessage(block));
+  details.append(head, body);
+  if (store.has(blockKey)) details.open = true;
+  details.addEventListener('toggle', () => {
+    if (details.open) store.add(blockKey);
+    else store.delete(blockKey);
+  });
+  return details;
+}
+
 function turnOutputBlockRow(block) {
   const row = document.createElement('li');
   row.className = 'log-row turn-output-row';
@@ -3523,123 +4008,50 @@ function turnOutputBlockRow(block) {
   row.dataset.taskId = block.taskId;
   row.dataset.blockKey = outputBlockDomKey(block);
   row.dataset.blockVersion = outputBlockDomVersion(block);
-
-  const header = document.createElement('div');
-  header.className = 'output-block__header';
-
-  const task = taskForId(block.taskId);
-  const item = task && task.identity && task.identity.item;
-  const issueUrl = itemUrl(item);
-  const issueLabel = item ? compactItemLabel(item) : text('taskNumber', { value: shortId(block.taskId) });
-  const issue = issueUrl
-    ? externalAnchor(issueLabel, issueUrl, 'output-block__issue')
-    : document.createElement('span');
-  if (!issueUrl) {
-    issue.className = 'output-block__issue';
-    issue.textContent = issueLabel;
+  if (block.kind === 'thinking' || block.kind === 'tool') {
+    row.append(outputBlockDisclosure(block));
   } else {
-    issue.title = issueDisplayTitle(task) || itemLabel(item);
+    row.append(outputBlockHeader(block), outputBlockMessage(block));
   }
-
-  const level = document.createElement('span');
-  level.className = 'event-level';
-  level.dataset.level = block.toolState === 'failed' ? 'error' : 'info';
-  level.textContent = outputKindLabel(block.kind);
-
-  const source = document.createElement('span');
-  source.className = 'output-block__source';
-  source.textContent = block.toolName ? toolLabel(block.toolName) : eventSourceLabel('agent');
-
-  const cursor = document.createElement('span');
-  cursor.className = 'output-block__cursor';
-  cursor.textContent = cursorRangeLabel(block);
-
-  header.append(issue, level, source, cursor);
-
-  if (block.roundId) {
-    const round = document.createElement('span');
-    round.className = 'output-block__meta';
-    round.textContent = shortId(block.roundId);
-    round.title = block.roundId;
-    header.append(round);
-  }
-  if (block.toolState) {
-    const status = document.createElement('span');
-    status.className = 'output-block__meta';
-    status.textContent = toolStateLabel(block.toolState);
-    header.append(status);
-  }
-  if (block.eventCount > 1) {
-    const chunks = document.createElement('span');
-    chunks.className = 'output-block__meta';
-    chunks.textContent = text('outputChunks', { value: block.eventCount });
-    header.append(chunks);
-  }
-
-  if (block.kind === 'thinking') {
-    const thinkingKey = outputBlockDomKey(block);
-    const details = document.createElement('details');
-    details.className = 'output-block__thinking';
-    // Expansion is remembered across re-renders: streaming regrows the block
-    // and would otherwise collapse it under the reader.
-    if (state.expandedThinking.has(thinkingKey)) details.open = true;
-    details.addEventListener('toggle', () => {
-      if (details.open) state.expandedThinking.add(thinkingKey);
-      else state.expandedThinking.delete(thinkingKey);
-    });
-    const summary = document.createElement('summary');
-    summary.textContent = text('outputThinkingSummary', { value: (block.text || '').length });
-    const content = document.createElement('div');
-    content.className = 'output-block__message';
-    content.textContent = block.text || outputKindLabel(block.kind);
-    details.append(summary, content);
-    row.append(header, details);
-    return row;
-  }
-
-  if (block.kind === 'tool') {
-    // Raw tool input (the executed shell command with host-internal absolute
-    // paths, a file path, a grep pattern) is developer telemetry: it is long,
-    // it leaks the host layout, and it does not help a human decide anything.
-    // Keep the header line (issue, tool, state, round) visible and put the raw
-    // text behind a collapsed expander - the same pattern thinking blocks use.
-    const detailKey = outputBlockDomKey(block);
-    const details = document.createElement('details');
-    details.className = 'output-block__thinking';
-    // Expansion is remembered across re-renders: streaming regrows the block
-    // and would otherwise collapse it under the reader.
-    if (state.expandedTool.has(detailKey)) details.open = true;
-    details.addEventListener('toggle', () => {
-      if (details.open) state.expandedTool.add(detailKey);
-      else state.expandedTool.delete(detailKey);
-    });
-    const summary = document.createElement('summary');
-    summary.textContent = text('outputToolSummary');
-    const content = document.createElement('div');
-    content.className = 'output-block__message';
-    content.textContent = block.text || outputKindLabel(block.kind);
-    details.append(summary, content);
-    row.append(header, details);
-    return row;
-  }
-
-  const message = document.createElement('div');
-  message.className = 'output-block__message';
-  const blockText = String(block.text || '');
-  const taskState = task && task.state ? task.state : '';
-  const canRenderMarkdown = block.kind === 'text' && (block.isEnd || taskState !== 'running');
-  if (canRenderMarkdown) {
-    message.classList.add('output-block__markdown', 'markdown-body');
-    renderMarkdown(message, blockText || outputKindLabel(block.kind), itemUrl(item));
-  } else {
-    message.textContent = blockText || outputKindLabel(block.kind);
-  }
-  if (blockText.length > LONG_OUTPUT_BLOCK_CHARS) message.classList.add('output-block__message--long');
-
-  row.append(header, message);
   return row;
 }
 
+/// Streaming regrows a block on every chunk. Rebuilding the <li> each time
+/// dropped the pointer's :hover state and shifted the scroll position under
+/// the reader (both observed live), so an existing row is patched in place and
+/// the row element itself is never replaced.
+function updateTurnOutputBlockRow(row, block) {
+  const version = outputBlockDomVersion(block);
+  if (row.dataset.blockVersion === version) return;
+  row.dataset.blockVersion = version;
+  row.dataset.level = block.toolState === 'failed' ? 'error' : 'info';
+  row.dataset.cursor = String(block.endCursor);
+
+  const disclosure = row.querySelector('.output-block__disclosure');
+  if (disclosure) {
+    const head = disclosure.querySelector('.output-block__disclosure-head');
+    if (head) {
+      const preview = head.querySelector('.output-block__preview');
+      const previewText = outputBlockPreview(block);
+      if (preview && preview.textContent !== previewText) preview.textContent = previewText;
+      const kind = head.querySelector('.output-block__source');
+      const kindText = block.toolName ? toolLabel(block.toolName) : outputKindLabel(block.kind);
+      if (kind && kind.textContent !== kindText) kind.textContent = kindText;
+      const cursor = head.querySelector('.output-block__cursor');
+      const cursorText = cursorRangeLabel(block);
+      if (cursor && cursor.textContent !== cursorText) cursor.textContent = cursorText;
+    }
+    const message = disclosure.querySelector('.output-block__message');
+    if (message) patchOutputBlockMessage(message, block);
+    return;
+  }
+
+  const header = row.querySelector('.output-block__header');
+  if (header) header.replaceWith(outputBlockHeader(block));
+  const message = row.querySelector('.output-block__message');
+  if (message) patchOutputBlockMessage(message, block);
+  else row.append(outputBlockMessage(block));
+}
 function timelineMilestoneRow(event) {
   const row = document.createElement('li');
   row.className = 'log-row log-row--milestone';
@@ -3735,6 +4147,28 @@ function timelineStageCard(task) {
   return card;
 }
 
+/// The reader's place in the stream must survive re-renders. The scroller is
+/// position:relative, so a row's offsetTop is stable in its coordinate space:
+/// remember the first visible row plus its offset, then put it back after the
+/// list has been reordered. Without this, new output shoved the row being read
+/// off screen even though follow-mode was already off.
+function captureLogAnchor() {
+  const scroller = view.logScroll;
+  if (!scroller) return null;
+  const scrollTop = scroller.scrollTop;
+  const node = [...view.logList.children]
+    .find((row) => row.offsetTop + row.offsetHeight > scrollTop);
+  if (!node) return null;
+  return { node, offset: node.offsetTop - scrollTop };
+}
+
+function restoreLogAnchor(anchor) {
+  if (!anchor || !anchor.node || !anchor.node.isConnected) return;
+  const scroller = view.logScroll;
+  const next = anchor.node.offsetTop - anchor.offset;
+  if (Math.abs(scroller.scrollTop - next) > 1) scroller.scrollTop = next;
+}
+
 function renderTimeline() {
   if (!canRender()) return;
   const running = runningOutputTask();
@@ -3796,13 +4230,14 @@ function renderTimeline() {
   const desired = visibleRows.map((row) => {
     if (row.kind === 'block') {
       const node = existingBlocks.get(row.key);
-      return node && node.dataset.blockVersion === outputBlockDomVersion(row.block)
-        ? node
-        : turnOutputBlockRow(row.block);
+      if (!node) return turnOutputBlockRow(row.block);
+      updateTurnOutputBlockRow(node, row.block);
+      return node;
     }
     const node = existingEvents.get(row.key);
     return node || timelineMilestoneRow(row.event);
   });
+  const logAnchor = state.followLogs ? null : captureLogAnchor();
   desired.forEach((node, index) => {
     const current = view.logList.children[index];
     if (current !== node) view.logList.insertBefore(node, current || null);
@@ -3827,8 +4262,9 @@ function renderTimeline() {
       view.logScroll.scrollTop = view.logScroll.scrollHeight;
       view.newEvents.hidden = true;
     });
-  } else if (visibleRows.length) {
-    view.newEvents.hidden = false;
+  } else {
+    restoreLogAnchor(logAnchor);
+    if (visibleRows.length) view.newEvents.hidden = false;
   }
   if (running && !state.turnOutput.inFlight && !state.turnOutput.timer) {
     scheduleTurnOutputPoll(state.turnOutput.events.length ? 1200 : 0);
