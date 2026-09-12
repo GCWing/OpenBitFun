@@ -6,7 +6,7 @@
 import { Button, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading, DialogTitle, Icon, Textarea } from '@openbitfun/ui';
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MessageCircle } from 'lucide-react';
+import { MessageCircle, Plug } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { ContextItem } from '../../shared/types/context';
 import { getRichTextExternalSyncAction } from './richTextInputSync';
@@ -18,6 +18,7 @@ import {
   getSkillPromptReferenceMatches,
   parseSkillPromptReferenceToken,
 } from '../utils/skillPromptReference';
+import { getMcpPromptReferenceMatches, parseMcpPromptReference } from '../utils/mcpPromptReference';
 import {
   getAdditionalModePromptReferenceMatches,
   parseAdditionalModePromptReferenceToken,
@@ -35,6 +36,9 @@ const SKILL_REFERENCE_BADGE_ICON = renderToStaticMarkup(
 );
 const SESSION_REFERENCE_BADGE_ICON = renderToStaticMarkup(
   <MessageCircle size={12} strokeWidth={2.2} aria-hidden="true" />,
+);
+const MCP_REFERENCE_BADGE_ICON = renderToStaticMarkup(
+  <Plug size={12} strokeWidth={2.2} aria-hidden="true" />,
 );
 const EMPTY_PENDING_LARGE_PASTES: Record<string, string> = Object.freeze({});
 const LARGE_PASTE_CARET_ANCHOR = '\u200B';
@@ -457,11 +461,12 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
 
   const createSkillStyledReferenceElement = useCallback((options: {
     token: string;
-    contextType: 'skill-reference' | 'additional-mode-reference';
-    inlineTokenType: 'skill-ref' | 'additional-mode-ref';
+    contextType: 'skill-reference' | 'additional-mode-reference' | 'mcp-reference';
+    inlineTokenType: 'skill-ref' | 'additional-mode-ref' | 'mcp-ref';
     title: string;
     displayText: string;
     modifierClass?: string;
+    badgeIcon?: string;
   }): HTMLSpanElement => {
     const tag = document.createElement('span');
     tag.className = [
@@ -473,6 +478,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     tag.dataset.openbitfunPart = 'contextTag';
     tag.dataset.openbitfunContextType = options.contextType;
     tag.contentEditable = 'false';
+    tag.setAttribute('contenteditable', 'false');
     tag.dataset.tagFormat = options.token;
     tag.dataset.inlineTokenType = options.inlineTokenType;
     tag.title = options.title;
@@ -481,7 +487,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     badge.className = 'rich-text-tag-pill__badge rich-text-tag-pill__badge--icon';
     badge.dataset.openbitfunComponent = 'rich-text-input';
     badge.dataset.openbitfunPart = 'tagBadge';
-    badge.innerHTML = SKILL_REFERENCE_BADGE_ICON;
+    badge.innerHTML = options.badgeIcon ?? SKILL_REFERENCE_BADGE_ICON;
 
     const text = document.createElement('span');
     text.className = 'rich-text-tag-pill__text rich-text-tag-pill__text--skill-ref';
@@ -539,11 +545,25 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
       : null;
   }, [createSkillStyledReferenceElement]);
 
+  const createMcpReferenceElement = useCallback((token: string): HTMLSpanElement | null => {
+    const payload = parseMcpPromptReference(token);
+    return payload ? createSkillStyledReferenceElement({
+      token,
+      contextType: 'mcp-reference',
+      inlineTokenType: 'mcp-ref',
+      displayText: payload.serverName,
+      title: `MCP: ${payload.serverName}`,
+      modifierClass: 'rich-text-tag-pill--mcp-ref',
+      badgeIcon: MCP_REFERENCE_BADGE_ICON,
+    }) : null;
+  }, [createSkillStyledReferenceElement]);
+
   const createInlineTokenElement = useCallback((token: string): HTMLSpanElement | null => {
     return createWidgetReferenceElement(token)
       ?? createAdditionalModeReferenceElement(token)
+      ?? createMcpReferenceElement(token)
       ?? createSkillReferenceElement(token);
-  }, [createAdditionalModeReferenceElement, createSkillReferenceElement, createWidgetReferenceElement]);
+  }, [createAdditionalModeReferenceElement, createMcpReferenceElement, createSkillReferenceElement, createWidgetReferenceElement]);
 
   const buildComposerPresentation = useCallback((): ComposerPresentation | null => {
     const editor = internalRef.current;
@@ -596,6 +616,11 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
       const inlineToken = element.dataset.inlineTokenType;
       const token = element.dataset.tagFormat;
       if (inlineToken && token) {
+        if (parseMcpPromptReference(token)) {
+          // Preserve the existing text wire shape so older hosts can read it.
+          appendText(token);
+          return;
+        }
         const additionalMode = parseAdditionalModePromptReferenceToken(token);
         if (additionalMode) {
           appendText(token);
@@ -646,7 +671,13 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
     const fragment = document.createDocumentFragment();
     for (const segment of presentation.segments) {
       if (segment.kind === 'text') {
-        fragment.appendChild(document.createTextNode(segment.text));
+        let cursor = 0;
+        for (const match of getMcpPromptReferenceMatches(segment.text)) {
+          fragment.appendChild(document.createTextNode(segment.text.slice(cursor, match.start)));
+          fragment.appendChild(createMcpReferenceElement(match.token) ?? document.createTextNode(match.token));
+          cursor = match.end;
+        }
+        fragment.appendChild(document.createTextNode(segment.text.slice(cursor)));
       } else if (segment.kind === 'context') {
         fragment.appendChild(createTagElement(segment.context));
       } else {
@@ -663,7 +694,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
       selection.removeAllRanges();
       selection.addRange(range);
     }
-  }, [createInlineTokenElement, createTagElement, internalRef]);
+  }, [createInlineTokenElement, createMcpReferenceElement, createTagElement, internalRef]);
 
   const renderValueWithInlineTokens = useCallback((editor: HTMLElement, text: string) => {
     const fragment = document.createDocumentFragment();
@@ -696,6 +727,10 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
         ...match,
         kind: 'skill-ref' as const,
       })),
+      ...getMcpPromptReferenceMatches(text).map(match => ({
+        ...match,
+        kind: 'mcp-ref' as const,
+      })),
       ...getAdditionalModePromptReferenceMatches(text).map(match => ({
         ...match,
         kind: 'additional-mode-ref' as const,
@@ -720,7 +755,9 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
           ? createWidgetReferenceElement(match.token)
           : match.kind === 'additional-mode-ref'
             ? createAdditionalModeReferenceElement(match.token)
-            : createSkillReferenceElement(match.token);
+            : match.kind === 'mcp-ref'
+              ? createMcpReferenceElement(match.token)
+              : createSkillReferenceElement(match.token);
       fragment.appendChild(tokenElement ?? document.createTextNode(match.token));
       cursor = match.end;
     }
@@ -733,6 +770,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
   }, [
     createAdditionalModeReferenceElement,
     createLargePasteElement,
+    createMcpReferenceElement,
     createSkillReferenceElement,
     createWidgetReferenceElement,
     pendingLargePastes,

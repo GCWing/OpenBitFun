@@ -987,6 +987,16 @@
     "currentStatus": "当前状态: {{status}}"
   },
   "contextPicker": {
+    "mcp": {
+      "label": "MCP",
+      "server": "MCP 服务",
+      "empty": "当前模式没有可用的已连接 MCP 工具。请在 MCP 设置中启用并启动服务。",
+      "modeRestricted": "当前模式不提供已连接的 MCP 工具。请切换到 Standard、Ultimate 或 Creative 使用。",
+      "loadFailed": "MCP 工具加载失败，请刷新重试。",
+      "refresh": "刷新 MCP 工具",
+      "remoteWorkspace": "远程工作区暂不支持选择 MCP。",
+      "unsupportedHost": "当前主机不支持选择 MCP，请更新主机版本。"
+    },
     "skillsIncomplete": "部分技能扫描失败，已成功读取的技能仍可使用。",
     "skillsDiagnosticsUnavailable": "当前主机不提供技能扫描诊断。",
     "menuTitle": "选择上下文",

@@ -1348,6 +1348,7 @@ pub async fn run() {
             choose_external_mcp_conflict_command,
             api::context_upload_api::upload_image_contexts,
             get_all_tools_info,
+            get_chat_mcp_catalog,
             get_readonly_tools_info,
             get_tool_info,
             validate_tool_input,

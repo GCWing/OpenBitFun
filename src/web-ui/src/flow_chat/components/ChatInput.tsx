@@ -19,6 +19,8 @@ import {
   type RichTextInputElement,
 } from './RichTextInput';
 import { ChatContextPicker, type ContextPickerSkill } from './ChatContextPicker';
+import { useChatMcpCatalog } from '../hooks/useChatMcpCatalog';
+import type { ContextPickerMcpItem } from './chatMcpItems';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import {
   useSessionDerivedState,
@@ -128,6 +130,7 @@ import {
   isChatInputActionVisibleForTarget,
   resolveAvailableChatInputMode,
   resolveChatInputCanUseSkills,
+  resolveChatInputCanUseMcp,
   resolveChatInputMainAgentModes,
   resolveChatInputSendAgentType,
   resolveChatInputModePolicy,
@@ -1486,6 +1489,18 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     isActive: false,
     query: '',
     startOffset: 0,
+  });
+  const canSelectMcp = resolveChatInputCanUseMcp({
+    targetAgentType: effectiveSendAgentType,
+    isAcpTargetSession,
+    isDispatchTransport: Boolean(caps.dispatchTransport),
+  });
+  const chatMcp = useChatMcpCatalog({
+    enabled: canSelectMcp && contextTriggerState.isActive,
+    surfaceEpoch: deviceSurfaceScope.epoch,
+    modeId: effectiveSendAgentType,
+    workspacePath: sessionBoundWorkspacePath || undefined,
+    remoteConnectionId: sessionBoundRemoteConnectionId || undefined,
   });
   const {
     skills: resolvedModeSkills,
@@ -5603,6 +5618,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     focusRichTextInputSoon();
   }, [focusRichTextInputSoon, getRichTextTriggerController, setQueuedInput]);
 
+  const selectContextMcp = useCallback((item: ContextPickerMcpItem) => {
+    getRichTextTriggerController()?.replaceActiveContextTrigger?.(item.reference);
+    setQueuedInput(null);
+    focusRichTextInputSoon();
+  }, [focusRichTextInputSoon, getRichTextTriggerController, setQueuedInput]);
+
   const handleContextPickerAddImage = useCallback(() => {
     getRichTextTriggerController()?.replaceActiveContextTrigger?.('');
     handleImageInput();
@@ -6070,6 +6091,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 skillDiagnosticsAvailable={resolvedSkillDiagnosticsAvailable}
                 onRetrySkills={retryResolvedModeSkills}
                 onSelectSkill={canUseSkillsForTarget ? selectContextSkill : undefined}
+                mcpCatalog={chatMcp.catalog}
+                mcpLoading={chatMcp.loading}
+                mcpLoadFailed={chatMcp.failed}
+                mcpUnavailable={chatMcp.unavailable}
+                onRefreshMcp={chatMcp.refresh}
+                onSelectMcp={canSelectMcp ? selectContextMcp : undefined}
                 onAddImage={!isAcpTargetSession ? handleContextPickerAddImage : undefined}
                 onSelectContext={(context: FileContext | DirectoryContext | SessionReferenceContext) => {
                   addContext(context);

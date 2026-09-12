@@ -238,6 +238,13 @@ cargo test -p openbitfun-core --no-default-features --features agent-runtime,git
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,remote-workspace,git --lib service::snapshot::
 ```
 
+MCP chat discovery and deferred-tool manifest contracts (Git is needed by the
+existing Agent tool test assembly):
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features mcp-runtime,git --lib agentic::tools::product_runtime::
+```
+
 Skill discovery, installation provenance, and local/remote registry regressions:
 
 ```bash

@@ -28,6 +28,7 @@ export const richTextInputAppearanceDescriptor: AppearanceSurfaceDescriptor = {
         'web-element',
         'widget-reference',
         'skill-reference',
+        'mcp-reference',
         'additional-mode-reference',
       ],
     },

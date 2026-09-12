@@ -40,6 +40,12 @@ vi.mock('@/infrastructure/api/service-api/ExternalSourcesAPI', () => ({
 }));
 
 interface HarnessProps {
+  mcpCatalog?: ChatContextPickerProps['mcpCatalog'];
+  mcpLoading?: boolean;
+  mcpLoadFailed?: boolean;
+  mcpUnavailable?: ChatContextPickerProps['mcpUnavailable'];
+  onRefreshMcp?: ChatContextPickerProps['onRefreshMcp'];
+  onSelectMcp?: ChatContextPickerProps['onSelectMcp'];
   isOpen?: boolean;
   searchQuery?: string;
   remoteConnectionId?: string;
@@ -55,6 +61,7 @@ interface HarnessProps {
 }
 
 const Harness: React.FC<HarnessProps> = ({
+  mcpCatalog, mcpLoading, mcpLoadFailed, mcpUnavailable, onRefreshMcp, onSelectMcp,
   isOpen = true,
   searchQuery = '',
   remoteConnectionId = 'remote-connection-1',
@@ -73,6 +80,12 @@ const Harness: React.FC<HarnessProps> = ({
     <div>
       <button ref={anchorRef} type="button">anchor</button>
       <ChatContextPicker
+        mcpCatalog={mcpCatalog}
+        mcpLoading={mcpLoading}
+        mcpLoadFailed={mcpLoadFailed}
+        mcpUnavailable={mcpUnavailable}
+        onRefreshMcp={onRefreshMcp}
+        onSelectMcp={onSelectMcp}
         isOpen={isOpen}
         searchQuery={searchQuery}
         workspacePath="/workspace"
@@ -97,6 +110,70 @@ const option = (kind: string) => document.querySelector<HTMLElement>(
 );
 
 describe('ChatContextPicker overlay', () => {
+  const mcpCatalog = {
+    modeRestricted: false,
+    tools: [{ name: 'mcp__docs__search', serverId: 'docs', serverName: 'Docs', toolName: 'search', description: 'Find manuals' }],
+  };
+
+  it('opens MCP from sources with the keyboard and selects a server reference', async () => {
+    const onSelectMcp = vi.fn();
+    const onClose = vi.fn();
+    await act(async () => root.render(<Harness entryView="sources" mcpCatalog={mcpCatalog} onSelectMcp={onSelectMcp} onClose={onClose} />));
+    expect(option('mcp')).not.toBeNull();
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    });
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+    expect(option('mcp-server')?.textContent).toContain('Docs');
+    expect(option('mcp-tool')).toBeNull();
+    await act(async () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+    expect(onSelectMcp).toHaveBeenCalledWith(expect.objectContaining({ reference: 'MCP "Docs" (server: "docs")' }));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('searches tool descriptions and selects only their owning MCP service', async () => {
+    const onSelectMcp = vi.fn();
+    await act(async () => root.render(<Harness searchQuery="manuals" mcpCatalog={mcpCatalog} onSelectMcp={onSelectMcp} />));
+    expect(option('mcp-tool')).toBeNull();
+    await act(async () => option('mcp-server')?.click());
+    expect(onSelectMcp).toHaveBeenCalledWith(expect.objectContaining({ reference: 'MCP "Docs" (server: "docs")' }));
+  });
+
+  it('removes the MCP source and search results when switching to a mode without MCP', async () => {
+    await act(async () => root.render(<Harness entryView="sources" mcpCatalog={mcpCatalog} onSelectMcp={vi.fn()} />));
+    await act(async () => option('mcp')?.click());
+    expect(option('mcp-server')).not.toBeNull();
+    await act(async () => root.render(<Harness entryView="sources" mcpCatalog={mcpCatalog} />));
+    expect(option('files')).not.toBeNull();
+    expect(option('mcp')).toBeNull();
+    expect(option('mcp-server')).toBeNull();
+    await act(async () => root.render(<Harness searchQuery="MCP" mcpCatalog={mcpCatalog} />));
+    expect(option('mcp-server')).toBeNull();
+  });
+
+  it('distinguishes loading, failure, mode restriction, and unsupported hosts with a retry action', async () => {
+    const onRefreshMcp = vi.fn();
+    const onSelectMcp = vi.fn();
+    const render = (props: Partial<HarnessProps>) => act(async () => root.render(
+      <Harness entryView="sources" onSelectMcp={onSelectMcp} onRefreshMcp={onRefreshMcp} {...props} />,
+    ));
+    await render({ mcpLoading: true });
+    await act(async () => option('mcp')?.click());
+    expect(document.body.textContent).toContain('contextPicker.loading');
+    await render({ mcpLoadFailed: true });
+    expect(document.body.textContent).toContain('contextPicker.mcp.loadFailed');
+    await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="contextPicker.mcp.refresh"]')?.click());
+    expect(onRefreshMcp).toHaveBeenCalledOnce();
+    await render({ mcpCatalog: { tools: [], modeRestricted: true } });
+    expect(document.body.textContent).toContain('contextPicker.mcp.modeRestricted');
+    expect(option('mcp-tool')).toBeNull();
+    await render({ mcpUnavailable: 'unsupportedHost' });
+    expect(document.body.textContent).toContain('contextPicker.mcp.unsupportedHost');
+    expect(document.querySelector('[aria-label="contextPicker.mcp.refresh"]')).toBeNull();
+    await render({ mcpUnavailable: 'remoteWorkspace' });
+    expect(document.body.textContent).toContain('contextPicker.mcp.remoteWorkspace');
+  });
+
   it('shows only the runtime winner for a name without exposing its key', async () => {
     const chosen = vi.fn();
     const skills = [{ name: 'pdf', key: 'user::codex::pdf', selectedForRuntime: false }, { name: 'pdf', key: 'project::codex::pdf', selectedForRuntime: true }];

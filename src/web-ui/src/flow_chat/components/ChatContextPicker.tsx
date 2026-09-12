@@ -1,6 +1,6 @@
 /**
  * Unified chat context picker.
- * The source level exposes files, skills, and images; typing searches providers together.
+ * The source level exposes files, skills, MCP, and images; typing searches providers together.
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
@@ -16,7 +16,7 @@ import {
   Tooltip,
 } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
-import { File, Loader2, MessageCircle, RotateCcw } from 'lucide-react';
+import { File, Loader2, MessageCircle, Plug, RotateCcw } from 'lucide-react';
 import { sessionAPI, workspaceAPI } from '@/infrastructure/api';
 import {
   externalSourcesAPI,
@@ -40,6 +40,8 @@ import {
   type FileItem,
 } from './workspaceReferenceItems';
 import type { SkillScanDiagnostic } from '@/infrastructure/config/types';
+import type { ChatMcpCatalog } from '@/infrastructure/api/service-api/ChatMcpAPI';
+import { chatMcpItems, type ContextPickerMcpItem } from './chatMcpItems';
 import './ChatContextPicker.scss';
 
 const log = createLogger('ChatContextPicker');
@@ -69,6 +71,12 @@ export interface ChatContextPickerProps {
   skillDiagnosticsAvailable?: boolean;
   onRetrySkills?: () => void;
   onSelectSkill?: (skill: ContextPickerSkill) => void;
+  mcpCatalog?: ChatMcpCatalog;
+  mcpLoading?: boolean;
+  mcpLoadFailed?: boolean;
+  mcpUnavailable?: 'remoteWorkspace' | 'unsupportedHost';
+  onRefreshMcp?: () => void;
+  onSelectMcp?: (item: ContextPickerMcpItem) => void;
   onAddImage?: () => void;
 }
 
@@ -83,13 +91,14 @@ export interface ContextPickerSkill {
 
 export type ChatContextPickerEntryView = 'sources' | 'files';
 
-type ContextPickerView = ChatContextPickerEntryView | 'skills';
+type ContextPickerView = ChatContextPickerEntryView | 'skills' | 'mcp';
 
 type ContextPickerItem =
   | { kind: 'file'; item: FileItem }
   | { kind: 'session'; item: SessionReferenceCandidate }
   | { kind: 'skill'; item: ContextPickerSkill }
-  | { kind: 'source'; id: 'files' | 'skills' }
+  | { kind: 'mcp'; item: ContextPickerMcpItem }
+  | { kind: 'source'; id: 'files' | 'skills' | 'mcp' }
   | { kind: 'action'; id: 'add-image' | 'retry-skills' };
 
 function mergeFileSearchResults(
@@ -136,6 +145,12 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   skillDiagnosticsAvailable = true,
   onRetrySkills,
   onSelectSkill,
+  mcpCatalog,
+  mcpLoading = false,
+  mcpLoadFailed = false,
+  mcpUnavailable,
+  onRefreshMcp,
+  onSelectMcp,
   onAddImage,
 }) => {
   const { t } = useTranslation('flow-chat');
@@ -473,8 +488,14 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   const sourceItems = useMemo<ContextPickerItem[]>(() => [
     { kind: 'source', id: 'files' },
     ...(onSelectSkill ? [{ kind: 'source' as const, id: 'skills' as const }] : []),
+    ...(onSelectMcp ? [{ kind: 'source' as const, id: 'mcp' as const }] : []),
     ...(onAddImage ? [{ kind: 'action' as const, id: 'add-image' as const }] : []),
-  ], [onAddImage, onSelectSkill]);
+  ], [onAddImage, onSelectSkill, onSelectMcp]);
+  const mcpItems = useMemo<ContextPickerItem[]>(() => (
+    onSelectMcp && !mcpLoading && !mcpLoadFailed && !mcpUnavailable
+      ? chatMcpItems(mcpCatalog?.tools ?? [], searchQuery).map(item => ({ kind: 'mcp', item }))
+      : []
+  ), [onSelectMcp, mcpLoading, mcpLoadFailed, mcpUnavailable, mcpCatalog, searchQuery]);
   const skillItems = useMemo<ContextPickerItem[]>(() => {
     if (skillsLoading) return [];
     if (skillsLoadFailed) {
@@ -493,6 +514,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
           ? filteredSkills.map(item => ({ kind: 'skill' as const, item }))
           : []),
         ...sessionResults.map(item => ({ kind: 'session' as const, item })),
+        ...mcpItems,
         ...(onSelectSkill && skillsLoadFailed && onRetrySkills
           ? [{ kind: 'action' as const, id: 'retry-skills' as const }]
           : []),
@@ -503,6 +525,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     }
     if (entryView === 'sources' && view === 'sources') return sourceItems;
     if (view === 'skills') return skillItems;
+    if (view === 'mcp') return mcpItems;
     return [
       ...currentFiles.map(item => ({ kind: 'file' as const, item })),
       ...(currentPath ? [] : referenceItems.map(item => ({ kind: 'file' as const, item }))),
@@ -522,6 +545,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     sessionResults,
     entryView,
     skillItems,
+    mcpItems,
     skillsLoadFailed,
     t,
     view,
@@ -547,6 +571,8 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   const currentDirectoryTailStart = Math.max(0, currentDirectoryPath.lastIndexOf('/'));
   const currentViewLabel = view === 'skills'
     ? t('chatInput.boostSkills')
+    : view === 'mcp'
+      ? t('contextPicker.mcp.label')
     : view === 'sources'
       ? t('contextPicker.menuTitle')
       : currentDirectoryPath;
@@ -575,6 +601,13 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     setSelectedIndex(0);
   }, []);
 
+  useEffect(() => {
+    if (view === 'mcp' && !onSelectMcp) {
+      setView('sources');
+      setSelectedIndex(0);
+    }
+  }, [onSelectMcp, view]);
+
   const handleSelect = useCallback((selection: ContextPickerItem) => {
     if (selection.kind === 'source') {
       openSource(selection.id);
@@ -591,6 +624,11 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     }
     if (selection.kind === 'skill') {
       onSelectSkill?.(selection.item);
+      onClose();
+      return;
+    }
+    if (selection.kind === 'mcp') {
+      onSelectMcp?.(selection.item);
       onClose();
       return;
     }
@@ -630,7 +668,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
       timestamp,
     });
     onClose();
-  }, [onAddImage, onClose, onRetrySkills, onSelectContext, onSelectSkill, openSource]);
+  }, [onAddImage, onClose, onRetrySkills, onSelectContext, onSelectSkill, onSelectMcp, openSource]);
 
   const handleItemClick = useCallback((selection: ContextPickerItem) => {
     if (selection.kind === 'file' && selection.item.isDirectory && !isSearchMode) {
@@ -725,11 +763,19 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   const isSkillLoading = Boolean(onSelectSkill)
     && skillsLoading
     && (isSearchMode || view === 'skills');
-  const isLoading = isFileLoading || isSessionLoading || isSkillLoading;
+  const showMcpStatus = Boolean(onSelectMcp) && (view === 'mcp' || isSearchMode);
+  const isLoading = isFileLoading || isSessionLoading || isSkillLoading || (showMcpStatus && mcpLoading);
+  const mcpStatus = mcpLoadFailed ? t('contextPicker.mcp.loadFailed')
+    : mcpUnavailable === 'remoteWorkspace' ? t('contextPicker.mcp.remoteWorkspace')
+    : mcpUnavailable === 'unsupportedHost' ? t('contextPicker.mcp.unsupportedHost')
+    : mcpCatalog?.modeRestricted ? t('contextPicker.mcp.modeRestricted')
+    : null;
   const emptyLabel = isSearchMode
     ? t('contextPicker.noMatchingResults')
     : view === 'skills'
       ? t('chatInput.boostSkillsEmpty')
+      : view === 'mcp'
+        ? mcpStatus ?? t('contextPicker.mcp.empty')
       : t('contextPicker.emptyDirectory');
 
   const picker = (
@@ -738,7 +784,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
       data-openbitfun-part="root"
       data-openbitfun-state={[
         isLoading && 'loading',
-        fileLoadError && 'error',
+        (fileLoadError || (showMcpStatus && mcpLoadFailed)) && 'error',
       ].filter(Boolean).join(' ') || undefined}
       data-openbitfun-placement={isOverlay ? overlayLayout?.placement ?? 'top' : undefined}
       ref={containerRef}
@@ -786,6 +832,17 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
             )}
           </div>
         )}
+        {showMcpStatus && onRefreshMcp && !mcpUnavailable && (
+          <IconButton
+            aria-label={t('contextPicker.mcp.refresh')}
+            title={t('contextPicker.mcp.refresh')}
+            icon={<RotateCcw aria-hidden="true" />}
+            onClick={onRefreshMcp}
+            disabled={mcpLoading}
+            size="xs"
+            variant="quiet"
+          />
+        )}
       </div>
       <div data-openbitfun-component="chat-context-picker" data-openbitfun-part="content" className="chat-context-picker__content">
         <Listbox
@@ -812,6 +869,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
               const file = selection.kind === 'file' ? selection.item : null;
               const session = selection.kind === 'session' ? selection.item : null;
               const skill = selection.kind === 'skill' ? selection.item : null;
+              const mcp = selection.kind === 'mcp' ? selection.item : null;
               const key = selection.kind === 'source'
                 ? `source-${selection.id}`
                 : selection.kind === 'action'
@@ -820,16 +878,20 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
                     ? `session-${session?.sessionId}-${session?.workspacePath}`
                     : skill
                       ? `skill-${skill.key}`
+                      : mcp
+                        ? mcp.key
                       : `file-${file?.referenceStableKey || file?.path}`;
               const label = selection.kind === 'source'
                 ? t(selection.id === 'files'
                   ? 'chatInput.boostAddContext'
+                  : selection.id === 'mcp'
+                    ? 'contextPicker.mcp.label'
                   : 'chatInput.boostSkills')
                 : selection.kind === 'action'
                   ? t(selection.id === 'add-image'
                     ? 'input.addImage'
                     : 'chatInput.boostSkillsLoadFailed')
-                  : session?.sessionName ?? skill?.name ?? file?.name;
+                  : session?.sessionName ?? skill?.name ?? mcp?.label ?? file?.name;
               const skillDescription = skill?.description?.trim() || undefined;
               return (
                 <ListboxOption data-overflow-trigger
@@ -840,18 +902,22 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
                   data-index={index}
                   data-openbitfun-context-kind={selection.kind === 'source' || selection.kind === 'action'
                     ? selection.id
-                    : selection.kind}
+                    : selection.kind === 'mcp' ? `mcp-${selection.item.kind}` : selection.kind}
                   indicator={selection.kind === 'source' || (file?.isDirectory && !isSearchMode)
                     ? <Icon name="chevron-right" size="lg" aria-hidden="true" />
                     : undefined}
                   leading={selection.kind === 'source'
-                    ? <Icon name={selection.id === 'files' ? 'files' : 'spark'} size="lg" aria-hidden="true" />
+                    ? selection.id === 'mcp'
+                      ? <Plug aria-hidden="true" />
+                      : <Icon name={selection.id === 'files' ? 'files' : 'spark'} size="lg" aria-hidden="true" />
                     : selection.kind === 'action'
                       ? selection.id === 'add-image'
                         ? <Icon name="image" size="lg" aria-hidden="true" />
                         : <RotateCcw aria-hidden="true" />
                       : skill
                         ? <Icon name="spark" size="lg" aria-hidden="true" />
+                        : mcp
+                          ? <Plug aria-hidden="true" />
                         : isSession
                           ? <MessageCircle aria-hidden="true" />
                           : file?.isDirectory
@@ -870,7 +936,8 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
                           {skillDescription}
                         </OverflowText>
                       )
-                    : session?.workspaceLabel
+                    : (mcp ? t('contextPicker.mcp.server') : undefined)
+                    ?? session?.workspaceLabel
                     ?? (file?.referenceStableKey
                       ? file.referenceDescription || file.path
                       : undefined)}
@@ -900,6 +967,10 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
               </ListboxEmpty>
             )}
           </>
+        )}
+        {showMcpStatus && !mcpLoading && (
+          mcpStatus && (isSearchMode || displayItems.length > 0)
+            && <ListboxEmpty className="chat-context-picker__empty"><span role="status">{mcpStatus}</span></ListboxEmpty>
         )}
         </Listbox>
       </div>

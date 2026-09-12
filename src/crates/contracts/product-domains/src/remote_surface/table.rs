@@ -265,6 +265,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("get_available_modes",                                        Unaudited,   Proxied,          HANDLED),
     op("get_available_tools",                                        Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_baseline_snapshot_diff",                                 Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
+    op("get_chat_mcp_catalog",                                       Unsupported, Proxied,          HANDLED),
     op("get_clipboard_files",                                        LocalOnly,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_config",                                                 Unaudited,   Proxied,          HANDLED),
     op("get_configs",                                                Unaudited,   Proxied,          HANDLED),

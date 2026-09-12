@@ -987,6 +987,16 @@
     "currentStatus": "目前狀態: {{status}}"
   },
   "contextPicker": {
+    "mcp": {
+      "label": "MCP",
+      "server": "MCP 服務",
+      "empty": "目前模式沒有可用的已連線 MCP 工具。請在 MCP 設定中啟用並啟動服務。",
+      "modeRestricted": "目前模式不提供已連線的 MCP 工具。請切換至 Standard、Ultimate 或 Creative 使用。",
+      "loadFailed": "MCP 工具載入失敗，請重新整理後重試。",
+      "refresh": "重新整理 MCP 工具",
+      "remoteWorkspace": "遠端工作區暫不支援選擇 MCP。",
+      "unsupportedHost": "目前主機不支援選擇 MCP，請更新主機版本。"
+    },
     "skillsIncomplete": "部分技能掃描失敗，已成功讀取的技能仍可使用。",
     "skillsDiagnosticsUnavailable": "目前主機不提供技能掃描診斷。",
     "menuTitle": "選擇上下文",

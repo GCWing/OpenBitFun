@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "79584f59ffb49edb846b0beacc31f5393d81c3f117f3630445ab034c27546736",
+  "digest": "1230aa44c72c2cfb44fd28cb3da60fe04548cefd323b610b28e44bf48d574773",
   "ownerDigest": "c0e5c187cf62bc6ed06196ce8520b3eb427bf268cf24659b72d2552fb1d99c54",
   "searchAcceptance": [
     {
@@ -138,11 +138,11 @@
     "features": 22,
     "settings": 21,
     "userFacing": 43,
-    "documentedItems": 319,
+    "documentedItems": 320,
     "controlCoverage": {
       "direct": 48,
       "delegated": 61,
-      "interactive": 210,
+      "interactive": 211,
       "unsupported": 0
     }
   },
@@ -197,6 +197,7 @@
         "permission-mailbox",
         "history-search",
         "agent-session-coordination",
+        "mcp-mentions",
         "tool-activity",
         "goals",
         "goal-maintenance",
@@ -613,6 +614,52 @@
         "SessionControl",
         "SessionMessage"
       ],
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "session"
+      }
+    },
+    {
+      "id": "feature.ai-assistant:open:mcp-mentions",
+      "capabilityId": "feature.ai-assistant",
+      "itemIds": [
+        "mcp-mentions"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "unstructuredInteraction",
       "presentationTarget": {
         "kind": "scene",
         "sceneId": "session"
@@ -19215,6 +19262,17 @@
           }
         },
         {
+          "id": "mcp-mentions",
+          "titleZh": "在对话中通过 @ 选择当前模式可用的 MCP 服务",
+          "titleEn": "Use @ in chat to select MCP servers available to the current mode",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“在对话中通过 @ 选择当前模式可用的 MCP 服务”需要用户在当前输入框选择服务并编辑草稿，没有可直接完成该交互的结构化 Command。也可通过工具名称或描述搜索所属服务；工具不会单独列出。目录按当前主机、工作区和模式过滤；Minimal 隐藏 MCP 入口。远程工作区暂不支持此选择器，Peer Host 必须协商 chat_mcp_catalog_v1 能力。",
+            "reasonEn": "“Use @ in chat to select MCP servers available to the current mode” requires the user to select a server and edit the current composer draft; no structured Command completes that interaction directly. Tool names and descriptions can find their owning server without separate tool rows. The catalog is scoped to the current host, workspace, and mode; Minimal hides MCP. Remote workspaces are unsupported; Peer Hosts must advertise chat_mcp_catalog_v1."
+          }
+        },
+        {
           "id": "tool-activity",
           "titleZh": "查看工具调用与后台命令，读取输出并继续输入或停止",
           "titleEn": "Inspect tool calls and background commands, read output, send input, or stop them",
@@ -19400,6 +19458,8 @@
         "Page through, search, and backfill historical turns and session content",
         "让 Agent 创建、列出、取消、删除会话或向另一会话发送消息",
         "Let an agent create, list, cancel, or delete sessions and send messages to another session",
+        "在对话中通过 @ 选择当前模式可用的 MCP 服务",
+        "Use @ in chat to select MCP servers available to the current mode",
         "查看工具调用与后台命令，读取输出并继续输入或停止",
         "Inspect tool calls and background commands, read output, send input, or stop them",
         "查看、创建并完成或阻塞当前会话目标",

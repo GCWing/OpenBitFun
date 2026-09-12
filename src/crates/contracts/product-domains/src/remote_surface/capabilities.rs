@@ -45,6 +45,8 @@ pub enum PeerHostCapability {
     CancelTool,
     /// Read-only `get_all_tools_info` catalog is implemented.
     ToolCatalog,
+    /// Mode/workspace-scoped `get_chat_mcp_catalog` is implemented.
+    ChatMcpCatalogV1,
     /// `submit_user_answers` is implemented for Runtime-owned questions.
     UserQuestionResponse,
 }
@@ -63,6 +65,7 @@ impl PeerHostCapability {
         Self::ProductControlPresentationV1,
         Self::CancelTool,
         Self::ToolCatalog,
+        Self::ChatMcpCatalogV1,
         Self::UserQuestionResponse,
     ];
 
@@ -80,6 +83,7 @@ impl PeerHostCapability {
             Self::ProductControlPresentationV1 => "product_control_presentation_v1",
             Self::CancelTool => "cancel_tool",
             Self::ToolCatalog => "tool_catalog",
+            Self::ChatMcpCatalogV1 => "chat_mcp_catalog_v1",
             Self::UserQuestionResponse => "user_question_response",
         }
     }
@@ -102,6 +106,7 @@ const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::ProductControlV1,
     PeerHostCapability::CancelTool,
     PeerHostCapability::ToolCatalog,
+    PeerHostCapability::ChatMcpCatalogV1,
     PeerHostCapability::UserQuestionResponse,
 ];
 

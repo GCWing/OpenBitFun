@@ -33,6 +33,8 @@ Work with AI in project context, create sessions, continue tasks, answer permiss
   - Page through, search, and backfill historical turns and session content
 - **由专用 Agent 工具控制 / Delegated Agent tool** · `SessionControl` / `SessionMessage` · 让 Agent 创建、列出、取消、删除会话或向另一会话发送消息
   - Let an agent create, list, cancel, or delete sessions and send messages to another session
+- **Agent 可定位入口，需交互完成 / Agent opens; interaction required** · 在对话中通过 @ 选择当前模式可用的 MCP 服务
+  - Use @ in chat to select MCP servers available to the current mode
 - **Agent 可定位入口，需交互完成 / Agent opens; interaction required** · 查看工具调用与后台命令，读取输出并继续输入或停止
   - Inspect tool calls and background commands, read output, send input, or stop them
 - **由专用 Agent 工具控制 / Delegated Agent tool** · `get_goal` / `create_goal` / `update_goal` · 查看、创建并完成或阻塞当前会话目标
