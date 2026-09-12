@@ -3370,8 +3370,11 @@ const AGENT_SUMMARY_CONTRACT: &str = r#"End your final response with a fenced bl
 {
   "issue_verdict": "needs_fix | already_fixed_upstream | wont_fix | needs_info",
   "fixed_by": "link to the upstream fix (required only when already_fixed_upstream)",
-  "wont_fix_reason": "duplicate_of:<#issue> | by_design | invalid (required only when wont_fix)",
+  "wont_fix_reason": "duplicate_of:<#issue> | by_design | invalid | evaluation_pending (required only when wont_fix)",
   "missing_info": ["what is missing"],
+  "background": "what the issue asked for, in one or two plain sentences",
+  "actual_findings": "what you actually found while investigating, in plain sentences",
+  "why_no_fix": "why no code change was made (required when issue_verdict is wont_fix)",
   "reproduction": "reproduced | not_reproduced | not_applicable",
   "reproduction_evidence": "link or path (required only when reproduced)",
   "segment_kind": "evidence | route_decision | implementation | validation | delivery",
@@ -3387,7 +3390,7 @@ const AGENT_SUMMARY_CONTRACT: &str = r#"End your final response with a fenced bl
 }
 ```
 
-Conditional rules: already_fixed_upstream requires fixed_by; wont_fix requires wont_fix_reason; needs_info requires a non-empty missing_info; reproduced requires reproduction_evidence. next_step must not introduce facts that are not in decision or completed. When a user gate is pending, skip decision and next_step — the host approval card carries it."#;
+Conditional rules: already_fixed_upstream requires fixed_by; wont_fix requires wont_fix_reason; needs_info requires a non-empty missing_info; reproduced requires reproduction_evidence. Use wont_fix_reason evaluation_pending when the issue is a real request that is still being evaluated or has no actionable scope yet - that is not by_design, which means the current behaviour is intended. When the verdict is wont_fix, why_no_fix must say in the owner's terms why nothing was changed. next_step must not introduce facts that are not in decision or completed; write it for the repository owner (what they may want to do next: close the issue, review the pull request, supply the missing detail) and in the same language as the issue discussion you read, never in internal LoopX terms. When a user gate is pending, skip decision and next_step — the host approval card carries it."#;
 
 fn render_agent_reentry_instruction(
     packet: &Value,

@@ -290,6 +290,8 @@ const COPY = {
     issueDescription: 'Issue 描述',
     loadingIssueDescription: '正在加载 Issue 描述…',
     issueDescriptionUnavailable: '暂时无法加载 Issue 描述。',
+    issueDescriptionExcerptNote: '以上是截断后的纯文本摘要，不是 GitHub 原文（Markdown 已被移除）。',
+    issueDescriptionOpenOnGithub: '在 GitHub 查看完整描述',
     publishApprovalTitle: '是否发布修复并创建 Pull Request？',
     publishApprovalSummary: '修复已在分支 {branch} 的提交 {commit} 中准备完成，目标仓库为 {repository}。现在需要你决定是否发布。',
     publishApprovalSummaryGeneric: '修复和发布材料已经准备完成，目标仓库为 {repository}。现在需要你决定是否发布为 Pull Request。',
@@ -693,6 +695,8 @@ const COPY = {
     issueDescription: 'Issue description',
     loadingIssueDescription: 'Loading issue description...',
     issueDescriptionUnavailable: 'Issue description is temporarily unavailable.',
+    issueDescriptionExcerptNote: 'This is a truncated plain-text excerpt, not the original GitHub body (markdown was removed).',
+    issueDescriptionOpenOnGithub: 'View the full description on GitHub',
     publishApprovalTitle: 'Publish the fix and create a pull request?',
     publishApprovalSummary: 'The fix is prepared on branch {branch} at commit {commit} for {repository}. Your approval is required before publishing it.',
     publishApprovalSummaryGeneric: 'The fix and publishing materials are ready for {repository}. Your approval is required before creating the pull request.',
@@ -3355,6 +3359,22 @@ function compactSummaryText(value, max = 110) {
   return `${source.slice(0, max - 1)}…`;
 }
 
+/// The owner asked for the middle of the story: what the issue wanted, what
+/// was actually found, and why nothing was changed. The card used to jump from
+/// a verdict badge straight to a conclusion, which read as missing background.
+function appendBriefSentence(container, titleKey, value, repository) {
+  const source = String(value || '').trim();
+  if (!source) return;
+  const section = document.createElement('div');
+  section.className = 'summary-section';
+  const title = document.createElement('strong');
+  title.textContent = text(titleKey);
+  const body = document.createElement('p');
+  body.append(linkifiedText(source, repository));
+  section.append(title, body);
+  container.append(section);
+}
+
 function renderStructuredBrief(container, s, task) {
   const narrativeRepository = task && task.identity && task.identity.item
     ? task.identity.item.repository
@@ -3444,6 +3464,10 @@ function renderStructuredBrief(container, s, task) {
     }
     container.append(conclusion);
   }
+  appendBriefSentence(container, 'summaryBackground', s.background, narrativeRepository);
+  appendBriefSentence(container, 'summaryActualFindings', s.actual_findings, narrativeRepository);
+  appendBriefSentence(container, 'summaryWhyNoFix', s.why_no_fix, narrativeRepository);
+
   if (task && task.state === 'completed' && decisionRoute) {
     const note = document.createElement('p');
     note.className = 'summary-note';
@@ -3604,6 +3628,18 @@ function renderIssueView() {
       ? text('issueDescriptionUnavailable')
       : (loadingDescription ? text('loadingIssueDescription') : text('issueDescriptionEmpty')));
   renderMarkdown(view.issueDescription, descriptionText, url);
+  // The host projects a bounded plain-text excerpt, not the original body:
+  // markdown is stripped and long text is cut with an ellipsis. Saying so stops
+  // the reader from reading it as a broken renderer.
+  if (description && /…$/.test(String(description).trim())) {
+    const note = document.createElement('p');
+    note.className = 'issue-description__note';
+    note.textContent = text('issueDescriptionExcerptNote');
+    if (url) {
+      note.append(' ', externalAnchor(text('issueDescriptionOpenOnGithub'), url));
+    }
+    view.issueDescription.append(note);
+  }
   renderTaskActions(task);
   if (isExternalWait(task)) {
     window.setTimeout(() => maybeAutoRecheckExternalWait(taskForId(task.taskId)), 0);

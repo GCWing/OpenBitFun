@@ -486,7 +486,7 @@ impl GithubLoopxIntakeMetadataProvider {
             let value = self
                 .get_json(
                     &format!(
-                        "/repos/{}/{}/issues?state=open&sort=updated&direction=desc&per_page={INTAKE_PAGE_SIZE}&page={page}",
+                        "/repos/{}/{}/issues?state=open&sort=created&direction=desc&per_page={INTAKE_PAGE_SIZE}&page={page}",
                         repository.owner, repository.repository
                     ),
                     deadline,
