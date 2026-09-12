@@ -471,6 +471,22 @@
           ]
         },
         {
+          "id": "mcp-mentions",
+          "titleZh": "在对话中通过 @ 选择当前模式可用的 MCP 服务",
+          "titleEn": "Use @ in chat to select MCP servers available to the current mode",
+          "control": {
+            "kind": "open",
+            "reasonCode": "unstructuredInteraction",
+            "reasonZh": "“在对话中通过 @ 选择当前模式可用的 MCP 服务”需要用户在当前输入框选择服务并编辑草稿，没有可直接完成该交互的结构化 Command。也可通过工具名称或描述搜索所属服务；工具不会单独列出。目录按当前主机、工作区和模式过滤；Minimal 隐藏 MCP 入口。远程工作区暂不支持此选择器，Peer Host 必须协商 chat_mcp_catalog_v1 能力。",
+            "reasonEn": "“Use @ in chat to select MCP servers available to the current mode” requires the user to select a server and edit the current composer draft; no structured Command completes that interaction directly. Tool names and descriptions can find their owning server without separate tool rows. The catalog is scoped to the current host, workspace, and mode; Minimal hides MCP. Remote workspaces are unsupported; Peer Hosts must advertise chat_mcp_catalog_v1."
+          },
+          "evidence": [
+            "command:get_chat_mcp_catalog",
+            "source:src/web-ui/src/flow_chat/components/ChatContextPicker.tsx#onSelectMcp",
+            "source:src/web-ui/src/flow_chat/components/ChatInput.tsx#selectContextMcp"
+          ]
+        },
+        {
           "id": "tool-activity",
           "titleZh": "查看工具调用与后台命令，读取输出并继续输入或停止",
           "titleEn": "Inspect tool calls and background commands, read output, send input, or stop them",

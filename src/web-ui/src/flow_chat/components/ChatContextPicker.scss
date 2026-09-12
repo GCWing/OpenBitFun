@@ -118,17 +118,22 @@
   }
 
   &--skills {
-    width: max-content;
+    // Keep mixed search results bounded independently of intrinsic row widths.
+    width: min(560px, calc(100vw - 16px));
     min-width: min(300px, calc(100vw - 16px));
     max-width: calc(100vw - 16px);
   }
 
   &__skill-option > [data-openbitfun-part='content'] {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    max-inline-size: 60%;
   }
 
   &__skill-name {
     display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
   }
 

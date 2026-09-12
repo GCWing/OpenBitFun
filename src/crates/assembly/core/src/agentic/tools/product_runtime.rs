@@ -10,6 +10,7 @@ mod catalog;
 mod get_tool_spec_tool;
 mod loaded_spec_state;
 mod materialization;
+mod mcp_catalog;
 mod snapshot;
 
 use crate::agentic::tools::registry::{ProductToolDecoratorRef, ToolRegistry};
@@ -34,6 +35,7 @@ pub(crate) use catalog::{
 pub use catalog::{ResolvedToolManifest, ResolvedVisibleTools};
 pub use get_tool_spec_tool::GetToolSpecTool;
 pub(crate) use loaded_spec_state::collect_product_loaded_deferred_tool_specs;
+pub use mcp_catalog::{build_chat_mcp_catalog, ChatMcpCatalog, ChatMcpCatalogRequest, ChatMcpTool};
 
 #[derive(Clone)]
 pub(crate) struct ProductToolRuntime {

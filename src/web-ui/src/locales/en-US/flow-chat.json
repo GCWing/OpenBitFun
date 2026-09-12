@@ -987,6 +987,16 @@
     "currentStatus": "Current status: {{status}}"
   },
   "contextPicker": {
+    "mcp": {
+      "label": "MCP",
+      "server": "MCP server",
+      "empty": "No connected MCP tools are available in this mode. Enable and start a server in MCP settings.",
+      "modeRestricted": "This mode does not expose the connected MCP tools. Switch to Standard, Ultimate, or Creative to use them.",
+      "loadFailed": "Could not load MCP tools. Retry to refresh the catalog.",
+      "refresh": "Refresh MCP tools",
+      "remoteWorkspace": "MCP selection is not supported for remote workspaces yet.",
+      "unsupportedHost": "This host does not support MCP selection. Update the host to use it."
+    },
     "skillsIncomplete": "Some skills could not be scanned. Available skills are still listed.",
     "skillsDiagnosticsUnavailable": "This host does not report skill scan diagnostics.",
     "menuTitle": "Choose context",

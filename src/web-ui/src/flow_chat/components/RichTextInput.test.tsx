@@ -4,6 +4,8 @@ import { createRoot, type Root } from 'react-dom/client';
 import { Simulate } from 'react-dom/test-utils';
 import RichTextInput, { type RichTextInputElement } from './RichTextInput';
 import type { ContextItem } from '../../shared/types/context';
+import { createMcpPromptReference } from '../utils/mcpPromptReference';
+import { composerPresentationToEditorText, parseComposerPresentation } from '../utils/composerPresentation';
 
 type HarnessHandle = {
   setValue: (value: string) => void;
@@ -737,6 +739,68 @@ describeWithJsdom('RichTextInput external sync', () => {
 
     expect(onChange).toHaveBeenLastCalledWith('', emptyContexts);
     expect(editor?.textContent).toBe('');
+  });
+
+  it('replaces @ with an MCP service capsule while sending the exact reference', async () => {
+    const onChange = vi.fn();
+    const reference = createMcpPromptReference({ serverName: 'Docs', serverId: 'docs-private-id' });
+    await act(async () => root.render(
+      <RichTextInput value="Please use @docs" onChange={onChange} contexts={emptyContexts} onRemoveContext={() => {}} />,
+    ));
+    const editor = container.querySelector('.rich-text-input') as RichTextInputElement;
+    setCaret(editor, 'Please use @docs'.length);
+    await act(async () => editor.dispatchEvent(new window.Event('input', { bubbles: true })));
+    await act(async () => editor.replaceActiveContextTrigger?.(reference));
+    expect(onChange).toHaveBeenLastCalledWith(`Please use ${reference}`, emptyContexts);
+    const capsule = editor.querySelector<HTMLElement>('[data-inline-token-type="mcp-ref"]');
+    expect(capsule?.querySelector('[data-openbitfun-part="tagText"]')?.textContent).toBe('Docs');
+    expect(capsule?.querySelector('[data-openbitfun-part="tagBadge"] svg')).not.toBeNull();
+    expect(capsule?.getAttribute('contenteditable')).toBe('false');
+    expect(capsule?.dataset.tagFormat).toBe(reference);
+    expect(editor.textContent).not.toContain('server:');
+    expect(editor.textContent).not.toContain('docs-private-id');
+    expect(editor.textContent).not.toContain('@docs');
+  });
+
+  it('restores MCP capsules from legacy plain-text drafts and preserves the text presentation shape', async () => {
+    const first = createMcpPromptReference({ serverName: 'Docs', serverId: 'one' });
+    const second = createMcpPromptReference({ serverName: 'Docs', serverId: 'two' });
+    const value = `Compare ${first} with ${second} please.`;
+    const inputRef = createRef<RichTextInputElement>();
+    await act(async () => root.render(<RichTextInput ref={inputRef} value={value} onChange={() => {}} contexts={emptyContexts} onRemoveContext={() => {}} />));
+    const presentation = inputRef.current!.getComposerPresentation!()!;
+    expect(presentation.segments).toEqual([{ kind: 'text', text: value }]);
+    expect(parseComposerPresentation(presentation)).toEqual(presentation);
+    expect(composerPresentationToEditorText(presentation)).toBe(value);
+    await act(async () => {
+      inputRef.current!.replaceChildren();
+      inputRef.current!.restoreComposerPresentation!(presentation);
+    });
+    const pills = inputRef.current!.querySelectorAll<HTMLElement>('[data-inline-token-type="mcp-ref"]');
+    expect(Array.from(pills, pill => pill.dataset.tagFormat)).toEqual([first, second]);
+    expect(inputRef.current!.textContent).toBe('Compare Docs× with Docs× please.');
+  });
+
+  it.each(['remove-button', 'Backspace'])('removes an MCP capsule atomically with %s', async method => {
+    const onChange = vi.fn();
+    const reference = createMcpPromptReference({ serverName: 'Docs', serverId: 'docs' });
+    await act(async () => root.render(<RichTextInput value={`before ${reference}`} onChange={onChange} contexts={emptyContexts} onRemoveContext={() => {}} />));
+    const editor = container.querySelector('.rich-text-input') as RichTextInputElement;
+    await act(async () => {
+      if (method === 'remove-button') {
+        editor.querySelector<HTMLButtonElement>('[data-inline-token-type="mcp-ref"] button')!.click();
+      } else {
+        const range = document.createRange();
+        range.selectNodeContents(editor);
+        range.collapse(false);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        editor.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+      }
+    });
+    expect(editor.querySelector('[data-inline-token-type="mcp-ref"]')).toBeNull();
+    expect(onChange).toHaveBeenLastCalledWith('before', emptyContexts);
   });
 
   it('can replace an active inline trigger with a skill token', async () => {

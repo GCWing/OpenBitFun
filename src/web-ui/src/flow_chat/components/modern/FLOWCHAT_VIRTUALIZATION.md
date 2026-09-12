@@ -173,6 +173,12 @@ timestamp stays at the row's leading edge while the actions stay at its trailing
 edge. The shell's trailing margin remains the item gap; the next Turn may remove
 that gap without removing space occupied by controls.
 
+MCP service references in user-message text render as ordinary reference capsules,
+including text segments alongside persisted file or skill capsules. The display
+reads the existing prompt syntax, so historical messages need no migration or live
+MCP catalog lookup. It preserves the stored text and uses the existing row measurement
+path, with no mount animation or viewport writes.
+
 ## A Row's Mount Is Not an Arrival
 
 **No mount or enter animation may live inside `.virtual-item-wrapper`**, no

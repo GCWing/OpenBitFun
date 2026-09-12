@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:7976cf996632e304",
+  "digest": "fnv1a64:7a261da74dcfbe89",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -20,6 +20,7 @@
       "product_control_presentation_v1",
       "cancel_tool",
       "tool_catalog",
+      "chat_mcp_catalog_v1",
       "user_question_response"
     ],
     "desktop": [
@@ -34,6 +35,7 @@
       "product_control_presentation_v1",
       "cancel_tool",
       "tool_catalog",
+      "chat_mcp_catalog_v1",
       "user_question_response"
     ],
     "cli": [
@@ -44,6 +46,7 @@
       "product_control_v1",
       "cancel_tool",
       "tool_catalog",
+      "chat_mcp_catalog_v1",
       "user_question_response"
     ]
   },
@@ -2185,6 +2188,17 @@
       "cliPeer": {
         "kind": "unsupported",
         "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "get_chat_mcp_catalog",
+      "surface": "tauri_command",
+      "remoteWorkspace": "RemoteUnsupported",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "handled"
       }
     },
     {

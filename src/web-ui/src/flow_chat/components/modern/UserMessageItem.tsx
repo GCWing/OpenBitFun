@@ -55,7 +55,7 @@ import {
   type ComposerPresentation,
 } from '../../utils/composerPresentation';
 import { restoreImageContextsFromPayload } from '../../utils/imageContextRestoration';
-import { UserMessagePresentationContent } from './UserMessagePresentationContent';
+import { UserMessagePresentationContent, UserMessageTextContent } from './UserMessagePresentationContent';
 import { UserMessageImage } from './UserMessageImage';
 import './UserMessageItem.scss';
 
@@ -590,7 +590,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
                 >
                   {composerPresentation ? (
                     <UserMessagePresentationContent presentation={composerPresentation} />
-                  ) : displayText}
+                  ) : <UserMessageTextContent text={displayText} />}
                 </div>
                 {steeringTag && (
                   <div className={`user-message-item__steering-tag ${steeringTag.className}`} data-openbitfun-component="user-message-item" data-openbitfun-part="steeringTag">
@@ -615,7 +615,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
                 >
                   {composerPresentation ? (
                     <UserMessagePresentationContent presentation={composerPresentation} />
-                  ) : displayText}
+                  ) : <UserMessageTextContent text={displayText} />}
                 </div>
                 {steeringTag && (
                   <div className={`user-message-item__steering-tag ${steeringTag.className}`} data-openbitfun-component="user-message-item" data-openbitfun-part="steeringTag">

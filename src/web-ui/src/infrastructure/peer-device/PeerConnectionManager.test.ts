@@ -85,6 +85,7 @@ describe('PeerConnectionManager attach', () => {
           capabilities: {
             cancel_tool: true,
             tool_catalog: true,
+            chat_mcp_catalog_v1: true,
             user_question_response: true,
             miniapp_agent_context_files_v1: true,
             wsl_workspaces_v1: true,
@@ -98,6 +99,7 @@ describe('PeerConnectionManager attach', () => {
     const caps = connection.getState().capabilities;
     expect(caps.cancelTool).toBe(true);
     expect(caps.toolCatalog).toBe(true);
+    expect(caps.chatMcpCatalogV1).toBe(true);
     expect(caps.miniAppAgentContextFilesV1).toBe(true);
     expect(caps.wslWorkspacesV1).toBe(true);
   });
@@ -127,6 +129,7 @@ describe('PeerConnectionManager attach', () => {
     const desktop = await makeManager('desktop').connect('peer-1', 'Studio');
     expect(desktop.getState().capabilities.hostKind).toBe('desktop');
     expect(desktop.getState().capabilities.inlineImageAttachmentsV1).toBe(false);
+    expect(desktop.getState().capabilities.chatMcpCatalogV1).toBe(false);
 
     const cli = await makeManager('cli').connect('peer-2', 'Studio');
     expect(cli.getState().capabilities.hostKind).toBe('cli');

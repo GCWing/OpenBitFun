@@ -430,6 +430,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn cancellation_does_not_signal_an_unverified_group_after_leader_exit() {
+        use std::io::Write;
+
         struct ProcessGroupGuard(i32);
         impl Drop for ProcessGroupGuard {
             fn drop(&mut self) {
@@ -440,16 +442,43 @@ mod tests {
             }
         }
 
-        let mut command = Command::new("/bin/sh");
+        let ready_dir = tempfile::tempdir().expect("ready directory");
+        let ready_path = ready_dir.path().join("hup-resistant-child-ready");
+        let mut command = openbitfun_services_core::process_manager::create_command("/bin/sh");
         command
-            .args(["-c", "trap '' HUP; sleep 30 &"])
-            .stdin(Stdio::null())
+            .arg("-c")
+            // Keep the leader alive until the child has installed its HUP
+            // disposition; exiting immediately races child startup on macOS.
+            .arg(
+                "trap '' HUP; \
+                 sh -c 'trap \"\" HUP; printf ready > \"$OPENBITFUN_DISPATCH_HUP_TEST_READY\"; \
+                 exec sleep 30' & \
+                 read release",
+            )
+            .env("OPENBITFUN_DISPATCH_HUP_TEST_READY", &ready_path)
+            .stdin(Stdio::piped())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         configure_detached_process(&mut command);
         let mut leader = command.spawn().expect("spawn process-group leader");
         let process_group = i32::try_from(leader.id()).expect("safe pid");
         let _guard = ProcessGroupGuard(process_group);
+        for _ in 0..100 {
+            if ready_path.is_file() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(
+            ready_path.is_file(),
+            "HUP-resistant child must be ready before the leader exits"
+        );
+        leader
+            .stdin
+            .take()
+            .expect("leader release pipe")
+            .write_all(b"release\n")
+            .expect("release process-group leader");
         leader.wait().expect("reap process-group leader");
         assert!(!process_alive(process_group as u32));
         assert!(process_group_alive(process_group));

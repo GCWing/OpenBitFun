@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "79584f59ffb49edb846b0beacc31f5393d81c3f117f3630445ab034c27546736",
-  "count": 210,
+  "catalogDigest": "1230aa44c72c2cfb44fd28cb3da60fe04548cefd323b610b28e44bf48d574773",
+  "count": 211,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
-    "unstructuredInteraction": 183,
+    "unstructuredInteraction": 184,
     "visualSelection": 18
   },
   "entries": [
@@ -94,6 +94,24 @@
         "command:respond_permission_batch",
         "command:subscribe_permission_requests",
         "command:submit_user_answers"
+      ]
+    },
+    {
+      "capabilityId": "feature.ai-assistant",
+      "itemId": "mcp-mentions",
+      "titleZh": "在对话中通过 @ 选择当前模式可用的 MCP 服务",
+      "titleEn": "Use @ in chat to select MCP servers available to the current mode",
+      "reasonCode": "unstructuredInteraction",
+      "reasonZh": "“在对话中通过 @ 选择当前模式可用的 MCP 服务”需要用户在当前输入框选择服务并编辑草稿，没有可直接完成该交互的结构化 Command。也可通过工具名称或描述搜索所属服务；工具不会单独列出。目录按当前主机、工作区和模式过滤；Minimal 隐藏 MCP 入口。远程工作区暂不支持此选择器，Peer Host 必须协商 chat_mcp_catalog_v1 能力。",
+      "reasonEn": "“Use @ in chat to select MCP servers available to the current mode” requires the user to select a server and edit the current composer draft; no structured Command completes that interaction directly. Tool names and descriptions can find their owning server without separate tool rows. The catalog is scoped to the current host, workspace, and mode; Minimal hides MCP. Remote workspaces are unsupported; Peer Hosts must advertise chat_mcp_catalog_v1.",
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "session"
+      },
+      "evidence": [
+        "command:get_chat_mcp_catalog",
+        "source:src/web-ui/src/flow_chat/components/ChatContextPicker.tsx#onSelectMcp",
+        "source:src/web-ui/src/flow_chat/components/ChatInput.tsx#selectContextMcp"
       ]
     },
     {

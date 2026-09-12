@@ -9,6 +9,7 @@ import {
   normalizeUserDefaultChatInputModeId,
   resolveAvailableChatInputMode,
   resolveChatInputCanUseSkills,
+  resolveChatInputCanUseMcp,
   resolveChatInputSendAgentType,
   resolveChatInputModePolicy,
   resolveChatInputMainAgentModes,
@@ -31,6 +32,19 @@ function createWorkspace(overrides: Partial<WorkspaceInfo>): WorkspaceInfo {
     ...overrides,
   };
 }
+
+describe('MCP picker availability', () => {
+  it.each(['Minimal', 'minimal', ' MINIMAL '])('hides MCP in %s mode', targetAgentType => {
+    expect(resolveChatInputCanUseMcp({ targetAgentType, isAcpTargetSession: false, isDispatchTransport: false })).toBe(false);
+  });
+  it.each(['Standard', 'Ultimate', 'Creative', 'agentic', 'DocsAgent'])('allows native %s discovery', targetAgentType => {
+    expect(resolveChatInputCanUseMcp({ targetAgentType, isAcpTargetSession: false, isDispatchTransport: false })).toBe(true);
+  });
+  it('keeps ACP and detached dispatch discovery unavailable', () => {
+    expect(resolveChatInputCanUseMcp({ targetAgentType: 'Standard', isAcpTargetSession: true, isDispatchTransport: false })).toBe(false);
+    expect(resolveChatInputCanUseMcp({ targetAgentType: 'Standard', isAcpTargetSession: false, isDispatchTransport: true })).toBe(false);
+  });
+});
 
 describe('normalizeUserDefaultChatInputModeId', () => {
   it('normalizes non-empty strings and rejects blank values', () => {

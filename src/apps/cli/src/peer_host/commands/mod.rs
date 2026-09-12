@@ -82,6 +82,7 @@ pub(crate) async fn dispatch(
         // really has no tools". Without this the call fell into the unsupported
         // dispatch branch and the UI silently rendered an empty tool list.
         "get_all_tools_info" => tools::get_all_tools_info().await,
+        "get_chat_mcp_catalog" => tools::get_chat_mcp_catalog(args).await,
 
         // Sessions
         "list_persisted_sessions" => session::list_persisted_sessions(state, args).await,
@@ -187,6 +188,7 @@ pub(crate) const HANDLED_COMMANDS: &[&str] = &[
     "get_agent_profile_config",
     "get_agent_profile_configs",
     "get_all_tools_info",
+    "get_chat_mcp_catalog",
     "get_available_modes",
     "get_config",
     "get_configs",

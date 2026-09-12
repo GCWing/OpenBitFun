@@ -7,6 +7,7 @@ import { FlowChatContext } from './FlowChatContext';
 import { UserMessageItem } from './UserMessageItem';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { useMessageEditStore } from '../../store/messageEditStore';
+import { createMcpPromptReference } from '../../utils/mcpPromptReference';
 import {
   SessionExecutionEvent,
   stateMachineManager,
@@ -310,6 +311,65 @@ describe('UserMessageItem steering tag', () => {
     });
 
     expect(container.querySelector('.user-message-item__steering-tag')).toBeNull();
+  });
+
+  it.each(['legacy', 'text-metadata', 'mixed-metadata', 'failed'])('renders sent MCP references as capsules after reloading %s messages', variant => {
+    const reference = createMcpPromptReference({ serverName: 'Docs', serverId: 'internal-docs-id' });
+    const text = `Before ${reference} after`;
+    const mixed = variant === 'mixed-metadata';
+    const message = JSON.parse(JSON.stringify({
+      id: 'user-mcp',
+      content: mixed ? `[$pdf] ${text}` : text,
+      timestamp: 1000,
+      ...(variant.includes('metadata') ? {
+        metadata: { composerPresentation: {
+          version: 1,
+          segments: [
+            ...(mixed ? [{ kind: 'inline-token', token: '[$pdf]', tokenType: 'skill', label: 'pdf' }, { kind: 'text', text: ' ' }] : []),
+            { kind: 'text', text },
+          ],
+        } },
+      } : {}),
+    }));
+    const persisted = JSON.stringify(message);
+    activeSessionRef.current = {
+      sessionId: 'mcp-session',
+      sessionKind: 'normal',
+      dialogTurns: [{ id: 'turn-mcp', status: variant === 'failed' ? 'error' : 'completed' }],
+    };
+    const render = () => act(() => root.render(
+      <FlowChatContext.Provider value={{ sessionId: 'mcp-session', allowUserMessageRollback: false }}>
+        <UserMessageItem message={message} turnId="turn-mcp" />
+      </FlowChatContext.Provider>,
+    ));
+    const verify = () => {
+      const content = container.querySelector('[data-testid="chat-user-message-content"]')!;
+      const capsule = content.querySelector('.message-reference-capsule--mcp');
+      expect(capsule?.textContent).toBe('Docs');
+      expect(capsule?.querySelector('svg')).not.toBeNull();
+      expect(capsule?.getAttribute('title')).toBe('MCP: Docs');
+      expect(content.textContent).toContain('Before Docs after');
+      expect(content.textContent).not.toContain('server:');
+      expect(content.textContent).not.toContain('internal-docs-id');
+      if (mixed) expect(content.querySelector('.message-reference-capsule--skill')?.textContent).toBe('pdf');
+      expect(JSON.stringify(message)).toBe(persisted);
+    };
+    render();
+    verify();
+    act(() => root.render(null));
+    render();
+    verify();
+  });
+
+  it('keeps malformed MCP references visible as text', () => {
+    const content = 'MCP "Docs" (server: "")';
+    act(() => root.render(
+      <FlowChatContext.Provider value={{ allowUserMessageRollback: false }}>
+        <UserMessageItem message={{ id: 'invalid-mcp', content, timestamp: 1000 }} turnId="invalid-mcp-turn" />
+      </FlowChatContext.Provider>,
+    ));
+    expect(container.querySelector('.message-reference-capsule--mcp')).toBeNull();
+    expect(container.querySelector('[data-testid="chat-user-message-content"]')?.textContent).toBe(content);
   });
 
   it('renders persisted reference metadata as capsules instead of raw prompt tags', () => {

@@ -74,6 +74,8 @@ export interface PeerHostCapabilities {
    * (older host); resolve via `hostKind` the same way as `cancelTool`.
    */
   readonly toolCatalog: boolean | null;
+  /** Scoped MCP choices must be explicitly advertised by the host. */
+  readonly chatMcpCatalogV1?: boolean;
   /**
    * Host implements `submit_user_answers` for Runtime-owned
    * AskUserQuestion interactions. Older Desktop hosts already implemented the
@@ -170,6 +172,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   // Consumers treat `null` optimistically so an unprobed host is not gated off.
   cancelTool: null,
   toolCatalog: null,
+  chatMcpCatalogV1: false,
   userQuestionResponse: null,
   // Host kind is unknown until the first `peer_mode_ping` resolves. Consumers
   // treat `null` optimistically. See PR #2428 round 5 #1.
@@ -498,6 +501,7 @@ export class PeerConnectionManager {
         caps?.product_control_presentation_v1 === true,
       cancelTool,
       toolCatalog,
+      chatMcpCatalogV1: caps?.chat_mcp_catalog_v1 === true,
       userQuestionResponse,
       hostKind,
     };
@@ -724,6 +728,7 @@ function capabilitiesEqual(
     a.wslWorkspacesV1 === b.wslWorkspacesV1 &&
     a.cancelTool === b.cancelTool &&
     a.toolCatalog === b.toolCatalog &&
+    a.chatMcpCatalogV1 === b.chatMcpCatalogV1 &&
     a.userQuestionResponse === b.userQuestionResponse &&
     a.hostKind === b.hostKind;
 }

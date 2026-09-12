@@ -14,6 +14,16 @@ export function agentExecutionTier(agentType: string | null | undefined): AgentE
   return canonicalHarnessId(agentType) ?? 'Standard';
 }
 
+export function resolveChatInputCanUseMcp(params: {
+  targetAgentType: string;
+  isAcpTargetSession: boolean;
+  isDispatchTransport: boolean;
+}): boolean {
+  return !params.isAcpTargetSession
+    && !params.isDispatchTransport
+    && canonicalHarnessId(params.targetAgentType) !== 'Minimal';
+}
+
 export function canSwitchSessionMainAgent(params: {
   sessionStarted: boolean;
   currentAgentType: string | null | undefined;

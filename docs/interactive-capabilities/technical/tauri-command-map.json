@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "79584f59ffb49edb846b0beacc31f5393d81c3f117f3630445ab034c27546736",
-  "commandCount": 645,
+  "catalogDigest": "1230aa44c72c2cfb44fd28cb3da60fe04548cefd323b610b28e44bf48d574773",
+  "commandCount": 646,
   "coverage": {
-    "commandCount": 645,
-    "documentedCommandCount": 608,
+    "commandCount": 646,
+    "documentedCommandCount": 609,
     "implementationCommandCount": 37,
     "implementationDigest": "3c5e64b6ff16d55d95c2a6b4f77046be009a554b395b4a52bf8ed7c162ab1093"
   },
@@ -2689,6 +2689,22 @@
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
       "signature": "fn get_baseline_snapshot_diff( request: GetBaselineSnapshotDiffRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "get_chat_mcp_catalog",
+      "moduleId": "tool",
+      "capabilityId": "feature.ai-assistant",
+      "capabilityIds": [
+        "feature.ai-assistant"
+      ],
+      "documentedItemIds": [
+        "feature.ai-assistant:mcp-mentions"
+      ],
+      "visibility": "documented",
+      "rustPath": "get_chat_mcp_catalog",
+      "sourceFile": "src/apps/desktop/src/api/tool_api.rs",
+      "signature": "fn get_chat_mcp_catalog( request: openbitfun_core::agentic::tools::product_runtime::ChatMcpCatalogRequest, ) -> Result<openbitfun_core::agentic::tools::product_runtime::ChatMcpCatalog, String>",
+      "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
       "id": "get_clipboard_files",
