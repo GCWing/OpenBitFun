@@ -105,8 +105,8 @@
       ],
       "model_policy": {
         "mode": "catalog_with_fallback",
-        "curated_models": ["deepseek-v4-flash", "deepseek-v4-pro"],
-        "additional_models": []
+        "curated_models": ["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro"],
+        "additional_models": ["deepseek-flash"]
       }
     },
     {

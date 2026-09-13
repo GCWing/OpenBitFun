@@ -119,6 +119,20 @@ const COPY = {
     factsArtifactNone: '本轮暂无文件变更',
     errorTitle: '错误',
     gateKindPublish: '发布审批',
+    gateKindComment: '发布评论审批',
+    gatePublishCommentTitle: '发布维护者评论到 {item}',
+    gatePublishCommentSummary: '将向 {item} 发布一条公开评论，这是对外写入，不会修改代码或创建 PR。',
+    gatePublishCommentApproveEffect: '在 {item} 公开发布这条评论；不会修改代码，也不会创建 PR。',
+    gatePublishCommentRejectEffect: '不发布评论；草稿、调查结果和工作区都会保留。',
+    gatePublishCommentRecommendation: '建议先核对评论要点；批准后评论会立即公开。',
+    gatePublishCommentApprove: '批准发布',
+    gateCommentPointsTitle: '评论要点',
+    gateCommentDraftTitle: '草稿位置',
+    gateCommentDraftHint: '完整正文保存在任务工作区草稿文件中。',
+    approvalAppliedComment: '已批准：将向 {item} 发布维护者评论。',
+    approvalAppliedPublish: '已批准：将推送分支并创建 Pull Request。',
+    approvalAppliedGeneric: '已批准：任务将继续执行「{title}」。',
+    approvalRejectedNotice: '已拒绝：该操作不会执行，草稿、进度和工作区都会保留。',
     gateKindDecision: '决策请求',
     outputUnavailable: '实时输出暂不可用',
     outputThinking: '思考',
@@ -148,6 +162,12 @@ const COPY = {
     summaryReproductionReproduced: '已复现',
     summaryReproductionNotReproduced: '未复现（未执行复现环节）',
     summaryReproductionNotApplicable: '不适用',
+    summaryReproductionE2e: '已复现（端到端）',
+    summaryReproductionModule: '已复现（模块/测试级）',
+    summaryReproductionScoped: '已复现（范围见证据）',
+    summaryReproductionEvidenceLabel: '复现证据',
+    summaryE2eVerificationHint: '端到端验证仍待完成：请在真实运行环境按 Issue 描述步骤确认修复生效。',
+    summaryReproductionInProgress: '复现中',     summaryReproductionPending: '待复现',     summaryReproductionActiveHint: '复现环节正在进行，当前不是最终结论。',
     summaryWontFixReasonDuplicateOf: '重复议题',
     summaryWontFixReasonByDesign: '设计如此，无需改动',
     summaryWontFixReasonInvalid: '无需处理（无可执行请求）',
@@ -155,6 +175,10 @@ const COPY = {
     state_completed_needs_fix: '已处理，待发布',
     summaryShowFullConclusion: '展开完整结论',
     summaryBackground: '背景',
+    summarySectionCompleted: '已完成',
+    summarySectionArtifacts: '证据与产物',
+    summarySectionCurrentAction: '当前动作',
+    summaryAgentEnglish: '英文原文',
     summaryActualFindings: '实际发现',
     summaryWhyNoFix: '为什么不用自动修复',
     taskLabelsMore: '+{value}',
@@ -301,11 +325,36 @@ const COPY = {
     publishApprovalRecommendationReview: '建议先确认修改和验证结果；批准只会发布 Pull Request，不会自动合并。',
     publishApprovalApprove: '批准并创建 PR',
     publishApprovalReject: '暂不发布',
-    genericApprovalTitle: '是否继续处理这个 Issue？',
-    genericApprovalSummary: 'Agent 在执行任务时请求一个决定。需要你批准的是超出只读边界的动作（写入/提交、构建、安装、发布、真实运行验证等）；仅在本地文件内修改不需要审批。具体内容见下方原始请求，不确定时可以先在时间线里确认它做了什么再决定。',
-    genericApprovalApproveEffect: '批准后：按下方「原始请求」执行其中的具体操作（含对仓库的写入/提交，以及构建、安装、发布、真实运行验证等外部动作），完成后会再次汇报结果。',
-    genericApprovalRejectEffect: '拒绝后：不执行该操作，任务保持等待、不会继续推进；现有修改、调查结果和工作区都会保留。',
-    genericApprovalRecommendation: '建议：先展开「原始请求」确认要执行的每个动作——需要你批准的是写入/提交、构建、安装、真实运行验证等会改变仓库或产生外部副作用的步骤；文件内的普通修改不需要审批。确认符合预期后再继续，不确定时暂不执行并在备注中说明需要补充的信息。',
+    state_queued_repo_wait_with: '等待 {item} 完成后才能开始',
+    externalActionTitlePr: '创建 Pull Request 到 {item}',
+    externalActionPushDetail: '将推送分支 {branch}（提交 {commit}）并创建 Pull Request，不会自动合并。',
+    externalActionPushDetailNoCommit: '将推送分支 {branch} 并创建 Pull Request，不会自动合并。',
+    externalActionPushDetailUnknown: '将把已准备好的修复分支推送到 {repository} 并创建 Pull Request，不会自动合并。',
+    externalActionApprovePr: '推送分支并创建 Pull Request（不会自动合并）。',
+    externalActionRejectPr: '不推送、不创建 Pull Request；本地分支、提交与验证结果保留。',
+    externalActionTitlePush: '推送分支或提交到远端',
+    externalActionPushSummary: '将把本地提交推送到远端仓库（不创建 Pull Request）。',
+    externalActionApprovePush: '执行 git 推送。',
+    externalActionRejectPush: '不推送；本地提交与工作区保留。',
+    externalActionTitleValidate: '运行外部验证（构建 / 安装 / 真实运行）',
+    externalActionSummaryValidate: '将执行构建、安装或真实运行验证，不会改动仓库内容。',
+    externalActionApproveValidate: '执行验证命令并汇报结果。',
+    externalActionRejectValidate: '不执行验证；任务保持等待。',
+    externalActionTitle: '需要批准的对外操作',
+    externalActionSummaryDetail: '请求执行：{detail}',
+    externalActionSummaryFallback: 'Agent 请求执行一个需要你批准的对外操作。',
+    externalActionApproveFallback: '执行该操作，完成后汇报结果。',
+    externalActionRejectFallback: '不执行该操作；现有修改、证据与工作区保留。',
+    approvalAppliedGenericDetail: '已批准：{detail}',
+    summarySupportingEvidence: '支撑证据',
+    summaryArtifactSupports: '对应结论：{value}',
+    artifactKindSource: '来源问题',
+    artifactKindRepro: '复现与验证证据',
+    artifactKindValidation: '验证证据',
+    artifactKindImplementation: '相关实现与改动范围',
+    artifactKindDocs: '模块约束与架构依据',
+    artifactKindReview: '发布与评审准备',
+    artifactKindFile: '相关文件',
     gateRawDetails: '技术原文（仅在需要核对时展开）',
     gateGrantAuthorityScopes: '需要的权限：{scopes}。',
     gateGatedReadTitle: '允许读取 Issue 正文与维护者评论？',
@@ -359,6 +408,16 @@ const COPY = {
     liveVerification: '目标需要再次在线复核，暂未创建任务。',
     retryRequired: '该目标已有终态任务。只有确认后才会创建新的 attempt。',
     actionApplied: '操作已应用。',
+    actionAppliedResume: '已继续执行：{item}',
+    actionAppliedRestore: '已还原任务：{item}',
+    actionAppliedPause: '已暂停：{item}',
+    actionAppliedAbort: '已中止：{item}',
+    actionAppliedArchive: '已归档：{item}',
+    actionAppliedRetry: '已重新尝试：{item}',
+    noticeOpenLink: '打开链接',
+    issuePullRequest: 'Pull Request',
+    publishOutcomePr: 'Pull Request 已创建：#{number}',
+    publishOutcomeComment: '已发布维护者评论：{item}',
     approvalSubmitting: '正在提交审批决定，任务会在宿主确认后继续。',
     approvalSubmittingShort: '正在提交决定…',
     actionPending: '正在提交操作',
@@ -400,6 +459,17 @@ const COPY = {
     status_blocked: '阻塞',
     state_preparing: '准备中',
     state_queued: '排队中',
+    state_queued_repo_wait: '等待同仓库任务',
+    state_queued_after_approval: '已批准，等待执行',
+    action_issue_fix_confirm_reproduction: '确认复现',
+    action_issue_fix_feasibility_decision: '可行性判定',
+    action_issue_fix_apply_patch: '实施修复',
+    action_issue_fix_validated_fix: '验证修复',
+    action_issue_fix_pr_review_packet: '准备 PR 评审包',
+    action_issue_fix_external_comment_packet: '准备外部评论',
+    action_issue_fix_delivery: '交付与发布',
+    action_issue_fix_publish: '发布 PR',
+    action_issue_fix_track: 'PR 监控',
     state_running: '运行中',
     state_waiting_for_user: '待批准',
     state_waiting_for_external: '等待外部操作',
@@ -524,6 +594,20 @@ const COPY = {
     factsArtifactNone: 'No file changes in this turn yet',
     errorTitle: 'Error',
     gateKindPublish: 'Publish approval',
+    gateKindComment: 'Comment approval',
+    gatePublishCommentTitle: 'Publish maintainer comment to {item}',
+    gatePublishCommentSummary: 'A public comment will be posted to {item}; this is an external write and will not change code or create a PR.',
+    gatePublishCommentApproveEffect: 'Post this comment publicly on {item}; code and PRs are not changed.',
+    gatePublishCommentRejectEffect: 'Do not post the comment; the draft, findings, and workspace are preserved.',
+    gatePublishCommentRecommendation: 'Review the comment points first; approving posts it immediately.',
+    gatePublishCommentApprove: 'Publish comment',
+    gateCommentPointsTitle: 'Comment points',
+    gateCommentDraftTitle: 'Draft file',
+    gateCommentDraftHint: 'The full body is kept in the task workspace draft file.',
+    approvalAppliedComment: 'Approved: a maintainer comment will be posted to {item}.',
+    approvalAppliedPublish: 'Approved: the branch will be pushed and a pull request created.',
+    approvalAppliedGeneric: 'Approved: the task will continue with "{title}".',
+    approvalRejectedNotice: 'Rejected: the action will not run; draft, progress, and workspace are preserved.',
     gateKindDecision: 'Decision request',
     outputUnavailable: 'Live output is unavailable',
     outputThinking: 'Thinking',
@@ -553,6 +637,12 @@ const COPY = {
     summaryReproductionReproduced: 'Reproduced',
     summaryReproductionNotReproduced: 'Not reproduced (no repro step)',
     summaryReproductionNotApplicable: 'Not applicable',
+    summaryReproductionE2e: 'Reproduced (end-to-end)',
+    summaryReproductionModule: 'Reproduced (module/test level)',
+    summaryReproductionScoped: 'Reproduced (scope in evidence)',
+    summaryReproductionEvidenceLabel: 'Reproduction evidence',
+    summaryE2eVerificationHint: 'End-to-end verification is still pending: confirm the fix in a real runtime following the issue steps.',
+    summaryReproductionInProgress: 'Reproduction in progress',     summaryReproductionPending: 'Awaiting reproduction',     summaryReproductionActiveHint: 'Reproduction is still in progress; this is not a final result.',
     summaryWontFixReasonDuplicateOf: 'Duplicate issue',
     summaryWontFixReasonByDesign: 'Works as designed',
     summaryWontFixReasonInvalid: 'No action needed (nothing actionable)',
@@ -560,6 +650,10 @@ const COPY = {
     state_completed_needs_fix: 'Handled, pending release',
     summaryShowFullConclusion: 'Show full conclusion',
     summaryBackground: 'Background',
+    summarySectionCompleted: 'Completed',
+    summarySectionArtifacts: 'Evidence and artifacts',
+    summarySectionCurrentAction: 'Current action',
+    summaryAgentEnglish: 'English original',
     summaryActualFindings: 'What was found',
     summaryWhyNoFix: 'Why this was not auto-fixed',
     taskLabelsMore: '+{value}',
@@ -706,11 +800,36 @@ const COPY = {
     publishApprovalRecommendationReview: 'Review the change and validation results first. Approval publishes a pull request but does not merge it automatically.',
     publishApprovalApprove: 'Approve and create PR',
     publishApprovalReject: 'Keep local only',
-    genericApprovalTitle: 'Continue handling this Issue?',
-    genericApprovalSummary: 'The agent requested a decision while working. What needs your approval are actions beyond the read-only boundary (writes/commits, builds, installs, publishing, real-run validation); plain local file edits do not need approval. See the original request below; when unsure, check the timeline first to see what it did.',
-    genericApprovalApproveEffect: 'Approve = perform the concrete operation described in the "Original request" below (writes/commits in the repo, plus external actions such as building, installing, publishing, or real-run validation), then report results again afterward.',
-    genericApprovalRejectEffect: 'Reject = do not perform that operation; the task stays waiting and does not move forward. Existing changes, investigation results, and the workspace are kept.',
-    genericApprovalRecommendation: 'Recommendation: expand the "Original request" and confirm each step. Only steps that change the repo or produce external side effects (write/commit, build, install, real-run validation) need your approval; ordinary local file edits do not. Continue when it matches your expectation; otherwise pause and note what information is missing.',
+    state_queued_repo_wait_with: 'Waiting for {item} to finish first',
+    externalActionTitlePr: 'Create a pull request for {item}',
+    externalActionPushDetail: 'Push branch {branch} (commit {commit}) and open a pull request; nothing is merged automatically.',
+    externalActionPushDetailNoCommit: 'Push branch {branch} and open a pull request; nothing is merged automatically.',
+    externalActionPushDetailUnknown: 'Push the prepared fix branch to {repository} and open a pull request; nothing is merged automatically.',
+    externalActionApprovePr: 'Push the branch and open a pull request (no automatic merge).',
+    externalActionRejectPr: 'Do not push or open a pull request; keep the local branch, commit, and validation results.',
+    externalActionTitlePush: 'Push a branch or commit',
+    externalActionPushSummary: 'Push the local commit to the remote repository (no pull request).',
+    externalActionApprovePush: 'Run the git push.',
+    externalActionRejectPush: 'Do not push; keep the local commit and workspace.',
+    externalActionTitleValidate: 'Run external validation (build / install / real run)',
+    externalActionSummaryValidate: 'Run a build, install, or real-run validation without changing repository content.',
+    externalActionApproveValidate: 'Run the validation and report the result.',
+    externalActionRejectValidate: 'Do not run the validation; the task stays waiting.',
+    externalActionTitle: 'External action needs your approval',
+    externalActionSummaryDetail: 'Requested action: {detail}',
+    externalActionSummaryFallback: 'The agent requested an external action that needs your approval.',
+    externalActionApproveFallback: 'Perform that action and report the result.',
+    externalActionRejectFallback: 'Do not perform the action; existing changes, evidence, and the workspace are kept.',
+    approvalAppliedGenericDetail: 'Approved: {detail}',
+    summarySupportingEvidence: 'Supporting evidence',
+    summaryArtifactSupports: 'Supports: {value}',
+    artifactKindSource: 'Source issue',
+    artifactKindRepro: 'Reproduction / verification evidence',
+    artifactKindValidation: 'Validation evidence',
+    artifactKindImplementation: 'Implementation and change scope',
+    artifactKindDocs: 'Module constraints and design basis',
+    artifactKindReview: 'Publish / review preparation',
+    artifactKindFile: 'Related file',
     gateRawDetails: 'Verbatim request (technical details only)',
     gateGrantAuthorityScopes: 'Required scopes: {scopes}.',
     gateGatedReadTitle: 'Allow reading the issue body and maintainer comments?',
@@ -764,6 +883,16 @@ const COPY = {
     liveVerification: 'The target needs another live verification before a task can be created.',
     retryRequired: 'A terminal task exists. Confirm before creating a new attempt.',
     actionApplied: 'Action applied.',
+    actionAppliedResume: 'Resumed: {item}',
+    actionAppliedRestore: 'Restored: {item}',
+    actionAppliedPause: 'Paused: {item}',
+    actionAppliedAbort: 'Aborted: {item}',
+    actionAppliedArchive: 'Archived: {item}',
+    actionAppliedRetry: 'Retried: {item}',
+    noticeOpenLink: 'Open link',
+    issuePullRequest: 'Pull request',
+    publishOutcomePr: 'Pull request created: #{number}',
+    publishOutcomeComment: 'Maintainer comment published: {item}',
     approvalSubmitting: 'Submitting the decision. The task will continue after host confirmation.',
     approvalSubmittingShort: 'Submitting decision...',
     actionPending: 'Applying action',
@@ -805,6 +934,17 @@ const COPY = {
     status_blocked: 'Blocked',
     state_preparing: 'Preparing',
     state_queued: 'Queued',
+    state_queued_repo_wait: 'Waiting for same-repo task',
+    state_queued_after_approval: 'Approved, waiting to run',
+    action_issue_fix_confirm_reproduction: 'Confirm reproduction',
+    action_issue_fix_feasibility_decision: 'Feasibility decision',
+    action_issue_fix_apply_patch: 'Apply fix',
+    action_issue_fix_validated_fix: 'Validate fix',
+    action_issue_fix_pr_review_packet: 'Prepare PR review packet',
+    action_issue_fix_external_comment_packet: 'Prepare external comment',
+    action_issue_fix_delivery: 'Delivery and publish',
+    action_issue_fix_publish: 'Publish PR',
+    action_issue_fix_track: 'PR monitor',
     state_running: 'Running',
     state_waiting_for_user: 'Pending approval',
     state_waiting_for_external: 'External wait',
@@ -902,6 +1042,8 @@ const view = {
   issueStatePill: byId('issue-state-pill'),
   issueMetaSep1: byId('issue-meta-sep-1'),
   issueLink: byId('issue-link'),
+  issueMetaSep3: byId('issue-meta-sep-3'),
+  issuePrLink: byId('issue-pr-link'),
   issueMetaSep2: byId('issue-meta-sep-2'),
   issueUpdated: byId('issue-updated'),
   issueDetail: byId('issue-detail'),
@@ -962,6 +1104,27 @@ const view = {
   resetLoopxConfirm: byId('reset-loopx-confirm'),
 };
 
+const PUBLISH_ARMED_STORAGE_KEY = 'loopx.publishArmed';
+const PUBLISH_SEEN_STORAGE_KEY = 'loopx.publishSeen';
+
+function loadStoredIdSet(key) {
+  try {
+    const raw = window.localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((value) => typeof value === 'string') : []);
+  } catch (error) {
+    return new Set();
+  }
+}
+
+function storeIdSet(key, values) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify([...values].slice(-50)));
+  } catch (error) {
+    // 存储失败不影响主流程：播报只是体验优化。
+  }
+}
+
 const state = {
   snapshot: null,
   events: [],
@@ -970,6 +1133,7 @@ const state = {
   followLogs: true,
   expandedThinking: new Set(),
   expandedTool: new Set(),
+  expandedLogDetails: new Set(),
   preview: null,
   pendingCreate: null,
   pendingRetry: null,
@@ -1009,6 +1173,11 @@ const state = {
   repositoryResumeTarget: null,
   repositoryResumePending: false,
   taskActionPending: new Map(),
+  gateAppliedPresentations: new Map(),
+  gateSubmittingAction: '',
+  publishOutcomeArmed: loadStoredIdSet(PUBLISH_ARMED_STORAGE_KEY),
+  publishOutcomeSeen: loadStoredIdSet(PUBLISH_SEEN_STORAGE_KEY),
+  approvedWaitingTasks: new Set(),
   modelCatalogLoading: false,
   modelCatalogLoaded: false,
   environmentInstallPending: false,
@@ -1098,6 +1267,114 @@ function isResolvedUpstream(task) {
     || /原始故障路径.{0,40}(?:消失|移除).{0,120}(?:不开\s*PR|无需.{0,20}修复)/is.test(summary);
 }
 
+function stripPriorityPrefix(value) {
+  // 优先级标签是宿主内部字段：任何位置的 [P#] 都不能回显给用户。
+  return String(value == null ? '' : value)
+    .replace(/\[P\d+\]\s*/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+function taskActionKey(task) {
+  const todo = task && task.currentTodo;
+  return todo ? String(todo.actionKind || '') : '';
+}
+
+function taskActionLabel(task) {
+  const kind = taskActionKey(task);
+  if (!kind) return '';
+  const known = {
+    issue_fix_confirm_reproduction: 'action_issue_fix_confirm_reproduction',
+    issue_fix_feasibility_decision: 'action_issue_fix_feasibility_decision',
+    issue_fix_apply_patch: 'action_issue_fix_apply_patch',
+    issue_fix_validated_fix: 'action_issue_fix_validated_fix',
+    issue_fix_pr_review_packet: 'action_issue_fix_pr_review_packet',
+    issue_fix_external_comment_packet: 'action_issue_fix_external_comment_packet',
+    issue_fix_delivery: 'action_issue_fix_delivery',
+    issue_fix_publish: 'action_issue_fix_publish',
+  }[kind];
+  if (known) return text(known);
+  if (kind.startsWith('issue_fix_track_')) return text('action_issue_fix_track');
+  return stripPriorityPrefix(kind.replace(/^issue_fix_/, '').replace(/_/g, ' '));
+}
+
+function sameRepositoryValue(left, right) {
+  const a = left && left.repository ? left.repository : left;
+  const b = right && right.repository ? right.repository : right;
+  if (!a || !b) return false;
+  return String(a.host || '') === String(b.host || '')
+    && String(a.owner || '') === String(b.owner || '')
+    && String(a.repository || '') === String(b.repository || '');
+}
+
+function taskRepositoryItem(task) {
+  return task && task.identity ? task.identity.item : null;
+}
+
+function activeSameRepoTask(task) {
+  if (!task || !state.snapshot || !Array.isArray(state.snapshot.tasks)) return null;
+  const item = taskRepositoryItem(task);
+  if (!item) return null;
+  return state.snapshot.tasks.find((other) => (
+    other
+    && other.taskId !== task.taskId
+    && sameRepositoryValue(taskRepositoryItem(other), item)
+    && (other.state === 'running' || other.state === 'preparing')
+  )) || null;
+}
+
+function hasActiveSameRepoTask(task) {
+  return Boolean(activeSameRepoTask(task));
+}
+
+function pruneApprovedWaiting(tasks) {
+  if (!state.approvedWaitingTasks || !state.approvedWaitingTasks.size) return;
+  [...state.approvedWaitingTasks].forEach((taskId) => {
+    const entry = Array.isArray(tasks) ? tasks.find((item) => item && item.taskId === taskId) : null;
+    if (!entry || entry.state !== 'queued') state.approvedWaitingTasks.delete(taskId);
+  });
+}
+
+/// 已批准但还没轮到执行。宿主批准后可能立刻清掉 gate，前端的事件窗口也会被重置，
+/// 所以命中一次就记住，避免同一个任务在「排队中 / 已批准，等待执行」之间反复跳。
+function approvedActionPending(task) {
+  const todo = task && task.currentTodo;
+  const kind = todo ? String(todo.actionKind || '') : '';
+  return kind === 'issue_fix_publish_pr'
+    || kind === 'issue_fix_publish_comment';
+}
+
+function isApprovedWaiting(task) {
+  if (!task || task.state !== 'queued') return false;
+  if (state.approvedWaitingTasks && state.approvedWaitingTasks.has(task.taskId)) return true;
+  const approved = queuedAfterApproval(task) || approvedActionPending(task);
+  if (approved && state.approvedWaitingTasks) state.approvedWaitingTasks.add(task.taskId);
+  return approved;
+}
+
+function queuedAfterApproval(task) {
+  if (!task || task.state !== 'queued' || !Array.isArray(state.events)) return false;
+  let sawApproval = false;
+  for (const event of state.events) {
+    if (!event || event.taskId !== task.taskId) continue;
+    const message = String(event.message || '');
+    if (event.kind === 'approval_required') sawApproval = true;
+    else if (sawApproval && /Applying the typed LoopX gate decision/i.test(message)) return true;
+  }
+  return false;
+}
+
+function queuedContextLabel(task) {
+  if (!task || task.state !== 'queued') return '';
+  const blocker = activeSameRepoTask(task);
+  if (blocker) {
+    return text('state_queued_repo_wait_with', {
+      item: compactItemLabel(blocker.identity && blocker.identity.item) || shortId(blocker.taskId),
+    });
+  }
+  if (isApprovedWaiting(task)) return text('state_queued_after_approval');
+  return '';
+}
 function taskStateLabel(task) {
   if (isResolvedUpstream(task)) return stateLabel('resolved_upstream');
   return isWorkspacePreparationFailure(task) ? stateLabel('failed') : stateLabel(task && task.state);
@@ -1138,6 +1415,8 @@ function taskStateDisplayLabel(task) {
     const completion = completionLabel(task);
     if (completion) return completion;
   }
+  const queuedContext = queuedContextLabel(task);
+  if (queuedContext) return queuedContext;
   return taskStateLabel(task);
 }
 
@@ -1186,16 +1465,35 @@ function shortId(value) {
   return raw.length > 14 ? raw.slice(0, 8) : raw;
 }
 
-function showNotice(message, tone = 'neutral') {
-  if (!message) {
+function isPlanExhaustedMessage(message) {
+  return /plan is exhausted|parks? for an owner decision|does not fabricate (?:a )?terminal|Resume after the goal gains/i.test(String(message || ''));
+}
+
+function showNotice(message, tone = 'neutral', linkUrl = '') {
+  const clearNotice = () => {
     view.notice.hidden = true;
     view.notice.textContent = '';
     view.notice.dataset.tone = '';
-    return;
-  }
-  view.notice.textContent = message;
-  view.notice.dataset.tone = tone;
+  };
+  if (!message) { clearNotice(); return; }
+  const raw = stripPriorityPrefix(message);
+  if (!raw) { clearNotice(); return; }
+  const parked = isPlanExhaustedMessage(raw);
+  view.notice.textContent = parked ? text('decisionCardPlanExhaustedHint') : raw;
+  view.notice.dataset.tone = parked ? 'warning' : tone;
   view.notice.hidden = false;
+  const target = String(linkUrl || '').trim();
+  if (!target) return;
+  // 产物类回执（已创建 PR / 已发布评论）直接给可点链接，省掉让用户去时间线里找。
+  const anchor = document.createElement('a');
+  anchor.className = 'notice__link';
+  anchor.href = target;
+  anchor.textContent = text('noticeOpenLink');
+  anchor.addEventListener('click', (event) => {
+    event.preventDefault();
+    openExternalUrl(target);
+  });
+  view.notice.append(' ', anchor);
 }
 
 /// Async completions (hydrate, reattach, actions) may settle after the host
@@ -1450,12 +1748,20 @@ function issueDisplayTitle(task) {
 
 function latestTaskWaitReason(task) {
   if (!task || task.state !== 'queued') return '';
+  const blocker = activeSameRepoTask(task);
+  if (blocker) {
+    return text('state_queued_repo_wait_with', {
+      item: compactItemLabel(blocker.identity && blocker.identity.item) || shortId(blocker.taskId),
+    });
+  }
+  if (isApprovedWaiting(task)) return text('state_queued_after_approval');
   for (let index = state.events.length - 1; index >= 0; index -= 1) {
     const event = state.events[index];
     if (event.taskId !== task.taskId || !event.message) continue;
-    const message = String(event.message);
+    const message = stripPriorityPrefix(String(event.message));
     if (/another task for this repository/i.test(message)) return text('queuedRepoBusy');
     if (/bounded turn/i.test(message)) return text('queuedBoundedWait');
+    if (!/[\u3400-\u9fff]/.test(message)) continue;
     return message;
   }
   return text('queuedRepoBusy');
@@ -2038,16 +2344,19 @@ function sortedTaskList(tasks) {
 /// owner, then finished work (most recent first).
 function taskExecutionRank(task) {
   if (isResolvedUpstream(task)) return 40;
+  // 同一条仓库泳道（运行/排队/准备/取消）共用一个档位、按创建时间排序：
+  // 宿主每个有界回合结算都会把任务短暂置为 queued 再重新入队，细分档位会让
+  // 任务行随每次结算上下跳动（用户多次反馈「位置变来变去」）。
   const rank = {
     running: 0,
-    preparing: 1,
-    cancelling: 2,
-    queued: 3,
-    retry_wait: 4,
-    waiting_for_user: 5,
-    recovery_required: 6,
-    stopped: 7,
-    failed: 9,
+    preparing: 0,
+    cancelling: 0,
+    queued: 0,
+    retry_wait: 0,
+    waiting_for_user: 10,
+    recovery_required: 11,
+    stopped: 12,
+    failed: 13,
     completed: 20,
     archived: 21,
   };
@@ -2260,9 +2569,90 @@ function updateTaskButton(button, task) {
   compact.textContent = item && item.number ? `#${item.number}` : shortId(task.taskId);
 }
 
+/// 任务已产生的 Pull Request 链接（宿主会把 PR URL 写进 structuredSummary.artifacts）。
+function taskPullRequestUrl(task) {
+  const summary = task && task.structuredSummary && typeof task.structuredSummary === 'object'
+    ? task.structuredSummary
+    : {};
+  const artifacts = Array.isArray(summary.artifacts)
+    ? summary.artifacts.map((entry) => String(entry).trim())
+    : [];
+  const standalone = artifacts.find((entry) => /^https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+\/?$/.test(entry));
+  if (standalone) return standalone.replace(/\/+$/, '');
+  const inline = String(task && task.lastAgentSummary || '').match(/https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/(\d+)/i);
+  if (inline) return inline[0];
+  return '';
+}
+
+/// 审批通过只代表「已授权」，真正的产物（PR 链接、评论）由 agent 随后完成。
+/// 产物一出现就把具体结果播报出来：已创建 PR #123 <链接>。
+function publishOutcomeFor(task) {
+  if (!task) return null;
+  const summary = task.structuredSummary && typeof task.structuredSummary === 'object'
+    ? task.structuredSummary
+    : {};
+  // 复用/合并已有 PR 的路线不播报「已创建 PR」，避免把别人的 PR 说成这次发布的产物。
+  const route = String((summary.decision && summary.decision.route) || '');
+  if (/reuse|merge/i.test(route) && !/publish|push|open/i.test(route)) return null;
+  const pool = [];
+  ['artifacts', 'completed', 'actual_findings', 'next_step'].forEach((key) => {
+    const value = summary[key];
+    if (Array.isArray(value)) pool.push(...value.map((entry) => String(entry)));
+    else if (typeof value === 'string') pool.push(value);
+  });
+  pool.push(String(task.lastAgentSummary || ''));
+  const haystack = pool.join('\n');
+  const todoKind = task.currentTodo ? String(task.currentTodo.actionKind || '') : '';
+  const tracking = /track|monitor|publish/i.test(todoKind);
+  const artifacts = Array.isArray(summary.artifacts)
+    ? summary.artifacts.map((entry) => String(entry).trim())
+    : [];
+  // 单独的 PR 链接（一行就是一个 PR URL）是「PR 已存在」的最强信号：
+  // 此时任务可能已经结算/排队（currentTodo 为空），不能只靠 todo 分类判断。
+  const standalonePr = artifacts.find((entry) => /^https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+\/?$/.test(entry));
+  const prUrl = standalonePr
+    ? standalonePr.replace(/\/+$/, '')
+    : (haystack.match(/https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/(\d+)/i) || [])[0];
+  const number = prUrl ? (String(prUrl).match(/\/pull\/(\d+)/) || [])[1] || '' : '';
+  const mentionsPrNumber = Boolean(number) && new RegExp(
+    `(拉取请求|pull request|\\bPR\\b)[^\\n]{0,24}#?${number}|#?${number}[^\\n]{0,24}(拉取请求|pull request|\\bPR\\b)`,
+    'i',
+  ).test(haystack);
+  if (prUrl && (tracking || mentionsPrNumber)) {
+    return { kind: 'pr', url: prUrl, number };
+  }
+  const commentUrl = haystack.match(/https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/issues\/\d+#issuecomment-\d+/i);
+  const commentLanguage = /(published|posted)[^\n]{0,40}(maintainer )?comment|(发布|发表)[^\n]{0,20}评论/i.test(haystack);
+  if (commentLanguage && (tracking || (state.publishOutcomeArmed || new Set()).has(task.taskId))) {
+    return { kind: 'comment', url: commentUrl ? commentUrl[0] : '' };
+  }
+  return null;
+}
+
+function announcePublishOutcome() {
+  if (!canRender() || !state.snapshot || !Array.isArray(state.snapshot.tasks)) return;
+  state.snapshot.tasks.forEach((task) => {
+    const outcome = publishOutcomeFor(task);
+    if (!outcome) return;
+    const key = `${task.taskId}:${outcome.kind}:${outcome.url || ''}`;
+    if (state.publishOutcomeSeen.has(key)) return;
+    state.publishOutcomeSeen.add(key);
+    storeIdSet(PUBLISH_SEEN_STORAGE_KEY, state.publishOutcomeSeen);
+    const item = task.identity && task.identity.item;
+    showNotice(
+      outcome.kind === 'pr'
+        ? text('publishOutcomePr', { number: outcome.number })
+        : text('publishOutcomeComment', { item: compactItemLabel(item) || '--' }),
+      'success',
+      outcome.url,
+    );
+  });
+}
+
 function renderTasks() {
   if (!canRender()) return;
   const tasks = state.snapshot && Array.isArray(state.snapshot.tasks) ? state.snapshot.tasks : [];
+  pruneApprovedWaiting(tasks);
   const existing = new Map();
   [...view.taskItems.children].forEach((node) => {
     if (node.dataset && node.dataset.taskId) existing.set(node.dataset.taskId, node);
@@ -2291,6 +2681,7 @@ function renderTasks() {
   view.taskEmpty.hidden = tasks.length !== 0;
   renderRepositoryActions(tasks);
   syncApprovalAttention(false);
+  announcePublishOutcome();
 }
 
 function latestGate(taskId) {
@@ -2360,6 +2751,14 @@ function stripGatePriorityPrefix(message) {
   return message.replace(/^\[[Pp]\d\]\s*/, '').trim();
 }
 
+/// 未知类型的 gate：只把「要做什么」那一句摆出来，不再输出模板化废话。
+function firstRequestSentence(message) {
+  const value = stripPriorityPrefix(message);
+  if (!value) return '';
+  const sentence = value.split(/(?<=[.!?])\s+/)[0] || value;
+  return sentence.length > 180 ? `${sentence.slice(0, 179)}…` : sentence;
+}
+
 function authorityScopeLabels(rawMessage) {
   const rawScopes = rawMessage.match(/\[([^\]]+)\]/)?.[1] || '';
   if (!rawScopes) return '';
@@ -2413,26 +2812,35 @@ function approvalPresentation(task, gate) {
     };
   }
 
+  const mentionsPr = /\bpull request\b|\bpr\b/i.test(body);
   const publishPullRequest = actionKind.includes('publish')
     || actionKind.includes('pull_request')
-    || /\bpr bundle\b|(?:publish|push|creat(?:e|ing|ion)).{0,100}(?:pull request|\bpr\b)/i.test(body);
+    || /\bpr bundle\b/i.test(body)
+    // 「approve opening the pull request」这类措辞此前会掉进 generic：只要句子里
+    // 同时出现 PR 和打开/发布/评审类动作，就按「创建 PR」处理。
+    || (mentionsPr && /\b(?:publish|push|creat(?:e|ing|ion)|open(?:ing)?|review|description|read(?:y)?)\b/i.test(body));
   if (publishPullRequest) {
     const branch = body.match(/\bbranch\s+([^,\s)]+)/i)?.[1] || '';
     const commit = body.match(/\bcommit\s+([0-9a-f]{7,40})\b/i)?.[1] || '';
     const messageRepository = body.match(/\bto\s+([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)(?=;|[\s.,]|$)/i)?.[1] || '';
     const item = task && task.identity && task.identity.item;
+    const itemText = compactItemLabel(item) || repositoryLabel(item && item.repository) || '--';
     const repository = messageRepository || repositoryLabel(item && item.repository) || '--';
     const evidence = taskProgressEvidence(task);
-    const validated = evidence.validated || evidence.settled || /\b(?:validated|verified)\b/i.test(body);
+    const validated = evidence.validated || evidence.settled || /\b(?:validated|verified)\b|验证/.test(body);
+    const summaryDetail = branch
+      ? (commit
+        ? text('externalActionPushDetail', { branch, commit })
+        : text('externalActionPushDetailNoCommit', { branch }))
+      : text('externalActionPushDetailUnknown', { repository });
     return {
       kind: 'publish',
-      title: text('publishApprovalTitle'),
-      summary: branch && commit
-        ? text('publishApprovalSummary', { branch, commit, repository })
-        : text('publishApprovalSummaryGeneric', { repository }),
+      title: text('externalActionTitlePr', { item: itemText }),
+      summary: summaryDetail,
+      summaryDetail,
       rawMessage,
-      approveEffect: text('publishApprovalApproveEffect'),
-      rejectEffect: text('publishApprovalRejectEffect'),
+      approveEffect: text('externalActionApprovePr'),
+      rejectEffect: text('externalActionRejectPr'),
       recommendation: text(validated ? 'publishApprovalRecommendationReady' : 'publishApprovalRecommendationReview'),
       approveLabel: text('publishApprovalApprove'),
       rejectLabel: text('publishApprovalReject'),
@@ -2441,6 +2849,45 @@ function approvalPresentation(task, gate) {
 
   // LoopX issue-fix 契约中的已知 gate 类型：面向人给出中文说明，
   // 原始待办文本（英文、技术性）折叠进「原始请求」而不是当作正文。
+  const publishComment = /comment/i.test(body)
+    && /(publish|post)/i.test(body)
+    && !/\bpull request\b|\bPR\b/i.test(body);
+  if (publishComment) {
+    const item = task && task.identity && task.identity.item;
+    const itemText = compactItemLabel(item) || repositoryLabel(item && item.repository) || '--';
+    const summary = task && task.structuredSummary && typeof task.structuredSummary === 'object'
+      ? task.structuredSummary
+      : {};
+    const points = [];
+    if (Array.isArray(summary.completed)) {
+      summary.completed.slice(0, 2).forEach((line) => {
+        const value = stripPriorityPrefix(line);
+        if (value) points.push(value);
+      });
+    }
+    if (Array.isArray(summary.missing_info)) {
+      summary.missing_info.slice(0, 2).forEach((line) => {
+        const value = stripPriorityPrefix(line);
+        if (value) points.push(value);
+      });
+    }
+    const artifacts = Array.isArray(summary.artifacts)
+      ? summary.artifacts.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+    return {
+      kind: 'publish_comment',
+      title: text('gatePublishCommentTitle', { item: itemText }),
+      summary: text('gatePublishCommentSummary', { item: itemText }),
+      rawMessage: body,
+      approveEffect: text('gatePublishCommentApproveEffect', { item: itemText }),
+      rejectEffect: text('gatePublishCommentRejectEffect', { item: itemText }),
+      recommendation: text('gatePublishCommentRecommendation'),
+      approveLabel: text('gatePublishCommentApprove'),
+      rejectLabel: text('reject'),
+      commentPoints: points,
+      artifacts,
+    };
+  }
   const gatedRead = actionKind.includes('body_or_comment_read')
     || actionKind.includes('gated_read')
     || /gated read|approve a gated read/i.test(body);
@@ -2503,14 +2950,52 @@ function approvalPresentation(task, gate) {
     };
   }
 
+  if (/\b(?:push|commit)\b/i.test(body)) {
+    const branch = body.match(/\bbranch\s+([^,\s)]+)/i)?.[1] || '';
+    const summaryDetail = branch
+      ? text('externalActionPushDetailNoCommit', { branch })
+      : text('externalActionPushSummary');
+    return {
+      kind: 'push',
+      title: text('externalActionTitlePush'),
+      summary: summaryDetail,
+      summaryDetail,
+      rawMessage: body,
+      approveEffect: text('externalActionApprovePush'),
+      rejectEffect: text('externalActionRejectPush'),
+      recommendation: '',
+      approveLabel: text('approve'),
+      rejectLabel: text('reject'),
+    };
+  }
+
+  if (/\b(?:build|install|run|execute|real[- ]?run|verify|verification|validation)\b|构建|安装|真实运行|验证/.test(body)) {
+    return {
+      kind: 'run_validation',
+      title: text('externalActionTitleValidate'),
+      summary: text('externalActionSummaryValidate'),
+      summaryDetail: text('externalActionSummaryValidate'),
+      rawMessage: body,
+      approveEffect: text('externalActionApproveValidate'),
+      rejectEffect: text('externalActionRejectValidate'),
+      recommendation: '',
+      approveLabel: text('approve'),
+      rejectLabel: text('reject'),
+    };
+  }
+
+  const request = firstRequestSentence(body);
   return {
-    kind: 'generic',
-    title: text('genericApprovalTitle'),
-    summary: text('genericApprovalSummary'),
+    kind: 'external_action',
+    title: text('externalActionTitle'),
+    summary: request
+      ? text('externalActionSummaryDetail', { detail: request })
+      : text('externalActionSummaryFallback'),
+    summaryDetail: request,
     rawMessage: body,
-    approveEffect: text('genericApprovalApproveEffect'),
-    rejectEffect: text('genericApprovalRejectEffect'),
-    recommendation: text('genericApprovalRecommendation'),
+    approveEffect: text('externalActionApproveFallback'),
+    rejectEffect: text('externalActionRejectFallback'),
+    recommendation: '',
     approveLabel: text('approve'),
     rejectLabel: text('reject'),
   };
@@ -2774,6 +3259,7 @@ function renderMarkdown(target, source, baseUrl) {
   const lines = String(source || '').replace(/\r\n?/g, '\n').split('\n');
   let list = null;
   let code = null;
+  let skipFence = false;
   let paragraph = null;
   const closeParagraph = () => { paragraph = null; };
   const closeList = () => { list = null; };
@@ -2782,6 +3268,10 @@ function renderMarkdown(target, source, baseUrl) {
     if (/^```/.test(line)) {
       closeParagraph();
       closeList();
+      if (skipFence) {
+        skipFence = false;
+        continue;
+      }
       if (code) {
         code = null;
       } else {
@@ -2790,18 +3280,16 @@ function renderMarkdown(target, source, baseUrl) {
         code = document.createElement('code');
         pre.append(code);
         if (fenceInfo === 'loopx_summary_v1') {
-          const details = document.createElement('details');
-          details.className = 'markdown-receipt';
-          const summary = document.createElement('summary');
-          summary.append(disclosureChevron(), document.createTextNode(text('summaryTechReceipts')));
-          details.append(summary, pre);
-          fragment.append(details);
-        } else {
-          fragment.append(pre);
+          // LoopX receipts are machine-readable duplication of the rendered
+          // summary above them; keep them out of the visible markdown.
+          skipFence = true;
+          continue;
         }
+        fragment.append(pre);
       }
       continue;
     }
+    if (skipFence) continue;
     if (code) {
       code.append(document.createTextNode(`${code.textContent ? '\n' : ''}${line}`));
       continue;
@@ -3019,7 +3507,7 @@ function renderIssueApproval(task) {
   const presentation = approvalPresentation(task, gate);
   view.issueApprovalKind.textContent = presentation.kind === 'publish'
     ? text('gateKindPublish')
-    : text('gateKindDecision');
+    : (presentation.kind === 'publish_comment' ? text('gateKindComment') : text('gateKindDecision'));
   view.issueApprovalTitle.textContent = presentation.title;
   view.issueApprovalMessage.textContent = presentation.summary;
   const rawBody = String(presentation.rawMessage || '').trim();
@@ -3039,7 +3527,15 @@ function renderIssueApproval(task) {
     ? task.structuredSummary
     : null;
   const contextItems = [];
-  if (structured && Array.isArray(structured.completed)) {
+  if (presentation.commentPoints && presentation.commentPoints.length) {
+    contextItems.push(`${text('gateCommentPointsTitle')}：`);
+    presentation.commentPoints.forEach((line) => contextItems.push(line));
+  }
+  if (presentation.artifacts && presentation.artifacts.length) {
+    contextItems.push(`${text('gateCommentDraftTitle')}：${presentation.artifacts.join(' , ')}`);
+    contextItems.push(text('gateCommentDraftHint'));
+  }
+  if (presentation.kind !== 'publish_comment' && structured && Array.isArray(structured.completed)) {
     structured.completed.slice(0, 2).forEach((item) => {
       const line = String(item || '').trim();
       if (line) contextItems.push(line);
@@ -3059,7 +3555,7 @@ function renderIssueApproval(task) {
     }),
   );
   view.issueApprovalContext.hidden = contextItems.length === 0;
-  const pending = Boolean(pendingActionFor(task));
+  const pending = Boolean(pendingActionFor(task)) || Boolean(state.gateSubmittingAction);
   view.issueApprovalApprove.textContent = pending ? text('approvalSubmittingShort') : presentation.approveLabel;
   view.issueApprovalReject.textContent = presentation.rejectLabel;
   view.issueApprovalApprove.disabled = pending;
@@ -3142,6 +3638,19 @@ function renderIssueStatus(task) {
   }
   body.textContent = recoveryHint;
   card.append(heading, body);
+  const decisionStructured = task.structuredSummary && typeof task.structuredSummary === 'object'
+    ? task.structuredSummary
+    : null;
+  if (
+    decisionStructured
+    && decisionStructured.reproduction === 'reproduced'
+    && reproductionScope(decisionStructured) !== 'e2e'
+  ) {
+    const e2eHint = document.createElement('p');
+    e2eHint.className = 'issue-decision-card__e2e-hint';
+    e2eHint.textContent = text('summaryE2eVerificationHint');
+    card.append(e2eHint);
+  }
   if (externalWait) {
     if (externalLinks.length > 0) card.append(externalWaitLinkRow(externalLinks));
     // A recent re-check with the same park message means the external
@@ -3365,21 +3874,150 @@ function compactSummaryText(value, max = 110) {
 function appendBriefSentence(container, titleKey, value, repository) {
   const source = String(value || '').trim();
   if (!source) return;
-  const section = document.createElement('div');
-  section.className = 'summary-section';
-  const title = document.createElement('strong');
-  title.textContent = text(titleKey);
+  const heading = document.createElement('h3');
+  heading.append(document.createTextNode(text(titleKey)));
+  if (!/[\u3400-\u9fff]/.test(source)) {
+    const tag = document.createElement('span');
+    tag.className = 'summary-lang-hint';
+    tag.textContent = text('summaryAgentEnglish');
+    heading.append(' ', tag);
+  }
   const body = document.createElement('p');
   body.append(linkifiedText(source, repository));
-  section.append(title, body);
-  container.append(section);
+  container.append(heading, body);
 }
 
+function appendBriefList(container, titleKey, items, repository) {
+  const values = Array.isArray(items)
+    ? items.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  if (!values.length) return;
+  const heading = document.createElement('h3');
+  heading.append(document.createTextNode(text(titleKey)));
+  if (!values.some((item) => /[\u3400-\u9fff]/.test(item))) {
+    const tag = document.createElement('span');
+    tag.className = 'summary-lang-hint';
+    tag.textContent = text('summaryAgentEnglish');
+    heading.append(' ', tag);
+  }
+  const list = document.createElement('ul');
+  values.forEach((item) => {
+    const entry = document.createElement('li');
+    entry.append(linkifiedText(item, repository));
+    list.append(entry);
+  });
+  container.append(heading, list);
+}
+
+function reproductionActiveKey(summary, task) {
+  const s = summary && typeof summary === 'object' ? summary : {};
+  if (s.reproduction !== 'not_reproduced' || !task) return '';
+  const state = String(task.state || '');
+  const phase = String(task.phase || '');
+  const todoKind = task.currentTodo ? String(task.currentTodo.actionKind || '') : '';
+  const paused = state === 'waiting_for_user'
+    || state === 'recovery_required'
+    || state === 'completed';
+  if (!paused && todoKind === 'issue_fix_confirm_reproduction') {
+    return 'summaryReproductionInProgress';
+  }
+  if (!paused && state === 'running' && phase === 'agent_running') {
+    return 'summaryReproductionInProgress';
+  }
+  if (!paused && (state === 'queued' || state === 'preparing')) {
+    return 'summaryReproductionPending';
+  }
+  return '';
+}
+function reproductionScope(summary) {
+  const s = summary && typeof summary === 'object' ? summary : {};
+  const evidence = [
+    s.reproduction_evidence,
+    s.actual_findings,
+    s.background,
+    s.decision && s.decision.reason,
+  ].filter(Boolean).join(' ');
+  if (!evidence) return 'unknown';
+  const mentionsE2e = /(端到端|end[- ]?to[- ]?end|\be2e\b|真实环境|真实订阅)/i.test(evidence);
+  const deniesE2e = /(无法|未能|没有|未做|未执行|未覆盖|不能|only|仅)[^。；\n]{0,24}(端到端|end[- ]?to[- ]?end|\be2e\b)/i.test(evidence);
+  if (mentionsE2e && !deniesE2e) return 'e2e';
+  if (/(回归测试|cargo test|单元测试|模块|请求构造|fixture|focused test|test surface)/i.test(evidence)) return 'module';
+  return 'unknown';
+}
 function renderStructuredBrief(container, s, task) {
+/// 每条证据/产物都要回答「它支持什么结论」，而不是抛一串路径让用户自己猜。
+function classifyArtifact(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'file';
+  const lower = raw.toLowerCase();
+  if (/^https?:\/\//.test(lower) && /github\.com\/[^/]+\/[^/]+\/(issues|pull)\//.test(lower)) return 'source_issue';
+  if (/(pr[-_]?review[-_]?packet|review[-_]?packet|publish|release)/.test(lower)) return 'review';
+  if (/(evidence|repro)/.test(lower)) return 'repro';
+  if (/(\.test\.|\.spec\.|vitest|cargo test|pytest|\btests?\b)/.test(lower)) return 'validation';
+  if (/(^|\/)agents\.md$|(^|\/)docs?\//.test(lower) || /\.md$/.test(lower)) return 'docs';
+  if (/\.(rs|ts|tsx|js|jsx|mjs|cjs|py|go|java|kt|vue|svelte|css|scss|json|toml|ya?ml)$/.test(lower)) return 'implementation';
+  return 'file';
+}
+
+const ARTIFACT_KIND_LABEL_KEY = {
+  source_issue: 'artifactKindSource',
+  repro: 'artifactKindRepro',
+  validation: 'artifactKindValidation',
+  implementation: 'artifactKindImplementation',
+  docs: 'artifactKindDocs',
+  review: 'artifactKindReview',
+  file: 'artifactKindFile',
+};
+
+function artifactSupportText(artifact, summary) {
+  const value = String(artifact || '').trim();
+  if (!value) return '';
+  const pool = [
+    summary.actual_findings,
+    summary.background,
+    summary.decision && summary.decision.reason,
+    summary.completed,
+  ].flat().filter(Boolean).map((entry) => String(entry));
+  const mentioned = pool.find((entry) => entry.includes(value));
+  if (!mentioned) return '';
+  const sentence = stripPriorityPrefix(mentioned).split(/(?<=[。；;.!?])\s*/)[0];
+  return sentence.length > 120 ? `${sentence.slice(0, 119)}…` : sentence;
+}
+
+function renderSupportingEvidence(container, artifacts, summary, repository) {
+  const values = Array.isArray(artifacts)
+    ? artifacts.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+  if (!values.length) return;
+  const heading = document.createElement('h3');
+  heading.append(document.createTextNode(text('summarySupportingEvidence')));
+  const list = document.createElement('ul');
+  list.className = 'summary-support';
+  values.forEach((value) => {
+    const entry = document.createElement('li');
+    const kind = document.createElement('span');
+    kind.className = 'summary-support__kind';
+    kind.textContent = text(ARTIFACT_KIND_LABEL_KEY[classifyArtifact(value)] || 'artifactKindFile');
+    const body = document.createElement('span');
+    body.className = 'summary-support__body';
+    // 路径/URL 列表不是「英文原文」叙述，不打语言标签。
+    body.append(linkifiedText(value, repository));
+    const support = artifactSupportText(value, summary || {});
+    if (support) {
+      const note = document.createElement('span');
+      note.className = 'summary-support__note';
+      note.textContent = text('summaryArtifactSupports', { value: support });
+      body.append(note);
+    }
+    entry.append(kind, body);
+    list.append(entry);
+  });
+  container.append(heading, list);
+}
+
   const narrativeRepository = task && task.identity && task.identity.item
     ? task.identity.item.repository
     : null;
-  const blockersWereOpen = Boolean(container.querySelector('.summary-blockers')?.open);
   container.replaceChildren();
   const badges = document.createElement('div');
   badges.className = 'summary-badges';
@@ -3403,25 +4041,68 @@ function renderStructuredBrief(container, s, task) {
     reason.textContent = summaryEnumLabel('summaryWontFixReason', s.wont_fix_reason) || s.wont_fix_reason;
     badges.append(reason);
   }
+  const reproScope = reproductionScope(s);
+  const reproductionEvidence = String(s.reproduction_evidence || '').trim();
+  const activeReproductionKey = reproductionActiveKey(s, task);
   if (s.reproduction && s.reproduction !== 'not_applicable') {
     const reproduction = document.createElement('span');
     reproduction.className = 'summary-badge';
-    reproduction.dataset.tone = 'muted';
-    reproduction.textContent = summaryEnumLabel('summaryReproduction', s.reproduction) || s.reproduction;
+    reproduction.dataset.tone = (activeReproductionKey || s.reproduction === 'reproduced') ? 'info' : 'muted';
+    reproduction.dataset.active = activeReproductionKey ? 'true' : 'false';
+    const labelKey = activeReproductionKey
+      || (s.reproduction === 'reproduced'
+        ? ({
+          e2e: 'summaryReproductionE2e',
+          module: 'summaryReproductionModule',
+        }[reproScope] || 'summaryReproductionScoped')
+        : (s.reproduction === 'not_reproduced'
+          ? 'summaryReproductionNotReproduced'
+          : 'summaryReproductionNotApplicable'));
+    reproduction.textContent = text(labelKey)
+      || summaryEnumLabel('summaryReproduction', s.reproduction)
+      || s.reproduction;
+    if (activeReproductionKey) {
+      reproduction.title = text('summaryReproductionActiveHint');
+    } else if (reproductionEvidence) {
+      reproduction.title = `${text('summaryReproductionEvidenceLabel')}: ${reproductionEvidence}`;
+    }
     badges.append(reproduction);
   }
   container.append(badges);
+  const stateLabelText = taskStateDisplayLabel(task);
+  const statePhaseText = taskPhaseLabel(task);
+  const stateActionText = taskActionLabel(task);
+  const stateLineText = [stateLabelText, statePhaseText, stateActionText].filter(Boolean).join(' · ');
+  if (stateLineText) {
+    const stateLine = document.createElement('p');
+    stateLine.className = 'summary-inline-note summary-state-line';
+    stateLine.textContent = stateLineText;
+    container.append(stateLine);
+  }
+  if (reproductionEvidence) {
+    const evidence = document.createElement('p');
+    evidence.className = 'summary-inline-note summary-reproduction-evidence';
+    evidence.append(document.createTextNode(`${text('summaryReproductionEvidenceLabel')}：`));
+    evidence.append(linkifiedText(reproductionEvidence, narrativeRepository));
+    container.append(evidence);
+  }
+  if (s.reproduction === 'reproduced' && reproScope !== 'e2e') {
+    const e2eHint = document.createElement('p');
+    e2eHint.className = 'summary-inline-note summary-e2e-hint';
+    e2eHint.textContent = text('summaryE2eVerificationHint');
+    container.append(e2eHint);
+  }
 
   if (s.issue_verdict === 'needs_info' && Array.isArray(s.missing_info) && s.missing_info.length) {
     const reason = document.createElement('p');
-    reason.className = 'summary-pending';
+    reason.className = 'summary-inline-note';
     reason.textContent = `${text('summaryMissingInfo')}：${s.missing_info.join('；')}`;
     container.append(reason);
   }
 
   if (task && task.state === 'waiting_for_user' && task.pendingGateId) {
     const pending = document.createElement('p');
-    pending.className = 'summary-pending';
+    pending.className = 'summary-inline-note';
     pending.textContent = text('summaryPendingGate');
     container.append(pending);
   }
@@ -3438,53 +4119,23 @@ function renderStructuredBrief(container, s, task) {
     : '';
   const conclusionSource = decisionText
     || (task && task.state === 'completed' ? text('summaryCompletedNoFollowup') : '');
-  const conclusionTruncated = conclusionSource.length > SUMMARY_CONCLUSION_MAX_CHARS;
-  if (conclusionSource) {
-    const conclusion = document.createElement('div');
-    conclusion.className = 'summary-conclusion';
-    const title = document.createElement('strong');
-    title.textContent = text('summaryConclusion');
-    const body = document.createElement('p');
-    body.append(linkifiedText(
-      conclusionTruncated ? compactSummaryText(conclusionSource) : conclusionSource,
-      narrativeRepository,
-    ));
-    conclusion.append(title, body);
-    if (conclusionTruncated) {
-      // The decision text used to be cut at 110 chars with no way to read the
-      // rest, so a real reason could be invisible behind the ellipsis.
-      const details = document.createElement('details');
-      details.className = 'summary-conclusion__full';
-      const fullLabel = document.createElement('summary');
-      fullLabel.append(disclosureChevron(), document.createTextNode(text('summaryShowFullConclusion')));
-      const full = document.createElement('p');
-      full.append(linkifiedText(conclusionSource, narrativeRepository));
-      details.append(fullLabel, full);
-      conclusion.append(details);
-    }
-    container.append(conclusion);
-  }
+  appendBriefSentence(container, 'summaryConclusion', conclusionSource, narrativeRepository);
+  // 「结论 + 支撑证据」是一个整体：证据紧跟结论，且每条都带中文类型说明。
+  renderSupportingEvidence(container, s.artifacts, s, narrativeRepository);
   appendBriefSentence(container, 'summaryBackground', s.background, narrativeRepository);
   appendBriefSentence(container, 'summaryActualFindings', s.actual_findings, narrativeRepository);
   appendBriefSentence(container, 'summaryWhyNoFix', s.why_no_fix, narrativeRepository);
+  appendBriefList(container, 'summarySectionCompleted', s.completed, narrativeRepository);
 
   if (task && task.state === 'completed' && decisionRoute) {
     const note = document.createElement('p');
-    note.className = 'summary-note';
+    note.className = 'summary-inline-note';
     note.textContent = text('summaryCompletedNoFollowup');
     container.append(note);
   }
 
   if (task && task.state !== 'completed' && s.next_step) {
-    const section = document.createElement('div');
-    section.className = 'summary-section';
-    const title = document.createElement('strong');
-    title.textContent = text('summaryNextStep');
-    section.append(title);
-    const body = document.createElement('p');
-    body.append(linkifiedText(s.next_step, narrativeRepository));
-    section.append(body);
-    container.append(section);
+    appendBriefSentence(container, 'summaryNextStep', s.next_step, narrativeRepository);
   }
 
   if (
@@ -3492,36 +4143,7 @@ function renderStructuredBrief(container, s, task) {
     && s.blockers.length
     && !(task && task.state === 'completed')
   ) {
-    if (task && task.state === 'recovery_required') {
-      const details = document.createElement('details');
-      details.className = 'summary-blockers';
-      details.open = blockersWereOpen;
-      const blockersLine = document.createElement('summary');
-      blockersLine.textContent = text('summaryBlockers');
-      details.append(blockersLine);
-      const list = document.createElement('ul');
-      s.blockers.forEach((item) => {
-        const li = document.createElement('li');
-        li.textContent = String(item);
-        list.append(li);
-      });
-      details.append(list);
-      container.append(details);
-    } else {
-      const section = document.createElement('div');
-      section.className = 'summary-section';
-      const title = document.createElement('strong');
-      title.textContent = text('summaryBlockers');
-      section.append(title);
-      const list = document.createElement('ul');
-      s.blockers.forEach((item) => {
-        const li = document.createElement('li');
-        li.textContent = String(item);
-        list.append(li);
-      });
-      section.append(list);
-      container.append(section);
-    }
+    appendBriefList(container, 'summaryBlockers', s.blockers, narrativeRepository);
   }
 }
 
@@ -3593,6 +4215,21 @@ function renderIssueView() {
     view.issueLink.removeAttribute('href');
     view.issueLink.removeAttribute('aria-label');
   }
+  // 已产生 PR 时，头部常驻一个入口：不用去翻时间线找链接。
+  const pullRequestUrl = taskPullRequestUrl(task);
+  const pullRequestNumber = pullRequestUrl ? (pullRequestUrl.match(/\/pull\/(\d+)/) || [])[1] || '' : '';
+  view.issuePrLink.hidden = !pullRequestUrl;
+  if (pullRequestUrl) {
+    view.issuePrLink.textContent = pullRequestNumber ? `PR #${pullRequestNumber}` : text('issuePullRequest');
+    view.issuePrLink.href = pullRequestUrl;
+    view.issuePrLink.title = pullRequestUrl;
+    view.issuePrLink.setAttribute('aria-label', `${text('issuePullRequest')}: ${pullRequestUrl}`);
+  } else {
+    view.issuePrLink.textContent = '';
+    view.issuePrLink.removeAttribute('href');
+    view.issuePrLink.removeAttribute('title');
+    view.issuePrLink.removeAttribute('aria-label');
+  }
   view.issueUpdated.textContent = task.updatedAt
     ? text('taskUpdated', { duration: relativeLabel(task.updatedAt) })
     : '';
@@ -3603,9 +4240,11 @@ function renderIssueView() {
   view.issueNumber.hidden = true;
   const statePillVisible = !view.issueStatePill.hidden;
   const issueLinkVisible = !view.issueLink.hidden;
+  const prLinkVisible = !view.issuePrLink.hidden;
   const updatedVisible = Boolean(view.issueUpdated.textContent);
-  view.issueMetaSep1.hidden = !(statePillVisible && (issueLinkVisible || updatedVisible));
-  view.issueMetaSep2.hidden = !(issueLinkVisible && updatedVisible);
+  view.issueMetaSep1.hidden = !(statePillVisible && (issueLinkVisible || prLinkVisible || updatedVisible));
+  view.issueMetaSep3.hidden = !(issueLinkVisible && prLinkVisible);
+  view.issueMetaSep2.hidden = !(prLinkVisible && updatedVisible);
   renderIssueApproval(task);
   renderIssueStatus(task);
   renderIssueBrief(task);
@@ -3849,25 +4488,123 @@ function outputBlockDomVersion(block) {
   return `${block.endCursor}:${block.eventCount}:${block.toolState}:${String(block.text || '').length}`;
 }
 
-/// Event-stream icons. Dense runs of native <details> triangles were hard to
-/// scan, so each row leads with a glyph that says what kind of event it is.
-function outputBlockIconGlyph(block) {
-  if (block.kind === 'thinking') return '✻';
-  if (block.kind === 'tool') {
-    const glyphs = {
-      ExecCommand: '❯',
-      Read: '▤',
-      Write: '✚',
-      Edit: '✎',
-      Grep: '⌕',
-      LS: '☰',
-      WebSearch: '⌕',
-      WebFetch: '⇩',
-    };
-    return glyphs[block.toolName] || '⚙';
-  }
-  if (block.kind === 'model_round_started' || block.kind === 'model_round_completed') return '↻';
-  return '✎';
+/// Event-stream icons. Dense glyph fonts rendered inconsistently across
+/// platforms, so each row leads with a small stroke icon that says what kind
+/// of event it is.
+const OUTPUT_ICON_PATHS = {
+  // deepseek-harness 0 0 16 16
+  thinking: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M8.00192 6.64454C8.75026 6.64454 9.35732 7.25169 9.35739 8.00001C9.35739 8.74838 8.7503 9.35548 8.00192 9.35548C7.25367 9.35533 6.64743 8.74829 6.64743 8.00001C6.6475 7.25178 7.25371 6.64468 8.00192 6.64454Z', rule: '' },
+      { d: 'M9.97165 1.29981C11.5853 0.718916 13.271 0.642197 14.3144 1.68555C15.3577 2.72902 15.2811 4.41466 14.7002 6.02833C14.4707 6.66561 14.1504 7.32937 13.75 8.00001C14.1504 8.67062 14.4707 9.33444 14.7002 9.97169C15.2811 11.5854 15.3578 13.271 14.3144 14.3145C13.271 15.3579 11.5854 15.2811 9.97165 14.7002C9.3344 14.4708 8.67059 14.1505 7.99997 13.75C7.32933 14.1505 6.66558 14.4708 6.02829 14.7002C4.41461 15.2811 2.72899 15.3578 1.68552 14.3145C0.642155 13.271 0.71887 11.5854 1.29977 9.97169C1.52915 9.33454 1.84865 8.67049 2.24899 8.00001C1.84866 7.32953 1.52915 6.66544 1.29977 6.02833C0.718852 4.41459 0.64207 2.729 1.68552 1.68555C2.72897 0.642112 4.41456 0.718887 6.02829 1.29981C6.66541 1.52918 7.32949 1.8487 7.99997 2.24903C8.67045 1.84869 9.33451 1.52919 9.97165 1.29981ZM12.9404 9.2129C12.4391 9.893 11.8616 10.5681 11.2148 11.2149C10.568 11.8616 9.89296 12.4391 9.21286 12.9404C9.62532 13.1579 10.0271 13.338 10.4121 13.4766C11.9146 14.0174 12.9172 13.8738 13.3955 13.3955C13.8737 12.9173 14.0174 11.9146 13.4765 10.4121C13.3379 10.0271 13.1578 9.62535 12.9404 9.2129ZM3.05856 9.2129C2.84121 9.62523 2.66197 10.0272 2.52341 10.4121C1.98252 11.9146 2.12627 12.9172 2.60446 13.3955C3.08278 13.8737 4.08544 14.0174 5.58786 13.4766C5.97264 13.338 6.37389 13.1577 6.7861 12.9404C6.10624 12.4393 5.43168 11.8614 4.78513 11.2149C4.13823 10.5679 3.55992 9.89313 3.05856 9.2129ZM7.99899 3.792C7.23179 4.31419 6.45306 4.95512 5.70407 5.70411C4.95509 6.45309 4.31415 7.23184 3.79196 7.99903C4.3143 8.76666 4.95471 9.54653 5.70407 10.2959C6.45309 11.0449 7.23271 11.6848 7.99997 12.207C8.76725 11.6848 9.54683 11.0449 10.2959 10.2959C11.0449 9.54686 11.6848 8.76729 12.207 8.00001C11.6848 7.23275 11.0449 6.45312 10.2959 5.70411C9.5465 4.95475 8.76662 4.31434 7.99899 3.792ZM5.58786 2.52344C4.08533 1.98255 3.08272 2.12625 2.60446 2.6045C2.12621 3.08275 1.98252 4.08536 2.52341 5.5879C2.66189 5.97253 2.8414 6.37409 3.05856 6.78614C3.55983 6.10611 4.1384 5.43189 4.78513 4.78516C5.43186 4.13843 6.10606 3.55987 6.7861 3.0586C6.37405 2.84144 5.97249 2.66192 5.58786 2.52344ZM13.3955 2.6045C12.9172 2.12631 11.9146 1.98257 10.4121 2.52344C10.0272 2.66201 9.62519 2.84125 9.21286 3.0586C9.8931 3.55996 10.5679 4.13827 11.2148 4.78516C11.8614 5.43172 12.4392 6.10627 12.9404 6.78614C13.1577 6.37393 13.338 5.97267 13.4765 5.5879C14.0174 4.08549 13.8736 3.08281 13.3955 2.6045Z', rule: 'evenodd' },
+    ],
+  },
+  // deepseek-harness 0 0 16 16
+  ExecCommand: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M12.3368 1.53569L11.931 4.43172H14.8086V5.79673H11.7404L11.1962 9.67859H14.2839V11.0436H11.0056L10.4994 14.6529L9.14873 14.4643L9.62731 11.0436H5.75876L5.25252 14.6529L3.90186 14.4643L4.38043 11.0436H1.69141V9.67859H4.57104L5.11417 5.79673H2.21609V4.43172H5.30581L5.73724 1.34713L7.08995 1.53569L6.68414 4.43172H10.5527L10.9841 1.34713L12.3368 1.53569ZM5.94937 9.67859H9.81791L10.361 5.79673H6.49353L5.94937 9.67859Z', rule: 'evenodd' },
+    ],
+  },
+  // deepseek-harness 0 0 16 16
+  Read: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M11.2426 4.80473V6.10551H4.75819V4.80473H11.2426Z', rule: '' },
+      { d: 'M9.40858 7.84478V9.14557H4.75819V7.84478H9.40858Z', rule: '' },
+      { d: 'M9.23438 0.546389C10.1941 0.546389 10.9683 0.544914 11.5859 0.611819C12.2161 0.680096 12.7634 0.825745 13.2393 1.17139C13.5172 1.3733 13.7619 1.61812 13.9639 1.896C14.3096 2.37183 14.4551 2.91922 14.5234 3.54932C14.5903 4.16686 14.5889 4.94133 14.5889 5.90088V10.0981C14.5889 11.0576 14.5903 11.8321 14.5234 12.4497C14.4552 13.0798 14.3094 13.6272 13.9639 14.103C13.7619 14.381 13.5172 14.6257 13.2393 14.8276C12.7633 15.1734 12.2163 15.3189 11.5859 15.3872C10.9683 15.4541 10.1942 15.4536 9.23438 15.4536H6.76563C5.80591 15.4536 5.03168 15.4541 4.41407 15.3872C3.78385 15.3189 3.23665 15.1734 2.76074 14.8276C2.48291 14.6257 2.23802 14.3809 2.03614 14.103C1.69066 13.6272 1.54483 13.0798 1.47657 12.4497C1.40973 11.8321 1.41114 11.0576 1.41114 10.0981V5.90088C1.41113 4.94132 1.40966 4.16686 1.47657 3.54932C1.54488 2.91921 1.69042 2.37184 2.03614 1.896C2.2381 1.61807 2.4828 1.37333 2.76074 1.17139C3.23665 0.825682 3.78386 0.680109 4.41407 0.611819C5.03168 0.544905 5.80591 0.546389 6.76563 0.546389H9.23438ZM6.76563 1.896C5.77586 1.896 5.0876 1.89738 4.55957 1.95459C4.0443 2.01043 3.76214 2.11349 3.55469 2.26416C3.39135 2.38284 3.24761 2.52662 3.12891 2.68994C2.97821 2.89736 2.8752 3.17967 2.81934 3.69483C2.76214 4.22279 2.76075 4.91131 2.76074 5.90088V10.0981C2.76074 11.0876 2.76221 11.7762 2.81934 12.3042C2.87516 12.8194 2.97829 13.1026 3.12891 13.3101C3.24754 13.4733 3.39147 13.6172 3.55469 13.7358C3.76213 13.8865 4.04438 13.9896 4.55957 14.0454C5.0876 14.1026 5.77586 14.103 6.76563 14.103H9.23438C10.2242 14.103 10.9124 14.1026 11.4404 14.0454C11.9556 13.9896 12.2379 13.8865 12.4453 13.7358C12.6086 13.6172 12.7525 13.4733 12.8711 13.3101C13.0217 13.1026 13.1248 12.8195 13.1807 12.3042C13.2378 11.7762 13.2393 11.0876 13.2393 10.0981V5.90088C13.2393 4.91131 13.2379 4.22279 13.1807 3.69483C13.1248 3.17969 13.0218 2.89736 12.8711 2.68994C12.7524 2.52667 12.6086 2.38281 12.4453 2.26416C12.2379 2.11355 11.9556 2.01041 11.4404 1.95459C10.9124 1.8974 10.2241 1.896 9.23438 1.896H6.76563Z', rule: '' },
+    ],
+  },
+  // deepseek-harness 0 0 16 16
+  Write: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M9.94076 1.34942C10.7047 0.90231 11.6503 0.902415 12.4143 1.34942C12.7061 1.52015 12.9688 1.79118 13.3104 2.13284C13.6521 2.47448 13.9231 2.73721 14.0939 3.02894C14.5408 3.79294 14.5409 4.73856 14.0939 5.50251C13.9231 5.79415 13.652 6.05704 13.3104 6.39861L6.65932 13.0497C6.28068 13.4284 6.00695 13.7108 5.66543 13.9097C5.32391 14.1085 4.94315 14.2074 4.42705 14.3498L3.24394 14.6761C2.77527 14.8054 2.34538 14.9262 2.00131 14.9684C1.65196 15.0112 1.17964 15.0013 0.810764 14.6325C0.441921 14.2637 0.432107 13.7913 0.47486 13.442C0.517035 13.0979 0.6379 12.668 0.767181 12.1993L1.09352 11.0162C1.23588 10.5001 1.33481 10.1193 1.5336 9.77784C1.7325 9.43632 2.0149 9.1626 2.39355 8.78395L9.04466 2.13284C9.38625 1.79126 9.64911 1.52016 9.94076 1.34942ZM15.5427 14.8398H7.55223L8.96707 13.425H15.5427V14.8398ZM3.39382 9.78422C2.965 10.213 2.84244 10.3436 2.75709 10.49C2.67183 10.6366 2.61862 10.8079 2.45733 11.3925L2.13099 12.5756C2.00183 13.0439 1.92194 13.3419 1.88863 13.5536C2.10041 13.5204 2.39872 13.4416 2.86764 13.3123L4.05075 12.9859C4.63544 12.8246 4.80669 12.7715 4.95323 12.6862C5.09968 12.6008 5.23022 12.4783 5.65905 12.0494L10.721 6.98644L8.45577 4.72121L3.39382 9.78422ZM11.7 2.57079C11.3774 2.38198 10.9777 2.38198 10.6551 2.57079C10.5602 2.62647 10.4487 2.72931 10.0449 3.13311L9.45604 3.72094L11.7213 5.98617L12.3102 5.39833C12.7139 4.99457 12.8168 4.88307 12.8725 4.78818C13.0613 4.46561 13.0612 4.06585 12.8725 3.74326C12.8169 3.64827 12.7146 3.53752 12.3102 3.13311C11.9057 2.72863 11.795 2.6264 11.7 2.57079Z', rule: '' },
+    ],
+  },
+  // deepseek-harness 0 0 16 16
+  Edit: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M9.94076 1.34942C10.7047 0.90231 11.6503 0.902415 12.4143 1.34942C12.7061 1.52015 12.9688 1.79118 13.3104 2.13284C13.6521 2.47448 13.9231 2.73721 14.0939 3.02894C14.5408 3.79294 14.5409 4.73856 14.0939 5.50251C13.9231 5.79415 13.652 6.05704 13.3104 6.39861L6.65932 13.0497C6.28068 13.4284 6.00695 13.7108 5.66543 13.9097C5.32391 14.1085 4.94315 14.2074 4.42705 14.3498L3.24394 14.6761C2.77527 14.8054 2.34538 14.9262 2.00131 14.9684C1.65196 15.0112 1.17964 15.0013 0.810764 14.6325C0.441921 14.2637 0.432107 13.7913 0.47486 13.442C0.517035 13.0979 0.6379 12.668 0.767181 12.1993L1.09352 11.0162C1.23588 10.5001 1.33481 10.1193 1.5336 9.77784C1.7325 9.43632 2.0149 9.1626 2.39355 8.78395L9.04466 2.13284C9.38625 1.79126 9.64911 1.52016 9.94076 1.34942ZM15.5427 14.8398H7.55223L8.96707 13.425H15.5427V14.8398ZM3.39382 9.78422C2.965 10.213 2.84244 10.3436 2.75709 10.49C2.67183 10.6366 2.61862 10.8079 2.45733 11.3925L2.13099 12.5756C2.00183 13.0439 1.92194 13.3419 1.88863 13.5536C2.10041 13.5204 2.39872 13.4416 2.86764 13.3123L4.05075 12.9859C4.63544 12.8246 4.80669 12.7715 4.95323 12.6862C5.09968 12.6008 5.23022 12.4783 5.65905 12.0494L10.721 6.98644L8.45577 4.72121L3.39382 9.78422ZM11.7 2.57079C11.3774 2.38198 10.9777 2.38198 10.6551 2.57079C10.5602 2.62647 10.4487 2.72931 10.0449 3.13311L9.45604 3.72094L11.7213 5.98617L12.3102 5.39833C12.7139 4.99457 12.8168 4.88307 12.8725 4.78818C13.0613 4.46561 13.0612 4.06585 12.8725 3.74326C12.8169 3.64827 12.7146 3.53752 12.3102 3.13311C11.9057 2.72863 11.795 2.6264 11.7 2.57079Z', rule: '' },
+    ],
+  },
+  // deepseek-harness 0 0 16 16
+  Grep: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z', rule: '' },
+      { d: 'M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z', rule: '' },
+    ],
+  },
+  // deepseek-harness 0 0 16 16
+  WebSearch: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M11.894845 6.647401C11.894845 3.725463 9.534486 1.356779 6.623219 1.35657C3.711786 1.35657 1.351635 3.725338 1.351635 6.647401C1.351843 9.569296 3.711911 11.938273 6.623219 11.938273C9.534361 11.938064 11.894637 9.569171 11.894845 6.647401ZM13.245462 6.647401C13.245254 10.317935 10.280401 13.293613 6.623219 13.293821C2.965871 13.293821 0.000204 10.31806 0 6.647401C0 2.976574 2.965746 0 6.623219 0C10.280526 0.000205 13.245462 2.9767 13.245462 6.647401Z', rule: '' },
+      { d: 'M16.000417 15.041079L15.044449 16.000433L11.530434 12.473588L12.486298 11.514234L16.000417 15.041079Z', rule: '' },
+    ],
+  },
+  // deepseek-harness 0 0 16 16
+  LS: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M5.19629 1.57104C5.81144 1.5711 6.38623 1.8786 6.72754 2.39038L7.19922 3.09839C7.28454 3.22635 7.42824 3.30344 7.58203 3.30347H12.1699C13.5039 3.30348 14.5859 4.38548 14.5859 5.71948V6.62671C15.2694 7.02689 15.6605 7.85012 15.4385 8.68726L14.3848 12.658C14.1037 13.7164 13.1449 14.4527 12.0498 14.4529H2.91699C1.51651 14.4529 0.451662 13.2814 0.501954 11.9519V3.98706C0.501954 2.65305 1.58396 1.57104 2.91797 1.57104H5.19629ZM3.7793 7.75562C3.30994 7.75562 2.89883 8.07153 2.77832 8.52515L1.91602 11.7722C1.74167 12.4291 2.23734 13.073 2.91699 13.073H12.0498C12.5191 13.0728 12.9304 12.757 13.0508 12.3035L14.1045 8.33374C14.1819 8.04202 13.9619 7.756 13.6602 7.75562H3.7793ZM2.91797 2.9519C2.34625 2.9519 1.88281 3.41534 1.88281 3.98706V7.2937C2.33068 6.7269 3.02249 6.37476 3.7793 6.37476H13.2051V5.71948C13.2051 5.14777 12.7416 4.68434 12.1699 4.68433H7.58203C6.96675 4.6843 6.39209 4.37595 6.05078 3.86401L5.5791 3.15601C5.49379 3.02821 5.34995 2.95196 5.19629 2.9519H2.91797Z', rule: '' },
+    ],
+  },
+  // deepseek-harness 0 0 14 14
+  WebFetch: {
+    box: '0 0 14 14',
+    paths: [
+      { d: 'M7.00018 0.353516C10.6708 0.353535 13.6468 3.32958 13.6469 7.00018C13.6468 10.6708 10.6708 13.6468 7.00018 13.6469C3.32957 13.6468 0.353535 10.6708 0.353516 7.00018C0.353535 3.32957 3.32957 0.353531 7.00018 0.353516ZM5.44643 7.59661C5.49463 8.97506 5.70762 10.191 6.02136 11.0793C6.20141 11.5891 6.40328 11.9585 6.59898 12.1889C6.79501 12.4196 6.93213 12.454 7.00018 12.454C7.06822 12.454 7.20533 12.4197 7.40138 12.1889C7.59708 11.9585 7.79895 11.589 7.979 11.0793C8.29274 10.191 8.50574 8.97506 8.55394 7.59661H5.44643ZM1.57861 7.59661C1.80785 9.70467 3.2386 11.4509 5.1715 12.1388C5.07135 11.9317 4.97972 11.7098 4.89746 11.477C4.53084 10.4391 4.30224 9.0828 4.25357 7.59661H1.57861ZM9.74679 7.59661C9.69813 9.0828 9.46952 10.4391 9.1029 11.477C9.0206 11.7099 8.92818 11.9316 8.82797 12.1388C10.7613 11.4511 12.1925 9.70496 12.4218 7.59661H9.74679ZM5.1706 1.8616C3.23814 2.54963 1.80876 4.29604 1.5795 6.40376H4.25357C4.30224 4.91756 4.53083 3.56129 4.89746 2.5234C4.97968 2.29066 5.07051 2.0686 5.1706 1.8616ZM7.00018 1.54637C6.93213 1.54638 6.79503 1.5807 6.59898 1.81145C6.40332 2.04177 6.20139 2.41058 6.02136 2.92012C5.70754 3.80851 5.49461 5.02499 5.44643 6.40376H8.55394C8.50575 5.025 8.29282 3.80851 7.979 2.92012C7.79898 2.41059 7.59705 2.04177 7.40138 1.81145C7.20531 1.58067 7.06823 1.54637 7.00018 1.54637ZM8.82887 1.8616C8.92902 2.0687 9.02064 2.29053 9.1029 2.5234C9.46953 3.56129 9.69812 4.91756 9.74679 6.40376H12.4209C12.1916 4.29575 10.7618 2.54943 8.82887 1.8616Z', rule: 'evenodd' },
+    ],
+  },
+  // deepseek-harness 0 0 16 16
+  model_round_started: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M6.1 3.1Q6.6 7.8 11.3 8.3Q6.6 8.8 6.1 13.5Q5.6 8.8 0.9 8.3Q5.6 7.8 6.1 3.1Z', rule: '' },
+      { d: 'M11.9 1Q12.2 3.7 14.9 4Q12.2 4.3 11.9 7Q11.6 4.3 8.9 4Q11.6 3.7 11.9 1Z', rule: '' },
+      { d: 'M12.5 9.4Q12.7 11.4 14.7 11.6Q12.7 11.8 12.5 13.8Q12.3 11.8 10.3 11.6Q12.3 11.4 12.5 9.4Z', rule: '' },
+    ],
+  },
+  // deepseek-harness 0 0 16 16
+  model_round_completed: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M6.1 3.1Q6.6 7.8 11.3 8.3Q6.6 8.8 6.1 13.5Q5.6 8.8 0.9 8.3Q5.6 7.8 6.1 3.1Z', rule: '' },
+      { d: 'M11.9 1Q12.2 3.7 14.9 4Q12.2 4.3 11.9 7Q11.6 4.3 8.9 4Q11.6 3.7 11.9 1Z', rule: '' },
+      { d: 'M12.5 9.4Q12.7 11.4 14.7 11.6Q12.7 11.8 12.5 13.8Q12.3 11.8 10.3 11.6Q12.3 11.4 12.5 9.4Z', rule: '' },
+    ],
+  },
+  // deepseek-harness 0 0 16 16
+  default: {
+    box: '0 0 16 16',
+    paths: [
+      { d: 'M6.1 3.1Q6.6 7.8 11.3 8.3Q6.6 8.8 6.1 13.5Q5.6 8.8 0.9 8.3Q5.6 7.8 6.1 3.1Z', rule: '' },
+      { d: 'M11.9 1Q12.2 3.7 14.9 4Q12.2 4.3 11.9 7Q11.6 4.3 8.9 4Q11.6 3.7 11.9 1Z', rule: '' },
+      { d: 'M12.5 9.4Q12.7 11.4 14.7 11.6Q12.7 11.8 12.5 13.8Q12.3 11.8 10.3 11.6Q12.3 11.4 12.5 9.4Z', rule: '' },
+    ],
+  },
+};
+
+function outputIconElement(entry) {
+  // 图标数据来自 deepseek-harness 的图标集（fill 型路径），不再是手绘的描边字形。
+  const spec = entry && entry.paths ? entry : OUTPUT_ICON_PATHS.default;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', spec.box || '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  spec.paths.forEach((item) => {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', item.d);
+    path.setAttribute('fill', 'currentColor');
+    path.setAttribute('stroke', 'none');
+    if (item.rule) path.setAttribute('fill-rule', item.rule);
+    svg.append(path);
+  });
+  return svg;
 }
 
 function outputBlockIcon(block) {
@@ -3875,7 +4612,10 @@ function outputBlockIcon(block) {
   icon.className = 'log-icon';
   icon.dataset.icon = block.kind === 'tool' ? 'tool' : block.kind;
   icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = outputBlockIconGlyph(block);
+  const key = block.kind === 'tool'
+    ? (block.toolName || 'default')
+    : (block.kind || 'default');
+  icon.append(outputIconElement(OUTPUT_ICON_PATHS[key] || OUTPUT_ICON_PATHS.default));
   return icon;
 }
 
@@ -4029,8 +4769,14 @@ function outputBlockDisclosure(block) {
   details.append(head, body);
   if (store.has(blockKey)) details.open = true;
   details.addEventListener('toggle', () => {
-    if (details.open) store.add(blockKey);
-    else store.delete(blockKey);
+    if (details.open) {
+      store.add(blockKey);
+      pauseFollowForReading();
+      const anchor = captureLogAnchor();
+      requestAnimationFrame(() => restoreLogAnchor(anchor));
+    } else {
+      store.delete(blockKey);
+    }
   });
   return details;
 }
@@ -4127,6 +4873,9 @@ function timelineMilestoneRow(event) {
     if (rawSummary) {
       const details = document.createElement('details');
       details.className = 'log-tool-details';
+      const detailsKey = `e:${event.cursor}`;
+      if (state.expandedLogDetails.has(detailsKey)) details.open = true;
+      details.addEventListener('toggle', () => handleLogDetailsToggle(details, detailsKey));
       const detailsSummary = document.createElement('summary');
       detailsSummary.textContent = text('outputToolSummary');
       const pre = document.createElement('pre');
@@ -4142,6 +4891,25 @@ function timelineMilestoneRow(event) {
   return row;
 }
 
+function taskStageCardRunning(task) {
+  if (!task || isExternalWait(task)) return false;
+  return ['queued', 'preparing', 'running', 'cancelling'].includes(task.state)
+    || task.phase === 'preparing_workspace';
+}
+
+function ensureStageCardTicker() {
+  if (state.stageCardTicker) return;
+  state.stageCardTicker = window.setInterval(() => {
+    document.querySelectorAll('.timeline-stage-card__elapsed[data-since]').forEach((node) => {
+      const since = Number(node.dataset.since || 0);
+      if (!Number.isFinite(since) || since <= 0) return;
+      node.textContent = text('preparingElapsed', {
+        duration: durationLabel(Date.now() - since),
+      });
+    });
+  }, 1000);
+}
+
 function timelineStageCard(task) {
   const item = task && task.identity && task.identity.item;
   const card = document.createElement('div');
@@ -4151,6 +4919,14 @@ function timelineStageCard(task) {
     message.textContent = text('noLogs');
     card.append(message);
     return card;
+  }
+  const running = taskStageCardRunning(task);
+  if (running) {
+    card.dataset.running = 'true';
+    const spinner = document.createElement('span');
+    spinner.className = 'timeline-stage-card__spinner';
+    spinner.setAttribute('aria-hidden', 'true');
+    card.append(spinner);
   }
   const heading = document.createElement('strong');
   heading.textContent = task && task.state === 'queued' && isMonitorTodo(task)
@@ -4162,10 +4938,22 @@ function timelineStageCard(task) {
   if (task.state === 'queued') {
     detail.textContent = isMonitorTodo(task) ? monitorWaitDetail(task) : latestTaskWaitReason(task);
   } else if (task.phase === 'preparing_workspace') {
-    const elapsed = task.updatedAt ? relativeLabel(task.updatedAt) : '';
-    detail.textContent = elapsed
-      ? `${text('preparingElapsed', { duration: elapsed })} · ${text('worktreeQuiet', { item: compactItemLabel(item) })}`
-      : text('worktreeQuiet', { item: compactItemLabel(item) });
+    const since = task.updatedAt ? normalizeTimestamp(task.updatedAt) : 0;
+    if (since) {
+      const elapsed = document.createElement('span');
+      elapsed.className = 'timeline-stage-card__elapsed';
+      elapsed.dataset.since = String(since);
+      elapsed.textContent = text('preparingElapsed', {
+        duration: durationLabel(Date.now() - since),
+      });
+      detail.append(
+        elapsed,
+        document.createTextNode(` · ${text('worktreeQuiet', { item: compactItemLabel(item) })}`),
+      );
+      if (running) ensureStageCardTicker();
+    } else {
+      detail.textContent = text('worktreeQuiet', { item: compactItemLabel(item) });
+    }
   } else if (task.state === 'running' && task.phase === 'agent_running') {
     detail.textContent = text('awaitingFirstOutput');
   } else if (isExternalWait(task)) {
@@ -4182,12 +4970,37 @@ function timelineStageCard(task) {
   card.append(detail);
   return card;
 }
-
 /// The reader's place in the stream must survive re-renders. The scroller is
 /// position:relative, so a row's offsetTop is stable in its coordinate space:
 /// remember the first visible row plus its offset, then put it back after the
 /// list has been reordered. Without this, new output shoved the row being read
 /// off screen even though follow-mode was already off.
+function pauseFollowForReading() {
+  state.followLogs = false;
+  if (view && view.newEvents) view.newEvents.hidden = false;
+}
+
+function logRowAnchorKey(node) {
+  if (!node || !node.dataset) return '';
+  return node.dataset.blockKey || node.dataset.toolRunKey || node.dataset.eventKey || '';
+}
+
+function findLogRowByAnchorKey(key) {
+  if (!key || !view || !view.logList) return null;
+  return [...view.logList.children].find((row) => logRowAnchorKey(row) === key) || null;
+}
+
+function handleLogDetailsToggle(details, key) {
+  if (details.open) {
+    state.expandedLogDetails.add(key);
+    pauseFollowForReading();
+    const anchor = captureLogAnchor();
+    requestAnimationFrame(() => restoreLogAnchor(anchor));
+  } else {
+    state.expandedLogDetails.delete(key);
+  }
+}
+
 function captureLogAnchor() {
   const scroller = view.logScroll;
   if (!scroller) return null;
@@ -4195,16 +5008,145 @@ function captureLogAnchor() {
   const node = [...view.logList.children]
     .find((row) => row.offsetTop + row.offsetHeight > scrollTop);
   if (!node) return null;
-  return { node, offset: node.offsetTop - scrollTop };
+  return { node, key: logRowAnchorKey(node), offset: node.offsetTop - scrollTop };
 }
 
 function restoreLogAnchor(anchor) {
-  if (!anchor || !anchor.node || !anchor.node.isConnected) return;
+  if (!anchor) return;
+  const node = anchor.node && anchor.node.isConnected
+    ? anchor.node
+    : findLogRowByAnchorKey(anchor.key);
+  if (!node) return;
   const scroller = view.logScroll;
-  const next = anchor.node.offsetTop - anchor.offset;
+  if (!scroller) return;
+  const next = node.offsetTop - anchor.offset;
   if (Math.abs(scroller.scrollTop - next) > 1) scroller.scrollTop = next;
 }
 
+function timelineToolRunGroupKey(event) {
+  const details = event.details && typeof event.details === 'object' ? event.details : null;
+  if (!details || !details.toolName || !details.activity) return '';
+  const toolId = details.toolId
+    ? String(details.toolId)
+    : `${details.toolName}:${details.summary || ''}`;
+  const generation = event.generation == null ? '' : String(event.generation);
+  return `${event.taskId || ''}:${generation}:${toolId}`;
+}
+
+function compactTimelineToolRuns(events) {
+  const rows = [];
+  const groups = new Map();
+  events.forEach((event) => {
+    const groupKey = timelineToolRunGroupKey(event);
+    if (!groupKey) {
+      rows.push({ key: `e:${event.cursor}`, kind: 'milestone', event });
+      return;
+    }
+    const details = event.details;
+    const terminal = ['completed', 'failed', 'cancelled', 'rejected'].includes(details.activity);
+    let group = groups.get(groupKey);
+    if (group && group.terminal) group = null;
+    if (!group) {
+      group = {
+        key: `t:${groupKey}:${event.cursor}`,
+        kind: 'toolRun',
+        groupKey,
+        first: event,
+        latest: event,
+        events: [],
+        terminal: false,
+      };
+      groups.set(groupKey, group);
+      rows.push(group);
+    }
+    group.events.push(event);
+    group.latest = event;
+    group.terminal = terminal;
+  });
+  return rows;
+}
+
+function toolRunDetailText(group) {
+  return group.events
+    .map((event) => {
+      const details = event.details && typeof event.details === 'object' ? event.details : {};
+      const state = details.activity ? toolStateLabel(details.activity) : '';
+      const summary = String(details.summary || '').trim();
+      const duration = details.durationMs ? `${details.durationMs} ms` : '';
+      return [state, summary, duration].filter(Boolean).join(' · ');
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+function timelineToolRunRow(group) {
+  const row = document.createElement('li');
+  row.className = 'log-row log-row--milestone log-row--tool-run';
+  row.dataset.toolRunKey = group.key;
+  row.dataset.level = group.latest.level || 'info';
+  row.dataset.important = String(Boolean(group.latest.important));
+
+  const time = document.createElement('time');
+  time.className = 'log-time';
+  const source = document.createElement('span');
+  source.className = 'log-source';
+
+  const content = document.createElement('div');
+  content.className = 'milestone-row__message milestone-row__message--tool';
+  const icon = outputBlockIcon({
+    kind: 'tool',
+    toolName: (group.latest.details && group.latest.details.toolName) || '',
+  });
+  const label = document.createElement('span');
+  label.className = 'milestone-row__tool-label';
+  const stateChip = document.createElement('span');
+  stateChip.className = 'milestone-row__tool-state';
+  const preview = document.createElement('span');
+  preview.className = 'milestone-row__tool-preview';
+  const details = document.createElement('details');
+  details.className = 'log-tool-details';
+  const detailsKey = `t:${group.key}`;
+  if (state.expandedLogDetails.has(detailsKey)) details.open = true;
+  details.addEventListener('toggle', () => handleLogDetailsToggle(details, detailsKey));
+  const summary = document.createElement('summary');
+  summary.textContent = text('outputToolSummary');
+  const pre = document.createElement('pre');
+  details.append(summary, pre);
+  content.append(icon, label, stateChip, preview, details);
+
+  row.append(time, source, content);
+  updateTimelineToolRunRow(row, group);
+  return row;
+}
+
+function updateTimelineToolRunRow(row, group) {
+  const event = group.latest;
+  const details = event.details && typeof event.details === 'object' ? event.details : {};
+  const toolName = String(details.toolName || '');
+  const time = row.querySelector('time');
+  if (time) {
+    time.dateTime = new Date(normalizeTimestamp(group.first.occurredAt)).toISOString();
+    time.textContent = clockLabel(group.first.occurredAt);
+  }
+  const source = row.querySelector('.log-source');
+  if (source) source.textContent = eventSourceLabel(event.source);
+  const label = row.querySelector('.milestone-row__tool-label');
+  if (label) label.textContent = toolLabel(toolName);
+  const stateChip = row.querySelector('.milestone-row__tool-state');
+  if (stateChip) {
+    stateChip.textContent = toolStateLabel(details.activity);
+    stateChip.dataset.state = details.activity || '';
+  }
+  const preview = row.querySelector('.milestone-row__tool-preview');
+  if (preview) {
+    const compact = compactToolSummary(toolName, details.summary);
+    preview.textContent = compact || '';
+    preview.title = String(details.summary || '');
+    preview.hidden = !compact;
+  }
+  const pre = row.querySelector('.log-tool-details pre');
+  if (pre) pre.textContent = toolRunDetailText(group);
+}
 function renderTimeline() {
   if (!canRender()) return;
   const running = runningOutputTask();
@@ -4243,9 +5185,7 @@ function renderTimeline() {
         && (event.generation == null || Number(event.generation) === Number(task.generation))
       ))
       : [];
-    toolEvents.forEach((event) => {
-      rows.push({ key: `e:${event.cursor}`, kind: 'milestone', event });
-    });
+    compactTimelineToolRuns(toolEvents).forEach((row) => rows.push(row));
   } else {
     blockGroups.forEach((group) => {
       group.blocks.forEach((block) => rows.push({ key: `b:${outputBlockDomKey(block)}`, kind: 'block', block }));
@@ -4263,11 +5203,22 @@ function renderTimeline() {
       .filter((node) => node.dataset && node.dataset.eventKey)
       .map((node) => [node.dataset.eventKey, node]),
   );
+  const existingToolRuns = new Map(
+    [...view.logList.children]
+      .filter((node) => node.dataset && node.dataset.toolRunKey)
+      .map((node) => [node.dataset.toolRunKey, node]),
+  );
   const desired = visibleRows.map((row) => {
     if (row.kind === 'block') {
       const node = existingBlocks.get(row.key);
       if (!node) return turnOutputBlockRow(row.block);
       updateTurnOutputBlockRow(node, row.block);
+      return node;
+    }
+    if (row.kind === 'toolRun') {
+      const node = existingToolRuns.get(row.key);
+      if (!node) return timelineToolRunRow(row);
+      updateTimelineToolRunRow(node, row);
       return node;
     }
     const node = existingEvents.get(row.key);
@@ -4734,7 +5685,7 @@ async function createTasks(retryTerminal) {
     }
     const messages = summarizeOutcomes(outcomes);
     const hasError = outcomes.some((outcome) => outcome.kind === 'needs_live_verification');
-    showNotice(messages.join(' '), hasError ? 'error' : 'success');
+    showNotice(messages.join(' '), hasError ? 'error' : 'neutral');
     view.intakeDialog.close();
     view.retryDialog.close();
     state.preview = null;
@@ -4953,6 +5904,53 @@ async function sendActionRequest(request) {
   return response;
 }
 
+function gateAppliedPresentation(extra) {
+  if (!extra) return null;
+  if (extra.presentation) return extra.presentation;
+  const gateId = extra.gateId;
+  if (gateId && state.gateAppliedPresentations && state.gateAppliedPresentations.has(gateId)) {
+    return state.gateAppliedPresentations.get(gateId);
+  }
+  return null;
+}
+
+const ACTION_APPLIED_TEXT_KEY = {
+  resume: 'actionAppliedResume',
+  restore: 'actionAppliedRestore',
+  pause: 'actionAppliedPause',
+  abort: 'actionAppliedAbort',
+  archive: 'actionAppliedArchive',
+  retry_environment: 'actionAppliedRetry',
+};
+
+function actionAppliedNotice(action, task, extra, response) {
+  // 提交前先把审批说明缓存下来：宿主在批准瞬间就会清掉 pendingGateId，
+  // 之后再查 latestGate() 已经查不到，旧代码因此回退成英文原文或「操作已应用。」。
+  const presentation = gateAppliedPresentation(extra);
+  if (action === 'approve' && task && presentation) {
+    if (presentation.kind === 'publish_comment') {
+      const item = task.identity && task.identity.item;
+      return text('approvalAppliedComment', { item: compactItemLabel(item) || '--' });
+    }
+    if (presentation.summaryDetail) {
+      return text('approvalAppliedGenericDetail', { detail: presentation.summaryDetail });
+    }
+    if (presentation.kind === 'publish') return text('approvalAppliedPublish');
+    return text('approvalAppliedGeneric', { title: presentation.title });
+  }
+  if (action === 'reject' && task) return text('approvalRejectedNotice');
+  const actionKey = ACTION_APPLIED_TEXT_KEY[action];
+  if (actionKey) {
+    const item = task && task.identity && task.identity.item;
+    const label = compactItemLabel(item) || (task ? issueDisplayTitle(task) : '') || '--';
+    return text(actionKey, { item: label });
+  }
+  const raw = stripPriorityPrefix(response && response.message);
+  // 宿主回执是英文内部句子（Approval applied; ... [P1] ...）时不再回显，
+  // 只接受已经本地化（含中文）的宿主文案。
+  if (raw && /[\u3400-\u9fff]/.test(raw)) return raw;
+  return text('actionApplied');
+}
 async function performAction(action, task, extra = {}) {
   if (!snapshotSupported()) {
     showNotice(text('intakeUnavailable'), 'error');
@@ -5010,7 +6008,7 @@ async function performAction(action, task, extra = {}) {
       showNotice(
         action === 'install_loopx'
           ? text('loopxInstallQueued')
-          : (response && response.message ? response.message : text('actionApplied')),
+          : actionAppliedNotice(action, task, extra, response),
         'success',
       );
       await attachSnapshot(false);
@@ -5077,14 +6075,35 @@ async function answerTaskGate(task, action, note = '') {
   const gate = task && latestGate(task.taskId);
   if (!task || !gate) {
     showNotice(text('noGate'), 'error');
+    clearGateSubmitting();
     return;
   }
   showNotice(text('approvalSubmitting'));
+  const presentation = approvalPresentation(task, gate);
+  if (presentation && state.gateAppliedPresentations) {
+    state.gateAppliedPresentations.set(gate.gateId, presentation);
+  }
+  if (
+    action === 'approve'
+    && presentation
+    && (presentation.kind === 'publish' || presentation.kind === 'publish_comment')
+    && state.publishOutcomeArmed
+  ) {
+    // 授权只是开始：等 agent 真的把 PR / 评论发出来后再播报具体产物。
+    state.publishOutcomeArmed.add(task.taskId);
+    storeIdSet(PUBLISH_ARMED_STORAGE_KEY, state.publishOutcomeArmed);
+  }
   try {
-    const applied = await performAction(action, task, { gateId: gate.gateId, note: note.trim() });
-    if (applied && state.selectedTaskId === task.taskId) view.issueApprovalNote.value = '';
+    const applied = await performAction(action, task, {
+      gateId: gate.gateId,
+      note: note.trim(),
+      presentation,
+    });
+    const shown = displayedTask();
+    if (applied && shown && shown.taskId === task.taskId) view.issueApprovalNote.value = '';
   } finally {
     syncApprovalAttention(false);
+    clearGateSubmitting();
   }
 }
 
@@ -5100,9 +6119,46 @@ function openApprovalAlertGate() {
 }
 
 function answerSelectedTaskGate(action) {
-  const task = selectedTask();
+  // 审批面板是按 displayedTask() 渲染的，而 selectedTask() 在没有手动点过
+  // 左侧任务行时是 null（旧代码因此 if (!task) return 静默返回：按钮点了
+  // 既不发请求也没有任何反馈）。这里改为回答「面板正在展示的那个任务」。
+  const task = displayedTask() || (state.approvalTaskId ? taskForId(state.approvalTaskId) : null);
   if (!task) return;
+  if (!latestGate(task.taskId)) {
+    showNotice(text('noGate'), 'error');
+    return;
+  }
+  markGateSubmitting(action);
   void answerTaskGate(task, action, view.issueApprovalNote.value);
+}
+
+function markGateSubmitting(action) {
+  state.gateSubmittingAction = action || '';
+  const approve = view.issueApprovalApprove;
+  const reject = view.issueApprovalReject;
+  if (!approve || !reject) return;
+  approve.disabled = true;
+  reject.disabled = true;
+  view.issueApprovalNote.disabled = true;
+  approve.classList.toggle('is-submitting', action === 'approve');
+  reject.classList.toggle('is-submitting', action === 'reject');
+  const button = action === 'approve' ? approve : reject;
+  button.textContent = text('approvalSubmittingShort');
+  button.setAttribute('aria-busy', 'true');
+}
+
+function clearGateSubmitting() {
+  state.gateSubmittingAction = '';
+  [view.issueApprovalApprove, view.issueApprovalReject].forEach((button) => {
+    if (!button) return;
+    button.classList.remove('is-submitting');
+    button.removeAttribute('aria-busy');
+  });
+  try {
+    renderIssueView();
+  } catch (error) {
+    console.error('renderIssueView failed after gate decision:', error);
+  }
 }
 
 const RAIL_MIN_WIDTH = 180;
@@ -5118,6 +6174,8 @@ function setRailWidth(width) {
   const workbench = view.taskRail.parentElement;
   workbench.style.setProperty('--rail-width', `${width}px`);
   state.railWidth = width;
+  // 窄轨（还没折叠到底）需要另一套排版：状态胶囊独占一行、标题两行截断。
+  view.taskRail.classList.toggle('is-narrow', Number(width) < 248);
 }
 
 function setRailCollapsed(collapsed) {

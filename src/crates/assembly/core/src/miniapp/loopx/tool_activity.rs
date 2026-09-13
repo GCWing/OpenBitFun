@@ -20,6 +20,7 @@ pub(super) fn project_tool_activity(event: &ToolEventData) -> Option<ToolActivit
     let mut details = BTreeMap::from([
         ("activity".to_string(), activity_state(event)?.to_string()),
         ("toolName".to_string(), tool_name.clone()),
+        ("toolId".to_string(), event.identity().tool_id.clone()),
     ]);
     let (message, current_tool, important) = match event {
         ToolEventData::Queued { position, .. } => {
