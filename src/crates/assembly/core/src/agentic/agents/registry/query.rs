@@ -17,23 +17,6 @@ use openbitfun_agent_runtime::agents::subagent_source_presentation_rank;
 use std::collections::HashSet;
 use std::path::Path;
 
-const DEFAULT_PRODUCT_CONTROL_TOOL: &str = "OpenBitFunControl";
-
-fn append_default_product_control_tool(
-    allowed_tools: &mut Vec<String>,
-    registered_tool_names: &[String],
-) {
-    if registered_tool_names
-        .iter()
-        .any(|tool| tool == DEFAULT_PRODUCT_CONTROL_TOOL)
-        && !allowed_tools
-            .iter()
-            .any(|tool| tool == DEFAULT_PRODUCT_CONTROL_TOOL)
-    {
-        allowed_tools.push(DEFAULT_PRODUCT_CONTROL_TOOL.to_string());
-    }
-}
-
 impl AgentRegistry {
     /// Return every effective local agent definition that can participate in
     /// product-level external-source conflict resolution. Main-agent modes and
@@ -105,7 +88,7 @@ impl AgentRegistry {
             };
         };
         let registered_tool_names = get_all_registered_tool_names().await;
-        let mut policy = match entry.category {
+        match entry.category {
             AgentCategory::Mode => {
                 let mode_configs = get_mode_configs().await;
                 let valid_tools: HashSet<String> = registered_tool_names.iter().cloned().collect();
@@ -144,9 +127,7 @@ impl AgentRegistry {
                     permission_constraints: entry.agent.permission_constraints().clone(),
                 }
             }
-        };
-        append_default_product_control_tool(&mut policy.allowed_tools, &registered_tool_names);
-        policy
+        }
     }
 
     /// get agent tools from config
@@ -492,32 +473,4 @@ fn local_conflict_info(
     info.override_state = availability.override_state;
     info.state_reason = availability.state_reason;
     Some(info)
-}
-
-#[cfg(test)]
-mod product_control_tool_tests {
-    use super::*;
-
-    #[test]
-    fn product_control_is_added_once_when_the_runtime_registered_it() {
-        let registered = vec!["Read".to_string(), DEFAULT_PRODUCT_CONTROL_TOOL.to_string()];
-        let mut allowed = vec!["Read".to_string()];
-
-        append_default_product_control_tool(&mut allowed, &registered);
-        append_default_product_control_tool(&mut allowed, &registered);
-
-        assert_eq!(
-            allowed,
-            vec!["Read".to_string(), DEFAULT_PRODUCT_CONTROL_TOOL.to_string()]
-        );
-    }
-
-    #[test]
-    fn product_control_is_not_advertised_when_the_runtime_omits_it() {
-        let mut allowed = vec!["Read".to_string()];
-
-        append_default_product_control_tool(&mut allowed, &["Read".to_string()]);
-
-        assert_eq!(allowed, vec!["Read".to_string()]);
-    }
 }

@@ -59,7 +59,9 @@ export default function ContentResourceView({ resourceId, isActive }: { resource
           else useSceneStore.getState().closeScene(`content:${resourceId}`);
         }}
         onDirtyStateChange={isDirty => update(resourceId, { isDirty })}
-        onFileMissingFromDiskChange={fileMissing => update(resourceId, { fileMissing })} />
+        onFileMissingFromDiskChange={missing => update(resourceId, {
+          fileMissing: document.isFileDeletedFromDisk(filePath, missing),
+        })} />
       </ResourceFileContext.Provider>
     </EditorDocumentContext.Provider>
   );

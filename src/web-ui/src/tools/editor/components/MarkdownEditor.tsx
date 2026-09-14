@@ -40,6 +40,7 @@ import 'highlight.js/styles/github-dark.css';
 
 const log = createLogger('MarkdownEditor');
 
+
 const FILE_SYNC_POLL_INTERVAL_MS = 1000;
 
 function getPollOffsetMs(filePath: string): number {
@@ -115,6 +116,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   const lastReportedDirtyRef = useRef<boolean | null>(null);
   const lastReportedMissingRef = useRef<boolean | undefined>(undefined);
 
+
   const reportFileMissingFromDisk = useCallback(
     (missing: boolean) => {
       if (!onFileMissingFromDiskChange) {
@@ -169,6 +171,7 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
 
   const loadFileContent = useCallback(async () => {
     if (!filePath || isUnmountedRef.current) return;
+
 
     if (documentSession?.snapshot) {
       const snapshot = documentSession.snapshot;
@@ -273,9 +276,14 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
     }
   }, [filePath, initialContent, loadFileContent, isActiveTab, documentSession]);
 
+  const retryStateRef = useRef({ error, loadFileContent });
+  retryStateRef.current = { error, loadFileContent };
   useEffect(() => {
-    if (isActiveTab && documentSession?.isCurrent() && !documentSession.snapshot && error) void loadFileContent();
-  }, [documentSession, error, isActiveTab, loadFileContent]);
+    // Failure and callback changes must not trigger another read. Retry only
+    // when the tab is reactivated or its document session changes.
+    const { error: loadError, loadFileContent: retryLoad } = retryStateRef.current;
+    if (isActiveTab && documentSession?.isCurrent() && !documentSession.snapshot && loadError) void retryLoad();
+  }, [documentSession, isActiveTab]);
 
   const syncMarkdownFromDisk = useCallback(async (source: 'poll' | 'event') => {
     if (!filePath || isUnmountedRef.current || isCheckingDiskRef.current) {

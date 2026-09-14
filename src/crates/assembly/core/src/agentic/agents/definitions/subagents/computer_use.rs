@@ -33,6 +33,7 @@ impl ComputerUseMode {
                 "WriteStdin".to_string(),
                 "ExecControl".to_string(),
                 "ControlHub".to_string(),
+                "OpenBitFunControl".to_string(),
                 "ComputerUse".to_string(),
             ],
             tool_exposure_overrides,

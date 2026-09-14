@@ -5,7 +5,7 @@
 .openbitfun-cowork-example-cards {
   border: 1px solid var(--openbitfun-color-border-default);
   border-radius: calc(var(--openbitfun-control-flow-chat-card-radius) + 2px);
-  padding: var(--openbitfun-control-flow-chat-card-expanded-padding-inline) var(--openbitfun-control-flow-chat-card-expanded-padding-inline) var(--openbitfun-control-flow-chat-card-expanded-padding-inline) 0;
+  padding: var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
   margin-bottom: var(--openbitfun-control-flow-chat-card-gap);
 
   &__header {

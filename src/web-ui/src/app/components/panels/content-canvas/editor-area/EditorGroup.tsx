@@ -46,7 +46,10 @@ function CanvasContentView({ documentId, ...props }: React.ComponentProps<typeof
       releaseEditorDocument(documentId);
     }
   }, [documentId]);
-  return <EditorDocumentContext.Provider value={documentSession}><ResourceFileContext.Provider value={documentSession}><FlexiblePanel {...props} /></ResourceFileContext.Provider></EditorDocumentContext.Provider>;
+  return <EditorDocumentContext.Provider value={documentSession}><ResourceFileContext.Provider value={documentSession}><FlexiblePanel {...props}
+    onFileMissingFromDiskChange={missing => props.onFileMissingFromDiskChange?.(
+      documentSession.isFileDeletedFromDisk(filePath, missing),
+    )} /></ResourceFileContext.Provider></EditorDocumentContext.Provider>;
 }
 
 export interface EditorGroupProps {
