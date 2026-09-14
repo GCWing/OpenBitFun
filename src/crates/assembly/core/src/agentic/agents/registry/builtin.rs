@@ -84,6 +84,7 @@ impl AgentRegistry {
             agents: std::sync::RwLock::new(agents),
             project_subagents: std::sync::RwLock::new(HashMap::new()),
             user_custom_agents_loaded: std::sync::RwLock::new(false),
+            custom_load_state: tokio::sync::Mutex::new(Default::default()),
             external_subagents: std::sync::Arc::new(
                 super::external::ExternalSubagentRegistryState::new(),
             ),

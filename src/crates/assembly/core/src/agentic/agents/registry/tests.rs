@@ -1220,6 +1220,69 @@ async fn updating_custom_mode_definition_rewrites_file_and_preserves_mode_kind()
     assert!(saved.contains("- workspace_context"));
 }
 
+#[tokio::test]
+async fn user_agent_queries_refresh_after_file_changes() {
+    let env = CustomAgentTestEnv::new("agent-watch");
+    std::fs::remove_dir(&env.user_agents_dir).unwrap();
+    let registry = AgentRegistry::new();
+    registry
+        .load_custom_agents_from_test_roots(None, &env.discovery_roots(None))
+        .await;
+    std::fs::create_dir_all(&env.user_agents_dir).unwrap();
+    let path = env.user_agents_dir.join("watched.md");
+    let write_mode = |name: &str| {
+        write_user_custom_mode(
+            &path,
+            "watched",
+            name,
+            vec!["Read".into()],
+            UserContextPolicy::default(),
+            "primary",
+            false,
+        )
+    };
+    write_mode("First");
+    wait_for_watched_mode(&registry, Some("First")).await;
+    write_mode("Updated");
+    wait_for_watched_mode(&registry, Some("Updated")).await;
+    std::fs::remove_file(&path).unwrap();
+    wait_for_watched_mode(&registry, None).await;
+    let replacement = env.root.join("replacement");
+    std::fs::create_dir(&replacement).unwrap();
+    write_user_custom_mode(
+        &replacement.join("watched.md"),
+        "watched",
+        "Replacement",
+        vec!["Read".into()],
+        UserContextPolicy::default(),
+        "primary",
+        false,
+    );
+    std::fs::remove_dir(&env.user_agents_dir).unwrap();
+    std::fs::rename(replacement, &env.user_agents_dir).unwrap();
+    wait_for_watched_mode(&registry, Some("Replacement")).await;
+    write_mode("After replacement");
+    wait_for_watched_mode(&registry, Some("After replacement")).await;
+}
+
+async fn wait_for_watched_mode(registry: &AgentRegistry, expected: Option<&str>) {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let modes = registry.get_modes_info_for_workspace(None, false).await;
+            let name = modes
+                .iter()
+                .find(|mode| mode.id == "watched")
+                .map(|mode| mode.name.as_str());
+            if name == expected {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("mode queries should observe user agent file changes");
+}
+
 struct CustomAgentTestEnv {
     root: PathBuf,
     workspace_root: PathBuf,

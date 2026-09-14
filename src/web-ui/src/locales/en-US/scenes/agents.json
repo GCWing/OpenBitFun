@@ -267,6 +267,7 @@
     "deleteSuccess": "Deleted \"{{name}}\"",
     "deleteFailed": "Delete failed: ",
     "form": {
+      "createThroughChatHint": "You can also describe what you need in a conversation and ask an Agent to create a custom Agent for you.",
       "title": "Create Custom Agent",
       "subtitle": "Create an Agent or SubAgent with its own prompt, tools, and runtime context policy.",
       "titleEdit": "Edit Custom Agent",

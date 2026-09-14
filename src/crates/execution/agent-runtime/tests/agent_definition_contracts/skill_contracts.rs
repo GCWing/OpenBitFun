@@ -437,6 +437,19 @@ fn project_skill(dir_name: &str) -> SkillInfo {
 
 #[test]
 fn builtin_skill_catalog_and_mode_policy_are_runtime_owned() {
+    assert_eq!(builtin_skill_group_key("create-agent"), Some("meta"));
+    for mode in ["Standard", "Creative", "Cowork", "DeepResearch"] {
+        assert_eq!(
+            resolve_builtin_default_enabled("create-agent", mode),
+            Some(true)
+        );
+    }
+    for mode in ["Ultimate", "SwarmWorker"] {
+        assert_eq!(
+            resolve_builtin_default_enabled("create-agent", mode),
+            Some(false)
+        );
+    }
     assert_eq!(builtin_skill_group_key("ppt-design"), Some("office"));
     for removed in ["docx", "pdf", "pptx", "xlsx"] {
         assert_eq!(builtin_skill_group_key(removed), None);

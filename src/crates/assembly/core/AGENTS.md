@@ -245,6 +245,13 @@ existing Agent tool test assembly):
 cargo test --locked -p openbitfun-core --no-default-features --features mcp-runtime,git --lib agentic::tools::product_runtime::
 ```
 
+User Agent directory watching and registry regressions (omit `file-watch` to
+exercise query-time discovery fallback):
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,file-watch --lib agentic::agents::registry::
+```
+
 Skill discovery, installation provenance, and local/remote registry regressions:
 
 ```bash

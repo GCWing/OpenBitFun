@@ -267,6 +267,7 @@
     "deleteSuccess": "已删除「{{name}}」",
     "deleteFailed": "删除失败：",
     "form": {
+      "createThroughChatHint": "也可以在对话中描述你的需求，让 Agent 帮你创建自定义 Agent。",
       "title": "新建自定义 Agent",
       "subtitle": "创建智能体或子智能体，定义提示词、工具和运行时上下文策略。",
       "titleEdit": "编辑自定义 Agent",

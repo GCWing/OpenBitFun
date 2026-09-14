@@ -531,6 +531,9 @@ const CreateAgentPage: React.FC = () => {
             <div className="th-create-page__heading">
               <h2 className="th__title">{formTitle}</h2>
               <p className="th__title-sub">{formSubtitle}</p>
+              {!isEdit && (
+                <p className="th__title-sub">{t('agentsOverview.form.createThroughChatHint')}</p>
+              )}
             </div>
             <div className="th-create-page__actions" data-openbitfun-component="create-agent-page" data-openbitfun-part="actions">
               <Button

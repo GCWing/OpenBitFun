@@ -2,6 +2,7 @@ mod availability;
 mod builtin;
 pub(super) mod catalog;
 mod custom;
+mod custom_watch;
 mod external;
 mod query;
 mod resolution;
@@ -58,6 +59,7 @@ pub struct AgentRegistry {
     /// workspace root -> (project subagent id -> agent_entry)
     project_subagents: RwLock<HashMap<PathBuf, HashMap<String, AgentEntry>>>,
     user_custom_agents_loaded: RwLock<bool>,
+    custom_load_state: tokio::sync::Mutex<custom_watch::CustomAgentLoadState>,
     external_subagents: Arc<external::ExternalSubagentRegistryState>,
 }
 

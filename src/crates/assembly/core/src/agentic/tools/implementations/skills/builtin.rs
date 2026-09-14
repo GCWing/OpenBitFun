@@ -324,6 +324,71 @@ mod tests {
     }
 
     #[test]
+    fn custom_agent_skill_embeds_parseable_templates() {
+        use openbitfun_agent_runtime::custom_agent::{
+            custom_agent_read_markdown_str, default_custom_agent_tools,
+            default_custom_agent_user_context_policy, CustomAgentKind, CustomAgentLevel,
+            CUSTOM_AGENT_SCHEMA_VERSION,
+        };
+
+        let skill = SkillData::from_markdown(
+            "/openbitfun-system/create-agent".to_string(),
+            embedded_skill_text("create-agent/SKILL.md"),
+            SkillLocation::User,
+            true,
+        )
+        .expect("agent authoring skill should parse");
+        assert_eq!(skill.name, "create-agent");
+        assert!(!embedded_skill_text("create-agent/references/tool-catalog.md").is_empty());
+
+        for (path, kind, levels, readonly, model, default_tools) in [
+            (
+                "create-agent/assets/mode.md",
+                CustomAgentKind::Mode,
+                vec![CustomAgentLevel::User],
+                false,
+                "primary",
+                true,
+            ),
+            (
+                "create-agent/assets/subagent.md",
+                CustomAgentKind::Subagent,
+                vec![CustomAgentLevel::User, CustomAgentLevel::Project],
+                true,
+                "fast",
+                false,
+            ),
+        ] {
+            for level in levels {
+                let parsed = custom_agent_read_markdown_str(embedded_skill_text(path), level)
+                    .expect("embedded agent template should parse");
+                let definition = parsed.definition;
+                assert_eq!(
+                    parsed.metadata.schema_version,
+                    Some(CUSTOM_AGENT_SCHEMA_VERSION)
+                );
+                assert!(!parsed.metadata.generated_id_from_name);
+                assert_eq!(parsed.metadata.used_default_tools, default_tools);
+                assert_eq!(definition.kind, kind);
+                assert_eq!(definition.level, level);
+                assert_eq!(definition.readonly, readonly);
+                assert!(!definition.review);
+                assert_eq!(definition.model, model);
+                assert!(!definition.model_is_explicit);
+                assert!(!definition.should_save_model());
+                assert_eq!(definition.tools, default_custom_agent_tools(kind));
+                assert_eq!(
+                    definition.user_context_policy,
+                    default_custom_agent_user_context_policy(kind)
+                );
+                assert!(!definition.name.trim().is_empty());
+                assert!(!definition.description.trim().is_empty());
+                assert!(!definition.prompt.trim().is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn plan_skill_embeds_a_valid_plan_artifact_workflow() {
         let text = embedded_skill_text("plan/SKILL.md");
         let skill = SkillData::from_markdown(

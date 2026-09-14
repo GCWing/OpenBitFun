@@ -31,10 +31,21 @@ use std::sync::Arc;
 
 impl AgentRegistry {
     pub async fn ensure_user_custom_agents_loaded(&self) {
-        if self.user_custom_agents_loaded() {
+        let mut state = self.custom_load_state.lock().await;
+        // Some registry fixtures install in-memory user entries without discovery.
+        #[cfg(test)]
+        if self.user_custom_agents_loaded() && state.roots.is_none() {
             return;
         }
-        self.load_custom_agents(None).await;
+        let roots = state
+            .roots
+            .clone()
+            .unwrap_or_else(|| custom_agent_discovery_roots(None));
+        let dirty = state.prepare(&roots).await;
+        if !self.user_custom_agents_loaded() || dirty {
+            self.scan_custom_agents(None, &roots).await;
+            state.published = true;
+        }
     }
 
     /// Load user custom agents globally and project subagents for the given workspace.
@@ -57,6 +68,18 @@ impl AgentRegistry {
     }
 
     async fn load_custom_agents_from_discovery_roots(
+        &self,
+        workspace_root: Option<&Path>,
+        roots: &CustomAgentDiscoveryRoots,
+    ) {
+        let mut state = self.custom_load_state.lock().await;
+        state.prepare(roots).await;
+        state.published = false;
+        self.scan_custom_agents(workspace_root, roots).await;
+        state.published = true;
+    }
+
+    async fn scan_custom_agents(
         &self,
         workspace_root: Option<&Path>,
         roots: &CustomAgentDiscoveryRoots,
