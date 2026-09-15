@@ -723,6 +723,88 @@ fn structured_summary_parses_valid_block_and_rejects_contract_violations() {
 }
 
 #[test]
+fn structured_summary_keeps_referenced_closed_pull_requests_out_of_produced_artifacts() {
+    let summary = r#"本段完成。
+
+```loopx_summary_v1
+{"issue_verdict":"needs_fix","segment_kind":"route_decision","actual_findings":"五个关联 PR（#4 至 #8）全部关闭且没有合并。","artifacts":["https://github.com/xielixing/dynamic-workflows-lab/pull/4","https://github.com/xielixing/dynamic-workflows-lab/pull/8","https://github.com/xielixing/dynamic-workflows-lab/issues/2"],"completed":["没有创建任何 PR，也没有对外推送。"],"decision":{"route":"停止为 issue #2 自动开新的修复 PR，并把该目标正式收尾","reason":"历史尝试均已关闭"},"next_step":"请所有者决定"}
+```
+"#;
+    let parsed = parse_structured_summary(Some(summary)).expect("summary parses");
+    let produced = parsed
+        .get("produced_artifacts")
+        .and_then(|value| value.as_array())
+        .expect("produced artifacts");
+    assert!(
+        produced.is_empty(),
+        "closed historical PRs must not be projected as produced"
+    );
+    let referenced = parsed
+        .get("referenced_artifacts")
+        .and_then(|value| value.as_array())
+        .expect("referenced artifacts");
+    let referenced_urls = referenced
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    assert!(referenced_urls.contains(&"https://github.com/xielixing/dynamic-workflows-lab/pull/4"));
+    let events = parsed
+        .get("artifact_events")
+        .and_then(|value| value.as_array())
+        .expect("artifact events");
+    let pull_event = events
+        .iter()
+        .find(|event| {
+            event.get("url").and_then(|value| value.as_str())
+                == Some("https://github.com/xielixing/dynamic-workflows-lab/pull/4")
+        })
+        .expect("referenced PR event");
+    assert_eq!(
+        pull_event.get("role").and_then(|value| value.as_str()),
+        Some("referenced")
+    );
+    assert_eq!(
+        pull_event.get("kind").and_then(|value| value.as_str()),
+        Some("pull_request")
+    );
+}
+
+#[test]
+fn structured_summary_marks_a_created_pull_request_as_produced() {
+    let summary = r#"本段完成。
+
+```loopx_summary_v1
+{"issue_verdict":"needs_fix","segment_kind":"delivery","artifacts":["https://github.com/xielixing/dynamic-workflows-lab/pull/9"],"completed":["已创建 PR #9 并完成验证。"],"decision":{"route":"创建修复 PR 并交付","reason":"验证通过"},"next_step":"等待维护者审阅 PR #9"}
+```
+"#;
+    let parsed = parse_structured_summary(Some(summary)).expect("summary parses");
+    let produced = parsed
+        .get("produced_artifacts")
+        .and_then(|value| value.as_array())
+        .expect("produced artifacts");
+    let produced_urls = produced
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        produced_urls,
+        vec!["https://github.com/xielixing/dynamic-workflows-lab/pull/9"]
+    );
+    let events = parsed
+        .get("artifact_events")
+        .and_then(|value| value.as_array())
+        .expect("artifact events");
+    assert_eq!(
+        events[0].get("role").and_then(|value| value.as_str()),
+        Some("produced")
+    );
+    assert_eq!(
+        events[0].get("number").and_then(|value| value.as_str()),
+        Some("9")
+    );
+}
+
+#[test]
 fn monitor_action_classification_covers_track_and_monitor_kinds() {
     // The pinned issue-fix workflow emits the merge-readiness tracker as
     // `issue_fix_track_pr_merge_readiness`; the watch family uses the
