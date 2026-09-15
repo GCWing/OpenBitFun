@@ -449,7 +449,7 @@ fn turn_output_event(
     if event.turn_id() != Some(expected_turn_id) {
         return None;
     }
-    match event {
+    let mut output = match event {
         AgenticEvent::TextChunk {
             turn_id,
             round_id,
@@ -531,7 +531,18 @@ fn turn_output_event(
             })
         }
         _ => None,
+    };
+    if let Some(value) = output.as_mut() {
+        value.at_ms = Some(now_millis());
     }
+    output
+}
+
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_millis() as i64)
+        .unwrap_or_default()
 }
 
 fn loopx_session_metadata(
