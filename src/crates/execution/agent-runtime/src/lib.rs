@@ -8,6 +8,8 @@ pub mod agents;
 #[cfg(feature = "agent-runtime")]
 pub mod checkpoint;
 #[cfg(feature = "agent-runtime")]
+pub mod compression_prefetch;
+#[cfg(feature = "agent-runtime")]
 pub mod context_profile;
 #[cfg(any(feature = "agent-runtime", feature = "definition-contracts"))]
 pub mod custom_agent;

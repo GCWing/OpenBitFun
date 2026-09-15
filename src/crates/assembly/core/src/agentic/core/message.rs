@@ -14,6 +14,9 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
+    /// Identity of a stable history message. After publication to stable context,
+    /// changing content or compression-relevant semantics must allocate a new ID.
+    /// Token bookkeeping and temporary provider projections do not replace history.
     pub id: String,
     pub role: MessageRole,
     pub content: MessageContent,

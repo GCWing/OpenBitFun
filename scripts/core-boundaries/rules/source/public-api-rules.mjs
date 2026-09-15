@@ -20,6 +20,7 @@ export const publicApiContractSlices = [
 export const agentRuntimeRootPublicModules = [
   'agents',
   'checkpoint',
+  'compression_prefetch',
   'context_profile',
   'custom_agent',
   'custom_subagent',

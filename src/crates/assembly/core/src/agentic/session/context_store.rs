@@ -12,6 +12,56 @@ pub struct SessionContextStore {
     session_contexts: Arc<DashMap<String, Vec<Message>>>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn compression_transform_serializes_with_concurrent_append() {
+        let store = Arc::new(SessionContextStore::new());
+        store.create_session("session");
+        let original = Message::user("original".into());
+        store.add_message("session", original.clone());
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let worker_store = store.clone();
+        let worker = std::thread::spawn(move || {
+            worker_store
+                .try_transform_context("session", |current| {
+                    assert_eq!(current.len(), 1);
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok((Some(vec![Message::assistant("summary".into())]), ()))
+                })
+                .unwrap();
+        });
+        entered_rx.recv().unwrap();
+        let append_store = store.clone();
+        let appended = Message::assistant("new tail".into());
+        let appended_id = appended.id.clone();
+        let append = std::thread::spawn(move || append_store.add_message("session", appended));
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        append.join().unwrap();
+        let result = store.get_context_messages("session");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[1].id, appended_id);
+    }
+
+    #[test]
+    fn compression_rejected_transform_keeps_context() {
+        let store = SessionContextStore::new();
+        store.create_session("session");
+        let original = Message::user("original".into());
+        store.add_message("session", original.clone());
+        let result = store.try_transform_context::<()>("session", |_| {
+            Err(crate::OpenBitFunError::Cancelled("owner changed".into()))
+        });
+        assert!(result.is_err());
+        assert_eq!(store.get_context_messages("session")[0].id, original.id);
+    }
+}
+
 impl Default for SessionContextStore {
     fn default() -> Self {
         Self::new()
@@ -50,6 +100,23 @@ impl SessionContextStore {
             .get(session_id)
             .map(|messages| messages.clone())
             .unwrap_or_default()
+    }
+
+    /// Validate and transform the latest context under the same entry lock used
+    /// by append/replace. A rejected preparation never changes the cache.
+    pub(crate) fn try_transform_context<T>(
+        &self,
+        session_id: &str,
+        transform: impl FnOnce(&[Message]) -> crate::OpenBitFunResult<(Option<Vec<Message>>, T)>,
+    ) -> crate::OpenBitFunResult<T> {
+        let mut messages = self.session_contexts.get_mut(session_id).ok_or_else(|| {
+            crate::OpenBitFunError::NotFound(format!("Session context not found: {session_id}"))
+        })?;
+        let (replacement, result) = transform(&messages)?;
+        if let Some(replacement) = replacement {
+            *messages = replacement;
+        }
+        Ok(result)
     }
 
     pub fn delete_session(&self, session_id: &str) {

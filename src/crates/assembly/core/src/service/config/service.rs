@@ -1114,6 +1114,7 @@ mod tests {
             ("ai.stream_idle_timeout_secs", json!(123)),
             ("ai.web_search.provider", json!("tavily")),
             ("ai.allow_tool_json_repair", json!(false)),
+            ("ai.enable_context_compression_prefetch", json!(false)),
             ("tool_permissions.interaction.auto_approve_ask", json!(true)),
             ("memories.use_memories", json!(true)),
             (

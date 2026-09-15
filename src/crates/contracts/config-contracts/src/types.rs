@@ -1035,6 +1035,10 @@ pub struct AIConfig {
     #[serde(default = "default_enable_deferred_tool_loading")]
     pub enable_deferred_tool_loading: bool,
 
+    /// Speculatively summarize context before automatic compression is required.
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub enable_context_compression_prefetch: bool,
+
     /// Allows broad JSON repair for non-Write tool arguments only after a
     /// provider confirms a normal tool-use completion.
     #[serde(default = "default_true")]
@@ -1391,6 +1395,10 @@ pub struct AgentProfileView {
 
 fn default_true() -> bool {
     true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// Default streaming idle timeout between chunks.
@@ -1919,6 +1927,7 @@ impl Default for AIConfig {
             stream_ttft_timeout_secs: default_stream_ttft_timeout(),
             tool_execution_timeout_secs: default_tool_execution_timeout(),
             enable_deferred_tool_loading: default_enable_deferred_tool_loading(),
+            enable_context_compression_prefetch: true,
             allow_tool_json_repair: true,
             computer_use_enabled: false,
             browser_control_preferred_browser: String::new(),
@@ -2892,6 +2901,7 @@ mod tests {
         assert_eq!(config.stream_idle_timeout_secs, Some(600));
         assert_eq!(config.stream_ttft_timeout_secs, Some(600));
         assert!(config.enable_deferred_tool_loading);
+        assert!(config.enable_context_compression_prefetch);
         assert!(config.allow_tool_json_repair);
         assert_eq!(config.subagent_max_concurrency, 5);
         assert_eq!(config.swarm_max_concurrency, 16);
@@ -2934,6 +2944,33 @@ mod tests {
             config.agent_model_defaults.subagents.fork,
             SubagentModelSelection::Inherit
         );
+    }
+
+    #[test]
+    fn compression_prefetch_defaults_on_omits_default_and_preserves_opt_out() {
+        let old: AIConfig = serde_json::from_value(serde_json::json!({"max_rounds": 42})).unwrap();
+        assert!(old.enable_context_compression_prefetch);
+        let mut payload = serde_json::to_value(&old).unwrap();
+        assert!(payload.get("enable_context_compression_prefetch").is_none());
+        payload["enable_context_compression_prefetch"] = serde_json::json!(true);
+        let enabled: AIConfig = serde_json::from_value(payload).unwrap();
+        assert!(enabled.enable_context_compression_prefetch);
+        assert!(serde_json::to_value(&enabled)
+            .unwrap()
+            .get("enable_context_compression_prefetch")
+            .is_none());
+        let reloaded: AIConfig =
+            serde_json::from_value(serde_json::to_value(enabled).unwrap()).unwrap();
+        assert!(reloaded.enable_context_compression_prefetch);
+        assert_eq!(reloaded.max_rounds, 42);
+        let disabled: AIConfig = serde_json::from_value(serde_json::json!({
+            "enable_context_compression_prefetch": false
+        }))
+        .unwrap();
+        let payload = serde_json::to_value(disabled).unwrap();
+        assert_eq!(payload["enable_context_compression_prefetch"], false);
+        let reloaded: AIConfig = serde_json::from_value(payload).unwrap();
+        assert!(!reloaded.enable_context_compression_prefetch);
     }
 
     #[test]

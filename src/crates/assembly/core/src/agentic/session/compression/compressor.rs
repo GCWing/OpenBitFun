@@ -338,6 +338,72 @@ impl ContextCompressor {
         (retained, retained_tokens)
     }
 
+    /// Refresh only the uncovered suffix. Pure appends are valid; rewritten
+    /// prefixes and boundaries inside an atomic tool exchange are not.
+    pub(crate) fn rebase_plan(
+        &self,
+        mut plan: CompressionPlan,
+        runtime_messages: &[Message],
+        current_turn_id: &str,
+    ) -> OpenBitFunResult<Option<CompressionPlan>> {
+        let conversation = Self::canonical_conversation(runtime_messages)
+            .cloned()
+            .collect::<Vec<_>>();
+        let cutoff = plan.summary_messages.len();
+        if !Self::has_message_id_prefix(
+            &conversation,
+            plan.summary_messages
+                .iter()
+                .map(|message| message.id.as_str()),
+        ) || (cutoff < conversation.len()
+            && !Self::atomic_message_units(&conversation)
+                .iter()
+                .any(|unit| unit.start == cutoff))
+        {
+            return Ok(None);
+        }
+        plan.recent_tail_messages = conversation[cutoff..].to_vec();
+        plan.recent_tail_tokens = plan
+            .recent_tail_messages
+            .iter()
+            .map(|message| message.estimate_tokens_with_reasoning(true))
+            .sum();
+        plan.current_turn_todo_checkpoint =
+            Self::latest_successful_todo_snapshot_for_turn(&conversation, current_turn_id)
+                .and_then(|(index, snapshot)| {
+                    (index < cutoff).then(|| CurrentTurnTodoCheckpoint {
+                        turn_id: current_turn_id.to_string(),
+                        snapshot,
+                    })
+                });
+        Ok(Some(plan))
+    }
+
+    /// Stable history is immutable by message identity: semantic replacement
+    /// must allocate a new ID. Append and non-semantic bookkeeping are allowed.
+    pub(crate) fn has_message_id_prefix<'a>(
+        messages: impl IntoIterator<Item = &'a Message>,
+        prefix_ids: impl IntoIterator<Item = &'a str>,
+    ) -> bool {
+        let mut messages = messages.into_iter();
+        prefix_ids
+            .into_iter()
+            .all(|id| messages.next().is_some_and(|message| message.id == id))
+    }
+
+    pub(crate) fn canonical_conversation(
+        runtime_messages: &[Message],
+    ) -> impl Iterator<Item = &Message> {
+        runtime_messages
+            .iter()
+            .filter(|message| {
+                !message
+                    .internal_reminder_kind()
+                    .is_some_and(InternalReminderKind::should_drop_during_compaction)
+            })
+            .skip_while(|message| message.role == MessageRole::System)
+    }
+
     pub fn compress_plan_with_contract(
         &self,
         session_id: &str,
@@ -717,6 +783,125 @@ mod tests {
         assert!(too_small.recent_tail_messages.is_empty());
         assert_eq!(exact.recent_tail_messages[0].id, assistant.id);
         assert_eq!(exact.recent_tail_messages[1].id, result.id);
+    }
+
+    #[test]
+    fn compression_prefetch_rebase_refreshes_todo_and_rejects_rewritten_prefix() {
+        let compressor = ContextCompressor::new();
+        let old_todos =
+            serde_json::json!([{ "id": "task", "content": "Work", "status": "pending" }]);
+        let mut messages = vec![
+            Message::system("system".into()),
+            Message::user("Work".into()),
+            Message::assistant_with_tools(
+                "Plan".into(),
+                vec![todo_call_with("old", old_todos.clone())],
+            )
+            .with_turn_id("turn".into()),
+            todo_result_with("old", old_todos, false).with_turn_id("turn".into()),
+        ];
+        let plan = compressor
+            .plan_compression_for_turn("session", "turn", &messages, 128_000, 0)
+            .unwrap()
+            .unwrap();
+        assert!(plan.current_turn_todo_checkpoint.is_some());
+        let latest =
+            serde_json::json!([{ "id": "task", "content": "Work", "status": "completed" }]);
+        messages.push(
+            Message::assistant_with_tools(
+                "Done".into(),
+                vec![todo_call_with("new", latest.clone())],
+            )
+            .with_turn_id("turn".into()),
+        );
+        messages.push(todo_result_with("new", latest, false).with_turn_id("turn".into()));
+        let rebased = compressor
+            .rebase_plan(plan.clone(), &messages, "turn")
+            .unwrap()
+            .unwrap();
+        assert!(rebased.current_turn_todo_checkpoint.is_none());
+        assert_eq!(rebased.recent_tail_messages.len(), 2);
+        messages[1] = Message::user("Rewritten work".into());
+        assert!(compressor
+            .rebase_plan(plan, &messages, "turn")
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn compression_message_id_prefix_checks_every_position() {
+        let original = vec![
+            Message::user("first".into()),
+            Message::assistant("second".into()),
+            Message::user("third".into()),
+        ];
+        let ids = original
+            .iter()
+            .map(|message| message.id.as_str())
+            .collect::<Vec<_>>();
+        let matches = |messages: &[Message]| {
+            ContextCompressor::has_message_id_prefix(messages, ids.iter().copied())
+        };
+        assert!(matches(&original));
+        let mut latest = original.clone();
+        latest.push(Message::assistant("appended".into()));
+        assert!(matches(&latest));
+        assert!(!matches(&latest[..2]));
+        latest[1] = Message::assistant("second".into());
+        assert!(
+            !matches(&latest),
+            "same length and last ID do not prove the prefix"
+        );
+        latest = original.clone();
+        latest.swap(0, 1);
+        assert!(!matches(&latest));
+        assert!(ContextCompressor::has_message_id_prefix(
+            &original,
+            std::iter::empty()
+        ));
+    }
+
+    #[test]
+    fn compression_rebase_ignores_nonsemantic_bookkeeping() {
+        let compressor = ContextCompressor::new();
+        let original = vec![
+            Message::system("system".into()),
+            Message::user("first".into()),
+            Message::assistant("second".into()),
+        ];
+        let plan = compressor
+            .plan_compression("session", &original, 128_000, 0)
+            .unwrap()
+            .unwrap();
+        let mut latest = original.clone();
+        latest[1].metadata.tokens = Some(99);
+        latest[1].timestamp = std::time::UNIX_EPOCH;
+        let tail = Message::assistant("appended".into());
+        latest.push(tail.clone());
+        let rebased = compressor
+            .rebase_plan(plan, &latest, "turn")
+            .unwrap()
+            .unwrap();
+        assert_eq!(rebased.recent_tail_messages.len(), 1);
+        assert_eq!(rebased.recent_tail_messages[0].id, tail.id);
+    }
+
+    #[test]
+    fn compression_prefetch_rebase_rejects_tool_result_crossing_boundary() {
+        let compressor = ContextCompressor::new();
+        let mut messages = vec![
+            Message::user("Work".into()),
+            Message::assistant_with_tools("Plan".into(), vec![todo_call()]),
+        ];
+        let plan = compressor
+            .plan_compression("session", &messages, 128_000, 0)
+            .unwrap()
+            .unwrap();
+        messages.push(todo_result());
+        assert!(compressor
+            .rebase_plan(plan, &messages, "turn")
+            .unwrap()
+            .is_none());
     }
 
     #[test]

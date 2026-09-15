@@ -77,6 +77,12 @@ port-backed `sdk` / `AgentRuntime` facade that can be built and tested without
   a time with equivalence tests before deleting the old owner.
 - Add focused tests before moving any runtime decision into this crate.
 
+`compression_prefetch` owns provider-neutral threshold, completion publication,
+claim and cancellation semantics. Core injects the future and validates its
+context/request identity; this module never calls providers, emits product events,
+or writes sessions. It is an internal assembly-facing module, not a new SDK or
+wire capability.
+
 ## Test Target Layout
 
 Integration contracts use six explicit Cargo targets so package-level checks
