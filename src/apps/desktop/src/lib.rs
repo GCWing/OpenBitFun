@@ -1976,7 +1976,7 @@ async fn init_agentic_system() -> anyhow::Result<(
     let persistence_manager = Arc::new(persistence::PersistenceManager::new(path_manager.clone())?);
 
     let context_store = Arc::new(session::SessionContextStore::new());
-    let context_compressor = Arc::new(session::ContextCompressor::new(Default::default()));
+    let context_compressor = Arc::new(session::ContextCompressor::new());
 
     let session_manager = Arc::new(session::SessionManager::new(
         context_store,

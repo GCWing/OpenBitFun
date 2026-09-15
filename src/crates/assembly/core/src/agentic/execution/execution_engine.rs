@@ -269,6 +269,20 @@ pub(crate) async fn prepare_compression_cancellable<T>(
     result
 }
 
+fn compression_plan_error(error: OpenBitFunError, plan: usize) -> OpenBitFunError {
+    match error {
+        OpenBitFunError::AIProvider(mut error)
+        | OpenBitFunError::RecoverableContextOverflow(mut error) => {
+            error.message = format!(
+                "Context compression failed on plan {plan}: {}",
+                error.message
+            );
+            OpenBitFunError::AIProvider(error)
+        }
+        error => error,
+    }
+}
+
 fn manual_compaction_terminal_error(error: OpenBitFunError) -> OpenBitFunError {
     match error {
         error @ OpenBitFunError::Cancelled(_) => error,
@@ -2314,100 +2328,10 @@ impl ExecutionEngine {
         Ok(compression_messages)
     }
 
-    async fn request_compression_summary_with_retry(
-        &self,
-        ai_client: Arc<crate::infrastructure::ai::AIClient>,
-        request_messages: Vec<AIMessage>,
-        tool_definitions: Option<Vec<ToolDefinition>>,
-        model_request_context: &ModelRequestContext,
-        trace_config: Option<ModelExchangeTraceConfig>,
-        max_tries: usize,
-    ) -> OpenBitFunResult<String> {
-        let mut last_error = None;
-        let base_wait_time_ms = 500;
-
-        for attempt in 0..max_tries {
-            let result = ai_client
-                .send_message_with_trace_and_request_context(
-                    request_messages.clone(),
-                    tool_definitions.clone(),
-                    Some(model_request_context.clone()),
-                    trace_config.clone(),
-                )
-                .await;
-
-            match result {
-                Ok(response) => {
-                    if response.tool_calls.is_some() {
-                        return Err(OpenBitFunError::AIClient(
-                            "Compression request returned tool calls instead of a summary"
-                                .to_string(),
-                        ));
-                    }
-                    if attempt > 0 {
-                        debug!(
-                            "Compression summary generation succeeded (attempt {}/{})",
-                            attempt + 1,
-                            max_tries
-                        );
-                    }
-                    return Ok(response.text);
-                }
-                Err(err) => {
-                    let provider_error = err
-                        .downcast_ref::<openbitfun_core_types::errors::AiProviderError>()
-                        .cloned();
-                    let err_msg = err.to_string();
-                    warn!(
-                        "Compression summary generation failed (attempt {}/{}): {}",
-                        attempt + 1,
-                        max_tries,
-                        err_msg
-                    );
-                    let category = provider_error
-                        .as_ref()
-                        .map(|error| error.category.clone())
-                        .unwrap_or_else(|| {
-                            openbitfun_core_types::errors::classify_ai_error_message(&err_msg)
-                        });
-                    if category == openbitfun_core_types::errors::ErrorCategory::ContextOverflow {
-                        return Err(OpenBitFunError::RecoverableContextOverflow(
-                            provider_error.unwrap_or_else(|| {
-                                openbitfun_core_types::errors::AiProviderError::classified(
-                                    err_msg,
-                                    openbitfun_core_types::errors::ErrorCategory::ContextOverflow,
-                                )
-                            }),
-                        ));
-                    }
-                    last_error = Some(err);
-
-                    if attempt < max_tries - 1 {
-                        let delay_ms = base_wait_time_ms * (1 << attempt.min(3));
-                        debug!(
-                            "Waiting {}ms before compression summary retry {}...",
-                            delay_ms,
-                            attempt + 2
-                        );
-                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                    }
-                }
-            }
-        }
-
-        Err(OpenBitFunError::AIClient(format!(
-            "Compression summary generation failed after {} attempts: {}",
-            max_tries,
-            last_error
-                .map(|err| err.to_string())
-                .unwrap_or_else(|| "Unknown error".to_string())
-        )))
-    }
-
     async fn generate_compression_model_summary(
         &self,
         input: CompressionModelSummaryInput<'_>,
-    ) -> OpenBitFunResult<Option<String>> {
+    ) -> OpenBitFunResult<String> {
         let request_messages = self
             .build_compression_request_messages(
                 input.runtime_messages,
@@ -2420,23 +2344,14 @@ impl ExecutionEngine {
             )
             .await?;
 
-        let raw_summary = self
-            .request_compression_summary_with_retry(
-                input.ai_client,
-                request_messages,
-                input.tool_definitions.clone(),
-                input.model_request_context,
-                input.trace_config,
-                2,
-            )
-            .await?;
-        let summary =
-            ContextCompressor::normalize_model_summary_output(&raw_summary).ok_or_else(|| {
-                OpenBitFunError::AIClient(
-                    "Model-based compression returned an empty summary".to_string(),
-                )
-            })?;
-        Ok(Some(summary))
+        super::compression_request::request_summary(
+            input.ai_client,
+            request_messages,
+            input.tool_definitions.clone(),
+            input.model_request_context,
+            input.trace_config,
+        )
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2459,8 +2374,7 @@ impl ExecutionEngine {
         let max_initial_recent = context_window.saturating_div(2).max(1);
         let mut recent_target =
             ContextCompressor::DEFAULT_RECENT_CONTEXT_TOKENS.min(max_initial_recent);
-        let mut selected_plan = None;
-        let mut model_summary = None;
+        let mut previous_cutoff = None;
 
         for attempt in 0..Self::MAX_COMPRESSION_OVERFLOW_ATTEMPTS {
             let Some(plan) = self.context_compressor.plan_compression_for_turn(
@@ -2471,8 +2385,16 @@ impl ExecutionEngine {
                 recent_target,
             )?
             else {
-                break;
+                return Err(OpenBitFunError::AIClient(
+                    "Context compression has no eligible plan".to_string(),
+                ));
             };
+            if previous_cutoff.is_some_and(|cutoff| plan.cutoff_message_index >= cutoff) {
+                return Err(OpenBitFunError::AIClient(
+                    "Context compression cannot reduce the summary input further".to_string(),
+                ));
+            }
+            previous_cutoff = Some(plan.cutoff_message_index);
             info!(
                 "Compression context plan: session_id={}, turn_id={}, attempt={}/{}, retained_user_token_budget={}, retained_user_tokens={}, retained_user_messages={}, recent_target_tokens={}, recent_tail_tokens={}, cutoff_message_index={}, summary_messages={}, recent_tail_messages={}",
                 session_id,
@@ -2506,9 +2428,15 @@ impl ExecutionEngine {
 
             match summary_result {
                 Ok(summary) => {
-                    selected_plan = Some(plan);
-                    model_summary = summary;
-                    break;
+                    return self
+                        .context_compressor
+                        .compress_plan_with_contract(
+                            session_id,
+                            plan,
+                            compression_contract,
+                            summary,
+                        )
+                        .map(Some);
                 }
                 Err(err) if err.is_recoverable_context_overflow() => {
                     warn!(
@@ -2525,39 +2453,19 @@ impl ExecutionEngine {
                     let can_retry = attempt + 1 < Self::MAX_COMPRESSION_OVERFLOW_ATTEMPTS
                         && plan.next_recent_target_tokens.is_some();
                     let next_recent_target = plan.next_recent_target_tokens;
-                    selected_plan = Some(plan);
                     if can_retry {
                         recent_target = recent_target
                             .saturating_add(ContextCompressor::RECENT_CONTEXT_RETRY_STEP_TOKENS)
                             .max(next_recent_target.expect("retry target checked above"));
                         continue;
                     }
-                    break;
+                    return Err(compression_plan_error(err, attempt + 1));
                 }
-                Err(err @ OpenBitFunError::Cancelled(_)) => return Err(err),
-                Err(err) => {
-                    warn!(
-                        "Model-based compression failed, falling back to structured local compression: {}",
-                        err
-                    );
-                    selected_plan = Some(plan);
-                    break;
-                }
+                Err(err) => return Err(compression_plan_error(err, attempt + 1)),
             }
         }
 
-        let Some(selected_plan) = selected_plan else {
-            return Ok(None);
-        };
-        self.context_compressor
-            .compress_plan_with_contract(
-                session_id,
-                context_window,
-                selected_plan,
-                compression_contract,
-                model_summary,
-            )
-            .map(Some)
+        unreachable!("compression planning returns a result or terminal error")
     }
 
     async fn resolve_compression_runtime_scaffold(
@@ -2989,11 +2897,7 @@ impl ExecutionEngine {
                     prepended_reminder_tokens,
                 );
                 let compressed_tokens = after_pressure.total_tokens;
-                let summary_source = if compression_result.has_model_summary {
-                    "model"
-                } else {
-                    "local_fallback"
-                };
+                let summary_source = "model";
 
                 info!(
                     "Compression completed: session_id={}, turn_id={}, messages {} -> {}, total_tokens {} -> {}, system_tokens {} -> {}, tool_tokens {} -> {}, prepended_reminder_tokens {} -> {}, conversation_tokens {} -> {}, context_window={}, input_limit={}, output_reserve={}, safety_reserve={}, usage {:.3} -> {:.3}, compression_count={}, duration_ms={}, summary_source={}",
@@ -3037,7 +2941,7 @@ impl ExecutionEngine {
                             (compressed_tokens as f64) / (before_pressure.total_tokens as f64)
                         },
                         duration_ms,
-                        has_summary: compression_result.has_model_summary,
+                        has_summary: true,
                         summary_source: summary_source.to_string(),
                         applied: true,
                     },
@@ -3315,11 +3219,7 @@ impl ExecutionEngine {
                     after_pressure.usage_ratio,
                     compression_count,
                     duration_ms,
-                    if compression_result.has_model_summary {
-                        "model"
-                    } else {
-                        "local_fallback"
-                    }
+                    "model"
                 );
 
                 self.emit_event(
@@ -3332,12 +3232,8 @@ impl ExecutionEngine {
                         tokens_after,
                         compression_ratio,
                         duration_ms,
-                        has_summary: compression_result.has_model_summary,
-                        summary_source: if compression_result.has_model_summary {
-                            "model".to_string()
-                        } else {
-                            "local_fallback".to_string()
-                        },
+                        has_summary: true,
+                        summary_source: "model".to_string(),
                         applied: true,
                     },
                     EventPriority::Normal,
@@ -3362,12 +3258,8 @@ impl ExecutionEngine {
                     tokens_after,
                     compression_ratio,
                     duration_ms,
-                    has_summary: compression_result.has_model_summary,
-                    summary_source: if compression_result.has_model_summary {
-                        "model".to_string()
-                    } else {
-                        "local_fallback".to_string()
-                    },
+                    has_summary: true,
+                    summary_source: "model".to_string(),
                     applied: true,
                 })
             }
@@ -3816,8 +3708,6 @@ impl ExecutionEngine {
         let mut total_tools = 0;
         let mut last_partial_recovery_reason: Option<String> = None;
         let mut finalization_reason: Option<&'static str> = None;
-        let mut consecutive_compression_failures: u32 = 0;
-        const MAX_CONSECUTIVE_COMPRESSION_FAILURES: u32 = 3;
         let mut main_context_overflow_recoveries = 0usize;
         let mut active_round_lifecycle: Option<ModelRoundLifecycle> = None;
 
@@ -3829,7 +3719,7 @@ impl ExecutionEngine {
         const MAX_FAILED_TOOL_RECOVERY_ATTEMPTS: usize = 3;
         const MAX_PARTIAL_CONTINUATION_ATTEMPTS: usize = 3;
         let mut full_compression_count = 0usize;
-        let mut compression_failure_count = 0u32;
+        let compression_failure_count = 0u32;
 
         // Save the last token usage statistics
         let mut last_usage: Option<crate::util::types::ai::GeminiUsage> = None;
@@ -4027,11 +3917,6 @@ impl ExecutionEngine {
                 && token_pressure.total_tokens >= token_pressure.input_limit;
             let mut send_pressure_reusable = true;
 
-            // Circuit breaker: skip full compression if it has failed too many
-            // consecutive times.  Microcompact and emergency truncation still run.
-            let circuit_breaker_open =
-                consecutive_compression_failures >= MAX_CONSECUTIVE_COMPRESSION_FAILURES;
-
             if !should_compress {
                 debug!(
                     "No compression needed: session={}, total_tokens={}, input_limit={}, context_window={}, output_reserve={}, safety_reserve={}, usage={:.1}%",
@@ -4042,11 +3927,6 @@ impl ExecutionEngine {
                     token_pressure.output_reserve_tokens,
                     token_pressure.safety_reserve_tokens,
                     token_pressure.usage_ratio * 100.0
-                );
-            } else if circuit_breaker_open {
-                warn!(
-                    "Compression circuit breaker open ({} consecutive failures), skipping full compression for round {}",
-                    consecutive_compression_failures, round_index
                 );
             } else {
                 info!(
@@ -4113,25 +3993,15 @@ impl ExecutionEngine {
                             &turn_prompt_scaffold,
                         );
                         full_compression_count += 1;
-                        consecutive_compression_failures = 0;
                         send_pressure_reusable = false;
                     }
                     Ok(None) => {
-                        debug!("No eligible multi-turn context available for compression");
-                        consecutive_compression_failures = 0;
+                        return Err(OpenBitFunError::AIClient(
+                            "Context compression has no eligible plan".to_string(),
+                        ));
                     }
                     Err(err @ OpenBitFunError::Cancelled(_)) => return Err(err),
-                    Err(e) => {
-                        consecutive_compression_failures += 1;
-                        compression_failure_count += 1;
-                        error!(
-                            "Round {} compression failed ({}/{}): {}, continuing with uncompressed context",
-                            round_index,
-                            consecutive_compression_failures,
-                            MAX_CONSECUTIVE_COMPRESSION_FAILURES,
-                            e
-                        );
-                    }
+                    Err(e) => return Err(e),
                 }
             }
 
@@ -4380,7 +4250,6 @@ impl ExecutionEngine {
                                 )
                                 .await;
                             full_compression_count += 1;
-                            consecutive_compression_failures = 0;
                             continue;
                         }
                         Ok(None) => {
@@ -4399,7 +4268,7 @@ impl ExecutionEngine {
                                 round_index,
                                 compression_error
                             );
-                            return Err(err);
+                            return Err(compression_error);
                         }
                     }
                 }
@@ -5302,6 +5171,10 @@ impl ExecutionEngine {
 }
 
 #[cfg(test)]
+#[path = "compression_tests.rs"]
+mod compression_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{
         activate_conditional_instructions_after_round, manual_compaction_terminal_error,
@@ -6056,19 +5929,13 @@ mod tests {
             .to_string()
             .contains("Old rule"));
 
-        let compressor = ContextCompressor::new(Default::default());
+        let compressor = ContextCompressor::new();
         let plan = compressor
             .plan_compression(&context.session_id, &persisted, 128_000, 100)
             .expect("compression plan")
             .expect("compressible context");
         let compressed = compressor
-            .compress_plan_with_contract(
-                &context.session_id,
-                128_000,
-                plan,
-                None,
-                Some("summary".to_string()),
-            )
+            .compress_plan_with_contract(&context.session_id, plan, None, "summary".to_string())
             .expect("compression result")
             .messages;
         session_manager

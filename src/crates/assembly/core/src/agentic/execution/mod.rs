@@ -2,6 +2,7 @@
 //!
 //! Responsible for AI interaction and model round control
 
+pub(super) mod compression_request;
 #[cfg(feature = "agent-runtime")]
 pub(crate) mod conditional_instructions;
 pub mod edit_constraint_guard;

@@ -15095,9 +15095,9 @@ mod tests {
     use crate::agentic::goal_mode::thread_goal_patch;
     use crate::agentic::persistence::PersistenceManager;
     use crate::agentic::session::{
-        compression::{CompressionConfig, ContextCompressor},
-        PromptCachePolicy, SessionContextStore, SessionManager, SessionManagerConfig,
-        SystemPromptCacheIdentity, UserContextCacheIdentity, TEST_MODEL_RESOLUTION_AI_CONFIG,
+        compression::ContextCompressor, PromptCachePolicy, SessionContextStore, SessionManager,
+        SessionManagerConfig, SystemPromptCacheIdentity, UserContextCacheIdentity,
+        TEST_MODEL_RESOLUTION_AI_CONFIG,
     };
     use crate::agentic::skill_agent_snapshot::SkillSnapshotEntry;
     use crate::agentic::tools::framework::{
@@ -16722,7 +16722,7 @@ mod tests {
             )),
             event_queue.clone(),
             session_manager.clone(),
-            Arc::new(ContextCompressor::new(CompressionConfig::default())),
+            Arc::new(ContextCompressor::new()),
             ExecutionEngineConfig::default(),
         ));
         let coordinator = ConversationCoordinator::new_with_coordination_database_file(

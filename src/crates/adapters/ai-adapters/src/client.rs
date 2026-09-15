@@ -22,18 +22,13 @@ use crate::types::*;
 use anyhow::Result;
 use format::ApiFormat;
 use log::warn;
-use openbitfun_core_types::errors::{AiProviderError, ErrorCategory};
+use openbitfun_core_types::errors::AiProviderError;
 use reqwest::Client;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-const SEND_MESSAGE_STREAM_ATTEMPTS: usize = 10;
+const SEND_MESSAGE_STREAM_ATTEMPTS: usize = openbitfun_agent_stream::retry::MAX_MODEL_ATTEMPTS;
 const TEST_CONNECTION_STREAM_ATTEMPTS: usize = 5;
-const SEND_MESSAGE_RETRY_BASE_DELAY_MS: u64 = 500;
-const SEND_MESSAGE_RATE_LIMIT_RETRY_BASE_DELAY_MS: u64 = 2_000;
-const SEND_MESSAGE_MAX_EXPONENTIAL_DELAY_MS: u64 = 30_000;
-const SEND_MESSAGE_MAX_RATE_LIMIT_DELAY_MS: u64 = 60_000;
-const SEND_MESSAGE_MAX_RETRY_EXPONENT_SHIFT: u32 = 6;
 
 /// Streamed response result with the parsed stream and optional raw SSE receiver.
 pub struct StreamResponse {
@@ -360,6 +355,37 @@ impl AIClient {
         .await
     }
 
+    /// Aggregate exactly one provider attempt; the caller owns retries and validation.
+    pub async fn send_message_once_with_trace_and_request_context(
+        &self,
+        messages: Vec<Message>,
+        tools: Option<Vec<ToolDefinition>>,
+        request_context: Option<ModelRequestContext>,
+        trace: Option<ModelExchangeTraceConfig>,
+    ) -> Result<GeminiResponse> {
+        let response = self
+            .send_message_stream_once_with_request_context(
+                messages,
+                tools,
+                request_context,
+                trace.clone(),
+            )
+            .await?;
+        let handle = response.trace_handle.clone();
+        match response_aggregator::aggregate_stream_response_preserving_tool_presence(response)
+            .await
+        {
+            Ok(response) => {
+                complete_aggregated_trace(trace.as_ref(), handle.as_ref(), &response).await;
+                Ok(response)
+            }
+            Err(error) => {
+                fail_aggregated_trace(trace.as_ref(), handle.as_ref(), &error.to_string()).await;
+                Err(error)
+            }
+        }
+    }
+
     pub async fn send_message_with_extra_body_and_trace(
         &self,
         messages: Vec<Message>,
@@ -578,35 +604,7 @@ fn send_message_retry_delay_ms_with_provider(
     error_message: &str,
     provider_error: Option<&AiProviderError>,
 ) -> u64 {
-    let shift = u32::try_from(attempt_index)
-        .unwrap_or(u32::MAX)
-        .min(SEND_MESSAGE_MAX_RETRY_EXPONENT_SHIFT);
-    let msg = error_message.to_lowercase();
-    let is_rate_limit = provider_error
-        .is_some_and(|error| error.category == ErrorCategory::RateLimit)
-        || msg.contains("429")
-        || msg.contains("rate limit")
-        || msg.contains("too many requests");
-
-    let fallback = if is_rate_limit {
-        SEND_MESSAGE_RATE_LIMIT_RETRY_BASE_DELAY_MS
-            .saturating_mul(1u64 << shift)
-            .min(SEND_MESSAGE_MAX_RATE_LIMIT_DELAY_MS)
-    } else {
-        SEND_MESSAGE_RETRY_BASE_DELAY_MS
-            .saturating_mul(1u64 << shift)
-            .min(SEND_MESSAGE_MAX_EXPONENTIAL_DELAY_MS)
-    };
-
-    match provider_error.and_then(|error| error.retry_after_ms) {
-        Some(retry_after_ms) if is_rate_limit => retry_after_ms
-            .max(fallback)
-            .min(SEND_MESSAGE_MAX_RATE_LIMIT_DELAY_MS),
-        Some(retry_after_ms) if retry_after_ms > 0 => {
-            retry_after_ms.min(SEND_MESSAGE_MAX_RATE_LIMIT_DELAY_MS)
-        }
-        Some(_) | None => fallback,
-    }
+    openbitfun_agent_stream::retry::delay_ms(attempt_index, error_message, provider_error)
 }
 
 async fn complete_aggregated_trace(

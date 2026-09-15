@@ -11,7 +11,5 @@
 //! `execution_engine.rs`.
 
 pub mod compressor;
-pub mod fallback;
 
 pub use compressor::*;
-pub use fallback::*;

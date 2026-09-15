@@ -116,32 +116,10 @@ impl ModelRoundLifecycle {
 }
 
 impl RoundExecutor {
-    const MAX_STREAM_ATTEMPTS: usize = 10;
-    const RETRY_BASE_DELAY_MS: u64 = 500;
-    const RATE_LIMIT_RETRY_BASE_DELAY_MS: u64 = 2_000;
-    const MAX_EXPONENTIAL_DELAY_MS: u64 = 30_000;
-    const MAX_RATE_LIMIT_DELAY_MS: u64 = 60_000;
-    const MAX_RETRY_EXPONENT_SHIFT: u32 = 6;
+    const MAX_STREAM_ATTEMPTS: usize = openbitfun_agent_stream::retry::MAX_MODEL_ATTEMPTS;
 
-    /// Unknown and malformed provider responses retain the bounded recovery
-    /// introduced with the unified attempt budget. Only classified rejections
-    /// leave this loop immediately; context overflow is recovered by the caller.
     fn should_retry_provider_error(category: &ErrorCategory) -> bool {
-        match category {
-            ErrorCategory::Auth
-            | ErrorCategory::Permission
-            | ErrorCategory::ProviderQuota
-            | ErrorCategory::ProviderBilling
-            | ErrorCategory::InvalidRequest
-            | ErrorCategory::ContentPolicy
-            | ErrorCategory::ContextOverflow => false,
-            ErrorCategory::Network
-            | ErrorCategory::RateLimit
-            | ErrorCategory::Timeout
-            | ErrorCategory::ProviderUnavailable
-            | ErrorCategory::ModelError
-            | ErrorCategory::Unknown => true,
-        }
+        openbitfun_agent_stream::retry::should_retry(category)
     }
 
     fn terminal_request_error(error: &anyhow::Error, attempts: u32) -> OpenBitFunError {
@@ -1578,35 +1556,7 @@ impl RoundExecutor {
         error_message: &str,
         provider_error: Option<&AiProviderError>,
     ) -> u64 {
-        let shift = u32::try_from(attempt_index)
-            .unwrap_or(u32::MAX)
-            .min(Self::MAX_RETRY_EXPONENT_SHIFT);
-        let msg = error_message.to_lowercase();
-        let is_rate_limit = provider_error
-            .is_some_and(|error| error.category == ErrorCategory::RateLimit)
-            || msg.contains("429")
-            || msg.contains("rate limit")
-            || msg.contains("too many requests");
-
-        let fallback = if is_rate_limit {
-            Self::RATE_LIMIT_RETRY_BASE_DELAY_MS
-                .saturating_mul(1u64 << shift)
-                .min(Self::MAX_RATE_LIMIT_DELAY_MS)
-        } else {
-            Self::RETRY_BASE_DELAY_MS
-                .saturating_mul(1u64 << shift)
-                .min(Self::MAX_EXPONENTIAL_DELAY_MS)
-        };
-
-        match provider_error.and_then(|error| error.retry_after_ms) {
-            Some(retry_after_ms) if is_rate_limit => retry_after_ms
-                .max(fallback)
-                .min(Self::MAX_RATE_LIMIT_DELAY_MS),
-            Some(retry_after_ms) if retry_after_ms > 0 => {
-                retry_after_ms.min(Self::MAX_RATE_LIMIT_DELAY_MS)
-            }
-            Some(_) | None => fallback,
-        }
+        openbitfun_agent_stream::retry::delay_ms(attempt_index, error_message, provider_error)
     }
 }
 
@@ -1638,7 +1588,7 @@ fn token_details_from_usage(
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::{
         normalize_deferred_tool_calls_for_replay, ModelRoundLifecycle, RoundExecutor,
         StreamProcessor,
@@ -1666,7 +1616,7 @@ mod tests {
     use std::time::Duration;
     use tokio_util::sync::CancellationToken;
 
-    fn test_round_executor() -> RoundExecutor {
+    pub(in crate::agentic::execution) fn test_round_executor() -> RoundExecutor {
         let event_queue = Arc::new(EventQueue::new(EventQueueConfig::default()));
         RoundExecutor {
             stream_processor: Arc::new(StreamProcessor::new(event_queue.clone())),
@@ -1801,15 +1751,15 @@ mod tests {
         }
     }
 
-    struct RetryTestServer {
+    pub(in crate::agentic::execution) struct RetryTestServer {
         url: String,
-        requests: Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
+        pub(in crate::agentic::execution) requests: Arc<std::sync::Mutex<Vec<serde_json::Value>>>,
         stop: Arc<std::sync::atomic::AtomicBool>,
         thread: Option<std::thread::JoinHandle<()>>,
     }
 
     impl RetryTestServer {
-        fn new(replies: Vec<(u16, String)>) -> Self {
+        pub(in crate::agentic::execution) fn new(replies: Vec<(u16, String)>) -> Self {
             Self::with_open_stream(replies, false)
         }
 
@@ -1886,7 +1836,9 @@ mod tests {
             }
         }
 
-        fn client(&self) -> Arc<crate::infrastructure::ai::AIClient> {
+        pub(in crate::agentic::execution) fn client(
+            &self,
+        ) -> Arc<crate::infrastructure::ai::AIClient> {
             Arc::new(crate::infrastructure::ai::AIClient::new(
                 openbitfun_core_types::AIConfig {
                     name: "retry-test".to_string(),
@@ -1923,7 +1875,7 @@ mod tests {
         }
     }
 
-    fn retry_test_success() -> (u16, String) {
+    pub(in crate::agentic::execution) fn retry_test_success() -> (u16, String) {
         (
             200,
             format!(

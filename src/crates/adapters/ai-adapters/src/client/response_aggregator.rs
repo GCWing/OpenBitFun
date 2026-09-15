@@ -10,6 +10,22 @@ use super::StreamResponse;
 pub(crate) async fn aggregate_stream_response(
     stream_response: StreamResponse,
 ) -> Result<GeminiResponse> {
+    aggregate_stream_response_inner(stream_response, false).await
+}
+
+/// Preserve even malformed tool-call presence so summary callers cannot accept
+/// text accompanied by tool deltas that the aggregator could not reconstruct.
+pub(crate) async fn aggregate_stream_response_preserving_tool_presence(
+    stream_response: StreamResponse,
+) -> Result<GeminiResponse> {
+    aggregate_stream_response_inner(stream_response, true).await
+}
+
+async fn aggregate_stream_response_inner(
+    stream_response: StreamResponse,
+    preserve_tool_presence: bool,
+) -> Result<GeminiResponse> {
+    let mut saw_tool_call = false;
     let mut stream = stream_response.stream;
 
     let mut full_text = String::new();
@@ -46,6 +62,7 @@ pub(crate) async fn aggregate_stream_response(
                 }
 
                 if let Some(tool_call) = tool_call {
+                    saw_tool_call = true;
                     let crate::stream::UnifiedToolCall {
                         tool_call_index,
                         id,
@@ -153,7 +170,8 @@ pub(crate) async fn aggregate_stream_response(
     Ok(GeminiResponse {
         text: full_text,
         reasoning_content: (!full_reasoning.is_empty()).then_some(full_reasoning),
-        tool_calls: (!tool_calls.is_empty()).then_some(tool_calls),
+        tool_calls: (!tool_calls.is_empty() || (preserve_tool_presence && saw_tool_call))
+            .then_some(tool_calls),
         usage,
         finish_reason,
         provider_metadata,

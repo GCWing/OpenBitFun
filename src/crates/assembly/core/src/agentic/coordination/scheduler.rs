@@ -3148,7 +3148,7 @@ mod tests {
     };
     use crate::agentic::persistence::PersistenceManager;
     use crate::agentic::session::{
-        compression::{CompressionConfig, ContextCompressor},
+        compression::ContextCompressor,
         revert::{SessionRevertPhase, SessionRevertState, SESSION_REVERT_SCHEMA_VERSION},
         PromptCachePolicy, SessionContextStore, SessionManagerConfig,
         TEST_MODEL_RESOLUTION_AI_CONFIG,
@@ -3259,7 +3259,7 @@ mod tests {
             )),
             event_queue.clone(),
             session_manager.clone(),
-            Arc::new(ContextCompressor::new(CompressionConfig::default())),
+            Arc::new(ContextCompressor::new()),
             ExecutionEngineConfig::default(),
         ));
         let coordinator = Arc::new(ConversationCoordinator::new(

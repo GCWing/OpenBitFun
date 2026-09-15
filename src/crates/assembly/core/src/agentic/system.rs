@@ -97,7 +97,7 @@ pub async fn init_agentic_system_for_profile_with_runtime_ownership(
     set_global_token_usage_service(token_usage_service.clone());
 
     let context_store = Arc::new(session::SessionContextStore::new());
-    let context_compressor = Arc::new(session::ContextCompressor::new(Default::default()));
+    let context_compressor = Arc::new(session::ContextCompressor::new());
 
     let session_manager = Arc::new(session::SessionManager::new(
         context_store,

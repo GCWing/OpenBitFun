@@ -468,7 +468,7 @@ ssh-remote = [
 tokio-tungstenite = { workspace = true }
 openbitfun-runtime-services = { path = "../../execution/runtime-services", features = ["test-support"] }
 tempfile = { workspace = true }
-tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "test-util"] }
 
 [[test]]
 name = "git_contracts"
