@@ -495,6 +495,12 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 }
 .task-rail__header > div { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .task-rail__header h2 { margin: 0; font-size: 12px; }
+.repository-actions__title { margin: 0 0 6px; font-size: 12px; color: var(--lx-text-soft); word-break: break-word; }
+.repository-actions__list { margin-top: 6px; }
+.repository-actions__list summary { cursor: pointer; font-size: 11.5px; color: var(--lx-text-muted); }
+.repository-recoverable { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; max-height: 180px; overflow-y: auto; }
+.repository-recoverable__row { display: flex; align-items: center; gap: 8px; justify-content: space-between; font-size: 11.5px; }
+.repository-recoverable__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repository-actions {
   display: grid;
   gap: 3px;
@@ -624,7 +630,13 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 }
 .task-item__hint--running::before { display: none; }
 .task-item__hint--running {
-  max-width: none;
+  /* `.task-item` is a two-column grid and the state row only occupies the
+     first column, so a 100%-wide pill painted the whole column and read as a
+     stray background block to the LEFT of the text (reported from a live run).
+     Size the pill to its content and push it to the right edge instead. */
+  width: fit-content;
+  max-width: 100%;
+  margin-left: auto;
   padding: 2px 6px;
   border-radius: 7px;
   background: color-mix(in srgb, var(--lx-accent) 12%, transparent);
@@ -1068,7 +1080,19 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 }
 .issue-decision-card[hidden] { display: none; }
 .issue-decision-card__message { margin: 0; color: var(--lx-text); font-size: 13px; line-height: 1.5; }
+.issue-decision-card__technical { margin: 6px 0 0; color: var(--lx-text-soft); font-size: 11.5px; }
+.issue-decision-card__technical summary { display: flex; align-items: center; gap: 6px; cursor: pointer; list-style: none; }
+.issue-decision-card__technical summary::-webkit-details-marker { display: none; }
+.issue-decision-card__technical summary .disclosure-chevron { margin-left: 0; }
+.issue-decision-card__technical p { margin: 4px 0 0; padding-left: 17px; font-family: var(--lx-mono); word-break: break-word; }
+.summary-internal-details { margin-top: 10px; }
+.summary-internal-details h4 { margin: 8px 0 2px; font-size: 11px; font-weight: 600; color: var(--lx-text-muted); }
+.summary-internal-details h4:first-child { margin-top: 4px; }
+.issue-description__retry { margin-top: 8px; padding: 3px 10px; font-size: 11.5px; cursor: pointer; border-radius: 6px; border: 1px solid var(--lx-border); background: transparent; color: var(--lx-text); }
+.issue-description__retry:hover { border-color: var(--lx-accent); }
 .issue-decision-card__actions { display: flex; gap: 8px; margin-top: 2px; }
+.issue-decision-card__background { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; color: var(--lx-text-soft); font-size: 12px; line-height: 1.5; }
+.issue-decision-card__background li::marker { color: var(--lx-text-muted); }
 
 .output-block__thinking { margin-top: 6px; }
 .output-block__thinking summary {
@@ -1185,6 +1209,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   text-decoration: none;
 }
 .output-block__issue:hover { color: var(--lx-link); text-decoration: underline; }
+.output-block__time { flex: 0 0 auto; font-family: var(--lx-mono); font-size: 10.5px; color: var(--lx-text-muted); }
 .output-block__cursor,
 .output-block__meta {
   color: var(--lx-text-muted);

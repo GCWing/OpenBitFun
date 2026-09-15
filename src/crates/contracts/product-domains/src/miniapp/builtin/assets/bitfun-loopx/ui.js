@@ -100,8 +100,12 @@ const COPY = {
     followBannerHint: '正在展示运行中的任务；点击左侧任务可固定查看该 Issue',
     backToFollow: '恢复自动跟随',
     timelineTitle: '运行时间线',
-    timelineLiveScope: '实时 · {item}',
-    timelineIdleScope: '已固定 · {item}',
+    timelineLiveScope: '当前运行 · {item}',
+    timelineIdleScope: '已固定到 · {item}',
+    summaryMonitorConclusion: '本次已创建 {url}；正在持续监控它的评审与合并状态。PR 合并或关闭后监控会自动结束，任务会标记为「已结束」——在此之前你无需操作。',
+    summaryMonitorConclusionWithTime: '本次已创建 {url}；正在持续监控它的评审与合并状态（下一次自动复查：{time}）。PR 合并或关闭后监控会自动结束，任务会标记为「已结束」——在此之前你无需操作。',
+    summaryMonitorConclusionNoArtifact: '正在持续监控 PR 的评审与合并状态（下一次自动复查：{time}）。PR 合并或关闭后监控会自动结束。',
+    summaryInternalVerification: '验证方式（内部）',
     worktreeQuiet: '正在准备 Worktree：{item}。首次克隆可能需要几分钟；Git 静默时不会产生子进程输出。',
     noLogs: '暂无运行事件',
     noLiveOutput: '暂无实时模型输出',
@@ -140,9 +144,9 @@ const COPY = {
     outputToolSummary: '工具详情（点击展开）',
     decisionCardTitle: '需要你的决策',
     decisionCardTitleExternal: '等待外部操作',
-    decisionCardTitleRecovery: '工作段被中断，需要恢复',
+    decisionCardTitleRecovery: '本段已暂停，等你决定',
     decisionCardTitlePlanExhausted: '修复计划已执行完毕，等待收尾方式',
-    decisionResume: '恢复重试',
+    decisionResume: '继续尝试',
     decisionContinueAfterOwnerAction: '我已完成，继续任务',
     decisionCardRecheck: '重新检查 PR 状态',
     decisionCardRecheckGeneric: '重新检查外部状态',
@@ -153,7 +157,12 @@ const COPY = {
     decisionCardExternalSummaryGeneric: '任务正在等待一个发生在 BitFun 之外的操作；完成后点下方「重新检查外部状态」继续任务。',
     approvalContextTitle: '本次决策的背景',
     decisionCardGateHint: '请在上方审批面板中批准或拒绝该请求。',
-    decisionCardRecoveryHint: '本段工作已结束，但结算未能确认持久进展；可恢复重试一次，结论详情见下方最新进展。',
+    decisionCardRecoveryHint: '本段工作已结束，但没有形成可确认的进展；你可以恢复重试一次，或先在下方查看产出与证据。',
+    decisionCardTechnicalDetail: '技术详情（内部状态）',
+    recoveryProducedArtifact: '本次已产出：{url}',
+    recoveryPreservedHint: '你的提交、改动与证据都保留在任务工作区；「继续尝试」会带着它们再跑一轮，也可以直接手动推送任务分支并开 PR。',
+    recoveryTechnicalPendingTodo: 'LoopX 待办（内部）：{todo}',
+    recoveryTechnicalHistory: '历史引用（内部）：{count} 个 PR',
     decisionCardPlanExhaustedHint: '流程的待办已全部执行完，但没有留下可继续的待办、待批门禁或收尾声明，宿主不会伪造收尾。已产生的提交、未提交改动与证据均保留在任务工作区。你可以：从任务分支手动推送并开 PR / 在 issue 上评论说明；或等 goal 出现新待办（例如上游 PR 合并、新的监控结论）后再点“恢复重试”。',
     summaryVerdictNeedsFix: '需要修复',
     summaryVerdictAlreadyFixedUpstream: '上游已修复',
@@ -162,11 +171,10 @@ const COPY = {
     summaryReproductionReproduced: '已复现',
     summaryReproductionNotReproduced: '未复现（未执行复现环节）',
     summaryReproductionNotApplicable: '不适用',
-    summaryReproductionE2e: '已复现（端到端）',
-    summaryReproductionModule: '已复现（模块/测试级）',
-    summaryReproductionScoped: '已复现（范围见证据）',
     summaryReproductionEvidenceLabel: '复现证据',
-    summaryE2eVerificationHint: '端到端验证仍待完成：请在真实运行环境按 Issue 描述步骤确认修复生效。',
+    summaryVerificationNeedsHuman: '还需要你在真实环境确认：{reason}',
+    summaryVerificationNotPerformed: '本段尚未执行验证：{reason}',
+    summaryVerificationAutomated: '已按 {surface} 验证',
     summaryReproductionInProgress: '复现中',     summaryReproductionPending: '待复现',     summaryReproductionActiveHint: '复现环节正在进行，当前不是最终结论。',
     summaryWontFixReasonDuplicateOf: '重复议题',
     summaryWontFixReasonByDesign: '设计如此，无需改动',
@@ -198,6 +206,10 @@ const COPY = {
     summaryDecisionTitle: '已定方案',
     summaryRejectedTitle: '已否决的其他方案',
     summaryNextStep: '下一步',
+    summaryInternalNextStep: '内部执行计划',
+    summaryInternalDecision: '决策路径',
+    summaryInternalDecisionReason: '决策理由',
+    issueDescriptionRetry: '重新加载',
     summaryBlockers: '阻塞',
     summaryConclusion: '结论',
     summaryProcessDetails: '查看过程详情',
@@ -207,9 +219,12 @@ const COPY = {
     recoveryReasonHostRestart: '中断原因：应用异常关闭导致执行中断',
     recoveryReasonExecutionFailure: '中断原因：执行过程失败',
     recoveryReasonPlanExhausted: '中断原因：计划用尽——无待办、无待批门禁、无终局声明',
-    recoveryReasonSettlementUnverified: '中断原因：结算未能确认持久进展，详情见下方技术回执',
-    recoveryReasonSettlementNoProgress: '中断原因：本段收尾写回未被 LoopX 接受，未形成结算认可的持久进展',
-    recoveryReasonSettlementReceiptMissing: '中断原因：本段写入已验证，但配额花费回执缺失，结算未完成',
+    recoveryReasonSettlementUnverified: '暂停原因：没有确认到可验证的进展',
+    recoveryReasonSettlementNoProgress: '暂停原因：这段结束时没有产生可确认的进展',
+    recoveryReasonSettlementReceiptMissing: '暂停原因：产出已验证，但缺少结算回执',
+    recoveryReasonSettlementUnverifiedTechnical: '结算判定 settlement_unverified：结算未能确认持久进展',
+    recoveryReasonSettlementNoProgressTechnical: '结算判定 settlement_no_progress（NoDurableProgress）：本段收尾写回未被 LoopX 接受，未形成结算认可的持久进展',
+    recoveryReasonSettlementReceiptMissingTechnical: '结算判定 settlement_receipt_missing（RetryRequired）：写入已验证，但配额花费回执缺失，结算未完成',
     recoveryReasonRepositoryPaused: '中断原因：同仓库其他任务失败后暂停队列',
     recoveryReasonManualRestore: '中断原因：手动恢复的归档任务',
     outputTool: '工具',
@@ -279,7 +294,12 @@ const COPY = {
     approve: '批准',
     pause: '暂停',
     resume: '恢复',
-    resumeRepository: '恢复仓库任务（{value}）',
+    resumeRepository: '全部继续（{value}）',
+    resumeOneTask: '继续这个任务',
+    resumeBannerOne: '待恢复：{item}',
+    resumeBannerMany: '待恢复：{count} 个任务',
+    resumeListSummary: '选择要恢复的任务（{count}）',
+    resumeRowAction: '继续',
     resumeTargetMissing: '恢复目标已失效，请刷新任务列表后重试',
     resumingRepository: '正在恢复异常任务…',
     repositorySerial: '同仓库串行执行',
@@ -481,6 +501,10 @@ const COPY = {
     state_stopped: '已暂停',
     state_recovery_required: '待恢复',
     state_completed: '已完成',
+    taskTerminalBadge: '已结束',
+    taskMonitoringBadge: '监控中',
+    taskMonitoringNext: '下次复查 {time}',
+    taskMonitoringQueued: '监控中 · 等待 {item}',
     state_failed: '失败',
     state_archived: '已归档',
     state_resolved_upstream: '上游已修复',
@@ -578,8 +602,12 @@ const COPY = {
     followBannerHint: 'Showing the running task; select a task on the left to pin it',
     backToFollow: 'Resume auto-follow',
     timelineTitle: 'Run timeline',
-    timelineLiveScope: 'Live · {item}',
-    timelineIdleScope: 'Pinned view',
+    timelineLiveScope: 'Current run · {item}',
+    timelineIdleScope: 'Pinned to · {item}',
+    summaryMonitorConclusion: 'This run created {url}; its review and merge status is being monitored. Monitoring ends automatically once the PR is merged or closed and the task is marked Finished - no action needed from you until then.',
+    summaryMonitorConclusionWithTime: 'This run created {url}; its review and merge status is being monitored (next automatic re-check: {time}). Monitoring ends automatically once the PR is merged or closed and the task is marked Finished - no action needed from you until then.',
+    summaryMonitorConclusionNoArtifact: 'The PR review and merge status is being monitored (next automatic re-check: {time}). Monitoring ends once the PR is merged or closed.',
+    summaryInternalVerification: 'Verification (internal)',
     worktreeQuiet: 'Preparing worktree: {item}. The first clone can take a few minutes; Git may not emit output while it is working.',
     noLogs: 'No run events yet',
     noLiveOutput: 'No live model output yet',
@@ -618,9 +646,9 @@ const COPY = {
     outputToolSummary: 'Tool details (click to expand)',
     decisionCardTitle: 'Needs your decision',
     decisionCardTitleExternal: 'Waiting for an external action',
-    decisionCardTitleRecovery: 'Work segment was interrupted and needs recovery',
+    decisionCardTitleRecovery: 'This segment is paused for your decision',
     decisionCardTitlePlanExhausted: 'Fix plan completed; choose how to finish',
-    decisionResume: 'Resume retry',
+    decisionResume: 'Continue',
     decisionContinueAfterOwnerAction: 'I finished the step — continue',
     decisionCardRecheck: 'Re-check PR status',
     decisionCardRecheckGeneric: 'Re-check external status',
@@ -631,7 +659,12 @@ const COPY = {
     decisionCardExternalSummaryGeneric: 'This task is waiting on an action outside BitFun. Use the re-check button below after you finish it.',
     approvalContextTitle: 'Why this decision',
     decisionCardGateHint: 'Approve or reject the request in the approval panel above.',
-    decisionCardRecoveryHint: 'This segment finished but settlement could not validate durable progress. You can retry recovery once; see the summary below for the conclusion.',
+    decisionCardRecoveryHint: 'This segment finished without confirmed progress. You can retry once, or review the artifacts and evidence below first.',
+    decisionCardTechnicalDetail: 'Technical details (internal state)',
+    recoveryProducedArtifact: 'Produced by this run: {url}',
+    recoveryPreservedHint: 'Your commits, changes, and evidence are preserved in the task worktree. Continue runs another segment with them; you can also push the task branch and open the PR manually.',
+    recoveryTechnicalPendingTodo: 'LoopX todo (internal): {todo}',
+    recoveryTechnicalHistory: 'Historical references (internal): {count} PR(s)',
     decisionCardPlanExhaustedHint: 'All plan todos are done, but the flow left no open todo, approval gate, or terminal declaration, and the host will not fabricate one. Commits, uncommitted changes, and evidence are preserved in the task worktree. You can push the task branch and open a PR / comment on the issue yourself, or wait until the goal gains a new todo or gate (for example after an upstream PR merge) and then use Resume retry.',
     summaryVerdictNeedsFix: 'Needs fix',
     summaryVerdictAlreadyFixedUpstream: 'Already fixed upstream',
@@ -640,11 +673,10 @@ const COPY = {
     summaryReproductionReproduced: 'Reproduced',
     summaryReproductionNotReproduced: 'Not reproduced (no repro step)',
     summaryReproductionNotApplicable: 'Not applicable',
-    summaryReproductionE2e: 'Reproduced (end-to-end)',
-    summaryReproductionModule: 'Reproduced (module/test level)',
-    summaryReproductionScoped: 'Reproduced (scope in evidence)',
     summaryReproductionEvidenceLabel: 'Reproduction evidence',
-    summaryE2eVerificationHint: 'End-to-end verification is still pending: confirm the fix in a real runtime following the issue steps.',
+    summaryVerificationNeedsHuman: 'A human still needs to confirm this in a real environment: {reason}',
+    summaryVerificationNotPerformed: 'This segment did not run verification: {reason}',
+    summaryVerificationAutomated: 'Verified via {surface}',
     summaryReproductionInProgress: 'Reproduction in progress',     summaryReproductionPending: 'Awaiting reproduction',     summaryReproductionActiveHint: 'Reproduction is still in progress; this is not a final result.',
     summaryWontFixReasonDuplicateOf: 'Duplicate issue',
     summaryWontFixReasonByDesign: 'Works as designed',
@@ -676,6 +708,10 @@ const COPY = {
     summaryDecisionTitle: 'Decided',
     summaryRejectedTitle: 'Rejected alternatives',
     summaryNextStep: 'Next step',
+    summaryInternalNextStep: 'Internal execution plan',
+    summaryInternalDecision: 'Decision route',
+    summaryInternalDecisionReason: 'Decision rationale',
+    issueDescriptionRetry: 'Reload',
     summaryBlockers: 'Blockers',
     summaryConclusion: 'Conclusion',
     summaryProcessDetails: 'View process details',
@@ -685,9 +721,12 @@ const COPY = {
     recoveryReasonHostRestart: 'Interrupted by an abnormal app shutdown',
     recoveryReasonExecutionFailure: 'Interrupted by an execution failure',
     recoveryReasonPlanExhausted: 'Interrupted because the plan ran dry: no open todo, no approval gate, no terminal declaration',
-    recoveryReasonSettlementUnverified: 'Interrupted because settlement could not validate durable progress; see the technical receipts below',
-    recoveryReasonSettlementNoProgress: 'Interrupted because this segment\'s closing writeback was rejected, so no settlement-recognized durable progress was recorded',
-    recoveryReasonSettlementReceiptMissing: 'Interrupted because the writeback was verified but the quota spend receipt is missing, so settlement did not complete',
+    recoveryReasonSettlementUnverified: 'Pause reason: no verifiable progress was confirmed',
+    recoveryReasonSettlementNoProgress: 'Pause reason: the segment ended without confirmed progress',
+    recoveryReasonSettlementReceiptMissing: 'Pause reason: the work was verified but the settlement receipt is missing',
+    recoveryReasonSettlementUnverifiedTechnical: 'Settlement verdict settlement_unverified: settlement could not validate durable progress',
+    recoveryReasonSettlementNoProgressTechnical: 'Settlement verdict settlement_no_progress (NoDurableProgress): this segment\'s closing writeback was rejected, so no settlement-recognized durable progress was recorded',
+    recoveryReasonSettlementReceiptMissingTechnical: 'Settlement verdict settlement_receipt_missing (RetryRequired): the writeback was verified but the quota spend receipt is missing',
     recoveryReasonRepositoryPaused: 'Interrupted because the repository queue paused after another task failed',
     recoveryReasonManualRestore: 'Interrupted because an archived task was manually restored',
     outputTool: 'Tool',
@@ -757,7 +796,12 @@ const COPY = {
     approve: 'Approve',
     pause: 'Pause',
     resume: 'Resume',
-    resumeRepository: 'Recover repository tasks ({value})',
+    resumeRepository: 'Continue all ({value})',
+    resumeOneTask: 'Continue this task',
+    resumeBannerOne: 'Needs recovery: {item}',
+    resumeBannerMany: 'Needs recovery: {count} tasks',
+    resumeListSummary: 'Choose a task to recover ({count})',
+    resumeRowAction: 'Continue',
     resumeTargetMissing: 'Resume target is stale; refresh the task list and retry',
     resumingRepository: 'Recovering failed tasks...',
     repositorySerial: 'Runs serially per repository',
@@ -959,6 +1003,10 @@ const COPY = {
     state_stopped: 'Paused',
     state_recovery_required: 'Pending recovery',
     state_completed: 'Completed',
+    taskTerminalBadge: 'Finished',
+    taskMonitoringBadge: 'Monitoring',
+    taskMonitoringNext: 'next re-check {time}',
+    taskMonitoringQueued: 'Monitoring · waiting for {item}',
     state_failed: 'Failed',
     state_archived: 'Archived',
     state_resolved_upstream: 'Resolved upstream',
@@ -1036,6 +1084,10 @@ const view = {
   taskCount: byId('task-count'),
   repositoryActions: byId('repository-actions'),
   resumeRepository: byId('resume-repository'),
+  repositoryActionsTitle: byId('repository-actions-title'),
+  repositoryActionsList: byId('repository-actions-list'),
+  repositoryActionsSummary: byId('repository-actions-summary'),
+  repositoryRecoverableItems: byId('repository-recoverable-items'),
   repositoryActionsMeta: byId('repository-actions-meta'),
   taskItems: byId('task-items'),
   taskEmpty: byId('task-empty'),
@@ -1140,6 +1192,8 @@ const state = {
   expandedThinking: new Set(),
   expandedTool: new Set(),
   expandedLogDetails: new Set(),
+  expandedRecoveryTechnical: new Set(),
+  expandedSummaryInternal: new Set(),
   preview: null,
   pendingCreate: null,
   pendingRetry: null,
@@ -1417,9 +1471,30 @@ function taskStateDisplayLabel(task) {
   if (pending === 'archive') return text('archivePending');
   if (pending) return text('actionPending');
   if (isExternalWait(task)) return text('state_waiting_for_external');
+  // A task is only finished when nothing re-checks it later. A LoopX monitor
+  // todo (for example a published PR waiting for review) keeps the task open,
+  // so name both states explicitly instead of leaving the owner to guess
+  // whether "handled" also means "done" (live 2026-09-15).
+  if (isMonitorTodo(task)) {
+    // A monitoring task can also be queued behind the repository's serial
+    // runner (one task at a time). Say BOTH: dropping to the plain queue
+    // reason hid the fact that this task is watching a published PR.
+    const blocker = activeSameRepoTask(task);
+    if (blocker) {
+      return text('taskMonitoringQueued', {
+        item: compactItemLabel(blocker.identity && blocker.identity.item) || shortId(blocker.taskId),
+      });
+    }
+    const due = monitorNextCheckLabel(task);
+    return due
+      ? `${text('taskMonitoringBadge')} · ${text('taskMonitoringNext', { time: due })}`
+      : text('taskMonitoringBadge');
+  }
   if (task && task.state === 'completed') {
     const completion = completionLabel(task);
-    if (completion) return completion;
+    return completion
+      ? `${completion} · ${text('taskTerminalBadge')}`
+      : text('taskTerminalBadge');
   }
   const queuedContext = queuedContextLabel(task);
   if (queuedContext) return queuedContext;
@@ -1438,6 +1513,10 @@ function taskPhaseLabel(task) {
 /// `_monitor` suffix family plus the `issue_fix_track_*` merge-readiness
 /// trackers. Keep both sides in sync.
 function isMonitorTodo(task) {
+  // The host persists a monitoring projection while LoopX waits between two
+  // checks; the frontier todo is not selected during that window, so this is
+  // the only signal that survives queueing (live 2026-09-15, issue #9).
+  if (task && task.monitorWait) return true;
   const todo = task && task.currentTodo;
   if (!todo) return false;
   if (String(todo.taskClass || '') === 'continuous_monitor') return true;
@@ -1446,10 +1525,13 @@ function isMonitorTodo(task) {
 }
 
 function monitorNextCheckLabel(task) {
-  const raw = task && task.currentTodo && task.currentTodo.nextDueAt;
-  const value = String(raw || '').trim();
+  const dueAtMs = Number(task && task.monitorWait && task.monitorWait.dueAtMs);
+  const raw = Number.isFinite(dueAtMs) && dueAtMs > 0
+    ? dueAtMs
+    : (task && task.currentTodo && task.currentTodo.nextDueAt);
+  const value = String(raw == null ? '' : raw).trim();
   if (!value) return '';
-  const parsed = new Date(value);
+  const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return value.slice(0, 40);
   const pad = (part) => String(part).padStart(2, '0');
   return `${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
@@ -2421,12 +2503,50 @@ function renderRepositoryActions(tasks) {
     && state.snapshot.environment.core.agentModel.status;
   const modelBlocked = modelStatus === 'degraded' || modelStatus === 'unavailable';
   view.resumeRepository.disabled = modelBlocked || state.repositoryResumePending || state.syncing;
+  // The banner used to read "Recover repository tasks (N)" with no way to tell
+  // which issue it would resume. Name the single pending task, and for several
+  // keep the button bounded while listing them in a disclosure (live
+  // 2026-09-15: one parked task whose owner could not tell what would resume).
+  const describeRecoverableTask = (task) => {
+    const item = task && task.identity && task.identity.item;
+    const id = compactItemLabel(item);
+    const title = (identityTitleOf(task) || '').trim();
+    if (title && id) return `${title}（${id}）`;
+    return title || id;
+  };
+  view.repositoryActionsTitle.textContent = eligible.length === 1
+    ? text('resumeBannerOne', { item: describeRecoverableTask(eligible[0]) })
+    : text('resumeBannerMany', { count: eligible.length });
   view.resumeRepository.textContent = state.repositoryResumePending
     ? text('resumingRepository')
-    : text('resumeRepository', { value: eligible.length });
+    : (eligible.length === 1
+      ? text('resumeOneTask')
+      : text('resumeRepository', { value: eligible.length }));
   view.repositoryActionsMeta.textContent = modelBlocked
     ? text('repositoryPausedByModel')
     : `${repositoryLabel(repository)} · ${text('repositorySerial')}`;
+  const showList = eligible.length > 1;
+  view.repositoryActionsList.hidden = !showList;
+  if (showList) {
+    view.repositoryActionsSummary.textContent = text('resumeListSummary', { count: eligible.length });
+    view.repositoryRecoverableItems.replaceChildren(...eligible.map((task) => {
+      const row = document.createElement('li');
+      row.className = 'repository-recoverable__row';
+      const label = document.createElement('span');
+      label.className = 'repository-recoverable__label';
+      label.textContent = describeRecoverableTask(task);
+      const action = document.createElement('button');
+      action.type = 'button';
+      action.className = 'text-button';
+      action.disabled = modelBlocked || state.syncing;
+      action.textContent = text('resumeRowAction');
+      action.addEventListener('click', () => { void performAction('resume', task); });
+      row.append(label, action);
+      return row;
+    }));
+  } else {
+    view.repositoryRecoverableItems.replaceChildren();
+  }
 }
 
 function completionLabel(task) {
@@ -3634,22 +3754,44 @@ function renderIssueStatus(task) {
     const nextStep = structured && structured.next_step
       ? String(structured.next_step).trim()
       : '';
-    recoveryHint = nextStep || text('decisionCardRecoveryHint');
+    recoveryHint = ownerSummaryOf(structured) || nextStep || text('decisionCardRecoveryHint');
   }
   body.textContent = recoveryHint;
   card.append(heading, body);
   const decisionStructured = task.structuredSummary && typeof task.structuredSummary === 'object'
     ? task.structuredSummary
     : null;
-  if (
-    decisionStructured
-    && decisionStructured.reproduction === 'reproduced'
-    && reproductionScope(decisionStructured) !== 'e2e'
-  ) {
-    const e2eHint = document.createElement('p');
-    e2eHint.className = 'issue-decision-card__e2e-hint';
-    e2eHint.textContent = text('summaryE2eVerificationHint');
-    card.append(e2eHint);
+  const verificationNote = structuredVerificationNote(decisionStructured);
+  if (verificationNote) {
+    const verificationHint = document.createElement('p');
+    verificationHint.className = 'issue-decision-card__e2e-hint';
+    verificationHint.textContent = text(verificationNote.key, verificationNote.values);
+    card.append(verificationHint);
+  }
+  // A settlement park used to explain only the reason code, which reads like a
+  // bug report. Explain it in owner terms instead: the pause is designed (not a
+  // crash), what LoopX is still waiting for, and which referenced PRs are
+  // history rather than output (live 2026-09-15, xielixing/dynamic-workflows-lab#2).
+  if (recovery && !planExhausted && !externalWait) {
+    // Owner surface carries only what the owner can act on. The LoopX todo
+    // text, the referenced-artifact classification, and the settlement
+    // semantics are internal state: they live in the collapsed technical
+    // details below instead of reading like a status dump (live 2026-09-15).
+    const background = [];
+    const produced = artifactLinks(decisionStructured, 'produced_artifacts');
+    if (produced.length) {
+      background.push(text('recoveryProducedArtifact', { url: produced[0] }));
+    }
+    background.push(text('recoveryPreservedHint'));
+    const backgroundList = document.createElement('ul');
+    backgroundList.className = 'issue-decision-card__background';
+    const repository = task.identity && task.identity.item ? task.identity.item.repository : '';
+    background.forEach((line) => {
+      const item = document.createElement('li');
+      item.append(linkifiedText(line, repository));
+      backgroundList.append(item);
+    });
+    card.append(backgroundList);
   }
   if (externalWait) {
     if (externalLinks.length > 0) card.append(externalWaitLinkRow(externalLinks));
@@ -3675,6 +3817,46 @@ function renderIssueStatus(task) {
     if (reasonText) reason.textContent = reasonText;
     else reason.hidden = true;
     card.append(reason);
+    const technicalKey = `${reasonKey}Technical`;
+    const technicalText = text(technicalKey);
+    const technicalRows = [];
+    if (technicalText && technicalText !== technicalKey) technicalRows.push(technicalText);
+    const pendingTodo = task.currentTodo
+      ? String(task.currentTodo.recommendedAction || '').trim()
+      : '';
+    if (pendingTodo) {
+      technicalRows.push(text('recoveryTechnicalPendingTodo', { todo: pendingTodo }));
+    }
+    const referencedCount = artifactLinks(decisionStructured, 'referenced_artifacts').length;
+    if (referencedCount) {
+      technicalRows.push(text('recoveryTechnicalHistory', { count: referencedCount }));
+    }
+    if (technicalRows.length) {
+      const details = document.createElement('details');
+      details.className = 'issue-decision-card__technical';
+      // The card is rebuilt on every snapshot poll, so the expansion state has
+      // to live outside the DOM: a plain <details> expanded on click and was
+      // re-created collapsed a few seconds later (live 2026-09-15). Same
+      // pattern as the log/tool disclosures above.
+      const disclosureKey = `${task.taskId}:${reasonKey}`;
+      const toggle = document.createElement('summary');
+      const toggleLabel = document.createElement('span');
+      toggleLabel.textContent = text('decisionCardTechnicalDetail');
+      toggle.append(disclosureChevron(), toggleLabel);
+      const technicalBody = document.createElement('div');
+      technicalRows.forEach((row) => {
+        const line = document.createElement('p');
+        line.textContent = row;
+        technicalBody.append(line);
+      });
+      details.append(toggle, technicalBody);
+      if (state.expandedRecoveryTechnical.has(disclosureKey)) details.open = true;
+      details.addEventListener('toggle', () => {
+        if (details.open) state.expandedRecoveryTechnical.add(disclosureKey);
+        else state.expandedRecoveryTechnical.delete(disclosureKey);
+      });
+      card.append(details);
+    }
   }
   const actions = document.createElement('div');
   actions.className = 'issue-decision-card__actions';
@@ -3929,20 +4111,127 @@ function reproductionActiveKey(summary, task) {
   }
   return '';
 }
-function reproductionScope(summary) {
-  const s = summary && typeof summary === 'object' ? summary : {};
-  const evidence = [
-    s.reproduction_evidence,
-    s.actual_findings,
-    s.background,
-    s.decision && s.decision.reason,
-  ].filter(Boolean).join(' ');
-  if (!evidence) return 'unknown';
-  const mentionsE2e = /(端到端|end[- ]?to[- ]?end|\be2e\b|真实环境|真实订阅)/i.test(evidence);
-  const deniesE2e = /(无法|未能|没有|未做|未执行|未覆盖|不能|only|仅)[^。；\n]{0,24}(端到端|end[- ]?to[- ]?end|\be2e\b)/i.test(evidence);
-  if (mentionsE2e && !deniesE2e) return 'e2e';
-  if (/(回归测试|cargo test|单元测试|模块|请求构造|fixture|focused test|test surface)/i.test(evidence)) return 'module';
-  return 'unknown';
+// Owner-facing conclusion and internal-details helpers.
+//
+// The structured block mixes owner-facing facts with agent-facing plans: the
+// previous build rendered the agent's `next_step` (often a shell command list)
+// as the owner's "next step" and echoed the raw decision route twice (live
+// 2026-09-15, xielixing/dynamic-workflows-lab#9). Owner surfaces now read
+// `owner_summary`; the raw plan/rationale move into a disclosure.
+const OWNER_CONCLUSION_FALLBACK_CHARS = 160;
+
+function artifactLinks(summary, key) {
+  const s = summary && typeof summary === 'object' ? summary : null;
+  const entries = s && Array.isArray(s[key]) ? s[key] : [];
+  return entries
+    .map((entry) => String(entry || '').trim())
+    .filter((entry) => /^https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/(pull|issues)\/\d+\/?$/.test(entry));
+}
+
+function ownerSummaryOf(summary) {
+  const s = summary && typeof summary === 'object' ? summary : null;
+  const value = s && typeof s.owner_summary === 'string' ? s.owner_summary.trim() : '';
+  return value;
+}
+
+function boundedOwnerConclusion(route) {
+  const value = String(route || '').trim();
+  if (!value) return '';
+  return value.length > OWNER_CONCLUSION_FALLBACK_CHARS
+    ? `${value.slice(0, OWNER_CONCLUSION_FALLBACK_CHARS)}…`
+    : value;
+}
+
+// Monitor tasks (a published PR waiting for review/merge) get a structured
+// owner conclusion instead of the agent's process prose: the previous build
+// fell back to `decision.route` and rendered "只记录复查结论并把定时观察顺延到
+// 下一个检查点", which the owner cannot act on (live 2026-09-15, issue #9).
+function ownerStatusConclusion(task, s) {
+  const produced = artifactLinks(s, 'produced_artifacts');
+  const due = monitorNextCheckLabel(task);
+  if (isMonitorTodo(task)) {
+    if (produced.length) {
+      const url = produced[0];
+      return due
+        ? text('summaryMonitorConclusionWithTime', { url, time: due })
+        : text('summaryMonitorConclusion', { url });
+    }
+    return due ? text('summaryMonitorConclusionNoArtifact', { time: due }) : '';
+  }
+  return '';
+}
+
+function renderInternalDetails(container, s, task, disclosureKey) {
+  const nextStep = String((s && s.next_step) || '').trim();
+  const decision = s && s.decision && typeof s.decision === 'object' ? s.decision : null;
+  const route = decision && typeof decision.route === 'string' ? decision.route.trim() : '';
+  const reason = decision && typeof decision.reason === 'string' ? decision.reason.trim() : '';
+  if (!nextStep && !route && !reason) return;
+  const repository = task && task.identity && task.identity.item
+    ? task.identity.item.repository
+    : '';
+  const details = document.createElement('details');
+  details.className = 'issue-decision-card__technical summary-internal-details';
+  const toggle = document.createElement('summary');
+  const label = document.createElement('span');
+  label.textContent = text('decisionCardTechnicalDetail');
+  toggle.append(disclosureChevron(), label);
+  const body = document.createElement('div');
+  const rows = [];
+  if (nextStep) rows.push(['summaryInternalNextStep', nextStep]);
+  if (route) rows.push(['summaryInternalDecision', route]);
+  if (reason) rows.push(['summaryInternalDecisionReason', reason]);
+  const verification = s && s.verification && typeof s.verification === 'object'
+    ? s.verification
+    : null;
+  if (verification) {
+    const parts = [
+      String(verification.requirement || '').trim(),
+      String(verification.surface || '').trim(),
+      String(verification.reason || '').trim(),
+    ].filter(Boolean);
+    if (parts.length) rows.push(['summaryInternalVerification', parts.join(' · ')]);
+  }
+  rows.forEach(([headingKey, value]) => {
+    const heading = document.createElement('h4');
+    heading.textContent = text(headingKey);
+    const paragraph = document.createElement('p');
+    paragraph.append(linkifiedText(value, repository));
+    body.append(heading, paragraph);
+  });
+  details.append(toggle, body);
+  if (state.expandedSummaryInternal.has(disclosureKey)) details.open = true;
+  details.addEventListener('toggle', () => {
+    if (details.open) state.expandedSummaryInternal.add(disclosureKey);
+    else state.expandedSummaryInternal.delete(disclosureKey);
+  });
+  container.append(details);
+}
+
+// Verification state is read from the structured `verification` object of the
+// `loopx_summary_v1` block. It is never inferred from prose: the previous
+// free-text regex asked a documentation-only segment to "confirm the fix in a
+// real runtime" (live 2026-09-15, xielixing/dynamic-workflows-lab#2, a README
+// edit). Absent, unknown, or `not_applicable` renders nothing at all.
+function structuredVerificationNote(summary) {
+  const s = summary && typeof summary === 'object' ? summary : null;
+  const verification = s && s.verification && typeof s.verification === 'object'
+    ? s.verification
+    : null;
+  if (!verification) return null;
+  const requirement = String(verification.requirement || '').trim();
+  const reason = String(verification.reason || '').trim();
+  // `automated` is deliberately silent here: its `surface` is the agent's own
+  // command line (for example `pwsh -File .loopx/evidence/…`), which is
+  // internal detail, not owner copy (live 2026-09-15, issue #9). It is shown
+  // in the internal-details disclosure instead.
+  if (requirement === 'needs_human_e2e' && reason) {
+    return { key: 'summaryVerificationNeedsHuman', values: { reason } };
+  }
+  if (requirement === 'not_performed' && reason) {
+    return { key: 'summaryVerificationNotPerformed', values: { reason } };
+  }
+  return null;
 }
 function renderStructuredBrief(container, s, task) {
 /// 每条证据/产物都要回答「它支持什么结论」，而不是抛一串路径让用户自己猜。
@@ -4041,7 +4330,6 @@ function renderSupportingEvidence(container, artifacts, summary, repository) {
     reason.textContent = summaryEnumLabel('summaryWontFixReason', s.wont_fix_reason) || s.wont_fix_reason;
     badges.append(reason);
   }
-  const reproScope = reproductionScope(s);
   const reproductionEvidence = String(s.reproduction_evidence || '').trim();
   const activeReproductionKey = reproductionActiveKey(s, task);
   if (s.reproduction && s.reproduction !== 'not_applicable') {
@@ -4051,10 +4339,7 @@ function renderSupportingEvidence(container, artifacts, summary, repository) {
     reproduction.dataset.active = activeReproductionKey ? 'true' : 'false';
     const labelKey = activeReproductionKey
       || (s.reproduction === 'reproduced'
-        ? ({
-          e2e: 'summaryReproductionE2e',
-          module: 'summaryReproductionModule',
-        }[reproScope] || 'summaryReproductionScoped')
+        ? 'summaryReproductionReproduced'
         : (s.reproduction === 'not_reproduced'
           ? 'summaryReproductionNotReproduced'
           : 'summaryReproductionNotApplicable'));
@@ -4086,11 +4371,12 @@ function renderSupportingEvidence(container, artifacts, summary, repository) {
     evidence.append(linkifiedText(reproductionEvidence, narrativeRepository));
     container.append(evidence);
   }
-  if (s.reproduction === 'reproduced' && reproScope !== 'e2e') {
-    const e2eHint = document.createElement('p');
-    e2eHint.className = 'summary-inline-note summary-e2e-hint';
-    e2eHint.textContent = text('summaryE2eVerificationHint');
-    container.append(e2eHint);
+  const verificationNote = structuredVerificationNote(s);
+  if (verificationNote) {
+    const verificationHint = document.createElement('p');
+    verificationHint.className = 'summary-inline-note summary-e2e-hint';
+    verificationHint.textContent = text(verificationNote.key, verificationNote.values);
+    container.append(verificationHint);
   }
 
   if (s.issue_verdict === 'needs_info' && Array.isArray(s.missing_info) && s.missing_info.length) {
@@ -4114,11 +4400,15 @@ function renderSupportingEvidence(container, artifacts, summary, repository) {
   const decisionReason = decision && typeof decision.reason === 'string'
     ? decision.reason.trim()
     : '';
-  const decisionText = decisionRoute
-    ? (decisionReason ? `${decisionRoute}（${decisionReason}）` : decisionRoute)
-    : '';
-  const conclusionSource = decisionText
-    || (task && task.state === 'completed' ? text('summaryCompletedNoFollowup') : '');
+  // A monitoring task's conclusion is owned by the host, not by the agent's
+  // prose: the owner must learn that this run published the PR, that reviews
+  // are being watched, and that monitoring ends when the PR is merged or
+  // closed (live 2026-09-15, issue #9: the conclusion read like a status dump).
+  const conclusionSource = (isMonitorTodo(task) ? ownerStatusConclusion(task, s) : '')
+    || ownerSummaryOf(s)
+    || ownerStatusConclusion(task, s)
+    || (task && task.state === 'completed' ? text('summaryCompletedNoFollowup') : '')
+    || boundedOwnerConclusion(decisionRoute);
   appendBriefSentence(container, 'summaryConclusion', conclusionSource, narrativeRepository);
   // 「结论 + 支撑证据」是一个整体：证据紧跟结论，且每条都带中文类型说明。
   renderSupportingEvidence(container, s.artifacts, s, narrativeRepository);
@@ -4134,8 +4424,8 @@ function renderSupportingEvidence(container, artifacts, summary, repository) {
     container.append(note);
   }
 
-  if (task && task.state !== 'completed' && s.next_step) {
-    appendBriefSentence(container, 'summaryNextStep', s.next_step, narrativeRepository);
+  if (task) {
+    renderInternalDetails(container, s, task, `brief:${task.taskId}`);
   }
 
   if (
@@ -4267,6 +4557,25 @@ function renderIssueView() {
       ? text('issueDescriptionUnavailable')
       : (loadingDescription ? text('loadingIssueDescription') : text('issueDescriptionEmpty')));
   renderMarkdown(view.issueDescription, descriptionText, url);
+  // A selected task whose metadata never hydrated used to sit on the loading
+  // placeholder forever (the fetch was only triggered by selectTask, and a
+  // snapshot reset cleared the cache). Re-arm the fetch from render, and give
+  // a failed fetch an explicit retry instead of a dead end.
+  if (!metadataResolved && !state.metadataRequests.has(metadataKey)) {
+    window.setTimeout(() => void hydrateTaskMetadata(task.taskId), 0);
+  }
+  if (metadataUnavailable) {
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'issue-description__retry';
+    retry.textContent = text('issueDescriptionRetry');
+    retry.addEventListener('click', () => {
+      state.itemMetadata.delete(metadataKey);
+      state.metadataRequests.delete(metadataKey);
+      void hydrateTaskMetadata(task.taskId);
+    });
+    view.issueDescription.append(retry);
+  }
   // The host projects a bounded plain-text excerpt, not the original body:
   // markdown is stripped and long text is cut with an ellipsis. Saying so stops
   // the reader from reading it as a broken renderer.
@@ -4448,6 +4757,7 @@ function compactTurnOutputBlocks(rawEvents) {
       text: outputEventFallbackText(event),
       isEnd: Boolean(event.isEnd),
       eventCount: 1,
+      atMs: Number.isFinite(Number(event.atMs)) ? Number(event.atMs) : null,
     });
   });
   // Fold trivial fragments (sentence tails like a lone period) into the
@@ -4472,6 +4782,22 @@ function compactTurnOutputBlocks(rawEvents) {
     merged.push(block);
   });
   return merged;
+}
+
+// The host stamps each projected turn-output event with its wall-clock time
+// (`atMs`); the block shows the time of its first event so the log reads like a
+// timeline. Tool-run fallback rows used to be the only place with a clock
+// (removed 2026-09-15 in favour of one log form).
+function outputBlockTimeNode(block) {
+  const at = Number(block && block.atMs);
+  if (!Number.isFinite(at) || at <= 0) return null;
+  const node = document.createElement('time');
+  node.className = 'output-block__time';
+  const date = new Date(at);
+  node.dateTime = date.toISOString();
+  node.textContent = clockLabel(at);
+  node.title = date.toLocaleString();
+  return node;
 }
 
 function cursorRangeLabel(block) {
@@ -4696,7 +5022,10 @@ function outputBlockHeader(block) {
   const cursor = document.createElement('span');
   cursor.className = 'output-block__cursor';
   cursor.textContent = cursorRangeLabel(block);
-  header.append(outputBlockIssueNode(block, 'output-block__issue'), level, source, cursor);
+  header.append(outputBlockIssueNode(block, 'output-block__issue'));
+  const headerTime = outputBlockTimeNode(block);
+  if (headerTime) header.append(headerTime);
+  header.append(level, source, cursor);
   outputBlockMetaNodes(block).forEach((node) => header.append(node));
   return header;
 }
@@ -4760,7 +5089,10 @@ function outputBlockDisclosure(block) {
   const cursor = document.createElement('span');
   cursor.className = 'output-block__cursor';
   cursor.textContent = cursorRangeLabel(block);
-  head.append(outputBlockIcon(block), kind, preview, cursor);
+  head.append(outputBlockIcon(block));
+  const headTime = outputBlockTimeNode(block);
+  if (headTime) head.append(headTime);
+  head.append(kind, preview, cursor);
   outputBlockMetaNodes(block).forEach((node) => head.append(node));
   head.append(disclosureChevron());
   const body = document.createElement('div');
@@ -5153,10 +5485,11 @@ function renderTimeline() {
   if (running) ensureTurnOutputTarget(running);
   const task = displayedTask();
 
+  const scopeItem = task && task.identity && task.identity.item;
+  const scopeRepo = scopeItem ? String(scopeItem.repository || '').trim() : '';
+  const scopeLabel = [scopeRepo, compactItemLabel(scopeItem)].filter(Boolean).join(' · ');
   view.timelineScope.textContent = task
-    ? text(state.selectedTaskId ? 'timelineIdleScope' : 'timelineLiveScope', {
-      item: compactItemLabel(task.identity && task.identity.item),
-    })
+    ? text(state.selectedTaskId ? 'timelineIdleScope' : 'timelineLiveScope', { item: scopeLabel })
     : '';
 
   // Model-output blocks are keyed per turn; each block group is anchored to
@@ -5174,23 +5507,15 @@ function renderTimeline() {
     else blockGroups.push({ turnId: block.turnId, blocks: [block] });
   });
 
+  // One log form only: the model-output timeline. The durable tool-activity
+  // fallback (timestamped tool rows with their own "tool details" disclosure)
+  // was a second presentation of the same work and is gone on request
+  // (live 2026-09-15); when a task captured no live output the panel now shows
+  // the empty stage card instead of that table.
   const rows = [];
-  if (visibleBlocks.length === 0) {
-    // No live output captured for this task: fall back to the durable
-    // tool-activity log so the timeline is not blank for older turns.
-    const toolEvents = task
-      ? state.events.filter((event) => (
-        event.taskId === task.taskId
-        && event.kind === 'log'
-        && (event.generation == null || Number(event.generation) === Number(task.generation))
-      ))
-      : [];
-    compactTimelineToolRuns(toolEvents).forEach((row) => rows.push(row));
-  } else {
-    blockGroups.forEach((group) => {
-      group.blocks.forEach((block) => rows.push({ key: `b:${outputBlockDomKey(block)}`, kind: 'block', block }));
-    });
-  }
+  blockGroups.forEach((group) => {
+    group.blocks.forEach((block) => rows.push({ key: `b:${outputBlockDomKey(block)}`, kind: 'block', block }));
+  });
   const visibleRows = rows.slice(-MAX_RENDERED_OUTPUT_BLOCKS);
 
   const existingBlocks = new Map(
@@ -5203,22 +5528,11 @@ function renderTimeline() {
       .filter((node) => node.dataset && node.dataset.eventKey)
       .map((node) => [node.dataset.eventKey, node]),
   );
-  const existingToolRuns = new Map(
-    [...view.logList.children]
-      .filter((node) => node.dataset && node.dataset.toolRunKey)
-      .map((node) => [node.dataset.toolRunKey, node]),
-  );
   const desired = visibleRows.map((row) => {
     if (row.kind === 'block') {
       const node = existingBlocks.get(row.key);
       if (!node) return turnOutputBlockRow(row.block);
       updateTurnOutputBlockRow(node, row.block);
-      return node;
-    }
-    if (row.kind === 'toolRun') {
-      const node = existingToolRuns.get(row.key);
-      if (!node) return timelineToolRunRow(row);
-      updateTimelineToolRunRow(node, row);
       return node;
     }
     const node = existingEvents.get(row.key);
