@@ -1741,7 +1741,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                   <Tooltip content={t('nav.sessions.confirmEdit')} placement="top">
                     <IconButton
                       aria-label={t('nav.sessions.confirmEdit')}
-                      variant="primary"
+                      variant="quiet"
                       size="sm"
                       className="openbitfun-nav-panel__inline-item-edit-btn confirm"
                       onClick={e => { e.stopPropagation(); handleConfirmEdit(); }}
