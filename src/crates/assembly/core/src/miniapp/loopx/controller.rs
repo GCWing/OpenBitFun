@@ -141,6 +141,21 @@ const LOOPX_CLOSING_CEREMONY_NOTE: &str = "\n\n---\n[BitFun host facts - closing
   something to brute-force.\n\
 - The runtime is project-local (`<worktree>/.loopx/runtime`); never write to `~/.codex/loopx`.";
 
+/// Always-on host fact: the closing summary's verification state is rendered
+/// from structured data only. The MiniApp never pattern-matches the agent's
+/// prose (a documentation-only segment was once asked to "confirm the fix in a
+/// real runtime"), so the agent must report what it actually verified as
+/// fields, and stay silent when there was no runnable surface at all.
+const LOOPX_SUMMARY_VERIFICATION_CONTRACT_NOTE: &str = "\n\n---\n[BitFun host fact - closing summary verification field]\n\
+The `loopx_summary_v1` block at the end of your final response drives the owner-facing UI, which reads STRUCTURED fields only: free-text is never pattern-matched. \
+Report this segment's verification as data in a `verification` object:\n\
+- `{\"requirement\":\"not_applicable\"}` - no runnable surface exists for this segment's change (for example a documentation-only edit).\n\
+- `{\"requirement\":\"automated\",\"surface\":\"<the command or suite you actually ran>\"}` - validated by an automated surface.\n\
+- `{\"requirement\":\"needs_human_e2e\",\"reason\":\"<why only a human can confirm it>\"}` - acceptance needs a human to run or observe it (UI interaction, live credentials, and the like).\n\
+- `{\"requirement\":\"not_performed\",\"reason\":\"<what is still unverified>\"}` - validation was possible but was not performed.\n\
+`needs_human_e2e` and `not_performed` must carry a non-empty `reason`; the host renders it to the owner verbatim. Never claim a verification you did not perform, and do not describe verification only in prose.\n\
+The same block carries the OWNER-FACING conclusion: include `owner_summary` with 1-2 plain-language sentences in the owner's language (match the issue title/body; use Chinese when the issue is Chinese) covering what was done, where the work stands, and what the owner must do (or that no action is needed). Never put shell commands, file paths, plan/todo language, or reasoning about your own process there: the host renders `owner_summary` verbatim to the owner, while `next_step` and `decision` are moved into an internal-details disclosure.";
+
 /// Composes the final agent turn instruction: the CLI-provided turn
 /// instruction, then the always-on environment boundary, then a short pointer
 /// to the pinned LoopX reference file seeded in the worktree (the agent reads
@@ -221,6 +236,7 @@ with `gh issue view`. This is host-resolved input, not LoopX authority: LoopX st
 workflow plan and candidate admission, and anything you act on must be verified against the live \
 repository.",
     );
+    composed.push_str(LOOPX_SUMMARY_VERIFICATION_CONTRACT_NOTE);
     if let Some(note) = host_note {
         composed.push_str("\n\n---\n[BitFun host note] ");
         composed.push_str(note);
@@ -1610,6 +1626,7 @@ impl LoopxController {
                 current.current_turn_id = None;
                 current.current_tool = None;
                 current.current_todo = None;
+                current.monitor_wait = None;
                 current.settlement = LoopxSettlementSummary::default();
                 current.revision = current.revision.saturating_add(1);
                 current_runtime.expected_durable_revision = None;
@@ -1752,6 +1769,18 @@ impl LoopxController {
         self.record_goal_state(&task, inspected.state).await?;
         self.record_current_todo(&task_id, task.generation, inspected.selected_todo.clone())
             .await?;
+        // Monitoring projection: between two checks of a monitor todo the
+        // envelope reports `cadence=monitor_wait` with no selected todo and no
+        // open todos, so nothing else in the task record says this goal is
+        // still being watched. Persist it (with the scheduler's own delay) so
+        // the rail keeps showing "monitoring" until the PR is merged/closed
+        // and the goal ends.
+        self.record_monitor_wait(
+            &task_id,
+            task.generation,
+            monitoring_wait_projection(&inspected),
+        )
+        .await?;
         match inspected.run_decision {
             LoopxCliRunDecision::Wait => {
                 if inspected.state == LoopxCliGoalState::Archived {
@@ -4274,6 +4303,23 @@ impl LoopxController {
         .map(|_| ())
     }
 
+    async fn record_monitor_wait(
+        &self,
+        task_id: &str,
+        generation: u64,
+        monitor_wait: Option<LoopxMonitorWait>,
+    ) -> Result<(), String> {
+        self.mutate_task(task_id, None, |current, _| {
+            if current.generation != generation || current.monitor_wait == monitor_wait {
+                return;
+            }
+            current.monitor_wait = monitor_wait;
+            current.revision = current.revision.saturating_add(1);
+        })
+        .await
+        .map(|_| ())
+    }
+
     async fn apply_goal_projection(
         &self,
         expected: &LoopxTaskSnapshot,
@@ -4325,6 +4371,7 @@ impl LoopxController {
                 task.phase = current.phase;
                 if current.state == LoopxTaskState::Completed {
                     task.current_todo = None;
+                    task.monitor_wait = None;
                 }
                 // The authoritative Goal projection is healthy again: a stale
                 // environment-level error (for example a coordination store
@@ -5470,6 +5517,23 @@ fn intake_preview_is_fresh(preview: &LoopxIntakePreview, now: i64) -> bool {
         Some(expires_at) => expires_at > now,
         None => false,
     }
+}
+
+/// Monitoring projection for the rail, or `None` when the goal is not in a
+/// monitoring wait. The next-check timestamp comes from the same host-owned
+/// requeue delay the scheduler uses, so the displayed time is not a second,
+/// invented cadence.
+fn monitoring_wait_projection(
+    inspected: &LoopxCliGoalSnapshot,
+) -> Option<LoopxMonitorWait> {
+    let cadence = inspected.scheduler_cadence.as_deref().unwrap_or_default();
+    if cadence != "monitor_wait" {
+        return None;
+    }
+    Some(LoopxMonitorWait {
+        cadence: cadence.to_string(),
+        due_at_ms: Some(now_ms().saturating_add(wait_requeue_delay_ms(inspected) as i64)),
+    })
 }
 
 fn now_ms() -> i64 {

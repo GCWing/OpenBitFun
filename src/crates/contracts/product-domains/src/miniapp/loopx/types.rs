@@ -379,6 +379,19 @@ pub struct LoopxCurrentTodo {
     pub recommended_action: String,
 }
 
+/// Host-persisted monitoring projection (see [`LoopxTaskSnapshot::monitor_wait`]).
+/// Display only: the LoopX registry and the envelope stay authoritative.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxMonitorWait {
+    /// Cadence label the envelope projected (currently always `monitor_wait`).
+    pub cadence: String,
+    /// Wall-clock milliseconds when the host will wake this goal for its next
+    /// check. Derived from the same requeue delay the scheduler uses, so the
+    /// rail and the scheduler cannot disagree.
+    pub due_at_ms: Option<i64>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct LoopxTaskSnapshot {
@@ -410,6 +423,14 @@ pub struct LoopxTaskSnapshot {
     /// Last known LoopX frontier todo projection. Absent for legacy records
     /// and cleared when the Goal reaches a terminal projection.
     pub current_todo: Option<LoopxCurrentTodo>,
+    /// Monitoring projection: present while the LoopX envelope reports the
+    /// `monitor_wait` cadence (a monitor todo between two checks, for example a
+    /// published PR waiting for review). The task rail renders "monitoring"
+    /// and the next check time from this instead of inferring it from prose.
+    /// Cleared as soon as the envelope reports another cadence or the goal
+    /// reaches a terminal projection - that transition is how "monitoring
+    /// stopped (PR merged/closed)" becomes visible.
+    pub monitor_wait: Option<LoopxMonitorWait>,
     pub last_output_at: Option<i64>,
     /// Bounded final response from the latest Agent turn. It is persisted
     /// before settlement so recovery surfaces retain the useful outcome even
@@ -757,6 +778,11 @@ pub struct LoopxTurnOutputEvent {
     pub tool_name: Option<String>,
     pub tool_state: Option<String>,
     pub is_end: bool,
+    /// Wall-clock milliseconds when the host projected this event. The agent
+    /// stream chunks carry no time of their own, and the MiniApp timeline shows
+    /// a clock per block, so the adapter stamps it at projection time (the
+    /// events are streamed live, so projection time is the event time).
+    pub at_ms: Option<i64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

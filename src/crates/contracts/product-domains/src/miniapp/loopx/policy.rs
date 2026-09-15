@@ -503,6 +503,21 @@ const SUMMARY_VERDICTS: [&str; 4] = [
     "needs_info",
 ];
 const SUMMARY_REPRODUCTIONS: [&str; 3] = ["reproduced", "not_reproduced", "not_applicable"];
+/// Structured verification requirement reported by the agent for the segment.
+/// The UI renders the owner-facing verification note from this enum only and
+/// never pattern-matches prose: a documentation-only segment must not be shown
+/// as "end-to-end verification pending" (live 2026-09-15,
+/// xielixing/dynamic-workflows-lab#2: a README edit was reported as needing a
+/// real-runtime run). `needs_human_e2e` = only a human can confirm (UI
+/// interaction, live credentials); `not_performed` = validation was possible
+/// but did not run; `automated` = validated by a named automated surface;
+/// `not_applicable` = no runnable surface exists for this change.
+const SUMMARY_VERIFICATION_REQUIREMENTS: [&str; 4] = [
+    "not_applicable",
+    "automated",
+    "needs_human_e2e",
+    "not_performed",
+];
 const SUMMARY_SEGMENT_KINDS: [&str; 5] = [
     "evidence",
     "route_decision",
@@ -574,6 +589,35 @@ pub fn parse_structured_summary(summary: Option<&str>) -> Option<serde_json::Val
             if evidence.trim().is_empty() {
                 return None;
             }
+        }
+    }
+    // Structured verification state: when present it must be well-formed, and
+    // the two "not verified" requirements must carry the reason the owner will
+    // read. Absent means the agent did not report verification and the UI stays
+    // silent (silence over a heuristic guess).
+    if let Some(verification) = object.get("verification") {
+        let verification = verification.as_object()?;
+        let requirement = verification.get("requirement")?.as_str()?;
+        if !SUMMARY_VERIFICATION_REQUIREMENTS.contains(&requirement) {
+            return None;
+        }
+        if matches!(requirement, "needs_human_e2e" | "not_performed") {
+            let reason = verification
+                .get("reason")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if reason.trim().is_empty() {
+                return None;
+            }
+        }
+    }
+    // Owner-facing conclusion: optional, but when present it must be usable
+    // text (the UI renders it verbatim as the task's conclusion).
+    if let Some(owner_summary) = object.get("owner_summary") {
+        let text = owner_summary.as_str()?;
+        let trimmed = text.trim();
+        if trimmed.is_empty() || trimmed.chars().count() > 800 {
+            return None;
         }
     }
     if let Some(kind) = object.get("segment_kind").and_then(|v| v.as_str()) {

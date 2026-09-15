@@ -723,6 +723,57 @@ fn structured_summary_parses_valid_block_and_rejects_contract_violations() {
 }
 
 #[test]
+#[test]
+fn structured_summary_requires_well_formed_verification_requirement() {
+    let cases = [
+        // Documentation-only segment: no runnable surface to verify.
+        (
+            "```loopx_summary_v1\n{\"issue_verdict\":\"needs_fix\",\"verification\":{\"requirement\":\"not_applicable\"}}\n```",
+            true,
+        ),
+        // Automated surface, named.
+        (
+            "```loopx_summary_v1\n{\"issue_verdict\":\"needs_fix\",\"verification\":{\"requirement\":\"automated\",\"surface\":\"cargo test -p x\"}}\n```",
+            true,
+        ),
+        // Human-only verification must carry the reason the owner reads.
+        (
+            "```loopx_summary_v1\n{\"issue_verdict\":\"needs_fix\",\"verification\":{\"requirement\":\"needs_human_e2e\",\"reason\":\"desktop click-through\"}}\n```",
+            true,
+        ),
+        (
+            "```loopx_summary_v1\n{\"issue_verdict\":\"needs_fix\",\"verification\":{\"requirement\":\"needs_human_e2e\"}}\n```",
+            false,
+        ),
+        (
+            "```loopx_summary_v1\n{\"issue_verdict\":\"needs_fix\",\"verification\":{\"requirement\":\"looks_fine_to_me\"}}\n```",
+            false,
+        ),
+        // Legacy block without the field still parses.
+        (
+            "```loopx_summary_v1\n{\"issue_verdict\":\"needs_fix\"}\n```",
+            true,
+        ),
+        // Owner-facing conclusion: plain text is fine, empty is not.
+        (
+            "```loopx_summary_v1\n{\"issue_verdict\":\"needs_fix\",\"owner_summary\":\"README 已改为中文并发布为 PR #10，等待维护者评审。\"}\n```",
+            true,
+        ),
+        (
+            "```loopx_summary_v1\n{\"issue_verdict\":\"needs_fix\",\"owner_summary\":\"   \"}\n```",
+            false,
+        ),
+    ];
+    for (summary, expected) in cases {
+        assert_eq!(
+            parse_structured_summary(Some(summary)).is_some(),
+            expected,
+            "unexpected parse result for {summary}"
+        );
+    }
+}
+
+#[test]
 fn structured_summary_keeps_referenced_closed_pull_requests_out_of_produced_artifacts() {
     let summary = r#"本段完成。
 
