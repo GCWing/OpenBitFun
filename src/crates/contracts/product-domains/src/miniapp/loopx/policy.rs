@@ -524,7 +524,7 @@ pub fn parse_structured_summary(summary: Option<&str>) -> Option<serde_json::Val
     let body_start = summary[start..].find('\n')? + start + 1;
     let body_end = summary[body_start..].find("```")? + body_start;
     let body = summary[body_start..body_end].trim();
-    let value: serde_json::Value = serde_json::from_str(body).ok()?;
+    let mut value: serde_json::Value = serde_json::from_str(body).ok()?;
     let object = value.as_object()?;
 
     let verdict = object.get("issue_verdict")?.as_str()?;
@@ -581,7 +581,284 @@ pub fn parse_structured_summary(summary: Option<&str>) -> Option<serde_json::Val
             return None;
         }
     }
+    inject_summary_artifact_roles(&mut value);
     Some(value)
+}
+
+const SUMMARY_ARTIFACT_KIND_PULL_REQUEST: &str = "pull_request";
+const SUMMARY_ARTIFACT_KIND_ISSUE_COMMENT: &str = "issue_comment";
+const SUMMARY_ARTIFACT_KIND_OTHER: &str = "other";
+const SUMMARY_ARTIFACT_ROLE_PRODUCED: &str = "produced";
+const SUMMARY_ARTIFACT_ROLE_REFERENCED: &str = "referenced";
+
+const SUMMARY_PR_CREATION_MARKERS: &[&str] = &[
+    "已创建",
+    "创建了",
+    "已提交",
+    "提交了",
+    "已打开",
+    "打开了",
+    "已发布",
+    "发布了",
+    "已推送",
+    "推送了",
+    "created",
+    "opened",
+    "submitted",
+    "published",
+    "pushed",
+    "filed",
+    "raised",
+    "新建",
+];
+
+const SUMMARY_PR_CREATION_NEGATIVE_MARKERS: &[&str] = &[
+    "停止",
+    "不再",
+    "未创建",
+    "没有创建",
+    "未提交",
+    "没有提交",
+    "未打开",
+    "没有打开",
+    "没打开",
+    "未推送",
+    "没有推送",
+    "没推送",
+    "未发布",
+    "没有发布",
+    "没发布",
+    "不开",
+    "不会开",
+    "reuse",
+    "merge",
+    "skip",
+    "no_followup",
+    "no-follow-up",
+    "wont_fix",
+    "already_fixed",
+];
+
+/// Adds the host's explicit artifact-role projection to a parsed
+/// `loopx_summary_v1` block. The agent-authored `artifacts` list mixes produced
+/// outputs (for example a newly opened PR) with evidence references (for
+/// example historical closed PRs), so the UI must not infer publication from
+/// the mere presence of a URL. `produced_artifacts` and `referenced_artifacts`
+/// are the host-owned classification; `artifact_events` keeps the same
+/// information in a typed, forward-compatible shape.
+fn inject_summary_artifact_roles(value: &mut serde_json::Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    let raw_artifacts = object
+        .get("artifacts")
+        .and_then(|artifacts| artifacts.as_array())
+        .map(|entries| {
+            entries
+                .iter()
+                .filter_map(|entry| entry.as_str())
+                .map(str::trim)
+                .filter(|entry| !entry.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let production_text = summary_production_text(object);
+    let creation_is_negative = summary_pr_creation_is_negative(&production_text);
+    let delivery_route_is_positive = summary_delivery_route_is_positive(object, &production_text);
+    let mut artifact_events = Vec::new();
+    let mut produced = Vec::new();
+    let mut referenced = Vec::new();
+    let mut seen = Vec::<String>::new();
+
+    for artifact in raw_artifacts {
+        if seen.iter().any(|value| value == &artifact) {
+            continue;
+        }
+        seen.push(artifact.clone());
+        let (kind, number) = classify_summary_artifact(&artifact);
+        let role = if kind == SUMMARY_ARTIFACT_KIND_PULL_REQUEST {
+            match number.as_deref() {
+                Some(number)
+                    if !creation_is_negative
+                        && (delivery_route_is_positive
+                            || summary_has_pr_creation_evidence(&production_text, number)) =>
+                {
+                    SUMMARY_ARTIFACT_ROLE_PRODUCED
+                }
+                _ => SUMMARY_ARTIFACT_ROLE_REFERENCED,
+            }
+        } else if kind == SUMMARY_ARTIFACT_KIND_ISSUE_COMMENT {
+            if !creation_is_negative && summary_has_comment_publication_evidence(&production_text) {
+                SUMMARY_ARTIFACT_ROLE_PRODUCED
+            } else {
+                SUMMARY_ARTIFACT_ROLE_REFERENCED
+            }
+        } else {
+            SUMMARY_ARTIFACT_ROLE_REFERENCED
+        };
+        if role == SUMMARY_ARTIFACT_ROLE_PRODUCED {
+            produced.push(artifact.clone());
+        } else {
+            referenced.push(artifact.clone());
+        }
+        artifact_events.push(serde_json::json!({
+            "role": role,
+            "kind": kind,
+            "url": artifact,
+            "number": number,
+        }));
+    }
+
+    for inline in summary_inline_pull_request_urls(&production_text) {
+        if seen.iter().any(|value| value == &inline) {
+            continue;
+        }
+        let Some(number) = github_pull_number(&inline) else {
+            continue;
+        };
+        if creation_is_negative || !summary_has_pr_creation_evidence(&production_text, &number) {
+            continue;
+        }
+        seen.push(inline.clone());
+        produced.push(inline.clone());
+        artifact_events.push(serde_json::json!({
+            "role": SUMMARY_ARTIFACT_ROLE_PRODUCED,
+            "kind": SUMMARY_ARTIFACT_KIND_PULL_REQUEST,
+            "url": inline,
+            "number": number,
+        }));
+    }
+
+    object.insert(
+        "artifact_events".to_string(),
+        serde_json::Value::Array(artifact_events),
+    );
+    object.insert(
+        "produced_artifacts".to_string(),
+        serde_json::Value::Array(
+            produced
+                .into_iter()
+                .map(serde_json::Value::String)
+                .collect(),
+        ),
+    );
+    object.insert(
+        "referenced_artifacts".to_string(),
+        serde_json::Value::Array(
+            referenced
+                .into_iter()
+                .map(serde_json::Value::String)
+                .collect(),
+        ),
+    );
+}
+
+fn summary_production_text(object: &serde_json::Map<String, serde_json::Value>) -> String {
+    let mut parts = Vec::<String>::new();
+    for key in ["segment_kind", "actual_findings", "next_step"] {
+        if let Some(value) = object.get(key).and_then(|value| value.as_str()) {
+            let value = value.trim();
+            if !value.is_empty() {
+                parts.push(value.to_string());
+            }
+        }
+    }
+    if let Some(decision) = object.get("decision").and_then(|value| value.as_object()) {
+        for key in ["route", "reason"] {
+            if let Some(value) = decision.get(key).and_then(|value| value.as_str()) {
+                let value = value.trim();
+                if !value.is_empty() {
+                    parts.push(value.to_string());
+                }
+            }
+        }
+    }
+    if let Some(completed) = object.get("completed").and_then(|value| value.as_array()) {
+        for value in completed.iter().filter_map(|value| value.as_str()) {
+            let value = value.trim();
+            if !value.is_empty() {
+                parts.push(value.to_string());
+            }
+        }
+    }
+    parts.join("\n")
+}
+
+fn summary_text_contains_marker(text: &str, markers: &[&str]) -> bool {
+    let lower = text.to_lowercase();
+    markers
+        .iter()
+        .any(|marker| lower.contains(&marker.to_lowercase()))
+}
+
+fn summary_pr_creation_is_negative(text: &str) -> bool {
+    summary_text_contains_marker(text, SUMMARY_PR_CREATION_NEGATIVE_MARKERS)
+}
+
+fn summary_delivery_route_is_positive(
+    object: &serde_json::Map<String, serde_json::Value>,
+    production_text: &str,
+) -> bool {
+    let segment_kind = object
+        .get("segment_kind")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    segment_kind == "delivery"
+        && !summary_pr_creation_is_negative(production_text)
+        && summary_text_contains_marker(production_text, SUMMARY_PR_CREATION_MARKERS)
+}
+
+fn classify_summary_artifact(artifact: &str) -> (&'static str, Option<String>) {
+    if let Some(number) = github_pull_number(artifact) {
+        return (SUMMARY_ARTIFACT_KIND_PULL_REQUEST, Some(number));
+    }
+    if artifact.contains("github.com/")
+        && artifact.contains("/issues/")
+        && artifact.contains("#issuecomment-")
+    {
+        return (SUMMARY_ARTIFACT_KIND_ISSUE_COMMENT, None);
+    }
+    (SUMMARY_ARTIFACT_KIND_OTHER, None)
+}
+
+fn github_pull_number(url: &str) -> Option<String> {
+    let marker = "/pull/";
+    let start = url.find(marker)? + marker.len();
+    let number = url[start..]
+        .chars()
+        .take_while(|character| character.is_ascii_digit())
+        .collect::<String>();
+    (!number.is_empty()).then_some(number)
+}
+
+fn summary_has_pr_creation_evidence(text: &str, number: &str) -> bool {
+    let markers = SUMMARY_PR_CREATION_MARKERS.join("|");
+    let number = regex::escape(number);
+    let pattern = format!(
+        r"(?is)(?:{markers})[^\n]{{0,80}}(?:pull\s*request|拉取请求|\bpr\b)[^\n]{{0,20}}#?{number}\b|(?is)(?:pull\s*request|拉取请求|\bpr\b)[^\n]{{0,20}}#?{number}\b[^\n]{{0,80}}(?:{markers})"
+    );
+    regex::Regex::new(&pattern)
+        .map(|pattern| pattern.is_match(text))
+        .unwrap_or(false)
+}
+
+fn summary_has_comment_publication_evidence(text: &str) -> bool {
+    let pattern =
+        r"(?is)(?:已发布|发表了|已发表|发布了|published|posted)[^\n]{0,80}(?:评论|comment)";
+    regex::Regex::new(pattern)
+        .map(|pattern| pattern.is_match(text))
+        .unwrap_or(false)
+}
+
+fn summary_inline_pull_request_urls(text: &str) -> Vec<String> {
+    let Ok(pattern) = regex::Regex::new(r"https?://github\.com/[^\s/]+/[^\s/]+/pull/\d+") else {
+        return Vec::new();
+    };
+    pattern
+        .find_iter(text)
+        .map(|matched| matched.as_str().to_string())
+        .collect()
 }
 
 pub fn derive_environment_status(

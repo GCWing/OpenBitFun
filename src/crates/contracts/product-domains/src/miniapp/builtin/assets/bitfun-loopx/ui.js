@@ -173,6 +173,7 @@ const COPY = {
     summaryWontFixReasonInvalid: '无需处理（无可执行请求）',
     summaryWontFixReasonEvaluationPending: '评估中，暂不处理',
     state_completed_needs_fix: '已处理，待发布',
+    state_completed_needs_fix_no_release: '已处理，未发布',
     summaryShowFullConclusion: '展开完整结论',
     summaryBackground: '背景',
     summarySectionCompleted: '已完成',
@@ -648,6 +649,7 @@ const COPY = {
     summaryWontFixReasonInvalid: 'No action needed (nothing actionable)',
     summaryWontFixReasonEvaluationPending: 'Under evaluation',
     state_completed_needs_fix: 'Handled, pending release',
+    state_completed_needs_fix_no_release: 'Handled, not published',
     summaryShowFullConclusion: 'Show full conclusion',
     summaryBackground: 'Background',
     summarySectionCompleted: 'Completed',
@@ -2437,7 +2439,11 @@ function completionLabel(task) {
   }
   if (verdict === 'already_fixed_upstream') return summaryEnumLabel('summaryVerdict', 'already_fixed_upstream');
   if (verdict === 'needs_info') return summaryEnumLabel('summaryVerdict', 'needs_info');
-  if (verdict === 'needs_fix') return text('state_completed_needs_fix');
+  if (verdict === 'needs_fix') {
+    if (taskHasProducedPullRequest(task)) return text('resolvedItem');
+    if (task.pendingGateId) return text('state_completed_needs_fix');
+    return text('state_completed_needs_fix_no_release');
+  }
   return '';
 }
 
@@ -2450,7 +2456,8 @@ function completionTone(task) {
     return String(structured.wont_fix_reason || '') === 'evaluation_pending' ? 'info' : 'muted';
   }
   if (verdict === 'needs_info') return 'info';
-  if (verdict === 'already_fixed_upstream' || verdict === 'needs_fix') return 'success';
+  if (verdict === 'already_fixed_upstream') return 'success';
+  if (verdict === 'needs_fix') return taskHasProducedPullRequest(task) ? 'success' : 'muted';
   return '';
 }
 
@@ -2569,66 +2576,44 @@ function updateTaskButton(button, task) {
   compact.textContent = item && item.number ? `#${item.number}` : shortId(task.taskId);
 }
 
-/// 任务已产生的 Pull Request 链接（宿主会把 PR URL 写进 structuredSummary.artifacts）。
+/// 任务已产生的 Pull Request 链接（宿主写入 structuredSummary.produced_artifacts）。
 function taskPullRequestUrl(task) {
   const summary = task && task.structuredSummary && typeof task.structuredSummary === 'object'
     ? task.structuredSummary
     : {};
-  const artifacts = Array.isArray(summary.artifacts)
-    ? summary.artifacts.map((entry) => String(entry).trim())
-    : [];
-  const standalone = artifacts.find((entry) => /^https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+\/?$/.test(entry));
-  if (standalone) return standalone.replace(/\/+$/, '');
-  const inline = String(task && task.lastAgentSummary || '').match(/https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/(\d+)/i);
-  if (inline) return inline[0];
-  return '';
+  if (!Array.isArray(summary.produced_artifacts)) return '';
+  const produced = summary.produced_artifacts.map((entry) => String(entry).trim()).filter(Boolean);
+  const standalone = produced.find((entry) => /^https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+\/?$/.test(entry));
+  return standalone ? standalone.replace(/\/+$/, '') : '';
+}
+/// True when the host classified a PR artifact as produced by this task.
+/// The UI never infers publication from raw reference URLs.
+function taskHasProducedPullRequest(task) {
+  const summary = task && task.structuredSummary && typeof task.structuredSummary === 'object'
+    ? task.structuredSummary
+    : {};
+  if (!Array.isArray(summary.produced_artifacts)) return false;
+  return summary.produced_artifacts.some((entry) => /^https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+\/?$/.test(String(entry).trim()));
 }
 
-/// 审批通过只代表「已授权」，真正的产物（PR 链接、评论）由 agent 随后完成。
-/// 产物一出现就把具体结果播报出来：已创建 PR #123 <链接>。
+/// Only host-classified produced artifacts are announced.
 function publishOutcomeFor(task) {
   if (!task) return null;
   const summary = task.structuredSummary && typeof task.structuredSummary === 'object'
     ? task.structuredSummary
     : {};
-  // 复用/合并已有 PR 的路线不播报「已创建 PR」，避免把别人的 PR 说成这次发布的产物。
-  const route = String((summary.decision && summary.decision.route) || '');
-  if (/reuse|merge/i.test(route) && !/publish|push|open/i.test(route)) return null;
-  const pool = [];
-  ['artifacts', 'completed', 'actual_findings', 'next_step'].forEach((key) => {
-    const value = summary[key];
-    if (Array.isArray(value)) pool.push(...value.map((entry) => String(entry)));
-    else if (typeof value === 'string') pool.push(value);
-  });
-  pool.push(String(task.lastAgentSummary || ''));
-  const haystack = pool.join('\n');
-  const todoKind = task.currentTodo ? String(task.currentTodo.actionKind || '') : '';
-  const tracking = /track|monitor|publish/i.test(todoKind);
-  const artifacts = Array.isArray(summary.artifacts)
-    ? summary.artifacts.map((entry) => String(entry).trim())
-    : [];
-  // 单独的 PR 链接（一行就是一个 PR URL）是「PR 已存在」的最强信号：
-  // 此时任务可能已经结算/排队（currentTodo 为空），不能只靠 todo 分类判断。
-  const standalonePr = artifacts.find((entry) => /^https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+\/?$/.test(entry));
-  const prUrl = standalonePr
-    ? standalonePr.replace(/\/+$/, '')
-    : (haystack.match(/https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/(\d+)/i) || [])[0];
-  const number = prUrl ? (String(prUrl).match(/\/pull\/(\d+)/) || [])[1] || '' : '';
-  const mentionsPrNumber = Boolean(number) && new RegExp(
-    `(拉取请求|pull request|\\bPR\\b)[^\\n]{0,24}#?${number}|#?${number}[^\\n]{0,24}(拉取请求|pull request|\\bPR\\b)`,
-    'i',
-  ).test(haystack);
-  if (prUrl && (tracking || mentionsPrNumber)) {
-    return { kind: 'pr', url: prUrl, number };
+  if (!Array.isArray(summary.produced_artifacts)) return null;
+  const produced = summary.produced_artifacts.map((entry) => String(entry).trim()).filter(Boolean);
+  const standalonePr = produced.find((entry) => /^https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+\/?$/.test(entry));
+  if (standalonePr) {
+    const url = standalonePr.replace(/\/+$/, '');
+    const number = (url.match(/\/pull\/(\d+)/) || [])[1] || '';
+    return { kind: 'pr', url, number };
   }
-  const commentUrl = haystack.match(/https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/issues\/\d+#issuecomment-\d+/i);
-  const commentLanguage = /(published|posted)[^\n]{0,40}(maintainer )?comment|(发布|发表)[^\n]{0,20}评论/i.test(haystack);
-  if (commentLanguage && (tracking || (state.publishOutcomeArmed || new Set()).has(task.taskId))) {
-    return { kind: 'comment', url: commentUrl ? commentUrl[0] : '' };
-  }
+  const commentUrl = produced.find((entry) => /^https?:\/\/github\.com\/[^\s/]+\/[^\s/]+\/issues\/\d+#issuecomment-\d+$/i.test(entry));
+  if (commentUrl) return { kind: 'comment', url: commentUrl };
   return null;
 }
-
 function announcePublishOutcome() {
   if (!canRender() || !state.snapshot || !Array.isArray(state.snapshot.tasks)) return;
   state.snapshot.tasks.forEach((task) => {
