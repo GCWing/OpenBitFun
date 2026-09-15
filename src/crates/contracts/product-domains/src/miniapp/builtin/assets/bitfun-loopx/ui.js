@@ -2850,7 +2850,15 @@ function currentApprovalAttention() {
   const tasks = state.snapshot && Array.isArray(state.snapshot.tasks)
     ? sortedTaskList(state.snapshot.tasks)
     : [];
-  const task = tasks.find((candidate) => candidate.state === 'waiting_for_user') || null;
+  // A live typed gate is the owner's decision surface even when the goal has
+  // other runnable work and the task therefore keeps RUNNING (the host records
+  // a concurrent gate through `sync_concurrent_user_gate`): the card used to be
+  // restricted to `waiting_for_user`, so a real gate stayed invisible while the
+  // agent kept re-asking the same question in prose (live 2026-09-15, issue #2:
+  // the agent counted its own "reminder" repeats with no popup to answer).
+  const task = tasks.find((candidate) => candidate.state === 'waiting_for_user' && latestGate(candidate.taskId))
+    || tasks.find((candidate) => candidate.pendingGateId && latestGate(candidate.taskId))
+    || null;
   if (!task) return null;
   const gate = latestGate(task.taskId);
   // The approval alert is the interactive approve/reject surface: it only
@@ -3611,7 +3619,9 @@ function activitySummary(toolName, rawSummary) {
 }
 
 function renderIssueApproval(task) {
-  const gate = task && task.state === 'waiting_for_user' ? latestGate(task.taskId) : null;
+  const gate = task && (task.pendingGateId || task.state === 'waiting_for_user')
+    ? latestGate(task.taskId)
+    : null;
   const gateJustArrived = gate && view.issueApprovalPanel.hidden;
   view.issueApprovalPanel.hidden = !gate;
   if (gateJustArrived && view.issueDetail) {
