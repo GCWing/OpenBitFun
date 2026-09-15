@@ -3614,11 +3614,33 @@ fn render_agent_reentry_instruction(
         ),
         None => String::new(),
     };
+    // Live observation 2026-09-15 (dynamic-workflows-lab issue #1 on the
+    // 12acc base): the agent followed the old work clause and ran
+    // `todo complete` before the turn's settlement receipts existed. The
+    // pinned CLI refused it with `writeback_missing`; the agent then burned
+    // several rounds re-deriving the closing order. Keep the lifecycle call
+    // explicitly last in the projected instruction so the model never
+    // finalizes before the writeback and spend receipts commit.
+    let lifecycle_instruction = if matches!(binding, Some(SettlementBinding::Todo { .. })) {
+        concat!(
+            " MANDATORY THIRD STEP - only after this spend succeeds, finalize ",
+            "the selected todo through the LoopX CLI (`todo complete`, ",
+            "`todo update`, `todo block`, or `todo defer` as appropriate; ",
+            "pass successor flags only when concrete follow-up remains). ",
+            "Do not run that lifecycle command before the writeback and this ",
+            "spend both succeed: the pinned CLI refuses an early completion ",
+            "as `writeback_missing`/settlement-blocked and it costs an ",
+            "extra round-trip.",
+        )
+        .to_string()
+    } else {
+        String::new()
+    };
     let spend_instruction = if spend_command.is_empty() {
         "This turn has no settlement binding; do not spend quota.".to_string()
     } else {
         format!(
-            "MANDATORY SECOND STEP - after the writeback validates, run this exact quota spend command once, in the SAME turn, before ending your response:\n`{spend_command}`\nRun it verbatim: do not add, remove, or reorder flags, and do not substitute the todo or turn ids. Skipping it fails the turn's settlement (the host has to compensate the bookkeeping and the task lands in recovery), so never end the turn between the writeback and this spend. If it returns a typed rejection naming `repair_scheduler_execution_context` or an advanced guard, stop and report the rejection verbatim; do not retry with modified arguments. EXCEPTION: a rejection saying the goal is terminal / fully closed / recurring automation must stop is NOT a blocker - it means your terminal writeback already completed the goal and the quota accounting is intentionally closed; skip the spend, mention it in one plain sentence in `completed`, and never put it in `blockers`."
+            "MANDATORY SECOND STEP - after the writeback validates, run this exact quota spend command once, in the SAME turn, before ending your response:\n`{spend_command}`\nRun it verbatim: do not add, remove, or reorder flags, and do not substitute the todo or turn ids. Skipping it fails the turn's settlement (the host has to compensate the bookkeeping and the task lands in recovery), so never end the turn between the writeback and this spend. If it returns a typed rejection naming `repair_scheduler_execution_context` or an advanced guard, stop and report the rejection verbatim; do not retry with modified arguments. EXCEPTION: a rejection saying the goal is terminal / fully closed / recurring automation must stop is NOT a blocker - it means your terminal writeback already completed the goal and the quota accounting is intentionally closed; skip the spend, mention it in one plain sentence in `completed`, and never put it in `blockers`.{lifecycle_instruction}"
         )
     };
     // The replan work clause is keyed on the SEMANTIC obligation: it applies
@@ -3631,7 +3653,20 @@ fn render_agent_reentry_instruction(
             "This turn is an autonomous replan turn: no todo is selected and you must not invent a todo claim. Apply the `replan_action_packet` from the contract: first re-read the durable goal state and current evidence, then record exactly one required semantic outcome through the refresh-state writeback flags below — a concrete runnable successor todo only when an executable target is known, otherwise a typed terminal outcome (for example a coverage-backed `no_followup` with the goal vision closed) or a new concrete blocker with evidence. The replan ACK must carry a matching typed `--repair-delta-kind` (for example `no_followup`, `blocker`, `successor_or_supersede`, `goal_vision_patch`, or `exploration_exhausted`): an ACK without a delta is stored as a no-op and does not clear the obligation. Turn-scoped settlement binding rule: THIS turn's writeback and spend must use exactly the replan obligation the quota guard bound at turn start (the flags in the commands below). If you create a successor todo during this turn, it becomes selectable only by the NEXT turn's guard - do not pass its id to this turn's refresh-state or spend; that is rejected as `settlement binding does not match the original quota guard`.".to_string()
         }
     } else {
-        "Claim the selected executable todo before write-capable work. Execute only the selected action in the current worktree. Then use the LoopX CLI prefix to complete, update, block, or defer the selected todo and create a successor only when concrete follow-up remains.".to_string()
+        concat!(
+            "Claim the selected executable todo before write-capable work. ",
+            "Execute only the selected action in the current worktree. ",
+            "Do NOT complete, update, block, or defer the selected todo ",
+            "before this turn's settlement receipts exist. ",
+            "The required order is: work -> refresh-state writeback (below) ",
+            "-> quota spend (below) -> close/update the selected todo. ",
+            "An early lifecycle call is refused as a writeback/settlement ",
+            "mismatch and costs an extra round-trip. ",
+            "Only after both receipts succeed, use the LoopX CLI prefix to ",
+            "close or update the selected todo, and create a successor only ",
+            "when concrete follow-up remains.",
+        )
+        .to_string()
     };
     let writeback_instruction = if writeback_command.is_empty() {
         "This turn has no settlement binding; do not run a turn-scoped refresh-state and do not spend quota.".to_string()
@@ -4487,6 +4522,17 @@ mod custom_runner_contract_tests {
         assert!(instruction.contains("Claim the selected executable todo"));
         assert!(instruction.contains("Approve publication"));
         assert!(instruction.contains("a prose claim is not evidence"));
+        assert!(instruction.contains("Do NOT complete, update, block, or defer"));
+        assert!(instruction.contains("work -> refresh-state writeback"));
+        assert!(instruction.contains("MANDATORY THIRD STEP"));
+        assert!(instruction.contains("writeback_missing"));
+        let spend_step = instruction
+            .find("MANDATORY SECOND STEP")
+            .expect("spend step");
+        let lifecycle_step = instruction
+            .find("MANDATORY THIRD STEP")
+            .expect("lifecycle step");
+        assert!(spend_step < lifecycle_step);
         // The turn-scoped refresh-state writeback must be copy-ready with the
         // accountable delivery outcome baked in: the pinned v1.0.1 CLI rejects
         // a turn-scoped refresh without an accountable --delivery-outcome and
