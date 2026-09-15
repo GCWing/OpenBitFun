@@ -56,10 +56,6 @@ impl BufferedRelayResponse {
             .map_err(|error| anyhow!("decode relay JSON response: {error}"))
     }
 
-    pub(crate) async fn bytes(self) -> Result<Vec<u8>> {
-        Ok(self.body)
-    }
-
     pub(crate) async fn text(self) -> Result<String> {
         Ok(String::from_utf8_lossy(&self.body).into_owned())
     }
@@ -396,8 +392,9 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
-        assert!(response.bytes().await.unwrap().is_empty());
+        let (status, body) = response.into_parts();
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+        assert!(body.is_empty());
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
         server.await.unwrap();
     }

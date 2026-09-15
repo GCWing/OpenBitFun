@@ -1,6 +1,4 @@
-use crate::agentic::tools::framework::{
-    PermissionIntent, Tool, ToolExposure, ToolResult, ToolUseContext,
-};
+use crate::agentic::tools::framework::{PermissionIntent, Tool, ToolResult, ToolUseContext};
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
 use log::{error, info};

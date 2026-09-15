@@ -5084,45 +5084,4 @@ mod tests {
         assert_eq!(tracker.session_state(), "idle");
         assert!(tracker.is_history_snapshot_required());
     }
-
-    #[derive(Default)]
-    struct FakeInteractionHost;
-
-    #[async_trait::async_trait]
-    impl RemoteInteractionRuntimeHost for FakeInteractionHost {
-        async fn confirm_tool(
-            &self,
-            _tool_id: &str,
-            _updated_input: Option<serde_json::Value>,
-        ) -> Result<(), String> {
-            Ok(())
-        }
-
-        async fn reject_tool(&self, _tool_id: &str, _reason: String) -> Result<(), String> {
-            Ok(())
-        }
-
-        async fn get_permission_mode(&self) -> Result<RemotePermissionMode, String> {
-            Ok(RemotePermissionMode::Ask)
-        }
-
-        async fn set_permission_mode(
-            &self,
-            mode: RemotePermissionMode,
-        ) -> Result<RemotePermissionMode, String> {
-            Ok(mode)
-        }
-
-        async fn cancel_tool(&self, _tool_id: &str, _reason: String) -> Result<(), String> {
-            Ok(())
-        }
-
-        fn answer_question(
-            &self,
-            _tool_id: &str,
-            _answers: serde_json::Value,
-        ) -> Result<(), String> {
-            Ok(())
-        }
-    }
 }

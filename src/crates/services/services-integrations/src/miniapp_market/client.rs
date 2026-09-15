@@ -6,7 +6,7 @@ use openbitfun_product_domains::miniapp::market::{
     CursorPage, MarketListingDetail, MarketListingSummary, MarketSort, MarketSubmission,
     MarketSubmissionDraftRequest, ReviewDecisionRequest, MARKET_PACKAGE_CONTENT_TYPE,
 };
-use reqwest::{Method, RequestBuilder, Response, StatusCode};
+use reqwest::{Method, RequestBuilder, Response};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
@@ -164,13 +164,6 @@ impl MarketClient {
 
     pub async fn me(&mut self) -> Result<Option<MarketMe>, MarketClientError> {
         self.identity.me().await
-    }
-
-    /// Returns the shared marketplace access token after applying the normal
-    /// refresh and expiry policy. Appearance Market uses the same desktop
-    /// identity without creating a second credential vault.
-    pub(crate) async fn access_token(&mut self) -> Result<Option<String>, MarketClientError> {
-        self.identity.access_token().await
     }
 
     pub async fn set_rating(

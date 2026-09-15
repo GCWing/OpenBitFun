@@ -2,13 +2,9 @@
 
 use crate::embedded_relay_host::DesktopEmbeddedRelayHost;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use openbitfun_core::agentic::coordination::{
-    get_global_coordinator, get_global_scheduler, ConversationCoordinator,
-};
 use openbitfun_core::agentic::tools::account_login_capability::set_account_login_available;
 use openbitfun_core::agentic::tools::page_deploy_host::set_page_deploy_handler;
 use openbitfun_core::agentic::tools::page_publish_host::set_page_publish_handler;
-use openbitfun_core::product_runtime::CoreAgentRuntimeCompatibility;
 use openbitfun_core::service::dispatch::{
     DispatchAccountDaemonIdentity, DispatchAccountDaemonProvisionRequest,
     DISPATCH_ACCOUNT_DAEMON_PROVISIONING_SCHEMA_VERSION,
@@ -21,8 +17,6 @@ use openbitfun_core::service::remote_connect::{
     lan, session_store, AccountClient, AccountSession, ConnectionMethod, ConnectionResult,
     DeviceIdentity, RemoteConnectConfig, RemoteConnectService,
 };
-use openbitfun_core::service::workspace::{get_global_workspace_service, WorkspaceKind};
-use openbitfun_core::service::workspace_runtime::WorkspaceRuntimeService;
 use openbitfun_events::AI_MODEL_CATALOG_UPDATED_EVENT;
 use openbitfun_services_integrations::remote_connect::account::{
     error_indicates_expired_token, validate_relay_base_url,
@@ -37,7 +31,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter};
 use tokio::sync::RwLock;
 
 static REMOTE_CONNECT_SERVICE: OnceLock<Arc<RwLock<Option<RemoteConnectService>>>> =
@@ -626,11 +620,6 @@ static TOKEN_EXPIRED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicB
 #[tauri::command]
 pub async fn account_token_expired() -> bool {
     TOKEN_EXPIRED.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// Internal helper: check if an error message indicates HTTP 401.
-fn is_token_expired_error(e: &anyhow::Error) -> bool {
-    error_indicates_expired_token(&e.to_string())
 }
 
 /// Drop the local account session after the relay rejects the token, but only

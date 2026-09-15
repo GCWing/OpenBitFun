@@ -3,7 +3,7 @@ use super::readable::{
     RequestedFormat,
 };
 use crate::agentic::tools::framework::{
-    PermissionIntent, Tool, ToolExposure, ToolResult, ToolUseContext, ValidationResult,
+    PermissionIntent, Tool, ToolResult, ToolUseContext, ValidationResult,
 };
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
