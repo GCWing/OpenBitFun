@@ -136,8 +136,13 @@
         </div>
         <nav id="task-list" class="task-list" aria-label="LoopX 任务">
           <div id="repository-actions" class="repository-actions" hidden>
+            <p id="repository-actions-title" class="repository-actions__title"></p>
             <button id="resume-repository" class="primary-button" type="button"></button>
             <span id="repository-actions-meta" data-i18n="repositorySerial">同仓库串行执行</span>
+            <details id="repository-actions-list" class="repository-actions__list" hidden>
+              <summary id="repository-actions-summary"></summary>
+              <ul id="repository-recoverable-items" class="repository-recoverable"></ul>
+            </details>
           </div>
           <div id="task-items"></div>
         </nav>
