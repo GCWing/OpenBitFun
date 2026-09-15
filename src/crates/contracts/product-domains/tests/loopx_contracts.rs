@@ -748,6 +748,18 @@ fn structured_summary_keeps_referenced_closed_pull_requests_out_of_produced_arti
         .filter_map(|value| value.as_str())
         .collect::<Vec<_>>();
     assert!(referenced_urls.contains(&"https://github.com/xielixing/dynamic-workflows-lab/pull/4"));
+    assert_eq!(
+        parsed
+            .get("publication_state")
+            .and_then(|value| value.as_str()),
+        Some("not_requested")
+    );
+    assert_eq!(
+        parsed
+            .get("automation_outcome")
+            .and_then(|value| value.as_str()),
+        Some("stopped_without_pr")
+    );
     let events = parsed
         .get("artifact_events")
         .and_then(|value| value.as_array())
@@ -789,6 +801,18 @@ fn structured_summary_marks_a_created_pull_request_as_produced() {
     assert_eq!(
         produced_urls,
         vec!["https://github.com/xielixing/dynamic-workflows-lab/pull/9"]
+    );
+    assert_eq!(
+        parsed
+            .get("publication_state")
+            .and_then(|value| value.as_str()),
+        Some("created")
+    );
+    assert_eq!(
+        parsed
+            .get("automation_outcome")
+            .and_then(|value| value.as_str()),
+        Some("created")
     );
     let events = parsed
         .get("artifact_events")

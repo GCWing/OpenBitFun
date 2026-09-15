@@ -730,6 +730,33 @@ fn inject_summary_artifact_roles(value: &mut serde_json::Value) {
         }));
     }
 
+    let publication_state = if produced.is_empty() {
+        "not_requested"
+    } else {
+        "created"
+    };
+    let verdict = object
+        .get("issue_verdict")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let automation_outcome = if !produced.is_empty() {
+        "created"
+    } else if creation_is_negative {
+        "stopped_without_pr"
+    } else if matches!(verdict, "wont_fix" | "already_fixed_upstream") {
+        "closed_without_artifact"
+    } else {
+        "completed_without_artifact"
+    };
+
+    object.insert(
+        "publication_state".to_string(),
+        serde_json::Value::String(publication_state.to_string()),
+    );
+    object.insert(
+        "automation_outcome".to_string(),
+        serde_json::Value::String(automation_outcome.to_string()),
+    );
     object.insert(
         "artifact_events".to_string(),
         serde_json::Value::Array(artifact_events),

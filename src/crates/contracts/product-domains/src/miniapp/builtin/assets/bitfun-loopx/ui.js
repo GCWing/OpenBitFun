@@ -173,7 +173,9 @@ const COPY = {
     summaryWontFixReasonInvalid: '无需处理（无可执行请求）',
     summaryWontFixReasonEvaluationPending: '评估中，暂不处理',
     state_completed_needs_fix: '已处理，待发布',
-    state_completed_needs_fix_no_release: '已处理，未发布',
+    state_completed_needs_fix_no_release: '已处理，未创建 PR',
+    state_completed_automation_stopped: '自动修复已停止',
+    state_completed_pr_created: '已处理，PR 已创建',
     summaryShowFullConclusion: '展开完整结论',
     summaryBackground: '背景',
     summarySectionCompleted: '已完成',
@@ -185,7 +187,7 @@ const COPY = {
     taskLabelsMore: '+{value}',
     summaryMissingInfo: '判断所需信息',
     summaryCompletedTitlePlain: '处理结果',
-    summaryCompletedNoFollowup: '处理已完成，系统不再自动跟进；如需继续，请使用「重新尝试」提交新任务。',
+    summaryCompletedNoFollowup: '处理已完成，系统不再自动跟进。',
     issueDescriptionEmpty: '（该 Issue 没有正文描述）',
     summarySegmentEvidence: '调查取证',
     summarySegmentRouteDecision: '方案决策',
@@ -649,7 +651,9 @@ const COPY = {
     summaryWontFixReasonInvalid: 'No action needed (nothing actionable)',
     summaryWontFixReasonEvaluationPending: 'Under evaluation',
     state_completed_needs_fix: 'Handled, pending release',
-    state_completed_needs_fix_no_release: 'Handled, not published',
+    state_completed_needs_fix_no_release: 'Handled, no PR created',
+    state_completed_automation_stopped: 'Automation stopped',
+    state_completed_pr_created: 'Handled, PR created',
     summaryShowFullConclusion: 'Show full conclusion',
     summaryBackground: 'Background',
     summarySectionCompleted: 'Completed',
@@ -661,7 +665,7 @@ const COPY = {
     taskLabelsMore: '+{value}',
     summaryMissingInfo: 'Information needed to decide',
     summaryCompletedTitlePlain: 'Outcome',
-    summaryCompletedNoFollowup: 'Handling is complete; automation stops here. Use the new-attempt action if you want to continue.',
+    summaryCompletedNoFollowup: 'Handling is complete; automation stops here.',
     issueDescriptionEmpty: '(This issue has no body text.)',
     summarySegmentEvidence: 'Evidence',
     summarySegmentRouteDecision: 'Route decision',
@@ -2440,8 +2444,16 @@ function completionLabel(task) {
   if (verdict === 'already_fixed_upstream') return summaryEnumLabel('summaryVerdict', 'already_fixed_upstream');
   if (verdict === 'needs_info') return summaryEnumLabel('summaryVerdict', 'needs_info');
   if (verdict === 'needs_fix') {
-    if (taskHasProducedPullRequest(task)) return text('resolvedItem');
     if (task.pendingGateId) return text('state_completed_needs_fix');
+    const publicationState = String(structured.publication_state || '');
+    const automationOutcome = String(structured.automation_outcome || '');
+    const producedPullRequest = taskHasProducedPullRequest(task);
+    if (publicationState === 'created' || producedPullRequest) {
+      return producedPullRequest ? text('state_completed_pr_created') : text('resolvedItem');
+    }
+    if (automationOutcome === 'stopped_without_pr') {
+      return text('state_completed_automation_stopped');
+    }
     return text('state_completed_needs_fix_no_release');
   }
   return '';
@@ -2457,7 +2469,10 @@ function completionTone(task) {
   }
   if (verdict === 'needs_info') return 'info';
   if (verdict === 'already_fixed_upstream') return 'success';
-  if (verdict === 'needs_fix') return taskHasProducedPullRequest(task) ? 'success' : 'muted';
+  if (verdict === 'needs_fix') {
+    const publicationState = String(structured.publication_state || '');
+    return publicationState === 'created' && taskHasProducedPullRequest(task) ? 'success' : 'muted';
+  }
   return '';
 }
 
