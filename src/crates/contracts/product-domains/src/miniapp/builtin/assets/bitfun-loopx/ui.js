@@ -58,10 +58,15 @@ const COPY = {
     resolve: '分析链接',
     resolving: '正在实时复核链接',
     resetLoopx: '重置 LoopX',
-    pauseAll: '停止全部任务',
-    pauseAllHint: '停止整个 LoopX 运行：正在执行的任务会被中断，仍处排队/等待的任务保持原地，新任务不再受理，直到你点「继续」。等待你审批的门禁不受影响。',
-    resumeAll: '继续任务',
-    resumeAllHint: '恢复整个 LoopX 运行：重新受理新任务并推进排队中的任务。',
+    pauseAll: '暂停全部任务',
+    pauseAllHint: '暂停整个 LoopX 运行：正在执行的任务会被中断，排队/等待中的任务保持原地，新任务不再受理，直到你点「继续运行」。等待你审批的门禁不受影响。',
+    resumeAll: '继续运行',
+    resumeAllHint: '解除整体暂停：重新受理新任务，并推进排队中的任务。',
+    suitePausedTitle: 'LoopX 已暂停 · 排队任务不会推进',
+    suitePausedHint: '点「继续运行」后重新受理新任务并推进队列；单条仓库任务的「继续」不会解除整体暂停。',
+    resumeBlockedBySuite: 'LoopX 已暂停：请先点「继续运行」，再继续这个任务。',
+    suitePausedApplied: '已暂停整个 LoopX 运行；排队任务保持原地，直到你点「继续运行」。',
+    suiteResumedApplied: '已恢复整个 LoopX 运行：新任务已可受理，排队任务开始推进。',
     resettingLoopxBackground: '正在后台清理任务与工作进展；窗口可以继续使用，完成后会自动刷新。',
     destructiveAction: '危险操作',
     resetLoopxTitle: '清空并重新开始',
@@ -294,7 +299,7 @@ const COPY = {
     approve: '批准',
     pause: '暂停',
     resume: '恢复',
-    resumeRepository: '全部继续（{value}）',
+    resumeRepository: '继续这 {value} 个任务',
     resumeOneTask: '继续这个任务',
     resumeBannerOne: '待恢复：{item}',
     resumeBannerMany: '待恢复：{count} 个任务',
@@ -560,10 +565,15 @@ const COPY = {
     resolve: 'Analyze URL',
     resolving: 'Verifying URL against the live source',
     resetLoopx: 'Reset LoopX',
-    pauseAll: 'Stop all tasks',
-    pauseAllHint: 'Stops the whole LoopX run: running agents are interrupted, queued and preparing tasks stay parked, new tasks are not accepted until you press Continue. Approval gates you already owe are not affected.',
-    resumeAll: 'Continue tasks',
-    resumeAllHint: 'Resumes the whole LoopX run: new tasks are accepted again and parked tasks may advance.',
+    pauseAll: 'Pause all tasks',
+    pauseAllHint: 'Pauses the whole LoopX run: running agents are interrupted, queued and preparing tasks stay parked, new tasks are not accepted until you press Resume run. Approval gates you already owe are not affected.',
+    resumeAll: 'Resume run',
+    resumeAllHint: 'Lifts the suite-wide pause: new tasks are accepted again and parked tasks advance.',
+    suitePausedTitle: 'LoopX is paused - queued tasks will not advance',
+    suitePausedHint: 'Press Resume run to accept new tasks and advance the queue; a single repository task continues without lifting the pause.',
+    resumeBlockedBySuite: 'LoopX is paused: press Resume run first, then continue this task.',
+    suitePausedApplied: 'The whole LoopX run is paused; parked tasks stay put until you press Resume run.',
+    suiteResumedApplied: 'The whole LoopX run resumed: new tasks are accepted and queued tasks advance.',
     resettingLoopxBackground: 'Cleaning tasks and saved progress in the background. You can keep using this window; it refreshes when cleanup finishes.',
     destructiveAction: 'Destructive action',
     resetLoopxTitle: 'Clear and start over',
@@ -796,7 +806,7 @@ const COPY = {
     approve: 'Approve',
     pause: 'Pause',
     resume: 'Resume',
-    resumeRepository: 'Continue all ({value})',
+    resumeRepository: 'Continue these {value} tasks',
     resumeOneTask: 'Continue this task',
     resumeBannerOne: 'Needs recovery: {item}',
     resumeBannerMany: 'Needs recovery: {count} tasks',
@@ -2494,6 +2504,23 @@ function renderRepositoryActions(tasks) {
   state.repositoryResumeTarget = repository && eligible.length > 0
     ? { repository, tasks: eligible }
     : null;
+  // 一次只给一层「继续」：suite 暂停时，仓库级恢复不可能生效（宿主不会驱动
+  // 任何 turn），rail 改为解释暂停并提供唯一的「继续运行」；未暂停时才显示
+  // 仓库级「继续这 N 个任务」。2026-09-15 实况：暂停中点「全部继续（2）」把
+  // 任务排回队列后什么都没运行，用户只能再去工具条找小图标。
+  const suiteSuspended = Boolean(state.snapshot && state.snapshot.suspended);
+  if (suiteSuspended) {
+    state.repositoryResumeTarget = null;
+    view.repositoryActions.hidden = Boolean(state.resetPending);
+    view.repositoryActions.dataset.action = 'resume-suite';
+    view.repositoryActionsTitle.textContent = text('suitePausedTitle');
+    view.resumeRepository.disabled = state.suitePending || state.resetPending || state.syncing;
+    view.resumeRepository.textContent = text('resumeAll');
+    view.repositoryActionsMeta.textContent = text('suitePausedHint');
+    view.repositoryActionsList.hidden = true;
+    return;
+  }
+  view.repositoryActions.dataset.action = 'resume-repository';
   view.repositoryActions.hidden = !state.repositoryResumeTarget;
   if (!state.repositoryResumeTarget) return;
   const modelStatus = state.snapshot
@@ -6056,10 +6083,11 @@ function openResetLoopxDialog() {
   view.resetLoopxDialog.showModal();
 }
 
-async function suiteAction(action) {
+async function suiteAction(action, sourceButton) {
   if (!state.snapshot || state.suitePending) return;
   state.suitePending = true;
-  const button = action.startsWith('pause') ? view.pauseAllLoopx : view.resumeAllLoopx;
+  const button = sourceButton
+    || (action.startsWith('pause') ? view.pauseAllLoopx : view.resumeAllLoopx);
   setButtonBusy(button, true);
   view.root.setAttribute('aria-busy', 'true');
   try {
@@ -6068,9 +6096,12 @@ async function suiteAction(action) {
       clientRequestId: requestId(),
       expectedRevision: Number((state.snapshot && state.snapshot.revision) || 0),
     });
+    const failed = Boolean(response && (response.status === 'rejected' || response.status === 'revision_conflict'));
     showNotice(
-      response && response.message ? response.message : text(action.startsWith('pause') ? 'pauseAll' : 'resumeAll'),
-      'success'
+      failed
+        ? (response.message || text('actionRejected'))
+        : text(action.startsWith('pause') ? 'suitePausedApplied' : 'suiteResumedApplied'),
+      failed ? 'error' : 'success'
     );
   } catch (error) {
     showNotice(errorMessage(error), 'error');
@@ -6184,7 +6215,11 @@ async function resumeRepository() {
     if (response && response.status === 'revision_conflict') {
       showNotice(response.message || text('revisionConflict'), 'error');
     } else if (response && response.status === 'rejected') {
-      showNotice(response.message || text('actionRejected'), 'error');
+      const blockedBySuite = Boolean(state.snapshot && state.snapshot.suspended);
+      showNotice(
+        blockedBySuite ? text('resumeBlockedBySuite') : (response.message || text('actionRejected')),
+        'error',
+      );
     } else {
       showNotice(text('resumeRepositoryApplied', { value: count }), 'success');
     }
@@ -6320,7 +6355,14 @@ async function performAction(action, task, extra = {}) {
       await attachSnapshot(false);
       return false;
     } else if (status === 'rejected') {
-      showNotice(response.message || text('actionRejected'), 'error');
+      // 暂停期间宿主会拒绝单任务恢复；宿主回执是英文内部句，rail 已给出唯一
+      // 的「继续运行」入口，这里只补一句本地化指引。
+      const blockedBySuite = action === 'resume'
+        && Boolean(state.snapshot && state.snapshot.suspended);
+      showNotice(
+        blockedBySuite ? text('resumeBlockedBySuite') : (response.message || text('actionRejected')),
+        'error',
+      );
       return false;
     } else if (status === 'duplicate') {
       showNotice(
@@ -6755,7 +6797,13 @@ function bindEvents() {
   view.retryEnvironment.addEventListener('click', async () => {
     await performAction('retry_environment', null);
   });
-  view.resumeRepository.addEventListener('click', openRepositoryResumeDialog);
+  view.resumeRepository.addEventListener('click', () => {
+    if (view.repositoryActions.dataset.action === 'resume-suite') {
+      void suiteAction('resume_all', view.resumeRepository);
+      return;
+    }
+    openRepositoryResumeDialog();
+  });
   view.approvalAlertOpen.addEventListener('click', openApprovalAlertGate);
   view.approvalAlertOpenAction.addEventListener('click', openApprovalAlertGate);
   view.issueLink.addEventListener('click', (event) => {
