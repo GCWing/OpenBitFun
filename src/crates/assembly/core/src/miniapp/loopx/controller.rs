@@ -1835,6 +1835,32 @@ impl LoopxController {
             LoopxCliRunDecision::RunNow => {
                 self.sync_concurrent_user_gate(&task, inspected.pending_user_gate.as_ref())
                     .await?;
+                // A selected publish/merge todo is not independent agent work
+                // while the typed owner gate that authorizes it is open. Do not
+                // drive the agent through the same no-op turn; park and surface
+                // the gate until the owner answers it.
+                if inspected.pending_user_gate.is_some()
+                    && selected_todo_requires_owner_gate(inspected.selected_todo.as_ref())
+                {
+                    log::info!(
+                        "LoopX selected agent todo is owner-gated; parking for the owner decision: task_id={} goal={} todo={} gate={}",
+                        task_id,
+                        inspected.goal_id,
+                        inspected
+                            .selected_todo
+                            .as_ref()
+                            .map(|todo| todo.todo_id.as_str())
+                            .unwrap_or("-"),
+                        inspected
+                            .pending_user_gate
+                            .as_ref()
+                            .map(|gate| gate.gate_id.as_str())
+                            .unwrap_or("-"),
+                    );
+                    return self
+                        .waiting_user_frontier(&task, &runtime, &inspected)
+                        .await;
+                }
                 // The contradiction witness is the envelope's own action
                 // projection, not the `open_count` scalar: the counter is a
                 // claim-scoped summary that can legitimately be zero while
@@ -2101,8 +2127,6 @@ impl LoopxController {
         inspected: &LoopxCliGoalSnapshot,
     ) -> Result<(), String> {
         let task_id = task.task_id.clone();
-        let task_generation = task.generation;
-        let repository_id = task.identity.item.repository.canonical_id();
         let Some(gate) = inspected.pending_user_gate.clone() else {
             // Owner action outside the host (live 2026-09-08, issue 2: the
             // agent opened PR #4 and LoopX projected the owner review/merge
@@ -5380,6 +5404,25 @@ fn is_reuse_merge_user_gate(action_kind: Option<&str>, message: &str) -> bool {
         || kind.contains("reuse")
         || message_lower.contains("merge pr #")
         || message_lower.contains("reuse existing pr")
+}
+
+/// Agent todos that publish or merge external state are owner-gated. LoopX
+/// can keep projecting one as `RunNow` after the agent's typed user gate is
+/// open; driving it again only burns turns because the agent cannot perform
+/// the external write. The host parks and surfaces the gate instead.
+///
+/// Live 2026-09-16: issue #11 re-ran `issue_fix_publish_prepared_update`
+/// four times while its publish gate and merge decision stayed open.
+fn selected_todo_requires_owner_gate(
+    todo: Option<&LoopxCurrentTodo>,
+) -> bool {
+    let Some(todo) = todo else {
+        return false;
+    };
+    let kind = todo.action_kind.trim().to_ascii_lowercase();
+    kind.starts_with("issue_fix_publish")
+        || kind.starts_with("issue_fix_merge")
+        || kind.starts_with("issue_fix_external_write")
 }
 
 fn reuse_merge_pr_label(message: &str) -> String {

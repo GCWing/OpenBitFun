@@ -680,9 +680,11 @@ impl LoopxCliProcessAdapter {
             .pointer("/run_history/goals")
             .and_then(Value::as_array)?;
         let goal_entry = goals.iter().find(|goal| {
-            goal.get("goal_id")
-                .and_then(Value::as_str)
-                .is_some_and(|value| value == goal_id)
+            ["id", "goal_id"].into_iter().any(|key| {
+                goal.get(key)
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| value == goal_id)
+            })
         })?;
         let agents = goal_entry
             .pointer("/semantic_history/agents")
@@ -3409,7 +3411,11 @@ Conditional rules: already_fixed_upstream requires fixed_by; wont_fix requires w
 /// "no vision is recorded, author fresh" while LoopX held an accepted vision;
 /// the agent patched around it, exhausted its corrective attempts, and the
 /// host parked the task as `settlement_no_progress`.
-fn render_vision_checkpoint_clause(recorded_agent_vision: Option<&Value>, goal_id: &str) -> String {
+fn render_vision_checkpoint_clause(
+    recorded_agent_vision: Option<&Value>,
+    goal_id: &str,
+    agent_id: &str,
+) -> String {
     match recorded_agent_vision.and_then(|vision| {
         vision
             .get("vision_patch")
@@ -3420,14 +3426,15 @@ fn render_vision_checkpoint_clause(recorded_agent_vision: Option<&Value>, goal_i
             let recorded_json = serde_json::to_string(recorded_patch)
                 .unwrap_or_else(|_| "<recorded vision unavailable>".to_string());
             format!(
-                "A vision is ALREADY RECORDED for this goal and agent. Your --agent-vision-json packet MUST copy these exact field values verbatim (do not reword, translate, summarize, or trim them):\n{recorded_json}\nOnly `state` and `path_delta` are new in your packet: set `state` to `no_followup` and write `path_delta` with `outcome: stop`, fresh `prior_assumption` and `observed_reality`, at least one `stopped` item, and `evidence_refs` citing your validation evidence. BEFORE submitting, re-read your packet file and compare each copied field against the recorded values above character by character - any difference in vision_summary, role_scope, acceptance_summary, or advancement_policy makes the CLI demand `path_delta.outcome=replan`, which the `no_followup` result class then rejects - an unsatisfiable pair that burns the turn. If the durable fields genuinely must change, that is a REPLAN, not a terminal: submit the same `--agent-vision-json` packet with its `path_delta` (the `goal_path_delta_v0`) set to `outcome: replan` plus `--repair-delta-kind goal_vision_patch`, then close the goal in a FOLLOWING writeback with those now-recorded fields copied verbatim and `path_delta.outcome=stop`. The path delta lives INSIDE the packet (`path_delta`) - do not add a separate `goal_path_delta_v0` key or flag."
+                "A vision is ALREADY RECORDED for this goal and agent. If this turn must satisfy a LoopX vision checkpoint, supply `--agent-vision-json <vision-file>` with a `goal_vision_replan_contract_v0` packet (append it only when the copy-ready command does not already include it). Its vision fields MUST copy these exact recorded values verbatim (do not reword, translate, summarize, or trim them):\n{recorded_json}\nSet `state` to `no_followup` and write `path_delta` with `outcome: stop`, fresh `prior_assumption` and `observed_reality`, at least one `stopped` item, and `evidence_refs` citing your validation evidence. BEFORE submitting, re-read your packet file and compare each copied field against the recorded values above character by character - any difference in vision_summary, role_scope, acceptance_summary, or advancement_policy makes the CLI demand `path_delta.outcome=replan`, which the `no_followup` result class then rejects - an unsatisfiable pair that burns the turn. If the durable fields genuinely must change, that is a REPLAN, not a terminal: submit the same `--agent-vision-json` packet with its `path_delta` (the `goal_path_delta_v0`) set to `outcome: replan` plus `--repair-delta-kind goal_vision_patch`, then close the goal in a FOLLOWING writeback with those now-recorded fields copied verbatim and `path_delta.outcome=stop`. The path delta lives INSIDE the packet (`path_delta`) - do not add a separate `goal_path_delta_v0` key or flag."
             )
         }
         None => {
-            let seed = r#"{"schema_version": "goal_vision_replan_contract_v0", "goal_id": "__GOAL_ID__", "agent_id": "<AGENT_ID>", "state": "no_followup", "vision_summary": "Deliver goal __GOAL_ID__ through the issue-fix lane: verify the tracked issue against live evidence, record exactly one route decision, and (when a change is required) prepare a validated fix for owner-approved publication.", "acceptance_summary": "Goal __GOAL_ID__ is satisfied by a recorded, evidence-backed route decision for its issue - a no-change conclusion or a validated fix whose publication was explicitly owner-approved.", "replan_trigger_summary": "New live evidence (maintainer comments, linked or closing pull requests, or an explicit change request) that invalidates the recorded route decision.", "path_delta": {"outcome": "replan", "prior_assumption": "The lane had no recorded vision baseline.", "observed_reality": "The host recorded the deterministic issue-fix lane vision for this goal.", "changed": ["Recorded the lane vision baseline for this goal."], "evidence_refs": ["host-authored issue-fix lane vision"]}}"#
-                .replace("__GOAL_ID__", goal_id);
+            let seed = r#"{"schema_version": "goal_vision_replan_contract_v0", "goal_id": "__GOAL_ID__", "agent_id": "__AGENT_ID__", "state": "no_followup", "vision_summary": "Deliver goal __GOAL_ID__ through the issue-fix lane: verify the tracked issue against live evidence, record exactly one route decision, and (when a change is required) prepare a validated fix for owner-approved publication.", "acceptance_summary": "Goal __GOAL_ID__ is satisfied by a recorded, evidence-backed route decision for its issue - a no-change conclusion or a validated fix whose publication was explicitly owner-approved.", "replan_trigger_summary": "New live evidence (maintainer comments, linked or closing pull requests, or an explicit change request) that invalidates the recorded route decision.", "path_delta": {"outcome": "stop", "prior_assumption": "The lane had no recorded vision baseline.", "observed_reality": "The host recorded the deterministic issue-fix lane vision for this goal.", "stopped": ["No further agent work remains beyond the recorded route decision."], "evidence_refs": ["host-authored issue-fix lane vision"]}}"#
+                .replace("__GOAL_ID__", goal_id)
+                .replace("__AGENT_ID__", agent_id);
             format!(
-                "No agent-vision baseline is readable for goal {goal_id} yet. If LoopX requires a vision checkpoint (`missing_baseline` / `write_vision_patch`), do NOT author free-form fields and do NOT reword them between attempts: first record this exact host-authored lane vision through `--agent-vision-json`:\n{seed}\nThen run the writeback or terminal close again. When a vision packet is required, copy the fields above verbatim, set `state` to `no_followup` and `path_delta.outcome=stop`, and add your real `stopped`/`evidence_refs` items. If the CLI refuses a packet with `changes durable fields ... requires outcome=replan`, do NOT reword it and do NOT add a separate `goal_path_delta_v0` key: resubmit the SAME fields as a replan (its `path_delta` with `outcome: replan` plus `--repair-delta-kind goal_vision_patch`) and afterwards close with the recorded fields copied verbatim and `outcome: stop`."
+                "No agent-vision baseline is readable for goal {goal_id} yet. If LoopX requires a vision checkpoint (`missing_baseline` / `write_vision_patch`), append `--agent-vision-json <vision-file>` to this turn's writeback command (only when the copy-ready command does not already include it) and write this exact host-authored lane packet, without authoring or rewording free-form fields:\n{seed}\nThe packet is already in the terminal `no_followup` / `path_delta.outcome=stop` shape. If this turn is not a terminal close, do not use this terminal packet; record a successor, blocker, or replan outcome instead. If the CLI refuses a packet with `changes durable fields ... requires outcome=replan`, do NOT reword it and do NOT add a separate `goal_path_delta_v0` key: resubmit the SAME fields as a replan (its `path_delta` with `outcome: replan` plus `--repair-delta-kind goal_vision_patch`) and afterwards close with the recorded fields copied verbatim and `outcome: stop`."
             )
         }
     }
@@ -3530,7 +3537,12 @@ fn render_agent_reentry_instruction(
         .get("goal_id")
         .and_then(Value::as_str)
         .unwrap_or("<GOAL_ID>");
-    let vision_clause = render_vision_checkpoint_clause(recorded_agent_vision, goal_id_text);
+    let agent_id_text = envelope
+        .get("agent_id")
+        .and_then(Value::as_str)
+        .unwrap_or("<AGENT_ID>");
+    let vision_clause =
+        render_vision_checkpoint_clause(recorded_agent_vision, goal_id_text, agent_id_text);
     let (writeback_command, writeback_guidance) = match writeback_flavor {
         WritebackFlavor::Todo(todo_id) => (
             format!(
@@ -3539,7 +3551,7 @@ fn render_agent_reentry_instruction(
                 agent_shell_value(turn_id),
             ),
             format!(
-                "Fill the <placeholders> from your validated evidence (classification is a short public-safe label of what this run validated); substitute `--delivery-outcome primary_goal_outcome` only when this turn completed the goal's primary result. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags.\n\n{vision_clause}"
+                "Fill the <placeholders> from your validated evidence (classification is a short public-safe label of what this run validated); substitute `--delivery-outcome primary_goal_outcome` only when this turn completed the goal's primary result. Run the command exactly as written, except for the single permitted addition described below. Only if LoopX requires a vision checkpoint, append `--agent-vision-json <vision-file>`; do not remove, reorder, or otherwise alter the fixed flags.\n\n{vision_clause}"
             ),
         ),
         WritebackFlavor::AutonomousReplan(obligation_id) => {
@@ -3650,18 +3662,21 @@ fn render_agent_reentry_instruction(
     // several rounds re-deriving the closing order. Keep the lifecycle call
     // explicitly last in the projected instruction so the model never
     // finalizes before the writeback and spend receipts commit.
+    let owner_gated_write_successor_command = match binding {
+        Some(SettlementBinding::Todo { todo_id }) => format!(
+            "{cli_prefix} todo complete {goal_id_arg} --todo-id {} --turn-instance-id {} {agent_id_arg} --evidence \"<public-safe evidence that the external write is prepared and validated>\" --next-user-todo \"Approve publishing <one-line public-safe external write>\" --next-user-task-class user_gate --next-agent-todo \"[P0] After owner approval, <the same external write> and verify the result\" --next-task-class advancement_task --next-action-kind issue_fix_publish_prepared_update --next-claimed-by {} --execute",
+            agent_shell_value(todo_id),
+            agent_shell_value(turn_id),
+            agent_shell_value(agent_id),
+        ),
+        _ => String::new(),
+    };
     let lifecycle_instruction = if matches!(binding, Some(SettlementBinding::Todo { .. })) {
-        concat!(
-            " MANDATORY THIRD STEP - only after this spend succeeds, finalize ",
-            "the selected todo through the LoopX CLI (`todo complete`, ",
-            "`todo update`, `todo block`, or `todo defer` as appropriate; ",
-            "pass successor flags only when concrete follow-up remains). ",
-            "Do not run that lifecycle command before the writeback and this ",
-            "spend both succeed: the pinned CLI refuses an early completion ",
-            "as `writeback_missing`/settlement-blocked and it costs an ",
-            "extra round-trip.",
+        format!(
+            " MANDATORY THIRD STEP - only after this spend succeeds, finalize the selected todo through the LoopX CLI (`todo complete`, `todo update`, `todo block`, or `todo defer` as appropriate; pass successor flags only when concrete follow-up remains). Do not run that lifecycle command before the writeback and this spend both succeed: the pinned CLI refuses an early completion as `writeback_missing`/settlement-blocked and it costs an extra round-trip. EXTERNAL-WRITE SUCCESSOR CONTRACT: when the only remaining follow-up is a GitHub external write (push/update an existing PR branch, create a PR, post a comment, or merge), do NOT encode it as prose or as a generic `user_action`. Use this exact successor form instead:
+`{owner_gated_write_successor_command}`
+This atomically creates a typed owner gate and a publish successor. The host surfaces the gate as an approval card and parks the publish successor while the gate is open. Do not run `git push`, `gh pr create`, `gh issue comment`, or `gh pr merge` before the owner answers that gate."
         )
-        .to_string()
     } else {
         String::new()
     };
