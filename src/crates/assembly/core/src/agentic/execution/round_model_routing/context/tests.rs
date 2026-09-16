@@ -3,6 +3,164 @@ use crate::agentic::core::{ToolCall, ToolResult};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Notify;
 
+#[test]
+fn summary_generation_limit_reserves_reasoning_headroom() {
+    // The provider counts reasoning and final text against the same limit.
+    // A 2K final summary must not also exhaust the entire generation budget.
+    assert!(RouterContextConfig::default().summary_max_tokens >= 8_192);
+}
+
+fn summary_client_fixture(endpoint: &str) -> AIClient {
+    AIClient::new(
+        serde_json::from_value(json!({
+            "name": "fast fixture", "model": "glm-5.3-flash", "format": "openai",
+            "base_url": endpoint, "request_url": endpoint, "api_key": "synthetic-key",
+            "context_window": 400_000, "max_tokens": 65_536,
+            "temperature": 0.95, "top_p": 1.0, "inline_think_in_text": false,
+            "skip_ssl_verify": false, "custom_request_body_mode": "merge",
+            "custom_request_body": {"reasoning_effort": "max", "temperature": 0.95,
+                "thinking": {"type": "enabled", "clear_thinking": false}, "top_p": 1.0}
+        }))
+        .unwrap(),
+    )
+}
+
+#[test]
+fn explicit_summary_preset_cannot_silently_fall_back_to_main_default() {
+    let client = summary_client_fixture("http://127.0.0.1:1/v1/chat/completions");
+    let mut config = RouterContextConfig {
+        summary_reasoning_preset: Some("missing-preset".into()),
+        ..Default::default()
+    };
+    assert!(summary_request_client(&client, &config).is_err());
+    config.summary_reasoning_preset = None;
+    let summary = summary_request_client(&client, &config).unwrap();
+    assert_eq!(summary.config.max_tokens, Some(16_384));
+    assert_eq!(client.config.max_tokens, Some(65_536));
+    assert!(summary.selected_reasoning_preset().is_none());
+    assert!(summary_system_prompt(&config).contains("4096 tokens"));
+    config.summary_target_tokens = config.summary_max_tokens + 1;
+    assert!(config.validate().is_err());
+    config.summary_target_tokens = 1;
+    config.summary_max_tokens = 0;
+    assert!(config.validate().is_err());
+    if usize::BITS > 32 {
+        config.summary_max_tokens = u32::MAX as usize + 1;
+        assert!(config.validate().is_err());
+    }
+}
+
+#[tokio::test]
+async fn summary_request_isolates_generation_limit_and_reasoning_on_the_wire() {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let endpoint = format!(
+        "http://{}/v1/chat/completions",
+        listener.local_addr().unwrap()
+    );
+    let server = std::thread::spawn(move || {
+        let mut bodies = Vec::new();
+        for _ in 0..3 {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse::<usize>().unwrap();
+                }
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).unwrap();
+            bodies.push(serde_json::from_slice::<Value>(&body).unwrap());
+            let data = json!({"id":"summary-fixture", "object":"chat.completion.chunk",
+                "created":0, "model":"glm-5.3-flash", "choices":[{"index":0,
+                "delta":{"content":"Confirmed parser regression; verification pending."},
+                "finish_reason":"stop"}], "usage":{"prompt_tokens":10,"completion_tokens":8,"total_tokens":18}});
+            let response = format!("data: {data}\n\ndata: [DONE]\n\n");
+            write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", response.len(), response).unwrap();
+        }
+        bodies
+    });
+    let shared = summary_client_fixture(&endpoint);
+    let before = serde_json::to_value(&shared.config).unwrap();
+    let projection = openbitfun_ai_adapters::models_dev::project_reasoning_catalog_with_limit(
+        "openai",
+        "glm-5.3-flash",
+        "https://open.bigmodel.cn/api/paas/v4",
+        65_536,
+        None,
+        None,
+    );
+    let low = projection
+        .presets
+        .iter()
+        .find(|preset| preset.id == "low")
+        .unwrap();
+    let config = RouterContextConfig {
+        summary_reasoning_preset: Some("low".into()),
+        ..Default::default()
+    };
+    let summary = summary_request_client(&shared.with_reasoning_preset(low), &config).unwrap();
+    let messages = || {
+        vec![
+            AIMessage::system(summary_system_prompt(&config)),
+            AIMessage::user("Synthetic parser fixture".into()),
+        ]
+    };
+    shared.send_message(messages(), None).await.unwrap();
+    let response = summary.send_message(messages(), None).await.unwrap();
+    let result = SummaryResult::from_response(response, "fast-fixture".into(), &summary);
+    shared.send_message(messages(), None).await.unwrap();
+    assert!(result.complete, "{:?}", result.diagnostics);
+    assert_eq!(result.diagnostics.reasoning_preset.as_deref(), Some("low"));
+    assert_eq!(result.diagnostics.finish_reason.as_deref(), Some("stop"));
+    assert_eq!(result.usage.unwrap()["candidatesTokenCount"], 8);
+    assert_eq!(serde_json::to_value(&shared.config).unwrap(), before);
+    assert!(shared.selected_reasoning_preset().is_none());
+    let bodies = server.join().unwrap();
+    assert_eq!(bodies[0], bodies[2]);
+    assert_eq!(bodies[0]["max_tokens"], 65_536);
+    assert_eq!(bodies[0]["reasoning_effort"], "max");
+    assert_eq!(bodies[0]["thinking"]["clear_thinking"], false);
+    assert_eq!(bodies[1]["max_tokens"], 16_384);
+    assert_eq!(bodies[1]["reasoning_effort"], "low");
+    assert!(bodies[1].get("thinking").is_none());
+    assert_eq!(bodies[1]["temperature"], 0.95);
+    assert_eq!(bodies[1]["top_p"], 1.0);
+    assert!(bodies[1].get("tools").is_none());
+}
+
+#[test]
+fn summary_response_distinguishes_truncation_reasoning_only_and_success() {
+    let client = summary_client_fixture("http://127.0.0.1:1/v1/chat/completions");
+    for (text, finish, expected) in [
+        ("partial", "length", Some("output_limit")),
+        ("partial", "MAX_TOKENS", Some("output_limit")),
+        ("", "stop", Some("empty_text")),
+        ("   ", "stop", Some("empty_text")),
+        ("Complete factual summary", "stop", None),
+    ] {
+        let response = serde_json::from_value(json!({"text":text,
+            "reasoning_content":"PRIVATE_REASONING", "finish_reason":finish}))
+        .unwrap();
+        let result = SummaryResult::from_response(response, "fast".into(), &client);
+        assert_eq!(result.complete, expected.is_none());
+        assert_eq!(result.diagnostics.incomplete_reason, expected);
+        assert_eq!(result.diagnostics.text_chars, text.chars().count());
+        assert_eq!(result.diagnostics.reasoning_chars, 17);
+        let diagnostics = serde_json::to_string(&result.diagnostics).unwrap();
+        assert!(!diagnostics.contains("PRIVATE_REASONING"));
+    }
+}
+
 struct FakeSummary {
     calls: AtomicUsize,
     release: Notify,
@@ -11,7 +169,11 @@ struct FakeSummary {
 
 #[async_trait::async_trait]
 impl SummaryProvider for FakeSummary {
-    async fn summarize(&self, _: String, _: usize) -> OpenBitFunResult<SummaryResult> {
+    async fn summarize(
+        &self,
+        _: String,
+        _: &RouterContextConfig,
+    ) -> OpenBitFunResult<SummaryResult> {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if self.fail {
             return Err(OpenBitFunError::AIClient("synthetic failure".into()));
@@ -23,6 +185,7 @@ impl SummaryProvider for FakeSummary {
             model_id: "fast-fixture".into(),
             model_name: "fast-fixture".into(),
             usage: Some(json!({"promptTokenCount": 10, "candidatesTokenCount": 5})),
+            diagnostics: SummaryDiagnostics::default(),
         })
     }
 }
@@ -532,13 +695,23 @@ async fn incomplete_summary_keeps_old_state_but_records_reported_usage() {
     struct Incomplete;
     #[async_trait::async_trait]
     impl SummaryProvider for Incomplete {
-        async fn summarize(&self, _: String, _: usize) -> OpenBitFunResult<SummaryResult> {
+        async fn summarize(
+            &self,
+            _: String,
+            _: &RouterContextConfig,
+        ) -> OpenBitFunResult<SummaryResult> {
             Ok(SummaryResult {
                 text: String::new(),
                 complete: false,
                 model_id: "fast-fixture".into(),
                 model_name: "fast-fixture".into(),
                 usage: Some(json!({"promptTokenCount": 12, "candidatesTokenCount": 4096})),
+                diagnostics: SummaryDiagnostics {
+                    finish_reason: Some("length".into()),
+                    reasoning_chars: 12_000,
+                    incomplete_reason: Some("output_limit"),
+                    ..Default::default()
+                },
             })
         }
     }
@@ -563,4 +736,10 @@ async fn incomplete_summary_keeps_old_state_but_records_reported_usage() {
     assert_eq!(event["event"], "router_context_summary");
     assert_eq!(event["usage"]["candidatesTokenCount"], 4096);
     assert!(event["error"].is_string());
+    assert_eq!(event["response"]["finish_reason"], "length");
+    assert_eq!(event["response"]["text_chars"], 0);
+    assert_eq!(event["response"]["reasoning_chars"], 12_000);
+    assert_eq!(event["response"]["incomplete_reason"], "output_limit");
+    assert_eq!(event["max_output_tokens"], 16_384);
+    assert_eq!(events[0]["summary_target_tokens"], 4_096);
 }

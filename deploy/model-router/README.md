@@ -74,14 +74,19 @@ Router 模型：       router-best
 Simple 阈值：       0.75
 请求超时：          10000 ms
 Fast 增量摘要：     开启；离开最近窗口的内容累计达到 8192 tokens
-历史摘要目标：      约 2048 tokens 以内
+历史摘要目标：      约 4096 tokens 以内（正文目标，不包含推理）
+摘要生成上限：      16384 tokens（推理与正文合计）
+摘要推理档位：      auto（可独立指定 fast 模型支持的 preset）
 摘要请求超时：      120000 ms
 ```
 
 可以通过 `ROUTER_MODEL`、`ROUTER_RECENT_ROUNDS`、`ROUTER_MAX_INPUT_TOKENS`、
 `ROUTER_CONTEXT_WINDOW`、`ROUTER_SIMPLE_THRESHOLD`、`ROUTER_TIMEOUT_MS`、
 `ROUTER_SUMMARY_ENABLED`、`ROUTER_SUMMARY_TRIGGER_TOKENS`、
-`ROUTER_SUMMARY_MAX_TOKENS` 和 `ROUTER_SUMMARY_TIMEOUT_MS` 覆盖这些默认值。
+`ROUTER_SUMMARY_MAX_TOKENS`、`ROUTER_SUMMARY_TARGET_TOKENS`、
+`ROUTER_SUMMARY_REASONING_PRESET` 和 `ROUTER_SUMMARY_TIMEOUT_MS` 覆盖这些默认值。
+未指定正文目标时取生成上限的一半与 4096 的较小值，以兼容已有的较小生成上限；显式目标
+必须为正数且不大于生成上限。直接运行宿主时使用相应的 `OPENBITFUN_ROUND_ROUTER_*` 变量。
 
 这些默认值来自当前训练数据和配置，而不是模型理论窗口：固定 system prompt 为 1580
 tokens，数据中 user prompt 最大 26517 tokens，完整 chat 输入最大 28110 tokens，SFT
@@ -104,14 +109,19 @@ Router 有自己的去重游标、待摘要增量和历史摘要；不读取主 
 每条观察先完成与 Router 输入一致的确定性预处理，再由 Router 自己的 tokenizer 计算并
 保存 token 数。离开最近 3 轮的旧轨迹累计达到 8192 tokens 后，用配置中的 **fast** 模型
 发起一次独立、无工具的后台摘要请求。摘要基于旧 Router 摘要和本次旧轨迹快照，提示 fast
-模型将新摘要控制在约 2000 tokens，并设置 2048 输出-token 上限。压缩触发只累计 pending
+模型将新摘要控制在约 4096 tokens，并单独预留推理空间，默认生成上限为 16384 tokens。
+不能把正文目标直接当作推理模型的整个生成预算。压缩触发只累计 pending
 history，不计算也不持久化 summary 的 tokens。
 摘要尚未完成时直接使用旧摘要加待处理增量，不等待模型返回。每个执行代最多一个摘要请求，
 每个进程最多两个；容量不足时不排队。摘要失败、超时、fast 未配置或返回空/截断内容时
 保留原状态；同一 Router round 内不会循环重试，下一轮会重新压缩现有的 summary + pending，
 不需要再累计 8192 个新 tokens，也不回退到主力模型做摘要。摘要请求使用 fast
-本身的 provider/采样/推理配置，不套用主 Agent 的 reasoning preset；输出预算在私有 client
-副本上设置为 4096，provider 自定义 request body 仍按既有适配器规则处理。
+本身的 provider 和采样配置，不套用主 Agent 的 reasoning preset。可通过
+`OPENBITFUN_ROUND_ROUTER_SUMMARY_REASONING_PRESET=low` 给摘要单独选择已支持的推理档位；
+未设置或 `auto` 时保留模型默认。显式选择不可用时摘要失败并保留历史，不静默退回默认档位。
+推理设置通过已有 provider adapter 编译，并与输出预算一起只作用于私有 client 副本，
+不修改 fast 主请求、subagent 或模型配置文件。provider 自定义 request body 仍按既有规则
+处理，因此不要在其中设置与摘要生成上限冲突的输出长度字段。
 
 增量缓冲最多 128 条，持续失败时超出的最老记录带明确省略游标；这是 Router 的内存预算，
 不是限制主 Agent 的轮数。成功摘要只覆盖请求时的序号，新到达的观察不会被删除；执行结束
@@ -148,7 +158,10 @@ smoke 验证。
 压缩状态。压缩记录包含 `in_flight`、`applied`、`failed`、`incomplete` 或 `stale` 状态及其
 快照边界、pending tokens、延迟、usage 和错误。单独的 `router_context_summary` 事件仍然保留，
 便于不依赖 Router 决策频率审计摘要请求。这部分是额外模型开销，不混入主轮次 Token Usage，
-评测时应单独汇总。
+评测时应单独汇总。摘要事件还记录配置的生成上限、正文目标、请求和实际选中的推理 preset，
+以及 `response.finish_reason`、`text_chars`、`reasoning_chars`、`tool_call_count` 和
+`incomplete_reason`。后者区分 `output_limit`、`empty_text` 与 `tool_calls`；诊断字段不保存
+推理正文。`usage.reasoningTokenCount` 只在 provider 确实返回时记录，不用字符数伪造 token 数。
 未返回 usage 的请求保持缺失，不能按零计费。可设 `ROUTER_SUMMARY_ENABLED=false` 对照纯规则
 裁剪版本；固定 Router system prompt 和 `simple/non_simple` 决策协议不变。
 
