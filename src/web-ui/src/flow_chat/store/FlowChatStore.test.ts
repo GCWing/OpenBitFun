@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flowChatStore, mergeModelRoundAttemptDiagnostics } from './FlowChatStore';
 import { sessionToVirtualItems } from './modernFlowChatStore';
 import { buildModelRoundItemGroups } from '../components/modern/modelRoundItemGrouping';
-import { sessionCompletionReceipt } from '../utils/sessionCompletionReceipt';
+import { sessionActivityStore } from './sessionActivityStore';
 import {
   LOCAL_SURFACE_ID,
   SurfaceChangedError,
@@ -564,38 +564,49 @@ describe('FlowChatStore metadata persistence callbacks', () => {
     resetStore();
   });
 
-  it('acknowledges only the displayed completion and preserves pending interaction facts', () => {
+  it('acknowledges completion and preserves pending interaction facts', () => {
     const session = completedSession();
     flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
-    flowChatStore.clearSessionUnreadCompletion(session.sessionId, {
-      surfaceId: LOCAL_SURFACE_ID, receipt: sessionCompletionReceipt(session)!,
-    });
+    flowChatStore.clearSessionUnreadCompletion(session.sessionId);
     expect(flowChatStore.getState().sessions.get(session.sessionId)).toMatchObject({
       hasUnreadCompletion: undefined, needsUserAttention: 'tool_confirm',
     });
   });
 
-  it('does not let an old view clear a newer completion of the same kind', () => {
-    const old = completedSession();
-    const latest = { ...old, lastFinishedAt: 20,
-      dialogTurns: [{ ...old.dialogTurns[0], id: 'new-turn', endTime: 20 }] };
-    flowChatStore.setState(() => ({ sessions: new Map([[latest.sessionId, latest]]) }));
-    flowChatStore.clearSessionUnreadCompletion(latest.sessionId, {
-      surfaceId: LOCAL_SURFACE_ID, receipt: sessionCompletionReceipt(old)!,
-    });
-    expect(flowChatStore.getState().sessions.get(latest.sessionId)?.hasUnreadCompletion).toBe('completed');
-  });
+  it.each(['new', 'metadata-only', 'ready'] as const)(
+    'explicitly acknowledges a %s session and keeps a refreshed result read', (historyState) => {
+      const session = { ...completedSession(), sessionId: `explicit-read-${historyState}`, historyState };
+      if (historyState === 'metadata-only') session.dialogTurns = [];
+      const summary = {
+        sessionId: session.sessionId, execution: 'idle' as const,
+        pendingApprovals: 0, pendingQuestions: 0, unreadCompletion: 'completed' as const,
+        lastTurn: { turnId: 'finished-turn', turnIndex: 0, status: 'completed' as const, executionGeneration: 2 },
+      };
+      sessionActivityStore.applyRead(sessionActivityStore.beginRead(), [summary]);
+      flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
+      const persist = vi.fn();
+      flowChatStore.registerPersistUnreadCompletionCallback(persist);
 
-  it('does not acknowledge an equal session id on a different device surface', () => {
-    const session = completedSession();
-    const receipt = sessionCompletionReceipt(session)!;
-    activateSurface('peer-status-receipt');
-    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
-    flowChatStore.clearSessionUnreadCompletion(session.sessionId, { surfaceId: LOCAL_SURFACE_ID, receipt });
-    expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBe('completed');
-  });
+      flowChatStore.clearSessionUnreadCompletion(session.sessionId);
+      expect(flowChatStore.getState().sessions.get(session.sessionId)).toMatchObject({
+        hasUnreadCompletion: undefined, needsUserAttention: 'tool_confirm',
+      });
+      expect(persist).toHaveBeenCalledWith(session.sessionId, undefined);
+      expect(sessionActivityStore.get(session.sessionId)?.summary?.unreadCompletion).toBeUndefined();
 
-  it('keeps a newer summary generation unread until its actual result is displayed', () => {
+      sessionActivityStore.applyRead(sessionActivityStore.beginRead(), [summary]);
+      flowChatStore.applySessionActivityReceipt(sessionActivityStore.get(session.sessionId)!.summary!);
+      expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBeUndefined();
+
+      sessionActivityStore.applyRead(sessionActivityStore.beginRead(), [{ ...summary,
+        lastTurn: { ...summary.lastTurn, executionGeneration: 3 },
+      }]);
+      flowChatStore.applySessionActivityReceipt(sessionActivityStore.get(session.sessionId)!.summary!);
+      expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBe('completed');
+    },
+  );
+
+  it('keeps the unread marker bound to the host summary generation', () => {
     const session = completedSession();
     flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
     flowChatStore.applySessionActivityReceipt({
@@ -605,10 +616,7 @@ describe('FlowChatStore metadata persistence callbacks', () => {
     });
     const updated = flowChatStore.getState().sessions.get(session.sessionId)!;
     expect(updated.unreadCompletionGeneration).toBe(2);
-    expect(sessionCompletionReceipt(updated)).toBeNull();
-    flowChatStore.clearSessionUnreadCompletion(session.sessionId, {
-      surfaceId: LOCAL_SURFACE_ID, receipt: sessionCompletionReceipt(session)!,
-    });
+    expect(updated.unreadCompletionTurnId).toBe('finished-turn');
     expect(flowChatStore.getState().sessions.get(session.sessionId)?.hasUnreadCompletion).toBe('completed');
   });
 
@@ -618,7 +626,6 @@ describe('FlowChatStore metadata persistence callbacks', () => {
     flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]) }));
     flowChatStore.markSessionUnreadCompletion(session.sessionId, 'completed', 'finished-turn');
     expect(flowChatStore.getState().sessions.get(session.sessionId)?.unreadCompletionTurnId).toBe('finished-turn');
-    expect(sessionCompletionReceipt(flowChatStore.getState().sessions.get(session.sessionId))).toBeNull();
   });
 
   it('persists unread completion clear only when the session state changes', () => {

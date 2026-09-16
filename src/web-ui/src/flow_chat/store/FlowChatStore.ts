@@ -42,7 +42,6 @@ import { SessionRecordReplica, type SessionRecord } from '@/flow_chat/session-st
 import { RelaySessionHistory } from '../services/RelaySessionHistory';
 import { stateMachineManager } from '../state-machine';
 import { ProcessingPhase, SessionExecutionState } from '../state-machine/types';
-import { sessionCompletionReceipt } from '../utils/sessionCompletionReceipt';
 import { isTurnAwaitingRecovery } from '../utils/interruptedTurnRecovery';
 import { sessionActivityStore } from './sessionActivityStore';
 import {
@@ -6694,26 +6693,14 @@ export class FlowChatStore {
     this.onPersistUnreadCompletion?.(sessionId, completionKind);
   }
 
-  public clearSessionUnreadCompletion(
-    sessionId: string,
-    expected?: { surfaceId: DeviceSurfaceId; receipt: string },
-  ): void {
+  public clearSessionUnreadCompletion(sessionId: string): void {
     let didClear = false;
+    // Explicit acknowledgement also works before the transcript is hydrated.
+    // Bind it to the host summary so a later status refresh cannot restore it.
+    const acknowledgedSummaryTurn = sessionActivityStore.get(sessionId)?.summary?.lastTurn;
     this.setState(prev => {
       const session = prev.sessions.get(sessionId);
       if (!session || !session.hasUnreadCompletion) return prev;
-      if (expected && (getActiveSurfaceId() !== expected.surfaceId
-        || sessionCompletionReceipt(session) !== expected.receipt)) return prev;
-      if (expected) {
-        const summary = sessionActivityStore.get(sessionId)?.summary;
-        const turn = lastUserDialogTurn(session);
-        if (summary && (summary.execution === 'running' || summary.execution === 'queued'
-          || (summary.unreadCompletion && summary.lastTurn && (summary.lastTurn.turnId !== turn?.id
-            || summary.lastTurn.status !== turn?.status
-            || summary.lastTurn.executionGeneration !== (turn?.recovery?.executionGeneration ?? turn?.recoveryEpoch)
-            || (summary.lastTurn.recoveryPending !== undefined
-              && summary.lastTurn.recoveryPending !== isTurnAwaitingRecovery(turn)))))) return prev;
-      }
 
       const updatedSession: Session = {
         ...session,
@@ -6730,7 +6717,9 @@ export class FlowChatStore {
     });
     if (didClear) {
       const turn = lastUserDialogTurn(this.state.sessions.get(sessionId));
-      if (turn) sessionActivityStore.acknowledge(sessionId, turn.id,
+      if (acknowledgedSummaryTurn) sessionActivityStore.acknowledge(sessionId, acknowledgedSummaryTurn.turnId,
+        acknowledgedSummaryTurn.executionGeneration, acknowledgedSummaryTurn.recoveryPending);
+      else if (turn) sessionActivityStore.acknowledge(sessionId, turn.id,
         turn.recovery?.executionGeneration ?? turn.recoveryEpoch, isTurnAwaitingRecovery(turn));
       this.onPersistUnreadCompletion?.(sessionId, undefined);
     }

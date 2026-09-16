@@ -1090,6 +1090,9 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
     async (sessionId: string) => {
       if (editingSessionId) return;
       try {
+        // Opening a row explicitly acknowledges its current unread result,
+        // including an already-active session or an unopened history record.
+        flowChatStore.clearSessionUnreadCompletion(sessionId);
         const session = flowChatStore.getState().sessions.get(sessionId);
         const historyOpenIntentDispatch = session
           ? dispatchHistoryOpenIntentForSession(session, 'switch')

@@ -20,7 +20,7 @@ import React, {
 import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useActiveSessionState } from '../../hooks/useActiveSessionState';
-import { useSessionCompletionReceipt } from '../../hooks/useSessionCompletionReceipt';
+import { useSessionReadOnOpen } from '../../hooks/useSessionReadOnOpen';
 import { useScrollToTurnHeader } from '../../hooks/useScrollToTurnHeader';
 import type { SessionHistoryWindowDirection } from '../../store/FlowChatStore';
 import {
@@ -443,7 +443,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   onViewportSnapshotRef.current = onViewportSnapshot;
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [isOpenViewportSettled, setIsOpenViewportSettled] = useState(false);
-  useSessionCompletionReceipt(activeSessionId, scrollerElementRef, isViewportActive && isOpenViewportSettled);
+  useSessionReadOnOpen(activeSessionId, isViewportActive);
   const shouldRestoreInitialSnapshot = Boolean(
     initialViewportSnapshot
     && initialViewportSnapshot.sessionId === activeSessionId

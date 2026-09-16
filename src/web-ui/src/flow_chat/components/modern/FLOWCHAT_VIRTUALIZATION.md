@@ -21,18 +21,17 @@ mounted geometry. Readers following output return to the live tail. The shared
 `useExploreGroupState` accepts initial expansion state for this remount boundary;
 the primary transcript retains its existing default and session lifetime.
 
-## Result visibility and read receipts
+## Opening a session marks it read
 
-`useSessionCompletionReceipt` reads the final projected non-user item for the
-unread Turn through `sessionToVirtualItems` and `getVirtualItemStableKey`. Its
-cache is keyed by Session object and device surface, so unrelated stream/store
-updates do not re-project the transcript. It observes only while a settled result
-is unread, and checks the real result end against the visible scroller rectangle
-in a focused, foreground document. A mounted overscan row, an inactive scene, or
-an older result beneath a newer summary cannot acknowledge completion. This hook
-performs no viewport writes and introduces no reservation or follow-output logic.
-The same receipt applies to the Btw viewport; opening either view alone is not a
-receipt. Native visual and focus/scroll acceptance remains a manual check.
+Navigation row clicks acknowledge the current unread result immediately.
+`useSessionReadOnOpen` also acknowledges results when the main session or Btw
+panel is open in an active scene and a focused, visible document, including new
+results received while it stays open. Inactive scenes and background windows
+retain unread results. This policy does not inspect transcript hydration, row
+geometry, scroll position, or result visibility. Device surface changes invalidate
+pending callbacks; host-summary acknowledgements prevent stale refreshes from
+restoring the same unread result. Paused recovery and pending interactions remain
+independent of read state. The hook performs no viewport writes.
 
 What the virtualization library is allowed to decide, what stays ours, and the
 one rule about rendering that only makes sense once a row's lifetime is shorter

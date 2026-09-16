@@ -70,7 +70,7 @@ import {
   SubagentAvatar,
 } from '../../subagent-identity';
 import { FlowChatManager } from '../../services/FlowChatManager';
-import { useSessionCompletionReceipt } from '../../hooks/useSessionCompletionReceipt';
+import { useSessionReadOnOpen } from '../../hooks/useSessionReadOnOpen';
 import { isImeOwnedKeyboardEvent } from '@/shared/utils/ime';
 import { bindBtwTailFollow } from './btwTailFollow';
 
@@ -166,7 +166,7 @@ const BtwSessionPanelContent: React.FC<BtwSessionPanelProps & { viewState: BtwPa
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const listHeaderRef = useRef<HTMLDivElement>(null);
   const viewportOwner = useFlowChatViewportOwner(scrollContainerRef);
-  useSessionCompletionReceipt(childSessionId ?? null, scrollContainerRef);
+  useSessionReadOnOpen(childSessionId ?? null);
   const actionBarRef = useRef<HTMLDivElement>(null);
   const [actionBarHeight, setActionBarHeight] = useState(0);
   const shouldAutoScrollRef = useRef(viewState.followTail);

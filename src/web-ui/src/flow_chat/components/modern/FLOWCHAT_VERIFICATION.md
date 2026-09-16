@@ -16,6 +16,7 @@ each missing what the other had.
 
 | Test | Contract it holds |
 |---|---|
+| `../../hooks/useSessionReadOnOpen.test.tsx` | opening and foreground results mark read; inactive scenes, background windows, unmounts, and device switches cannot acknowledge from stale views |
 | `../../selection/conversationExcerptInventory.test.ts` | source session/device isolation, draft/queue removal, sent-number retention, stable snapshots during streaming |
 | `../../selection/conversationExcerptMarkerPosition.test.ts` | text endpoint coordinates, wrapping and nested clipping; geometry contracts only, not visual acceptance |
 | `../ChatInputAttachments.test.tsx` | shared image/annotation strip, pending editing/removal, read-only sent snapshots with no write controls/shortcuts, one-line source quote, locate, keyboard containment and stale-device rejection |
