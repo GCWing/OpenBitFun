@@ -3575,10 +3575,10 @@ fn render_agent_reentry_instruction(
             );
             writeback_guidance.push_str(&vision_clause);
             writeback_guidance.push_str(
-                " The packet shape (char budgets are enforced, including the 220-char scalars and the 1200-char total):\n",
+                " The packet shape (char budgets are enforced, including the 220-char path_delta scalars, the 240-char replan_trigger_summary, the 420-char summaries, and the 1200-char total):\n",
             );
             writeback_guidance.push_str(
-                "{\"schema_version\": \"goal_vision_replan_contract_v0\", \"goal_id\": \"<GOAL_ID>\", \"agent_id\": \"<AGENT_ID>\", \"state\": \"no_followup\", \"vision_summary\": \"<what the goal set out to achieve, <=420 chars>\", \"acceptance_summary\": \"<what evidence closes it, <=420 chars>\", \"path_delta\": {\"outcome\": \"stop\", \"prior_assumption\": \"<the assumption before this turn, <=220 chars>\", \"observed_reality\": \"<what this turn verified, <=220 chars>\", \"stopped\": [\"<the work path stopped by this terminal, <=120 chars>\"], \"evidence_refs\": [\"<evidence reference, <=140 chars>\"]}}\n",
+                "{\"schema_version\": \"goal_vision_replan_contract_v0\", \"goal_id\": \"<GOAL_ID>\", \"agent_id\": \"<AGENT_ID>\", \"state\": \"no_followup\", \"vision_summary\": \"<what the goal set out to achieve, <=420 chars>\", \"acceptance_summary\": \"<what evidence closes it, <=420 chars>\", \"replan_trigger_summary\": \"<what would invalidate this acceptance, <=240 chars>\", \"path_delta\": {\"outcome\": \"stop\", \"prior_assumption\": \"<the assumption before this turn, <=220 chars>\", \"observed_reality\": \"<what this turn verified, <=220 chars>\", \"stopped\": [\"<the work path stopped by this terminal, <=120 chars>\"], \"evidence_refs\": [\"<evidence reference, <=140 chars>\"]}}\n",
             );
             writeback_guidance.push_str(
                 "Consistency is enforced across the ACK: a `no_followup` result class requires vision `state=no_followup` AND `path_delta.outcome=stop` together; `prior_assumption` and `observed_reality` are mandatory; at least one `retained`/`changed`/`stopped` item must be present (max 3 per list, <=120 chars each; `unresolved_questions` max 2; `evidence_refs` max 4). A non-terminal replan (successor todo or concrete blocker) does NOT need the vision packet - use the successor/blocker path instead.",

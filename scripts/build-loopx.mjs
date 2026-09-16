@@ -131,7 +131,14 @@ export async function buildLoopx({
     const pyinstaller = process.platform === 'win32'
       ? path.join(venv, 'Scripts', 'pyinstaller.exe')
       : path.join(venv, 'bin', 'pyinstaller');
-    sh(pip, ['install', '--disable-pip-version-check', '--quiet', 'pyinstaller']);
+    // tzdata is required at RUNTIME on Windows: CPython's zoneinfo has no
+    // system database there, and LoopX's periodic-report machine defaults
+    // normalize a timezone while building the machine-configuration
+    // registry. Without the wheel the frozen sidecar aborts with
+    // `ZoneInfoNotFoundError: 'No time zone found with key UTC'` and every
+    // CLI call logs `periodic_report.timezone is unknown; post-writeback
+    // hooks are disabled` (live 2026-09-16, dynamic-workflows-lab run).
+    sh(pip, ['install', '--disable-pip-version-check', '--quiet', 'pyinstaller', 'tzdata']);
 
     const entry = path.join(src, '_loopx_bundle_entry.py');
     writeFileSync(entry, 'from loopx.entrypoint import main\nraise SystemExit(main())\n', 'utf8');
@@ -214,6 +221,11 @@ export async function buildLoopx({
       // on those subprocess calls) is tracked separately; neither replaces the
       // other, because this one also covers the other sites.
       '--python-option', 'X utf8=1',
+      // zoneinfo loads the timezone database through importlib.resources,
+      // which PyInstaller's import analysis cannot see; bundle both the
+      // package and its data.
+      '--hidden-import', 'tzdata',
+      '--collect-data', 'tzdata',
       '--distpath', dist,
       '--workpath', path.join(work, 'build'),
       '--specpath', path.join(work, 'build'),
@@ -230,6 +242,20 @@ export async function buildLoopx({
     copyFileSync(binary, path.join(outDir, path.basename(binary)));
     for (const file of complianceFiles) {
       copyFileSync(file, path.join(outDir, path.basename(file)));
+    }
+    // tzdata ships under Apache-2.0; keep its license text next to the
+    // sidecar so the bundled timezone data keep their attribution.
+    const venvPython = process.platform === 'win32'
+      ? path.join(venv, 'Scripts', 'python.exe')
+      : path.join(venv, 'bin', 'python');
+    const tzdataLicense = shOut(venvPython, [
+      '-c',
+      'import importlib.metadata as m; d = m.distribution("tzdata"); print(next((str(d.locate_file(f)) for f in (d.files or []) if f.name.lower().startswith("license")), ""))',
+    ]).trim();
+    if (tzdataLicense) {
+      copyFileSync(tzdataLicense, path.join(outDir, 'LICENSE-tzdata'));
+    } else {
+      console.warn('build-loopx: tzdata license file not found in the wheel');
     }
 
     const pyinstallerVersion = shOut(pyinstaller, ['--version']);
