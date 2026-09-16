@@ -82,6 +82,14 @@ export function deriveSessionNavStatus({
     if (activity.execution === 'queued') return status('queued');
     if (activity.execution !== 'idle' && activity.execution !== 'error') return status('syncing');
 
+    // A local submission enters PROCESSING before the host accepts its Turn.
+    // A read issued in that gap may still describe the preceding idle result.
+    // Protect only this pending Turn, not an old processing transcript; a host
+    // result for this same Turn and local failure/cancellation remain authoritative.
+    if (machine?.currentState === SessionExecutionState.PROCESSING
+      && trackedId === turn?.id && turn?.status === 'pending'
+      && activity.lastTurn?.turnId !== turn.id) return status('running');
+
     // Idle/error settle execution; neither says whether the result was read.
     // Only a resumable checkpoint remains visible after acknowledgement. Old
     // summaries may borrow that fact from the matching hydrated user Turn.

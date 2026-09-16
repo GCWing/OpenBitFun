@@ -214,9 +214,9 @@ export function installSessionNavStatusService(): () => void {
     if (machineTurns.get(sessionId) === identity) return;
     machineTurns.set(sessionId, identity);
     if (machine.currentState === SessionExecutionState.PROCESSING) {
-      sessionActivityStore.observe(getActiveSurfaceId(), 'agentic://dialog-turn-started', {
-        sessionId, turnId: machine.context.currentDialogTurnId,
-      });
+      // A local start is not a host acknowledgement. Refresh the host facts;
+      // navigation projects the pending local Turn until those facts catch up.
+      sessionActivityStore.invalidate(sessionId);
     }
     publish(sessionId);
   }));

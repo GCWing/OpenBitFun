@@ -4,6 +4,8 @@ import type { Session } from '../types/flow-chat';
 import type { SessionActivitySummary } from '@/shared/types/session-history';
 import type { PermissionRequest } from '@/infrastructure/api/service-api/AgentAPI';
 import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { SessionStateMachineImpl } from '../state-machine/SessionStateMachine';
+import { SessionExecutionEvent, SessionExecutionState, type SessionStateMachine } from '../state-machine/types';
 
 const sources = vi.hoisted(() => ({
   sessions: new Map<string, Session>(),
@@ -15,6 +17,8 @@ const sources = vi.hoisted(() => ({
   permissionListeners: new Set<() => void>(),
   reachability: new Map<string, 'unknown' | 'reachable' | 'unreachable'>(),
   navigationListeners: new Set<() => void>(),
+  machines: new Map<string, SessionStateMachine>(),
+  machineListeners: new Set<(sessionId: string, machine: SessionStateMachine) => void>(),
 }));
 vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({ agentAPI: Object.fromEntries([
   'onSessionStateChanged', 'onSessionHistoryChanged', 'onSessionDeleted', 'onDialogTurnStarted',
@@ -40,7 +44,11 @@ vi.mock('../store/FlowChatStore', () => ({ flowChatStore: {
   },
 } }));
 vi.mock('../state-machine', () => ({ stateMachineManager: {
-  getSnapshot: () => null, subscribeGlobal: () => () => {},
+  getSnapshot: (sessionId: string) => sources.machines.get(sessionId) ?? null,
+  subscribeGlobal: (listener: (sessionId: string, machine: SessionStateMachine) => void) => {
+    sources.machineListeners.add(listener);
+    return () => sources.machineListeners.delete(listener);
+  },
 } }));
 vi.mock('../session-drivers/registry', () => {
   const navigationStatusSource = {
@@ -91,6 +99,7 @@ beforeEach(() => {
   sources.sessions.clear();
   sources.permissions = [];
   sources.reachability.clear();
+  sources.machines.clear();
   activateSurface(`service-test-${++sequence}`);
 });
 afterEach(() => {
@@ -104,6 +113,50 @@ const install = (...ids: string[]) => {
 };
 
 describe('navigation status synchronization', () => {
+  it('keeps a local submission running across a host read that predates host acceptance', async () => {
+    const id = 'local-start-race';
+    const pending = { id: 'new-turn', status: 'pending', modelRounds: [] } as unknown as Session['dialogTurns'][number];
+    sources.sessions.set(id, { ...row(id), historyState: 'new', dialogTurns: [pending] });
+    sources.read.mockResolvedValue(response([activity(id, 'idle')]));
+    install(id);
+    await vi.advanceTimersByTimeAsync(100);
+    const machine = new SessionStateMachineImpl(id);
+    await machine.transition(SessionExecutionEvent.START, { dialogTurnId: pending.id });
+    const snapshot = machine.getSnapshot();
+    sources.machines.set(id, snapshot);
+    sources.machineListeners.forEach(listener => listener(id, snapshot));
+    expect(sessionNavStatusService.getSnapshot(id).kind).toBe('running');
+    // The old idle snapshot is accepted as a host fact, but does not cancel a local submission.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(sessionActivityStore.get(id)?.summary?.execution).toBe('idle');
+    expect(sessionNavStatusService.getSnapshot(id).kind).toBe('running');
+    sources.events.get('onDialogTurnStarted')!({ sessionId: id, turnId: pending.id });
+    expect(sessionNavStatusService.getSnapshot(id).kind).toBe('running');
+    // Host completion wins even if the local transcript has not caught up yet.
+    sources.events.get('onDialogTurnCompleted')!({ sessionId: id, turnId: pending.id });
+    expect(sessionNavStatusService.getSnapshot(id).kind).toBe('unread');
+  });
+
+  it.each([SessionExecutionState.IDLE, SessionExecutionState.ERROR])(
+    'ends local startup protection when the submitting machine enters %s', async state => {
+      const id = `submission-ended-${state}`;
+      sources.sessions.set(id, { ...row(id), historyState: 'new', dialogTurns: [
+        { id: 'new-turn', status: 'pending', modelRounds: [] } as unknown as Session['dialogTurns'][number],
+      ] });
+      sources.read.mockResolvedValue(response([activity(id, 'idle')]));
+      install(id);
+      await vi.advanceTimersByTimeAsync(100);
+      const machine = new SessionStateMachineImpl(id);
+      await machine.transition(SessionExecutionEvent.START, { dialogTurnId: 'new-turn' });
+      sources.machines.set(id, machine.getSnapshot());
+      sources.machineListeners.forEach(listener => listener(id, sources.machines.get(id)!));
+      expect(sessionNavStatusService.getSnapshot(id).kind).toBe('running');
+      sources.machines.set(id, { ...machine.getSnapshot(), currentState: state });
+      sources.machineListeners.forEach(listener => listener(id, sources.machines.get(id)!));
+      expect(sessionNavStatusService.getSnapshot(id).kind).toBe('idle');
+    },
+  );
+
   it('keeps selection stable and promotes background starts even without mounted rows', () => {
     const older = { ...row('older'), createdAt: 10 };
     const newer = { ...row('newer'), createdAt: 20 };
