@@ -2421,10 +2421,18 @@ function renderEnvironment() {
     environmentFact('gitWorktree', text('gitWorktree'), core.gitWorktree),
     environmentFact('agentModel', text('agentModel'), core.agentModel),
   );
-  view.optionalEnvironmentList.replaceChildren(
-    environmentFact('pythonFallback', text('pythonFallback'), optional.pythonFallback),
-    environmentFact('githubAuth', text('githubAuth'), optional.githubAuth),
-  );
+  // The optional list only shows capabilities that apply to the selected
+  // runtime: `unknown` means the capability is not part of it - e.g. the Python
+  // fallback is a build-time concern for the bundled sidecar, not a runtime
+  // dependency the owner installs (live 2026-09-16) - so rendering it as
+  // "未知 / not required" only adds noise.
+  const optionalFacts = [
+    ['pythonFallback', optional.pythonFallback],
+    ['githubAuth', optional.githubAuth],
+  ]
+    .filter(([, fact]) => fact && fact.status !== 'unknown')
+    .map(([key, fact]) => environmentFact(key, text(key), fact));
+  view.optionalEnvironmentList.replaceChildren(...optionalFacts);
 }
 
 const ERROR_TASK_STATES = new Set(['recovery_required', 'failed']);
