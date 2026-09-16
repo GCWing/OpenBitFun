@@ -17,6 +17,7 @@ const MAX_INTAKE_HISTORY = 12;
 const HOST_CLOCK_TICK_MS = 5000;
 const HOST_RESUME_GAP_MS = 30000;
 const STALE_ACTIVE_REATTACH_MS = 30000;
+const BRIDGE_CALL_TIMEOUT_MS = 30000;
 const MODEL_SELECTION_STORAGE_KEY = 'loopx.modelId';
 const INTAKE_HISTORY_STORAGE_KEY = 'loopx.intakeHistory';
 const METADATA_HYDRATE_TIMEOUT_MS = 8000;
@@ -2175,6 +2176,23 @@ function applySnapshot(snapshot) {
   }
 }
 
+// The host bridge is IPC: a backgrounded webview can lose the reply and leave
+// the promise pending forever, which used to freeze the rail resume button in
+// its disabled state (`state.syncing` / `state.repositoryResumePending` never
+// cleared). Bound every state-changing bridge call so the UI can recover.
+function withBridgeTimeout(promise, label) {
+  let timer = null;
+  const timeout = new Promise((_resolve, reject) => {
+    timer = window.setTimeout(
+      () => reject(new Error(`${label} timeout`)),
+      BRIDGE_CALL_TIMEOUT_MS,
+    );
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== null) window.clearTimeout(timer);
+  });
+}
+
 async function attachSnapshot(loadHistory = false, resumeDetected = false) {
   if (!app || !app.loopx) {
     showBridgeUnavailable();
@@ -2195,11 +2213,14 @@ async function attachSnapshot(loadHistory = false, resumeDetected = false) {
       const knownStreamId = state.snapshot && state.snapshot.streamId;
       const afterCursor = state.snapshot && state.snapshot.cursor;
       if (!state.connected) view.connectionLabel.textContent = text('connecting');
-      const response = await app.loopx.attach({
-        ...(knownStreamId ? { knownStreamId } : {}),
-        ...(Number.isSafeInteger(afterCursor) ? { afterCursor } : {}),
-        ...(reportResume ? { resumeDetected: true } : {}),
-      });
+      const response = await withBridgeTimeout(
+        app.loopx.attach({
+          ...(knownStreamId ? { knownStreamId } : {}),
+          ...(Number.isSafeInteger(afterCursor) ? { afterCursor } : {}),
+          ...(reportResume ? { resumeDetected: true } : {}),
+        }),
+        'host attach',
+      );
       state.lastReattachAt = Date.now();
       applySnapshot(response && response.snapshot);
       void loadModelCatalog();
@@ -6206,12 +6227,15 @@ async function resumeRepository() {
   renderRepositoryActions(state.snapshot.tasks || []);
   view.repositoryResumeConfirm.disabled = true;
   try {
-    const response = await app.loopx.action({
-      action: 'resume_repository',
-      repository: target.repository,
-      clientRequestId: requestId(),
-      expectedRevision: Number(state.snapshot.revision || 0),
-    });
+    const response = await withBridgeTimeout(
+      app.loopx.action({
+        action: 'resume_repository',
+        repository: target.repository,
+        clientRequestId: requestId(),
+        expectedRevision: Number(state.snapshot.revision || 0),
+      }),
+      'resume_repository',
+    );
     if (response && response.status === 'revision_conflict') {
       showNotice(response.message || text('revisionConflict'), 'error');
     } else if (response && response.status === 'rejected') {

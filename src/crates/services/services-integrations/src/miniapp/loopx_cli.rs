@@ -667,7 +667,7 @@ impl LoopxCliProcessAdapter {
             Ok(status) => status,
             Err(error) => {
                 log::warn!(
-                    "LoopX agent-vision status projection failed; the replan turn will not embed the recorded vision: goal={}, agent={}, error={}",
+                    "LoopX agent-vision status projection failed; the turn will not embed the recorded vision: goal={}, agent={}, error={}",
                     goal_id,
                     agent_id,
                     error
@@ -693,18 +693,25 @@ impl LoopxCliProcessAdapter {
                 .and_then(Value::as_str)
                 .is_some_and(|value| value == agent_id)
         })?;
-        let vision = agent_entry
-            .pointer("/latest_agent_vision_run/agent_vision")
-            .cloned()?;
-        // Only a vision with a non-empty patch counts as recorded: an empty
-        // projection cannot seed the verbatim-copy requirement.
-        let has_patch = vision
-            .get("vision_patch")
-            .and_then(Value::as_object)
-            .is_some_and(|patch| !patch.is_empty());
-        if !has_patch {
-            return None;
-        }
+        // Prefer the durable outcome checkpoint, then the latest agent vision
+        // run: those are the fields LoopX compares against when it decides
+        // whether a packet changes mainline fields. Live 2026-09-16: reading
+        // only the agent-run patch made every terminal turn report "no vision
+        // recorded" while LoopX held an accepted vision, and each freshly
+        // authored packet was refused with
+        // `... requires goal_path_delta_v0 with outcome=replan`.
+        let vision = [
+            "/latest_outcome_vision_checkpoint_run/agent_vision",
+            "/latest_agent_vision_run/agent_vision",
+        ]
+        .into_iter()
+        .filter_map(|pointer| agent_entry.pointer(pointer).cloned())
+        .find(|candidate| {
+            candidate
+                .get("vision_patch")
+                .and_then(Value::as_object)
+                .is_some_and(|patch| !patch.is_empty())
+        })?;
         Some(vision)
     }
 
@@ -2304,26 +2311,24 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 )
             })?;
             let semantic_obligation = semantic_replan_obligation_id(&guard.payload);
-            // A replan turn that closes the goal with a coverage-backed
-            // terminal must reuse the ALREADY RECORDED vision's durable fields
-            // verbatim (see the guidance in `render_agent_reentry_instruction`);
-            // the CLI refuses a terminal packet that changes them. Resolve
-            // the recorded vision through the pinned CLI's own `status`
-            // projection so the agent does not have to discover it by burning
-            // rounds on typed refusals (live 2026-09-10: the replan turn
-            // hand-wrote a fresh vision packet, was refused, and settled with
-            // no durable progress, which re-drove the replan obligation).
-            let recorded_agent_vision = if semantic_obligation.is_some() {
-                self.latest_recorded_agent_vision(
+            // Any turn can be asked by LoopX to satisfy a vision checkpoint,
+            // and a close must reuse the ALREADY RECORDED vision's durable
+            // fields verbatim (see the guidance in
+            // `render_agent_reentry_instruction`); the CLI refuses a packet
+            // that changes them. Resolve the recorded vision through the
+            // pinned CLI's own `status` projection on EVERY turn so the agent
+            // never has to discover or re-derive it by burning rounds on typed
+            // refusals (live 2026-09-16: the clause was rendered only for
+            // replan obligations, and a close turn without it lost the goal to
+            // `settlement_no_progress`).
+            let recorded_agent_vision = self
+                .latest_recorded_agent_vision(
                     &request.context,
                     &request.goal_id,
                     &request.agent_id,
                     &observer,
                 )
-                .await
-            } else {
-                None
-            };
+                .await;
             let agent_instruction = render_agent_reentry_instruction(
                 &guard.payload,
                 &verified,
@@ -3392,6 +3397,42 @@ const AGENT_SUMMARY_CONTRACT: &str = r#"End your final response with a fenced bl
 
 Conditional rules: already_fixed_upstream requires fixed_by; wont_fix requires wont_fix_reason; needs_info requires a non-empty missing_info; reproduced requires reproduction_evidence. Use wont_fix_reason evaluation_pending when the issue is a real request that is still being evaluated or has no actionable scope yet - that is not by_design, which means the current behaviour is intended. When the verdict is wont_fix, why_no_fix must say in the owner's terms why nothing was changed. next_step must not introduce facts that are not in decision or completed; write it for the repository owner (what they may want to do next: close the issue, review the pull request, supply the missing detail) and in the same language as the issue discussion you read, never in internal LoopX terms. When a user gate is pending, skip decision and next_step — the host approval card carries it."#;
 
+/// The vision-checkpoint paragraph shared by every settlement flavor.
+///
+/// LoopX compares an `--agent-vision-json` packet against the goal's accepted
+/// vision: changing `vision_summary`/`acceptance_summary` makes the CLI demand
+/// `path_delta.outcome=replan`, while a `no_followup` close demands
+/// `outcome=stop`, so a freshly authored terminal packet is an unsatisfiable
+/// pair. The host therefore hands the agent either the recorded fields (copy
+/// verbatim) or a deterministic lane text plus the exact two-step replan
+/// recipe. Live 2026-09-16 (dynamic-workflows-lab #1): the host kept saying
+/// "no vision is recorded, author fresh" while LoopX held an accepted vision;
+/// the agent patched around it, exhausted its corrective attempts, and the
+/// host parked the task as `settlement_no_progress`.
+fn render_vision_checkpoint_clause(recorded_agent_vision: Option<&Value>, goal_id: &str) -> String {
+    match recorded_agent_vision.and_then(|vision| {
+        vision
+            .get("vision_patch")
+            .and_then(Value::as_object)
+            .filter(|patch| !patch.is_empty())
+    }) {
+        Some(recorded_patch) => {
+            let recorded_json = serde_json::to_string(recorded_patch)
+                .unwrap_or_else(|_| "<recorded vision unavailable>".to_string());
+            format!(
+                "A vision is ALREADY RECORDED for this goal and agent. Your --agent-vision-json packet MUST copy these exact field values verbatim (do not reword, translate, summarize, or trim them):\n{recorded_json}\nOnly `state` and `path_delta` are new in your packet: set `state` to `no_followup` and write `path_delta` with `outcome: stop`, fresh `prior_assumption` and `observed_reality`, at least one `stopped` item, and `evidence_refs` citing your validation evidence. BEFORE submitting, re-read your packet file and compare each copied field against the recorded values above character by character - any difference in vision_summary, role_scope, acceptance_summary, or advancement_policy makes the CLI demand `path_delta.outcome=replan`, which the `no_followup` result class then rejects - an unsatisfiable pair that burns the turn. If the durable fields genuinely must change, that is a REPLAN, not a terminal: submit the same `--agent-vision-json` packet with its `path_delta` (the `goal_path_delta_v0`) set to `outcome: replan` plus `--repair-delta-kind goal_vision_patch`, then close the goal in a FOLLOWING writeback with those now-recorded fields copied verbatim and `path_delta.outcome=stop`. The path delta lives INSIDE the packet (`path_delta`) - do not add a separate `goal_path_delta_v0` key or flag."
+            )
+        }
+        None => {
+            let seed = r#"{"schema_version": "goal_vision_replan_contract_v0", "goal_id": "__GOAL_ID__", "agent_id": "<AGENT_ID>", "state": "no_followup", "vision_summary": "Deliver goal __GOAL_ID__ through the issue-fix lane: verify the tracked issue against live evidence, record exactly one route decision, and (when a change is required) prepare a validated fix for owner-approved publication.", "acceptance_summary": "Goal __GOAL_ID__ is satisfied by a recorded, evidence-backed route decision for its issue - a no-change conclusion or a validated fix whose publication was explicitly owner-approved.", "replan_trigger_summary": "New live evidence (maintainer comments, linked or closing pull requests, or an explicit change request) that invalidates the recorded route decision.", "path_delta": {"outcome": "replan", "prior_assumption": "The lane had no recorded vision baseline.", "observed_reality": "The host recorded the deterministic issue-fix lane vision for this goal.", "changed": ["Recorded the lane vision baseline for this goal."], "evidence_refs": ["host-authored issue-fix lane vision"]}}"#
+                .replace("__GOAL_ID__", goal_id);
+            format!(
+                "No agent-vision baseline is readable for goal {goal_id} yet. If LoopX requires a vision checkpoint (`missing_baseline` / `write_vision_patch`), do NOT author free-form fields and do NOT reword them between attempts: first record this exact host-authored lane vision through `--agent-vision-json`:\n{seed}\nThen run the writeback or terminal close again. When a vision packet is required, copy the fields above verbatim, set `state` to `no_followup` and `path_delta.outcome=stop`, and add your real `stopped`/`evidence_refs` items. If the CLI refuses a packet with `changes durable fields ... requires outcome=replan`, do NOT reword it and do NOT add a separate `goal_path_delta_v0` key: resubmit the SAME fields as a replan (its `path_delta` with `outcome: replan` plus `--repair-delta-kind goal_vision_patch`) and afterwards close with the recorded fields copied verbatim and `outcome: stop`."
+            )
+        }
+    }
+}
+
 fn render_agent_reentry_instruction(
     packet: &Value,
     command: &VerifiedLoopxCommand,
@@ -3485,6 +3526,11 @@ fn render_agent_reentry_instruction(
             _ => WritebackFlavor::Unbound,
         }
     };
+    let goal_id_text = envelope
+        .get("goal_id")
+        .and_then(Value::as_str)
+        .unwrap_or("<GOAL_ID>");
+    let vision_clause = render_vision_checkpoint_clause(recorded_agent_vision, goal_id_text);
     let (writeback_command, writeback_guidance) = match writeback_flavor {
         WritebackFlavor::Todo(todo_id) => (
             format!(
@@ -3492,7 +3538,9 @@ fn render_agent_reentry_instruction(
                 agent_shell_value(todo_id),
                 agent_shell_value(turn_id),
             ),
-            "Fill the <placeholders> from your validated evidence (classification is a short public-safe label of what this run validated); substitute `--delivery-outcome primary_goal_outcome` only when this turn completed the goal's primary result. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags.".to_string(),
+            format!(
+                "Fill the <placeholders> from your validated evidence (classification is a short public-safe label of what this run validated); substitute `--delivery-outcome primary_goal_outcome` only when this turn completed the goal's primary result. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags.\n\n{vision_clause}"
+            ),
         ),
         WritebackFlavor::AutonomousReplan(obligation_id) => {
             // Guidance (single source: the pinned v1.0.1 validation code in
@@ -3530,25 +3578,6 @@ fn render_agent_reentry_instruction(
             // The host embeds the recorded fields so the agent copies them;
             // a genuinely changed direction is a successor or blocker
             // outcome, never a terminal.
-            let vision_clause =
-                match recorded_agent_vision.and_then(|vision| {
-                    vision
-                        .get("vision_patch")
-                        .and_then(Value::as_object)
-                        .filter(|patch| !patch.is_empty())
-                }) {
-                    Some(recorded_patch) => {
-                        let recorded_json = serde_json::to_string(recorded_patch)
-                            .unwrap_or_else(|_| "<recorded vision unavailable>".to_string());
-                        format!(
-                            "A vision is ALREADY RECORDED for this goal and agent. Your --agent-vision-json packet MUST copy these exact field values verbatim (do not reword, translate, summarize, or trim them):\n{recorded_json}\nOnly `state` and `path_delta` are new in your packet: set `state` to `no_followup` and write `path_delta` with `outcome: stop`, fresh `prior_assumption` and `observed_reality`, at least one `stopped` item, and `evidence_refs` citing your validation evidence. BEFORE submitting, re-read your packet file and compare each copied field against the recorded values above character by character - any difference in vision_summary, role_scope, acceptance_summary, or advancement_policy makes the CLI demand `path_delta.outcome=replan`, which the `no_followup` result class then rejects - an unsatisfiable pair that burns the turn (a live agent reworded the summary and lost the turn to exactly this refusal). If the recorded vision text is genuinely wrong for the outcome you observed, do NOT choose the terminal path and do NOT paraphrase: record a successor todo or a concrete blocker instead."
-                        )
-                    }
-                    None => {
-                        "No vision is recorded for this goal yet, so your packet authors the vision fields fresh."
-                            .to_string()
-                    }
-                };
             let mut writeback_guidance = String::from(
                 "Fill the <placeholders>: choose the `--progress-result-class` and a matching `--repair-delta-kind` for the one semantic outcome you recorded, and fill at least one stable identifier (`--progress-surface-id`, `--progress-hypothesis-id`, `--progress-probe-kind`, or `--progress-evidence-id`) - a bare result class is rejected as unattributable. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags. When the existing goal vision is still correct and you are NOT closing the goal, also append `--vision-unchanged-reason \"<compact reason>\"` instead of writing a patch (the CLI rejects a reason longer than 240 characters).",
             );
@@ -4627,7 +4656,9 @@ mod custom_runner_contract_tests {
         assert!(instruction.contains("--progress-result-class no_followup"));
         assert!(instruction.contains("--progress-coverage-scope-id <coverage-scope-id>"));
         assert!(instruction.contains("--agent-vision-json <vision-file>"));
-        assert!(instruction.contains("No vision is recorded for this goal yet"));
+        assert!(instruction.contains("No agent-vision baseline is readable"));
+        assert!(instruction.contains("host-authored lane vision"));
+        assert!(instruction.contains("do NOT add a separate `goal_path_delta_v0` key"));
         // The spend command for a replan binding stays bound to the
         // obligation, not to a todo.
         assert!(instruction.contains("--replan-obligation-id"));
@@ -4696,7 +4727,7 @@ mod custom_runner_contract_tests {
         assert!(instruction.contains("recorded summary that must be reused verbatim"));
         assert!(instruction.contains("recorded acceptance that must be reused verbatim"));
         // The first-vision fallback must not appear once a vision exists.
-        assert!(!instruction.contains("No vision is recorded for this goal yet"));
+        assert!(!instruction.contains("No agent-vision baseline is readable"));
         assert!(instruction.contains("path_delta.outcome=replan"));
     }
 
