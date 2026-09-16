@@ -3550,7 +3550,7 @@ fn render_agent_reentry_instruction(
                     }
                 };
             let mut writeback_guidance = String::from(
-                "Fill the <placeholders>: choose the `--progress-result-class` and a matching `--repair-delta-kind` for the one semantic outcome you recorded, and fill at least one stable identifier (`--progress-surface-id`, `--progress-hypothesis-id`, `--progress-probe-kind`, or `--progress-evidence-id`) - a bare result class is rejected as unattributable. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags. When the existing goal vision is still correct and you are NOT closing the goal, also append `--vision-unchanged-reason \"<compact reason>\"` instead of writing a patch.",
+                "Fill the <placeholders>: choose the `--progress-result-class` and a matching `--repair-delta-kind` for the one semantic outcome you recorded, and fill at least one stable identifier (`--progress-surface-id`, `--progress-hypothesis-id`, `--progress-probe-kind`, or `--progress-evidence-id`) - a bare result class is rejected as unattributable. Run the command verbatim otherwise - do not add, remove, or reorder the fixed flags. When the existing goal vision is still correct and you are NOT closing the goal, also append `--vision-unchanged-reason \"<compact reason>\"` instead of writing a patch (the CLI rejects a reason longer than 240 characters).",
             );
             // Verified live 2026-09-11 (dynamic-workflows-lab issue #1, replan
             // turn bitfun-2c03fe0d vs the corrective bitfun-95c3217c): a
@@ -3564,10 +3564,10 @@ fn render_agent_reentry_instruction(
             // Teaching the order removes the whole first-attempt refusal
             // class without pattern-matching any error string.
             writeback_guidance.push_str(&format!(
-                "\n\nBefore a TERMINAL close, settle the todo lifecycle first when the goal still has a completed todo recorded with an active-goal continuation (the normal state after a settled work turn): run `{cli_prefix} todo complete {goal_id_arg} --todo-id <completed-todo-id> --no-follow-up {agent_id_arg} --execute` for that todo, THEN the terminal command below - a coverage-backed terminal cannot replace Todo lifecycle settlement and is refused otherwise.",
+                "\n\nBefore a TERMINAL close, settle the todo lifecycle first when the goal still has a completed todo recorded with an active-goal continuation (the normal state after a settled work turn): run `{cli_prefix} todo complete {goal_id_arg} --todo-id <latest-completed-todo-id> --no-follow-up --note \"<one-line terminal reason>\" {agent_id_arg} --execute` for the LATEST completed todo, whose continuation is the goal's active one (a todo that already has a successor cannot be closed terminally; the CLI refuses `--no-follow-up` without `--note` or `--evidence`), THEN the terminal command below - a coverage-backed terminal cannot replace Todo lifecycle settlement and is refused otherwise.",
             ));
             writeback_guidance.push_str(
-                "\n\nFor the coverage-backed TERMINAL (`--progress-result-class no_followup`, the normal close when the goal ends without further agent work) do NOT use the command above: use exactly this terminal command instead (that result class additionally requires `--progress-coverage-scope-id` and at least one `--progress-evidence-id` - the generic four-identifier list is not enough):\n`",
+                "\n\nFor the coverage-backed TERMINAL (`--progress-result-class no_followup`, the normal close when the goal ends without further agent work) do NOT use the command above: use exactly this terminal command instead (that result class additionally requires `--progress-coverage-scope-id` and at least one `--progress-evidence-id` - the generic four-identifier list is not enough; the coverage scope id must be a public-safe identifier with no spaces, 1-128 characters, e.g. `issue_fix_coverage`):\n`",
             );
             writeback_guidance.push_str(&terminal_command);
             writeback_guidance.push_str(
