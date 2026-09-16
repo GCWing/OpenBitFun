@@ -72,6 +72,7 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
   const [draft, setDraft] = useState(() => format(value));
   const [editing, setEditing] = useState(false);
   const compositionActiveRef = useRef(false);
+  const skipBlurCommitRef = useRef(false);
 
   useEffect(() => { if (!editing) setDraft(format(value)); }, [editing, format, value]);
 
@@ -79,14 +80,17 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
     const parsed = Number.parseFloat(draft);
     if (Number.isFinite(parsed)) {
       const next = clamp(parsed);
-      onValueChange(next);
+      if (next !== value) onValueChange(next);
       setDraft(format(next));
     } else {
       setDraft(format(value));
     }
     setEditing(false);
   }, [clamp, draft, format, onValueChange, value]);
-  const changeBy = (amount: number) => onValueChange(clamp(value + amount));
+  const changeBy = (amount: number) => {
+    const next = clamp(value + amount);
+    if (next !== value) onValueChange(next);
+  };
   return (
     <span className={classNames(styles.root, className)} data-openbitfun-component="number-input" data-disabled={disabled ? "true" : "false"} data-field-surface={fieldSurface} data-size={size} data-variant={variant}>
       {label && <span className={styles.label} data-openbitfun-part="label">{label}</span>}
@@ -112,7 +116,8 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
           inputMode="decimal"
           onBlur={(event) => {
             onBlur?.(event);
-            if (!event.defaultPrevented) commit();
+            if (!event.defaultPrevented && !skipBlurCommitRef.current) commit();
+            skipBlurCommitRef.current = false;
           }}
           onChange={(event) => setDraft(event.currentTarget.value)}
           onCompositionEnd={(event) => {
@@ -132,8 +137,8 @@ export const NumberInput = forwardRef<HTMLInputElement, NumberInputProps>(functi
             if ((event.key === "Enter" || event.key === "Escape") && isImeOwnedKeyboardEvent(event, compositionActiveRef.current)) { event.stopPropagation(); return; }
             if (event.key === "ArrowUp") { event.preventDefault(); changeBy(step); }
             if (event.key === "ArrowDown") { event.preventDefault(); changeBy(-step); }
-            if (event.key === "Enter") { commit(); event.currentTarget.blur(); }
-            if (event.key === "Escape") { setDraft(format(value)); setEditing(false); event.currentTarget.blur(); }
+            if (event.key === "Enter") { event.currentTarget.blur(); }
+            if (event.key === "Escape") { skipBlurCommitRef.current = true; setDraft(format(value)); setEditing(false); event.currentTarget.blur(); }
           }}
           ref={ref}
           type="text"

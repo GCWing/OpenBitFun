@@ -87,6 +87,11 @@ fn config_value_for_persistence(config: &GlobalConfig) -> OpenBitFunResult<Value
         .map_err(|e| OpenBitFunError::config(format!("Failed to serialize config: {}", e)))?;
     prune_default_ai_tool_argument_json_repair(&mut value);
     prune_default_ai_max_rounds(&mut value);
+    if config.ai.user_question_timeout_secs == AIConfig::default().user_question_timeout_secs {
+        if let Some(ai) = value.get_mut("ai").and_then(Value::as_object_mut) {
+            ai.remove("user_question_timeout_secs");
+        }
+    }
     prune_default_memories_config(&mut value)?;
     prune_default_web_search_config(&mut value)?;
     Ok(value)
@@ -1008,6 +1013,28 @@ mod tests {
                 custom_request_body: None,
             }),
             ..InstallerConfigHandoff::default()
+        }
+    }
+
+    #[test]
+    fn user_question_timeout_default_is_readable_but_not_persisted() {
+        let mut config = GlobalConfig::default();
+        assert_eq!(
+            serde_json::to_value(&config).unwrap()["ai"]["user_question_timeout_secs"],
+            180
+        );
+        assert!(config_value_for_persistence(&config).unwrap()["ai"]
+            .get("user_question_timeout_secs")
+            .is_none());
+        for timeout in [None, Some(0), Some(60), Some(180)] {
+            config.ai.user_question_timeout_secs = timeout;
+            let persisted = config_value_for_persistence(&config).unwrap();
+            assert_eq!(
+                persisted["ai"].get("user_question_timeout_secs").is_none(),
+                timeout == Some(180)
+            );
+            let restored: GlobalConfig = serde_json::from_value(persisted).unwrap();
+            assert_eq!(restored.ai.user_question_timeout_secs, timeout);
         }
     }
 

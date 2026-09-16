@@ -3,6 +3,7 @@
  * Initializes event listeners and handles various Agentic events
  */
 
+import { projectUserQuestionTiming } from '../../utils/userQuestionTiming';
 import { FlowChatStore, mergeModelRoundAttemptDiagnostics } from '../../store/FlowChatStore';
 import { initializeAcpPlanState } from '../acpPlanState';
 import { isSessionTurnRetired } from '../../store/sessionMutationStore';
@@ -62,7 +63,6 @@ import {
   clearRecentHistorySessionOpenIntent,
 } from '../sessionOpenIntent';
 
-const pendingImageAnalysisTurns = new Map<string, string>();
 import { 
   debouncedSaveDialogTurn, 
   immediateSaveDialogTurn, 
@@ -96,6 +96,34 @@ import {
 } from '../../utils/optimisticTurnAdoption';
 import { isAcpFlowSession } from '../../utils/acpSession';
 
+const pendingImageAnalysisTurns = new Map<string, string>();
+
+/** Apply host timing separately from model arguments and tolerate event batching. */
+export function handleUserQuestionWaiting(context: FlowChatContext, event: {
+  session_id: string;
+  tool_id: string;
+  questions: { responseDeadlineMs?: number | null; responseHostNowMs?: number };
+}): void {
+  if (!event || typeof event.session_id !== 'string' || typeof event.tool_id !== 'string') return;
+  context.eventBatcher.flushNow();
+  const session = context.flowChatStore.getState().sessions.get(event.session_id);
+  for (const turn of session?.dialogTurns ?? []) {
+    for (const round of turn.modelRounds) {
+      const tool = round.items.find(item => item.type === 'tool'
+        && (item.id === event.tool_id || (item as FlowToolItem).toolCall?.id === event.tool_id)) as FlowToolItem | undefined;
+      if (!tool) continue;
+      if (['completed', 'error', 'cancelled', 'rejected'].includes(tool.status)
+        || tool.userQuestionWait) return;
+      const updates: Partial<FlowToolItem> = {
+        userQuestionWait: projectUserQuestionTiming(event.questions),
+      };
+      context.flowChatStore.updateModelRoundItem(event.session_id, turn.id, tool.id, updates);
+      return;
+    }
+  }
+  // Restore the authoritative mailbox if the tool/turn has not arrived yet.
+  requestRuntimeProjectionRepair(event.session_id);
+}
 const log = createLogger('EventHandlerModule');
 const TURN_COMPLETION_QUIET_WINDOW_MS = 500;
 
@@ -781,6 +809,9 @@ export async function initializeEventListeners(
   onTodoWriteResult: (sessionId: string, turnId: string, result: any) => void
 ): Promise<() => void> {
   const { api } = await import('@/infrastructure/api/service-api/ApiClient');
+  const unlistenUserQuestion = api.listen('backend-event-toolawaitinguserinput', (payload: any) => {
+    handleUserQuestionWaiting(context, payload?.value ?? payload);
+  });
   const unlistenProgress = api.listen('backend-event-toolexecutionprogress', (payload: any) => {
     handleToolExecutionProgress(payload);
   });
@@ -897,6 +928,7 @@ export async function initializeEventListeners(
 
   return () => {
     unlistenProgress();
+    unlistenUserQuestion();
     unlistenTerminalReady();
     unlistenBackgroundCommandLifecycle();
     unlistenMcpInteractionRequest();

@@ -1031,6 +1031,10 @@ pub struct AIConfig {
     #[serde(default = "default_tool_execution_timeout")]
     pub tool_execution_timeout_secs: Option<u64>,
 
+    /// Unattended question timeout; null or zero waits indefinitely.
+    #[serde(default = "default_user_question_timeout")]
+    pub user_question_timeout_secs: Option<u32>,
+
     /// Whether tools with deferred exposure load their schemas on demand.
     #[serde(default = "default_enable_deferred_tool_loading")]
     pub enable_deferred_tool_loading: bool,
@@ -1412,6 +1416,10 @@ fn default_stream_ttft_timeout() -> Option<u64> {
 }
 
 /// Default is no timeout (wait forever).
+fn default_user_question_timeout() -> Option<u32> {
+    Some(180)
+}
+
 fn default_tool_execution_timeout() -> Option<u64> {
     None
 }
@@ -1926,6 +1934,7 @@ impl Default for AIConfig {
             stream_idle_timeout_secs: default_stream_idle_timeout(),
             stream_ttft_timeout_secs: default_stream_ttft_timeout(),
             tool_execution_timeout_secs: default_tool_execution_timeout(),
+            user_question_timeout_secs: default_user_question_timeout(),
             enable_deferred_tool_loading: default_enable_deferred_tool_loading(),
             enable_context_compression_prefetch: true,
             allow_tool_json_repair: true,
@@ -3727,4 +3736,35 @@ fn reject_retired_config_fields(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod user_question_timeout_tests {
+    use super::AIConfig;
+    #[test]
+    fn legacy_defaults_and_unlimited_round_trip() {
+        let mut legacy = serde_json::to_value(AIConfig::default()).unwrap();
+        legacy
+            .as_object_mut()
+            .unwrap()
+            .remove("user_question_timeout_secs");
+        let config: AIConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(config.user_question_timeout_secs, Some(180));
+        assert_eq!(
+            serde_json::to_value(&config).unwrap()["user_question_timeout_secs"],
+            180
+        );
+        for value in [
+            serde_json::Value::Null,
+            serde_json::json!(0),
+            serde_json::json!(60),
+        ] {
+            legacy["user_question_timeout_secs"] = value.clone();
+            let config: AIConfig = serde_json::from_value(legacy.clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(config).unwrap()["user_question_timeout_secs"],
+                value
+            );
+        }
+    }
 }

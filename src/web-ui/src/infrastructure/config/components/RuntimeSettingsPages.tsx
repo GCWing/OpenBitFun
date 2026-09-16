@@ -180,6 +180,7 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
   const [subagentMaxConcurrency, setSubagentMaxConcurrency] = useState(DEFAULT_SUBAGENT_MAX_CONCURRENCY);
   const [swarmMaxConcurrency, setSwarmMaxConcurrency] = useState(DEFAULT_SWARM_MAX_CONCURRENCY);
   const [executionTimeout, setExecutionTimeout] = useState('');
+  const [userQuestionTimeout, setUserQuestionTimeout] = useState('180');
   const [subagentBatchExecutionPolicy, setSubagentBatchExecutionPolicy] =
     useState<SubagentBatchExecutionPolicy>(DEFAULT_SUBAGENT_BATCH_EXECUTION_POLICY);
   const [toolExecConfigLoading, setToolExecConfigLoading] = useState(false);
@@ -346,6 +347,7 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
           execTimeout,
           loadedSubagentBatchExecutionPolicy,
           loadedToolPermissionConfig,
+          loadedUserQuestionTimeout,
           loadedPermissionModeControlVisibility,
         ] = await Promise.all([
           configManager.getConfig<boolean>('ai.enable_deferred_tool_loading'),
@@ -354,6 +356,7 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
           configManager.getConfig<number | null>('ai.tool_execution_timeout_secs'),
           configManager.getConfig<SubagentBatchExecutionPolicy>('ai.subagent_batch_execution_policy'),
           permissionConfigService.getConfig(),
+          configManager.getOptionalConfig<number | null>('ai.user_question_timeout_secs'),
           configManager.getOptionalConfig<boolean>(SHOW_PERMISSION_MODE_CONTROL_CONFIG_PATH),
         ]);
         setEnableDeferredToolLoading(deferredToolLoadingEnabled ?? true);
@@ -364,6 +367,9 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
           ? loadedSwarmMaxConcurrency
           : DEFAULT_SWARM_MAX_CONCURRENCY);
         setExecutionTimeout(execTimeout != null ? String(execTimeout) : '');
+        setUserQuestionTimeout(loadedUserQuestionTimeout === undefined || loadedUserQuestionTimeout === 180
+          ? '180'
+          : loadedUserQuestionTimeout === null ? '0' : String(loadedUserQuestionTimeout));
         setSubagentBatchExecutionPolicy(normalizeSubagentBatchExecutionPolicy(loadedSubagentBatchExecutionPolicy));
         setToolPermissionConfig(normalizeToolPermissionConfig(loadedToolPermissionConfig));
         setShowPermissionModeControl(loadedPermissionModeControlVisibility !== false);
@@ -897,6 +903,24 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
     }
   };
 
+  const handleUserQuestionTimeoutChange = async (value: string) => {
+    const trimmed = value.trim();
+    if (trimmed !== '' && (!/^\d+$/.test(trimmed) || Number(trimmed) > 3600)) return;
+    if (toolExecConfigLoading || Number(trimmed) === Number(userQuestionTimeout)) return;
+    const previous = userQuestionTimeout;
+    setUserQuestionTimeout(trimmed);
+    setToolExecConfigLoading(true);
+    try {
+      await configManager.setConfig('ai.user_question_timeout_secs', trimmed === '' ? null : Number(trimmed));
+    } catch (error) {
+      log.error('Failed to save user question timeout config', { error });
+      setUserQuestionTimeout(previous);
+      notificationService.error(tTools('messages.saveFailed'));
+    } finally {
+      setToolExecConfigLoading(false);
+    }
+  };
+
   // ── Derived values ───────────────────────────────────────────────────────
 
   const computerUseAccessLabel = computerUseStatusLoading
@@ -1234,6 +1258,25 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
               <NumberInput
                 value={executionTimeout === '' ? 0 : parseInt(executionTimeout, 10)}
                 onValueChange={(val) => handleToolTimeoutChange(val === 0 ? '' : String(val))}
+                min={0}
+                max={3600}
+                step={5}
+                unit={tTools('config.seconds')}
+                size="sm"
+                variant="compact"
+                disabled={toolExecConfigLoading}
+              />
+            </div>
+          </ConfigPageRow>
+          <ConfigPageRow
+            label={tTools('config.userQuestionTimeout')}
+            description={tTools('config.userQuestionTimeoutDesc')}
+            align="center"
+          >
+            <div className="openbitfun-runtime-settings__row-control" data-openbitfun-component="runtime-settings" data-openbitfun-part="control">
+              <NumberInput
+                value={userQuestionTimeout === '' ? 0 : parseInt(userQuestionTimeout, 10)}
+                onValueChange={(val) => void handleUserQuestionTimeoutChange(val === 0 ? '0' : String(val))}
                 min={0}
                 max={3600}
                 step={5}

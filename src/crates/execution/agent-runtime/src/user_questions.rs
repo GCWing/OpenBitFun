@@ -26,21 +26,6 @@ pub struct Question {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AskUserQuestionInput {
     pub questions: Vec<Question>,
-    #[serde(
-        default = "default_user_question_timeout_seconds",
-        skip_serializing_if = "is_default_user_question_timeout"
-    )]
-    pub timeout_seconds: u32,
-}
-
-pub const DEFAULT_USER_QUESTION_TIMEOUT_SECONDS: u32 = 30;
-
-fn default_user_question_timeout_seconds() -> u32 {
-    DEFAULT_USER_QUESTION_TIMEOUT_SECONDS
-}
-
-fn is_default_user_question_timeout(value: &u32) -> bool {
-    *value == DEFAULT_USER_QUESTION_TIMEOUT_SECONDS
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,15 +193,27 @@ pub enum UserQuestionWaitOutcome {
 /// the deadline for this question; submitting and cancelling keep their meaning.
 pub async fn wait_for_user_question_response(
     registration: &UserInputRegistration,
+    response: oneshot::Receiver<UserInputResponse>,
+    unattended_timeout: impl Into<Option<std::time::Duration>>,
+) -> UserQuestionWaitOutcome {
+    let deadline = unattended_timeout
+        .into()
+        .map(|timeout| tokio::time::Instant::now() + timeout);
+    wait_for_user_question_response_until(registration, response, deadline).await
+}
+
+/// Uses the deadline captured when the question was registered, including event delivery time.
+pub async fn wait_for_user_question_response_until(
+    registration: &UserInputRegistration,
     mut response: oneshot::Receiver<UserInputResponse>,
-    unattended_timeout: std::time::Duration,
+    deadline: Option<tokio::time::Instant>,
 ) -> UserQuestionWaitOutcome {
     let mut activity = registration.interaction_started.clone();
     let result = tokio::select! {
         biased;
         result = &mut response => result,
         _ = async { let _ = activity.wait_for(|started| *started).await; } => response.await,
-        _ = tokio::time::sleep(unattended_timeout) => {
+        _ = async { match deadline { Some(deadline) => tokio::time::sleep_until(deadline).await, None => std::future::pending::<()>().await } } => {
             if registration.expire_if_unstarted() {
                 return UserQuestionWaitOutcome::TimedOut;
             }
@@ -354,6 +351,9 @@ impl UserInputManager {
             pending.interaction_started.send_replace(true);
             if let Some(question) = pending.question.as_mut() {
                 question.interaction_started = true;
+                if let Some(payload) = question.questions.as_object_mut() {
+                    payload.insert("responseDeadlineMs".into(), Value::Null);
+                }
             }
             state.bump_revision();
         }
@@ -475,6 +475,13 @@ impl UserInputManager {
                     return None;
                 }
                 pending.question.clone().map(|mut question| {
+                    if question.questions.get("responseDeadlineMs").is_some() {
+                        question.questions["responseHostNowMs"] = json!(SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis()
+                            as u64);
+                    }
                     if question.session_id != session_id {
                         if let Some(controller) = pending
                             .controllers
@@ -538,10 +545,6 @@ pub fn validate_ask_user_question_input(input: &AskUserQuestionInput) -> Result<
     }
     if input.questions.len() > 4 {
         return Err("Maximum 4 questions allowed".to_string());
-    }
-
-    if input.timeout_seconds == 0 {
-        return Err("timeout_seconds must be at least 1".to_string());
     }
 
     for (q_idx, question) in input.questions.iter().enumerate() {
@@ -632,7 +635,7 @@ pub fn build_timed_out_user_question_result(
             "questions_count": input.questions.len(),
             "status": "timeout"
         }),
-        result_for_assistant: "用户无响应，跳过提问，继续执行".to_string(),
+        result_for_assistant: "The user did not respond before the timeout. Skip the questions and continue execution.".to_string(),
     }
 }
 
@@ -840,6 +843,39 @@ mod tests {
             sender,
         );
         (registration, receiver)
+    }
+
+    #[tokio::test]
+    async fn unlimited_wait_accepts_answer_without_interaction() {
+        let manager = UserInputManager::new();
+        let (registration, receiver) = unattended_question(&manager);
+        let wait = super::wait_for_user_question_response(&registration, receiver, None);
+        tokio::pin!(wait);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(20), &mut wait)
+                .await
+                .is_err()
+        );
+        manager.send_answer("tool", json!({"0":"yes"})).unwrap();
+        assert!(matches!(
+            wait.await,
+            super::UserQuestionWaitOutcome::Answered(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn elapsed_delivery_time_does_not_restart_the_timeout() {
+        let manager = UserInputManager::new();
+        let (registration, receiver) = unattended_question(&manager);
+        let deadline = tokio::time::Instant::now() - std::time::Duration::from_secs(1);
+        let result = tokio::time::timeout(
+            std::time::Duration::from_millis(100),
+            super::wait_for_user_question_response_until(&registration, receiver, Some(deadline)),
+        )
+        .await
+        .expect("an elapsed deadline must expire immediately");
+        assert!(matches!(result, super::UserQuestionWaitOutcome::TimedOut));
+        assert!(!manager.has_pending("tool"));
     }
 
     #[tokio::test]

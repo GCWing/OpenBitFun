@@ -33,6 +33,12 @@
     font-weight: var(--openbitfun-type-label-lg-font-weight);
   }
 
+  .headerTrailing {
+    margin-inline-start: auto;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
   .summaryButton {
     display: flex;
     inline-size: 100%;

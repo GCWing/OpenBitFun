@@ -24,6 +24,8 @@
     "executionTimeout": "工具逾時",
     "executionTimeoutDesc": "單次工具操作的最長時間。設為 0 表示不限制",
     "executionTimeoutHint": "設為 0 表示不限制",
+    "userQuestionTimeout": "提問逾時",
+    "userQuestionTimeoutDesc": "等待使用者開始回答提問的最長時間。設為 0 表示不限制，預設 180 秒。",
     "subagentBatchPolicy": {
       "label": "任務並行方式",
       "desc": "選擇多個任務同時開始時的執行方式。",

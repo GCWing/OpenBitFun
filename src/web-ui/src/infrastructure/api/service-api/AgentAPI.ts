@@ -163,6 +163,7 @@ export interface PendingUserQuestion {
   modelRoundId?: string;
   questions: unknown;
   registeredAtMs: number;
+  interactionStarted?: boolean;
 }
 
 export interface PendingUserQuestionSnapshot {

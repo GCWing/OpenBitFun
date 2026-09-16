@@ -68,6 +68,7 @@ export interface AskUserProps
   disabled?: boolean;
   expanded?: boolean;
   header?: ReactNode;
+  headerTrailing?: ReactNode;
   onAnswersChange?: (questionId: string, values: readonly string[]) => void;
   onCustomAnswerChange?: (
     questionId: string,
@@ -128,6 +129,7 @@ export const AskUser = forwardRef<HTMLDivElement, AskUserProps>(function AskUser
   disabled = false,
   expanded,
   header,
+  headerTrailing,
   onAnswersChange,
   onCustomAnswerChange,
   onExpandedChange,
@@ -254,7 +256,10 @@ export const AskUser = forwardRef<HTMLDivElement, AskUserProps>(function AskUser
           </span>
         </button>
       ) : header !== undefined && header !== null ? (
-        <div className={styles.header} data-openbitfun-part="header">{header}</div>
+        <div className={styles.header} data-openbitfun-part="header">
+          <OverflowText>{header}</OverflowText>
+          {headerTrailing !== undefined && <span className={styles.headerTrailing}>{headerTrailing}</span>}
+        </div>
       ) : null}
 
       <div

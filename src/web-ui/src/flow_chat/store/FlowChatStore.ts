@@ -1,3 +1,4 @@
+import { projectUserQuestionTiming } from '../utils/userQuestionTiming';
 /**
  * Flow Chat global state store
  * Prevents state loss when components remount
@@ -976,6 +977,7 @@ function reconcilePendingUserQuestionSnapshot(
         id: pending.toolId,
         type: 'tool',
         toolName: 'AskUserQuestion',
+        userQuestionWait: projectUserQuestionTiming(pending.questions, pending.interactionStarted === true),
         toolCall: {
           id: pending.toolId,
           input: pending.questions,

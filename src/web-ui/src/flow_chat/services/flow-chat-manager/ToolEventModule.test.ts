@@ -1,3 +1,4 @@
+import { handleUserQuestionWaiting } from './EventHandlerModule';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FlowChatStore } from '../../store/FlowChatStore';
 import type { DialogTurn, FlowToolItem, ModelRound, Session } from '../../types/flow-chat';
@@ -778,5 +779,34 @@ describe('processToolEvent AskUserQuestion retry superseded handling', () => {
       attemptId: 'round-1:attempt:2',
       attemptIndex: 2,
     });
+  });
+});
+
+
+describe('host-owned question timing', () => {
+  afterEach(resetStore);
+  it.each([123456, null])('keeps deadline %s across later original-argument events', (deadline) => {
+    const store = FlowChatStore.getInstance();
+    store.setState(() => ({ sessions: new Map([['session-1', createSessionWithTool(makeAskUserQuestionTool('ask-live', 'running'))]]), activeSessionId: 'session-1' }));
+    const context = makeToolContext();
+    handleUserQuestionWaiting(context, { session_id: 'session-1', tool_id: 'ask-live', questions: { responseDeadlineMs: deadline } });
+    processToolEvent(context, 'session-1', 'turn-1', 'round-1', {
+      event_type: 'Started', tool_id: 'ask-live', tool_name: 'AskUserQuestion', params: { questions: [] },
+    });
+    expect(store.findToolItem('session-1', 'turn-1', 'ask-live')?.userQuestionWait)
+      .toEqual(expect.objectContaining({ deadlineMs: deadline, interactionStarted: false }));
+    store.reconcilePendingUserQuestions('session-1', { revision: 100, questions: [{
+      toolId: 'ask-live', sessionId: 'session-1', dialogTurnId: 'turn-1', registeredAtMs: 1,
+      questions: { questions: [], responseDeadlineMs: null }, interactionStarted: true,
+    }] });
+    handleUserQuestionWaiting(context, { session_id: 'session-1', tool_id: 'ask-live', questions: { responseDeadlineMs: deadline } });
+    expect(store.findToolItem('session-1', 'turn-1', 'ask-live')?.userQuestionWait)
+      .toEqual({ deadlineMs: null, interactionStarted: true });
+  });
+  it('does not revive a terminal question from a late waiting event', () => {
+    const store = FlowChatStore.getInstance();
+    store.setState(() => ({ sessions: new Map([['session-1', createSessionWithTool(makeAskUserQuestionTool('ask-ended', 'completed'))]]), activeSessionId: 'session-1' }));
+    handleUserQuestionWaiting(makeToolContext(), { session_id: 'session-1', tool_id: 'ask-ended', questions: { responseDeadlineMs: 123456 } });
+    expect(store.findToolItem('session-1', 'turn-1', 'ask-ended')?.userQuestionWait).toBeUndefined();
   });
 });

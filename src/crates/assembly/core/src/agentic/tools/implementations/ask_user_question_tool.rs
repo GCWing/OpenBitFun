@@ -7,10 +7,10 @@ use log::{debug, warn};
 use openbitfun_agent_runtime::user_questions::{
     ask_user_question_available_in_context, build_answered_user_question_result,
     build_cancelled_user_question_result, build_timed_out_user_question_result,
-    validate_ask_user_question_input, wait_for_user_question_response, AskUserQuestionInput,
+    validate_ask_user_question_input, wait_for_user_question_response_until, AskUserQuestionInput,
     PendingUserQuestion, UserQuestionController, UserQuestionWaitOutcome,
-    DEFAULT_USER_QUESTION_TIMEOUT_SECONDS, USER_INPUT_AVAILABLE_CONTEXT_KEY,
-    USER_INPUT_MODEL_ROUND_CONTEXT_KEY, USER_INPUT_PARENT_CONTEXT_KEY,
+    USER_INPUT_AVAILABLE_CONTEXT_KEY, USER_INPUT_MODEL_ROUND_CONTEXT_KEY,
+    USER_INPUT_PARENT_CONTEXT_KEY,
 };
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -143,8 +143,6 @@ RECOMMENDATION GUIDELINES:
 - Provide 2-4 clear options with descriptions of trade-offs
 
 Usage notes:
-- This tool waits up to 30 seconds by default for the first user interaction. Once the user clicks an option or input, the timeout is disabled and the tool waits for submission or cancellation. If the user does not interact, it skips the questions and returns so you can continue execution.
-- Prefer the default timeout. Set timeout_seconds only when necessary to wait a shorter or longer time. A timeout is not user approval or a selected answer.
 - Put all questions you need into a single AskUserQuestion call instead of calling it repeatedly in one response
 - Users will always be able to select "Other" to provide custom text input
 - Use multiSelect: true to allow multiple answers to be selected for a question"#.to_string())
@@ -158,13 +156,6 @@ Usage notes:
         json!({
             "type": "object",
             "properties": {
-                "timeout_seconds": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": u32::MAX,
-                    "default": DEFAULT_USER_QUESTION_TIMEOUT_SECONDS,
-                    "description": "Seconds to wait for the first user interaction, default 30. Once the user starts answering, wait until submission or cancellation without a timeout. Prefer omitting this parameter; use a shorter or longer wait only when necessary. On timeout, skip the questions and continue execution."
-                },
                 "questions": {
                     "type": "array",
                     "items": {
@@ -249,6 +240,24 @@ Usage notes:
         input: &Value,
         context: &ToolUseContext,
     ) -> OpenBitFunResult<Vec<ToolResult>> {
+        let service = crate::service::config::global::GlobalConfigManager::get_service().await?;
+        let ai_config: crate::service::config::types::AIConfig =
+            service.get_config(Some("ai")).await?;
+        let timeout = ai_config
+            .user_question_timeout_secs
+            .filter(|seconds| *seconds > 0)
+            .map(|seconds| std::time::Duration::from_secs(u64::from(seconds)));
+        self.call_with_timeout(input, context, timeout).await
+    }
+}
+
+impl AskUserQuestionTool {
+    async fn call_with_timeout(
+        &self,
+        input: &Value,
+        context: &ToolUseContext,
+        timeout: Option<std::time::Duration>,
+    ) -> OpenBitFunResult<Vec<ToolResult>> {
         if !Self::is_available_for_tool_context(Some(context)) {
             return Err(crate::util::errors::OpenBitFunError::tool(
                 "AskUserQuestion is unavailable because this execution surface cannot accept interactive user input",
@@ -287,7 +296,17 @@ Usage notes:
             .get(USER_INPUT_MODEL_ROUND_CONTEXT_KEY)
             .and_then(Value::as_str)
             .map(str::to_string);
-        let questions = serde_json::to_value(&tool_input).unwrap_or_else(|_| json!({}));
+        let mut questions = serde_json::to_value(&tool_input).unwrap_or_else(|_| json!({}));
+        let controllers = Self::question_controllers(context).await;
+        let wait_deadline = timeout.map(|duration| tokio::time::Instant::now() + duration);
+        let registered_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        questions["responseHostNowMs"] = json!(registered_at);
+        questions["responseDeadlineMs"] = timeout
+            .map(|duration| json!(registered_at.saturating_add(duration.as_millis() as u64)))
+            .unwrap_or(Value::Null);
 
         // 4. Create oneshot channel
         let (tx, rx) = tokio::sync::oneshot::channel();
@@ -305,7 +324,7 @@ Usage notes:
                 questions.clone(),
             ),
             tx,
-            Self::question_controllers(context).await,
+            controllers,
         );
 
         // 6. Send backend event to notify frontend to display question card
@@ -326,13 +345,7 @@ Usage notes:
 
         // 7. Bound the wait in the runtime host, including for remote driving surfaces.
         // The registration guard clears replay state on timeout or turn cancellation.
-        match wait_for_user_question_response(
-            &registration,
-            rx,
-            std::time::Duration::from_secs(u64::from(tool_input.timeout_seconds)),
-        )
-        .await
-        {
+        match wait_for_user_question_response_until(&registration, rx, wait_deadline).await {
             UserQuestionWaitOutcome::Answered(response) => {
                 debug!(
                     "AskUserQuestion tool received user response, tool_id: {}",
@@ -444,7 +457,7 @@ mod tests {
 
         let error = tokio::time::timeout(
             std::time::Duration::from_millis(100),
-            tool.call(&input, &context),
+            tool.call_with_timeout(&input, &context, Some(std::time::Duration::from_secs(180))),
         )
         .await
         .expect("non-interactive question must not wait")
@@ -495,7 +508,8 @@ mod tests {
             }]
         });
 
-        let call = tool.call(&input, &context);
+        let call =
+            tool.call_with_timeout(&input, &context, Some(std::time::Duration::from_secs(180)));
         tokio::pin!(call);
         let mailbox_registration = async {
             loop {
@@ -505,7 +519,16 @@ mod tests {
                     assert_eq!(question.dialog_turn_id.as_deref(), Some(turn_id.as_str()));
                     assert_eq!(question.model_round_id.as_deref(), Some(round_id.as_str()));
                     assert_eq!(
-                        question.questions,
+                        {
+                            let mut payload = question.questions.clone();
+                            payload.as_object_mut().unwrap().remove("responseHostNowMs");
+                            assert!(payload["responseDeadlineMs"].is_u64());
+                            payload
+                                .as_object_mut()
+                                .unwrap()
+                                .remove("responseDeadlineMs");
+                            payload
+                        },
                         serde_json::json!({
                             "questions": [{
                                 "question": "Continue?",
@@ -557,13 +580,16 @@ mod tests {
         )]));
         context.session_id = Some(child.clone());
         context.tool_call_id = Some(unique.clone());
-        let input = serde_json::json!({"timeout_seconds": 1, "questions": [{
+        let input = serde_json::json!({"questions": [{
             "question": "Continue?", "header": "Continue", "options": [
                 {"label": "Yes", "description": "Continue"}, {"label": "No", "description": "Stop"}
             ]
         }]});
-        let task =
-            tokio::spawn(async move { AskUserQuestionTool::new().call(&input, &context).await });
+        let task = tokio::spawn(async move {
+            AskUserQuestionTool::new()
+                .call_with_timeout(&input, &context, Some(std::time::Duration::from_secs(180)))
+                .await
+        });
         let manager = get_user_input_manager();
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
             while !manager.has_pending(&unique) {
@@ -595,21 +621,19 @@ mod tests {
     }
 
     #[test]
-    fn timeout_schema_is_optional_and_owned_by_the_tool() {
+    fn timeout_is_configured_outside_the_tool_schema() {
         let tool = AskUserQuestionTool::new();
         let schema = tool.input_schema();
-        assert_eq!(schema["properties"]["timeout_seconds"]["default"], 30);
-        assert_eq!(schema["properties"]["timeout_seconds"]["minimum"], 1);
+        assert!(schema["properties"].get("timeout_seconds").is_none());
         assert_eq!(schema["required"], serde_json::json!(["questions"]));
         assert!(tool.manages_own_execution_timeout());
     }
-
     async fn assert_question_times_out(timeout_seconds: Option<u32>) {
         let unique = uuid::Uuid::new_v4().to_string();
         let mut context = context_with_custom_data(HashMap::new());
         context.session_id = Some(unique.clone());
         context.tool_call_id = Some(unique.clone());
-        let mut input = serde_json::json!({
+        let input = serde_json::json!({
             "questions": [{
                 "question": "Continue?", "header": "Continue",
                 "options": [
@@ -618,14 +642,11 @@ mod tests {
                 ]
             }]
         });
-        if let Some(seconds) = timeout_seconds {
-            input["timeout_seconds"] = serde_json::json!(seconds);
-        }
-        let expected = std::time::Duration::from_secs(u64::from(timeout_seconds.unwrap_or(30)));
+        let expected = std::time::Duration::from_secs(u64::from(timeout_seconds.unwrap_or(180)));
         let started = tokio::time::Instant::now();
         let result = tokio::time::timeout(
             expected + std::time::Duration::from_secs(5),
-            AskUserQuestionTool::new().call(&input, &context),
+            AskUserQuestionTool::new().call_with_timeout(&input, &context, Some(expected)),
         )
         .await
         .expect("question must finish without a user response")
@@ -640,7 +661,7 @@ mod tests {
                 assert_eq!(data["status"], "timeout");
                 assert_eq!(
                     result_for_assistant.as_deref(),
-                    Some("用户无响应，跳过提问，继续执行")
+                    Some("The user did not respond before the timeout. Skip the questions and continue execution.")
                 );
             }
             _ => panic!("timeout must return a normal tool result"),
@@ -657,8 +678,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unanswered_question_defaults_to_thirty_seconds_and_rejects_late_answers() {
-        assert_question_times_out(None).await;
+    async fn unanswered_question_times_out_and_rejects_late_answers() {
+        assert_question_times_out(Some(1)).await;
     }
 
     #[tokio::test]
@@ -667,6 +688,6 @@ mod tests {
     }
     #[tokio::test]
     async fn unanswered_question_honors_longer_timeout() {
-        assert_question_times_out(Some(31)).await;
+        assert_question_times_out(Some(2)).await;
     }
 }

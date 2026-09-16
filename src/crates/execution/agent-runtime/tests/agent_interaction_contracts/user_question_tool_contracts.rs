@@ -25,18 +25,14 @@ fn question() -> Question {
 #[test]
 fn ask_user_question_validation_preserves_legacy_limits() {
     assert_eq!(
-        validate_ask_user_question_input(&AskUserQuestionInput {
-            questions: vec![],
-            timeout_seconds: 30
-        })
-        .expect_err("empty questions should fail"),
+        validate_ask_user_question_input(&AskUserQuestionInput { questions: vec![] })
+            .expect_err("empty questions should fail"),
         "At least one question is required"
     );
 
     let mut too_many = vec![question(), question(), question(), question(), question()];
     assert_eq!(
         validate_ask_user_question_input(&AskUserQuestionInput {
-            timeout_seconds: 30,
             questions: std::mem::take(&mut too_many),
         })
         .expect_err("too many questions should fail"),
@@ -47,7 +43,6 @@ fn ask_user_question_validation_preserves_legacy_limits() {
     missing_header.header.clear();
     assert_eq!(
         validate_ask_user_question_input(&AskUserQuestionInput {
-            timeout_seconds: 30,
             questions: vec![missing_header],
         })
         .expect_err("missing header should fail"),
@@ -92,7 +87,6 @@ fn ask_user_question_availability_honors_non_interactive_surface_fact() {
 #[test]
 fn ask_user_question_answered_and_cancelled_results_keep_wire_shape() {
     let input = AskUserQuestionInput {
-        timeout_seconds: 30,
         questions: vec![question()],
     };
     let answered = build_answered_user_question_result(
@@ -140,55 +134,4 @@ fn ask_user_question_input_defaults_multi_select_to_false_when_omitted() {
     .expect("input without multiSelect should deserialize");
 
     assert!(!input.questions[0].multi_select);
-}
-
-#[test]
-fn question_timeout_defaults_preserve_legacy_round_trip_and_accept_overrides() {
-    let legacy = serde_json::json!({ "questions": [question()] });
-    let input: AskUserQuestionInput = serde_json::from_value(legacy.clone()).unwrap();
-    assert_eq!(input.timeout_seconds, 30);
-    assert_eq!(serde_json::to_value(&input).unwrap(), legacy);
-    for seconds in [1, 10, 60, 300] {
-        let payload = serde_json::json!({ "questions": [question()], "timeout_seconds": seconds });
-        let input: AskUserQuestionInput = serde_json::from_value(payload.clone()).unwrap();
-        assert_eq!(input.timeout_seconds, seconds);
-        validate_ask_user_question_input(&input).unwrap();
-        assert_eq!(serde_json::to_value(&input).unwrap(), payload);
-    }
-    for invalid in [
-        serde_json::json!(-1),
-        serde_json::json!(1.5),
-        serde_json::json!("30"),
-    ] {
-        assert!(
-            serde_json::from_value::<AskUserQuestionInput>(serde_json::json!({
-                "questions": [question()], "timeout_seconds": invalid
-            }))
-            .is_err()
-        );
-    }
-    let input = AskUserQuestionInput {
-        questions: vec![question()],
-        timeout_seconds: 0,
-    };
-    assert!(validate_ask_user_question_input(&input).is_err());
-}
-
-#[test]
-fn timeout_is_distinct_from_answer_or_cancellation() {
-    let input = AskUserQuestionInput {
-        questions: vec![question()],
-        timeout_seconds: 30,
-    };
-    let result =
-        openbitfun_agent_runtime::user_questions::build_timed_out_user_question_result(&input);
-    assert_eq!(
-        result.data,
-        serde_json::json!({ "questions_count": 1, "status": "timeout" })
-    );
-    assert_eq!(
-        result.result_for_assistant,
-        "用户无响应，跳过提问，继续执行"
-    );
-    assert!(result.data.get("answers").is_none());
 }

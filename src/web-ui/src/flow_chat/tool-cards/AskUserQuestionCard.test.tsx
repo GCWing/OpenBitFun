@@ -12,7 +12,8 @@ import {
 import { PeerDeviceContext } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { askUserQuestionDraftStore } from '../store/askUserQuestionDraftStore';
 
-vi.mock('react-i18next', () => ({
+vi.mock('react-i18next', async (importOriginal) => ({
+  ...await importOriginal<typeof import('react-i18next')>(),
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) => (
       options?.count === undefined ? key : `${key}:${String(options.count)}`
@@ -107,6 +108,77 @@ describe('AskUserQuestionCard', () => {
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+  });
+
+  it('uses the host deadline across remounts and supports unlimited waits', () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date', 'performance'] });
+    vi.setSystemTime(1000000);
+    const tool = questionTool('waiting');
+    tool.userQuestionWait = { deadlineMs: Date.now() + 180000, monotonicDeadlineMs: performance.now() + 180000, interactionStarted: false };
+    const render = () => act(() => root.render(
+      <AskUserQuestionCard toolItem={tool} config={config} sessionId="timer-session" />,
+    ));
+    try {
+      render();
+      expect(container.querySelector('[role="timer"]')?.textContent).toBe('3:00');
+      act(() => vi.advanceTimersByTime(65000));
+      expect(container.querySelector('[role="timer"]')?.textContent).toBe('1:55');
+      vi.setSystemTime(Date.now() + 86400000);
+      act(() => vi.advanceTimersByTime(1000));
+      expect(container.querySelector('[role="timer"]')?.textContent).toBe('1:54');
+      act(() => root.render(null));
+      render();
+      expect(container.querySelector('[role="timer"]')?.textContent).toBe('1:54');
+      act(() => vi.advanceTimersByTime(114000));
+      expect(container.querySelector('[role="timer"]')?.textContent)
+        .toBe('toolCards.askUser.awaitingTimeoutConfirmation');
+      expect(toolAPI.submitUserAnswers).not.toHaveBeenCalled();
+      tool.userQuestionWait.deadlineMs = null;
+      render();
+      expect(container.querySelector('[role="timer"]')).toBeNull();
+      expect(container.querySelector('button[aria-label="toolCards.askUser.cancelCountdown"]')).toBeNull();
+      tool.userQuestionWait.interactionStarted = true;
+      render();
+      expect(container.querySelector('[role="timer"]')).toBeNull();
+      tool.userQuestionWait.interactionStarted = false;
+      delete tool.userQuestionWait.deadlineMs;
+      render();
+      expect(container.querySelector('[role="timer"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the countdown only after host acknowledgement and deduplicates clicks', async () => {
+    let acknowledge!: () => void;
+    vi.mocked(toolAPI.startUserQuestionInteraction).mockReturnValue(new Promise<void>(resolve => { acknowledge = resolve; }));
+    const tool = questionTool('waiting');
+    tool.userQuestionWait = { deadlineMs: Date.now() + 180000, monotonicDeadlineMs: performance.now() + 180000, interactionStarted: false };
+    act(() => root.render(<AskUserQuestionCard toolItem={tool} config={config} sessionId="timer-session" />));
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="toolCards.askUser.cancelCountdown"]')!;
+    expect(button.querySelector('[role="timer"]')).not.toBeNull();
+    expect(button.querySelector('svg')).not.toBeNull();
+    act(() => button.focus());
+    expect(toolAPI.startUserQuestionInteraction).not.toHaveBeenCalled();
+    act(() => { button.click(); button.click(); });
+    expect(toolAPI.startUserQuestionInteraction).toHaveBeenCalledExactlyOnceWith(tool.id, 'timer-session');
+    expect(container.querySelector('[role="timer"]')).not.toBeNull();
+    await act(async () => acknowledge());
+    expect(container.querySelector('[role="timer"]')).toBeNull();
+    expect(toolAPI.submitUserAnswers).not.toHaveBeenCalled();
+  });
+
+  it('keeps the countdown available for retry when cancellation fails', async () => {
+    vi.mocked(toolAPI.startUserQuestionInteraction).mockRejectedValueOnce(new Error('offline'));
+    const tool = questionTool('waiting');
+    tool.userQuestionWait = { deadlineMs: Date.now() + 180000, monotonicDeadlineMs: performance.now() + 180000, interactionStarted: false };
+    act(() => root.render(<AskUserQuestionCard toolItem={tool} config={config} sessionId="timer-session" />));
+    const button = container.querySelector<HTMLButtonElement>('button[aria-label="toolCards.askUser.cancelCountdown"]')!;
+    await act(async () => button.click());
+    expect(container.querySelector('[role="timer"]')).not.toBeNull();
+    await act(async () => button.click());
+    expect(toolAPI.startUserQuestionInteraction).toHaveBeenCalledTimes(2);
+    expect(container.querySelector('[role="timer"]')).toBeNull();
   });
 
   it('keeps a just-completed tail question visible until newer content arrives', () => {

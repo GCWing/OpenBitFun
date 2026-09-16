@@ -120,6 +120,12 @@ export interface FlowToolItem extends FlowItem {
     kind: 'user_question';
     revision: number;
   };
+  /** Host-owned live question state, independent of model tool arguments. */
+  userQuestionWait?: {
+    deadlineMs?: number | null;
+    monotonicDeadlineMs?: number;
+    interactionStarted: boolean;
+  };
 }
 
 export interface ToolRejectOptions {

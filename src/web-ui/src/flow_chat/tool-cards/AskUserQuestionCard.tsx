@@ -22,6 +22,9 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Button, Tooltip } from '@openbitfun/ui';
+import { X } from 'lucide-react';
+import { i18nService } from '@/infrastructure/i18n';
 import { toolAPI } from '@/infrastructure/api/service-api/ToolAPI';
 import {
   getActiveSurfaceScope,
@@ -168,6 +171,28 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
     peerDevice?.currentPeerCapabilities ?? null,
   );
   const canAnswer = !finished && !awaitingPayload && canSubmitUserAnswers;
+  const deadline = toolItem.userQuestionWait?.deadlineMs;
+  const [interactionAcknowledged, setInteractionAcknowledged] = useState(false);
+  const [clockNow, setClockNow] = useState(() => performance.now());
+  const showTimer = canAnswer && !interactionAcknowledged
+    && !toolItem.userQuestionWait?.interactionStarted && typeof deadline === 'number';
+  useEffect(() => {
+    setInteractionAcknowledged(false);
+  }, [activeSurfaceId, sessionId, toolId]);
+  useEffect(() => {
+    if (!showTimer || typeof deadline !== 'number') return;
+    setClockNow(performance.now());
+    const interval = window.setInterval(() => setClockNow(performance.now()), 250);
+    return () => window.clearInterval(interval);
+  }, [deadline, showTimer]);
+  const remainingSeconds = typeof deadline === 'number'
+    ? Math.max(0, Math.ceil(((toolItem.userQuestionWait?.monotonicDeadlineMs ?? clockNow) - clockNow) / 1000)) : null;
+  const countdown = remainingSeconds === null ? null
+    : remainingSeconds === 0 ? t('toolCards.askUser.awaitingTimeoutConfirmation') : `${
+    i18nService.formatNumber(Math.floor(remainingSeconds / 60), { useGrouping: false })
+  }:${
+    i18nService.formatNumber(remainingSeconds % 60, { minimumIntegerDigits: 2, useGrouping: false })
+  }`;
   const submissionScope = useRef(0);
   const draftKey = useMemo(
     () => sessionId && draftToolId
@@ -199,7 +224,9 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
     }
     interactionAttempt.current = scope;
     setInteractionFailed(false);
-    void toolAPI.startUserQuestionInteraction(toolId, sessionId).catch((error) => {
+    void toolAPI.startUserQuestionInteraction(toolId, sessionId).then(() => {
+      if (submissionScope.current === scope) setInteractionAcknowledged(true);
+    }).catch((error) => {
       if (submissionScope.current !== scope) return;
       interactionAttempt.current = null;
       setInteractionFailed(true);
@@ -631,6 +658,21 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
         ? undefined
         : t('toolCards.askUser.questionsCount', { count: questions.length })}
       onClickCapture={handleInteraction}
+      headerTrailing={showTimer && !isSubmitted ? (
+        <Tooltip content={t('toolCards.askUser.timeoutSettingsHint')} placement="top">
+          <Button
+            variant="text"
+            size="xs"
+            labelBehavior="static"
+            aria-label={t('toolCards.askUser.cancelCountdown')}
+            disabled={!sessionId}
+            trailingIcon={<X aria-hidden="true" />}
+            onClick={startInteraction}
+          >
+            <span role="timer">{countdown}</span>
+          </Button>
+        </Tooltip>
+      ) : undefined}
       onFocusCapture={handleInteraction}
       onAnswersChange={handleAnswersChange}
       onCustomAnswerChange={(questionId, value, meta) => {
