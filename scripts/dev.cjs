@@ -154,6 +154,7 @@ function runCommandPrefixed(prefix, cmd, args, cwd = ROOT_DIR, envOverrides = {}
   return new Promise((resolve) => {
     const spawnOptions = {
       cwd,
+      windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
         ...process.env,
@@ -681,7 +682,8 @@ async function main() {
   let currentStep = 1;
 
   // Step 1: Run all independent preparation tasks in parallel.
-  // copy-monaco / generate-version / mobile-web / plugin-host / loopx have no
+  // copy-monaco / generate-version / mobile-web / flashgrep / plugin-host / loopx
+  // have no
   // dependencies on each other; each task's output is line-prefixed so the
   // interleaved logs stay attributable. The DeepSeek bridge is not prepared
   // here: it is not a compile-time Tauri resource. Official desktop:build
@@ -690,7 +692,7 @@ async function main() {
     currentStep++,
     totalSteps,
     desktopMode
-      ? 'Prepare resources (parallel: monaco, version, mobile-web, plugin-host, loopx)'
+      ? 'Prepare resources (parallel: monaco, version, mobile-web, flashgrep, plugin-host, loopx)'
       : 'Prepare resources (parallel: monaco, version)'
   );
 
@@ -719,6 +721,32 @@ async function main() {
     prepTasks.push({
       name: 'Prepare loopx CLI sidecar',
       promise: ensureLoopxSidecar(),
+    });
+    prepTasks.push({
+      name: 'Prepare speech libraries',
+      promise: (async () => {
+        try {
+          const { prepareSherpaDev } = await import('./prepare-sherpa-dev.mjs');
+          prepareSherpaDev(ROOT_DIR);
+          return { ok: true, code: 0 };
+        } catch (error) {
+          return { ok: false, code: null, error };
+        }
+      })(),
+    });
+    prepTasks.push({
+      name: 'Prepare workspace search daemon',
+      promise: (async () => {
+        try {
+          const { ensureFlashgrepBinary } = await import(
+            pathToFileURL(path.join(__dirname, 'prepare-flashgrep-resource.mjs')).href
+          );
+          process.env.FLASHGREP_DAEMON_BIN = ensureFlashgrepBinary();
+          return { ok: true, code: 0 };
+        } catch (error) {
+          return { ok: false, code: null, error };
+        }
+      })(),
     });
     prepTasks.push({
       name: 'Build mobile-web',

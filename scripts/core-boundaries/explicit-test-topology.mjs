@@ -213,6 +213,11 @@ export const productDomainsIntegrationTestTargets = [
     requiredFeatures: ['miniapp'],
   },
   {
+    name: 'legacy_migration_contracts',
+    path: 'tests/legacy_migration_contracts.rs',
+    requiredFeatures: ['legacy-migration'],
+  },
+  {
     name: 'plugin_source_contracts',
     path: 'tests/plugin_source_contracts.rs',
     requiredFeatures: ['plugin-source'],

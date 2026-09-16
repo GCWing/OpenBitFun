@@ -22,16 +22,6 @@ use std::sync::{Arc, Mutex};
 const DEFAULT_RUNTIME_EVENT_PAGE_SIZE: usize = 200;
 const MAX_RUNTIME_EVENT_PAGE_SIZE: usize = 1_000;
 
-/// One appended line. `streamId` identifies the Runtime process that wrote it,
-/// so a log left by an older process is never mistaken for current progress.
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct LoggedEvent {
-    stream_id: String,
-    cursor: u64,
-    event: AgenticEvent,
-}
-
 #[derive(Debug, Clone)]
 pub struct RuntimeEventRecord {
     pub stream_id: String,

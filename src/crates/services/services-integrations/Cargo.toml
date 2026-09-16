@@ -228,6 +228,16 @@ miniapp-loopx = [
     "uuid",
     "which",
 ]
+account-identity = [
+    "dep:openbitfun-product-domains",
+    "openbitfun-services-core/tls-provider",
+    "openbitfun-services-core/credential-vault",
+    "openbitfun-services-core/product-identity",
+    "chrono", "dirs", "thiserror",
+    "dep:keyring-core", "dep:windows-native-keyring-store", "dep:zbus-secret-service-keyring-store",
+    "reqwest", "reqwest/json", "reqwest/rustls-no-provider",
+    "tokio/rt", "tokio/sync",
+]
 miniapp-market = [
     "account-identity",
     "openbitfun-services-core/tls-provider",

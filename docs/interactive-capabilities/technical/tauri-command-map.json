@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "d7a7419ddd673eb733ae8bd33dbb3dcd3b4d1ce0acfc953067a3403fe26d6699",
-  "commandCount": 673,
+  "catalogDigest": "5473331e06ecd4bfafbf9b547d48b4fe1561ccf69d86fdfde51ea10dc919531c",
+  "commandCount": 664,
   "coverage": {
-    "commandCount": 673,
-    "documentedCommandCount": 633,
-    "implementationCommandCount": 40,
-    "implementationDigest": "c0a1edc760154624bd17f742f82fb66d08af6e8e2b32e99829e92ed6a75cd75e"
+    "commandCount": 664,
+    "documentedCommandCount": 613,
+    "implementationCommandCount": 51,
+    "implementationDigest": "233258957d404d017612c63fc57b2d6630543a50c4a10c059b5fb2623b621827"
   },
   "commands": [
     {
@@ -5835,38 +5835,6 @@
       "sourceFile": "src/apps/desktop/src/api/miniapp_loopx_api.rs",
       "signature": "fn miniapp_loopx_turn_output_since( app_state: State<'_, AppState>, controller: State<'_, LoopxControllerState>, request: MiniAppLoopxTurnOutputSinceRequest, ) -> Result<LoopxTurnOutputSinceResponse, String>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
-    },
-    {
-      "id": "miniapp_market_auth_poll",
-      "moduleId": "miniapp_market",
-      "capabilityId": "feature.miniapps",
-      "capabilityIds": [
-        "feature.miniapps"
-      ],
-      "documentedItemIds": [
-        "feature.miniapps:market-account"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::miniapp_market_api::miniapp_market_auth_poll",
-      "sourceFile": "src/apps/desktop/src/api/miniapp_market_api.rs",
-      "signature": "fn miniapp_market_auth_poll( app: AppHandle, request: DesktopAuthPollViewRequest, ) -> Result<DesktopAuthPollViewResponse, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
-    },
-    {
-      "id": "miniapp_market_auth_start",
-      "moduleId": "miniapp_market",
-      "capabilityId": "feature.miniapps",
-      "capabilityIds": [
-        "feature.miniapps"
-      ],
-      "documentedItemIds": [
-        "feature.miniapps:market-account"
-      ],
-      "visibility": "documented",
-      "rustPath": "api::miniapp_market_api::miniapp_market_auth_start",
-      "sourceFile": "src/apps/desktop/src/api/miniapp_market_api.rs",
-      "signature": "fn miniapp_market_auth_start() -> Result<DesktopAuthStartView, String>",
-      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "miniapp_market_browse",

@@ -14,6 +14,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { buildLoopx } from './build-loopx.mjs';
+import { ensureFlashgrepBinary } from './prepare-flashgrep-resource.mjs';
 import { extractProductConfigArg } from './product-customization/cli.mjs';
 import { productBuildEnvironment } from './product-customization/projections.mjs';
 import { resolveProductDefinition } from './product-customization/resolver.mjs';
@@ -49,9 +50,12 @@ async function main() {
   console.log(`[release] channel=${releaseChannel.channel}`);
 
   const desktopDir = join(ROOT, 'src', 'apps', 'desktop');
-  preparePluginHost();
-  // Flashgrep distribution is temporarily suspended.
-  const flashgrepBinary = null;
+  if (!bundleOnly) preparePluginHost();
+  const flashgrepBinary = prepareMacOSFlashgrepForSigning(
+    ensureFlashgrepBinary({ target: optionValue(forward, '--target') || rustHostTargetTriple() }),
+    desktopDir,
+  );
+  process.env.FLASHGREP_DAEMON_BIN = flashgrepBinary;
   const loopxResourceDir = await prepareBundledLoopx(forward, desktopDir);
   // Tauri CLI reads CI and rejects numeric "1" (common in CI providers).
   process.env.CI = 'true';

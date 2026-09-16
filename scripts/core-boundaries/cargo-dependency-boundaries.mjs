@@ -153,6 +153,7 @@ const SERVICES_INTEGRATIONS_TOKIO_FEATURES = new Map([
   ['function-agents', ['fs', 'io-util', 'macros', 'rt', 'time']],
   ['mcp', ['fs', 'io-util', 'net', 'process', 'rt', 'sync', 'time']],
   ['miniapp-loopx', ['fs', 'io-util', 'macros', 'process', 'rt', 'sync', 'time']],
+  ['miniapp-storage', ['fs', 'time']],
   ['miniapp-runtime', ['fs', 'io-util', 'net', 'process', 'rt', 'sync', 'time']],
   ['miniapp-market', ['fs', 'io-util', 'net', 'process', 'rt', 'sync', 'time']],
   ['plugin-source', ['fs', 'rt', 'sync', 'time']],

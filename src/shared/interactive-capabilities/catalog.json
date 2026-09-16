@@ -191,6 +191,9 @@
       "miniapp_loopx_resolve_intake",
       "miniapp_loopx_turn_output_since"
     ],
+    "publicMarketImageCache": [
+      "market_image_load"
+    ],
     "legacyUpdateCompatibility": [
       "install_update"
     ],

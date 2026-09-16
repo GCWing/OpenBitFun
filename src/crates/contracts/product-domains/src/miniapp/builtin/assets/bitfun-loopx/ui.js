@@ -515,6 +515,7 @@ const COPY = {
     taskNumber: '任务 {value}',
     sidecar: 'LoopX 引擎',
     nodeRuntime: 'Node.js 运行时',
+    nodeRuntimeUnknownDetail: '尚未探测；点击重新检查环境更新',
     gitWorktree: 'Git / Worktree',
     agentModel: 'Agent 模型',
     pythonFallback: 'Python 备用',
@@ -1063,6 +1064,7 @@ const COPY = {
     taskNumber: 'Task {value}',
     sidecar: 'LoopX engine',
     nodeRuntime: 'Node.js runtime',
+    nodeRuntimeUnknownDetail: 'Not probed yet; click Check environment again to update',
     gitWorktree: 'Git / Worktree',
     agentModel: 'Agent model',
     pythonFallback: 'Python fallback',
@@ -2751,10 +2753,20 @@ function renderEnvironment() {
 
   const core = environment && environment.core ? environment.core : {};
   const optional = environment && environment.optional ? environment.optional : {};
+  const nodeRuntimeFact = core.node_runtime && typeof core.node_runtime === 'object'
+    ? core.node_runtime
+    : {};
+  const nodeRuntime = nodeRuntimeFact.status && nodeRuntimeFact.status !== 'unknown'
+    ? nodeRuntimeFact
+    : {
+      ...nodeRuntimeFact,
+      status: 'unknown',
+      detail: nodeRuntimeFact.detail || text('nodeRuntimeUnknownDetail'),
+    };
   renderEnvironmentRemediation(core.sidecar);
   view.coreEnvironmentList.replaceChildren(
     environmentFact('sidecar', text('sidecar'), core.sidecar),
-    environmentFact('nodeRuntime', text('nodeRuntime'), core.node_runtime),
+    environmentFact('nodeRuntime', text('nodeRuntime'), nodeRuntime),
     environmentFact('gitWorktree', text('gitWorktree'), core.gitWorktree),
     environmentFact('agentModel', text('agentModel'), core.agentModel),
   );

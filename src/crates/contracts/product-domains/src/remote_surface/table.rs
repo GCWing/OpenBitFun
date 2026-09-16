@@ -467,8 +467,6 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("miniapp_loopx_list_models",                                  Unsupported, ControllerLocal,  REFUSED),
     op("miniapp_loopx_resolve_intake",                               Unsupported, ControllerLocal,  REFUSED),
     op("miniapp_loopx_turn_output_since",                            Unsupported, ControllerLocal,  REFUSED),
-    op("miniapp_market_auth_poll",                                   Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
-    op("miniapp_market_auth_start",                                  Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("miniapp_market_browse",                                      Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("miniapp_market_capture_window",                              LocalOnly,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("miniapp_market_get_listing",                                 Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),

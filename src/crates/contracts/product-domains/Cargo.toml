@@ -39,6 +39,11 @@ name = "loopx_contracts"
 path = "tests/loopx_contracts.rs"
 required-features = ["miniapp"]
 
+[[test]]
+name = "legacy_migration_contracts"
+path = "tests/legacy_migration_contracts.rs"
+required-features = ["legacy-migration"]
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
