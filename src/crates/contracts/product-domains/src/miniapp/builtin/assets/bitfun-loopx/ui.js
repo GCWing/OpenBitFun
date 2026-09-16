@@ -108,6 +108,8 @@ const COPY = {
     timelineTitle: '运行时间线',
     timelineLiveScope: '当前运行 · {item}',
     timelineIdleScope: '已固定到 · {item}',
+    timelineTurn: '第 {value} 回合',
+    timelineTurnEvents: '{value} 个事件',
     summaryMonitorConclusion: '本次已创建 {url}；正在持续监控它的评审与合并状态。PR 合并或关闭后监控会自动结束，任务会标记为「已结束」——在此之前你无需操作。',
     summaryMonitorConclusionWithTime: '本次已创建 {url}；正在持续监控它的评审与合并状态（下一次自动复查：{time}）。PR 合并或关闭后监控会自动结束，任务会标记为「已结束」——在此之前你无需操作。',
     summaryMonitorConclusionNoArtifact: '正在持续监控 PR 的评审与合并状态（下一次自动复查：{time}）。PR 合并或关闭后监控会自动结束。',
@@ -130,6 +132,14 @@ const COPY = {
     errorTitle: '错误',
     gateKindPublish: '发布审批',
     gateKindComment: '发布评论审批',
+    gateKindReuseMerge: '复用已有 PR',
+    gateKindGatedRead: '读取正文与评论',
+    gateKindClarify: '澄清方向',
+    gateKindAuthority: '权限授予',
+    gateKindDraft: '草稿确认',
+    gateKindPush: '推送操作',
+    gateKindValidation: '外部验证',
+    gateKindExternal: '待确认操作',
     gatePublishCommentTitle: '发布维护者评论到 {item}',
     gatePublishCommentSummary: '将向 {item} 发布一条公开评论，这是对外写入，不会修改代码或创建 PR。',
     gatePublishCommentApproveEffect: '在 {item} 公开发布这条评论；不会修改代码，也不会创建 PR。',
@@ -164,7 +174,7 @@ const COPY = {
     approvalContextTitle: '本次决策的背景',
     decisionCardGateHint: '请在上方审批面板中批准或拒绝该请求。',
     decisionCardRecoveryHint: '本段工作已结束，但没有形成可确认的进展；你可以恢复重试一次，或先在下方查看产出与证据。',
-    decisionCardTechnicalDetail: '技术详情（内部状态）',
+    decisionCardTechnicalDetail: '技术详情（可选）',
     recoveryProducedArtifact: '本次已产出：{url}',
     recoveryPreservedHint: '你的提交、改动与证据都保留在任务工作区；「继续尝试」会带着它们再跑一轮，也可以直接手动推送任务分支并开 PR。',
     recoveryTechnicalPendingTodo: 'LoopX 待办（内部）：{todo}',
@@ -220,7 +230,8 @@ const COPY = {
     summaryConclusion: '结论',
     summaryProcessDetails: '查看过程详情',
     summaryTechReceipts: '技术回执（原始文本）',
-    localPathRefHint: '本地文件，无法在应用内打开：{path}',
+    localPathRefHint: '点击在文件夹中显示：{path}',
+    localPathOpenFailed: '无法打开本地文件位置，请在文件系统中手动查找。',
     summaryPendingGate: '等待你在上方审批面板中处理',
     recoveryReasonHostRestart: '中断原因：应用异常关闭导致执行中断',
     recoveryReasonExecutionFailure: '中断原因：执行过程失败',
@@ -319,6 +330,7 @@ const COPY = {
     restore: '还原',
     updated: '更新于 {duration}前',
     taskUpdated: '任务更新于 {duration}前',
+    timeAgo: '{duration}前',
     openInGithub: '在 GitHub 中打开',
     openExternalFailed: '无法打开外部链接，请手动复制地址到浏览器。',
     currentWork: '当前',
@@ -328,18 +340,35 @@ const COPY = {
     stageComplete: '已完成',
     stageBlocked: '已阻塞',
     progressSummaryLine: '修复分五步：准备工作区 → 分析与方案 → 实施修改 → 结果核验 → 结算收束。当前：{stage}。',
-    progressPreparing: '正在准备独立 Worktree',
-    progressQueued: '等待同仓库前序 Issue',
-    progressAnalyzing: '正在分析原因并形成可执行方案',
-    progressImplementing: '已进入代码修改阶段',
-    progressValidating: '正在核验本轮产出',
-    progressSettling: '正在保存本轮进展',
+    progressPreparing: '正在准备工作区并确认问题背景',
+    progressQueued: '排队中，等待前一个任务完成',
+    progressAnalyzing: '正在定位原因并确认修复方案',
+    progressImplementing: '正在修改代码',
+    progressValidating: '正在验证修改是否解决了问题',
+    progressSettling: '正在整理结果并准备收尾',
     progressWaiting: '等待你的决定',
-    progressRecovery: '本轮执行已中断',
+    progressRecovery: '自动修复未完成',
+    progressPublishing: '正在准备发布 Pull Request',
+    progressFeasibility: '正在判断该 issue 是否需要修复',
+    progressInvestigating: '正在确认问题背景和已有修复',
+    progressReproducing: '正在复现问题并收集证据',
     progressCompleted: '修复流程已完成',
     progressResolvedUpstream: '上游已处理该问题',
     progressResolvedUpstreamDetail: '已确认当前上游代码移除了原始故障路径，不需要再提交额外修复。',
     progressIdle: '等待任务推进',
+    userStatePublishDecision: '需要你确认是否创建 PR',
+    userStateCommentDecision: '需要你确认是否发布评论',
+    userStateDecision: '需要你做出决定',
+    userStateExternalWait: '等待你在 GitHub 操作',
+    userStateMonitoring: '已创建 PR，系统持续跟进',
+    userStateWorking: '正在自动修复',
+    userStateWorkingDetail: '当前不需要你操作，系统会自动推进。',
+    userStateWorkingPreparingHint: '首次准备工作区可能稍慢，完成后会自动继续。',
+    userStateNoAction: '当前不需要你操作。',
+    userStateRecovery: '自动修复未完成，需要你决定',
+    userStateFailed: '自动修复失败，需要你处理',
+    userStatePausedDetail: '任务当前不继续推进，可在任务列表中恢复。',
+    userStateArchivedDetail: '任务已归档，不再自动运行。',
     issueDescription: 'Issue 描述',
     loadingIssueDescription: '正在加载 Issue 描述…',
     issueDescriptionUnavailable: '暂时无法加载 Issue 描述。',
@@ -369,15 +398,26 @@ const COPY = {
     externalActionSummaryValidate: '将执行构建、安装或真实运行验证，不会改动仓库内容。',
     externalActionApproveValidate: '执行验证命令并汇报结果。',
     externalActionRejectValidate: '不执行验证；任务保持等待。',
-    externalActionTitle: '需要批准的对外操作',
-    externalActionSummaryDetail: '请求执行：{detail}',
-    externalActionSummaryFallback: 'Agent 请求执行一个需要你批准的对外操作。',
+    externalActionTitle: '需要你批准的操作',
+    externalActionSummaryDetail: '待批准操作：{detail}',
+    externalActionSummaryFallback: '系统请求执行下面这个操作，请确认是否允许。',
     externalActionApproveFallback: '执行该操作，完成后汇报结果。',
     externalActionRejectFallback: '不执行该操作；现有修改、证据与工作区保留。',
     approvalAppliedGenericDetail: '已批准：{detail}',
     summarySupportingEvidence: '支撑证据',
     summaryArtifactSupports: '对应结论：{value}',
     artifactKindSource: '来源问题',
+    artifactKindFeasibility: '可行性判断',
+    artifactKindCandidateEvidence: '候选证据',
+    artifactKindTerminalVision: '收尾核验',
+    artifactKindRepositoryContext: '仓库上下文',
+    artifactKindLocalCommit: '本地提交',
+    artifactKindLocalCommitDetail: '该提交尚未推送到远端，暂时没有云端链接。',
+    artifactKindFeasibilityDetail: '记录该 issue 是否值得修复、风险与边界。',
+    artifactKindCandidateEvidenceDetail: '记录本轮调查中收集到的候选事实和证据。',
+    artifactKindTerminalVisionDetail: '记录收尾阶段对修复结果的最终核验。',
+    artifactKindRepositoryContextDetail: '记录仓库、分支和上下文检查结果。',
+    artifactKindFileDetail: '本轮自动修复产出的本地文件。',
     artifactKindRepro: '复现与验证证据',
     artifactKindValidation: '验证证据',
     artifactKindImplementation: '相关实现与改动范围',
@@ -512,6 +552,7 @@ const COPY = {
     taskMonitoringNext: '下次复查 {time}',
     taskMonitoringQueued: '监控中 · 等待 {item}',
     state_failed: '失败',
+    state_aborted: '已中止',
     state_archived: '已归档',
     state_resolved_upstream: '上游已修复',
     phase_unknown: '等待宿主状态',
@@ -615,6 +656,8 @@ const COPY = {
     timelineTitle: 'Run timeline',
     timelineLiveScope: 'Current run · {item}',
     timelineIdleScope: 'Pinned to · {item}',
+    timelineTurn: 'Turn {value}',
+    timelineTurnEvents: '{value} events',
     summaryMonitorConclusion: 'This run created {url}; its review and merge status is being monitored. Monitoring ends automatically once the PR is merged or closed and the task is marked Finished - no action needed from you until then.',
     summaryMonitorConclusionWithTime: 'This run created {url}; its review and merge status is being monitored (next automatic re-check: {time}). Monitoring ends automatically once the PR is merged or closed and the task is marked Finished - no action needed from you until then.',
     summaryMonitorConclusionNoArtifact: 'The PR review and merge status is being monitored (next automatic re-check: {time}). Monitoring ends once the PR is merged or closed.',
@@ -637,6 +680,14 @@ const COPY = {
     errorTitle: 'Error',
     gateKindPublish: 'Publish approval',
     gateKindComment: 'Comment approval',
+    gateKindReuseMerge: 'Reuse existing PR',
+    gateKindGatedRead: 'Read body and comments',
+    gateKindClarify: 'Clarification needed',
+    gateKindAuthority: 'Write authority',
+    gateKindDraft: 'Draft confirmation',
+    gateKindPush: 'Push action',
+    gateKindValidation: 'External validation',
+    gateKindExternal: 'Action confirmation',
     gatePublishCommentTitle: 'Publish maintainer comment to {item}',
     gatePublishCommentSummary: 'A public comment will be posted to {item}; this is an external write and will not change code or create a PR.',
     gatePublishCommentApproveEffect: 'Post this comment publicly on {item}; code and PRs are not changed.',
@@ -671,7 +722,7 @@ const COPY = {
     approvalContextTitle: 'Why this decision',
     decisionCardGateHint: 'Approve or reject the request in the approval panel above.',
     decisionCardRecoveryHint: 'This segment finished without confirmed progress. You can retry once, or review the artifacts and evidence below first.',
-    decisionCardTechnicalDetail: 'Technical details (internal state)',
+    decisionCardTechnicalDetail: 'Technical details (optional)',
     recoveryProducedArtifact: 'Produced by this run: {url}',
     recoveryPreservedHint: 'Your commits, changes, and evidence are preserved in the task worktree. Continue runs another segment with them; you can also push the task branch and open the PR manually.',
     recoveryTechnicalPendingTodo: 'LoopX todo (internal): {todo}',
@@ -727,7 +778,8 @@ const COPY = {
     summaryConclusion: 'Conclusion',
     summaryProcessDetails: 'View process details',
     summaryTechReceipts: 'Technical receipts (raw text)',
-    localPathRefHint: 'Local file - cannot be opened from the app: {path}',
+    localPathRefHint: 'Click to reveal in folder: {path}',
+    localPathOpenFailed: 'Could not open the local file location; find it manually in the file system.',
     summaryPendingGate: 'Waiting for you in the approval panel above',
     recoveryReasonHostRestart: 'Interrupted by an abnormal app shutdown',
     recoveryReasonExecutionFailure: 'Interrupted by an execution failure',
@@ -826,6 +878,7 @@ const COPY = {
     restore: 'Restore',
     updated: 'Updated {duration} ago',
     taskUpdated: 'Task updated {duration} ago',
+    timeAgo: '{duration} ago',
     openInGithub: 'Open in GitHub',
     openExternalFailed: 'Could not open the link. Copy the address into your browser instead.',
     currentWork: 'Current',
@@ -835,18 +888,35 @@ const COPY = {
     stageComplete: 'Complete',
     stageBlocked: 'Blocked',
     progressSummaryLine: 'The repair runs five stages: worktree → analysis and plan → implementation → validation → settlement. Current: {stage}.',
-    progressPreparing: 'Preparing an isolated worktree',
-    progressQueued: 'Waiting for the previous repository issue',
-    progressAnalyzing: 'Analyzing the cause and forming an actionable plan',
-    progressImplementing: 'Code changes are in progress',
-    progressValidating: 'Validating this outcome',
-    progressSettling: 'Saving this stage of progress',
+    progressPreparing: 'Preparing the workspace and checking the issue context',
+    progressQueued: 'Queued behind the previous task in this repository',
+    progressAnalyzing: 'Locating the cause and confirming a fix plan',
+    progressImplementing: 'Changing the code',
+    progressValidating: 'Verifying that the change actually fixes the issue',
+    progressSettling: 'Organizing the result and wrapping up',
     progressWaiting: 'Waiting for your decision',
-    progressRecovery: 'Execution was interrupted',
+    progressRecovery: 'Automatic repair did not finish',
+    progressPublishing: 'Preparing to publish the pull request',
+    progressFeasibility: 'Deciding whether this issue needs a repair',
+    progressInvestigating: 'Checking the issue context and any existing fix',
+    progressReproducing: 'Reproducing the issue and collecting evidence',
     progressCompleted: 'The repair workflow is complete',
     progressResolvedUpstream: 'Resolved upstream',
     progressResolvedUpstreamDetail: 'The current upstream code has removed the original failure path, so no additional patch is required.',
     progressIdle: 'Waiting for task progress',
+    userStatePublishDecision: 'Your decision is needed: create the PR?',
+    userStateCommentDecision: 'Your decision is needed: publish the comment?',
+    userStateDecision: 'Your decision is needed',
+    userStateExternalWait: 'Waiting for you on GitHub',
+    userStateMonitoring: 'PR created; monitoring continues',
+    userStateWorking: 'Automatic repair is in progress',
+    userStateWorkingDetail: 'No action is needed right now; the system will keep going.',
+    userStateWorkingPreparingHint: 'Preparing the workspace may take a moment on the first run; it will continue automatically.',
+    userStateNoAction: 'No action is needed right now.',
+    userStateRecovery: 'Automatic repair did not finish; your decision is needed',
+    userStateFailed: 'Automatic repair failed; your action is needed',
+    userStatePausedDetail: 'This task is paused. You can resume it from the task list.',
+    userStateArchivedDetail: 'This task is archived and will not run automatically.',
     issueDescription: 'Issue description',
     loadingIssueDescription: 'Loading issue description...',
     issueDescriptionUnavailable: 'Issue description is temporarily unavailable.',
@@ -876,15 +946,26 @@ const COPY = {
     externalActionSummaryValidate: 'Run a build, install, or real-run validation without changing repository content.',
     externalActionApproveValidate: 'Run the validation and report the result.',
     externalActionRejectValidate: 'Do not run the validation; the task stays waiting.',
-    externalActionTitle: 'External action needs your approval',
+    externalActionTitle: 'This action needs your approval',
     externalActionSummaryDetail: 'Requested action: {detail}',
-    externalActionSummaryFallback: 'The agent requested an external action that needs your approval.',
+    externalActionSummaryFallback: 'The system is requesting the following action; please confirm whether to allow it.',
     externalActionApproveFallback: 'Perform that action and report the result.',
     externalActionRejectFallback: 'Do not perform the action; existing changes, evidence, and the workspace are kept.',
     approvalAppliedGenericDetail: 'Approved: {detail}',
     summarySupportingEvidence: 'Supporting evidence',
     summaryArtifactSupports: 'Supports: {value}',
     artifactKindSource: 'Source issue',
+    artifactKindFeasibility: 'Feasibility decision',
+    artifactKindCandidateEvidence: 'Candidate evidence',
+    artifactKindTerminalVision: 'Final verification',
+    artifactKindRepositoryContext: 'Repository context',
+    artifactKindLocalCommit: 'Local commit',
+    artifactKindLocalCommitDetail: 'This commit has not been pushed yet, so there is no cloud link yet.',
+    artifactKindFeasibilityDetail: 'Records whether this issue is worth fixing, its risks, and boundaries.',
+    artifactKindCandidateEvidenceDetail: 'Records candidate facts and evidence gathered during this investigation.',
+    artifactKindTerminalVisionDetail: 'Records the final verification of the repair outcome.',
+    artifactKindRepositoryContextDetail: 'Records the repository, branch, and context checks.',
+    artifactKindFileDetail: 'A local file produced by this repair run.',
     artifactKindRepro: 'Reproduction / verification evidence',
     artifactKindValidation: 'Validation evidence',
     artifactKindImplementation: 'Implementation and change scope',
@@ -1019,6 +1100,7 @@ const COPY = {
     taskMonitoringNext: 'next re-check {time}',
     taskMonitoringQueued: 'Monitoring · waiting for {item}',
     state_failed: 'Failed',
+    state_aborted: 'Aborted',
     state_archived: 'Archived',
     state_resolved_upstream: 'Resolved upstream',
     phase_unknown: 'Waiting for host state',
@@ -1140,6 +1222,7 @@ const view = {
   issueDescription: byId('issue-description'),
   issueNumber: byId('issue-number'),
   timelineScope: byId('timeline-scope'),
+  timelineState: byId('timeline-state'),
   taskActions: byId('task-actions'),
   logScroll: byId('log-scroll'),
   logEmpty: byId('log-empty'),
@@ -1205,6 +1288,7 @@ const state = {
   expandedLogDetails: new Set(),
   expandedRecoveryTechnical: new Set(),
   expandedSummaryInternal: new Set(),
+  turnCollapseOverrides: new Map(),
   preview: null,
   pendingCreate: null,
   pendingRetry: null,
@@ -1312,6 +1396,12 @@ function relativeLabel(value) {
   const timestamp = normalizeTimestamp(value);
   if (!timestamp) return '--';
   return durationLabel(Date.now() - timestamp);
+}
+
+function timeAgoLabel(value) {
+  const duration = relativeLabel(value);
+  const justNow = text('justNow');
+  return duration === justNow ? justNow : text('timeAgo', { duration });
 }
 
 function clockLabel(value) {
@@ -1516,6 +1606,239 @@ function taskPhaseLabel(task) {
   if (isWorkspacePreparationFailure(task)) return text('workspacePreparationFailed');
   if (isExternalWait(task)) return text('state_waiting_for_external');
   return phaseLabel(task && task.phase);
+}
+
+/// Compact display-only projection of the task state machine for the timeline
+/// header. This deliberately reads the same public helpers as the issue
+/// header, rail, and stage card; it does not derive or persist task state.
+function recoveryReasonLabel(task) {
+  const reason = String(task && task.recoveryReason || '').trim();
+  if (!reason) return '';
+  const key = `recoveryReason${reason.split('_').map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join('')}`;
+  const value = text(key);
+  return value && value !== key ? value : '';
+}
+
+/// Pure display-only mapping from the runtime task state machine to the
+/// owner-facing contract: does this issue still need repair, did upstream
+/// already fix it, and what (if anything) must the owner do next?
+function taskUserTemplate(task) {
+  if (!task) return null;
+  const structured = task.structuredSummary && typeof task.structuredSummary === 'object'
+    ? task.structuredSummary
+    : null;
+  const verdict = String(structured && structured.issue_verdict || '');
+  const gate = task.pendingGateId ? latestGate(task.taskId) : null;
+  const approval = gate ? approvalPresentation(task, gate) : null;
+
+  if (isResolvedUpstream(task) || verdict === 'already_fixed_upstream') {
+    return {
+      key: 'upstream_fixed',
+      tone: 'success',
+      heading: text('progressResolvedUpstream'),
+      detail: text('progressResolvedUpstreamDetail'),
+      hint: '',
+      collapseLogs: true,
+    };
+  }
+  if (task.state === 'completed' && verdict === 'wont_fix') {
+    return {
+      key: 'no_fix',
+      tone: 'success',
+      heading: completionLabel(task) || text('summaryVerdictWontFix'),
+      detail: text('summaryCompletedNoFollowup'),
+      hint: '',
+      collapseLogs: true,
+    };
+  }
+  if (approval) {
+    const heading = approval.kind === 'publish'
+      ? text('userStatePublishDecision')
+      : (approval.kind === 'publish_comment' ? text('userStateCommentDecision') : text('userStateDecision'));
+    return {
+      key: 'owner_decision',
+      tone: 'warning',
+      heading,
+      detail: approval.summary,
+      hint: approval.recommendation || text('decisionCardGateHint'),
+      collapseLogs: true,
+      action: 'approval',
+    };
+  }
+  if (isExternalWait(task)) {
+    const waitMessage = String(task.pendingGateMessage || '').trim();
+    const links = taskPullRequestLinks(task, waitMessage);
+    return {
+      key: 'external_wait',
+      tone: 'info',
+      heading: text('userStateExternalWait'),
+      detail: externalWaitPresentation(waitMessage, links),
+      hint: text('decisionCardExternalSummaryGeneric'),
+      collapseLogs: true,
+      action: 'external',
+    };
+  }
+  if (isMonitorTodo(task)) {
+    return {
+      key: 'monitoring',
+      tone: 'info',
+      heading: text('userStateMonitoring'),
+      detail: monitorWaitDetail(task),
+      hint: text('userStateNoAction'),
+      collapseLogs: true,
+    };
+  }
+  if (task.state === 'completed') {
+    return {
+      key: 'completed',
+      tone: 'success',
+      heading: completionLabel(task) || text('progressCompleted'),
+      detail: text('summaryCompletedNoFollowup'),
+      hint: '',
+      collapseLogs: true,
+    };
+  }
+  if (task.state === 'failed' || task.state === 'recovery_required') {
+    return {
+      key: 'recovery',
+      tone: 'error',
+      heading: task.state === 'failed' ? text('userStateFailed') : text('userStateRecovery'),
+      detail: recoveryReasonLabel(task) || String(task.error || '').trim() || text('decisionCardRecoveryHint'),
+      hint: text('decisionCardRecoveryHint'),
+      collapseLogs: true,
+      action: 'recovery',
+    };
+  }
+  if (task.state === 'queued') {
+    return {
+      key: 'queued',
+      tone: 'muted',
+      heading: taskStateDisplayLabel(task),
+      detail: latestTaskWaitReason(task),
+      hint: text('userStateNoAction'),
+      collapseLogs: false,
+    };
+  }
+  if (task.state === 'stopped' || task.state === 'aborted') {
+    return {
+      key: 'paused',
+      tone: 'muted',
+      heading: taskStateDisplayLabel(task),
+      detail: text('userStatePausedDetail'),
+      hint: '',
+      collapseLogs: true,
+    };
+  }
+  if (task.state === 'archived') {
+    return {
+      key: 'archived',
+      tone: 'muted',
+      heading: taskStateDisplayLabel(task),
+      detail: text('userStateArchivedDetail'),
+      hint: '',
+      collapseLogs: true,
+    };
+  }
+  if (task.state === 'cancelling') {
+    return {
+      key: 'cancelling',
+      tone: 'warning',
+      heading: text('state_cancelling'),
+      detail: text('userStateNoAction'),
+      hint: '',
+      collapseLogs: false,
+    };
+  }
+  if (task.state === 'waiting_for_user') {
+    return {
+      key: 'owner_decision',
+      tone: 'warning',
+      heading: text('state_waiting_for_user'),
+      detail: text('decisionCardGateHint'),
+      hint: '',
+      collapseLogs: true,
+    };
+  }
+  if (task.state === 'retry_wait') {
+    return {
+      key: 'retry_wait',
+      tone: 'warning',
+      heading: text('state_retry_wait'),
+      detail: text('userStateWorkingDetail'),
+      hint: '',
+      collapseLogs: false,
+    };
+  }
+
+  const evidence = taskProgressEvidence(task);
+  const todoKind = String(task.currentTodo && task.currentTodo.actionKind || '');
+  let heading = text('userStateWorking');
+  let detail = text('userStateWorkingDetail');
+  if (task.phase === 'preparing_workspace' || task.state === 'preparing') {
+    heading = text('progressPreparing');
+    detail = text('userStateWorkingPreparingHint');
+  } else if (task.phase === 'validating_progress') {
+    heading = text('progressValidating');
+  } else if (task.phase === 'settling_turn') {
+    heading = text('progressSettling');
+  } else if (/publish|delivery|pr_review|pr_packet/.test(todoKind)) {
+    heading = text('progressPublishing');
+  } else if (/feasibility/.test(todoKind)) {
+    heading = text('progressFeasibility');
+  } else if (/confirm_reproduction|repro/.test(todoKind)) {
+    heading = text('progressReproducing');
+  } else if (/collect_candidate|preflight|investigat/.test(todoKind)) {
+    heading = text('progressInvestigating');
+  } else if (/validat|verif/.test(todoKind)) {
+    heading = text('progressValidating');
+  } else if (/apply_patch|validated_fix|implement/.test(todoKind)) {
+    heading = text('progressImplementing');
+  } else if (task.phase === 'agent_running') {
+    heading = text(evidence.changes > 0 ? 'progressImplementing' : 'progressAnalyzing');
+  }
+  return {
+    key: 'working',
+    tone: 'accent',
+    heading,
+    detail,
+    hint: '',
+    collapseLogs: false,
+  };
+}
+
+function timelineStatePresentation(task) {
+  return taskUserTemplate(task);
+}
+
+function renderTimelineState(task, visible) {
+  const element = view.timelineState;
+  if (!element) return;
+  const presentation = visible ? timelineStatePresentation(task) : null;
+  if (!presentation) {
+    element.hidden = true;
+    element.replaceChildren();
+    return;
+  }
+  element.hidden = false;
+  element.dataset.tone = presentation.tone;
+  const signal = document.createElement('span');
+  signal.className = 'timeline-state__signal';
+  signal.dataset.running = String(taskStageCardRunning(task));
+  signal.setAttribute('aria-hidden', 'true');
+  const copy = document.createElement('div');
+  copy.className = 'timeline-state__copy';
+  const heading = document.createElement('strong');
+  heading.textContent = presentation.heading;
+  const detail = document.createElement('p');
+  detail.textContent = presentation.detail || '';
+  copy.append(heading, detail);
+  if (presentation.hint) {
+    const hint = document.createElement('p');
+    hint.className = 'timeline-state__hint';
+    hint.textContent = presentation.hint;
+    copy.append(hint);
+  }
+  element.replaceChildren(signal, copy);
 }
 
 /// The LoopX frontier-todo projection marks the PR-lifecycle monitoring
@@ -1767,13 +2090,26 @@ function linkifiedText(value, repository) {
   const base = repository && repository.host && repository.owner && repository.repository
     ? `https://${repository.host}/${repository.owner}/${repository.repository}`
     : '';
-  const pattern = /\b(?:PR|pull request|pull)\s*#(\d+)\b|\bpull\/(\d+)\b|\b#(\d+)\b|\bcommit\s+([0-9a-f]{7,10})\b|\b([0-9a-f]{7,10})\b/g;
+  const pattern = /(https?:\/\/[^\s<>"')]+)|\b(?:PR|pull request|pull)\s*#(\d+)\b|\bpull\/(\d+)\b|\b#(\d+)\b|\bcommit\s+([0-9a-f]{7,40})\b|\b([0-9a-f]{7,40})\b/g;
   let cursor = 0;
   let match;
   while ((match = pattern.exec(raw)) !== null) {
-    const [full, prA, prB, issue, shaA, shaB] = match;
+    const [full, urlRaw, prA, prB, issue, shaA, shaB] = match;
     let url = '';
     let label = full;
+    if (urlRaw) {
+      let trailing = '';
+      url = urlRaw.replace(/[.,;:!?]+$/, (suffix) => {
+        trailing = suffix;
+        return '';
+      });
+      if (!url) continue;
+      if (match.index > cursor) fragment.append(raw.slice(cursor, match.index));
+      fragment.append(externalAnchor(url, url));
+      if (trailing) fragment.append(trailing);
+      cursor = match.index + full.length;
+      continue;
+    }
     if (prA) {
       url = `${base}/pull/${prA}`;
       label = `PR #${prA}`;
@@ -2007,6 +2343,7 @@ function clearRunUiState() {
   state.outputHistory = [];
   state.outputKeys.clear();
   state.outputCharacters = 0;
+  state.turnCollapseOverrides.clear();
   clearTurnOutputTimer();
   resetTurnOutput(null);
 }
@@ -2703,7 +3040,7 @@ function updateTaskButton(button, task) {
   const activity = task.lastOutputAt || task.updatedAt;
   const repositoryText = repositoryLabel(item && item.repository);
   const itemText = compactItemLabel(item);
-  const activityText = relativeLabel(activity);
+  const activityText = timeAgoLabel(activity);
   button.querySelector('.task-item__repo').textContent = repositoryText;
   button.querySelector('.task-item__item').textContent = itemText;
   button.querySelector('.task-item__time').textContent = activityText;
@@ -2943,7 +3280,7 @@ function stripGatePriorityPrefix(message) {
 function firstRequestSentence(message) {
   const value = stripPriorityPrefix(message);
   if (!value) return '';
-  const sentence = value.split(/(?<=[.!?])\s+/)[0] || value;
+  const sentence = value.split(/(?<=[.!?。！？])\s*/)[0] || value;
   return sentence.length > 180 ? `${sentence.slice(0, 179)}…` : sentence;
 }
 
@@ -2980,7 +3317,9 @@ function approvalPresentation(task, gate) {
   const reuseMerge = actionKind.includes('merge')
     || actionKind.includes('reuse')
     || /merge\s+PR\s+#(\d+)/i.test(body)
-    || /reuse[_\s-]*(?:existing[_\s-]*)?pr/i.test(body);
+    || /reuse[_\s-]*(?:existing[_\s-]*)?pr/i.test(body)
+    || /(?:合并|复用).*(?:PR|pull request|拉取请求)/i.test(body)
+    || /(?:PR|pull request|拉取请求).*(?:合并|复用)/i.test(body);
   if (reuseMerge) {
     const prNumber = body.match(/PR\s+#(\d+)/i)?.[1] || '';
     const pr = prNumber ? `PR #${prNumber}` : text('gateReuseMergeFallbackPr');
@@ -3000,13 +3339,15 @@ function approvalPresentation(task, gate) {
     };
   }
 
-  const mentionsPr = /\bpull request\b|\bpr\b/i.test(body);
+  const mentionsPr = /\bpull request\b|\bpr\b|拉取请求/i.test(body);
   const publishPullRequest = actionKind.includes('publish')
     || actionKind.includes('pull_request')
     || /\bpr bundle\b/i.test(body)
     // 「approve opening the pull request」这类措辞此前会掉进 generic：只要句子里
     // 同时出现 PR 和打开/发布/评审类动作，就按「创建 PR」处理。
-    || (mentionsPr && /\b(?:publish|push|creat(?:e|ing|ion)|open(?:ing)?|review|description|read(?:y)?)\b/i.test(body));
+    || (mentionsPr && /\b(?:publish|push|creat(?:e|ing|ion)|open(?:ing)?|review|description|read(?:y)?)\b/i.test(body))
+    || /(?:发布|创建|提交|推送|打开|发起|关联).*(?:PR|pull request|拉取请求)/i.test(body)
+    || /(?:PR|pull request|拉取请求).*(?:发布|创建|提交|推送|打开|发起|关联)/i.test(body);
   if (publishPullRequest) {
     const branch = body.match(/\bbranch\s+([^,\s)]+)/i)?.[1] || '';
     const commit = body.match(/\bcommit\s+([0-9a-f]{7,40})\b/i)?.[1] || '';
@@ -3037,9 +3378,9 @@ function approvalPresentation(task, gate) {
 
   // LoopX issue-fix 契约中的已知 gate 类型：面向人给出中文说明，
   // 原始待办文本（英文、技术性）折叠进「原始请求」而不是当作正文。
-  const publishComment = /comment/i.test(body)
-    && /(publish|post)/i.test(body)
-    && !/\bpull request\b|\bPR\b/i.test(body);
+  const publishComment = /(?:comment|评论|回复)/i.test(body)
+    && /(?:publish|post|发布|公开|提交)/i.test(body)
+    && !/\bpull request\b|\bPR\b|拉取请求/i.test(body);
   if (publishComment) {
     const item = task && task.identity && task.identity.item;
     const itemText = compactItemLabel(item) || repositoryLabel(item && item.repository) || '--';
@@ -3078,7 +3419,8 @@ function approvalPresentation(task, gate) {
   }
   const gatedRead = actionKind.includes('body_or_comment_read')
     || actionKind.includes('gated_read')
-    || /gated read|approve a gated read/i.test(body);
+    || /gated read|approve a gated read/i.test(body)
+    || /(?:读取|阅读|查看).*(?:正文|评论|内容)/i.test(body);
   if (gatedRead) {
     return {
       kind: 'gated_read',
@@ -3093,7 +3435,7 @@ function approvalPresentation(task, gate) {
     };
   }
 
-  if (actionKind.includes('clarify') || actionKind.includes('semantic_ambiguity')) {
+  if (actionKind.includes('clarify') || actionKind.includes('semantic_ambiguity') || /(?:澄清|歧义|多种理解)/i.test(body)) {
     return {
       kind: 'clarify',
       title: text('gateClarifyTitle'),
@@ -3107,7 +3449,7 @@ function approvalPresentation(task, gate) {
     };
   }
 
-  if (actionKind.includes('authority') || actionKind.includes('grant_')) {
+  if (actionKind.includes('authority') || actionKind.includes('grant_') || /(?:授权|写权限|权限范围)/i.test(body)) {
     const scopes = authorityScopeLabels(body);
     return {
       kind: 'grant_authority',
@@ -3124,7 +3466,7 @@ function approvalPresentation(task, gate) {
     };
   }
 
-  if (actionKind.includes('draft') || actionKind.includes('ready_for_review')) {
+  if (actionKind.includes('draft') || actionKind.includes('ready_for_review') || /(?:草稿|待评审)/i.test(body)) {
     return {
       kind: 'draft_ready',
       title: text('gateDraftReadyTitle'),
@@ -3138,7 +3480,7 @@ function approvalPresentation(task, gate) {
     };
   }
 
-  if (/\b(?:push|commit)\b/i.test(body)) {
+  if (/\b(?:push|commit)\b/i.test(body) || /(?:推送|提交到远端)/i.test(body)) {
     const branch = body.match(/\bbranch\s+([^,\s)]+)/i)?.[1] || '';
     const summaryDetail = branch
       ? text('externalActionPushDetailNoCommit', { branch })
@@ -3173,10 +3515,11 @@ function approvalPresentation(task, gate) {
   }
 
   const request = firstRequestSentence(body);
+  const requestIsChinese = /[\u3400-\u9fff]/.test(request);
   return {
     kind: 'external_action',
     title: text('externalActionTitle'),
-    summary: request
+    summary: requestIsChinese
       ? text('externalActionSummaryDetail', { detail: request })
       : text('externalActionSummaryFallback'),
     summaryDetail: request,
@@ -3187,6 +3530,22 @@ function approvalPresentation(task, gate) {
     approveLabel: text('approve'),
     rejectLabel: text('reject'),
   };
+}
+
+function approvalKindLabel(presentation) {
+  const key = {
+    reuse_merge: 'gateKindReuseMerge',
+    publish: 'gateKindPublish',
+    publish_comment: 'gateKindComment',
+    gated_read: 'gateKindGatedRead',
+    clarify: 'gateKindClarify',
+    grant_authority: 'gateKindAuthority',
+    draft_ready: 'gateKindDraft',
+    push: 'gateKindPush',
+    run_validation: 'gateKindValidation',
+    external_action: 'gateKindExternal',
+  }[presentation && presentation.kind];
+  return key ? text(key) : text('gateKindDecision');
 }
 
 function syncApprovalAttention(autoOpen = false) {
@@ -3296,17 +3655,49 @@ function isLocalPathReference(rawUrl) {
   const source = String(rawUrl || '').trim();
   if (!source) return false;
   if (/^[a-z][a-z0-9+.-]*:/i.test(source)) return false;
-  if (source.startsWith('//') || source.startsWith('#') || source.startsWith('/')) return false;
-  return true;
+  if (source.startsWith('//') || source.startsWith('#')) return false;
+  if (/^[a-zA-Z]:[\\/]/.test(source)) return true;
+  if (source.startsWith('/')) return true;
+  if (/^\.{1,2}[\\/]/.test(source)) return true;
+  // Treat only file-like relative paths as local files. A branch name or a
+  // commit description (for example "位于分支 codex/...，尚未推送") has a slash
+  // but no file extension and must not render as a clickable local file.
+  return /[\\/]/.test(source) && /\.[a-z0-9]{1,8}(?:$|[?#])/i.test(source);
+}
+
+function resolveWorkspacePath(workspacePath, target) {
+  const raw = String(target || '').trim();
+  if (!raw) return raw;
+  if (/^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('/') || raw.startsWith('\\\\')) return raw;
+  const base = String(workspacePath || '').trim();
+  if (!base) return raw;
+  return `${base.replace(/[\\/]+$/, '')}/${raw.replace(/\\/g, '/')}`;
+}
+
+function revealLocalPath(target) {
+  const task = displayedTask();
+  const path = resolveWorkspacePath(task && task.workspacePath, target);
+  const reveal = app && app.system && typeof app.system.revealInFolder === 'function'
+    ? app.system.revealInFolder
+    : null;
+  if (!reveal) {
+    showNotice(text('localPathOpenFailed'), 'error');
+    return;
+  }
+  Promise.resolve(reveal(path)).catch(() => {
+    showNotice(text('localPathOpenFailed'), 'error');
+  });
 }
 
 function localPathReferenceChip(label, target) {
-  const chip = document.createElement('span');
-  chip.className = 'local-path-ref';
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = 'local-path-ref local-path-ref--action';
   chip.title = text('localPathRefHint', { path: String(target || '') });
   const name = document.createElement('code');
   name.textContent = label || target;
   chip.append(name);
+  chip.addEventListener('click', () => revealLocalPath(target));
   return chip;
 }
 
@@ -3695,13 +4086,11 @@ function renderIssueApproval(task) {
   }
   if (!gate) return;
   const presentation = approvalPresentation(task, gate);
-  view.issueApprovalKind.textContent = presentation.kind === 'publish'
-    ? text('gateKindPublish')
-    : (presentation.kind === 'publish_comment' ? text('gateKindComment') : text('gateKindDecision'));
+  view.issueApprovalKind.textContent = approvalKindLabel(presentation);
   view.issueApprovalTitle.textContent = presentation.title;
   view.issueApprovalMessage.textContent = presentation.summary;
   const rawBody = String(presentation.rawMessage || '').trim();
-  const showRaw = rawBody && rawBody !== presentation.summary && presentation.kind === 'generic';
+  const showRaw = rawBody && rawBody !== presentation.summary;
   view.issueApprovalRaw.hidden = !showRaw;
   view.issueApprovalRawText.textContent = showRaw ? rawBody : '';
   view.issueApprovalApproveEffect.textContent = presentation.approveEffect;
@@ -4311,6 +4700,11 @@ function classifyArtifact(value) {
   const lower = raw.toLowerCase();
   if (/^https?:\/\//.test(lower) && /github\.com\/[^/]+\/[^/]+\/(issues|pull)\//.test(lower)) return 'source_issue';
   if (/(pr[-_]?review[-_]?packet|review[-_]?packet|publish|release)/.test(lower)) return 'review';
+  if (/本地提交|尚未推送/.test(String(value || '')) || /\bcommit\s+[0-9a-f]{7,40}\b/i.test(lower)) return 'local_commit';
+  if (/(feasibility|feasible)/.test(lower)) return 'feasibility';
+  if (/(candidate[-_]?evidence|candidate[-_]?facts)/.test(lower)) return 'candidate_evidence';
+  if (/(terminal[-_]?vision|vision[-_]?packet)/.test(lower)) return 'terminal_vision';
+  if (/(repository[-_]?context|preflight[-_]?input)/.test(lower)) return 'repository_context';
   if (/(evidence|repro)/.test(lower)) return 'repro';
   if (/(\.test\.|\.spec\.|vitest|cargo test|pytest|\btests?\b)/.test(lower)) return 'validation';
   if (/(^|\/)agents\.md$|(^|\/)docs?\//.test(lower) || /\.md$/.test(lower)) return 'docs';
@@ -4325,7 +4719,21 @@ const ARTIFACT_KIND_LABEL_KEY = {
   implementation: 'artifactKindImplementation',
   docs: 'artifactKindDocs',
   review: 'artifactKindReview',
+  feasibility: 'artifactKindFeasibility',
+  candidate_evidence: 'artifactKindCandidateEvidence',
+  terminal_vision: 'artifactKindTerminalVision',
+  repository_context: 'artifactKindRepositoryContext',
+  local_commit: 'artifactKindLocalCommit',
   file: 'artifactKindFile',
+};
+
+const ARTIFACT_KIND_DETAIL_KEY = {
+  feasibility: 'artifactKindFeasibilityDetail',
+  candidate_evidence: 'artifactKindCandidateEvidenceDetail',
+  terminal_vision: 'artifactKindTerminalVisionDetail',
+  repository_context: 'artifactKindRepositoryContextDetail',
+  local_commit: 'artifactKindLocalCommitDetail',
+  file: 'artifactKindFileDetail',
 };
 
 function artifactSupportText(artifact, summary) {
@@ -4344,8 +4752,13 @@ function artifactSupportText(artifact, summary) {
 }
 
 function renderSupportingEvidence(container, artifacts, summary, repository) {
+  // Supporting evidence only shows cloud/remote references. Local paths and
+  // local-only commit descriptions are intentionally omitted; the owner can
+  // still inspect them in the workspace if needed.
   const values = Array.isArray(artifacts)
-    ? artifacts.map((item) => String(item || '').trim()).filter(Boolean)
+    ? artifacts
+      .map((item) => String(item || '').trim())
+      .filter((item) => /^https?:\/\/\S+$/i.test(item))
     : [];
   if (!values.length) return;
   const heading = document.createElement('h3');
@@ -4354,18 +4767,21 @@ function renderSupportingEvidence(container, artifacts, summary, repository) {
   list.className = 'summary-support';
   values.forEach((value) => {
     const entry = document.createElement('li');
+    const artifactKind = classifyArtifact(value);
     const kind = document.createElement('span');
     kind.className = 'summary-support__kind';
-    kind.textContent = text(ARTIFACT_KIND_LABEL_KEY[classifyArtifact(value)] || 'artifactKindFile');
+    kind.textContent = text(ARTIFACT_KIND_LABEL_KEY[artifactKind] || 'artifactKindFile');
     const body = document.createElement('span');
     body.className = 'summary-support__body';
     // 路径/URL 列表不是「英文原文」叙述，不打语言标签。
     body.append(linkifiedText(value, repository));
-    const support = artifactSupportText(value, summary || {});
+    const detailKey = ARTIFACT_KIND_DETAIL_KEY[artifactKind];
+    const support = artifactSupportText(value, summary || {})
+      || (detailKey ? text(detailKey) : '');
     if (support) {
       const note = document.createElement('span');
       note.className = 'summary-support__note';
-      note.textContent = text('summaryArtifactSupports', { value: support });
+      note.textContent = support;
       body.append(note);
     }
     entry.append(kind, body);
@@ -4424,16 +4840,6 @@ function renderSupportingEvidence(container, artifacts, summary, repository) {
     badges.append(reproduction);
   }
   container.append(badges);
-  const stateLabelText = taskStateDisplayLabel(task);
-  const statePhaseText = taskPhaseLabel(task);
-  const stateActionText = taskActionLabel(task);
-  const stateLineText = [stateLabelText, statePhaseText, stateActionText].filter(Boolean).join(' · ');
-  if (stateLineText) {
-    const stateLine = document.createElement('p');
-    stateLine.className = 'summary-inline-note summary-state-line';
-    stateLine.textContent = stateLineText;
-    container.append(stateLine);
-  }
   if (reproductionEvidence) {
     const evidence = document.createElement('p');
     evidence.className = 'summary-inline-note summary-reproduction-evidence';
@@ -4494,9 +4900,6 @@ function renderSupportingEvidence(container, artifacts, summary, repository) {
     container.append(note);
   }
 
-  if (task) {
-    renderInternalDetails(container, s, task, `brief:${task.taskId}`);
-  }
 
   if (
     Array.isArray(s.blockers)
@@ -5173,11 +5576,10 @@ function outputBlockDisclosure(block) {
   details.addEventListener('toggle', () => {
     if (details.open) {
       store.add(blockKey);
-      pauseFollowForReading();
-      const anchor = captureLogAnchor();
-      requestAnimationFrame(() => restoreLogAnchor(anchor));
+      applyLogViewportChange(() => {});
     } else {
       store.delete(blockKey);
+      applyLogViewportChange(() => {});
     }
   });
   return details;
@@ -5190,6 +5592,7 @@ function turnOutputBlockRow(block) {
   row.dataset.level = block.toolState === 'failed' ? 'error' : 'info';
   row.dataset.cursor = String(block.endCursor);
   row.dataset.taskId = block.taskId;
+  row.dataset.turnKey = `${block.taskId}:${block.turnId || ''}`;
   row.dataset.blockKey = outputBlockDomKey(block);
   row.dataset.blockVersion = outputBlockDomVersion(block);
   if (block.kind === 'thinking' || block.kind === 'tool') {
@@ -5210,6 +5613,7 @@ function updateTurnOutputBlockRow(row, block) {
   row.dataset.blockVersion = version;
   row.dataset.level = block.toolState === 'failed' ? 'error' : 'info';
   row.dataset.cursor = String(block.endCursor);
+  row.dataset.turnKey = `${block.taskId}:${block.turnId || ''}`;
 
   const disclosure = row.querySelector('.output-block__disclosure');
   if (disclosure) {
@@ -5295,7 +5699,7 @@ function timelineMilestoneRow(event) {
 
 function taskStageCardRunning(task) {
   if (!task || isExternalWait(task)) return false;
-  return ['queued', 'preparing', 'running', 'cancelling'].includes(task.state)
+  return ['preparing', 'running', 'cancelling'].includes(task.state)
     || task.phase === 'preparing_workspace';
 }
 
@@ -5313,7 +5717,6 @@ function ensureStageCardTicker() {
 }
 
 function timelineStageCard(task) {
-  const item = task && task.identity && task.identity.item;
   const card = document.createElement('div');
   card.className = 'timeline-stage-card';
   if (!task) {
@@ -5322,6 +5725,7 @@ function timelineStageCard(task) {
     card.append(message);
     return card;
   }
+  const template = taskUserTemplate(task);
   const running = taskStageCardRunning(task);
   if (running) {
     card.dataset.running = 'true';
@@ -5331,16 +5735,11 @@ function timelineStageCard(task) {
     card.append(spinner);
   }
   const heading = document.createElement('strong');
-  heading.textContent = task && task.state === 'queued' && isMonitorTodo(task)
-    ? text('monitor_phase_queued')
-    : taskPhaseLabel(task);
+  heading.textContent = template ? template.heading : text('progressIdle');
   card.append(heading);
   const detail = document.createElement('p');
-  const taskEvents = progressTaskEvents(task);
-  if (task.state === 'queued') {
-    detail.textContent = isMonitorTodo(task) ? monitorWaitDetail(task) : latestTaskWaitReason(task);
-  } else if (task.phase === 'preparing_workspace') {
-    const since = task.updatedAt ? normalizeTimestamp(task.updatedAt) : 0;
+  if (template && template.key === 'working' && task.phase === 'preparing_workspace' && task.updatedAt) {
+    const since = normalizeTimestamp(task.updatedAt);
     if (since) {
       const elapsed = document.createElement('span');
       elapsed.className = 'timeline-stage-card__elapsed';
@@ -5350,41 +5749,70 @@ function timelineStageCard(task) {
       });
       detail.append(
         elapsed,
-        document.createTextNode(` · ${text('worktreeQuiet', { item: compactItemLabel(item) })}`),
+        document.createTextNode(` · ${template.detail || text('userStateWorkingDetail')}`),
       );
       if (running) ensureStageCardTicker();
     } else {
-      detail.textContent = text('worktreeQuiet', { item: compactItemLabel(item) });
+      detail.textContent = template.detail || '';
     }
-  } else if (task.state === 'running' && task.phase === 'agent_running') {
-    detail.textContent = text('awaitingFirstOutput');
-  } else if (isExternalWait(task)) {
-    const waitMessage = String(task.pendingGateMessage || '').trim();
-    detail.textContent = externalWaitPresentation(
-      waitMessage,
-      taskPullRequestLinks(task, waitMessage),
-    );
-  } else if (task.state === 'waiting_for_user') {
-    detail.textContent = text('decisionCardGateHint');
   } else {
-    detail.textContent = currentProgressDetail(task, taskEvents);
+    detail.textContent = template ? (template.detail || '') : '';
   }
   card.append(detail);
   return card;
 }
+
 /// The reader's place in the stream must survive re-renders. The scroller is
 /// position:relative, so a row's offsetTop is stable in its coordinate space:
 /// remember the first visible row plus its offset, then put it back after the
 /// list has been reordered. Without this, new output shoved the row being read
 /// off screen even though follow-mode was already off.
+function logScrollRemaining() {
+  const scroller = view && view.logScroll;
+  if (!scroller) return 0;
+  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+}
+
+function updateNewEventsVisibility() {
+  if (!view || !view.newEvents || !view.logScroll) return;
+  const scroller = view.logScroll;
+  const hasOverflow = scroller.scrollHeight > scroller.clientHeight + 1;
+  const remaining = logScrollRemaining();
+  view.newEvents.hidden = state.followLogs || !hasOverflow || remaining <= 40;
+}
+
 function pauseFollowForReading() {
   state.followLogs = false;
-  if (view && view.newEvents) view.newEvents.hidden = false;
+  requestAnimationFrame(updateNewEventsVisibility);
+}
+
+function applyLogViewportChange(change) {
+  const keepAtBottom = logScrollRemaining() < 40;
+  if (!keepAtBottom) {
+    pauseFollowForReading();
+    const anchor = captureLogAnchor();
+    change();
+    requestAnimationFrame(() => {
+      restoreLogAnchor(anchor);
+      updateNewEventsVisibility();
+    });
+    return;
+  }
+  state.followLogs = true;
+  change();
+  requestAnimationFrame(() => {
+    view.logScroll.scrollTop = view.logScroll.scrollHeight;
+    updateNewEventsVisibility();
+  });
 }
 
 function logRowAnchorKey(node) {
   if (!node || !node.dataset) return '';
-  return node.dataset.blockKey || node.dataset.toolRunKey || node.dataset.eventKey || '';
+  return node.dataset.timelineKey
+    || node.dataset.blockKey
+    || node.dataset.toolRunKey
+    || node.dataset.eventKey
+    || '';
 }
 
 function findLogRowByAnchorKey(key) {
@@ -5395,11 +5823,10 @@ function findLogRowByAnchorKey(key) {
 function handleLogDetailsToggle(details, key) {
   if (details.open) {
     state.expandedLogDetails.add(key);
-    pauseFollowForReading();
-    const anchor = captureLogAnchor();
-    requestAnimationFrame(() => restoreLogAnchor(anchor));
+    applyLogViewportChange(() => {});
   } else {
     state.expandedLogDetails.delete(key);
+    applyLogViewportChange(() => {});
   }
 }
 
@@ -5408,7 +5835,10 @@ function captureLogAnchor() {
   if (!scroller) return null;
   const scrollTop = scroller.scrollTop;
   const node = [...view.logList.children]
-    .find((row) => row.offsetTop + row.offsetHeight > scrollTop);
+    .find((row) => (
+      (row.classList.contains('log-row') && !row.classList.contains('is-turn-collapsed'))
+      || row.classList.contains('timeline-turn')
+    ) && row.offsetTop + row.offsetHeight > scrollTop);
   if (!node) return null;
   return { node, key: logRowAnchorKey(node), offset: node.offsetTop - scrollTop };
 }
@@ -5549,6 +5979,121 @@ function updateTimelineToolRunRow(row, group) {
   const pre = row.querySelector('.log-tool-details pre');
   if (pre) pre.textContent = toolRunDetailText(group);
 }
+function timelineChildKey(node) {
+  if (!node || !node.dataset) return '';
+  if (node.dataset.timelineKey) return node.dataset.timelineKey;
+  if (node.dataset.blockKey) return `b:${node.dataset.blockKey}`;
+  if (node.dataset.eventKey) return `e:${node.dataset.eventKey}`;
+  if (node.dataset.toolRunKey) return `r:${node.dataset.toolRunKey}`;
+  return '';
+}
+
+function timelineTurnGroupKey(task, group) {
+  const taskId = task && task.taskId ? task.taskId : '';
+  const turnId = group && group.turnId ? group.turnId : '';
+  return `${taskId}:${turnId}`;
+}
+
+function timelineTurnNumber(turnId, fallbackIndex) {
+  // Turn IDs are host-internal and can jump; the UI shows a stable sequence
+  // for the visible turn groups instead of exposing the raw turn id.
+  void turnId;
+  return fallbackIndex + 1;
+}
+
+function timelineTurnSummary(group) {
+  const kinds = [];
+  group.blocks.forEach((block) => {
+    const label = outputKindLabel(block.kind);
+    if (!kinds.includes(label)) kinds.push(label);
+  });
+  return [
+    kinds.join(' · '),
+    text('timelineTurnEvents', { value: group.blocks.length }),
+  ].filter(Boolean).join(' · ');
+}
+
+function defaultRawLogsCollapsed(task) {
+  return [
+    'completed',
+    'failed',
+    'recovery_required',
+    'waiting_for_user',
+    'stopped',
+    'aborted',
+    'archived',
+  ].includes(String(task && task.state || ''))
+    || isExternalWait(task)
+    || isMonitorTodo(task);
+}
+
+function isTurnCollapsed(task, group, index, total) {
+  const key = timelineTurnGroupKey(task, group);
+  if (state.turnCollapseOverrides.has(key)) return state.turnCollapseOverrides.get(key);
+  return index < total - 1 || defaultRawLogsCollapsed(task);
+}
+
+function updateTimelineTurnDivider(node, task, group, index, total) {
+  const key = timelineTurnGroupKey(task, group);
+  const collapsed = isTurnCollapsed(task, group, index, total);
+  node.dataset.turnKey = key;
+  node.dataset.timelineKey = `d:${key}`;
+  const button = node.querySelector('.timeline-turn__toggle');
+  const label = node.querySelector('.timeline-turn__label');
+  const meta = node.querySelector('.timeline-turn__meta');
+  if (button) {
+    button.setAttribute('aria-expanded', String(!collapsed));
+    button.dataset.collapsed = String(collapsed);
+    button.onclick = () => {
+      const nextCollapsed = !isTurnCollapsed(task, group, index, total);
+      state.turnCollapseOverrides.set(key, nextCollapsed);
+      applyLogViewportChange(() => applyTimelineTurnCollapse(task, group, index, total));
+    };
+  }
+  if (label) label.textContent = text('timelineTurn', { value: timelineTurnNumber(group.turnId, index) });
+  if (meta) meta.textContent = timelineTurnSummary(group);
+}
+
+function applyTimelineTurnCollapse(task, group, index, total, nodes) {
+  const key = timelineTurnGroupKey(task, group);
+  const collapsed = isTurnCollapsed(task, group, index, total);
+  const children = nodes || view.logList.children;
+  [...children].forEach((node) => {
+    if (
+      node.classList
+      && node.classList.contains('log-row')
+      && node.dataset
+      && node.dataset.turnKey === key
+    ) {
+      node.classList.toggle('is-turn-collapsed', collapsed);
+    }
+  });
+  const divider = [...children].find((node) => (
+    node.classList
+    && node.classList.contains('timeline-turn')
+    && node.dataset
+    && node.dataset.turnKey === key
+  ));
+  if (divider) updateTimelineTurnDivider(divider, task, group, index, total);
+  return collapsed;
+}
+
+function createTimelineTurnDivider(task, group, index, total) {
+  const node = document.createElement('li');
+  node.className = 'timeline-turn';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'timeline-turn__toggle';
+  const label = document.createElement('strong');
+  label.className = 'timeline-turn__label';
+  const meta = document.createElement('span');
+  meta.className = 'timeline-turn__meta';
+  button.append(disclosureChevron(), label, meta);
+  node.append(button);
+  updateTimelineTurnDivider(node, task, group, index, total);
+  return node;
+}
+
 function renderTimeline() {
   if (!canRender()) return;
   const running = runningOutputTask();
@@ -5556,7 +6101,7 @@ function renderTimeline() {
   const task = displayedTask();
 
   const scopeItem = task && task.identity && task.identity.item;
-  const scopeRepo = scopeItem ? String(scopeItem.repository || '').trim() : '';
+  const scopeRepo = scopeItem ? repositoryLabel(scopeItem.repository) : '';
   const scopeLabel = [scopeRepo, compactItemLabel(scopeItem)].filter(Boolean).join(' · ');
   view.timelineScope.textContent = task
     ? text(state.selectedTaskId ? 'timelineIdleScope' : 'timelineLiveScope', { item: scopeLabel })
@@ -5582,44 +6127,55 @@ function renderTimeline() {
   // was a second presentation of the same work and is gone on request
   // (live 2026-09-15); when a task captured no live output the panel now shows
   // the empty stage card instead of that table.
-  const rows = [];
-  blockGroups.forEach((group) => {
-    group.blocks.forEach((block) => rows.push({ key: `b:${outputBlockDomKey(block)}`, kind: 'block', block }));
+  const existingNodes = new Map();
+  [...view.logList.children].forEach((node) => {
+    const key = timelineChildKey(node);
+    if (key) existingNodes.set(key, node);
   });
-  const visibleRows = rows.slice(-MAX_RENDERED_OUTPUT_BLOCKS);
 
-  const existingBlocks = new Map(
-    [...view.logList.children]
-      .filter((node) => node.dataset && node.dataset.blockKey)
-      .map((node) => [node.dataset.blockKey, node]),
-  );
-  const existingEvents = new Map(
-    [...view.logList.children]
-      .filter((node) => node.dataset && node.dataset.eventKey)
-      .map((node) => [node.dataset.eventKey, node]),
-  );
-  const desired = visibleRows.map((row) => {
-    if (row.kind === 'block') {
-      const node = existingBlocks.get(row.key);
-      if (!node) return turnOutputBlockRow(row.block);
-      updateTurnOutputBlockRow(node, row.block);
-      return node;
-    }
-    const node = existingEvents.get(row.key);
-    return node || timelineMilestoneRow(row.event);
+  const totalGroups = blockGroups.length;
+  // Apply the current collapse plan to already rendered rows before taking
+  // the scroll anchor, so auto-collapsing a historical turn does not move the
+  // reader's place in the stream.
+  blockGroups.forEach((group, groupIndex) => {
+    applyTimelineTurnCollapse(task, group, groupIndex, totalGroups);
   });
+
+  const desiredNodes = [];
+  blockGroups.forEach((group, groupIndex) => {
+    const groupKey = timelineTurnGroupKey(task, group);
+    let divider = existingNodes.get(`d:${groupKey}`);
+    if (!divider) divider = createTimelineTurnDivider(task, group, groupIndex, totalGroups);
+    else updateTimelineTurnDivider(divider, task, group, groupIndex, totalGroups);
+    desiredNodes.push(divider);
+
+    group.blocks.forEach((block) => {
+      const key = `b:${outputBlockDomKey(block)}`;
+      let node = existingNodes.get(key);
+      if (!node) node = turnOutputBlockRow(block);
+      else updateTurnOutputBlockRow(node, block);
+      node.dataset.turnKey = `${block.taskId}:${block.turnId || ''}`;
+      desiredNodes.push(node);
+    });
+  });
+
   const logAnchor = state.followLogs ? null : captureLogAnchor();
-  desired.forEach((node, index) => {
+  desiredNodes.forEach((node, index) => {
     const current = view.logList.children[index];
     if (current !== node) view.logList.insertBefore(node, current || null);
   });
-  const desiredNodes = new Set(desired);
+  const desiredSet = new Set(desiredNodes);
   [...view.logList.children].forEach((node) => {
-    if (!desiredNodes.has(node)) node.remove();
+    if (!desiredSet.has(node)) node.remove();
   });
 
-  const hasRows = visibleRows.length !== 0;
+  blockGroups.forEach((group, groupIndex) => {
+    applyTimelineTurnCollapse(task, group, groupIndex, totalGroups);
+  });
+
+  const hasRows = blockGroups.some((group) => group.blocks.length > 0);
   view.logEmpty.hidden = hasRows;
+  renderTimelineState(task, hasRows);
   if (!hasRows) {
     view.logEmptyText.textContent = state.turnOutput.message || text('noLiveOutput');
     const stageCard = timelineStageCard(task);
@@ -5631,11 +6187,11 @@ function renderTimeline() {
   if (state.followLogs) {
     requestAnimationFrame(() => {
       view.logScroll.scrollTop = view.logScroll.scrollHeight;
-      view.newEvents.hidden = true;
+      updateNewEventsVisibility();
     });
   } else {
     restoreLogAnchor(logAnchor);
-    if (visibleRows.length) view.newEvents.hidden = false;
+    requestAnimationFrame(updateNewEventsVisibility);
   }
   if (running && !state.turnOutput.inFlight && !state.turnOutput.timer) {
     scheduleTurnOutputPoll(state.turnOutput.events.length ? 1200 : 0);
@@ -6868,9 +7424,8 @@ function bindEvents() {
     setRailCollapsed(!state.railCollapsed);
   });
   view.logScroll.addEventListener('scroll', () => {
-    const remaining = view.logScroll.scrollHeight - view.logScroll.scrollTop - view.logScroll.clientHeight;
-    state.followLogs = remaining < 40;
-    if (state.followLogs) view.newEvents.hidden = true;
+    state.followLogs = logScrollRemaining() < 40;
+    updateNewEventsVisibility();
   }, { passive: true });
   view.newEvents.addEventListener('click', () => {
     state.followLogs = true;

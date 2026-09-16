@@ -482,7 +482,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   flex-direction: column;
   min-width: 0;
   border-right: 1px solid var(--lx-border);
-  background: var(--lx-surface);
+  background: var(--lx-bg);
 }
 .task-rail__header {
   display: flex;
@@ -532,17 +532,21 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 #task-items { min-height: 0; }
 .task-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 70px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "main"
+    "state";
   align-items: center;
-  gap: 7px;
+  gap: 4px;
   width: 100%;
   min-height: 46px;
   margin: 0 0 3px;
   padding: 6px 7px;
-  border: 1px solid transparent;
+  border: 1px solid var(--lx-border);
   border-radius: var(--lx-radius);
-  background: transparent;
+  background: var(--lx-surface);
   color: var(--lx-text-soft);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--lx-text) 4%, transparent);
   text-align: left;
   transition: background 120ms ease, border-color 120ms ease;
 }
@@ -563,9 +567,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
    The frame and the inner ring are now reserved for selection; the live state
    is carried by the tinted background, the left accent bar and the sweep. */
 .task-item[data-state="running"] {
-  border-color: transparent;
+  border-color: var(--lx-border);
   background: color-mix(in srgb, var(--lx-accent) 7%, var(--lx-element));
-  box-shadow: none;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--lx-text) 4%, transparent);
 }
 /* A task that is both running and selected keeps the selection ring, so the
    frame still means exactly one thing: "this is what the pane is showing". */
@@ -585,7 +589,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   from { transform: translateX(-100%); }
   to { transform: translateX(100%); }
 }
-.task-item__main { display: flex; flex-direction: column; min-width: 0; }
+.task-item__main { grid-area: main; display: flex; flex-direction: column; min-width: 0; }
 .task-item__main strong { overflow: hidden; font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
 .task-item__main small {
   display: flex;
@@ -599,25 +603,31 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .task-item__repo { overflow: hidden; min-width: 0; text-overflow: ellipsis; }
 .task-item__item, .task-item__time { flex: 0 0 auto; }
 .task-item__main .task-item__reason { color: var(--lx-text-soft); }
-.task-item__state { align-self: start; min-width: 0; width: 100%; margin-top: 2px; }
-.task-item__hint {
+.task-item__state {
+  grid-area: state;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
   width: 100%;
-  color: var(--lx-text-muted);
+  margin-top: 2px;
+}
+.task-item__hint {
+  --hint-color: var(--lx-text-muted);
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  padding: 2px 7px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--hint-color) 38%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--hint-color) 13%, transparent);
+  color: var(--hint-color);
   font-size: 9px;
   font-weight: 600;
-  line-height: 1.25;
-  text-align: right;
-  /* 状态胶囊不换行：窄轨里「等待同仓库任务」曾被拆成两行（用户截图反馈）。 */
-  white-space: nowrap;
-  overflow: hidden;
+  line-height: 1.45;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.task-item__hint[data-status="waiting_for_user"] { color: var(--lx-warning); }
-.task-item__hint[data-status="recovery_required"] { color: var(--lx-warning); }
-.task-item__hint[data-status="failed"] { color: var(--lx-error); }
-.task-item__hint[data-status="completed"] { color: var(--lx-success); }
-.task-item__hint[data-status="queued"], .task-item__hint[data-status="preparing"] { color: var(--lx-accent); }
-.task-item__hint[data-wait="external"] { color: var(--lx-text-muted); }
 .task-item__hint::before {
   content: '';
   display: inline-block;
@@ -628,20 +638,28 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   background: currentColor;
   vertical-align: middle;
 }
-.task-item__hint--running::before { display: none; }
-.task-item__hint--running {
-  /* `.task-item` is a two-column grid and the state row only occupies the
-     first column, so a 100%-wide pill painted the whole column and read as a
-     stray background block to the LEFT of the text (reported from a live run).
-     Size the pill to its content and push it to the right edge instead. */
-  width: fit-content;
-  max-width: 100%;
-  margin-left: auto;
-  padding: 2px 6px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--lx-accent) 12%, transparent);
-  color: var(--lx-accent);
-}
+/* Normal / good progress: green. */
+.task-item__hint[data-status="running"],
+.task-item__hint[data-status="preparing"],
+.task-item__hint[data-status="completed"],
+.task-item__hint[data-tone="success"] { --hint-color: var(--lx-success); }
+/* Neutral queued: blue. */
+.task-item__hint[data-status="queued"],
+.task-item__hint[data-tone="info"] { --hint-color: var(--lx-info); }
+/* Owner decision / approval: red. */
+.task-item__hint[data-status="waiting_for_user"],
+.task-item__hint[data-status="failed"] { --hint-color: var(--lx-error); }
+/* Abnormal / recovery / waiting states: yellow. */
+.task-item__hint[data-status="recovery_required"],
+.task-item__hint[data-status="retry_wait"],
+.task-item__hint[data-status="cancelling"],
+.task-item__hint[data-status="stopped"],
+.task-item__hint[data-status="aborted"],
+.task-item__hint[data-wait="external"],
+.task-item__hint--pending { --hint-color: var(--lx-warning); }
+.task-item__hint[data-status="archived"],
+.task-item__hint[data-tone="muted"] { --hint-color: var(--lx-text-muted); }
+
 .task-empty { display: grid; place-items: center; gap: 4px; margin: auto; color: var(--lx-text-muted); text-align: center; }
 /* With no tasks the rail must hand the free space to the placeholder; the task
    list otherwise keeps its flex growth and pins the placeholder to the bottom. */
@@ -652,8 +670,15 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .task-rail.is-collapsed .task-rail__header { justify-content: center; padding-inline: 5px; }
 .task-rail.is-collapsed .task-rail__header > div, .task-rail.is-collapsed .repository-actions, .task-rail.is-collapsed .task-item__main,
 .task-rail.is-collapsed .task-empty { display: none; }
-.task-rail.is-collapsed .task-item { grid-template-columns: 1fr; min-height: 38px; padding: 6px; }
-.task-item__compact { display: none; color: var(--lx-text-soft); font: 600 10px/1 var(--lx-mono); text-align: center; }
+.task-rail.is-collapsed .task-item {
+  grid-template-columns: 1fr;
+  grid-template-areas:
+    "compact"
+    "state";
+  min-height: 38px;
+  padding: 6px;
+}
+.task-item__compact { grid-area: compact; display: none; color: var(--lx-text-soft); font: 600 10px/1 var(--lx-mono); text-align: center; }
 .task-rail.is-collapsed .task-item__compact { display: block; }
 .task-rail.is-collapsed .task-item__state {
   width: 9px;
@@ -665,24 +690,52 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   color: transparent;
   font-size: 0;
 }
-.task-rail.is-collapsed .task-item__state[data-status="running"], .task-rail.is-collapsed .task-item__state[data-status="queued"], .task-rail.is-collapsed .task-item__state[data-status="preparing"] { background: var(--lx-accent); }
-.task-rail.is-collapsed .task-item__state[data-status="waiting_for_user"], .task-rail.is-collapsed .task-item__state[data-status="retry_wait"] { background: var(--lx-warning); }
+.task-rail.is-collapsed .task-item__hint {
+  display: block;
+  width: 9px;
+  height: 9px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: transparent;
+  font-size: 0;
+}
+.task-rail.is-collapsed .task-item__hint::before { display: none; }
+.task-rail.is-collapsed .task-item__state[data-status="running"],
+.task-rail.is-collapsed .task-item__state[data-status="preparing"],
+.task-rail.is-collapsed .task-item__state[data-status="completed"],
+.task-rail.is-collapsed .task-item__state[data-tone="success"] { background: var(--lx-success); }
+.task-rail.is-collapsed .task-item__state[data-status="queued"],
+.task-rail.is-collapsed .task-item__state[data-tone="info"] { background: var(--lx-info); }
+.task-rail.is-collapsed .task-item__state[data-status="waiting_for_user"],
 .task-rail.is-collapsed .task-item__state[data-status="failed"] { background: var(--lx-error); }
-.task-rail.is-collapsed .task-item__state[data-status="recovery_required"] { background: var(--lx-warning); }
-.task-rail.is-collapsed .task-item__state[data-status="completed"] { background: var(--lx-success); }
-.task-rail.is-collapsed .task-item__state[data-wait="external"] { background: var(--lx-text-muted); }
+.task-rail.is-collapsed .task-item__state[data-status="recovery_required"],
+.task-rail.is-collapsed .task-item__state[data-status="retry_wait"],
+.task-rail.is-collapsed .task-item__state[data-status="cancelling"],
+.task-rail.is-collapsed .task-item__state[data-status="stopped"],
+.task-rail.is-collapsed .task-item__state[data-status="aborted"],
+.task-rail.is-collapsed .task-item__state[data-wait="external"] { background: var(--lx-warning); }
+.task-rail.is-collapsed .task-item__state[data-status="archived"],
+.task-rail.is-collapsed .task-item__state[data-tone="muted"] { background: var(--lx-text-muted); }
 .task-rail.is-collapsed #collapse-tasks svg { transform: rotate(180deg); }
 
 /* 窄轨（还没折叠到底）排版：标题最多两行，状态胶囊独占一行右对齐且不换行。
    折叠到底（52px）仍走上面的 is-collapsed 规则，只留状态圆点。 */
-.task-rail.is-narrow .task-item { grid-template-columns: minmax(0, 1fr); }
+.task-rail.is-narrow .task-item {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "main"
+    "state";
+}
 .task-rail.is-narrow .task-item__main strong {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   white-space: normal;
 }
-.task-rail.is-narrow .task-item__state { align-self: end; width: auto; max-width: 100%; }
+.task-rail.is-narrow .task-item__state { width: 100%; max-width: 100%; }
 
 .issue-workspace { container: loopx-main / inline-size; position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--lx-bg); }
 .follow-banner {
@@ -1459,7 +1512,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   background: color-mix(in srgb, var(--lx-accent) 45%, var(--lx-border));
 }
 .issue-splitter:focus { outline: 0; }
-.issue-timeline { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 140px; }
+.issue-timeline { position: relative; display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 140px; }
 .timeline-header {
   display: flex;
   flex: 0 0 auto;
@@ -1544,7 +1597,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .markdown-body th { background: var(--lx-muted-surface); color: var(--lx-text); font-weight: 600; }
 .markdown-body td { color: var(--lx-text-soft); }
 .markdown-body .markdown-bold-heading { margin: 12px 0 6px; color: var(--lx-text); font-size: 12.5px; font-weight: 600; }
-.local-path-ref { display: inline-flex; align-items: baseline; padding: 0 5px; border: 1px dashed var(--lx-border-strong); border-radius: 4px; color: var(--lx-text-muted); font-size: 11px; }
+.local-path-ref { display: inline-flex; align-items: baseline; padding: 0 5px; border: 1px dashed var(--lx-border-strong); border-radius: 4px; background: transparent; color: var(--lx-text-muted); font: inherit; font-size: 11px; }
+.local-path-ref--action { cursor: pointer; }
+.local-path-ref--action:hover { border-color: var(--lx-accent); color: var(--lx-text); }
 .local-path-ref code { padding: 0; background: transparent; color: inherit; }
 
 /* ---------- log event rows ---------- */
@@ -1576,3 +1631,94 @@ details[open] > summary .disclosure-chevron { transform: rotate(90deg); }
 .task-item__label { padding: 0 5px; border: 1px solid var(--lx-border); border-radius: 999px; color: var(--lx-text-muted); font-size: 9px; line-height: 1.6; }
 .task-item__hint[data-tone="muted"] { color: var(--lx-text-muted); }
 .task-item__hint[data-tone="info"] { color: var(--lx-info); }
+
+
+/* ---------- timeline state strip ---------- */
+.timeline-state {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--lx-border);
+  background: var(--lx-muted-surface);
+  color: var(--lx-text-soft);
+}
+.timeline-state[hidden] { display: none; }
+.timeline-state__signal {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: var(--lx-text-muted);
+}
+.timeline-state[data-tone="accent"] .timeline-state__signal { background: var(--lx-accent); }
+.timeline-state[data-tone="success"] .timeline-state__signal { background: var(--lx-success); }
+.timeline-state[data-tone="warning"] .timeline-state__signal { background: var(--lx-warning); }
+.timeline-state[data-tone="error"] .timeline-state__signal { background: var(--lx-error); }
+.timeline-state[data-tone="info"] .timeline-state__signal { background: var(--lx-info); }
+.timeline-state__signal[data-running="true"] {
+  width: 12px;
+  height: 12px;
+  margin-top: 2px;
+  border: 2px solid color-mix(in srgb, var(--lx-border-strong) 70%, transparent);
+  border-top-color: var(--lx-accent);
+  background: transparent;
+  animation: lx-spin .8s linear infinite;
+}
+.timeline-state__copy {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+.timeline-state__copy strong {
+  color: var(--lx-text);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+.timeline-state__copy p {
+  margin: 0;
+  color: var(--lx-text-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.timeline-state__copy p.timeline-state__hint { color: var(--lx-text-soft); }
+
+
+/* ---------- per-turn log grouping ---------- */
+.log-row.is-turn-collapsed { display: none; }
+.timeline-turn {
+  margin: 0;
+  padding: 0 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--lx-border) 65%, transparent);
+  background: color-mix(in srgb, var(--lx-muted-surface) 55%, transparent);
+  list-style: none;
+}
+.timeline-turn__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--lx-text-muted);
+  cursor: pointer;
+  text-align: left;
+}
+.timeline-turn__toggle:hover { color: var(--lx-text-soft); }
+.timeline-turn__toggle .disclosure-chevron { margin-left: 0; }
+.timeline-turn__toggle[data-collapsed="false"] .disclosure-chevron { transform: rotate(90deg); }
+.timeline-turn__label { color: var(--lx-text); font-size: 10.5px; font-weight: 600; }
+.timeline-turn__meta {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--lx-text-muted);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
