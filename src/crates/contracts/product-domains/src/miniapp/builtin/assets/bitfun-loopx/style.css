@@ -643,6 +643,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   color: var(--lx-accent);
 }
 .task-empty { display: grid; place-items: center; gap: 4px; margin: auto; color: var(--lx-text-muted); text-align: center; }
+/* With no tasks the rail must hand the free space to the placeholder; the task
+   list otherwise keeps its flex growth and pins the placeholder to the bottom. */
+.task-rail.is-empty .task-list { flex: 0 0 auto; }
 .task-empty span { font: 22px/1 var(--lx-mono); }
 .task-empty p { margin: 0; font-size: 11px; }
 .task-rail.is-collapsed { width: 52px; min-width: 52px; }

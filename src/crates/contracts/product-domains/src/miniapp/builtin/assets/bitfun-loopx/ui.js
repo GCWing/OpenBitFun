@@ -2847,6 +2847,10 @@ function renderTasks() {
   view.taskCount.title = countLabel;
   view.taskCount.setAttribute('aria-label', countLabel);
   view.taskEmpty.hidden = tasks.length !== 0;
+  // The empty placeholder only centers when the task list stops growing:
+  // `.task-list` keeps `flex: 1 1 0` otherwise and eats the free space, which
+  // parked "暂无任务" at the bottom of the rail (live 2026-09-16).
+  view.taskRail.classList.toggle('is-empty', tasks.length === 0);
   renderRepositoryActions(tasks);
   syncApprovalAttention(false);
   announcePublishOutcome();
