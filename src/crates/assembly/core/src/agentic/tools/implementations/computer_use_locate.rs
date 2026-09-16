@@ -6,6 +6,7 @@ use crate::agentic::tools::computer_use_host::{
 };
 use crate::agentic::tools::framework::{ToolResult, ToolUseContext};
 use crate::agentic::tools::implementations::computer_use_tool::computer_use_augment_result_json;
+use crate::agentic::tools::parse_u64_value;
 use crate::service::config::global::GlobalConfigManager;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use serde_json::{json, Value};
@@ -60,7 +61,7 @@ pub(crate) async fn execute_computer_use_locate(
             .map(|s| s.to_string()),
         max_depth: input
             .get("max_depth")
-            .and_then(|v| v.as_u64())
+            .and_then(parse_u64_value)
             .map(|v| v as u32),
         filter_combine: input
             .get("filter_combine")
@@ -72,7 +73,7 @@ pub(crate) async fn execute_computer_use_locate(
             .map(|s| s.to_string()),
         node_idx: input
             .get("node_idx")
-            .and_then(|v| v.as_u64())
+            .and_then(parse_u64_value)
             .map(|v| v as u32),
         app_state_digest: input
             .get("app_state_digest")

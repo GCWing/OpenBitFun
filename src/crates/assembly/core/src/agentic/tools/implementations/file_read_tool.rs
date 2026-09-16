@@ -6,6 +6,7 @@ use crate::agentic::tools::framework::{
 use crate::agentic::tools::miniapp_context_runtime::{
     is_virtual_context_path, requires_virtual_context_path, virtual_context_file,
 };
+use crate::agentic::tools::parse_u64_value;
 use crate::agentic::tools::review_read_receipt_runtime::{
     file_revision, get_review_read_coverage, record_review_read_receipt,
     review_read_receipts_enabled,
@@ -611,7 +612,7 @@ Usage:
 
         let limit = input
             .get("limit")
-            .and_then(|v| v.as_u64())
+            .and_then(parse_u64_value)
             .unwrap_or(self.default_max_lines_to_read as u64) as usize;
 
         let resolved = context.resolve_tool_path(file_path)?;

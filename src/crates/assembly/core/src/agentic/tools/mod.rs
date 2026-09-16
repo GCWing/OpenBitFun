@@ -13,6 +13,7 @@ pub mod framework;
 pub mod frontend_workbench_host;
 pub mod image_context;
 pub mod implementations;
+mod integer_parser;
 pub mod manifest_resolver;
 #[cfg(feature = "tools-miniapp")]
 pub(crate) mod miniapp_context_runtime;
@@ -37,6 +38,7 @@ pub(crate) mod tool_context_runtime;
 pub(crate) mod tool_result_storage;
 pub mod user_input_manager;
 pub mod workspace_paths;
+pub use integer_parser::{parse_i64_value, parse_u64_value};
 pub use openbitfun_agent_tools::input_validator;
 
 pub use framework::{

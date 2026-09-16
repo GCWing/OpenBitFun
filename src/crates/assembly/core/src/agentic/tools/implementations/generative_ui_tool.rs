@@ -3,6 +3,7 @@
 use crate::agentic::tools::framework::{
     Tool, ToolExposure, ToolResult, ToolUseContext, ValidationResult,
 };
+use crate::agentic::tools::parse_i64_value;
 use crate::service::config::get_global_config_service;
 use crate::util::errors::OpenBitFunResult;
 use async_trait::async_trait;
@@ -434,8 +435,8 @@ Input rules:
             .get("widget_code")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let width = input.get("width").and_then(|v| v.as_i64()).unwrap_or(960);
-        let height = input.get("height").and_then(|v| v.as_i64()).unwrap_or(640);
+        let width = input.get("width").and_then(parse_i64_value).unwrap_or(960);
+        let height = input.get("height").and_then(parse_i64_value).unwrap_or(640);
         let modules = input
             .get("modules")
             .and_then(|v| v.as_array())
