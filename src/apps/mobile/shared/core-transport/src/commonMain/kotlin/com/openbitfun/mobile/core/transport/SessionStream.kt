@@ -92,7 +92,23 @@ internal fun sessionStream(
             replica.commitHistory(messages.map { it.content.c }, maxOf(replica.cursor(), messages.lastOrNull()?.seq ?: 0), if (more) boundary else -boundary)
             emit(buildJsonObject { put("session_id", sessionId); put("event", "relay://session-ready"); put("payload", buildJsonObject { put("hasMore", more); put("oldestSeq", boundary); put("cursor", replica.cursor()) }) })
         }
-        if (replica.cursor() == 0L) older(9007199254740991L)
+        if (replica.cursor() == 0L) {
+            var initialRetry = 1000L
+            while (true) {
+                // The host grants the key from its durable local log before the
+                // publisher necessarily creates the relay session. A first-read
+                // 404 is pending publication, never an empty transcript.
+                try { older(9007199254740991L); break }
+                catch (cancelled: CancellationException) { throw cancelled }
+                catch (failure: Throwable) {
+                    onError(failure)
+                    if (!isRetryableStreamFailure(failure) &&
+                        !(failure is CloudAccountException && failure.statusCode == 404)) throw failure
+                    delay(initialRetry)
+                    initialRetry = (initialRetry * 2).coerceAtMost(30000)
+                }
+            }
+        }
         else emit(buildJsonObject { put("session_id", sessionId); put("event", "relay://session-ready"); put("payload", buildJsonObject { put("hasMore", replica.historyBefore() > 0); put("oldestSeq", kotlin.math.abs(replica.historyBefore())); put("cursor", replica.cursor()) }) })
         if (prefetchOlder) launch {
             while (replica.historyBefore() > 0) {
@@ -160,7 +176,7 @@ internal fun sessionStream(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: Throwable) {
                 onError(failure)
-                if (failure !is CloudAccountException || failure.failure !in setOf(CloudAccountFailure.NETWORK, CloudAccountFailure.TIMEOUT, CloudAccountFailure.RELAY_UNAVAILABLE, CloudAccountFailure.RATE_LIMITED)) throw failure
+                if (!isRetryableStreamFailure(failure)) throw failure
                 // Retrying reads cannot execute host mutations. Caller cancellation remains immediate.
                 delay(retry); retry = (retry * 2).coerceAtMost(30000); wake.trySend(null)
             }
@@ -191,3 +207,9 @@ private suspend fun decryptFragments(sessionId: String, key: String, parts: List
     check(event["session_id"]?.jsonPrimitive?.content == sessionId && event["event"] is JsonPrimitive && event.containsKey("payload")) { "Session encryption binding mismatch" }
     return event
 }
+
+internal fun isRetryableStreamFailure(failure: Throwable): Boolean =
+    failure is CloudAccountException && failure.failure in setOf(
+        CloudAccountFailure.NETWORK, CloudAccountFailure.TIMEOUT,
+        CloudAccountFailure.RELAY_UNAVAILABLE, CloudAccountFailure.RATE_LIMITED,
+    )

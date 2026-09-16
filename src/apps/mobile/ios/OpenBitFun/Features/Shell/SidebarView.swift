@@ -40,10 +40,6 @@ struct SidebarView: View {
     @State private var visibleDeviceWorkspaceCounts: [String: Int] = [:]
     @State private var compactActionSession: ChatSession?
     @State private var workspacePickerDevice: MobileDeviceDirectoryEntry?
-    @State private var deviceTools: NativeDeviceToolTarget?
-    @State private var deviceToolsPicker = false
-    @State private var toolLocation: NativeDeviceToolLocation?
-    @State private var pendingDeviceTool: NativeDeviceToolTarget?
     @State private var workspaceCreateTarget: MobileWorkspaceGroup?
     @State private var pendingWorkspaceCreate: NativeWorkspaceCreateTarget?
     @State private var workspaceCreatePath: String?
@@ -125,31 +121,8 @@ struct SidebarView: View {
         }
         .onChange(of: model.remoteWorkspaces) { _ in finishWorkspaceCreateWhenReady() }
         .onChange(of: model.remoteCreateInteraction.canSubmit) { _ in finishWorkspaceCreateWhenReady() }
-        .sheet(isPresented: $deviceToolsPicker, onDismiss: {
-            if let target = pendingDeviceTool, target.deviceKey == model.remoteExpectedDeviceKey {
-                if target.terminal { model.openDeviceTerminal(target.location.path, connectionId: target.location.connectionId) } else { model.openDeviceFiles(target.location.path, connectionId: target.location.connectionId) }
-                deviceTools = target
-            }
-            pendingDeviceTool = nil
-        }) {
-            NavigationStack {
-                List {
-                    if let location = toolLocation {
-                        Text(location.name).font(.headline)
-                        Button(model.localized("浏览文件")) { pendingDeviceTool = NativeDeviceToolTarget(location: location, terminal: false, deviceKey: model.remoteExpectedDeviceKey); deviceToolsPicker = false }
-                        Button(model.localized("打开终端")) { pendingDeviceTool = NativeDeviceToolTarget(location: location, terminal: true, deviceKey: model.remoteExpectedDeviceKey); deviceToolsPicker = false }
-                    } else {
-                        Button(model.localized("受控设备本机")) { toolLocation = NativeDeviceToolLocation(name: model.localized("受控设备本机"), path: "", connectionId: nil) }
-                        ForEach(model.savedRuntimeConnections, id: \.id) { connection in
-                            Button(connection.name) { toolLocation = NativeDeviceToolLocation(name: connection.name, path: "", connectionId: connection.id) }
-                        }
-                    }
-                }.navigationTitle(model.localized("Device tools"))
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button(model.localized("返回")) { if toolLocation != nil { toolLocation = nil } else { deviceToolsPicker = false } } } }
-            }
-        }
-        .fullScreenCover(item: $deviceTools) { target in
-            NativeDeviceToolsView(model: model, terminal: target.terminal, rootPath: target.location.path, deviceKey: target.deviceKey) { deviceTools = nil }
+        .fullScreenCover(isPresented: Binding(get: { model.runtimeDeviceTools?.visible == true }, set: { if !$0 { model.closeDeviceTools() } })) {
+            NativeDeviceToolsView(model: model, rootPath: model.runtimeDeviceTools?.path ?? "", deviceKey: model.remoteExpectedDeviceKey) { model.closeDeviceTools() }
         }
         .sheet(item: $workspacePickerDevice) { requestedDevice in
             let device = directoryEntries.first(where: { $0.id == requestedDevice.id }) ?? requestedDevice
@@ -320,17 +293,23 @@ struct SidebarView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(Text(model.localized("刷新设备")))
                 }
-                Button { model.scanRemote() } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .regular))
-                        .frame(width: 17, height: 20)
-                        .frame(width: 32, height: 32)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(model.localized("添加连接")))
+
             }
             .frame(height: 38)
             .padding(.top, 18)
+
+            if let error = model.accountDirectoryError {
+                Button { model.refreshRemoteDevices() } label: {
+                    Text(error)
+                        .font(.system(size: 12))
+                        .foregroundStyle(OpenBitFunTheme.statusDanger)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.accountRefreshing)
+                .accessibilityHint(Text(model.localized("刷新设备")))
+            }
 
             if directoryEntries.isEmpty {
                 Text(model.localized("尚未连接桌面设备"))
@@ -342,6 +321,26 @@ struct SidebarView: View {
 
             ForEach(directoryEntries) { device in
                 directoryDeviceSelector(device)
+                if isCurrentDevice(device), model.connectionPhase != .connected {
+                    HStack {
+                        Text(activeConnectionLabel)
+                            .font(MobileDesignTypography.labelSmall.font)
+                            .foregroundStyle(OpenBitFunTheme.muted)
+                        Spacer(minLength: 0)
+                        Button {
+                            model.retryRemoteConnection()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(OpenBitFunTheme.muted)
+                                .frame(width: 44, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(Text(model.localized("重试")))
+                        .accessibilityIdentifier("sidebar.retryConnection")
+                    }
+                    .padding(.leading, 10)
+                }
             }
 
             if let selectedDirectoryEntry {
@@ -374,14 +373,15 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func directoryDeviceSelector(_ device: MobileDeviceDirectoryEntry) -> some View {
-        let selected = selectedDirectoryEntry?.id == device.id
+        let expanded = selectedDirectoryEntry?.id == device.id
+        let current = isCurrentDevice(device)
         Button { selectDirectoryDevice(device) } label: {
             HStack(spacing: 8) {
                 Image(systemName: "desktopcomputer")
                     .font(.system(size: 18, weight: .regular))
                     .frame(width: 24, height: 20)
                 Text(device.name)
-                    .font(.system(size: 15, weight: selected ? .medium : .regular))
+                    .font(.system(size: 14, weight: current ? .bold : .regular))
                     .foregroundStyle(device.online ? OpenBitFunTheme.ink : OpenBitFunTheme.muted)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -389,10 +389,10 @@ struct SidebarView: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Circle()
-                        .fill(device.online ? OpenBitFunTheme.statusSuccess : OpenBitFunTheme.muted)
+                        .fill(current ? activeConnectionColor : (device.online ? OpenBitFunTheme.statusSuccess : OpenBitFunTheme.muted))
                         .frame(width: 8, height: 8)
                 }
-                Image(systemName: selected ? "chevron.down" : "chevron.right")
+                Image(systemName: expanded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(device.online ? OpenBitFunTheme.ink : OpenBitFunTheme.muted)
                     .frame(width: 20, height: 24)
@@ -407,7 +407,27 @@ struct SidebarView: View {
         .opacity(device.online ? 1 : 0.58)
         .accessibilityIdentifier("sidebar.device.\(device.id)")
         .accessibilityLabel(Text(device.name))
-        .accessibilityValue(Text(device.online ? model.localized("在线") : model.localized("离线")))
+        .accessibilityValue(Text(current ? activeConnectionLabel : (device.online ? model.localized("在线") : model.localized("离线"))))
+    }
+
+    private func isCurrentDevice(_ device: MobileDeviceDirectoryEntry) -> Bool {
+        device.id == (model.accountSelectedDeviceID ?? normalizedDeviceKey(model.remoteExpectedDeviceKey))
+    }
+
+    private var activeConnectionLabel: String {
+        switch model.connectionPhase {
+        case .connected: return model.localized("已连接")
+        case .reconnecting: return model.localized("正在恢复连接")
+        case .disconnected: return model.localized("已断开")
+        }
+    }
+
+    private var activeConnectionColor: Color {
+        switch model.connectionPhase {
+        case .connected: return OpenBitFunTheme.statusSuccess
+        case .reconnecting: return OpenBitFunTheme.muted
+        case .disconnected: return OpenBitFunTheme.statusDanger
+        }
     }
 
     private func selectDirectoryDevice(_ device: MobileDeviceDirectoryEntry) {
@@ -426,6 +446,12 @@ struct SidebarView: View {
 
     @ViewBuilder
     private func directoryDeviceBody(_ device: MobileDeviceDirectoryEntry) -> some View {
+        if device.catalogSource == "RECENT" {
+            Text(model.localized("旧版设备：显示最近访问的工作区"))
+                .font(.system(size: 12))
+                .foregroundStyle(OpenBitFunTheme.muted)
+                .padding(.horizontal, 10)
+        }
         if device.status == "LOADING" && device.workspaces.isEmpty && device.sessions.isEmpty {
             HStack(spacing: 8) { ProgressView().controlSize(.small); Text(model.localized("正在加载工作区")).font(.system(size: 13)).foregroundStyle(OpenBitFunTheme.muted) }
                 .padding(.horizontal, 18).frame(height: 42)
@@ -456,7 +482,8 @@ struct SidebarView: View {
                 deviceKey: device.id,
                 directoryExpanded: workspace.directoryExpanded,
                 directoryStatus: workspace.directoryStatus,
-                remoteConnectionId: workspace.remoteConnectionId
+                remoteConnectionId: workspace.remoteConnectionId,
+                remoteSshHost: workspace.remoteSshHost
             )
             SidebarWorkspaceRow(
                 workspace: scopedWorkspace,
@@ -574,7 +601,7 @@ struct SidebarView: View {
             return sources.map { source in
                 MobileWorkspaceGroup(path: source.path, name: source.name, selected: source.selected,
                     sessions: section.sessions, deviceKey: normalizedDeviceKey(model.remoteExpectedDeviceKey),
-                    remoteConnectionId: source.remoteConnectionId)
+                    remoteConnectionId: source.remoteConnectionId, remoteSshHost: source.remoteSshHost)
             }
         }
         return ForEach(workspaces) { workspace in
@@ -880,7 +907,7 @@ struct SidebarView: View {
 
     private var authenticatedFooter: some View {
         HStack(spacing: 0) {
-            Button { toolLocation = nil; deviceToolsPicker = true } label: { deviceToolsLabel }
+            Button { model.openDeviceTools() } label: { deviceToolsLabel }
                 .buttonStyle(.plain)
                 .disabled(!model.remoteConnected)
                 .accessibilityIdentifier("sidebar.deviceTools")
@@ -939,7 +966,7 @@ private struct SidebarRecentRow: View {
             Button(action: onOpen) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(session.title)
-                        .font(.system(size: 15, weight: selected ? .medium : .regular))
+                        .font(.system(size: 13, weight: selected ? .bold : .regular))
                         .foregroundStyle(OpenBitFunTheme.ink)
                         .lineLimit(1)
                     if let metadata, !metadata.isEmpty {
@@ -1025,6 +1052,7 @@ private struct SidebarWorkspaceRow: View {
                 .accessibilityLabel(
                     MobileLocalization.text(expanded ? "收起工作区" : "展开工作区")
                 )
+                .accessibilityIdentifier("sidebar.workspaceDisclosure.\(workspace.deviceKey ?? "unknown").\(workspace.path)")
 
                 Button(action: onToggle) {
                     HStack(spacing: 10) {
@@ -1039,7 +1067,7 @@ private struct SidebarWorkspaceRow: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .onLongPressGesture(perform: onOpenWorkspace)
+                .simultaneousGesture(LongPressGesture().onEnded { _ in onOpenWorkspace() })
                 .accessibilityIdentifier("sidebar.workspace.\(workspace.deviceKey ?? "unknown").\(workspace.path)")
                 .accessibilityValue(Text(workspace.path))
                 Spacer(minLength: 0)
@@ -1116,8 +1144,8 @@ private struct SidebarWorkspaceRow: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(session.title)
                                     .font(.system(
-                                        size: 15,
-                                        weight: isSelected(session) ? .medium : .regular
+                                        size: 13,
+                                        weight: isSelected(session) ? .bold : .regular
                                     ))
                                     .foregroundStyle(OpenBitFunTheme.ink)
                                     .lineLimit(1)
@@ -1183,6 +1211,8 @@ private struct SidebarWorkspacePickerSheet: View {
     let onClose: () -> Void
     let onSelect: (MobileWorkspaceGroup) -> Void
 
+    private var workspaces: [MobileWorkspaceGroup] { device.recentWorkspaces ?? device.workspaces }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
@@ -1212,7 +1242,7 @@ private struct SidebarWorkspacePickerSheet: View {
 
             Divider().overlay(OpenBitFunTheme.line)
 
-            if device.status == "LOADING" && device.workspaces.isEmpty {
+            if device.status == "LOADING" && workspaces.isEmpty {
                 VStack(spacing: 12) {
                     ProgressView().controlSize(.regular)
                     Text(MobileLocalization.text("正在加载"))
@@ -1220,7 +1250,7 @@ private struct SidebarWorkspacePickerSheet: View {
                         .foregroundStyle(OpenBitFunTheme.muted)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if device.workspaces.isEmpty {
+            } else if workspaces.isEmpty {
                 VStack(spacing: 8) {
                     Image(systemName: "folder")
                         .font(.system(size: 30, weight: .regular))
@@ -1234,7 +1264,7 @@ private struct SidebarWorkspacePickerSheet: View {
             } else {
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 4) {
-                        ForEach(device.workspaces) { workspace in
+                        ForEach(workspaces) { workspace in
                             Button { onSelect(workspace) } label: {
                                 HStack(spacing: 12) {
                                     Image(systemName: "folder")

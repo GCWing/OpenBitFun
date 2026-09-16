@@ -268,7 +268,8 @@ internal fun RemoteSessionListContent(
                                     val matching = scope?.workspaces.orEmpty().filter { it.path == section.path }
                                     val selected = scope?.selected?.takeIf { it.path == section.path }
                                     if (selected != null || matching.size == 1) {
-                                        onIntent(RemoteSessionIntent.CreateSession(agentType, "", "", null, section.path, selected?.remoteConnectionId ?: matching.singleOrNull()?.remoteConnectionId))
+                                        onIntent(RemoteSessionIntent.CreateSession(agentType, "", "", null, section.path, (if (selected != null) selected.remoteConnectionId else matching.singleOrNull()?.remoteConnectionId),
+                                            (if (selected != null) selected.remoteSshHost else matching.singleOrNull()?.remoteSshHost)))
                                     } else onCreate()
 
                                 }

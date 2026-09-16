@@ -1,3 +1,4 @@
+import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import {
   ConversationUiMessage,
@@ -33,6 +34,7 @@ import { RemoteLogger } from '../../services/RemoteLogger';
 @ReusableV2
 @ComponentV2
 struct ChatAssistantTimelineRow {
+  @Param interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   @Param row: ObservableChatTimelineItem = new ObservableChatTimelineItem({
     id: '',
     type: 'empty_state',
@@ -78,6 +80,7 @@ struct ChatAssistantTimelineRow {
     // can be thawed before its retained @Local state has been synchronized,
     // and omitting the child at that point leaves a permanently hollow row.
     ChatMessageBubble({
+      interactionMailbox: this.interactionMailbox,
       item: this.uiMessage,
       renderRevision: this.renderRevision,
       isStreaming: this.row.isStreaming,
@@ -110,6 +113,7 @@ struct ChatAssistantTimelineRow {
 
 @ComponentV2
 export struct ChatTimeline {
+  @Param interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   private readonly listScroller: Scroller = new Scroller();
   private followTimerId: number = 0;
   private followedActiveTurnKey: string = '';
@@ -123,6 +127,8 @@ export struct ChatTimeline {
   @Param timelineItems: ObservableChatTimelineItem[] = [];
   @Param timelineRevision: number = 0;
   @Param hasMoreMessages: boolean = false;
+  @Param historyLoading: boolean = false;
+  @Param historyFailed: boolean = false;
   @Param isBusy: boolean = false;
   @Param connectionState: string = 'connected';
   @Param statusText: string = '';
@@ -181,14 +187,14 @@ export struct ChatTimeline {
       List({ space: MobileDesignGeometry.messageSpacing, scroller: this.listScroller }) {
         if (this.hasMoreMessages) {
           ListItem() {
-            Text(this.isBusy ? RemoteI18n.t('common.loading') : RemoteI18n.t('chat.loadOlder'))
+            Text(this.historyLoading ? RemoteI18n.t('common.loading') : RemoteI18n.t(this.historyFailed ? 'chat.loadOlderFailed' : 'chat.loadOlder'))
               .fontSize(MobileDesignTypography.bodySmall.size)
               .fontColor(MUTED)
               .textAlign(TextAlign.Center)
               .width('100%')
               .padding({ top: 10, bottom: 10 })
               .onClick(() => {
-                this.onLoadOlder();
+                if (!this.historyLoading) this.onLoadOlder();
               })
           }
         }
@@ -218,6 +224,7 @@ export struct ChatTimeline {
                   .reuse({ reuseId: () => 'chat_user' })
                 } else {
                   ChatAssistantTimelineRow({
+                    interactionMailbox: this.interactionMailbox,
                     row: repeatItem.item,
                     renderRevision: this.timelineRevision,
                     isBusy: this.isBusy,
@@ -272,6 +279,7 @@ export struct ChatTimeline {
           if (item.message) {
             ListItem() {
               ChatAssistantTimelineRow({
+                interactionMailbox: this.interactionMailbox,
                 row: item,
                 renderRevision: this.timelineRevision,
                 isBusy: this.isBusy,

@@ -349,6 +349,12 @@ struct MobilePendingDownload: Identifiable, Equatable {
     }
 }
 
+struct MobileWorkspaceScope: Equatable {
+    let path: String
+    let remoteConnectionId: String?
+    let remoteSshHost: String?
+}
+
 struct ChatSession: Identifiable, Equatable {
     let id: String
     var title: String
@@ -358,6 +364,7 @@ struct ChatSession: Identifiable, Equatable {
     var agentType: String = "general_chat"
     var workspacePath: String?
     var workspaceName: String?
+    var workspaceScope: MobileWorkspaceScope? = nil
     var deviceKey: String? = nil
     var createdAt: String = ""
     var messageCount: Int = 0
@@ -376,6 +383,8 @@ struct PendingDirectoryRemoteDraft {
     let rawDeviceKey: String
     let workspacePath: String
     let normalizedWorkspacePath: String
+    var remoteConnectionId: String? = nil
+    var remoteSshHost: String? = nil
     var agentType: String = "code"
     let epoch: UInt64
     var selectionRequested: Bool
@@ -397,10 +406,12 @@ struct MobileDeviceDirectoryEntry: Identifiable, Equatable {
     let error: String?
     let workspaces: [MobileWorkspaceGroup]
     let sessions: [ChatSession]
+    var catalogSource: String? = nil
+    var recentWorkspaces: [MobileWorkspaceGroup]? = nil
 }
 
 struct MobileWorkspaceGroup: Identifiable, Equatable {
-    var id: String { (deviceKey ?? "") + ":" + (remoteConnectionId ?? "") + ":" + path }
+    var id: String { [deviceKey ?? "", remoteConnectionId ?? "", remoteSshHost ?? "", path].map { "\($0.utf8.count):\($0)" }.joined() }
     let path: String
     let name: String
     let selected: Bool
@@ -409,6 +420,7 @@ struct MobileWorkspaceGroup: Identifiable, Equatable {
     var directoryExpanded = false
     var directoryStatus = "IDLE"
     var remoteConnectionId: String? = nil
+    var remoteSshHost: String? = nil
 }
 
 enum MobileSessionListSectionKind: Equatable {

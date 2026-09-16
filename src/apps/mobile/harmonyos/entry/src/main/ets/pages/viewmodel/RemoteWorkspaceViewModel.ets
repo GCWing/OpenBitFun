@@ -13,7 +13,7 @@ export interface RemoteWorkspaceViewModelHooks {
   readonly onStatus: (statusText: string) => void;
   readonly onWorkspaceSelected: (workspace: WorkspaceInfo) => void;
   readonly onCatalogLoading: (targetId: string) => void;
-  readonly onCatalogLoaded: (targetId: string, workspaces: RecentWorkspaceEntry[]) => void;
+  readonly onCatalogLoaded: (targetId: string, workspaces: RecentWorkspaceEntry[], source?: string, recentWorkspaces?: RecentWorkspaceEntry[]) => void;
   readonly onCatalogFailed: (targetId: string) => void;
   readonly onRefreshSessions: () => Promise<void>;
   readonly onConnectionFailure: (error: Object) => void;
@@ -56,8 +56,8 @@ export class RemoteWorkspaceViewModel {
     await this.loadAssistants();
   }
 
-  async selectWorkspace(path: string, connectionId?: string): Promise<boolean> {
-    return await this.select(path, false, connectionId);
+  async selectWorkspace(path: string, connectionId?: string, sshHost?: string): Promise<boolean> {
+    return await this.select(path, false, connectionId, sshHost);
   }
 
   async selectAssistant(path: string): Promise<boolean> {
@@ -72,41 +72,27 @@ export class RemoteWorkspaceViewModel {
     }
     this.hooks.onCatalogLoading(targetId);
     try {
-      this.pageState.savedConnections = [];
-      this.pageState.savedConnectionsTargetId = '';
+      if (this.pageState.savedConnectionsTargetId !== targetId) {
+        this.pageState.savedConnections = [];
+        this.pageState.savedConnectionsTargetId = '';
+      }
       try {
         const saved = await this.coordinator.savedConnections();
-        if (targetId === this.hooks.remoteTargetId()) {
+        if (this.isCurrentCatalogLoad(loadVersion, targetId)) {
           this.pageState.savedConnections = saved;
           this.pageState.savedConnectionsTargetId = targetId;
         }
-      } catch (error) { this.hooks.onConnectionFailure(error); }
-      const recent = await this.coordinator.recentWorkspaces();
-      if (!this.isCurrentCatalogLoad(loadVersion, targetId)) {
-        return;
+      } catch (error) {
+        if (this.isCurrentCatalogLoad(loadVersion, targetId)) this.hooks.onConnectionFailure(error);
       }
-      const assistants = await this.coordinator.assistants();
-      if (!this.isCurrentCatalogLoad(loadVersion, targetId)) {
-        return;
-      }
-      const assistantWorkspaces: RecentWorkspaceEntry[] = [];
-      assistants.forEach((item) => {
-        assistantWorkspaces.push({
-          path: item.path,
-          name: item.name,
-          lastOpened: '',
-          workspaceKind: 'assistant'
-        } as RecentWorkspaceEntry);
-      });
-      const allWorkspaces = recent.slice();
-      assistantWorkspaces.forEach((item: RecentWorkspaceEntry) => {
-        if (!allWorkspaces.some((existing: RecentWorkspaceEntry) => existing.path === item.path &&
-          (existing.remoteConnectionId || '') === (item.remoteConnectionId || ''))) {
-          allWorkspaces.push(item);
-        }
-      });
-      this.pageState.setRecentWorkspaces(allWorkspaces);
-      this.hooks.onCatalogLoaded(targetId, allWorkspaces);
+      // The coordinator follows the selected runtime. A superseded request
+      // must not issue its next operation against a newly selected device.
+      if (!this.isCurrentCatalogLoad(loadVersion, targetId)) return;
+      const catalog = await this.coordinator.workspaceCatalog();
+      if (!this.isCurrentCatalogLoad(loadVersion, targetId)) return;
+      const allWorkspaces = catalog.workspaces;
+      this.pageState.setRecentWorkspaces(catalog.recentWorkspaces);
+      this.hooks.onCatalogLoaded(targetId, allWorkspaces, catalog.source, catalog.recentWorkspaces);
       RemoteLogger.info(
         `workspace catalog loaded target=${targetId} count=${allWorkspaces.length} first=${allWorkspaces.length > 0 ? allWorkspaces[0].path : ''}`
       );
@@ -178,7 +164,7 @@ export class RemoteWorkspaceViewModel {
     }
   }
 
-  private async select(path: string, assistant: boolean, connectionId?: string): Promise<boolean> {
+  private async select(path: string, assistant: boolean, connectionId?: string, sshHost?: string): Promise<boolean> {
     if (this.hooks.isBusy() || path.trim().length === 0 || !this.hooks.isRemoteAvailable()) {
       return false;
     }
@@ -187,7 +173,7 @@ export class RemoteWorkspaceViewModel {
       this.hooks.onStatus(RemoteI18n.t(assistant ?
         'status.switchingAssistant' : 'status.switchingWorkspace'));
       const workspace = assistant ?
-        await this.coordinator.switchAssistant(path) : await this.coordinator.switchWorkspace(path, connectionId);
+        await this.coordinator.switchAssistant(path) : await this.coordinator.switchWorkspace(path, connectionId, sshHost);
       this.hooks.onWorkspaceSelected(workspace);
       this.pageState.closePickers();
       this.pageState.clear();

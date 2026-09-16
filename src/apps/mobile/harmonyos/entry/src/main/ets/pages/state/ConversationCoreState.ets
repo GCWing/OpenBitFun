@@ -23,6 +23,8 @@ export class ConversationCoreState {
   @Trace optimisticMessages: ChatMessage[] = [];
   @Trace activeTurnMessage: ChatMessage = RemoteUiState.emptyActiveTurn();
   @Trace hasMoreMessages: boolean = false;
+  @Trace historyLoading: boolean = false;
+  @Trace historyFailed: boolean = false;
   @Trace timelineItems: ObservableChatTimelineItem[] = [];
   @Trace timelineRevision: number = 0;
   @Trace isBusy: boolean = false;
@@ -87,6 +89,8 @@ export class ConversationCoreState {
     this.optimisticMessages = [];
     this.activeTurnMessage = RemoteUiState.emptyActiveTurn();
     this.hasMoreMessages = false;
+    this.historyLoading = false;
+    this.historyFailed = false;
     this.timelineItems = [];
     this.timelineRowStore.clear();
     this.timelineRevision = this.timelineRevisionTracker.reset();

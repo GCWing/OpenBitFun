@@ -84,40 +84,20 @@ internal fun AppSidebar(
     onToggleSearch: () -> Unit,
     onScanDesktop: () -> Unit,
     onRetryRemoteDevice: () -> Unit,
+    onRefreshRemoteDevices: () -> Unit,
+    refreshingRemoteDevices: Boolean,
+    directoryRefreshError: String? = null,
     onSelectRemoteDevice: (String) -> Unit,
     onOpenRemoteSession: (String) -> Unit,
-    onCreateRemoteInWorkspace: (String, String?, String) -> Unit,
+    onCreateRemoteInWorkspace: (String, String?, String?, String) -> Unit,
     onOpenRemoteWorkspace: (String) -> Unit,
+    onAddRemoteWorkspace: (() -> Unit)? = null,
     onWorkspaceTool: (String, String?, Boolean) -> Unit,
     onDeleteRemoteSession: (String) -> Unit,
     onOpenSettings: () -> Unit,
     onOpenAccount: () -> Unit,
     modifier: Modifier,
 ) {
-    var toolsPicker by remember { mutableStateOf(false) }
-    var toolsPositionSelected by remember { mutableStateOf(false) }
-    var toolsConnection by remember { mutableStateOf<String?>(null) }
-    androidx.compose.runtime.LaunchedEffect(remoteSelectedDeviceId) { toolsPicker = false; toolsPositionSelected = false; toolsConnection = null }
-    if (toolsPicker) androidx.compose.material3.AlertDialog(
-        onDismissRequest = { toolsPicker = false; toolsPositionSelected = false; toolsConnection = null },
-        title = { Text(stringResource(R.string.device_tools)) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (!toolsPositionSelected) {
-                    androidx.compose.material3.TextButton(onClick = { toolsConnection = null; toolsPositionSelected = true }) { Text(stringResource(R.string.workspace_target_device)) }
-                    (workspaceState as? RemoteWorkspaceUiState.Ready)?.savedConnections.orEmpty().forEach { connection ->
-                        androidx.compose.material3.TextButton(onClick = { toolsConnection = connection.id; toolsPositionSelected = true }) { Text(connection.name) }
-                    }
-                } else {
-                    androidx.compose.material3.TextButton(onClick = { toolsPicker = false; onWorkspaceTool("", toolsConnection, false) }) { Text(stringResource(R.string.workspace_browse_files)) }
-                    androidx.compose.material3.TextButton(onClick = { toolsPicker = false; onWorkspaceTool("", toolsConnection, true) }) { Text(stringResource(R.string.workspace_terminal)) }
-                }
-            }
-        },
-        confirmButton = {},
-        dismissButton = { androidx.compose.material3.TextButton(onClick = { if (toolsPositionSelected) { toolsPositionSelected = false; toolsConnection = null } else toolsPicker = false }) { Text(stringResource(R.string.common_back)) } },
-    )
-
     val signedIn = !accountUserId.isNullOrBlank()
     var remoteActionSession by remember { mutableStateOf<RemoteSidebarSessionRow?>(null) }
     var remoteActionAnchor by remember { mutableStateOf(IntRect.Zero) }
@@ -150,6 +130,9 @@ internal fun AppSidebar(
                         selectedSessionId = remoteSelectedSessionId.takeIf { remoteActive },
                         onConnect = onScanDesktop,
                         onRetryActive = onRetryRemoteDevice,
+                        onRefreshDevices = onRefreshRemoteDevices,
+                        refreshingDevices = refreshingRemoteDevices,
+                        directoryRefreshError = directoryRefreshError,
                         onSelectDevice = onSelectRemoteDevice,
                         onOpenSession = onOpenRemoteSession,
                         onOpenActions = { row, anchor ->
@@ -158,9 +141,11 @@ internal fun AppSidebar(
                         },
                         onCreateInWorkspace = onCreateRemoteInWorkspace,
                         onOpenWorkspace = onOpenRemoteWorkspace,
+                        onAddWorkspace = onAddRemoteWorkspace,
                         onWorkspaceTool = onWorkspaceTool,
                     )
             }
+
         }
 
         // Over the list, not after it: the 84dp tail the list reserves is what
@@ -172,7 +157,7 @@ internal fun AppSidebar(
                 .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
         ) {
             if (signedIn) {
-                SidebarAuthenticatedFooter({ toolsPicker = true }, onOpenSettings)
+                SidebarAuthenticatedFooter({ onWorkspaceTool("", null, false) }, onOpenSettings)
             } else {
                 SidebarSignedOutFooter(
                     showScan = connectionPhase != ConnectionPhase.CONNECTED,

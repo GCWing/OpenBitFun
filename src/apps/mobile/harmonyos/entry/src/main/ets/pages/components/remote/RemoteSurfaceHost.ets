@@ -203,7 +203,7 @@ export struct RemoteSurfaceHost {
 
   @Builder
   private ConnectionEntry() {
-    if (this.isSyncing()) {
+    if (this.isInitialLoading()) {
       RemoteSessionLoadingView()
     } else {
       this.CompactEmptyState()
@@ -234,6 +234,9 @@ export struct RemoteSurfaceHost {
   @Builder
   private CompactEmptyState() {
     RecentRemoteHome({
+      sessions: this.remotePageState.recentHomeSessions(),
+      desktopName: this.desktopName(),
+      onOpen: (session: RemoteSession) => this.openSession(session),
       connected: this.remotePageState.connectionState === 'connected',
       busy: this.isInitialLoading(),
       onBrowse: () => { if (this.compact) this.onOpenSidebar(); else this.onRestoreSidebar(); },
@@ -251,7 +254,7 @@ export struct RemoteSurfaceHost {
           Blank().width(48).height(48)
         }
         Column({ space: 4 }) {
-          Text(RemoteI18n.t('remote.chats')).fontSize(MobileDesignTypography.headlineMedium.size).fontWeight(FontWeight.Bold).fontColor(INK)
+          Text(RemoteI18n.t('app.title')).fontSize(MobileDesignTypography.headlineMedium.size).fontWeight(FontWeight.Bold).fontColor(INK)
           Text(this.desktopName()).fontSize(MobileDesignTypography.bodySmall.size).fontColor(MUTED).maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
@@ -354,10 +357,11 @@ export struct RemoteSurfaceHost {
    * placeholder rows would be a step backwards.
    */
   private isInitialLoading(): boolean {
-    if (this.remotePageState.sessions.length > 0) {
-      return false;
-    }
-    return this.isSyncing();
+    return RemoteCompactHomePolicy.shouldShowInitialLoading(
+      this.remotePageState.connectionState,
+      this.remotePageState.sessions.length,
+      this.remotePageState.isLoadingHome
+    );
   }
 
   /** Work in progress, whether or not there is already a list behind it. */
@@ -388,8 +392,8 @@ export struct RemoteSurfaceHost {
 
   /**
    * Compact Remote Home names the bound desktop under the title, the same
-   * context the conversation header carries. Stays empty while disconnected so
-   * the connect state does not advertise a stale desktop.
+   * context the conversation header carries. Keep it stable during recovery so
+   * the content does not shift when the sidebar health state changes.
    */
   private compactHeaderContext(): string {
     return RemoteCompactHomePolicy.headerSubtitle(

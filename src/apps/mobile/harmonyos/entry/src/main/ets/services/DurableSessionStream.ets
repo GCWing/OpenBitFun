@@ -28,6 +28,7 @@ export interface DurableSessionCallbacks {
   onResumed?: () => Promise<void>;
   onError: (error: Error) => void;
   onHistory?: (hasMore: boolean) => void;
+  onHistoryState?: (loading: boolean, failed: boolean) => void;
 }
 
 /** Account WS provides wakeups; the encrypted durable log is the authority.
@@ -50,6 +51,7 @@ export class DurableSessionStream {
   private fragments: Uint8Array[] = [];
   private pending: Map<number, SessionMessage> = new Map();
   private retryTimer: number = -1;
+  private historyPrefetchTimer: number = -1;
   private retryMs: number = 1000;
   private unsubscribeUpdate: () => void;
   private unsubscribeReconnect: () => void;
@@ -84,29 +86,60 @@ export class DurableSessionStream {
     this.unsubscribeUpdate();
     this.unsubscribeReconnect();
     if (this.retryTimer !== -1) clearTimeout(this.retryTimer);
+    this.cancelHistoryPrefetch();
     this.fragments = [];
     this.pending.clear();
     this.grant = undefined;
   }
 
   loadOlder(): void {
-    if (this.stopped || !this.hasOlder || this.historyRequested) return;
+    if (this.stopped || !this.hasOlder) return;
+    this.cancelHistoryPrefetch();
+    if (this.historyRequested) {
+      if (this.retryTimer !== -1) {
+        clearTimeout(this.retryTimer); this.retryTimer = -1;
+        this.callbacks.onHistoryState?.(true, false); this.wake();
+      }
+      return;
+    }
     this.historyRequested = true;
+    this.callbacks.onHistoryState?.(true, false);
     if (!this.running) this.catchUp();
+  }
+
+  private cancelHistoryPrefetch(): void {
+    if (this.historyPrefetchTimer !== -1) clearTimeout(this.historyPrefetchTimer);
+    this.historyPrefetchTimer = -1;
+  }
+
+  private scheduleHistoryPrefetch(): void {
+    if (this.stopped || !this.hasOlder || this.historyRequested ||
+      this.historyPrefetchTimer !== -1 || this.logicalId === '@host/catalog') return;
+    // Match mobile-web: render the newest page first, then use the same
+    // serialized history request for background prefetch and user scrolls.
+    this.historyPrefetchTimer = setTimeout(() => {
+      this.historyPrefetchTimer = -1;
+      this.loadOlder();
+    }, 250);
   }
 
   private async backward(before: number): Promise<SessionMessagePage> {
     if (!this.source.readBefore || !this.grant) throw new Error('History pagination is unavailable');
     let page = await this.source.readBefore(this.grant.relay_session_id, before);
     let rows = page.messages.slice().sort((a: SessionMessage, b: SessionMessage) => a.seq - b.seq);
+    if (rows.length > 0 && rows[rows.length - 1].seq >= before) throw new Error('History pagination did not advance');
     // A wire page may start in the middle of a large record. Fetch only its
     // missing prefix before applying; never discard a partial event.
     while (rows.length > 0) {
       const first = Encoding.parseJsonObject<SessionFragment>(rows[0].content.c);
       if (first.index === 0) break;
       if (!page.hasMore) throw new Error('Session history has an incomplete fragment prefix');
-      page = await this.source.readBefore(this.grant.relay_session_id, rows[0].seq);
+      const boundary = rows[0].seq;
+      page = await this.source.readBefore(this.grant.relay_session_id, boundary);
       if (page.messages.length === 0) throw new Error('Session history pagination stalled');
+      if (page.messages.some((message: SessionMessage): boolean => message.seq >= boundary)) {
+        throw new Error('History pagination did not advance');
+      }
       rows = page.messages.concat(rows).sort((a: SessionMessage, b: SessionMessage) => a.seq - b.seq);
     }
     return { messages: rows, hasMore: page.hasMore };
@@ -195,16 +228,23 @@ export class DurableSessionStream {
           more = page.hasMore;
           if (more && page.messages.length === 0) throw new Error('Session log returned an empty continuation');
         }
-        if (this.historyRequested) { await this.applyHistory(false); this.historyRequested = false; }
+        if (this.historyRequested) {
+          this.callbacks.onHistoryState?.(true, false);
+          await this.applyHistory(false); this.historyRequested = false;
+          this.callbacks.onHistoryState?.(false, false);
+        }
         if (this.pending.size > 0 && !this.pending.has(this.readSeq + 1)) throw new Error('Session log sequence gap');
         if (!this.stopped && this.fragments.length === 0) {
           if (this.resumed) { await this.callbacks.onResumed?.(); this.resumed = false; }
           await this.callbacks.onCaughtUp();
+          this.scheduleHistoryPrefetch();
         }
         this.retryMs = 1000;
       }
     } catch (error) {
       if (!this.stopped) {
+        this.cancelHistoryPrefetch();
+        if (this.historyRequested) this.callbacks.onHistoryState?.(false, true);
         this.dirty = true;
         this.pending.clear();
         this.readSeq = this.committedSeq;

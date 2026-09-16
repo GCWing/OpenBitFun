@@ -1,3 +1,4 @@
+import { WorkspaceCatalog, mergeLegacyWorkspaces } from '../main/ets/services/WorkspaceCatalog';
 import { describe, it, expect } from '@ohos/hypium';
 import { AssistantEntry, RecentWorkspaceEntry, RemoteSession, SessionListResult } from '../main/ets/model/RemoteModels';
 import { AccountDeviceDirectorySource } from '../main/ets/services/AccountDeviceDirectory';
@@ -21,6 +22,11 @@ class FakeAccountDeviceDirectory implements AccountDeviceDirectorySource {
   sessionsByDevicePath: Map<string, RemoteSession[]> = new Map<string, RemoteSession[]>();
   failingDevices: string[] = [];
   failingPaths: string[] = [];
+
+  async listWorkspaceCatalog(deviceId: string): Promise<WorkspaceCatalog> {
+    const recent = await this.listRecentWorkspaces(deviceId);
+    return { workspaces: mergeLegacyWorkspaces(recent, await this.listAssistants(deviceId)), recentWorkspaces: recent, source: 'recent' };
+  }
 
   async listRecentWorkspaces(deviceId: string): Promise<RecentWorkspaceEntry[]> {
     this.listedDeviceIds.push(deviceId);

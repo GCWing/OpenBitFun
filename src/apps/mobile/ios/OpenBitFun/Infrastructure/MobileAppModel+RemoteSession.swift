@@ -70,6 +70,7 @@ extension MobileAppModel {
         remoteWorkspaces = []
         remoteAssistants = []
         workspaceCatalog = []
+        remoteSidebarWorkspaceState = nil
         selectedRemoteWorkspaceKind = ""
         workspaceLoading = !targetKey.isEmpty
         workspaceLoadFailed = false
@@ -103,7 +104,7 @@ extension MobileAppModel {
             pendingDirectoryRemoteDraft = nil
         }
         pendingRemoteWorkspaceCreate = nil
-        pendingRemoteSessionRefreshWorkspacePath = nil
+        pendingRemoteSessionRefreshWorkspace = nil
         pendingRemoteAssistantCreate = false
 
         committedRemoteCreate = nil
@@ -131,23 +132,31 @@ extension MobileAppModel {
                     agentType: session.agentType,
                     workspacePath: session.workspacePath,
                     workspaceName: session.workspaceName,
+                    workspaceScope: session.workspaceIdentity.map {
+                        MobileWorkspaceScope(path: $0.path, remoteConnectionId: $0.remoteConnectionId, remoteSshHost: $0.remoteSshHost)
+                    },
                     deviceKey: deviceKey,
                     createdAt: session.createdAt,
                     messageCount: Int(session.messageCount)
                 )
             }
             let workspaces = entry.workspaces.map { workspace in
-                let directory = entry.workspace(path: workspace.path)
+                let directory = entry.workspace(path: workspace.path, remoteConnectionId: workspace.remoteConnectionId, remoteSshHost: workspace.remoteSshHost)
+                let ownedSessionIDs = Set(entry.sessionsForWorkspace(path: workspace.path, remoteConnectionId: workspace.remoteConnectionId, remoteSshHost: workspace.remoteSshHost).map { $0.id })
                 return MobileWorkspaceGroup(
                     path: workspace.path,
                     name: workspace.name.isEmpty ? workspace.path : workspace.displayName,
                     selected: remoteExpectedDeviceKey == deviceKey &&
-                        normalizedSessionWorkspacePath(workspace.path) == normalizedSessionWorkspacePath(workspaceCatalog.first(where: { $0.selected })?.path ?? ""),
-                    sessions: sessions.filter { normalizedSessionWorkspacePath($0.workspacePath ?? "") == normalizedSessionWorkspacePath(workspace.path) },
+                        workspaceCatalog.contains(where: {
+                            $0.selected && normalizedSessionWorkspacePath($0.path) == normalizedSessionWorkspacePath(workspace.path) &&
+                                $0.remoteConnectionId == workspace.remoteConnectionId && $0.remoteSshHost == workspace.remoteSshHost
+                        }),
+                    sessions: sessions.filter { ownedSessionIDs.contains($0.id) },
                     deviceKey: deviceKey,
                     directoryExpanded: directory?.expanded ?? false,
                     directoryStatus: directory?.status.name ?? "IDLE",
-                    remoteConnectionId: workspace.remoteConnectionId
+                    remoteConnectionId: workspace.remoteConnectionId,
+                    remoteSshHost: workspace.remoteSshHost
                 )
             }
             return MobileDeviceDirectoryEntry(
@@ -158,7 +167,13 @@ extension MobileAppModel {
                 status: entry.status.name,
                 error: entry.error?.name,
                 workspaces: workspaces,
-                sessions: sessions
+                sessions: sessions,
+                catalogSource: entry.catalogSource?.name,
+                recentWorkspaces: entry.recentWorkspaces.map { workspace in
+                    MobileWorkspaceGroup(path: workspace.path, name: workspace.displayName,
+                        selected: false, sessions: [], deviceKey: deviceKey,
+                        remoteConnectionId: workspace.remoteConnectionId, remoteSshHost: workspace.remoteSshHost)
+                }
             )
         }
     }
@@ -184,7 +199,7 @@ extension MobileAppModel {
         expanded: Bool
     ) {
         guard device.online else { return }
-        coreAdapter?.setDirectoryWorkspaceExpanded(device.id, path: workspace.path, expanded: expanded)
+        coreAdapter?.setDirectoryWorkspaceExpanded(device.id, path: workspace.path, expanded: expanded, connectionId: workspace.remoteConnectionId, sshHost: workspace.remoteSshHost)
     }
 
     func retryDirectoryWorkspace(
@@ -192,7 +207,7 @@ extension MobileAppModel {
         workspace: MobileWorkspaceGroup
     ) {
         guard device.online else { return }
-        coreAdapter?.retryDirectoryWorkspace(device.id, path: workspace.path)
+        coreAdapter?.retryDirectoryWorkspace(device.id, path: workspace.path, connectionId: workspace.remoteConnectionId, sshHost: workspace.remoteSshHost)
     }
 
     private func directoryTargetKey(forRawDeviceKey rawDeviceKey: String) -> String {
@@ -238,6 +253,8 @@ extension MobileAppModel {
             rawDeviceKey: device.id,
             workspacePath: workspace.path,
             normalizedWorkspacePath: normalizedSessionWorkspacePath(workspace.path),
+            remoteConnectionId: workspace.remoteConnectionId,
+            remoteSshHost: workspace.remoteSshHost,
             agentType: agentType,
             epoch: epoch,
             selectionRequested: false
@@ -271,7 +288,7 @@ extension MobileAppModel {
             selectRemoteWorkspace(workspace)
             return
         }
-        pendingDirectoryWorkspace = (deviceKey, workspace.path, remoteTargetEpoch &+ 1)
+        pendingDirectoryWorkspace = (deviceKey, workspace.path, remoteTargetEpoch &+ 1, workspace.remoteConnectionId, workspace.remoteSshHost)
         guard targetKey != "pairing",
               let device = accountDevices.first(where: { $0.id == deviceKey }) else {
             pendingDirectoryWorkspace = nil
@@ -373,6 +390,8 @@ extension MobileAppModel {
         isSending = false
         busy = true
         remoteHasMoreMessages = false
+        remoteHistoryLoading = false
+        remoteHistoryFailed = false
         remoteConversationLoadTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: 140_000_000)
@@ -420,8 +439,9 @@ extension MobileAppModel {
             showToast(localized("远程会话连接已失效，请重新选择设备后重试"))
             return
         }
-        let selectedPath = workspaceCatalog.first(where: { $0.selected })?.path ?? ""
-        if selectedPath == pending.workspacePath {
+        let selected = remoteSidebarWorkspaceState?.selected
+        if normalizedSessionWorkspacePath(selected?.path ?? "") == pending.normalizedWorkspacePath &&
+            selected?.remoteConnectionId == pending.remoteConnectionId && selected?.remoteSshHost == pending.remoteSshHost {
             guard remoteCreateInteraction.canSubmit else {
                 mobilePerformanceLog.error("Directory create blocked connected=\(self.remoteConnected) switching=\(self.accountBusy) workspaceReady=\(self.remoteCreateWorkspacePhase == .ready) selecting=\(self.workspaceSelectionBusy) submitting=\(self.remoteCreateSubmitting) activeTurn=\(self.activeTurnID != nil) sending=\(self.isSending)")
                 pendingDirectoryRemoteDraft = nil
@@ -433,12 +453,14 @@ extension MobileAppModel {
             drawerOpen = false
             createRemoteSession(
                 agentType: pending.agentType, title: "", instruction: "",
-                workspacePath: pending.workspacePath
+                workspacePath: pending.workspacePath,
+                remoteConnectionId: pending.remoteConnectionId, remoteSshHost: pending.remoteSshHost
             )
             return
         }
         guard !pending.selectionRequested else { return }
-        guard workspaceCatalog.contains(where: { $0.path == pending.workspacePath }) else {
+        guard workspaceCatalog.contains(where: { $0.path == pending.workspacePath &&
+            $0.remoteConnectionId == pending.remoteConnectionId && $0.remoteSshHost == pending.remoteSshHost }) else {
             pendingDirectoryRemoteDraft = nil
             showToast(localized("暂无可用工作区"))
             return
@@ -450,15 +472,19 @@ extension MobileAppModel {
         }
         pending.selectionRequested = true
         pendingDirectoryRemoteDraft = pending
-        coreAdapter?.selectRemoteWorkspace(path: pending.workspacePath)
+        coreAdapter?.selectRemoteWorkspace(path: pending.workspacePath, remoteConnectionId: pending.remoteConnectionId, remoteSshHost: pending.remoteSshHost)
     }
 
     func resizeRuntimeTerminal(cols: Int, rows: Int) { coreAdapter?.resizeRuntimeTerminal(cols: cols, rows: rows) }
+    func openDeviceTools(connectionId: String? = nil) { coreAdapter?.openDeviceTools(connectionId: connectionId) }
+    func selectDeviceToolsPanel(terminal: Bool) { coreAdapter?.selectDeviceToolsPanel(terminal: terminal) }
+    func closeDeviceTools() { coreAdapter?.closeDeviceTools() }
+    func startDeviceToolsTerminal() { coreAdapter?.startDeviceToolsTerminal() }
     func openDeviceFiles(_ path: String, connectionId: String?) { coreAdapter?.openDeviceFiles(path, connectionId: connectionId) }
     func openDeviceTerminal(_ path: String, connectionId: String?) { coreAdapter?.openDeviceTerminal(path, connectionId: connectionId) }
     func browseRuntimeDirectories(_ path: String, connectionId: String?, append: Bool = false) { coreAdapter?.browseRuntimeDirectories(path, connectionId: connectionId, append: append) }
     func sortRuntimeFiles(_ sort: RuntimeFileSort) { coreAdapter?.sortRuntimeFiles(sort) }
-    func closeRuntimeFileEditor() { coreAdapter?.closeRuntimeFileEditor() }
+    func closeRuntimeFileEditor() { runtimeFileDraft.reset(); coreAdapter?.closeRuntimeFileEditor() }
     func browseRuntimeFiles(_ path: String, append: Bool = false) { coreAdapter?.browseRuntimeFiles(path, append: append) }
     func readRuntimeFile(_ path: String) { coreAdapter?.readRuntimeFile(path) }
     func saveRuntimeFile(_ content: String) { coreAdapter?.saveRuntimeFile(content) }
@@ -469,22 +495,34 @@ extension MobileAppModel {
             coreAdapter.uploadRuntimeFile(path, source: source)
         } catch { showToast(localized("Could not read the selected file. Choose a local file and retry.")) }
     }
+    func createRuntimeFileEntry(_ name: String, directory: Bool) { coreAdapter?.createRuntimeFileEntry(name, directory: directory) }
+    func renameRuntimeFileEntry(_ path: String, name: String) { coreAdapter?.renameRuntimeFileEntry(path, name: name) }
+    func deleteRuntimeFileEntry(_ path: String) { coreAdapter?.deleteRuntimeFileEntry(path) }
+    func uploadRuntimeFileEntry(_ name: String, url: URL) -> Bool {
+        do {
+            let source = try IOSRuntimeUploadSource(url: url)
+            guard let coreAdapter else { source.close(); return false }
+            coreAdapter.uploadRuntimeFileEntry(name, source: source)
+            return true
+        } catch { showToast(localized("Could not read the selected file. Choose a local file and retry.")); return false }
+    }
     func createRuntimeFile(_ path: String) { coreAdapter?.createRuntimeFile(path) }
     func renameRuntimeFile(_ path: String) { coreAdapter?.renameRuntimeFile(path) }
     func deleteRuntimeFile() { coreAdapter?.deleteRuntimeFile() }
     func createRuntimeDirectory(_ path: String) { coreAdapter?.createRuntimeDirectory(path) }
     func openRuntimeTerminal() { coreAdapter?.openRuntimeTerminal() }
+    func reopenRuntimeTerminal() { coreAdapter?.reopenRuntimeTerminal() }
     func writeRuntimeTerminal(_ data: String) { coreAdapter?.writeRuntimeTerminal(data) }
     func closeRuntimeTerminal() { coreAdapter?.closeRuntimeTerminal() }
 
-    func openRemoteWorkspacePath(_ path: String, connectionId: String?) {
+    func openRemoteWorkspacePath(_ path: String, connectionId: String?, sshHost: String? = nil) {
         let targetPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !targetPath.isEmpty, remoteConnected, remoteCreateInteraction.canSelectWorkspace else { return }
         pendingDirectoryRemoteDraft = nil
         surface = .remote
         workspaceSelectionBusy = true
-        pendingRemoteSessionRefreshWorkspacePath = normalizedSessionWorkspacePath(targetPath)
-        coreAdapter?.selectRemoteWorkspace(path: targetPath, remoteConnectionId: connectionId)
+        pendingRemoteSessionRefreshWorkspace = MobileWorkspaceScope(path: normalizedSessionWorkspacePath(targetPath), remoteConnectionId: connectionId, remoteSshHost: sshHost)
+        coreAdapter?.selectRemoteWorkspace(path: targetPath, remoteConnectionId: connectionId, remoteSshHost: sshHost)
     }
 
     func selectRemoteWorkspace(_ workspace: MobileWorkspaceGroup) {
@@ -496,8 +534,8 @@ extension MobileAppModel {
         surface = .remote
         drawerOpen = false
         workspaceSelectionBusy = true
-        pendingRemoteSessionRefreshWorkspacePath = normalizedSessionWorkspacePath(workspace.path)
-        coreAdapter?.selectRemoteWorkspace(path: workspace.path)
+        pendingRemoteSessionRefreshWorkspace = MobileWorkspaceScope(path: normalizedSessionWorkspacePath(workspace.path), remoteConnectionId: workspace.remoteConnectionId, remoteSshHost: workspace.remoteSshHost)
+        coreAdapter?.selectRemoteWorkspace(path: workspace.path, remoteConnectionId: workspace.remoteConnectionId, remoteSshHost: workspace.remoteSshHost)
     }
 
     func createRemoteSession(in workspace: MobileWorkspaceGroup, agentType: String) {
@@ -510,7 +548,8 @@ extension MobileAppModel {
             title: "",
             instruction: "",
             workspacePath: workspace.path,
-            remoteConnectionId: workspace.remoteConnectionId
+            remoteConnectionId: workspace.remoteConnectionId,
+            remoteSshHost: workspace.remoteSshHost
         )
     }
 
@@ -546,7 +585,8 @@ extension MobileAppModel {
         instruction: String,
         modelID: String? = nil,
         workspacePath: String? = nil,
-        remoteConnectionId: String? = nil
+        remoteConnectionId: String? = nil,
+        remoteSshHost: String? = nil
     ) {
         guard remoteCreateInteraction.canSubmit else {
             remoteCreateError = localized("远程会话当前不可创建，请重试")
@@ -576,7 +616,8 @@ extension MobileAppModel {
             instruction: normalizedInstruction,
             modelID: selectedModel,
             workspacePath: workspacePath,
-            remoteConnectionId: remoteConnectionId
+            remoteConnectionId: remoteConnectionId,
+            remoteSshHost: remoteSshHost
         )
         surface = .remote
     }
@@ -633,6 +674,9 @@ extension MobileAppModel {
                 agentType: confirmed.agentType,
                 workspacePath: confirmed.workspacePath,
                 workspaceName: confirmed.workspaceName,
+                workspaceScope: confirmed.workspaceIdentity.map {
+                    MobileWorkspaceScope(path: $0.path, remoteConnectionId: $0.remoteConnectionId, remoteSshHost: $0.remoteSshHost)
+                },
                 createdAt: confirmed.createdAt,
                 messageCount: Int(confirmed.messageCount)
             )
@@ -712,6 +756,14 @@ extension MobileAppModel {
     func refreshRemoteSessions() {
         guard remoteConnected, !busy else { return }
         coreAdapter?.refreshRemoteSessions()
+    }
+
+    func retryRemoteConnection() {
+        // Recovery must reach the shared stores even while the link is down.
+        // The adapter owns the current target; stores preserve the transcript
+        // and reject superseded work through their existing lifecycle fences.
+        coreAdapter?.refreshRemoteSessions()
+        coreAdapter?.loadRemoteWorkspaces()
     }
 
     func setRemoteAgentFilter(_ name: String) {
@@ -939,6 +991,9 @@ extension MobileAppModel {
                 agentType: session.agentType,
                 workspacePath: session.workspacePath,
                 workspaceName: session.workspaceName,
+                workspaceScope: session.workspaceIdentity.map {
+                    MobileWorkspaceScope(path: $0.path, remoteConnectionId: $0.remoteConnectionId, remoteSshHost: $0.remoteSshHost)
+                },
                 createdAt: session.createdAt,
                 messageCount: Int(session.messageCount)
             )
@@ -977,6 +1032,8 @@ extension MobileAppModel {
         setPublishedIfChanged(\.remoteAgentFilter, to: ready.agentFilter.name)
         setPublishedIfChanged(\.remoteHasMore, to: ready.hasMore)
         setPublishedIfChanged(\.remoteHasMoreMessages, to: ready.hasMoreMessages)
+        setPublishedIfChanged(\.remoteHistoryLoading, to: ready.historyLoadState == .loading)
+        setPublishedIfChanged(\.remoteHistoryFailed, to: ready.historyLoadState == .failed)
         setPublishedIfChanged(\.remotePermissionMode, to: ready.permissionMode?.name ?? remotePermissionMode)
         setPublishedIfChanged(\.remotePermissionFailure, to: ready.permissionModeFailure?.name)
         let acceptsTimeline = remoteConversationOpeningSessionID.map {
@@ -1031,8 +1088,8 @@ extension MobileAppModel {
            remoteConnected,
            remoteInitialWorkspaceReady {
             pendingDirectoryWorkspace = nil
-            pendingRemoteSessionRefreshWorkspacePath = normalizedSessionWorkspacePath(pending.path)
-            coreAdapter?.selectRemoteWorkspace(path: pending.path)
+            pendingRemoteSessionRefreshWorkspace = MobileWorkspaceScope(path: normalizedSessionWorkspacePath(pending.path), remoteConnectionId: pending.remoteConnectionId, remoteSshHost: pending.remoteSshHost)
+            coreAdapter?.selectRemoteWorkspace(path: pending.path, remoteConnectionId: pending.remoteConnectionId, remoteSshHost: pending.remoteSshHost)
         }
         openPendingDirectorySessionIfReady()
         advancePendingDirectoryRemoteDraftIfReady()
@@ -1043,6 +1100,10 @@ extension MobileAppModel {
         targetKey: String,
         epoch: UInt64
     ) {
+        #if DEBUG
+        let targetMatches = targetKey == remoteExpectedDeviceKey
+        mobilePerformanceLog.info("Remote health model: phase=\(phase.name, privacy: .public) epoch=\(epoch) expectedEpoch=\(self.remoteTargetEpoch) targetMatches=\(targetMatches) preview=\(self.localActionPreview || self.accountLoginPreview || self.remoteCreatePreview)")
+        #endif
         guard !localActionPreview, !accountLoginPreview, !remoteCreatePreview,
               RemoteAuthorityGate.callbackMatchesAuthority(
                 targetKey: targetKey,
@@ -1095,7 +1156,7 @@ extension MobileAppModel {
                 busy = false
                 showToast(localized("工作区加载失败，点按重试"))
             }
-            pendingRemoteSessionRefreshWorkspacePath = nil
+            pendingRemoteSessionRefreshWorkspace = nil
             if pendingRemoteWorkspaceCreate != nil || pendingRemoteAssistantCreate ||
                 pendingDirectoryRemoteDraft != nil {
                 pendingRemoteWorkspaceCreate = nil
@@ -1107,8 +1168,15 @@ extension MobileAppModel {
         }
         guard let ready = state as? RemoteWorkspaceUiStateReady else { return }
 
+        runtimeDeviceTools = ready.deviceTools
         runtimeTerminal = ready.terminal
         runtimeFiles = ready.files
+        if let file = ready.files.file {
+            runtimeFileDraft.synchronize(
+                identity: [remoteExpectedDeviceKey ?? "", ready.deviceTools.connectionId ?? "", file],
+                savedContent: ready.files.content
+            )
+        }
         runtimeDirectoryPicker = ready.directoryPicker
         savedRuntimeConnections = ready.savedConnections
         savedRuntimeConnectionsFailed = ready.savedConnectionsFailure
@@ -1119,25 +1187,10 @@ extension MobileAppModel {
         remoteCreateWorkspacePhase = ready.loadFailure ? .failed : (ready.busy ? .loading : .ready)
         remoteInitialWorkspaceReady = !ready.busy && !ready.loadFailure
         selectedRemoteWorkspaceKind = ready.selected?.kind ?? ""
-        var seen = Set<String>()
-        var catalog: [(path: String, name: String, selected: Bool, remoteConnectionId: String?)] = []
-        if let selected = ready.selected,
-           !selected.path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let normalizedPath = normalizedSessionWorkspacePath(selected.path)
-            seen.insert(normalizedPath + ":" + (selected.remoteConnectionId ?? ""))
-            catalog.append((selected.path, ready.workspaces.first(where: { normalizedSessionWorkspacePath($0.path) == normalizedPath })?.displayName ?? selected.name, true, selected.remoteConnectionId))
-        }
-        for workspace in ready.workspaces {
-            guard !workspace.path.isEmpty else { continue }
-            let normalizedPath = normalizedSessionWorkspacePath(workspace.path)
-            guard seen.insert(normalizedPath + ":" + (workspace.remoteConnectionId ?? "")).inserted else { continue }
-            catalog.append((workspace.path, workspace.displayName, false, workspace.remoteConnectionId))
-        }
-        for assistant in ready.assistants {
-            let key = normalizedSessionWorkspacePath(assistant.path) + ":"
-            if seen.insert(key).inserted { catalog.append((assistant.path, assistant.name, false, nil)) }
-        }
-        workspaceCatalog = catalog
+        remoteSidebarWorkspaceState = ready
+        workspaceCatalog = RemoteSidebarPresentation.shared.workspacesForSessions(
+            workspaceState: ready, sessions: []
+        ).map { ($0.path, $0.name, $0.selected, $0.remoteConnectionId, $0.remoteSshHost) }
         remoteAssistants = ready.assistants.map {
             MobileAssistantOption(path: $0.path, name: $0.name)
         }
@@ -1155,9 +1208,11 @@ extension MobileAppModel {
             pendingRemoteAssistantCreate = false
             createRemoteSession(agentType: "Claw", title: "", instruction: "")
         }
-        if !ready.busy, let pendingPath = pendingRemoteSessionRefreshWorkspacePath {
-            pendingRemoteSessionRefreshWorkspacePath = nil
-            if normalizedSessionWorkspacePath(ready.selected?.path ?? "") == pendingPath {
+        if !ready.busy, let pendingScope = pendingRemoteSessionRefreshWorkspace {
+            pendingRemoteSessionRefreshWorkspace = nil
+            if normalizedSessionWorkspacePath(ready.selected?.path ?? "") == pendingScope.path &&
+                ready.selected?.remoteConnectionId == pendingScope.remoteConnectionId &&
+                ready.selected?.remoteSshHost == pendingScope.remoteSshHost {
                 coreAdapter?.refreshRemoteSessions()
             }
         }
@@ -1165,17 +1220,18 @@ extension MobileAppModel {
     }
 
     func rebuildRemoteWorkspaceGroups() {
-        let selectedPath = workspaceCatalog.first(where: { $0.selected })?.path
-        let projectedWorkspaces = workspaceCatalog.map { workspace in
-            MobileWorkspaceGroup(
+        let rows = RemoteSidebarPresentation.shared.workspacesForSessions(
+            workspaceState: remoteSidebarWorkspaceState, sessions: sessionListCoreSessions
+        )
+        let projectedWorkspaces = rows.map { workspace in
+            let ownedIDs = Set(workspace.sessions.map { $0.id })
+            return MobileWorkspaceGroup(
                 path: workspace.path,
                 name: workspace.name.isEmpty ? workspace.path : workspace.name,
                 selected: workspace.selected,
-                sessions: remoteSessions.filter { session in
-                    normalizedSessionWorkspacePath(session.workspacePath ?? selectedPath ?? "") ==
-                        normalizedSessionWorkspacePath(workspace.path)
-                },
-                remoteConnectionId: workspace.remoteConnectionId
+                sessions: remoteSessions.filter { ownedIDs.contains($0.id) },
+                remoteConnectionId: workspace.remoteConnectionId,
+                remoteSshHost: workspace.remoteSshHost
             )
         }
         setPublishedIfChanged(\.remoteWorkspaces, to: projectedWorkspaces)
@@ -1265,7 +1321,10 @@ extension MobileAppModel {
                 createdAt: session.createdAt,
                 messageCount: Int32(session.messageCount),
                 workspacePath: session.workspacePath,
-                workspaceName: session.workspaceName
+                workspaceName: session.workspaceName,
+                workspaceIdentity: session.workspaceScope.map {
+                    RemoteWorkspaceIdentity(path: $0.path, remoteConnectionId: $0.remoteConnectionId, remoteSshHost: $0.remoteSshHost)
+                }
             )
         }
     }

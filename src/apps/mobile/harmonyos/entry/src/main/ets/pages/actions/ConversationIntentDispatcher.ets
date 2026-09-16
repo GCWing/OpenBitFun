@@ -1,3 +1,4 @@
+import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { RemoteQuestionAnswerPayload, RemoteSession } from '../../model/RemoteModels';
 import { AppRoute, AppRouteContract } from '../navigation/AppRouteContract';
 import { ConversationIntent, ConversationIntentType } from './ConversationIntent';
@@ -5,6 +6,7 @@ import { toRemoteQuestionAnswer } from '../state/ConversationUiModels';
 import { FilePreviewRequest } from '../../model/FilePreviewTarget';
 
 export interface ConversationIntentDispatcherHooks {
+  readonly mailbox: (action: InteractionMailboxAction) => Promise<void>;
   readonly openSidebar: () => void;
   readonly back: () => void;
   readonly newRemoteSession: () => void;
@@ -38,6 +40,7 @@ export class ConversationIntentDispatcher {
 
   dispatch(route: AppRoute, intent: ConversationIntent): void {
     switch (intent.type) {
+      case ConversationIntentType.Mailbox: if (intent.mailboxAction) void this.hooks.mailbox(intent.mailboxAction); return;
       case ConversationIntentType.OpenSidebar: this.hooks.openSidebar(); return;
       case ConversationIntentType.Back: this.hooks.back(); return;
       case ConversationIntentType.NewSession: this.hooks.newRemoteSession(); return;

@@ -6,6 +6,38 @@ use crate::service::remote_ssh::{
     get_remote_workspace_manager, lookup_remote_connection_with_hint, RemoteFileService,
 };
 
+/// Resolve an explicit file-operation connection without registering a workspace.
+/// Existing workspace providers remain supported; saved SSH profiles also own
+/// device-level paths outside opened workspaces.
+pub async fn resolve_explicit_path_connection(path: &str, id: &str) -> Result<String, String> {
+    if !path.starts_with('/') || path.contains('\0') {
+        return Err("Remote file operation requires an absolute POSIX path".into());
+    }
+    if let Some(entry) =
+        crate::service::remote_ssh::workspace_state::lookup_remote_connection_scoped(path, id).await
+    {
+        return Ok(entry.connection_id);
+    }
+    #[cfg(feature = "ssh-remote")]
+    {
+        let state =
+            crate::service::remote_ssh::workspace_state::ensure_saved_connection_services().await?;
+        let ssh = state
+            .get_ssh_manager()
+            .await
+            .ok_or("SSH manager is unavailable")?;
+        if ssh
+            .get_saved_connections()
+            .await
+            .iter()
+            .any(|profile| profile.id == id)
+        {
+            return Ok(id.to_string());
+        }
+    }
+    Err("Remote connection is unavailable or not saved on this runtime; local fallback was not attempted".into())
+}
+
 async fn remote(
     path: &str,
     hint: Option<&str>,
@@ -14,17 +46,11 @@ async fn remote(
         return Ok(None);
     }
     let hint = hint.map(str::trim).filter(|value| !value.is_empty());
-    let entry = if let Some(id) = hint {
-        crate::service::remote_ssh::workspace_state::lookup_remote_connection_scoped(path, id).await
+    let connection_id = if let Some(id) = hint {
+        resolve_explicit_path_connection(path, id).await?
+    } else if let Some(entry) = lookup_remote_connection_with_hint(path, None).await {
+        entry.connection_id
     } else {
-        lookup_remote_connection_with_hint(path, None).await
-    };
-    let Some(entry) = entry else {
-        if hint.is_some() {
-            return Err(
-                "Remote workspace is unavailable or does not own the requested path".into(),
-            );
-        }
         return Ok(None);
     };
     let manager =
@@ -33,7 +59,7 @@ async fn remote(
         .get_file_service()
         .await
         .ok_or("Remote file service is unavailable")?;
-    Ok(Some((service, entry.connection_id)))
+    Ok(Some((service, connection_id)))
 }
 
 pub async fn read_text(
@@ -256,6 +282,36 @@ pub async fn exists(
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn explicit_file_scope_retains_registered_provider_and_rejects_invalid_paths() {
+        let manager = crate::service::remote_ssh::workspace_state::init_remote_workspace_manager();
+        let root = format!("/routing-test-{}", uuid::Uuid::new_v4());
+        manager
+            .register_remote_workspace(
+                root.clone(),
+                "file-scope-test".into(),
+                "Fixture".into(),
+                "host".into(),
+            )
+            .await;
+        assert_eq!(
+            super::resolve_explicit_path_connection(&format!("{root}/file"), "file-scope-test")
+                .await
+                .unwrap(),
+            "file-scope-test"
+        );
+        for path in ["relative/file", "C:\\file", "/invalid\0file"] {
+            assert!(
+                super::resolve_explicit_path_connection(path, "file-scope-test")
+                    .await
+                    .is_err()
+            );
+        }
+        manager
+            .unregister_remote_workspace("file-scope-test", &root)
+            .await;
+    }
+
     #[tokio::test]
     async fn explicit_local_scope_bypasses_same_path_remote_routing() {
         let temp = tempfile::tempdir().unwrap();

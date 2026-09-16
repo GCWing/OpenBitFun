@@ -1,3 +1,4 @@
+import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { ConversationUiMessageItem, ConversationUiQuestionAnswer } from '../state/ConversationUiModels';
@@ -17,6 +18,7 @@ import { ToolGlyph } from './ToolGlyphs';
 
 @ComponentV2
 export struct SubagentTaskCard {
+  @Param interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   @Param title: string = '';
   @Param status: string = 'completed';
   @Param items: ConversationUiMessageItem[] = [];
@@ -116,6 +118,7 @@ export struct SubagentTaskCard {
           })
         } else if (entry.tool) {
           ToolStatusList({
+            interactionMailbox: this.interactionMailbox,
             tools: [entry.tool],
             renderRevision: this.renderRevision,
             isBusy: this.isRunning(),

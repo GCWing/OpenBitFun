@@ -12,6 +12,7 @@ pub mod account_runtime;
 pub mod bot;
 pub mod embedded_relay_host;
 pub mod lan;
+mod permission_publication;
 pub mod remote_server;
 
 pub mod device {
@@ -1108,6 +1109,7 @@ pub async fn synchronize_session_record_turn(
 /// Bridge the runtime-owned question mailbox to the account log. Only revisions
 /// travel here; controllers read the authoritative live mailbox on invalidation.
 pub fn start_session_interaction_publication(publisher: &Arc<session_log::SessionPublisher>) {
+    permission_publication::start(publisher);
     #[cfg(feature = "workspace-runtime")]
     start_host_catalog_publication(publisher);
     let mut closed = publisher.subscribe_closed();

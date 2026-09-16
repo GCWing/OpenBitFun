@@ -17,8 +17,8 @@ export class HostCatalogObserver {
   start(target: string): void {
     if (!target) { this.stop(); return; }
     if (this.target === target && this.stream && !this.stream.isClosed()) {
-      this.dirty = true;
-      void this.flush(this.generation);
+      // Successful session reads also ensure observation is active. Treating
+      // that as an invalidation makes refresh -> start -> refresh a loop.
       this.stream.wake();
       return;
     }

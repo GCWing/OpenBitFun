@@ -1,3 +1,4 @@
+import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { ObservableChatTimelineItem } from '../../model/ChatTimelineModels';
 import {
   GeneralChatServiceStatus
@@ -24,6 +25,7 @@ import { RemotePageState } from './RemotePageState';
 
 /** Immutable presentation state consumed by ConversationView. */
 export class ConversationViewState {
+  interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   activeSession: ConversationUiSession = ConversationViewState.emptySession();
   surface: ChatSurface = ChatSurface.General;
   desktopName: string = '';
@@ -36,6 +38,8 @@ export class ConversationViewState {
   isLoadingConversation: boolean = false;
   canStop: boolean = false;
   hasMoreMessages: boolean = false;
+  historyLoading: boolean = false;
+  historyFailed: boolean = false;
   timelineItems: ObservableChatTimelineItem[] = [];
   timelineRevision: number = 0;
   showSuggestionsWhenEmpty: boolean = false;
@@ -76,6 +80,7 @@ export class ConversationViewState {
     state.downloadingFilePath = remote.downloadingFilePath;
     state.downloadedFilePath = remote.downloadedFilePath;
     state.fileDownloadStatus = remote.fileDownloadStatus;
+    state.interactionMailbox = remote.interactionMailbox;
     return state;
   }
 
@@ -95,6 +100,8 @@ export class ConversationViewState {
     state.isBusy = core.isBusy;
     state.canStop = core.hasRunningActiveTurn();
     state.hasMoreMessages = core.hasMoreMessages;
+    state.historyLoading = core.historyLoading;
+    state.historyFailed = core.historyFailed;
     state.timelineItems = core.timelineItems;
     state.timelineRevision = core.timelineRevision;
     state.modelCatalog = toConversationUiModelCatalog(core.modelCatalog);

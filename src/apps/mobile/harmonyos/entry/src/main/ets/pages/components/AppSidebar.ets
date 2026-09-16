@@ -16,8 +16,6 @@ export struct AppSidebar {
   @Param workspacePath: string = '';
   @Param controlTargetDeviceId: string = '';
   @Param supportsHarnessProfiles: boolean = false;
-  @Local showToolsPicker: boolean = false;
-  @Local toolsPickerTargetId: string = '';
   @Param toolLocations: SavedRuntimeConnection[] = [];
   @Event onWorkspaceTools: (intent: WorkspaceToolsIntent) => void = (_intent: WorkspaceToolsIntent) => {};
   @Param accountUserId: string = '';
@@ -262,18 +260,6 @@ export struct AppSidebar {
       .opacity(this.connectionState === 'connected' ? 1 : 0.45)
       .accessibilityText(RemoteI18n.t('workspaceTools.title'))
       .stateEffect(true)
-      .bindPopup(this.showToolsPicker, {
-        builder: () => { this.DeviceToolsPicker() },
-        placement: Placement.Top,
-        popupColor: TRANSPARENT,
-        enableArrow: false,
-        autoCancel: true,
-        mask: false,
-        targetSpace: 6,
-        onStateChange: (event) => {
-          if (!event.isVisible) this.showToolsPicker = false;
-        }
-      })
       .onClick(() => { this.requestDeviceTools(); })
 
       Blank()
@@ -343,39 +329,9 @@ export struct AppSidebar {
       .zIndex(2)
   }
 
-  @Monitor('controlTargetDeviceId', 'workspacePath', 'workspaceKind', 'connectionState', 'isBusy', 'supportsHarnessProfiles')
-  private closeStaleToolsPicker(): void {
-    this.showToolsPicker = false;
-  }
-
   private requestDeviceTools(): void {
     if (this.connectionState !== 'connected') return;
-    this.toolsPickerTargetId = this.controlTargetDeviceId;
-    this.showToolsPicker = !this.showToolsPicker;
-  }
-
-  @Builder
-  private DeviceToolsPicker() {
-    Scroll() {
-      Column({ space: 4 }) {
-        Text(RemoteI18n.t('workspaceTools.selectLocation'))
-          .fontSize(MobileDesignTypography.labelSmall.size).fontColor(SUBTLE)
-          .padding(10).width('100%')
-        Button(RemoteI18n.t('workspaceTools.runtimeLocal')).width('100%').padding(12)
-          .backgroundColor(TRANSPARENT).fontColor(INK).onClick(() => this.openDeviceLocation(''))
-        ForEach(this.toolLocations, (location: SavedRuntimeConnection) => {
-          Button(location.name || location.id).width('100%').padding(12)
-            .backgroundColor(TRANSPARENT).fontColor(INK)
-            .onClick(() => this.openDeviceLocation(location.id))
-        }, (location: SavedRuntimeConnection): string => location.id)
-      }.width('100%').padding(8)
-    }.width(270).constraintSize({ maxHeight: 360 }).backgroundColor(CARD).borderRadius(16)
-  }
-
-  private openDeviceLocation(connectionId: string): void {
-    this.showToolsPicker = false;
-    if (this.toolsPickerTargetId !== this.controlTargetDeviceId || this.connectionState !== 'connected') return;
-    this.onWorkspaceTools({ type: 'open-device', deviceId: this.toolsPickerTargetId, connectionId: connectionId, tab: 0 });
+    this.onWorkspaceTools({ type: 'open-device', deviceId: this.controlTargetDeviceId, connectionId: '', tab: 0 });
   }
 
   private shouldShowPrimaryNavigation(): boolean {

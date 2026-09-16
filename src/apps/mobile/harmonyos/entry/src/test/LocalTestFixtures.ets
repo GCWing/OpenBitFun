@@ -1,3 +1,4 @@
+import { WorkspaceCatalog, mergeLegacyWorkspaces } from '../main/ets/services/WorkspaceCatalog';
 import { DurableSessionStream, DurableSessionCallbacks, DurableSessionEvent, DurableSessionSource, SessionKeyGrant } from '../main/ets/services/DurableSessionStream';
 import { SessionRecord } from '../main/ets/services/DurableSessionReducer';
 import { SavedRuntimeConnection } from '../main/ets/model/RemoteModels';
@@ -168,6 +169,11 @@ export class FakeRemoteWorkspaceDataSource implements RemoteWorkspaceDataSource 
   failingPaths: string[] = [];
   /** Every path listed, in the order the listings were started. */
   listedPaths: string[] = [];
+
+  async listWorkspaceCatalog(): Promise<WorkspaceCatalog> {
+    const recent = await this.listRecentWorkspaces();
+    return { workspaces: mergeLegacyWorkspaces(recent, await this.listAssistants()), recentWorkspaces: recent, source: 'recent' };
+  }
 
   async listRecentWorkspaces(): Promise<RecentWorkspaceEntry[]> {
     return this.recent;

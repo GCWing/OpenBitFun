@@ -18,12 +18,21 @@ public data class RuntimeFilesUiState public constructor(
     public val directory: String, public val entries: List<RuntimeFileUiState>, public val hasMore: Boolean,
     public val file: String?, public val content: String, public val busy: Boolean, public val failed: Boolean,
     public val sort: RuntimeFileSort,
+    public val completedOperation: Long,
+    /** Unlocalized diagnostic supplied by the controlled host; null uses the surface fallback. */
+    public val errorDetail: String?,
 ) {
+    /** Stable host error code; native surfaces own the localized explanation. */
+    public val saveConflict: Boolean get() = failed && errorDetail?.startsWith("FILE_CONFLICT:") == true
+    public constructor(directory: String, entries: List<RuntimeFileUiState>, hasMore: Boolean, file: String?, content: String, busy: Boolean, failed: Boolean, sort: RuntimeFileSort, completedOperation: Long) : this(directory, entries, hasMore, file, content, busy, failed, sort, completedOperation, null)
+    public constructor(directory: String, entries: List<RuntimeFileUiState>, hasMore: Boolean, file: String?, content: String, busy: Boolean, failed: Boolean, sort: RuntimeFileSort) : this(directory, entries, hasMore, file, content, busy, failed, sort, 0)
     public constructor(directory: String, entries: List<RuntimeFileUiState>, hasMore: Boolean, file: String?, content: String, busy: Boolean, failed: Boolean) : this(directory, entries, hasMore, file, content, busy, failed, RuntimeFileSort.NAME_ASC)
 }
 @Serializable
 private data class FilesHostResult(override val resp: String? = null, override val message: String? = null,
-    val ok: Boolean = false, val value: JsonElement = JsonNull) : CommandStatus
+    val ok: Boolean = false, val value: JsonElement = JsonNull, val error: String? = null) : CommandStatus
+
+private class FilesHostFailure(val detail: String?) : Exception()
 
 internal class RuntimeFilesStore(private val scope: CoroutineScope, private val transport: RemoteCommandTransport) {
     private val mutable = MutableStateFlow(RuntimeFilesUiState("", emptyList(), false, null, "", false, false))
@@ -40,18 +49,18 @@ internal class RuntimeFilesStore(private val scope: CoroutineScope, private val 
         else args["remoteConnectionId"] = JsonPrimitive(connectionId.orEmpty())
         val response = transport.send<FilesHostResult>(RemoteCommand(cmd = "host_invoke", command = command,
             args = buildJsonObject { put("request", JsonObject(args)) }))
-        check(response.ok) { "Runtime filesystem operation failed" }
+        if (!response.ok) throw FilesHostFailure(response.error?.takeIf { it.isNotBlank() })
         return response.value
     }
     private fun run(operation: suspend (Long) -> Unit) {
         if (mutable.value.busy) return
         val ticket = epoch
-        mutable.value = mutable.value.copy(busy = true, failed = false)
+        mutable.value = mutable.value.copy(busy = true, failed = false, errorDetail = null)
         job = scope.launch {
             try { operation(ticket) }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Throwable) { if (ticket == epoch) mutable.value = mutable.value.copy(failed = true) }
-            finally { if (ticket == epoch) mutable.value = mutable.value.copy(busy = false) }
+            catch (error: Throwable) { if (ticket == epoch) mutable.value = mutable.value.copy(failed = true, errorDetail = (error as? FilesHostFailure)?.detail) }
+            finally { if (ticket == epoch) mutable.value = mutable.value.copy(busy = false, completedOperation = mutable.value.completedOperation + 1) }
         }
     }
     fun browse(path: String, rootPath: String, remoteConnectionId: String?, append: Boolean, sort: RuntimeFileSort = mutable.value.sort) {
@@ -59,21 +68,55 @@ internal class RuntimeFilesStore(private val scope: CoroutineScope, private val 
             stop(); root = rootPath; connectionId = remoteConnectionId
             mutable.value = RuntimeFilesUiState("", emptyList(), false, null, "", false, false)
         }
-        run { ticket ->
-            val page = invoke("get_directory_children_paginated", buildJsonObject {
-                put("path", path); put("offset", if (append) mutable.value.entries.size else 0); put("limit", 100)
-                put("sortBy", if (sort == RuntimeFileSort.NAME_ASC || sort == RuntimeFileSort.NAME_DESC) "name" else "modified")
-                put("sortOrder", if (sort == RuntimeFileSort.NAME_ASC || sort == RuntimeFileSort.MODIFIED_ASC) "asc" else "desc")
-            }).jsonObject
-            val entries = page.getValue("children").jsonArray.map { child ->
-                val item = child.jsonObject
-                RuntimeFileUiState(item.getValue("path").jsonPrimitive.content, item.getValue("name").jsonPrimitive.content,
-                    item.getValue("isDirectory").jsonPrimitive.boolean)
-            }
-            if (ticket == epoch) mutable.value = mutable.value.copy(directory = path, sort = sort,
-                entries = if (append) mutable.value.entries + entries else entries,
-                hasMore = page.getValue("hasMore").jsonPrimitive.boolean, file = null, content = "")
+        run { ticket -> loadDirectory(ticket, path, append, sort) }
+    }
+    private suspend fun loadDirectory(ticket: Long, path: String, append: Boolean, sort: RuntimeFileSort) {
+        val page = invoke("get_directory_children_paginated", buildJsonObject {
+            put("path", path); put("offset", if (append) mutable.value.entries.size else 0); put("limit", 100)
+            put("sortBy", if (sort == RuntimeFileSort.NAME_ASC || sort == RuntimeFileSort.NAME_DESC) "name" else "modified")
+            put("sortOrder", if (sort == RuntimeFileSort.NAME_ASC || sort == RuntimeFileSort.MODIFIED_ASC) "asc" else "desc")
+        }).jsonObject
+        val entries = page.getValue("children").jsonArray.map { child ->
+            val item = child.jsonObject
+            RuntimeFileUiState(item.getValue("path").jsonPrimitive.content, item.getValue("name").jsonPrimitive.content,
+                item.getValue("isDirectory").jsonPrimitive.boolean)
         }
+        if (ticket == epoch) mutable.value = mutable.value.copy(directory = path, sort = sort,
+            entries = if (append) mutable.value.entries + entries else entries,
+            hasMore = page.getValue("hasMore").jsonPrimitive.boolean, file = null, content = "")
+    }
+    private suspend fun refreshDirectory(ticket: Long) {
+        if (ticket != epoch) return
+        val current = mutable.value
+        loadDirectory(ticket, current.directory, false, current.sort)
+    }
+    private fun entryPath(name: String): String {
+        require(name.isNotBlank()) { "A file name is required" }
+        val directory = mutable.value.directory
+        check(directory.isNotEmpty()) { "No directory is open" }
+        return if (name.startsWith('/')) name else directory.trimEnd('/') + "/" + name
+    }
+    fun createEntry(name: String, directory: Boolean) = run { ticket ->
+        val path = entryPath(name)
+        if (directory) invoke("create_directory", buildJsonObject { put("path", path) })
+        else invoke("write_file_content", buildJsonObject {
+            put("filePath", path); put("workspacePath", root); put("content", ""); put("expectedHash", "")
+        })
+        refreshDirectory(ticket)
+    }
+    fun renameEntry(path: String, name: String) = run { ticket ->
+        check(mutable.value.entries.any { it.path == path }) { "File entry is no longer available" }
+        val destination = entryPath(name)
+        invoke("rename_file", buildJsonObject { put("oldPath", path); put("newPath", destination) })
+        refreshDirectory(ticket)
+    }
+    fun deleteEntry(path: String) = run { ticket ->
+        val entry = mutable.value.entries.firstOrNull { it.path == path } ?: error("File entry is no longer available")
+        invoke(if (entry.directory) "delete_directory" else "delete_file", buildJsonObject {
+            put("path", path)
+            if (entry.directory) put("recursive", false)
+        })
+        refreshDirectory(ticket)
     }
     fun sort(value: RuntimeFileSort) { if (mutable.value.directory.isNotEmpty()) browse(mutable.value.directory, root, connectionId, false, value) }
     fun closeFile() { if (!mutable.value.busy) { originalHash = null; mutable.value = mutable.value.copy(file = null, content = "") } }
@@ -87,6 +130,12 @@ internal class RuntimeFilesStore(private val scope: CoroutineScope, private val 
         invoke("write_file_content", buildJsonObject { put("filePath", file); put("workspacePath", root); put("content", content); put("expectedHash", originalHash ?: error("No file revision is available")) })
         val digest = ContentHash.sha256(content)
         if (ticket == epoch) { originalHash = digest; mutable.value = mutable.value.copy(content = content) }
+    }
+    fun uploadEntry(name: String, source: RuntimeUploadSource) {
+        val path = try { entryPath(name) } catch (_: Throwable) {
+            source.close(); mutable.value = mutable.value.copy(failed = true, errorDetail = null); return
+        }
+        upload(path, source)
     }
     fun upload(path: String, source: RuntimeUploadSource) {
         if (mutable.value.busy) { source.close(); return }
@@ -127,7 +176,9 @@ internal class RuntimeFilesStore(private val scope: CoroutineScope, private val 
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (error: Throwable) { status = call("status"); if (status["completed"]?.jsonPrimitive?.boolean != true) throw error }
                 }
-                check(status.getValue("completed").jsonPrimitive.boolean) { "Runtime upload is incomplete" }
+                check(status.getValue("completed").jsonPrimitive.boolean &&
+                    status.getValue("nextOffset").jsonPrimitive.long == source.size) { "Runtime upload is incomplete" }
+                refreshDirectory(ticket)
             } finally { withContext(NonCancellable + Dispatchers.Default) { closeSource() } }
         }
         job?.invokeOnCompletion { closeSource() }

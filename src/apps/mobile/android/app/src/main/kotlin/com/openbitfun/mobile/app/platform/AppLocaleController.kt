@@ -54,10 +54,16 @@ internal object AppLocaleController {
     }
 
     fun applySaved(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val manager = context.getSystemService(LocaleManager::class.java)
+            if (manager.applicationLocales.isEmpty) {
+                manager.applicationLocales = LocaleList.forLanguageTags(DEFAULT_APP_LANGUAGE_TAG)
+            }
+            return
+        }
         val tag = context.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
             .getString(LANGUAGE_KEY, null)
-            ?: return
+            ?: DEFAULT_APP_LANGUAGE_TAG
         applyLegacy(context, tag)
     }
 

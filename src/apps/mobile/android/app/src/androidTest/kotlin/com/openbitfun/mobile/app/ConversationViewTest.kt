@@ -4,12 +4,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.captureToImage
@@ -17,6 +19,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
@@ -26,9 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openbitfun.mobile.app.ui.chat.CONVERSATION_LIST_TEST_TAG
 import com.openbitfun.mobile.app.ui.chat.CONVERSATION_LOADING_TEST_TAG
-import com.openbitfun.mobile.app.ui.chat.CHAT_STATUS_DOT_TEST_TAG
 import com.openbitfun.mobile.app.ui.chat.CHAT_STATUS_BAR_TEST_TAG
-import com.openbitfun.mobile.app.ui.chat.ChatStatusBar
 import com.openbitfun.mobile.app.ui.chat.ConversationEmptyState
 import com.openbitfun.mobile.app.ui.chat.ConversationTimelineView
 import com.openbitfun.mobile.app.ui.chat.COMPOSER_INPUT_TEST_TAG
@@ -54,6 +55,84 @@ class ConversationViewTest {
     val composeRule = createComposeRule()
 
     @Test
+    fun permissionDraftSurvivesSavedStateRestoration() {
+        val restoration = androidx.compose.ui.test.junit4.StateRestorationTester(composeRule)
+        val intents = mutableListOf<RemoteSessionIntent>()
+        val mailbox = com.openbitfun.mobile.core.feature.session.PermissionMailboxUiState(listOf(
+            com.openbitfun.mobile.core.feature.session.PermissionMailboxRequest(
+                "request-1", "write", listOf("/workspace/readme.md"), null, "Write")
+        ), false, false)
+        restoration.setContent {
+            OpenBitFunTheme(dark = false) {
+                com.openbitfun.mobile.app.ui.chat.PermissionMailboxView(mailbox, "session", 600.dp, intents::add)
+            }
+        }
+        val draft = """{"content":"retained edit"}"""
+        composeRule.onNodeWithText(string(R.string.tool_edit_approval_input)).performClick()
+        composeRule.onNodeWithText("{}").performTextReplacement(draft)
+        restoration.emulateSavedInstanceStateRestore()
+        composeRule.onNodeWithText(draft).assertIsDisplayed()
+        composeRule.onNodeWithText(string(R.string.tool_approve)).performClick()
+        val reply = intents.filterIsInstance<RemoteSessionIntent.RespondPermission>().single()
+        assertEquals("request-1", reply.requestId)
+        assertEquals(draft, reply.updatedInput)
+    }
+
+    @Test
+    fun permissionDraftDoesNotBlockRejectionAndMailboxStaysOutsideComposer() {
+        val intents = mutableListOf<RemoteSessionIntent>()
+        val state = readyState(sessionId = "session").copy(permissionMailbox =
+            com.openbitfun.mobile.core.feature.session.PermissionMailboxUiState(listOf(
+                com.openbitfun.mobile.core.feature.session.PermissionMailboxRequest(
+                    "request-1", "write", listOf("/workspace/readme.md"), null, "Write")
+            ), false, false))
+        val dark = androidx.test.platform.app.InstrumentationRegistry.getArguments().getString("mailboxDark") == "true"
+        setConversationContent(state = { state }, onIntent = intents::add, dark = dark)
+        composeRule.onNodeWithText("/workspace/readme.md").assertIsDisplayed()
+        val capture = composeRule.onRoot().captureToImage().asAndroidBitmap()
+        val context = androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().targetContext
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.Downloads.DISPLAY_NAME, "openbitfun-permission-mailbox-${if (dark) "dark" else "light"}.png")
+            put(android.provider.MediaStore.Downloads.MIME_TYPE, "image/png")
+        }
+        val uri = requireNotNull(context.contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values))
+        requireNotNull(context.contentResolver.openOutputStream(uri)).use {
+            capture.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        val requestBounds = composeRule.onNodeWithText("/workspace/readme.md").getUnclippedBoundsInRoot()
+        val composerBounds = composeRule.onNodeWithTag(COMPOSER_INPUT_TEST_TAG).getUnclippedBoundsInRoot()
+        assertTrue(requestBounds.bottom < composerBounds.top)
+        composeRule.onNodeWithText(string(R.string.tool_edit_approval_input)).performClick()
+        composeRule.onNodeWithText("{}").performTextReplacement("{invalid")
+        composeRule.onNodeWithText(string(R.string.tool_approve)).assertIsNotEnabled()
+        composeRule.onNodeWithText(string(R.string.tool_reject)).performScrollTo().performClick()
+        val reply = intents.filterIsInstance<RemoteSessionIntent.RespondPermission>().single()
+        assertEquals("request-1", reply.requestId)
+        assertEquals(false, reply.approve)
+        assertEquals(null, reply.updatedInput)
+    }
+
+    @Test
+    fun multiplePermissionsScrollIndependentlyWithoutHidingComposer() {
+        val intents = mutableListOf<RemoteSessionIntent>()
+        val requests = (1..10).map { index ->
+            com.openbitfun.mobile.core.feature.session.PermissionMailboxRequest(
+                "request-$index", "write", listOf("/workspace/file-$index.md"), null, "Write")
+        }
+        val state = readyState(sessionId = "session").copy(permissionMailbox =
+            com.openbitfun.mobile.core.feature.session.PermissionMailboxUiState(requests, false, false))
+        setConversationContent(state = { state }, onIntent = intents::add)
+        composeRule.onNodeWithTag(COMPOSER_INPUT_TEST_TAG).assertIsDisplayed()
+        val composerBefore = composeRule.onNodeWithTag(COMPOSER_INPUT_TEST_TAG).getUnclippedBoundsInRoot()
+        composeRule.onAllNodesWithText(string(R.string.tool_reject))[9].performScrollTo().assertIsDisplayed().performClick()
+        composeRule.onNodeWithTag(COMPOSER_INPUT_TEST_TAG).assertIsDisplayed()
+        assertEquals(composerBefore, composeRule.onNodeWithTag(COMPOSER_INPUT_TEST_TAG).getUnclippedBoundsInRoot())
+        val reply = intents.filterIsInstance<RemoteSessionIntent.RespondPermission>().single()
+        assertEquals("request-10", reply.requestId)
+        assertEquals(false, reply.approve)
+    }
+
+    @Test
     fun openingATallLastMessageStartsAtTheActualTail() {
         val answer = List(500) { "A long answer line." }.joinToString(" ") + " tail-marker"
 
@@ -64,7 +143,7 @@ class ConversationViewTest {
                     hasMoreMessages = false,
                     onLoadOlder = {},
                     enabled = true,
-                    onApproveTool = {},
+                    onApproveTool = { _, _ -> },
                     onRejectTool = { _, _ -> },
                     onCancelTool = { _, _ -> },
                     onAnswerTool = { _, _ -> },
@@ -286,65 +365,48 @@ class ConversationViewTest {
     }
 
     @Test
-    fun reconnectingStatusBarMatchesTheFixedHeightColorAndCopyContract() {
-        composeRule.setContent {
-            OpenBitFunTheme(dark = false) {
-                ChatStatusBar(
-                    phase = ConnectionPhase.RECONNECTING,
-                    canStop = false,
-                    onStop = {},
-                )
-            }
-        }
-
-        val title = string(R.string.chat_status_restoring_connection)
-        val detail = string(R.string.connection_reconnecting_desktop)
-        composeRule.onNodeWithText("$title · $detail").assertExists()
-        val bounds = composeRule.onNodeWithTag(CHAT_STATUS_BAR_TEST_TAG).getUnclippedBoundsInRoot()
-        assertTrue(kotlin.math.abs((bounds.bottom - bounds.top).value - 48f) < 1f)
-        val dot = composeRule.onNodeWithTag(CHAT_STATUS_DOT_TEST_TAG).captureToImage()
-        assertEquals(0xFF706F6A.toInt(), dot.toPixelMap()[dot.width / 2, dot.height / 2].toArgb())
-    }
-
-    @Test
-    fun executingStatusBarDoesNotAppendAConnectionDetail() {
-        composeRule.setContent {
-            OpenBitFunTheme(dark = false) {
-                ChatStatusBar(
-                    phase = ConnectionPhase.RECONNECTING,
-                    canStop = true,
-                    onStop = {},
-                )
-            }
-        }
-
-        composeRule.onNodeWithText(string(R.string.chat_status_executing)).assertExists()
+    fun reconnectingKeepsConversationAndComposerWithoutHeaderBanner() {
+        setConversationContent(
+            state = { readyState() },
+            phase = ConnectionPhase.RECONNECTING,
+        )
+        composeRule.onNodeWithTag(CHAT_STATUS_BAR_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(COMPOSER_INPUT_TEST_TAG).assertIsDisplayed()
+        composeRule.onNodeWithTag(COMPOSER_SEND_TEST_TAG).assertIsNotEnabled()
     }
 
     private fun setConversationContent(
         state: () -> RemoteSessionUiState.Ready,
         phase: ConnectionPhase = ConnectionPhase.CONNECTED,
         onIntent: (RemoteSessionIntent) -> Unit = {},
+        dark: Boolean = false,
     ) {
         composeRule.setContent {
-            OpenBitFunTheme(dark = false) {
-                ConversationView(
-                    state = state(),
-                    phase = phase,
-                    settingsPlacement = SettingsPlacement(SettingsPlacementMode.BOTTOM, 0, 0, 0),
-                    onBack = {},
-                    onIntent = onIntent,
-                    contextTitle = "Test desktop",
-                    onOpenFile = { _, _ -> },
-                    previewingRemotePath = "",
-                    previewLoading = false,
-                    download = RemoteFileDownloadUiState.None,
-                    onDownloadFile = { _, _ -> },
+            OpenBitFunTheme(dark = dark) {
+                androidx.compose.material3.Surface(
                     modifier = Modifier.fillMaxSize(),
-                )
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.background,
+                    contentColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
+                ) {
+                    ConversationView(
+                        state = state(),
+                        phase = phase,
+                        settingsPlacement = SettingsPlacement(SettingsPlacementMode.BOTTOM, 0, 0, 0),
+                        onBack = {},
+                        onIntent = onIntent,
+                        contextTitle = "Test desktop",
+                        onOpenFile = { _, _ -> },
+                        previewingRemotePath = "",
+                        previewLoading = false,
+                        download = RemoteFileDownloadUiState.None,
+                        onDownloadFile = { _, _ -> },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }
+
 
     private fun readyState(
         sessionId: String = "",
@@ -372,7 +434,7 @@ class ConversationViewTest {
             hasMoreMessages = hasMoreMessages,
             onLoadOlder = {},
             enabled = true,
-            onApproveTool = {},
+            onApproveTool = { _, _ -> },
             onRejectTool = { _, _ -> },
             onCancelTool = { _, _ -> },
             onAnswerTool = { _, _ -> },

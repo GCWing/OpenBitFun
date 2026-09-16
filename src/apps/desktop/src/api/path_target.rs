@@ -16,8 +16,14 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+/// Resolved file routing identity, independent of workspace registration.
 #[derive(Debug, Clone)]
-pub enum DesktopPathTarget {
+pub struct RemotePathConnection {
+    pub connection_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum DesktopPathTarget<T = RemotePathConnection> {
     Local {
         requested_path: String,
         resolved_path: PathBuf,
@@ -25,7 +31,7 @@ pub enum DesktopPathTarget {
     },
     Remote {
         requested_path: String,
-        entry: RemoteWorkspaceEntry,
+        entry: T,
     },
 }
 
@@ -165,20 +171,22 @@ pub async fn resolve_desktop_path_target(
     let explicit_connection_id = preferred_remote_connection_id
         .map(str::trim)
         .filter(|value| !value.is_empty());
+    if let Some(id) = explicit_connection_id {
+        let connection_id = openbitfun_core::service::filesystem::path_operations::resolve_explicit_path_connection(raw_path, id).await?;
+        return Ok(DesktopPathTarget::Remote {
+            requested_path: raw_path.to_string(),
+            entry: RemotePathConnection { connection_id },
+        });
+    }
     if let Some(entry) =
         lookup_remote_entry_for_path(app_state, raw_path, explicit_connection_id).await
     {
         return Ok(DesktopPathTarget::Remote {
             requested_path: raw_path.to_string(),
-            entry,
+            entry: RemotePathConnection {
+                connection_id: entry.connection_id,
+            },
         });
-    }
-
-    if let Some(connection_id) = explicit_connection_id {
-        return Err(format!(
-            "Remote workspace connection '{}' is unavailable or does not own path '{}'; local filesystem fallback was not attempted",
-            connection_id, raw_path
-        ));
     }
 
     Ok(DesktopPathTarget::Local {
@@ -186,6 +194,42 @@ pub async fn resolve_desktop_path_target(
         resolved_path: PathBuf::from(raw_path),
         is_runtime_artifact: false,
     })
+}
+
+/// Workspace search retains registered-root scope even when device file tools
+/// use a saved SSH connection outside any opened workspace.
+pub async fn resolve_desktop_workspace_path_target(
+    app_state: &AppState,
+    path: &str,
+    preferred: Option<&str>,
+) -> Result<DesktopPathTarget<RemoteWorkspaceEntry>, String> {
+    match resolve_desktop_path_target(app_state, path, preferred).await? {
+        DesktopPathTarget::Local {
+            requested_path,
+            resolved_path,
+            is_runtime_artifact,
+        } => Ok(DesktopPathTarget::Local {
+            requested_path,
+            resolved_path,
+            is_runtime_artifact,
+        }),
+        DesktopPathTarget::Remote {
+            requested_path,
+            entry,
+        } => {
+            let workspace = lookup_remote_entry_for_path(
+                app_state,
+                &requested_path,
+                Some(&entry.connection_id),
+            )
+            .await
+            .ok_or("Remote search requires a registered workspace owning the requested path")?;
+            Ok(DesktopPathTarget::Remote {
+                requested_path,
+                entry: workspace,
+            })
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]

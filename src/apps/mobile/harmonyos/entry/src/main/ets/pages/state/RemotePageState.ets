@@ -1,3 +1,5 @@
+import { TimeFormat } from '../../services/TimeFormat';
+import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { WorkspaceToolsState } from './WorkspaceToolsState';
 import {
   SavedRuntimeConnection,
@@ -19,6 +21,7 @@ import { ConversationCoreState } from './ConversationCoreState';
  */
 @ObservedV2
 export class RemotePageState {
+  @Trace interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   readonly workspaceTools: WorkspaceToolsState = new WorkspaceToolsState();
   @Trace conversation: ConversationCoreState = new ConversationCoreState('code');
   @Trace desktopName: string = '';
@@ -40,6 +43,8 @@ export class RemotePageState {
   @Trace showRemoteUrlInput: boolean = false;
   @Trace workspaceName: string = '';
   @Trace workspacePath: string = '';
+  @Trace workspaceConnectionId: string = '';
+  @Trace workspaceSshHost: string = '';
   @Trace workspaceBranch: string = '';
   @Trace workspaceKind: string = 'normal';
   @Trace assistantId: string = '';
@@ -185,10 +190,14 @@ export class RemotePageState {
     workspacePath: string,
     assistantId: string,
     workspaceBranch: string = '',
-    workspaceKind: string = 'normal'
+    workspaceKind: string = 'normal',
+    remoteConnectionId: string = '',
+    remoteSshHost: string = ''
   ): void {
     this.workspaceName = workspaceName;
     this.workspacePath = workspacePath;
+    this.workspaceConnectionId = remoteConnectionId;
+    this.workspaceSshHost = remoteSshHost;
     this.assistantId = assistantId;
     this.workspaceBranch = workspaceBranch;
     this.workspaceKind = workspaceKind;
@@ -222,10 +231,12 @@ export class RemotePageState {
   }
 
   setActiveSession(session: SessionSummary): void {
+    if (this.conversation.activeSession.sessionId !== session.sessionId) this.interactionMailbox = new InteractionMailboxState();
     this.conversation.setActiveSession(session);
   }
 
   clearActiveSession(): void {
+    this.interactionMailbox = new InteractionMailboxState();
     this.conversation.clearActiveSession();
     this.isLoadingConversation = false;
     this.pendingSessionId = '';
@@ -251,6 +262,11 @@ export class RemotePageState {
 
   setHasMoreMessages(hasMoreMessages: boolean): void {
     this.conversation.setHasMoreMessages(hasMoreMessages);
+  }
+
+  setHistoryLoadState(loading: boolean, failed: boolean): void {
+    this.conversation.historyLoading = loading;
+    this.conversation.historyFailed = failed;
   }
 
   clearTimeline(): void {
@@ -336,6 +352,7 @@ export class RemotePageState {
 
   /** Clears every conversation-scoped value when its remote identity ends. */
   resetConversationContext(): void {
+    this.interactionMailbox = new InteractionMailboxState();
     this.conversation.reset();
     this.hasMoreSessions = false;
     this.isLoadingSessions = false;
@@ -378,6 +395,29 @@ export class RemotePageState {
       return query.length === 0 || item.title.toLowerCase().indexOf(query) >= 0;
     });
     return this.visibleSessionsCache;
+  }
+
+  private recentHomeSource: RemoteSession[] | undefined = undefined;
+  private recentHomeCache: RemoteSession[] = [];
+
+  recentHomeSessions(): RemoteSession[] {
+    const source = this.conversation.sessions;
+    if (this.recentHomeSource === source) return this.recentHomeCache;
+    this.recentHomeSource = source;
+    this.recentHomeCache = source.filter((session: RemoteSession): boolean =>
+      session.id.trim().length > 0 && session.status !== 'archived')
+      .sort((left: RemoteSession, right: RemoteSession): number =>
+        this.recentSessionTime(right) - this.recentSessionTime(left))
+      .filter((session: RemoteSession, index: number, rows: RemoteSession[]): boolean =>
+        rows.findIndex((row: RemoteSession): boolean => row.id === session.id) === index).slice(0, 3);
+    return this.recentHomeCache;
+  }
+
+  private recentSessionTime(session: RemoteSession): number {
+    const updated = TimeFormat.timestampMs(session.updatedAt);
+    if (Number.isFinite(updated) && updated > 0) return updated;
+    const created = TimeFormat.timestampMs(session.createdAt);
+    return Number.isFinite(created) ? created : 0;
   }
 
   hasRunningActiveTurn(): boolean {

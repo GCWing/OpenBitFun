@@ -8,6 +8,8 @@ export type WorkspaceDirectoryStatus = 'idle' | 'loading' | 'ready' | 'failed';
 export class WorkspaceDirectoryState {
   @Trace deviceId: string = '';
   @Trace path: string = '';
+  @Trace remoteConnectionId: string = '';
+  @Trace remoteSshHost: string = '';
   @Trace expanded: boolean = false;
   @Trace status: WorkspaceDirectoryStatus = 'idle';
   @Trace hasLoadedSessions: boolean = false;
@@ -27,12 +29,17 @@ export class DeviceDirectoryEntry {
   @Trace status: DeviceDirectoryStatus = 'idle';
   @Trace errorText: string = '';
   @Trace workspaces: RecentWorkspaceEntry[] = [];
+  @Trace catalogSource: string = '';
+  @Trace recentWorkspaces: RecentWorkspaceEntry[] = [];
   @Trace sessions: RemoteSession[] = [];
 }
 
 /** Snapshot of every account desktop the sidebar can observe. */
 @ObservedV2
 export class DeviceDirectoryState {
+  @Trace refreshing: boolean = false;
+  @Trace refreshError: string = '';
+  refreshGeneration: number = 0;
   @Trace devices: DeviceDirectoryEntry[] = [];
   /** Disclosure state is independent of device catalog projection instances. */
   @Trace workspaceDirectory: WorkspaceDirectoryState[] = [];
@@ -44,6 +51,7 @@ export class DeviceDirectoryState {
   }
 
   clear(): void {
+    this.refreshGeneration++; this.refreshing = false; this.refreshError = '';
     this.devices = [];
     this.workspaceDirectory = [];
     this.selectedDeviceId = '';
@@ -66,33 +74,33 @@ export class DeviceDirectoryState {
     return this.devices.find((item: DeviceDirectoryEntry): boolean => item.deviceId === deviceId);
   }
 
-  workspaceExpanded(deviceId: string, path: string): boolean {
-    return this.findWorkspace(deviceId, path)?.expanded || false;
+  workspaceExpanded(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): boolean {
+    return this.findWorkspace(deviceId, path, remoteConnectionId, remoteSshHost)?.expanded || false;
   }
 
-  workspaceStatus(deviceId: string, path: string): WorkspaceDirectoryStatus {
-    return this.findWorkspace(deviceId, path)?.status || 'idle';
+  workspaceStatus(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): WorkspaceDirectoryStatus {
+    return this.findWorkspace(deviceId, path, remoteConnectionId, remoteSshHost)?.status || 'idle';
   }
 
-  workspaceHasLoadedSessions(deviceId: string, path: string): boolean {
-    return this.findWorkspace(deviceId, path)?.hasLoadedSessions || false;
+  workspaceHasLoadedSessions(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): boolean {
+    return this.findWorkspace(deviceId, path, remoteConnectionId, remoteSshHost)?.hasLoadedSessions || false;
   }
 
   /** A request retains this object so a reset cannot publish into its successor. */
-  workspaceLoadState(deviceId: string, path: string): WorkspaceDirectoryState {
-    return this.ensureWorkspace(deviceId, path);
+  workspaceLoadState(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): WorkspaceDirectoryState {
+    return this.ensureWorkspace(deviceId, path, remoteConnectionId, remoteSshHost);
   }
 
   isCurrentWorkspaceLoad(state: WorkspaceDirectoryState): boolean {
-    return this.findWorkspace(state.deviceId, state.path) === state;
+    return this.findWorkspace(state.deviceId, state.path, state.remoteConnectionId, state.remoteSshHost) === state;
   }
 
-  setWorkspaceExpanded(deviceId: string, path: string, expanded: boolean): void {
-    this.ensureWorkspace(deviceId, path).expanded = expanded;
+  setWorkspaceExpanded(deviceId: string, path: string, expanded: boolean, remoteConnectionId?: string, remoteSshHost?: string): void {
+    this.ensureWorkspace(deviceId, path, remoteConnectionId, remoteSshHost).expanded = expanded;
   }
 
-  setWorkspaceStatus(deviceId: string, path: string, status: WorkspaceDirectoryStatus): void {
-    this.ensureWorkspace(deviceId, path).status = status;
+  setWorkspaceStatus(deviceId: string, path: string, status: WorkspaceDirectoryStatus, remoteConnectionId?: string, remoteSshHost?: string): void {
+    this.ensureWorkspace(deviceId, path, remoteConnectionId, remoteSshHost).status = status;
   }
 
   /**
@@ -113,24 +121,27 @@ export class DeviceDirectoryState {
     );
   }
 
-  private findWorkspace(deviceId: string, path: string): WorkspaceDirectoryState | undefined {
+  private findWorkspace(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): WorkspaceDirectoryState | undefined {
     const targetDeviceId = deviceId.trim();
     const normalizedPath = DeviceDirectoryState.normalizeWorkspacePath(path);
     return this.workspaceDirectory.find((item: WorkspaceDirectoryState): boolean =>
-      item.deviceId === targetDeviceId && item.path === normalizedPath
+      item.deviceId === targetDeviceId && item.path === normalizedPath &&
+      item.remoteConnectionId === (remoteConnectionId?.trim() || '') && item.remoteSshHost === (remoteSshHost?.trim() || '')
     );
   }
 
-  private ensureWorkspace(deviceId: string, path: string): WorkspaceDirectoryState {
+  private ensureWorkspace(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): WorkspaceDirectoryState {
     const targetDeviceId = deviceId.trim();
     const normalizedPath = DeviceDirectoryState.normalizeWorkspacePath(path);
-    const existing = this.findWorkspace(targetDeviceId, normalizedPath);
+    const existing = this.findWorkspace(targetDeviceId, normalizedPath, remoteConnectionId, remoteSshHost);
     if (existing) {
       return existing;
     }
     const created = new WorkspaceDirectoryState();
     created.deviceId = targetDeviceId;
     created.path = normalizedPath;
+    created.remoteConnectionId = remoteConnectionId?.trim() || '';
+    created.remoteSshHost = remoteSshHost?.trim() || '';
     this.workspaceDirectory = this.workspaceDirectory.concat([created]);
     return created;
   }

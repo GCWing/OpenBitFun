@@ -19,6 +19,9 @@ import com.openbitfun.mobile.core.transport.TransportLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.collect
@@ -95,6 +98,7 @@ public class AccountStore internal constructor(
     private var profileAttempt: Pair<String, String>? = null
     /** Latest account membership snapshot, used to authorize explicit device stores. */
     private var controllableDevices: List<AccountDeviceUi> = emptyList()
+    private var pendingInitialDeviceSelection = false
 
     public fun resumeSessionStreams() { backend.resumeSessionStreams() }
 
@@ -123,7 +127,7 @@ public class AccountStore internal constructor(
 
     public fun createSessionStore(scope: CoroutineScope): RemoteSessionStore? {
         val current = session ?: return null
-        val target = current.targetDeviceId?.takeIf(String::isNotBlank) ?: return null
+        val target = current.targetDeviceId?.let(::authorizedDeviceId) ?: return null
         return RemoteSessionStore.create(
             scope,
             backend.transport(current, target),
@@ -134,7 +138,7 @@ public class AccountStore internal constructor(
 
     public fun createWorkspaceStore(scope: CoroutineScope): RemoteWorkspaceStore? {
         val current = session ?: return null
-        val target = current.targetDeviceId?.takeIf(String::isNotBlank) ?: return null
+        val target = current.targetDeviceId?.let(::authorizedDeviceId) ?: return null
         return RemoteWorkspaceStore.create(
             scope,
             backend.transport(current, target),
@@ -196,6 +200,7 @@ public class AccountStore internal constructor(
     }
 
     private fun restore() {
+        pendingInitialDeviceSelection = false
         work?.cancel()
         _state.value = AccountUiState.Restoring
         work = scope.launch {
@@ -229,31 +234,25 @@ public class AccountStore internal constructor(
             }
             session = restored
             selectedRelayUrl = restored.relayUrl
-            try {
-                publishReady(restored, backend.listDevices(restored, deviceId))
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (error: CloudAccountException) {
-                if (error.failure == CloudAccountFailure.AUTHENTICATION) {
-                    expireSession(error.failure.toUiReason(), AccountFailureStage.DEVICE_LIST)
-                } else {
-                    _state.value = AccountUiState.Failed(
-                        error.failure.toUiReason(),
-                        true,
-                        AccountFailureStage.DEVICE_LIST,
-                    )
-                }
-            } catch (_: Throwable) {
-                _state.value = AccountUiState.Failed(
-                    AccountFailureReason.NETWORK,
-                    true,
-                    AccountFailureStage.DEVICE_LIST,
-                )
-            }
+            // Local credential restoration and remote directory availability are
+            // separate facts. Publish identity before any network wait, but grant
+            // no target authority until an authenticated membership snapshot arrives.
+            publishReady(restored, emptyList(), selectionConfirmed = false)
+            refreshDevices()
         }
     }
 
+    /** A directory outage is not an authentication failure or device authority. */
+    private fun publishDirectoryFailure(restored: AccountSessionData, reason: AccountFailureReason) {
+        publishReady(restored, emptyList())
+        val ready = _state.value as AccountUiState.Ready
+        _state.value = ready.copy(refreshFailure = reason, selectedDeviceId = null, selectedDeviceName = null)
+        // The saved target stays in session and is restored after the relay has
+        // supplied its device directory. No new transport is authorized here.
+    }
+
     private fun login() {
+        pendingInitialDeviceSelection = false
         work?.cancel()
         _state.value = AccountUiState.SigningIn
         work = scope.launch {
@@ -266,20 +265,23 @@ public class AccountStore internal constructor(
                 failLogin(AccountFailureReason.SECURE_STORAGE, AccountFailureStage.SECURE_STORAGE)
                 return@launch
             }
+            val loginContext = currentCoroutineContext()
             val loggedIn = try {
                 backend.login(
                     selectedRelayUrl,
                     deviceId,
                     deviceName,
                     deviceSecret,
-                    { url -> _state.value = AccountUiState.Authorizing(url) },
+                    { url -> if (loginContext.isActive) _state.value = AccountUiState.Authorizing(url) },
                 )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: CloudAccountException) {
+                currentCoroutineContext().ensureActive()
                 failLogin(error.failure.toUiReason(), AccountFailureStage.AUTHENTICATION)
                 return@launch
             } catch (_: Throwable) {
+                currentCoroutineContext().ensureActive()
                 // Live transport failures are normalized by CloudAccountClient.
                 // An untyped failure here is therefore a crypto/protocol failure,
                 // never evidence that secure storage was involved.
@@ -289,9 +291,11 @@ public class AccountStore internal constructor(
                 deviceSecret.fill(0)
             }
 
+            currentCoroutineContext().ensureActive()
             controllableDevices = emptyList()
             if (!persistLogin(loggedIn)) return@launch
             session = loggedIn
+            pendingInitialDeviceSelection = true
 
             val devices = loadDevices(loggedIn) ?: return@launch
 
@@ -305,31 +309,31 @@ public class AccountStore internal constructor(
             )
             if (!persistLogin(selected)) return@launch
             session = selected
+            pendingInitialDeviceSelection = false
             publishReady(selected, devices)
         }
     }
 
     private suspend fun loadDevices(current: AccountSessionData): List<AccountDeviceUi>? = try {
-        backend.listDevices(current, deviceId)
+        backend.listDevices(current, deviceId).also { currentCoroutineContext().ensureActive() }
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (error: CloudAccountException) {
-        _state.value = AccountUiState.Failed(
-            error.failure.toUiReason(),
-            true,
-            AccountFailureStage.DEVICE_LIST,
-        )
+        currentCoroutineContext().ensureActive()
+        if (error.failure == CloudAccountFailure.AUTHENTICATION) {
+            expireSession(error.failure.toUiReason(), AccountFailureStage.DEVICE_LIST)
+        } else {
+            publishDirectoryFailure(current, error.failure.toUiReason())
+        }
         null
     } catch (_: Throwable) {
-        _state.value = AccountUiState.Failed(
-            AccountFailureReason.NETWORK,
-            true,
-            AccountFailureStage.DEVICE_LIST,
-        )
+        currentCoroutineContext().ensureActive()
+        publishDirectoryFailure(current, AccountFailureReason.NETWORK)
         null
     }
 
     private fun retryFailedStage() {
+        if (_state.value is AccountUiState.Ready) { refreshDevices(); return }
         val failed = _state.value as? AccountUiState.Failed ?: return
         val current = session ?: return
         if (!failed.canRetry || failed.stage != AccountFailureStage.DEVICE_LIST) return
@@ -348,6 +352,7 @@ public class AccountStore internal constructor(
             // This retry only refreshes the volatile device-list projection. The
             // authenticated bytes saved before the failed list request stay exact.
             session = selected
+            pendingInitialDeviceSelection = false
             publishReady(selected, devices)
         }
     }
@@ -414,21 +419,42 @@ public class AccountStore internal constructor(
         work = scope.launch {
             try {
                 val devices = backend.listDevices(current, deviceId)
-                if (session?.token == current.token && session?.relayUrl == current.relayUrl) publishReady(session!!, devices)
+                currentCoroutineContext().ensureActive()
+                if (session?.token == current.token && session?.relayUrl == current.relayUrl) {
+                    val active = session!!
+                    val selected = if (pendingInitialDeviceSelection) {
+                        val preferred = AccountDevicePolicy.preferredTarget(devices, deviceId)
+                        active.copy(targetDeviceId = preferred?.id, targetDeviceName = preferred?.name)
+                    } else active
+                    pendingInitialDeviceSelection = false
+                    session = selected
+                    publishReady(selected, devices)
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: CloudAccountException) {
+                currentCoroutineContext().ensureActive()
                 if (error.failure == CloudAccountFailure.AUTHENTICATION) {
                     expireSession(error.failure.toUiReason(), AccountFailureStage.DEVICE_LIST)
                 } else {
-                    _state.value = ready.copy(refreshing = false, refreshFailure = error.failure.toUiReason())
+                    publishRefreshFailure(current, error.failure.toUiReason())
                 }
             } catch (_: Throwable) {
-                _state.value = ready.copy(refreshing = false, refreshFailure = AccountFailureReason.NETWORK)
+                currentCoroutineContext().ensureActive()
+                publishRefreshFailure(current, AccountFailureReason.NETWORK)
             } finally {
-                if (directoryDirty && session?.token == current.token) { directoryDirty = false; refreshDevices() }
+                if (currentCoroutineContext().isActive && directoryDirty && session?.token == current.token && session?.relayUrl == current.relayUrl) { directoryDirty = false; refreshDevices() }
             }
         }
+    }
+
+    private fun publishRefreshFailure(requestSession: AccountSessionData, reason: AccountFailureReason) {
+        val active = session ?: return
+        if (active.token != requestSession.token || active.relayUrl != requestSession.relayUrl) return
+        val latest = _state.value as? AccountUiState.Ready ?: return
+        // Selection/profile changes made during the request belong to the current
+        // UI. A failed directory read has no authority to restore an old snapshot.
+        _state.value = latest.copy(refreshing = false, refreshFailure = reason)
     }
 
     private fun logout() {
@@ -471,7 +497,7 @@ public class AccountStore internal constructor(
      * filter cannot be forgotten by a caller — or applied twice with two
      * different answers on two platforms.
      */
-    private fun publishReady(current: AccountSessionData, devices: List<AccountDeviceUi>) {
+    private fun publishReady(current: AccountSessionData, devices: List<AccountDeviceUi>, selectionConfirmed: Boolean = true) {
         val directoryKey = current.relayUrl to current.token
         if (directoryIdentity != directoryKey) {
             directoryWork?.cancel(); directoryIdentity = directoryKey
@@ -487,8 +513,8 @@ public class AccountStore internal constructor(
             relayUrl = current.relayUrl,
             username = displayedProfile?.takeIf { it.userId == current.userId }?.username ?: current.username,
             devices = controllableDevices,
-            selectedDeviceId = current.targetDeviceId,
-            selectedDeviceName = current.targetDeviceName,
+            selectedDeviceId = current.targetDeviceId.takeIf { selectionConfirmed },
+            selectedDeviceName = current.targetDeviceName.takeIf { selectionConfirmed },
         ).copy(avatarUrl = displayedProfile?.takeIf { it.userId == current.userId }?.avatarUrl)
         enrichProfile(current)
     }

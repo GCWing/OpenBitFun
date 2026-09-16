@@ -35,11 +35,70 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertNotNull
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RemoteSessionStoreTest {
+    @Test
+    fun firstHistoryReadDoesNotPublishAnEmptyOrPartialConversation() = runTest {
+        val transport = FakeSessionTransport().apply {
+            initialHistoryGate = CompletableDeferred()
+            initialEvents = listOf(richRecord("s-code", "first", 0, 1, "completed", "answer"))
+        }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Load); runCurrent()
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        assertNull((store.state.value as? RemoteSessionUiState.Ready)?.timeline)
+        transport.initialHistoryGate!!.complete(Unit); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("s-code", ready.selectedSessionId)
+        assertTrue(ready.timeline!!.persistedMessages.isNotEmpty())
+        assertFalse(ready.busy)
+        store.stop()
+    }
+
+    @Test
+    fun anEmptySessionIsEmptyOnlyAfterTheHistoryReadCompletes() = runTest {
+        val transport = FakeSessionTransport().apply { initialHistoryGate = CompletableDeferred() }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        assertFalse(store.state.value is RemoteSessionUiState.Ready)
+        transport.initialHistoryGate!!.complete(Unit); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertTrue(ready.timeline!!.persistedMessages.isEmpty())
+        assertFalse(ready.busy)
+        store.stop()
+    }
+
+    @Test
+    fun initialHistoryCanRecoverAfterTransientStreamFailure() = runTest {
+        val transport = FakeSessionTransport().apply { initialHistoryGate = CompletableDeferred() }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        transport.streamError!!.invoke(IllegalStateException("Temporary disconnect")); runCurrent()
+        assertFalse(store.state.value is RemoteSessionUiState.Ready)
+        transport.initialHistoryGate!!.complete(Unit); runCurrent()
+        assertEquals("s-code", assertIs<RemoteSessionUiState.Ready>(store.state.value).selectedSessionId)
+        store.stop()
+    }
+
+    @Test
+    fun switchingSessionsCancelsThePreviousInitialHistoryWait() = runTest {
+        val previousGate = CompletableDeferred<Unit>()
+        val transport = FakeSessionTransport().apply { initialHistoryGate = previousGate }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        transport.initialHistoryGate = null
+        store.dispatch(RemoteSessionIntent.Open("s-cowork")); runCurrent()
+        assertEquals("s-cowork", assertIs<RemoteSessionUiState.Ready>(store.state.value).selectedSessionId)
+        previousGate.complete(Unit); runCurrent()
+        assertEquals("s-cowork", assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline!!.sessionId)
+        assertEquals(1, transport.activeSubscriptions)
+        store.stop()
+    }
+
     @Test
     fun additiveRevisionConstructorsKeepLegacySourceShape() {
         val succeeded = CreateSessionOperationState.Succeeded("request", "session", null)
@@ -98,7 +157,33 @@ class RemoteSessionStoreTest {
     }
 
     @Test
-    fun initialListingAndCatalogRequestsOverlapWithoutChangingReadyOrdering() = runTest {
+    fun workspaceDirectorySeparatesSamePathSshLoadsAndRetry() = runTest {
+        val transport = FakeSessionTransport().apply {
+            listSessionsOverride = { command ->
+                """{"resp":"ok","has_more":false,"sessions":[{"id":"${command.remoteConnectionId}","title":"Branch","agent_type":"code"}]}"""
+            }
+        }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.LoadWorkspaceSessions("/repo", "a", "host-a"))
+        store.dispatch(RemoteSessionIntent.LoadWorkspaceSessions("/repo", "b", "host-b"))
+        advanceUntilIdle()
+        val first = store.workspaceDirectory.value.workspace("/repo", "a", "host-a")!!
+        val second = store.workspaceDirectory.value.workspace("/repo", "b", "host-b")!!
+        assertEquals(listOf("a"), first.sessions.map { it.id })
+        assertEquals(listOf("b"), second.sessions.map { it.id })
+        assertEquals("host-a", first.sessions.single().workspaceIdentity?.remoteSshHost)
+        assertNull(store.workspaceDirectory.value.workspace("/repo"))
+        store.dispatch(RemoteSessionIntent.RetryWorkspaceSessions("/repo/", "a", "host-a"))
+        advanceUntilIdle()
+        val requests = transport.commands.filter { it.cmd == "list_sessions" }
+        assertEquals(listOf("a", "b", "a"), requests.map { it.remoteConnectionId })
+        assertEquals(listOf("host-a", "host-b", "host-a"), requests.map { it.remoteSshHost })
+        assertEquals(2, store.workspaceDirectory.value.workspaces.size)
+        assertEquals(second, store.workspaceDirectory.value.workspace("/repo", "b", "host-b"))
+    }
+
+    @Test
+    fun slowCatalogDoesNotBlockAuthoritativeSessionNavigation() = runTest {
         val transport = FakeSessionTransport()
         val listGate = CompletableDeferred<Unit>()
         val catalogGate = CompletableDeferred<Unit>()
@@ -120,13 +205,38 @@ class RemoteSessionStoreTest {
 
         listGate.complete(Unit)
         runCurrent()
-        assertIs<RemoteSessionUiState.Loading>(store.state.value)
+        val listing = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertFalse(listing.busy)
+        assertEquals(listOf("s-code", "s-cowork", "s-agentic"), listing.sessions.map { it.id })
+        assertNull(listing.modelCatalog)
 
         catalogGate.complete(Unit)
         advanceUntilIdle()
         val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
         assertEquals(listOf("s-code", "s-cowork", "s-agentic"), ready.sessions.map { it.id })
         assertEquals("model-primary", ready.modelCatalog?.defaultModels?.primary)
+    }
+
+    @Test
+    fun conversationOpensWhileInitialCatalogRequestIsStillPending() = runTest {
+        val transport = FakeSessionTransport()
+        val catalogGate = CompletableDeferred<Unit>()
+        transport.commandGates["get_model_catalog"] = catalogGate
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Load)
+        runCurrent()
+        store.dispatch(RemoteSessionIntent.Open("s-code"))
+        runCurrent()
+        val opened = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("s-code", opened.selectedSessionId)
+        assertNotNull(opened.timeline)
+        assertFalse(opened.busy)
+        assertFalse(catalogGate.isCompleted)
+        store.dispatch(RemoteSessionIntent.UpdateDraft("draft after navigation"))
+        catalogGate.complete(Unit)
+        runCurrent()
+        assertEquals("draft after navigation", assertIs<RemoteSessionUiState.Ready>(store.state.value).draft)
+        store.stop()
     }
 
     @Test
@@ -261,6 +371,52 @@ class RemoteSessionStoreTest {
     }
 
     @Test
+    fun optionalSettingsReadsCoalesceAndDoNotBlockSending() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        transport.commands.clear()
+        val catalogGate = CompletableDeferred<Unit>()
+        val permissionGate = CompletableDeferred<Unit>()
+        transport.commandGates["get_model_catalog"] = catalogGate
+        transport.commandGates["get_permission_mode"] = permissionGate
+        repeat(2) {
+            store.dispatch(RemoteSessionIntent.RefreshModelCatalog)
+            store.dispatch(RemoteSessionIntent.RefreshPermissionMode)
+            runCurrent()
+        }
+        assertFalse(assertIs<RemoteSessionUiState.Ready>(store.state.value).busy)
+        assertEquals(1, transport.commands.count { it.cmd == "get_model_catalog" })
+        assertEquals(1, transport.commands.count { it.cmd == "get_permission_mode" })
+        store.dispatch(RemoteSessionIntent.SendMessage("s-code", "send during optional refresh")); runCurrent()
+        assertEquals(1, transport.commands.count { it.cmd == "send_message" })
+        store.dispatch(RemoteSessionIntent.UpdateDraft("next message"))
+        catalogGate.complete(Unit); permissionGate.complete(Unit); runCurrent()
+        assertEquals("next message", assertIs<RemoteSessionUiState.Ready>(store.state.value).draft)
+        store.stop()
+    }
+
+    @Test
+    fun cancelledSettingsReadCannotOverwriteAnotherConversation() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        transport.nonCancellableCommands += "get_model_catalog"
+        store.dispatch(RemoteSessionIntent.RefreshModelCatalog); runCurrent()
+        val late = transport.lateCommandContinuations.remove("get_model_catalog")!!
+        store.dispatch(RemoteSessionIntent.Open("s-cowork")); runCurrent()
+        store.dispatch(RemoteSessionIntent.UpdateDraft("other conversation"))
+        val before = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        late.resume(Unit); runCurrent()
+        val after = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("s-cowork", after.selectedSessionId)
+        assertEquals(before.modelCatalog, after.modelCatalog)
+        assertEquals(before.timeline, after.timeline)
+        assertEquals("other conversation", after.draft)
+        store.stop()
+    }
+
+    @Test
     fun sendingPublishesPendingAndFailedMessagesWithoutPolling() = runTest {
         val transport = FakeSessionTransport()
         val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
@@ -337,6 +493,86 @@ class RemoteSessionStoreTest {
         assertFalse(ready.busy)
         assertEquals(listOf("set_session_model"), transport.commands.map { it.cmd })
         store.dispatch(RemoteSessionIntent.Stop)
+    }
+
+    @Test
+    fun hostCatalogInvalidationRefreshesSelectedSessionModel() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code"))
+        runCurrent()
+        store.dispatch(RemoteSessionIntent.UpdateDraft("keep this draft"))
+        val notices = kotlinx.coroutines.flow.MutableSharedFlow<com.openbitfun.mobile.core.feature.relay.HostCatalogNotice>()
+        store.bindCatalog(notices)
+        runCurrent()
+        transport.catalogSessionModelId = "model-from-another-controller"
+        val gate = CompletableDeferred<Unit>()
+        transport.commandGates["get_model_catalog"] = gate
+        transport.commands.clear()
+        notices.emit(com.openbitfun.mobile.core.feature.relay.HostCatalogNotice.Changed)
+        runCurrent()
+        notices.emit(com.openbitfun.mobile.core.feature.relay.HostCatalogNotice.Changed)
+        runCurrent()
+        gate.complete(Unit)
+        runCurrent()
+        assertEquals(2, transport.commands.count { it.cmd == "get_model_catalog" })
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("model-from-another-controller", ready.timeline?.selectedModelId)
+        assertEquals("keep this draft", ready.draft)
+        assertTrue(transport.commands.any { it.cmd == "get_model_catalog" && it.sessionId == "s-code" })
+        store.stop()
+    }
+
+    @Test
+    fun openingSessionLoadsItsModelWithoutBlockingReadyOrLeakingAcrossNavigation() = runTest {
+        val transport = FakeSessionTransport()
+        val gate = CompletableDeferred<Unit>()
+        transport.commandGates["get_model_catalog"] = gate
+        transport.catalogSessionModelId = "old-session-model"
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code"))
+        runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertFalse(ready.busy)
+        assertTrue(transport.commands.any { it.cmd == "get_model_catalog" && it.sessionId == "s-code" })
+        store.dispatch(RemoteSessionIntent.UpdateDraft("old draft"))
+        store.dispatch(RemoteSessionIntent.Open("s-new"))
+        runCurrent()
+        transport.catalogSessionModelId = "new-session-model"
+        gate.complete(Unit)
+        runCurrent()
+        val newSession = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("s-new", newSession.selectedSessionId)
+        assertEquals("new-session-model", newSession.timeline?.selectedModelId)
+        assertFalse(newSession.busy)
+        store.stop()
+    }
+
+    @Test
+    fun catalogRefreshReadsCurrentSessionSelectionWithoutLosingDraft() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code"))
+        runCurrent()
+        store.dispatch(RemoteSessionIntent.SelectModel("s-code", "model-primary"))
+        runCurrent()
+        store.dispatch(RemoteSessionIntent.UpdateDraft("unsent draft"))
+        transport.catalogSessionModelId = "externally-selected-model"
+        transport.commands.clear()
+        store.dispatch(RemoteSessionIntent.RefreshModelCatalog)
+        runCurrent()
+        val request = transport.commands.single { it.cmd == "get_model_catalog" }
+        assertEquals("s-code", request.sessionId)
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("externally-selected-model", ready.timeline?.selectedModelId)
+        assertEquals("unsent draft", ready.draft)
+        assertFalse(ready.busy)
+        // Older peers may omit the session-specific selection.
+        transport.catalogSessionModelId = null
+        store.dispatch(RemoteSessionIntent.RefreshModelCatalog)
+        runCurrent()
+        assertEquals("externally-selected-model", assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline?.selectedModelId)
+        store.stop()
     }
 
     @Test
@@ -866,6 +1102,32 @@ class RemoteSessionStoreTest {
     }
 
     @Test
+    fun loadOlderMessagesUsesHistoryCursorEvenWhenLatestPageHasNoVisibleMessages() = runTest {
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(buildJsonObject {
+                put("session_id", "s-code"); put("event", "session-record")
+                put("payload", buildJsonObject {
+                    put("sessionId", "s-code"); put("id", "turn/deleted")
+                    put("revision", 10); put("deleted", true)
+                })
+            }, historyReady(true))
+            olderEvents = listOf(richRecord("s-code", "old", 0, 1, "completed", "older"), historyReady(false))
+        }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        val initial = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertTrue(initial.hasMoreMessages)
+        assertTrue(initial.timeline?.persistedMessages.orEmpty().isEmpty())
+        store.dispatch(RemoteSessionIntent.LoadOlderMessages); runCurrent()
+        assertEquals(1, transport.olderRequests)
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(listOf("old_user", "old_assistant"), ready.timeline?.persistedMessages?.map { it.id })
+        assertFalse(ready.hasMoreMessages)
+        assertFalse(ready.busy)
+        store.stop()
+    }
+
+    @Test
     fun loadOlderMessagesPrependsThePreviousTranscriptPage() = runTest {
         val transport = FakeSessionTransport()
         transport.initialEvents = listOf(richRecord("s-code", "new", 1, 2, "completed", "new"), historyReady(true))
@@ -922,6 +1184,26 @@ class RemoteSessionStoreTest {
     }
 
     @Test
+    fun remoteCreateUsesReturnedWorkspaceIdentityBeforeRequestedScope() = runTest {
+        val base = FakeSessionTransport()
+        val transport = object : RemoteCommandTransport {
+            override suspend fun <T : CommandStatus> send(deserializer: DeserializationStrategy<T>, command: RemoteCommand, timeoutMs: Long): T {
+                return if (command.cmd == "create_session") RelayJson.decodeFromString(deserializer,
+                    """{"resp":"ok","session_id":"s-new","workspace_path":"/actual","remote_connection_id":"actual-connection","remote_ssh_host":"actual-host"}""")
+                else base.send(deserializer, command, timeoutMs)
+            }
+        }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.CreateSession("code", "", "", null, "/requested", "requested-connection", "requested-host"))
+        runCurrent()
+        val created = assertIs<RemoteSessionUiState.Ready>(store.state.value).sessions.first { it.id == "s-new" }
+        assertEquals("/actual", created.workspacePath)
+        assertEquals("actual-connection", created.workspaceIdentity?.remoteConnectionId)
+        assertEquals("actual-host", created.workspaceIdentity?.remoteSshHost)
+        store.stop()
+    }
+
+    @Test
     fun crossWorkspaceCreateDoesNotSwitchTheDesktopAndStaysProjected() = runTest {
         val transport = FakeSessionTransport()
         val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
@@ -937,6 +1219,7 @@ class RemoteSessionStoreTest {
                 modelId = null,
                 workspacePath = "/other",
                 remoteConnectionId = "saved-ssh",
+                remoteSshHost = "ssh.example",
             ),
         )
         runCurrent()
@@ -944,9 +1227,12 @@ class RemoteSessionStoreTest {
         assertTrue(transport.commands.none { it.cmd == "get_workspace_info" })
         assertEquals("/other", transport.commands.first { it.cmd == "create_session" }.workspacePath)
         assertEquals("saved-ssh", transport.commands.first { it.cmd == "create_session" }.remoteConnectionId)
+        assertEquals("ssh.example", transport.commands.first { it.cmd == "create_session" }.remoteSshHost)
         val created = assertIs<RemoteSessionUiState.Ready>(store.state.value)
             .sessions.first { it.id == "s-new" }
         assertEquals("/other", created.workspacePath)
+        assertEquals("saved-ssh", created.workspaceIdentity?.remoteConnectionId)
+        assertEquals("ssh.example", created.workspaceIdentity?.remoteSshHost)
         store.dispatch(RemoteSessionIntent.Refresh)
         runCurrent()
         assertTrue(assertIs<RemoteSessionUiState.Ready>(store.state.value).sessions.any { it.id == "s-new" })
@@ -1377,6 +1663,25 @@ class RemoteSessionStoreTest {
     }
 
     @Test
+    fun explicitRefreshAfterStreamFailureKeepsSelectedTranscriptAndDraft() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.UpdateDraft("keep this unsent draft")); runCurrent()
+        val before = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        transport.streamError?.invoke(RelayTransportException(RelayFailure.NetworkUnreachable))
+        runCurrent()
+        assertEquals(ConnectionPhase.RECONNECTING, store.connectionPhase.value)
+        store.dispatch(RemoteSessionIntent.Refresh); runCurrent()
+        val after = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(before.selectedSessionId, after.selectedSessionId)
+        assertEquals(before.timeline, after.timeline)
+        assertEquals(before.draft, after.draft)
+        assertEquals(ConnectionPhase.CONNECTED, store.connectionPhase.value)
+        store.stop()
+    }
+
+    @Test
     fun idleHealthRecoversWithoutDiscardingListAndStopsInBackground() = runTest {
         val transport = FakeSessionTransport()
         val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
@@ -1385,6 +1690,7 @@ class RemoteSessionStoreTest {
         transport.pingFailure = RelayFailure.NetworkUnreachable
         store.dispatch(RemoteSessionIntent.SetForeground(true)); runCurrent()
         assertEquals(ConnectionPhase.RECONNECTING, store.connectionPhase.value)
+        assertEquals(10_000L, transport.pingTimeoutMs)
         assertEquals(sessions, assertIs<RemoteSessionUiState.Ready>(store.state.value).sessions)
         transport.pingFailure = null
         advanceTimeBy(15_000); runCurrent()
@@ -1393,6 +1699,24 @@ class RemoteSessionStoreTest {
         val count = transport.commands.count { it.cmd == "ping" }
         advanceTimeBy(60_000); runCurrent()
         assertEquals(count, transport.commands.count { it.cmd == "ping" })
+        store.stop()
+    }
+
+    @Test
+    fun healthDeadlineIncludesTransportPreparationAndCanRecover() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Load); advanceUntilIdle()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        transport.commandGates["ping"] = gate
+        store.dispatch(RemoteSessionIntent.SetForeground(true)); runCurrent()
+        advanceTimeBy(9_999); runCurrent()
+        assertEquals(ConnectionPhase.CONNECTED, store.connectionPhase.value)
+        advanceTimeBy(1); runCurrent()
+        assertEquals(ConnectionPhase.RECONNECTING, store.connectionPhase.value)
+        gate.complete(Unit)
+        advanceTimeBy(15_000); runCurrent()
+        assertEquals(ConnectionPhase.CONNECTED, store.connectionPhase.value)
         store.stop()
     }
 
@@ -1415,14 +1739,27 @@ class RemoteSessionStoreTest {
     }
 
     @Test
-    fun openTranscriptUsesDurableStreamInsteadOfExtraPings() = runTest {
+    fun openTranscriptStillProbesHostHealthWithoutPollingOrDiscardingDraft() = runTest {
         val transport = FakeSessionTransport()
         val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
         store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.UpdateDraft("retain this draft")); runCurrent()
+        val before = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        transport.pingFailure = RelayFailure.NetworkUnreachable
         store.dispatch(RemoteSessionIntent.SetForeground(true)); runCurrent()
-        advanceTimeBy(30_000); runCurrent()
+        assertEquals(1, transport.commands.count { it.cmd == "ping" })
+        assertEquals(ConnectionPhase.RECONNECTING, store.connectionPhase.value)
+        val disconnected = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(before.timeline, disconnected.timeline)
+        assertEquals(before.draft, disconnected.draft)
+        transport.pingFailure = null
+        advanceTimeBy(15_000); runCurrent()
+        assertEquals(ConnectionPhase.CONNECTED, store.connectionPhase.value)
         assertTrue(transport.commands.none { it.cmd == "poll_session" })
-        assertTrue(transport.commands.none { it.cmd == "ping" })
+        store.dispatch(RemoteSessionIntent.SetForeground(false))
+        val count = transport.commands.count { it.cmd == "ping" }
+        advanceTimeBy(30_000); runCurrent()
+        assertEquals(count, transport.commands.count { it.cmd == "ping" })
         store.stop()
     }
 
@@ -1525,6 +1862,134 @@ class RemoteSessionStoreTest {
     }
 
     @Test
+    fun olderPageInFlightDoesNotReplaceLiveCompletionWithAnOlderRevision() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "live", 1, 2, "inprogress", "partial"), historyReady(true))
+            olderGate = gate
+            olderEvents = listOf(
+                richRecord("s-code", "old", 0, 1, "completed", "older"),
+                richRecord("s-code", "live", 1, 1, "inprogress", "obsolete"),
+                historyReady(false),
+            )
+        }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.LoadOlderMessages); runCurrent()
+        store.dispatch(RemoteSessionIntent.LoadOlderMessages); runCurrent()
+        assertEquals(1, transport.olderRequests)
+        assertFalse(assertIs<RemoteSessionUiState.Ready>(store.state.value).busy)
+        store.dispatch(RemoteSessionIntent.UpdateDraft("draft while loading history"))
+        assertEquals(HistoryLoadState.LOADING, assertIs<RemoteSessionUiState.Ready>(store.state.value).historyLoadState)
+        transport.streamEvents.emit(richRecord("s-code", "live", 1, 3, "inprogress", "updated")); runCurrent()
+        assertEquals("updated", assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline?.activeTurn?.text)
+        transport.streamEvents.emit(richRecord("s-code", "live", 1, 4, "completed", "final reply")); runCurrent()
+        gate.complete(Unit); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(listOf("old_user", "old_assistant", "live_user", "live_assistant"), ready.timeline?.persistedMessages?.map { it.id })
+        assertEquals("final reply", ready.timeline?.persistedMessages?.last()?.text)
+        assertEquals("draft while loading history", ready.draft)
+        assertEquals(HistoryLoadState.IDLE, ready.historyLoadState)
+        assertNull(ready.timeline?.activeTurn)
+        assertFalse(ready.hasMoreMessages)
+        assertFalse(ready.busy)
+        store.stop()
+    }
+
+    @Test
+    fun loadingOlderMessagesDoesNotCancelInitialModelHydration() = runTest {
+        val catalogGate = CompletableDeferred<Unit>()
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "new", 1, 1, "completed", "new"), historyReady(true))
+            olderEvents = listOf(richRecord("s-code", "old", 0, 1, "completed", "old"), historyReady(false))
+            commandGates["get_model_catalog"] = catalogGate
+            catalogSessionModelId = "hydrated-model"
+        }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.LoadOlderMessages); runCurrent()
+        catalogGate.complete(Unit); runCurrent()
+        assertEquals("hydrated-model", assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline?.selectedModelId)
+        store.stop()
+    }
+
+    @Test
+    fun olderPageFailureKeepsTranscriptAndExposesRetryWithoutBlockingComposer() = runTest {
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "new", 1, 1, "completed", "new"), historyReady(true))
+            olderEvents = listOf(richRecord("s-code", "old", 0, 1, "completed", "old"), historyReady(false))
+            olderFailure = true
+        }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.UpdateDraft("keep this draft"))
+        store.dispatch(RemoteSessionIntent.LoadOlderMessages)
+        assertEquals(HistoryLoadState.LOADING, assertIs<RemoteSessionUiState.Ready>(store.state.value).historyLoadState)
+        runCurrent()
+        val failed = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(HistoryLoadState.FAILED, failed.historyLoadState)
+        assertFalse(failed.busy)
+        assertTrue(failed.hasMoreMessages)
+        assertEquals("new", failed.timeline?.persistedMessages?.last()?.text)
+        assertEquals("keep this draft", failed.draft)
+        transport.olderFailure = false
+        store.dispatch(RemoteSessionIntent.LoadOlderMessages); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(HistoryLoadState.IDLE, ready.historyLoadState)
+        assertEquals(2, transport.olderRequests)
+        assertEquals("keep this draft", ready.draft)
+        assertEquals(listOf("old_user", "old_assistant", "new_user", "new_assistant"), ready.timeline?.persistedMessages?.map { it.id })
+        store.stop()
+    }
+
+    @Test
+    fun switchingSessionsCancelsTheIndependentOlderPage() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        val transport = FakeSessionTransport().apply {
+            initialEvents = listOf(richRecord("s-code", "new", 1, 1, "completed", "new"), historyReady(true))
+            olderEvents = listOf(richRecord("s-code", "old", 0, 1, "completed", "old"), historyReady(false))
+            olderGate = gate
+        }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.LoadOlderMessages); runCurrent()
+        transport.initialEvents = emptyList()
+        store.dispatch(RemoteSessionIntent.Open("s-agentic")); runCurrent()
+        gate.complete(Unit); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("s-agentic", ready.selectedSessionId)
+        assertTrue(ready.timeline?.persistedMessages.orEmpty().none { it.id == "old_user" })
+        assertEquals(HistoryLoadState.IDLE, ready.historyLoadState)
+        assertFalse(ready.busy)
+        store.stop()
+    }
+
+    @Test
+    fun permissionSaveUsesHostModeInsteadOfRequestedMode() = runTest {
+        val transport = FakeSessionTransport().apply {
+            permissionSaveJson = """{"resp":"ok","mode":"auto"}"""
+        }
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.SetPermissionMode(SessionPermissionMode.FULL_ACCESS)); runCurrent()
+        assertEquals(SessionPermissionMode.AUTO, assertIs<RemoteSessionUiState.Ready>(store.state.value).permissionMode)
+        store.stop()
+    }
+
+    @Test
+    fun legacyPermissionSaveReadsBackAuthorityAndDoesNotInventMissingMode() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        transport.commands.clear()
+        transport.permissionModeJson = """{"resp":"ok"}"""
+        store.dispatch(RemoteSessionIntent.SetPermissionMode(SessionPermissionMode.FULL_ACCESS)); runCurrent()
+        assertEquals(listOf("set_permission_mode", "get_permission_mode"), transport.commands.map { it.cmd })
+        assertEquals(SessionPermissionMode.UNKNOWN, assertIs<RemoteSessionUiState.Ready>(store.state.value).permissionMode)
+        store.stop()
+    }
+
+    @Test
     fun aRefusedPermissionChangeLeavesTheSessionStanding() = runTest {
         val transport = FakeSessionTransport()
         val store = RemoteSessionStore(this, transport, relayStreamStore = TestRelayStreamStore())
@@ -1577,11 +2042,18 @@ private class AssistantWorkspaceTransport(
 }
 
 private class FakeSessionTransport : RemoteCommandTransport, RemoteSessionStreamTransport {
+    var initialHistoryGate: CompletableDeferred<Unit>? = null
     var initialEvents = emptyList<JsonObject>()
     var olderEvents = emptyList<JsonObject>()
     var olderRequests = 0
+    var olderGate: CompletableDeferred<Unit>? = null
+    var olderFailure = false
     var activeSubscriptions = 0
-    override suspend fun loadOlder(sessionId: String) { olderRequests++; olderEvents.forEach { streamEvents.emit(it) } }
+    override suspend fun loadOlder(sessionId: String) {
+        olderRequests++; olderGate?.await()
+        if (olderFailure) error("History read failed")
+        olderEvents.forEach { streamEvents.emit(it) }
+    }
     val streamEvents = MutableSharedFlow<JsonObject>(extraBufferCapacity = 10)
     var streamError: ((Throwable) -> Unit)? = null
     var streamCaughtUp: (() -> Unit)? = null
@@ -1589,7 +2061,7 @@ private class FakeSessionTransport : RemoteCommandTransport, RemoteSessionStream
     override suspend fun subscribe(sessionId: String, replica: SessionStreamReplica, onError: (Throwable) -> Unit, onCaughtUp: () -> Unit): Flow<JsonObject> = flow {
         streamError = onError; streamCaughtUp = onCaughtUp
         activeSubscriptions++
-        try { initialEvents.forEach { emit(it) }; onCaughtUp(); streamEvents.collect { emit(it) } }
+        try { initialEvents.forEach { emit(it) }; initialHistoryGate?.await(); onCaughtUp(); streamEvents.collect { emit(it) } }
         finally { activeSubscriptions-- }
     }
 
@@ -1601,6 +2073,7 @@ private class FakeSessionTransport : RemoteCommandTransport, RemoteSessionStream
     var permissionFailure: RelayFailure? = null
 
     var permissionModeJson: String? = null
+    var permissionSaveJson: String? = null
 
     /** When set, `list_sessions` serves one row per offset so paging is observable. */
     var paged: Boolean = false
@@ -1615,10 +2088,12 @@ private class FakeSessionTransport : RemoteCommandTransport, RemoteSessionStream
 
     /** When set, `get_model_catalog` fails with the selected transport result. */
     var modelCatalogFailure: RelayFailure? = null
+    var catalogSessionModelId: String? = null
 
     /** When set, the open conversation's health poll fails below the desktop. */
     var pollFailure: RelayFailure? = null
     var pingFailure: RelayFailure? = null
+    var pingTimeoutMs: Long? = null
 
     /** When set, `send_message` fails below the desktop while the draft is kept. */
     var sendMessageFailure: RelayFailure? = null
@@ -1666,7 +2141,10 @@ private class FakeSessionTransport : RemoteCommandTransport, RemoteSessionStream
             rejection?.let { throw RelayTransportException(RelayFailure.RemoteRejected(it)) }
             failure?.let { throw RelayTransportException(it) }
         }
-        if (command.cmd == "ping") pingFailure?.let { throw RelayTransportException(it) }
+        if (command.cmd == "ping") {
+            pingTimeoutMs = timeoutMs
+            pingFailure?.let { throw RelayTransportException(it) }
+        }
         if (command.cmd == "poll_session") {
             pollFailure?.let { throw RelayTransportException(it) }
         }
@@ -1689,6 +2167,7 @@ private class FakeSessionTransport : RemoteCommandTransport, RemoteSessionStream
                 "resp":"ok",
                 "catalog":{
                   "version":7,
+                  "session_model_id":${catalogSessionModelId?.let { "\"$it\"" } ?: "null"},
                   "models":[{
                     "id":"model-primary","name":"Primary","provider":"account",
                     "base_url":"","model_name":"primary","enabled":true
@@ -1707,7 +2186,8 @@ private class FakeSessionTransport : RemoteCommandTransport, RemoteSessionStream
             "create_session" -> """{"resp":"ok","session_id":"s-new"}"""
             "set_session_model" -> """{"resp":"ok","model_id":"model-primary"}"""
             "send_message", "steer_turn", "build_plan" -> """{"resp":"ok","turn_id":"t-1"}"""
-            "ping", "delete_session", "update_session_title", "answer_question", "set_permission_mode", "confirm_tool" ->
+            "set_permission_mode" -> permissionSaveJson ?: """{"resp":"ok"}"""
+            "ping", "delete_session", "update_session_title", "answer_question", "confirm_tool" ->
                 """{"resp":"ok"}"""
             else -> error("Unexpected command ${command.cmd}")
         }

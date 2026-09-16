@@ -1,4 +1,6 @@
 import Foundation
+import OpenBitFunMobileCore
+import OSLog
 
 @MainActor
 enum MobileLaunchConfiguration {
@@ -21,7 +23,7 @@ enum MobileLaunchConfiguration {
                 ChatMessage(id: UUID(), role: .user, text: "你好"),
                 ChatMessage(id: UUID(), role: .assistant, text: "这是 OpenBitFun 的移动端会话界面。你可以从手机连接桌面端，查看工作区、会话和智能体的执行状态。")
             ],
-            connectCore: !streamingRegressionPreview && !ProcessInfo.processInfo.arguments.contains("--harness-preview") && designPreviewScenario() == nil
+            connectCore: !streamingRegressionPreview && !ProcessInfo.processInfo.arguments.contains("--permission-mailbox-preview") && !ProcessInfo.processInfo.arguments.contains("--harness-preview") && designPreviewScenario() == nil
         )
         return configure(model)
     }
@@ -40,6 +42,15 @@ enum MobileLaunchConfiguration {
             model.configureConnectedPreview()
             model.remoteHostCapabilities = ["harness_profiles_v1"]
         }
+        #if DEBUG
+        if arguments.contains("--permission-mailbox-preview") {
+            model.configureTimelinePreview()
+            model.permissionMailbox = PermissionMailboxUiState(requests: [
+                PermissionMailboxRequest(requestId: "preview-write", action: "write", resources: ["/workspace/readme.md"], toolCallId: nil, source: "Write")
+            ], busy: false, failed: false)
+            Logger(subsystem: "com.openbitfun.mobile.ios", category: "permission-mailbox").info("Mailbox preview requests=\(model.permissionMailbox?.requests.count ?? -1)")
+        }
+        #endif
         if arguments.contains("--connected") {
             model.configureConnectedPreview()
         }
@@ -297,7 +308,7 @@ private extension MobileAppModel {
             MobileDeviceDirectoryEntry(id: "preview-mac", name: "Studio Mac", online: true, expanded: true, status: "FAILED", error: "REMOTE_UNAVAILABLE", workspaces: [failedWorkspace], sessions: [failedSession]),
             MobileDeviceDirectoryEntry(id: "preview-offline", name: "Office PC", online: false, expanded: false, status: "READY", error: nil, workspaces: [offlineWorkspace], sessions: [cachedSession])
         ]
-        workspaceCatalog = [(path: "/workspace/OpenBitFun", name: "OpenBitFun", selected: true, remoteConnectionId: nil)]
+        workspaceCatalog = [(path: "/workspace/OpenBitFun", name: "OpenBitFun", selected: true, remoteConnectionId: nil, remoteSshHost: nil)]
         remoteAssistants = [
             MobileAssistantOption(path: "/workspace/OpenBitFun/.openbitfun/assistants/review", name: "代码审查助手")
         ]

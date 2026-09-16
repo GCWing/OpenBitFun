@@ -64,6 +64,9 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.ktor.client.java)
         }
+        jvmTest.dependencies {
+            implementation(libs.ktor.client.okhttp)
+        }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
         }

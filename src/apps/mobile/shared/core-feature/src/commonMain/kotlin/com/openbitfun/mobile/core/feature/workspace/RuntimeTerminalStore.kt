@@ -2,6 +2,7 @@ package com.openbitfun.mobile.core.feature.workspace
 
 import com.openbitfun.mobile.core.persistence.RelayStreamStore
 import com.openbitfun.mobile.core.feature.relay.PersistentSessionReplica
+import com.openbitfun.mobile.core.protocol.isError
 import com.openbitfun.mobile.core.protocol.CommandStatus
 import com.openbitfun.mobile.core.protocol.RemoteCommand
 import com.openbitfun.mobile.core.protocol.RelayJson
@@ -14,7 +15,9 @@ import kotlinx.serialization.json.*
 public data class RuntimeTerminalUiState public constructor(
     public val sessionId: String?, public val output: String, public val busy: Boolean, public val failed: Boolean,
     public val revision: Long, public val chunk: String, public val reset: Boolean,
+    public val errorDetail: String?,
 ) {
+    public constructor(sessionId: String?, output: String, busy: Boolean, failed: Boolean, revision: Long, chunk: String, reset: Boolean) : this(sessionId, output, busy, failed, revision, chunk, reset, null)
     public constructor(sessionId: String?, output: String, busy: Boolean, failed: Boolean) : this(sessionId, output, busy, failed, 0, "", true)
 }
 
@@ -32,16 +35,21 @@ internal class RuntimeTerminalStore(private val scope: CoroutineScope, private v
     private var resizeJob: Job? = null
     private var pendingInput = ""
     private var pendingSize: Pair<Int, Int>? = null
+    private var historyFailureActive = false
+    private fun failHistory(error: Throwable) { historyFailureActive = true; mutable.value = mutable.value.copy(failed = true, errorDetail = error.message) }
+    private fun failAction(error: Throwable) { historyFailureActive = false; mutable.value = mutable.value.copy(failed = true, errorDetail = error.message) }
     private var epoch = 0L
+    private var location: Pair<String, String?>? = null
     private suspend fun invoke(command: String, args: JsonObject, structured: Boolean = true): JsonElement {
         val result = transport.send<HostResult>(RemoteCommand(cmd = "host_invoke", command = command,
             args = if (structured) buildJsonObject { put("request", args) } else args))
-        check(result.ok) { "Host terminal operation failed" }
+        check(result.ok && !result.isError) { result.error?.takeIf { it.isNotBlank() } ?: result.message?.takeIf { it.isNotBlank() } ?: "Host terminal operation failed" }
         return result.value
     }
     fun open(path: String, connectionId: String?) {
         if (mutable.value.busy || mutable.value.sessionId != null) return
-        mutable.value = mutable.value.copy(busy = true, failed = false)
+        location = path to connectionId
+        mutable.value = mutable.value.copy(busy = true, failed = false, errorDetail = null)
         val ticket = epoch
         action = scope.launch {
             try {
@@ -54,10 +62,12 @@ internal class RuntimeTerminalStore(private val scope: CoroutineScope, private v
                 mutable.value = RuntimeTerminalUiState(id, "", false, false)
                 observe(id)
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Throwable) { if (ticket == epoch) mutable.value = mutable.value.copy(busy = false, failed = true) }
+            catch (error: Throwable) { if (ticket == epoch) { failAction(error); mutable.value = mutable.value.copy(busy = false) } }
         }
     }
     private fun observe(id: String) {
+        val ticket = epoch
+        fun isCurrent(): Boolean = ticket == epoch && mutable.value.sessionId == id
         owner?.cancel()
         owner = scope.launch {
             try {
@@ -68,17 +78,25 @@ internal class RuntimeTerminalStore(private val scope: CoroutineScope, private v
                 var offset = 0L
                 suspend fun refresh() {
                     do {
+                        if (!isCurrent()) return
                         val page = invoke("terminal_get_history", buildJsonObject { put("sessionId", id); put("afterOffset", offset) }, false).jsonObject
+                        if (!isCurrent()) return
                         val next = page.getValue("nextOffset").jsonPrimitive.long
                         val cursor = page.getValue("cursor").jsonPrimitive.long
                         val truncated = page["truncated"]?.jsonPrimitive?.boolean == true
+                        check(next >= 0 && cursor >= next) { "Invalid terminal history cursor" }
                         check(next >= offset || truncated) { "Terminal cursor moved backwards" }
+                        check(next > offset || (truncated && next < offset) || next == cursor) { "Terminal history made no progress" }
                         val data = page.getValue("data").jsonPrimitive.content
+                        if (historyFailureActive) {
+                            historyFailureActive = false
+                            mutable.value = mutable.value.copy(failed = false, errorDetail = null)
+                        }
                         if (data.isNotEmpty() || truncated) {
                             // Local replay is bounded like the runtime ring; live rendering receives only this delta.
                             var replay = ((if (truncated) "" else mutable.value.output) + data).takeLast(4 * 1024 * 1024)
                             if (replay.firstOrNull()?.isLowSurrogate() == true) replay = replay.drop(1)
-                            mutable.value = mutable.value.copy(output = replay, revision = mutable.value.revision + 1, chunk = data, reset = truncated, failed = false)
+                            mutable.value = mutable.value.copy(output = replay, revision = mutable.value.revision + 1, chunk = data, reset = truncated)
                         }
                         offset = next
                     } while (next < cursor)
@@ -88,15 +106,15 @@ internal class RuntimeTerminalStore(private val scope: CoroutineScope, private v
                 launch { for (request in refreshRequests) {
                     try { refresh() }
                     catch (cancelled: CancellationException) { throw cancelled }
-                    catch (_: Throwable) { mutable.value = mutable.value.copy(failed = true) }
+                    catch (error: Throwable) { if (isCurrent()) failHistory(error) }
                 } }
-                source.subscribe("terminal-$id", replica, { mutable.value = mutable.value.copy(failed = true) }, {
-                    if (!caughtUp) { caughtUp = true; refreshRequests.trySend(Unit) }
+                source.subscribe("terminal-$id", replica, { error -> if (isCurrent()) failHistory(error) }, {
+                    if (isCurrent() && !caughtUp) { caughtUp = true; refreshRequests.trySend(Unit) }
                 }).collect { event ->
-                    if (caughtUp && event["event"]?.jsonPrimitive?.content in setOf("terminal-output", "relay://session-resumed")) refreshRequests.trySend(Unit)
+                    if (isCurrent() && caughtUp && event["event"]?.jsonPrimitive?.content in setOf("terminal-output", "relay://session-resumed")) refreshRequests.trySend(Unit)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Throwable) { mutable.value = mutable.value.copy(failed = true) }
+            catch (error: Throwable) { if (isCurrent()) failHistory(error) }
         }
     }
     fun write(data: String) {
@@ -111,7 +129,7 @@ internal class RuntimeTerminalStore(private val scope: CoroutineScope, private v
                 val batch = pendingInput; pendingInput = ""
                 try { invoke("terminal_write", buildJsonObject { put("sessionId", id); put("data", batch) }) }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Throwable) { if (ticket == epoch) { pendingInput = ""; mutable.value = mutable.value.copy(failed = true) }; break }
+                catch (error: Throwable) { if (ticket == epoch) { pendingInput = ""; failAction(error) }; break }
             }
         }
     }
@@ -126,7 +144,7 @@ internal class RuntimeTerminalStore(private val scope: CoroutineScope, private v
                 val size = pendingSize!!; pendingSize = null
                 try { invoke("terminal_resize", buildJsonObject { put("sessionId", id); put("cols", size.first); put("rows", size.second) }) }
                 catch (cancelled: CancellationException) { throw cancelled }
-                catch (_: Throwable) { if (ticket == epoch) mutable.value = mutable.value.copy(failed = true); break }
+                catch (error: Throwable) { if (ticket == epoch) failAction(error); break }
             }
         }
     }
@@ -134,15 +152,22 @@ internal class RuntimeTerminalStore(private val scope: CoroutineScope, private v
         val id = mutable.value.sessionId ?: return
         if (mutable.value.busy) return
         mutable.value = mutable.value.copy(busy = true)
+        val ticket = epoch
         action = scope.launch {
             try {
                 invoke("terminal_close", buildJsonObject { put("sessionId", id) })
-                stop()
+                if (ticket == epoch) stop(clearLocation = false)
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Throwable) { mutable.value = mutable.value.copy(busy = false, failed = true) }
+            catch (error: Throwable) { if (ticket == epoch) { failAction(error); mutable.value = mutable.value.copy(busy = false) } }
         }
     }
-    fun stop() {
+    fun reopen() {
+        val previous = location ?: return
+        open(previous.first, previous.second)
+    }
+    fun stop(clearLocation: Boolean = true) {
+        historyFailureActive = false
+        if (clearLocation) location = null
         epoch++; owner?.cancel(); action?.cancel(); inputJob?.cancel(); resizeJob?.cancel(); pendingInput = ""; pendingSize = null
         mutable.value = RuntimeTerminalUiState(null, "", false, false)
     }

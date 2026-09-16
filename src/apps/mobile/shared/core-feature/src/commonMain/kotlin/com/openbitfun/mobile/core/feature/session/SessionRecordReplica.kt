@@ -34,8 +34,8 @@ internal class SessionRecordReplica(private val sessionId: String) {
         val recordId = payload.string("id")
         check(recordId.substringBefore('/') in setOf("turn", "round", "item") && recordId.substringAfter('/', "").isNotEmpty()) { "Invalid session record identity" }
         if (revision <= (recordVersions[recordId] ?: -1)) return
-        recordVersions[recordId] = revision
         if (payload["deleted"]?.jsonPrimitive?.booleanOrNull == true) {
+            recordVersions[recordId] = revision
             if (revision > (tombstones[recordId] ?: -1)) tombstones[recordId] = revision
             return
         }
@@ -49,22 +49,29 @@ internal class SessionRecordReplica(private val sessionId: String) {
         check(recordItem == null || recordRound != null) { "Item has no round" }
         val expectedId = if (recordItem != null) "item/" + recordItem.getValue("data").jsonObject.string("id") else if (recordRound != null) "round/" + recordRound.string("id") else "turn/$turnId"
         check(recordId == expectedId) { "Session record identity mismatch" }
+        val roundId = recordRound?.string("id")
+        if (recordRound != null) {
+            check(recordRound.string("turnId") == turnId) { "Round binding mismatch" }
+        }
+        val itemId = recordItem?.getValue("data")?.jsonObject?.string("id")
+        if (itemId != null) {
+            check(itemRounds[itemId] == null || itemRounds[itemId] == roundId) { "Item parent changed" }
+        }
+
+        // Validate the complete ancestry before changing either data or replay fences.
+        // A rejected record must leave a corrected delivery at the same revision usable.
+        recordVersions[recordId] = revision
         put(turns, turnId, revision, turn)
         if (turns[turnId]?.value?.string("status") != "inprogress") controls.entries.removeAll { it.value.first == turnId }
-        val round = payload["round"] as? JsonObject
-        if (round != null) {
-            check(round.string("turnId") == turnId) { "Round binding mismatch" }
-            val roundId = round.string("id")
-            put(rounds, roundId, revision, round)
-            val item = payload["item"] as? JsonObject
-            if (item != null) {
-                val id = item.getValue("data").jsonObject.string("id")
-                check(itemRounds[id] == null || itemRounds[id] == roundId) { "Item parent changed" }
-                itemRounds[id] = roundId
-                put(items, id, revision, item)
+        if (recordRound != null && roundId != null) {
+            put(rounds, roundId, revision, recordRound)
+            if (recordItem != null && itemId != null) {
+                itemRounds[itemId] = roundId
+                put(items, itemId, revision, recordItem)
             }
         }
     }
+
     fun messages(): List<ChatMessage> = turns.filter { (id, record) -> record.revision > (tombstones["turn/$id"] ?: -1) }.values.sortedBy { it.value.number("turnIndex") }.flatMap { record ->
         val turn = record.value
         val turnId = turn.string("turnId")
@@ -73,18 +80,23 @@ internal class SessionRecordReplica(private val sessionId: String) {
         val children = rounds.filter { (id, record) -> record.revision > maxOf(turnFence, tombstones["round/$id"] ?: -1) }.values.map { it.value }.filter { it.string("turnId") == turnId }
             .sortedBy { it.number("roundIndex") }.flatMap { round ->
                 items.filter { (id, record) -> itemRounds[id] == round.string("id") && record.revision > maxOf(turnFence, tombstones["round/" + round.string("id")] ?: -1, tombstones["item/$id"] ?: -1) }.values.map { it.value }
-                    .filter { it.getValue("data").jsonObject.string("status") != "superseded" }
+                    .filter { it.getValue("data").jsonObject.string("status") !in setOf("superseded", "retry_superseded") }
                     .sortedWith(compareBy({ it.getValue("data").jsonObject.number("orderIndex") }, { it.getValue("data").jsonObject.number("timestamp") }))
             }
         val rendered = children.map { item ->
             val data = item.getValue("data").jsonObject
             val type = item.string("type")
             val result = data["toolResult"] as? JsonObject
-            ChatMessageItemResponse(type = type, content = data.string("content"), isSubagent = data["isSubagentItem"]?.jsonPrimitive?.booleanOrNull,
+            ChatMessageItemResponse(type = type, content = data.string("content"), isSubagent = data["isSubagentItem"]?.jsonPrimitive?.booleanOrNull == true || data.string("subagentSessionId").isNotEmpty(),
                 tool = if (type != "tool") null else RemoteToolStatusResponse(
-                    id = (data["toolCall"] as? JsonObject)?.string("id")?.takeIf { it.isNotEmpty() } ?: data.string("id"), name = data.string("toolName"), status = data.string("status"),
+                    id = (data["toolCall"] as? JsonObject)?.string("id")?.takeIf { it.isNotEmpty() } ?: data.string("id"), name = data.string("toolName"),
+                    status = data.string("status").takeIf { it.isNotEmpty() }
+                        ?: if (result == null) "running" else if (result["success"]?.jsonPrimitive?.booleanOrNull == true) "completed" else "failed",
                     toolInput = (data["toolCall"] as? JsonObject)?.get("input"), toolOutput = result?.get("result"),
-                    errorPreview = result?.string("error"), durationMs = data["durationMs"]?.jsonPrimitive?.longOrNull))
+                    errorPreview = result?.string("error"),
+                    startMs = data["startTime"]?.jsonPrimitive?.longOrNull,
+                    durationMs = data["durationMs"]?.jsonPrimitive?.longOrNull
+                        ?: result?.get("durationMs")?.jsonPrimitive?.longOrNull))
         }
         rendered.mapNotNull { it.tool }.filter { it.status in setOf("completed", "failed", "cancelled", "rejected", "skipped") }.forEach { controls.remove(it.id) }
         val controlTools = controls.values.filter { it.first == turnId }.map { it.second }
@@ -92,8 +104,8 @@ internal class SessionRecordReplica(private val sessionId: String) {
             controlTools.filter { tool -> rendered.none { it.tool?.id == tool.id } }.map { ChatMessageItemResponse(type = "tool", tool = it) }
         listOf(RemoteResponseMapper.chatMessage(ChatMessageResponse(id = user.string("id"), role = "user", content = user.string("content"), turnId = turnId, metadata = user["metadata"], timestamp = user.string("timestamp"))),
             RemoteResponseMapper.chatMessage(ChatMessageResponse(id = "${turnId}_assistant", role = "assistant", turnId = turnId,
-                content = rendered.filter { it.type == "text" }.joinToString("") { it.content.orEmpty() },
-                thinking = rendered.filter { it.type == "thinking" }.joinToString("") { it.content.orEmpty() },
+                content = rendered.filter { it.type == "text" && it.isSubagent != true }.joinToString("") { it.content.orEmpty() },
+                thinking = rendered.filter { it.type == "thinking" && it.isSubagent != true }.joinToString("") { it.content.orEmpty() },
                 items = shownItems, status = when (turn.string("status")) { "inprogress" -> "streaming"; "error" -> "failed"; else -> turn.string("status") }, error = turn.string("error"), metadata = turn)))
     }
     private fun JsonObject.string(key: String): String = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()

@@ -196,6 +196,10 @@
     "welcome_secondary": {
       "light": "#B9BCB9",
       "dark": "#B9BCB9"
+    },
+    "status_warning": {
+      "light": "#FF8C00",
+      "dark": "#FF8C00"
     }
   },
   "typography": {
@@ -360,7 +364,12 @@
     "recent_home_mark_size": 132,
     "recent_home_title_size": 25,
     "recent_home_max_width": 560,
-    "recent_home_row_padding": 18
+    "recent_home_row_padding": 18,
+    "approval_card_radius": 12,
+    "approval_card_padding": 12,
+    "approval_card_gap": 8,
+    "approval_action_radius": 8,
+    "approval_action_height": 36
   },
   "breakpoints": {
     "wide": 600,

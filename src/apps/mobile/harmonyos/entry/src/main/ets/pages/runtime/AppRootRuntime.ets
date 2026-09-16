@@ -4,8 +4,8 @@ import { ConnectionErrorPolicy } from '../../services/ConnectionErrorPolicy';
 import { CloudAccountDevice } from '../../services/CloudAccountClient';
 import { RemoteLogger } from '../../services/RemoteLogger';
 import {
-  stampRemoteSessionsDevice,
-  stampRemoteSessionsWorkspace
+  remoteWorkspaceKey,
+  stampRemoteSessionsDevice
 } from '../../services/RemoteSessionIdentity';
 import { RemoteUiState } from '../../services/RemoteUiState';
 import { AppRootHostPort } from '../host/AppRootHostAdapter';
@@ -240,14 +240,14 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
     this.remoteActivityViewModel.stopHeartbeat();
   }
 
-  async selectWorkspace(path: string, connectionId?: string): Promise<void> {
+  async selectWorkspace(path: string, connectionId?: string, sshHost?: string): Promise<void> {
     this.filePreviewController.close();
-    await this.remoteWorkspaceViewModel.selectWorkspace(path, connectionId);
+    await this.remoteWorkspaceViewModel.selectWorkspace(path, connectionId, sshHost);
   }
 
-  async selectWorkspaceOnDevice(path: string, deviceId?: string, connectionId?: string): Promise<void> {
+  async selectWorkspaceOnDevice(path: string, deviceId?: string, connectionId?: string, sshHost?: string): Promise<void> {
     await this.conversationController.ensureRemoteControlTarget(deviceId);
-    await this.selectWorkspace(path, connectionId);
+    await this.selectWorkspace(path, connectionId, sshHost);
   }
 
   async selectDirectoryDevice(deviceId: string): Promise<void> {
@@ -307,18 +307,22 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
     await this.deviceDirectoryViewModel.retryDevice(deviceId);
   }
 
-  async loadWorkspaceSessionsOnDevice(deviceId: string, path: string): Promise<void> {
+  async loadWorkspaceSessionsOnDevice(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<void> {
     const targetDeviceId = deviceId.trim();
     const targetPath = path.trim();
     if (targetDeviceId.length === 0 || targetPath.length === 0) {
       return;
     }
-    await this.deviceDirectoryViewModel.loadWorkspaceSessions(targetDeviceId, targetPath);
+    await this.deviceDirectoryViewModel.loadWorkspaceSessions(targetDeviceId, targetPath, remoteConnectionId, remoteSshHost);
   }
 
-  publishWorkspaceSessionPage(path: string, result: SessionListResult): void {
-    this.remoteWorkspaceSessions = this.replaceWorkspaceSessions(path, result.sessions);
-    if (path === this.remotePageState.workspacePath) {
+  publishWorkspaceSessionPage(path: string, result: SessionListResult, remoteConnectionId?: string, remoteSshHost?: string): void {
+    this.remoteWorkspaceSessions = this.replaceWorkspaceSessions(path, result.sessions, remoteConnectionId, remoteSshHost);
+    if (remoteWorkspaceKey({ path, remoteConnectionId, remoteSshHost }) === remoteWorkspaceKey({
+      path: this.remotePageState.workspacePath,
+      remoteConnectionId: this.remotePageState.workspaceConnectionId,
+      remoteSshHost: this.remotePageState.workspaceSshHost
+    })) {
       // Update the controller as well as the sidebar so a later title change
       // cannot republish the old current-workspace list.
       this.remoteSessionController.setSessions(result.sessions, result.hasMore);
@@ -457,7 +461,11 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
    */
   async reconcileCreatedRemoteSession(session: SessionSummary): Promise<void> {
     const workspacePath = session.workspacePath.trim();
-    if (workspacePath.length === 0 || workspacePath === this.remotePageState.workspacePath) {
+    const remoteConnectionId = session.remoteConnectionId;
+    const remoteSshHost = session.remoteSshHost;
+    if (workspacePath.length === 0 || remoteWorkspaceKey({ path: workspacePath, remoteConnectionId, remoteSshHost }) ===
+      remoteWorkspaceKey({ path: this.remotePageState.workspacePath,
+        remoteConnectionId: this.remotePageState.workspaceConnectionId, remoteSshHost: this.remotePageState.workspaceSshHost })) {
       await this.remoteSessionViewModel.refreshSessions();
       return;
     }
@@ -471,20 +479,23 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
       updatedAt: now,
       createdAt: now,
       messageCount: session.initialTurnId ? 1 : 0,
-      workspacePath
+      workspacePath,
+      workspaceIdentity: { path: workspacePath, remoteConnectionId, remoteSshHost }
     };
     this.remoteWorkspaceSessions = this.replaceWorkspaceSessions(
       workspacePath,
-      this.mergeSessions([created], this.sessionsForWorkspace(workspacePath))
+      this.mergeSessions([created], this.sessionsForWorkspace(workspacePath, remoteConnectionId, remoteSshHost)),
+      remoteConnectionId, remoteSshHost
     );
     this.publishRemoteWorkspaceSessions();
 
     try {
-      const refreshed = await this.sessionManager.listSessionsForWorkspace(workspacePath, 50);
+      const refreshed = await this.sessionManager.listSessionsForWorkspace(workspacePath, 50, remoteConnectionId, remoteSshHost);
       const containsCreated = refreshed.some((item: RemoteSession): boolean => item.id === session.sessionId);
       this.remoteWorkspaceSessions = this.replaceWorkspaceSessions(
         workspacePath,
-        containsCreated ? refreshed : this.mergeSessions([created], refreshed)
+        containsCreated ? refreshed : this.mergeSessions([created], refreshed),
+        remoteConnectionId, remoteSshHost
       );
       this.publishRemoteWorkspaceSessions();
     } catch (err) {
@@ -494,24 +505,31 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
     }
   }
 
-  private sessionsForWorkspace(path: string): RemoteSession[] {
-    return this.remotePageState.sessions.filter((item: RemoteSession): boolean => item.workspacePath === path);
+  private sessionsForWorkspace(path: string, remoteConnectionId?: string, remoteSshHost?: string): RemoteSession[] {
+    const key = remoteWorkspaceKey({ path, remoteConnectionId, remoteSshHost });
+    return this.remotePageState.sessions.filter((item: RemoteSession): boolean =>
+      item.workspaceIdentity !== undefined && remoteWorkspaceKey(item.workspaceIdentity) === key);
   }
 
-  private replaceWorkspaceSessions(path: string, replacement: RemoteSession[]): RemoteSession[] {
+  private replaceWorkspaceSessions(path: string, replacement: RemoteSession[], remoteConnectionId?: string, remoteSshHost?: string): RemoteSession[] {
+    const key = remoteWorkspaceKey({ path, remoteConnectionId, remoteSshHost });
     const preserved = this.remotePageState.sessions.filter((item: RemoteSession): boolean => {
-      return item.workspacePath !== path;
+      return !item.workspaceIdentity || remoteWorkspaceKey(item.workspaceIdentity) !== key;
     });
     return replacement.concat(preserved);
   }
 
   private publishRemoteWorkspaceSessions(): void {
-    const currentPath = this.remotePageState.workspacePath;
+    const currentKey = remoteWorkspaceKey({
+      path: this.remotePageState.workspacePath,
+      remoteConnectionId: this.remotePageState.workspaceConnectionId,
+      remoteSshHost: this.remotePageState.workspaceSshHost
+    });
     const current = this.remotePageState.sessions.filter((item: RemoteSession): boolean => {
-      return (item.workspacePath || currentPath) === currentPath;
+      return !item.workspaceIdentity || remoteWorkspaceKey(item.workspaceIdentity) === currentKey;
     });
     const extras = this.remoteWorkspaceSessions.filter((item: RemoteSession): boolean => {
-      return item.workspacePath !== currentPath;
+      return !item.workspaceIdentity || remoteWorkspaceKey(item.workspaceIdentity) !== currentKey;
     });
     this.publishRemoteSessions(this.mergeSessions(current, extras), this.remotePageState.hasMoreSessions);
   }
@@ -526,16 +544,19 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
    */
   publishRemoteSessions(sessions: RemoteSession[], hasMore: boolean): void {
     const deviceId = this.remotePageState.controlTargetDeviceId || this.remotePageState.desktopId;
-    const scoped = stampRemoteSessionsWorkspace(sessions, this.remotePageState.workspacePath);
+    const scoped = sessions;
     const stamped = stampRemoteSessionsDevice(scoped, deviceId);
     this.remotePageState.setSessions(stamped, hasMore);
     this.remoteSessionListCache.save(stamped, hasMore);
     const currentPath = this.remotePageState.workspacePath;
+    const remoteConnectionId = this.remotePageState.workspaceConnectionId;
+    const remoteSshHost = this.remotePageState.workspaceSshHost;
+    const currentKey = remoteWorkspaceKey({ path: currentPath, remoteConnectionId, remoteSshHost });
     if (currentPath.length > 0) {
       const currentSessions = stamped.filter((item: RemoteSession): boolean => {
-        return (item.workspacePath || '') === currentPath;
+        return item.workspaceIdentity !== undefined && remoteWorkspaceKey(item.workspaceIdentity) === currentKey;
       });
-      this.deviceDirectoryViewModel.captureWorkspaceSessions(deviceId, currentPath, currentSessions);
+      this.deviceDirectoryViewModel.captureWorkspaceSessions(deviceId, currentPath, currentSessions, remoteConnectionId, remoteSshHost);
     }
     this.deviceDirectoryViewModel.captureLive(
       deviceId,

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,30 +23,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.openbitfun.mobile.app.R
+import com.openbitfun.mobile.app.ui.theme.generated.MobileDesignGeometry
 import com.openbitfun.mobile.core.feature.session.QuestionAnswer
 import com.openbitfun.mobile.core.feature.session.QuestionAnswerValue
 import com.openbitfun.mobile.core.feature.session.QuestionOption
-import com.openbitfun.mobile.core.feature.session.ToolApprovalEditContract
-import com.openbitfun.mobile.core.feature.session.ToolApprovalEditSupport
 import com.openbitfun.mobile.core.feature.session.ToolQuestion
 
-/**
- * Approve and reject as equal halves of one row, ported from
- * `ToolConfirmationPanel` in `pages/components/ToolInteractionPanels.ets`.
- *
- * Editable approval is gated by [ToolApprovalEditContract.support] and is
- * intentionally not rendered while support is [ToolApprovalEditSupport.UNSUPPORTED].
- * The HarmonyOS source offers a JSON editor over `tool_input` before approving.
- * Android does not expose it yet because the shared intent still carries only a
- * tool id; the HarmonyOS command factory currently drops `updatedInput` at the
- * wire as well. The UI and protocol need to move together before this surface
- * can promise editable approval on both clients.
- */
+/** Compact approval actions; rejection remains available while JSON edits are invalid. */
 @Composable
 internal fun ToolConfirmationPanel(
     canApprove: Boolean,
@@ -55,36 +45,38 @@ internal fun ToolConfirmationPanel(
     onApprove: (String?) -> Unit,
     onReject: () -> Unit,
 ) {
-    var editing by remember(input) { mutableStateOf(false) }
-    var editedInput by remember(input) { mutableStateOf(input.ifBlank { "{}" }) }
+    var editing by rememberSaveable(input) { mutableStateOf(false) }
+    var editedInput by rememberSaveable(input) { mutableStateOf(input.ifBlank { "{}" }) }
     val valid = !editing || runCatching { org.json.JSONObject(editedInput) }.isSuccess
-    if (canApprove) {
-        TextButton(onClick = { editing = !editing }, enabled = enabled) { Text(stringResource(R.string.tool_edit_approval)) }
-        if (editing) OutlinedTextField(value = editedInput, onValueChange = { editedInput = it }, isError = !valid, label = { Text(stringResource(R.string.tool_input)) }, modifier = Modifier.fillMaxWidth())
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
+    Column(verticalArrangement = Arrangement.spacedBy(MobileDesignGeometry.ApprovalCardGap)) {
         if (canApprove) {
-            PillButton(
-                label = stringResource(R.string.tool_approve),
-                primary = true,
-                enabled = enabled && valid,
-                compact = false,
-                onClick = { if (valid) onApprove(if (editing) editedInput else null) },
-                modifier = Modifier.weight(1f),
-            )
+            TextButton(onClick = { editing = !editing }, enabled = enabled) { Text(stringResource(if (editing) R.string.tool_hide_approval_input else R.string.tool_edit_approval_input)) }
+            if (editing) OutlinedTextField(enabled = enabled, value = editedInput, onValueChange = { editedInput = it }, isError = !valid, label = { Text(stringResource(R.string.tool_input)) }, modifier = Modifier.fillMaxWidth())
         }
-        if (canReject) {
-            PillButton(
-                label = stringResource(R.string.tool_reject),
-                primary = false,
-                enabled = enabled,
-                compact = false,
-                onClick = onReject,
-                modifier = Modifier.weight(1f),
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(MobileDesignGeometry.ApprovalCardGap, androidx.compose.ui.Alignment.End),
+        ) {
+            if (canReject) {
+                Button(
+                    onClick = onReject,
+                    enabled = enabled,
+                    shape = RoundedCornerShape(MobileDesignGeometry.ApprovalActionRadius),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        contentColor = MaterialTheme.colorScheme.onSurface),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    modifier = Modifier.height(MobileDesignGeometry.ApprovalActionHeight),
+                ) { Text(stringResource(R.string.tool_reject)) }
+            }
+            if (canApprove) {
+                Button(
+                    onClick = { if (valid) onApprove(if (editing) editedInput else null) },
+                    enabled = enabled && valid,
+                    shape = RoundedCornerShape(MobileDesignGeometry.ApprovalActionRadius),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    modifier = Modifier.height(MobileDesignGeometry.ApprovalActionHeight),
+                ) { Text(stringResource(R.string.tool_approve)) }
+            }
         }
     }
 }
@@ -130,7 +122,7 @@ internal fun ToolQuestionAnswerPanel(
             compact = false,
             onClick = {
                 onSubmit(answer.trim())
-                answer = ""
+                // Keep the draft until the authoritative question leaves the UI.
             },
             modifier = Modifier.fillMaxWidth(),
         )

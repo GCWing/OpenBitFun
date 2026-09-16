@@ -11,6 +11,7 @@ struct MobileShellView: View {
     var body: some View {
         GeometryReader { proxy in
             adaptiveSurface(viewportWidth: proxy.size.width, viewportHeight: proxy.size.height)
+                .environment(\.permissionMailboxMaxHeight, proxy.size.height * 0.4)
         }
         .overlayPreferenceValue(SessionActionsAnchorKey.self) { anchor in
             GeometryReader { proxy in
@@ -92,14 +93,7 @@ struct MobileShellView: View {
             }
         }
         .animation(.easeOut(duration: 0.18), value: model.toastMessage)
-        .sheet(isPresented: $model.downloadExporterOpen) {
-            if let download = model.pendingDownload {
-                RuntimeDownloadExporter(url: download.localURL, name: download.name) { saved in
-                    guard model.pendingDownload?.localURL == download.localURL else { return }
-                    model.finishDownloadExport(success: saved)
-                }
-            }
-        }
+        .modifier(RuntimeDownloadPresentation(model: model, enabled: model.runtimeDeviceTools?.visible != true && model.filePreview == nil))
 
     }
 
@@ -331,18 +325,12 @@ struct MobileShellView: View {
                 sidebarActionLabel: sidebarActionLabel
             )
             }
-            if model.surface == .remote,
-               model.remoteExpectedDeviceKey != nil,
-               model.connectionPhase != .connected,
-               !model.remoteConversationLoading,
-               model.remoteSessionSelected || model.connectionPhase == .reconnecting || model.coreErrorMessage != nil {
-                RemoteConversationStatusBar(model: model)
-            }
             if showsWelcomeHome {
                 WelcomeHomeView(model: model)
             } else if model.surface == .remote && !model.remoteSessionSelected {
                 RemoteConnectedHomeView(model: model, onBrowse: sidebarAction)
             } else {
+                PermissionMailboxPanel(model: model)
                 ZStack {
                     ChatTimelineView(model: model)
                     if model.surface == .remote && model.remoteConversationLoading {
@@ -374,6 +362,24 @@ struct MobileShellView: View {
     }
 }
 
+
+struct RuntimeDownloadPresentation: ViewModifier {
+    @ObservedObject var model: MobileAppModel
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        content.sheet(isPresented: Binding(
+            get: { enabled && model.downloadExporterOpen },
+            set: { if enabled { model.downloadExporterOpen = $0 } }
+        )) {
+            if let download = model.pendingDownload {
+                RuntimeDownloadExporter(url: download.localURL, name: download.name) { saved in
+                    guard model.pendingDownload?.localURL == download.localURL else { return }
+                    model.finishDownloadExport(success: saved)
+                }
+            }
+        }
+    }
+}
 
 private struct RuntimeDownloadExporter: UIViewControllerRepresentable {
     let url: URL

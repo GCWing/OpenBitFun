@@ -762,7 +762,8 @@ export default function conversationPresentationUnitTest() {
       expect(RemoteCompactHomePolicy.shouldShowConnectHome('failed')).assertTrue();
       expect(RemoteCompactHomePolicy.shouldShowConnectHome('disconnected')).assertTrue();
       expect(RemoteCompactHomePolicy.shouldShowConnectHome('idle')).assertTrue();
-      expect(RemoteCompactHomePolicy.headerSubtitle('reconnecting', 'Studio')).assertEqual('');
+      expect(RemoteCompactHomePolicy.headerSubtitle('reconnecting', 'Studio')).assertEqual('Studio');
+      expect(RemoteCompactHomePolicy.headerSubtitle('idle', 'Studio')).assertEqual('');
       expect(RemoteCompactHomePolicy.headerSubtitle('connected', 'Studio')).assertEqual('Studio');
     });
   });

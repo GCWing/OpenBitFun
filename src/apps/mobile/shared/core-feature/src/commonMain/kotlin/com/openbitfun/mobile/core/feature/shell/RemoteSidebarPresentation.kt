@@ -1,7 +1,12 @@
 package com.openbitfun.mobile.core.feature.shell
 
+import com.openbitfun.mobile.core.domain.RemoteSession
+import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
+import com.openbitfun.mobile.core.domain.identity
+import com.openbitfun.mobile.core.domain.belongsTo
 import com.openbitfun.mobile.core.feature.session.RemoteSessionUiState
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceUiState
+import com.openbitfun.mobile.core.feature.workspace.projectWorkspaceCatalog
 
 /** One remote session with only the facts the unified sidebar renders. */
 public data class RemoteSidebarSessionRow public constructor(
@@ -17,7 +22,10 @@ public data class RemoteSidebarWorkspaceRow public constructor(
     public val selected: Boolean,
     public val sessions: List<RemoteSidebarSessionRow>,
     public val remoteConnectionId: String?,
+    public val remoteSshHost: String?,
 ) {
+    public val key: String get() = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost).key
+    public constructor(path: String, name: String, selected: Boolean, sessions: List<RemoteSidebarSessionRow>, remoteConnectionId: String?) : this(path, name, selected, sessions, remoteConnectionId, null)
     public constructor(path: String, name: String, selected: Boolean, sessions: List<RemoteSidebarSessionRow>) : this(path, name, selected, sessions, null)
 }
 
@@ -26,30 +34,29 @@ public object RemoteSidebarPresentation {
     public fun workspaces(
         workspaceState: RemoteWorkspaceUiState.Ready?,
         sessionState: RemoteSessionUiState.Ready?,
+    ): List<RemoteSidebarWorkspaceRow> = workspacesForSessions(workspaceState, sessionState?.sessions.orEmpty())
+
+    public fun workspacesForSessions(
+        workspaceState: RemoteWorkspaceUiState.Ready?,
+        sessions: List<RemoteSession>,
     ): List<RemoteSidebarWorkspaceRow> {
         if (workspaceState == null) return emptyList()
         val selected = workspaceState.selected
-        val workspaceRows = buildList {
-            if (selected != null && selected.path.isNotBlank()) {
-                add(Triple(selected.path, selected.name, selected.remoteConnectionId))
-            }
-            workspaceState.assistants.forEach { assistant ->
-                if (assistant.path.isNotBlank() && none { it.first == assistant.path && it.third == null }) add(Triple(assistant.path, assistant.name, null))
-            }
-            workspaceState.workspaces.forEach { workspace ->
-                if (workspace.path.isNotBlank() && none { it.first == workspace.path && it.third == workspace.remoteConnectionId }) {
-                    add(Triple(workspace.path, workspace.name, workspace.remoteConnectionId))
-                }
-            }
-        }
-        return workspaceRows.map { (path, name, connectionId) ->
+        val workspaceRows = (workspaceState.catalog ?: projectWorkspaceCatalog(
+            workspaceState.workspaces, workspaceState.assistants,
+        )).workspaces
+        return workspaceRows.map { workspace ->
+            val path = workspace.path
+            val connectionId = workspace.remoteConnectionId
             RemoteSidebarWorkspaceRow(
                 path = path,
-                name = name,
-                selected = path == selected?.path && connectionId == selected.remoteConnectionId,
+                name = workspace.name,
+                selected = selected != null && workspace.identity().matches(
+                    RemoteWorkspaceIdentity(selected.path, selected.remoteConnectionId, selected.remoteSshHost)),
                 remoteConnectionId = connectionId,
-                sessions = sessionState?.sessions.orEmpty()
-                    .filter { (it.workspacePath ?: selected?.path) == path }
+                remoteSshHost = workspace.remoteSshHost,
+                sessions = sessions
+                    .filter { it.belongsTo(workspace.identity(), workspaceRows.map { row -> row.identity() }) }
                     .map { session ->
                         RemoteSidebarSessionRow(
                             id = session.id,

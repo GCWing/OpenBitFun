@@ -1,7 +1,7 @@
-import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
+import { MobileDesignTypography, MobileDesignGeometry } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { ConversationUiQuestionAnswer } from '../state/ConversationUiModels';
-import { ACCENT, CARD, INK, LINE, MUTED, CONTENT_ON_ACTION, STATUS_DANGER, SOFT } from './Theme';
+import { ACCENT, PRIMARY_ACTION, CARD, INK, LINE, MUTED, CONTENT_ON_ACTION, STATUS_DANGER, SOFT } from './Theme';
 
 interface QuestionOption {
   label: string;
@@ -24,6 +24,9 @@ export struct ToolConfirmationPanel {
   @Param toolId: string = '';
   @Param defaultInputText: string = '';
   @Param hasEditableInput: boolean = false;
+  @Param leadingInset: number = 30;
+  @Param compactActions: boolean = true;
+  @Param isBusy: boolean = false;
   @Event onApproveTool: (toolId: string, updatedInput?: Object) => void =
     (_toolId: string, _updatedInput?: Object) => {};
   @Event onRejectTool: (toolId: string) => void = (_toolId: string) => {};
@@ -39,6 +42,22 @@ export struct ToolConfirmationPanel {
       if (this.hasEditableInput) {
         this.InputEditor()
       }
+      if (this.compactActions) {
+        Row({ space: MobileDesignGeometry.approvalCardGap }) {
+          Blank()
+          Button(RemoteI18n.t('chat.reject'))
+            .fontSize(MobileDesignTypography.labelMedium.size).fontColor(INK)
+            .height(MobileDesignGeometry.approvalActionHeight).padding({ left: 16, right: 16 })
+            .backgroundColor(SOFT).borderRadius(MobileDesignGeometry.approvalActionRadius)
+            .enabled(!this.isBusy)
+            .onClick(() => this.onRejectTool(this.toolId))
+          Button(RemoteI18n.t('chat.approve'))
+            .fontSize(MobileDesignTypography.labelMedium.size).fontColor(CONTENT_ON_ACTION)
+            .height(MobileDesignGeometry.approvalActionHeight).padding({ left: 16, right: 16 })
+            .backgroundColor(PRIMARY_ACTION).borderRadius(MobileDesignGeometry.approvalActionRadius)
+            .enabled(!this.isBusy).onClick(() => this.approve())
+        }.width('100%')
+      } else {
       Row({ space: 8 }) {
         Text(RemoteI18n.t('chat.approve'))
           .fontSize(MobileDesignTypography.labelMedium.size)
@@ -48,6 +67,7 @@ export struct ToolConfirmationPanel {
           .layoutWeight(1)
           .backgroundColor(ACCENT)
           .borderRadius(16)
+          .enabled(!this.isBusy)
           .onClick(() => this.approve())
         Text(RemoteI18n.t('chat.reject'))
           .fontSize(MobileDesignTypography.labelMedium.size)
@@ -58,12 +78,14 @@ export struct ToolConfirmationPanel {
           .backgroundColor(SOFT)
           .borderRadius(16)
           .border({ width: 1, color: LINE })
+          .enabled(!this.isBusy)
           .onClick(() => this.onRejectTool(this.toolId))
       }
       .width('100%')
+      }
     }
     .width('100%')
-    .padding({ left: 30 })
+    .padding({ left: this.leadingInset })
   }
 
   @Builder
@@ -91,7 +113,7 @@ export struct ToolConfirmationPanel {
         .padding(10)
         .border({ width: 1, color: this.inputError.length > 0 ? STATUS_DANGER : LINE })
         .defaultFocus(false)
-        .enabled(true)
+        .enabled(!this.isBusy)
         .onChange((value: string) => {
           this.inputText = value;
           this.inputError = '';
@@ -104,7 +126,7 @@ export struct ToolConfirmationPanel {
   }
 
   private approve(): void {
-    if (this.toolId.length === 0) {
+    if (this.toolId.length === 0 || this.isBusy) {
       return;
     }
     if (!this.hasEditableInput) {
@@ -118,7 +140,7 @@ export struct ToolConfirmationPanel {
     }
     try {
       const parsed = JSON.parse(rawInput) as Object;
-      if (parsed === null || Array.isArray(parsed)) {
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
         this.inputError = RemoteI18n.t('chat.jsonObjectRequired');
         return;
       }

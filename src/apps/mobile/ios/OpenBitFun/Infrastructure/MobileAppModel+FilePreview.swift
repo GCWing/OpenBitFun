@@ -13,8 +13,6 @@ private struct MobilePreviewRequestExpectation {
 
 private var filePreviewRequestByModel: [ObjectIdentifier: MobilePreviewRequestExpectation] = [:]
 private var downloadRetryableByModel: [ObjectIdentifier: Bool] = [:]
-private var downloadRetrySessionByModel: [ObjectIdentifier: String] = [:]
-private var downloadRetryEpochByModel: [ObjectIdentifier: Int32] = [:]
 private var downloadRetryDeviceByModel: [ObjectIdentifier: String] = [:]
 private var downloadRetryCallbackEpochByModel: [ObjectIdentifier: UInt64] = [:]
 private var downloadRetryPathByModel: [ObjectIdentifier: String] = [:]
@@ -45,6 +43,7 @@ private func localizedFailureReason(_ localized: (String) -> String, kindName: S
 
 extension MobileAppModel {
     func invalidateTargetScopedFileTransfers() {
+        runtimeDeviceTools = nil
         let modelID = ObjectIdentifier(self)
         filePreviewRequestByModel[modelID] = nil
         filePreview = nil
@@ -56,8 +55,6 @@ extension MobileAppModel {
         downloadStatusText = nil
         downloadPhase = .idle
         downloadRetryableByModel[modelID] = nil
-        downloadRetrySessionByModel[modelID] = nil
-        downloadRetryEpochByModel[modelID] = nil
         downloadRetryDeviceByModel[modelID] = nil
         downloadRetryCallbackEpochByModel[modelID] = nil
         downloadRetryPathByModel[modelID] = nil
@@ -199,8 +196,6 @@ extension MobileAppModel {
             downloadPhase = .failed
             let modelID = ObjectIdentifier(self)
             downloadRetryableByModel[modelID] = failed.retryable
-            downloadRetrySessionByModel[modelID] = failed.target.sessionId
-            downloadRetryEpochByModel[modelID] = failed.target.controlTargetEpoch
             downloadRetryDeviceByModel[modelID] = coreAdapter?.currentRemoteTargetKey
             downloadRetryCallbackEpochByModel[modelID] = coreAdapter?.currentRemoteTargetEpoch ?? 0
             downloadRetryPathByModel[modelID] = failed.target.remotePath
@@ -219,21 +214,13 @@ extension MobileAppModel {
         guard downloadRetryableByModel[modelID] == true,
               let path = downloadRetryPathByModel[modelID],
               downloadTargetPath == path,
-              downloadRetrySessionByModel[modelID] == selectedSessionID,
               downloadRetryDeviceByModel[modelID] == coreAdapter?.currentRemoteTargetKey,
               downloadRetryCallbackEpochByModel[modelID] == coreAdapter?.currentRemoteTargetEpoch else {
             downloadPhase = .failed
             downloadStatusText = localized("下载目标已变化，请重新打开文件")
             return
         }
-        if let preview = filePreview, preview.id == path,
-           preview.sessionID == downloadRetrySessionByModel[modelID],
-           preview.controlTargetEpoch != downloadRetryEpochByModel[modelID] {
-            downloadPhase = .failed
-            downloadStatusText = localized("下载目标已变化，请重新打开文件")
-            return
-        }
-        downloadRemoteFile(reference: "computer://\(path)", label: path.split(separator: "/").last.map(String.init) ?? path)
+        coreAdapter?.retryRemoteDownload()
     }
 
     func apply(filePreviewState state: RemoteFilePreviewUiState) {

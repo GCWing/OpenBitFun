@@ -13,8 +13,15 @@ public data class PermissionMailboxRequest public constructor(
 public data class PermissionMailboxUiState public constructor(
     public val requests: List<PermissionMailboxRequest>, public val busy: Boolean, public val failed: Boolean,
     public val questions: List<ToolCard>,
+    public val ownedToolIds: Set<String>,
 ) {
+    public constructor(requests: List<PermissionMailboxRequest>, busy: Boolean, failed: Boolean, questions: List<ToolCard>) :
+        this(requests, busy, failed, questions, emptySet())
     public constructor(requests: List<PermissionMailboxRequest>, busy: Boolean, failed: Boolean) : this(requests, busy, failed, emptyList())
+
+    /** A transcript row may show details, but must not duplicate a mailbox action. */
+    public fun ownsToolInteraction(toolId: String): Boolean =
+        toolId.isNotEmpty() && (toolId in ownedToolIds || questions.any { it.id == toolId } || requests.any { it.toolCallId == toolId })
 }
 @Serializable
 private data class MailboxResult(override val resp: String? = null, override val message: String? = null,
@@ -39,7 +46,7 @@ internal class PermissionMailboxStore(private val scope: CoroutineScope, private
     }
     private suspend fun invoke(command: String, args: JsonObject): JsonElement {
         val result = transport.send<MailboxResult>(RemoteCommand(cmd = "host_invoke", command = command, args = args))
-        check(result.ok) { "Runtime permission request failed" }
+        check(result.ok && !result.isError) { "Runtime permission request failed" }
         return result.value
     }
     fun invalidate() {
@@ -51,7 +58,21 @@ internal class PermissionMailboxStore(private val scope: CoroutineScope, private
             try {
                 while (dirty && ticket == epoch) {
                     dirty = false
-                    val snapshot = invoke("get_session_interaction_mailbox", buildJsonObject { put("request", buildJsonObject { put("sessionId", selected) }) }).jsonObject
+                    val snapshot = try {
+                        invoke("get_session_interaction_mailbox", buildJsonObject { put("request", buildJsonObject { put("sessionId", selected) }) }).jsonObject
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Throwable) {
+                        if (ticket != epoch) return@launch
+                        // A newer invalidation must survive an older request failure.
+                        if (dirty) continue
+                        throw error
+                    }
+                    // An interaction event may invalidate this snapshot while the RPC is
+                    // in flight. Keep the last authoritative rows until the newer read
+                    // completes, matching Harmony's mailbox version check.
+                    if (ticket != epoch) return@launch
+                    if (dirty) continue
                     check(snapshot.getValue("sessionId").jsonPrimitive.content == selected) { "Interaction mailbox session mismatch" }
                     val value = snapshot.getValue("permissions").jsonObject.getValue("requests").jsonArray
                     val questions = snapshot.getValue("userQuestions").jsonObject.getValue("questions").jsonArray.map { it.jsonObject }
@@ -65,7 +86,10 @@ internal class PermissionMailboxStore(private val scope: CoroutineScope, private
                             it["toolCallId"]?.jsonPrimitive?.contentOrNull,
                             (it["source"] as? JsonObject)?.get("identity")?.jsonPrimitive?.contentOrNull.orEmpty())
                     }
-                    if (ticket == epoch) update(state.copy(requests = requests, questions = questions, failed = false))
+                    // Keep ownership after a successful reply removes the mailbox
+                    // row: transcript completion may arrive later over another stream.
+                    val ownedToolIds = state.ownedToolIds + questions.map { it.id } + requests.mapNotNull { it.toolCallId }
+                    if (ticket == epoch) update(state.copy(requests = requests, questions = questions, failed = false, ownedToolIds = ownedToolIds))
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Throwable) { if (ticket == epoch) update(state.copy(failed = true)) }
@@ -73,27 +97,61 @@ internal class PermissionMailboxStore(private val scope: CoroutineScope, private
     }
     fun startQuestion(toolId: String) {
         val selected = session ?: return
+        if (state.questions.none { it.id == toolId }) return
         if (!interacting.add(toolId)) return
         val ticket = epoch
         scope.launch {
             if (ticket != epoch) return@launch
-            try { transport.send<CommandStatusResponse>(RemoteCommand(cmd = "start_question_interaction", sessionId = selected, toolId = toolId)) }
+            try {
+                val result = transport.send<CommandStatusResponse>(RemoteCommand(cmd = "start_question_interaction", sessionId = selected, toolId = toolId))
+                check(!result.isError) { result.message ?: "Question interaction failed" }
+                if (ticket == epoch) invalidate()
+            }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Throwable) { if (ticket == epoch) { interacting.remove(toolId); update(state.copy(failed = true)) } }
         }
     }
+    /** Returns false only for questions owned by the legacy transcript path. */
+    fun answer(selected: String, toolId: String, answers: JsonObject): Boolean {
+        if (session != selected || state.questions.none { it.id == toolId }) return false
+        if (state.busy) return true
+        val ticket = epoch
+        update(state.copy(busy = true, failed = false))
+        reply = scope.launch {
+            try {
+                val result = transport.send<CommandStatusResponse>(RemoteCommand(
+                    cmd = "answer_question", sessionId = selected, toolId = toolId, answers = answers))
+                check(!result.isError) { "Question answer failed" }
+                if (ticket == epoch) {
+                    invalidate()
+                    refresh?.join()
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Throwable) { if (ticket == epoch) update(state.copy(failed = true)) }
+            finally { if (ticket == epoch) update(state.copy(busy = false)) }
+        }
+        return true
+    }
+
     fun respond(requestId: String, approve: Boolean, updatedInput: String?) {
         if (state.busy || state.requests.none { it.requestId == requestId }) return
         val ticket = epoch
         update(state.copy(busy = true, failed = false))
         reply = scope.launch {
             try {
-                val patch = updatedInput?.let { Json.parseToJsonElement(it) as? JsonObject ?: error("Input must be an object") }
+                val patch = if (approve) updatedInput?.let {
+                    Json.parseToJsonElement(it) as? JsonObject ?: error("Input must be an object")
+                } else null
                 invoke("respond_permission", buildJsonObject { put("request", buildJsonObject {
                     put("requestId", requestId); put("reply", if (approve) "once" else "reject")
                     if (approve && patch != null) put("updatedInput", patch)
                 }) })
-                if (ticket == epoch) invalidate()
+                if (ticket == epoch) {
+                    invalidate()
+                    // Keep the mutation busy until the authoritative mailbox refresh
+                    // finishes, so stale request rows cannot be submitted again.
+                    refresh?.join()
+                }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Throwable) { if (ticket == epoch) update(state.copy(failed = true)) }
             finally { if (ticket == epoch) update(state.copy(busy = false)) }

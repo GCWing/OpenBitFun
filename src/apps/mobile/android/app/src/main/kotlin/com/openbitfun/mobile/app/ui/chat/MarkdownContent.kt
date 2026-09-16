@@ -29,9 +29,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -211,11 +213,20 @@ private fun annotatedInlines(
 }
 
 /**
- * The markers live in their own 20dp column so wrapped lines line up under the
+ * The markers share a measured column so wrapped lines line up under the
  * text rather than under the bullet.
  */
 @Composable
 private fun MarkdownList(items: List<MarkdownListItem>, onOpenLink: (String, String) -> Unit) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val style = MaterialTheme.typography.bodyLarge
+    val markerWidth = remember(items, style, density, measurer) {
+        with(density) {
+            items.maxOfOrNull { measurer.measure(it.marker, style, softWrap = false).size.width }
+                ?.toDp()?.coerceAtLeast(20.dp) ?: 20.dp
+        }
+    }
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -232,7 +243,9 @@ private fun MarkdownList(items: List<MarkdownListItem>, onOpenLink: (String, Str
                     lineHeight = MaterialTheme.typography.bodyLarge.lineHeight,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.End,
-                    modifier = Modifier.width(20.dp),
+                    modifier = Modifier.width(markerWidth),
+                    softWrap = false,
+                    maxLines = 1,
                 )
                 Box(Modifier.weight(1f)) {
                     InlineText(

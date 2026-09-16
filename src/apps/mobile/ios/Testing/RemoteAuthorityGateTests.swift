@@ -636,13 +636,23 @@ struct RemoteAuthorityGateTests {
         let filePreviewSource = readSource(
             iosDirectory.appendingPathComponent("OpenBitFun/Infrastructure/MobileAppModel+FilePreview.swift")
         )
-        let guardedEntryCount = filePreviewSource.components(
-            separatedBy: "guard surface == .remote, remoteSessionSelected"
-        ).count - 1
-        expect(
-            guardedEntryCount >= 2,
-            "preview and download production entries remain closed after token expiry clears remote selection"
+        expectCallBeforeMutation(
+            in: filePreviewSource, function: "func openRemoteFile(",
+            call: "guard surface == .remote, remoteSessionSelected",
+            mutation: "adapter.openRemoteFile(",
+            message: "chat file preview remains closed after remote selection expires"
         )
+        expectCallBeforeMutation(
+            in: filePreviewSource, function: "func downloadRemoteFile(",
+            call: "guard remoteSessionSelected", mutation: "beginRemoteDownload(",
+            message: "chat download requires a selected session"
+        )
+        expectCallBeforeMutation(
+            in: filePreviewSource, function: "private func beginRemoteDownload(",
+            call: "guard surface == .remote, remoteConnected", mutation: "coreAdapter?.downloadRemoteFile(",
+            message: "both device-tool and chat downloads require a connected remote authority"
+        )
+
     }
 
     private static func readSource(_ url: URL) -> String {

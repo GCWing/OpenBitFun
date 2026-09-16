@@ -10,6 +10,7 @@ function load(name, dependencies = {}) {
   new Function('require', 'exports', compiled)(name => dependencies[name] || {}, exported);
   return exported;
 }
+const mailboxModule = load('InteractionMailboxStore', { '../model/InteractionMailbox': load('../model/InteractionMailbox') });
 const reducerModule = load('DurableSessionReducer');
 const { DurableSessionReducer } = reducerModule;
 function record(revision, content, status = 'inprogress', itemId = 'text') {
@@ -40,9 +41,9 @@ test('late older child cannot regress completed parent, while its own unseen con
   assert.equal(reducer.messages()[1].renderVersion, 10);
 });
 test('controller hydrates from the same record log without transcript RPC', async () => {
-  const { ChatSessionController } = load('ChatSessionController', { './DurableSessionReducer': reducerModule, './PermissionControlOverlay': load('PermissionControlOverlay') });
+  const { ChatSessionController } = load('ChatSessionController', { './DurableSessionReducer': reducerModule, './InteractionMailboxStore': mailboxModule });
   let callbacks, snapshots = [];
-  const manager = { subscribeSession: (_id, next) => { callbacks = next; return { wake() {}, close() {} }; }, getSessionMessages: () => { throw new Error('Snapshot RPC is forbidden'); } };
+  const manager = { getModelCatalog: async () => ({ version: 1, models: [], default_models: {} }), subscribeSession: (_id, next) => { callbacks = next; return { wake() {}, close() {} }; }, getSessionMessages: () => { throw new Error('Snapshot RPC is forbidden'); } };
   const controller = new ChatSessionController(manager, { onSnapshot: value => snapshots.push(value), canPoll: () => true, onError: error => { throw error; } });
   controller.start('session', { pollVersion: 0, knownMessageCount: 0, knownModelCatalogVersion: 0 });
   await callbacks.onEvent(record(1, 'partial'));
@@ -78,55 +79,94 @@ test('command history entrypoints delegate to the same durable collection with n
   await controller.loadMessages('stale', () => false);
   await controller.reloadMessages('s1', () => true);
   await controller.loadOlderMessages('s1', 0, true, false);
+  await controller.loadOlderMessages('s1', 0, true, true);
   await controller.loadOlderMessages('s1', 0, false, false);
-  assert.deepEqual(requests, [['s1', false], ['s1', false], ['s1', true]]);
+  await controller.loadOlderMessages('', 0, true, true);
+  assert.deepEqual(requests, [['s1', false], ['s1', false], ['s1', true], ['s1', true]]);
   assert.equal(rpc, 0); assert.equal(cacheReads, 0);
 });
 
-test('permission controls decorate active tools separately and authoritative mailbox removes resolved requests', () => {
-  const { PermissionControlOverlay } = load('PermissionControlOverlay');
-  const overlay = new PermissionControlOverlay();
-  const base = [{ id: 'a', role: 'assistant', status: 'active', turnId: 't', text: '', tools: [{id:'tool', name:'Write', tool_input:{content:'old'}}], items: [] }];
-  overlay.apply({event:'agentic://tool-event',payload:{turnId:'t',toolEvent:{event_type:'ConfirmationNeeded',tool_id:'tool',params:{content:'new'}}}});
-  assert.equal(overlay.decorate(base)[0].tools[0].status, 'pending_confirmation');
-  assert.equal(overlay.decorate(base)[0].tools[0].tool_input.content, 'new');
-  assert.equal(base[0].tools[0].status, undefined);
-  overlay.hydrate('session', []);
-  assert.equal(overlay.decorate(base)[0].tools[0].status, undefined);
-  overlay.hydrate('session', [{requestId:'req',sessionId:'session',toolCallId:'tool',source:{identity:'Write'}}]);
-  assert.equal(overlay.decorate(base)[0].tools[0].tool_input.content, 'old');
-  overlay.apply({event:'agentic://tool-event',payload:{turnId:'t',toolEvent:{event_type:'Rejected',tool_id:'tool'}}});
-  assert.equal(overlay.decorate(base)[0].tools[0].status, undefined);
-});
-test('canonical tool completion clears permission overlay without a duplicate typed completion event', () => {
-  const { PermissionControlOverlay } = load('PermissionControlOverlay');
-  const overlay = new PermissionControlOverlay();
-  overlay.apply({ event: 'agentic://tool-event', payload: { turnId: 'turn', toolEvent: { event_type: 'ConfirmationNeeded', tool_id: 'tool', tool_name: 'write' } } });
-  overlay.hydrate('session', [{requestId:'permission', sessionId:'session', toolCallId:'tool', source:{identity:'write'}}]);
-  const messages = [{ id:'assistant-turn', turnId:'turn', role:'assistant', status:'active', tools:[{id:'tool',status:'completed'}], items:[] }];
-  const decorated = overlay.decorate(messages);
-  assert.equal(decorated[0].tools[0].status, 'completed');
-  assert.equal(decorated[0].tools[0].permission_request_id, undefined);
-});
-test('initial and resumed mailbox restores a waiting question through the existing question tool presentation', async () => {
-  const { ChatSessionController } = load('ChatSessionController', { './DurableSessionReducer': reducerModule, './PermissionControlOverlay': load('PermissionControlOverlay') });
-  let callbacks, snapshot, mailboxReads = 0;
+test('initial and resumed mailbox restores questions independently of transcript lifetime', async () => {
+  const { ChatSessionController } = load('ChatSessionController', { './DurableSessionReducer': reducerModule, './InteractionMailboxStore': mailboxModule });
+  let callbacks, snapshot, mailbox, mailboxReads = 0;
   const question = { questions: [{question:'Proceed?',options:[{label:'Yes'}]}] };
   const manager = {
+    getModelCatalog: async () => ({ version: 1, models: [], default_models: {} }),
     subscribeSession: (_id, next) => { callbacks = next; return {wake(){},close(){}}; },
     hostInvoke: async (command, args) => {
       assert.equal(command, 'get_session_interaction_mailbox'); assert.equal(args.request.sessionId, 'session'); mailboxReads++;
       return {sessionId:'session',permissions:{revision:0,requests:[]},userQuestions:{revision:1,questions:[{toolId:'question-tool',sessionId:'session',questions:question,registeredAtMs:1}]}};
     }
   };
-  const controller = new ChatSessionController(manager,{onSnapshot:value=>snapshot=value,onError:error=>{throw error;},canPoll:()=>true});
+  const controller = new ChatSessionController(manager,{onSnapshot:value=>snapshot=value,onMailbox:value=>mailbox=value,onError:error=>{throw error;},canPoll:()=>true});
   controller.start('session',{pollVersion:0,knownMessageCount:0,knownModelCatalogVersion:0});
   await callbacks.onResumed(); await callbacks.onCaughtUp();
-  assert.equal(snapshot.activeTurn.tools[0].name,'AskUserQuestion');
-  assert.equal(snapshot.activeTurn.tools[0].id,'question-tool');
-  assert.deepEqual(snapshot.activeTurn.tools[0].tool_input,question);
+  assert.equal(snapshot.activeTurn,undefined);
+  assert.equal(snapshot.cursor.knownMessageCount,0);
+  assert.equal(mailbox.questions[0].toolId,'question-tool');
+  assert.deepEqual(mailbox.questions[0].questions,question);
   await callbacks.onResumed(); await callbacks.onCaughtUp();
-  assert.equal(mailboxReads,2); assert.equal(snapshot.activeTurn.tools.length,1);
+  assert.equal(mailboxReads,2); assert.equal(mailbox.questions.length,1);
   await callbacks.onEvent({session_id:'session',event:'session-interaction-changed',payload:{sessionId:'session',userQuestionsRevision:2}});
-  assert.equal(mailboxReads,3); assert.equal(snapshot.activeTurn.tools.length,1);
+  assert.equal(mailboxReads,3); assert.equal(mailbox.questions.length,1);
+});
+
+test('restoring a turn header does not restore children older than its tombstone', () => {
+  const reducer = new DurableSessionReducer();
+  reducer.apply(record(1, 'deleted content'));
+  reducer.apply({session_id:'session',event:'session-record',payload:{sessionId:'session',id:'turn/turn',revision:10,deleted:true}});
+  const header = record(11, '');
+  header.payload.id = 'turn/turn'; delete header.payload.round; delete header.payload.item;
+  reducer.apply(header);
+  assert.equal(reducer.messages()[1].text, '');
+  reducer.apply(record(9, 'late old child', 'inprogress', 'old-child'));
+  assert.equal(reducer.messages()[1].text, '');
+  reducer.apply(record(12, 'new child', 'inprogress', 'new-child'));
+  assert.equal(reducer.messages()[1].text, 'new child');
+});
+
+test('restoring a round with a new item does not resurrect its deleted siblings', () => {
+  const reducer = new DurableSessionReducer();
+  reducer.apply(record(1, 'deleted sibling'));
+  reducer.apply({session_id:'session',event:'session-record',payload:{sessionId:'session',id:'round/round',revision:10,deleted:true}});
+  reducer.apply(record(11, 'new sibling', 'inprogress', 'new-child'));
+  assert.equal(reducer.messages()[1].text, 'new sibling');
+});
+
+
+test('superseded and retry-superseded text thinking and tools do not reach presentation', () => {
+  for (const kind of ['text', 'thinking', 'tool']) for (const status of ['superseded', 'retry_superseded']) {
+    const reducer = new DurableSessionReducer();
+    const event = record(1, 'obsolete');
+    event.payload.item.type = kind; event.payload.item.data.status = status;
+    reducer.apply(event);
+    const assistant = reducer.messages()[1];
+    assert.deepEqual(assistant.items, [], `${kind}/${status}`);
+    assert.equal(assistant.text, ''); assert.deepEqual(assistant.tools, []);
+  }
+});
+
+test('subagent session identity works without the legacy boolean marker', () => {
+  const reducer = new DurableSessionReducer();
+  const event = record(1, 'child output');
+  event.payload.item.data.subagentSessionId = 'child-session';
+  reducer.apply(event);
+  const assistant = reducer.messages()[1];
+  assert.equal(assistant.items[0].is_subagent, true);
+  assert.equal(assistant.text, '');
+});
+
+
+test('tool actions use call identity and preserve zero duration', () => {
+  const reducer = new DurableSessionReducer();
+  const event = record(1, '');
+  event.payload.item.type = 'tool';
+  Object.assign(event.payload.item.data, {
+    toolName:'Read', toolCall:{id:'call-id',input:{path:'/test'}},
+    toolResult:{success:true,result:'output',durationMs:9}, startTime:123, durationMs:0
+  });
+  reducer.apply(event);
+  const tool = reducer.messages()[1].tools[0];
+  assert.equal(tool.id,'call-id'); assert.equal(tool.status,'completed');
+  assert.equal(tool.start_ms,123); assert.equal(tool.duration_ms,0);
 });

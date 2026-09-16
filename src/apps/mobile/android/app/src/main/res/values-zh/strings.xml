@@ -510,4 +510,12 @@
     <string name="miniapps_offline">离线可用</string>
     <string name="miniapps_load_failed">无法加载小应用，请重试</string>
     <string name="account_authorization_open_failed">无法打开授权页面，请重试。</string>
+    <string name="sidebar_legacy_workspace_catalog">旧版设备：显示最近访问的工作区</string>
+    <string name="tool_edit_approval_input">编辑参数</string>
+    <string name="tool_hide_approval_input">收起参数</string>
+    <string name="workspace_file_name">文件名</string>
+    <string name="workspace_file_actions">文件操作</string>
+    <string name="workspace_file_conflict">电脑上的文件已被修改，当前草稿仍保留。请先复制草稿，再重新打开文件以读取最新内容。</string>
+    <string name="chat_load_older_failed">加载更早消息失败，点按重试。</string>
+    <string name="chat_loading_older_messages">正在加载更早消息…</string>
 </resources>

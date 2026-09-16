@@ -10,8 +10,8 @@ import org.junit.Test
 
 class ToolInteractionPanelsTest {
     @Test
-    fun approvalEditSupportIsTypedAsUnsupported() {
-        assertEquals(ToolApprovalEditSupport.UNSUPPORTED, ToolApprovalEditContract.support)
+    fun approvalEditSupportMatchesRuntimeUpdatedInputContract() {
+        assertEquals(ToolApprovalEditSupport.SUPPORTED, ToolApprovalEditContract.support)
     }
 
     private val questions = listOf(

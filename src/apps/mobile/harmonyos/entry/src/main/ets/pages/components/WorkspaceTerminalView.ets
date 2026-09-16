@@ -65,6 +65,10 @@ export struct WorkspaceTerminalView {
     } catch (_error) { this.reset = true; this.dirty = true; }
     finally { this.sending = false; }
   }
+  onWillApplyTheme(_theme: Theme): void {
+    this.dirty = true;
+    void this.flush();
+  }
   aboutToDisappear(): void { this.active = false; this.ready = false; }
   build() {
     Web({ src: $rawfile('terminal/index.html'), controller: this.controller })

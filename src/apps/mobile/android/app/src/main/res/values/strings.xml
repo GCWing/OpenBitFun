@@ -525,4 +525,12 @@
     <string name="miniapps_offline">Available offline</string>
     <string name="miniapps_load_failed">Unable to load apps. Please retry.</string>
     <string name="account_authorization_open_failed">Unable to open the authorization page. Please retry.</string>
+    <string name="sidebar_legacy_workspace_catalog">Older device: showing recent workspaces</string>
+    <string name="tool_edit_approval_input">Edit input</string>
+    <string name="tool_hide_approval_input">Hide input</string>
+    <string name="workspace_file_name">File name</string>
+    <string name="workspace_file_actions">File actions</string>
+    <string name="workspace_file_conflict">File changed on the computer. Your draft is preserved. Copy it before reopening the file to load the latest version.</string>
+    <string name="chat_load_older_failed">Could not load earlier messages. Tap to retry.</string>
+    <string name="chat_loading_older_messages">Loading earlier messages…</string>
 </resources>

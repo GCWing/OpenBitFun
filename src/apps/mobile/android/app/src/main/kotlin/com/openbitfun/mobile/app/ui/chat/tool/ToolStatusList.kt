@@ -53,6 +53,7 @@ internal class ToolDisclosure(selectedState: MutableState<String?>) {
     var selected by selectedState
 }
 internal val LocalToolDisclosure = staticCompositionLocalOf<ToolDisclosure?> { null }
+internal val LocalPermissionMailbox = staticCompositionLocalOf<com.openbitfun.mobile.core.feature.session.PermissionMailboxUiState?> { null }
 
 private const val REJECT_REASON = "Rejected from the Android client"
 private const val CANCEL_REASON = "Cancelled from the Android client"
@@ -218,7 +219,11 @@ internal fun ToolStatusRow(
         if (disclosure == null) localExpanded = !localExpanded
         else disclosure.selected = if (expanded) null else tool.id
     }
-    val blocking = tool.actions.isNotEmpty()
+    val transcriptActions = if (LocalPermissionMailbox.current?.ownsToolInteraction(tool.id) == true) {
+        tool.actions - setOf(ToolAction.ANSWER, ToolAction.APPROVE, ToolAction.REJECT) -
+            (if (ToolAction.ANSWER in tool.actions) setOf(ToolAction.CANCEL) else emptySet())
+    } else tool.actions
+    val blocking = transcriptActions.isNotEmpty()
     val emphasized = expanded || blocking || tool.phase == ToolPhase.FAILED
     val canExpand = tool.expandable
     val openable = tool.filePath.isNotEmpty()
@@ -305,18 +310,18 @@ internal fun ToolStatusRow(
             }
         }
 
-        if (ToolAction.APPROVE in tool.actions || ToolAction.REJECT in tool.actions) {
+        if (ToolAction.APPROVE in transcriptActions || ToolAction.REJECT in transcriptActions) {
             ToolConfirmationPanel(
                 input = tool.input,
-                canApprove = ToolAction.APPROVE in tool.actions,
-                canReject = ToolAction.REJECT in tool.actions,
+                canApprove = ToolAction.APPROVE in transcriptActions,
+                canReject = ToolAction.REJECT in transcriptActions,
                 enabled = enabled,
                 onApprove = onApprove,
                 onReject = { onReject(REJECT_REASON) },
             )
         }
 
-        if (ToolAction.ANSWER in tool.actions) {
+        if (ToolAction.ANSWER in transcriptActions) {
             if (tool.questions.isNotEmpty()) {
                 ToolStructuredQuestionPanel(
                     toolId = tool.id,
@@ -335,7 +340,7 @@ internal fun ToolStatusRow(
             }
         }
 
-        if (ToolAction.CANCEL in tool.actions) {
+        if (ToolAction.CANCEL in transcriptActions) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = DETAIL_INDENT),
                 horizontalArrangement = Arrangement.End,

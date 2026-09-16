@@ -548,7 +548,9 @@ export class SettingsController {
         initialSync.workspace.path,
         initialSync.workspace.assistantId || '',
         initialSync.workspace.gitBranch,
-        initialSync.workspace.workspaceKind || 'normal'
+        initialSync.workspace.workspaceKind || 'normal',
+        initialSync.workspace.remoteConnectionId || '',
+        initialSync.workspace.remoteSshHost || ''
       );
       cloud.remoteState.setSessions(
         stampRemoteSessionsDevice(initialSync.sessions, deviceId),
@@ -700,9 +702,12 @@ export class SettingsController {
         // Relay credentials are database-scoped; never replay an older credential at a new endpoint.
         this.selectedRelayUrl = OFFICIAL_RELAY_URL;
         this.cloudRelayUrl = OFFICIAL_RELAY_URL;
-        cloud.remoteState.setAccountUserId(persisted.userId);
+        // Saved profile identity is not authentication against the current relay.
+        // Keep the encrypted record and display name, but expose the sign-in entry.
+        cloud.remoteState.setAccountUserId('');
         cloud.remoteState.setAccountUsername(persisted.username || persisted.userId);
         cloud.remoteState.setStatusText(RemoteI18n.t('remote.settings.relayReauthorizationRequired'));
+        RemoteLogger.warn('Saved account requires authorization for the current relay');
         return;
       }
       const session: CloudAccountSession = {

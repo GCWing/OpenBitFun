@@ -26,12 +26,10 @@ enum MobileLocalization {
     }
 
     static func text(_ key: String, language: MobileLanguage) -> String {
-        // The catalog's source language is Simplified Chinese and UI call sites
-        // use those source strings as stable keys. Asking Foundation to resolve
-        // an untranslated source key with an English development region can
-        // still fall through to the English localization, so keep the source
-        // language explicit instead of relying on Bundle fallback order.
-        if language == .simplifiedChinese { return key }
+        // Resolve only the selected language bundle. Returning every source key
+        // unchanged loses translated English keys added by remote features.
+        // An explicit bundle plus key fallback also avoids English fallback for
+        // untranslated Chinese source strings.
         guard let path = Bundle.main.path(forResource: language.rawValue, ofType: "lproj"),
               let bundle = Bundle(path: path) else { return key }
         return bundle.localizedString(forKey: key, value: key, table: nil)

@@ -7,6 +7,7 @@
     "zh-CN"
   ],
   "surfaceDefaults": {
+    "android": "zh-CN",
     "web-ui": "zh-CN",
     "mobile-web": "en-US",
     "installer": "en-US",

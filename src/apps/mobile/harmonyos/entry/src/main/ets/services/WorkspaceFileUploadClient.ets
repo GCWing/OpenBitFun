@@ -19,7 +19,13 @@ export class WorkspaceFileUploadClient {
   private async call(request: UploadRequest): Promise<UploadStatus> {
     if (this.pending && this.pending.targetId !== this.target()) throw new Error('Reconnect to the upload owning runtime first');
     const args: UploadArgs = { request: request };
-    return this.manager.hostInvoke<UploadStatus>('workspace_file_upload', args);
+    const status = await this.manager.hostInvoke<UploadStatus>('workspace_file_upload', args);
+    if (request.action !== 'cancel' && (status.transferId !== request.transferId ||
+      status.totalBytes !== request.totalBytes || !Number.isSafeInteger(status.nextOffset) ||
+      status.nextOffset < 0 || status.nextOffset > (request.totalBytes || 0))) {
+      throw new Error('Invalid upload acknowledgement');
+    }
+    return status;
   }
   async select(path: string, remoteConnectionId: string | undefined, expectedHash: string, current: () => boolean, workspacePath: string): Promise<void> {
     if (this.pending) throw new Error('Finish or cancel the current file upload first');
@@ -58,8 +64,13 @@ export class WorkspaceFileUploadClient {
     // Begin is idempotent even when its earlier acknowledgement was lost.
     pending.started = true;
     request.action = 'begin'; request.contentBase64 = undefined; request.offset = undefined;
-    let status = await this.call(request);
-    if (status.transferId !== request.transferId || status.totalBytes !== request.totalBytes || !Number.isSafeInteger(status.nextOffset) || status.nextOffset < 0 || status.nextOffset > (request.totalBytes || 0)) throw new Error('Invalid upload acknowledgement');
+    let status: UploadStatus;
+    try { status = await this.call(request); }
+    catch (error) {
+      if (!current() || pending.targetId !== this.target()) throw error as Error;
+      request.action = 'status';
+      status = await this.call(request);
+    }
     while (!status.completed && status.nextOffset < (request.totalBytes || 0)) {
       if (!current() || pending.targetId !== this.target()) return;
       const offset = status.nextOffset;
@@ -79,9 +90,17 @@ export class WorkspaceFileUploadClient {
       progress(status.nextOffset, request.totalBytes || 0);
     }
     if (!current() || pending.targetId !== this.target()) return;
-    request.action = 'finish'; request.contentBase64 = undefined;
-    status = await this.call(request);
-    if (!status.completed) throw new Error('Runtime did not complete the file upload');
+    if (!status.completed) {
+      request.action = 'finish'; request.contentBase64 = undefined;
+      try { status = await this.call(request); }
+      catch (error) {
+        if (!current() || pending.targetId !== this.target()) throw error as Error;
+        request.action = 'status';
+        status = await this.call(request);
+        if (!status.completed) throw error as Error;
+      }
+    }
+    if (!status.completed || status.nextOffset !== request.totalBytes) throw new Error('Runtime did not complete the file upload');
     await fs.close(pending.file); if (this.pending === pending) this.pending = undefined;
   }
   async cancel(): Promise<void> {

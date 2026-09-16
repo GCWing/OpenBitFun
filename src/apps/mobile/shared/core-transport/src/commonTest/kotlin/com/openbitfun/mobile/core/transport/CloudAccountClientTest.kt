@@ -14,6 +14,10 @@ import io.ktor.client.request.HttpRequestData
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.encodeToJsonElement
@@ -194,6 +198,73 @@ class CloudAccountClientTest {
 
         assertEquals(RelayFailure.RelayUnavailable(500), error.failure)
         assertEquals(CloudAccountFailure.RELAY_UNAVAILABLE, (error.cause as CloudAccountException).failure)
+    }
+
+    @Test
+    fun sessionGrantRetriesTransientFailureButStopsAtAuthenticationFailure() = runTest {
+        var calls = 0
+        val failures = mutableListOf<Throwable>()
+        val client = rpcClient(DeviceIdentity.publicKey(ByteArray(32) { 11 })) { _, _ ->
+            calls++
+            throw CloudAccountException(if (calls == 1) CloudAccountFailure.TIMEOUT else CloudAccountFailure.AUTHENTICATION)
+        }
+        val error = assertFailsWith<CloudAccountException> {
+            client.subscribeSession("http://192.168.1.2:9700", CloudAccountSession("token-1", "user-1", ByteArray(32)),
+                "desktop-1", "session", EmptyReplica(), { failures += it }, {})
+        }
+        assertEquals(CloudAccountFailure.AUTHENTICATION, error.failure)
+        assertEquals(2, calls)
+        assertEquals(listOf(CloudAccountFailure.TIMEOUT), failures.map { (it as CloudAccountException).failure })
+    }
+
+    @Test
+    fun cancellingSessionGrantBackoffPreventsAnotherRequest() = runTest {
+        var calls = 0
+        val entered = CompletableDeferred<Unit>()
+        val client = rpcClient(DeviceIdentity.publicKey(ByteArray(32) { 11 })) { _, _ ->
+            calls++
+            entered.complete(Unit)
+            throw CloudAccountException(CloudAccountFailure.NETWORK)
+        }
+        val job = launch {
+            client.subscribeSession("http://192.168.1.2:9700", CloudAccountSession("token-1", "user-1", ByteArray(32)),
+                "desktop-1", "session", EmptyReplica(), {}, {})
+        }
+        entered.await()
+        assertEquals(1, calls)
+        job.cancelAndJoin()
+        advanceUntilIdle()
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun sessionGrantRecoversAndOnlyRepeatsTheReadCommand() = runTest {
+        var calls = 0
+        val master = ByteArray(32)
+        val peerSecret = ByteArray(32) { 11 }
+        val key = DeviceIdentity.messageKey(peerSecret, DeviceIdentity.publicKey(master))
+        val client = rpcClient(DeviceIdentity.publicKey(peerSecret)) { _, params ->
+            val envelope = RelayJson.decodeFromJsonElement(EncryptedPayload.serializer(), params)
+            val plain = CloudAccountCipher.decrypt(Base64.Default.decode(envelope.encryptedData), key,
+                Base64.Default.decode(envelope.nonce)).decodeToString()
+            assertEquals("get_session_key", RelayJson.decodeFromString(RemoteCommand.serializer(), plain).cmd)
+            if (++calls == 1) throw CloudAccountException(CloudAccountFailure.TIMEOUT)
+            val nonce = ByteArray(12) { 20 }
+            val response = """{"resp":"session_key","session_id":"session","relay_session_id":"opaque","key":"${Base64.Default.encode(ByteArray(32))}"}"""
+            val encrypted = CloudAccountCipher.encrypt(response.encodeToByteArray(), key, nonce)
+            RelayJson.encodeToJsonElement(EncryptedPayload.serializer(),
+                EncryptedPayload(Base64.Default.encode(encrypted), Base64.Default.encode(nonce)))
+        }
+        client.subscribeSession("http://192.168.1.2:9700", CloudAccountSession("token-1", "user-1", master),
+            "desktop-1", "session", EmptyReplica(), {}, {})
+        assertEquals(2, calls)
+    }
+
+    private class EmptyReplica : SessionStreamReplica {
+        override suspend fun eventIds() = emptyList<String>()
+        override suspend fun cursor() = 0L
+        override suspend fun fragments(eventId: String) = emptyList<String>()
+        override suspend fun commit(fragments: List<String>, cursor: Long) {}
     }
 
     private class FakeRpc(private val reply: suspend (String, JsonElement) -> JsonElement) : AccountRpcConnection {

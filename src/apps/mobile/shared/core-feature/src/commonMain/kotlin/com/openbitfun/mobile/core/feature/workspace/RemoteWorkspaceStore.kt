@@ -85,7 +85,8 @@ public class RemoteWorkspaceStore internal constructor(
                     }
                     updateReady { it.copy(workspaces = recent.workspaces.map { item ->
                         RecentWorkspace(item.path.orEmpty(), item.name ?: basename(item.path.orEmpty()), item.lastOpened, item.workspaceKind.orEmpty(), item.remoteSshHost, item.remoteConnectionId)
-                    }, assistants = assistants.assistants.map { item -> WorkspaceAssistant(item.path, item.name, item.assistantId) }, loadFailure = false) }
+                    }, assistants = assistants.assistants.map { item -> WorkspaceAssistant(item.path, item.name, item.assistantId) },
+                        catalog = recent.sidebarCatalog(assistants.assistants.map { item -> WorkspaceAssistant(item.path, item.name, item.assistantId) }), loadFailure = false) }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Throwable) { updateReady { it.copy(loadFailure = true) } }
             }
@@ -101,6 +102,14 @@ public class RemoteWorkspaceStore internal constructor(
     private var work: Job? = null
     private var previewWork: Job? = null
     private var downloadWork: Job? = null
+    private data class DownloadBinding(
+        val target: FilePreviewTarget,
+        val workspacePath: String?,
+        val connectionId: String?,
+        val generation: Long,
+        val stopVersion: Long,
+    )
+    private var downloadBinding: DownloadBinding? = null
     private var loadGeneration: Long = 0
     private var targetEpoch: Int = 0
     private var previewGeneration: Long = 0
@@ -156,6 +165,16 @@ public class RemoteWorkspaceStore internal constructor(
             }
             is RemoteWorkspaceIntent.SortFiles -> files.sort(intent.sort)
             RemoteWorkspaceIntent.CloseFileEditor -> files.closeFile()
+            is RemoteWorkspaceIntent.OpenDeviceTools -> openDeviceTools(intent.path, intent.connectionId)
+            is RemoteWorkspaceIntent.SelectDeviceToolsPanel -> updateReady { it.copy(deviceTools = it.deviceTools.copy(panel = intent.panel)) }
+            RemoteWorkspaceIntent.CloseDeviceTools -> {
+                deviceToolGeneration++; deviceToolAction?.cancel()
+                updateReady { it.copy(deviceTools = it.deviceTools.copy(visible = false, busy = false)) }
+            }
+            RemoteWorkspaceIntent.StartDeviceToolsTerminal -> {
+                val tools = (_state.value as? RemoteWorkspaceUiState.Ready)?.deviceTools
+                if (tools != null && tools.visible && !tools.busy && !tools.failed && tools.path.isNotEmpty()) terminal.open(tools.path, tools.connectionId)
+            }
             is RemoteWorkspaceIntent.OpenDeviceFiles -> openDeviceTool(intent.path, intent.remoteConnectionId, false)
             is RemoteWorkspaceIntent.OpenDeviceTerminal -> openDeviceTool(intent.path, intent.remoteConnectionId, true)
             is RemoteWorkspaceIntent.BrowseFiles -> {
@@ -174,6 +193,10 @@ public class RemoteWorkspaceStore internal constructor(
             is RemoteWorkspaceIntent.RenameFile -> files.renameFile(intent.path)
             RemoteWorkspaceIntent.DeleteFile -> files.deleteFile()
             is RemoteWorkspaceIntent.CreateDirectory -> files.createDirectory(intent.path)
+            is RemoteWorkspaceIntent.UploadFileEntry -> files.uploadEntry(intent.name, intent.source)
+            is RemoteWorkspaceIntent.CreateFileEntry -> files.createEntry(intent.name, intent.directory)
+            is RemoteWorkspaceIntent.RenameFileEntry -> files.renameEntry(intent.path, intent.name)
+            is RemoteWorkspaceIntent.DeleteFileEntry -> files.deleteEntry(intent.path)
             RemoteWorkspaceIntent.OpenTerminal -> {
                 if (terminalObserver == null) terminalObserver = scope.launch { terminal.state.collect { value -> updateReady { it.copy(terminal = value) } } }
                 val selected = (_state.value as? RemoteWorkspaceUiState.Ready)?.selected
@@ -182,11 +205,13 @@ public class RemoteWorkspaceStore internal constructor(
             }
             is RemoteWorkspaceIntent.ResizeTerminal -> terminal.resize(intent.cols, intent.rows)
             RemoteWorkspaceIntent.CloseTerminal -> terminal.close()
+            RemoteWorkspaceIntent.ReopenTerminal -> terminal.reopen()
             is RemoteWorkspaceIntent.WriteTerminal -> terminal.write(intent.data)
             is RemoteWorkspaceIntent.SelectWorkspace -> selectWorkspace(intent)
             is RemoteWorkspaceIntent.SelectAssistant -> selectAssistant(intent.path)
             is RemoteWorkspaceIntent.OpenFile -> resolveAndOpenFile(intent)
             is RemoteWorkspaceIntent.DownloadFile -> resolveAndDownloadFile(intent)
+            RemoteWorkspaceIntent.RetryDownload -> retryDownload()
             is RemoteWorkspaceIntent.DownloadSaved -> finishDownload(intent.reference, true)
             is RemoteWorkspaceIntent.DownloadSaveFailed -> finishDownload(intent.reference, false)
             RemoteWorkspaceIntent.DismissPreview -> {
@@ -198,6 +223,8 @@ public class RemoteWorkspaceStore internal constructor(
     }
 
     public fun stop() {
+        updateReady { it.copy(deviceTools = DeviceToolsUiState()) }
+        downloadBinding = null
         deviceToolGeneration++; deviceToolAction?.cancel()
         directoryPicker.reset(); directoryPickerObserver?.cancel(); directoryPickerObserver = null; fileWorkspace = null
         catalogSubscription?.cancel(); catalogRefresh?.cancel()
@@ -228,7 +255,7 @@ public class RemoteWorkspaceStore internal constructor(
     }
 
     /** Device-directory catalog request; it must not depend on the desktop's active workspace. */
-    internal suspend fun directoryCatalog(): List<RecentWorkspace> = coroutineScope {
+    internal suspend fun directoryCatalog(): WorkspaceCatalogUiState = coroutineScope {
         val recentDeferred = async {
             transport.send<RecentWorkspaceListResponse>(RemoteCommand(cmd = "list_recent_workspaces"))
         }
@@ -257,7 +284,7 @@ public class RemoteWorkspaceStore internal constructor(
                 // The remote catalog remains authoritative when its optional cache is unavailable.
             }
         }
-        mergedCatalog(loadedWorkspaces, loadedAssistants)
+        recent.sidebarCatalog(loadedAssistants)
     }
 
     private fun load() {
@@ -329,7 +356,7 @@ public class RemoteWorkspaceStore internal constructor(
                                 busy = false,
                                 download = RemoteFileDownloadUiState.None,
                                 loadFailure = false,
-                            )
+                            ).copy(catalog = recent.sidebarCatalog(loadedAssistants))
                             if (catalogDirty && catalogRefresh?.isActive != true) refreshCatalog()
                             try {
                                 val connections = transport.send<SavedRuntimeConnectionsResponse>(RemoteCommand(
@@ -369,7 +396,9 @@ public class RemoteWorkspaceStore internal constructor(
     private fun selectWorkspace(intent: RemoteWorkspaceIntent.SelectWorkspace) {
         val normalized = intent.path.trim()
         if (normalized.isEmpty()) return
-        val candidates = (_state.value as? RemoteWorkspaceUiState.Ready)?.workspaces.orEmpty().filter { it.path == normalized }
+        val candidates = if (intent.inferSavedIdentity) {
+            (_state.value as? RemoteWorkspaceUiState.Ready)?.workspaces.orEmpty().filter { it.path == normalized }
+        } else emptyList()
         if (intent.remoteConnectionId == null && intent.remoteSshHost == null && candidates.size > 1) {
             failRetainingCache()
             return
@@ -531,16 +560,39 @@ public class RemoteWorkspaceStore internal constructor(
         downloadFile(target)
     }
 
-    private fun openDeviceTool(path: String, connectionId: String?, terminalTool: Boolean) {
+    private fun bindTerminal(location: String, connectionId: String?) {
+        terminalObserver?.cancel()
+        terminal = workspaceTerminals.getOrPut(location to connectionId) { RuntimeTerminalStore(scope, transport, relayStreams) }
+        updateReady { it.copy(terminal = terminal.state.value) }
+        terminalObserver = scope.launch { terminal.state.collect { value -> updateReady { it.copy(terminal = value) } } }
+    }
+
+    private fun openDeviceTools(path: String, connectionId: String?) {
+        val ready = _state.value as? RemoteWorkspaceUiState.Ready ?: return
+        // The editor must be closed through its discard/save flow before changing providers.
+        if (ready.deviceTools.visible && ready.files.file != null) return
+        val panel = if (ready.deviceTools.visible) ready.deviceTools.panel else DeviceToolsPanel.FILES
+        updateReady { it.copy(deviceTools = DeviceToolsUiState(true, panel, "", connectionId, true, false)) }
+        openDeviceTool(path, connectionId, false, unifiedTools = true)
+    }
+
+    private fun openDeviceTool(path: String, connectionId: String?, terminalTool: Boolean, unifiedTools: Boolean = false) {
         val ready = _state.value as? RemoteWorkspaceUiState.Ready ?: return
         deviceToolAction?.cancel()
         val generation = ++deviceToolGeneration
+        // Detach the previous provider before validating the replacement: even
+        // a rejected selection must fence late directory responses from it.
+        if (!terminalTool) {
+            filesObserver?.cancel(); filesObserver = null
+            files.reset(); fileWorkspace = null
+            updateReady { it.copy(files = files.state.value.copy(busy = true)) }
+        }
         if (connectionId != null && ready.savedConnections.none { it.id == connectionId }) {
+            if (unifiedTools) updateReady { it.copy(deviceTools = it.deviceTools.copy(busy = false, failed = true)) }
             updateReady { if (terminalTool) it.copy(terminal = RuntimeTerminalUiState(null, "", false, true)) else it.copy(files = RuntimeFilesUiState("", emptyList(), false, null, "", false, true)) }
             return
         }
         if (terminalTool) updateReady { it.copy(terminal = RuntimeTerminalUiState(null, "", true, false)) }
-        else { filesObserver?.cancel(); filesObserver = null; files.reset(); fileWorkspace = null; updateReady { it.copy(files = it.files.copy(busy = true)) } }
         deviceToolAction = scope.launch {
             try {
                 val location = path.takeIf { it.isNotBlank() } ?: if (connectionId != null) "/" else {
@@ -550,12 +602,13 @@ public class RemoteWorkspaceStore internal constructor(
                 }
                 if (generation != deviceToolGeneration) return@launch
                 if (terminalTool) {
-                    terminalObserver?.cancel()
-                    terminal = workspaceTerminals.getOrPut(location to connectionId) { RuntimeTerminalStore(scope, transport, relayStreams) }
-                    updateReady { it.copy(terminal = terminal.state.value) }
-                    terminalObserver = scope.launch { terminal.state.collect { value -> updateReady { it.copy(terminal = value) } } }
+                    bindTerminal(location, connectionId)
                     terminal.open(location, connectionId)
                 } else {
+                    if (unifiedTools) {
+                        bindTerminal(location, connectionId)
+                        updateReady { it.copy(deviceTools = it.deviceTools.copy(path = location, busy = false, failed = false)) }
+                    }
                     if (filesObserver == null) filesObserver = scope.launch { files.state.collect { value ->
                         if (value.directory.isNotEmpty() && !value.failed) fileWorkspace = value.directory to connectionId
                         updateReady { it.copy(files = value) }
@@ -565,21 +618,38 @@ public class RemoteWorkspaceStore internal constructor(
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Throwable) {
+                if (generation == deviceToolGeneration && unifiedTools) updateReady { it.copy(deviceTools = it.deviceTools.copy(busy = false, failed = true)) }
                 if (generation == deviceToolGeneration) updateReady { if (terminalTool) it.copy(terminal = RuntimeTerminalUiState(null, "", false, true)) else it.copy(files = it.files.copy(busy = false, failed = true)) }
             }
         }
     }
 
-    private fun downloadFile(target: FilePreviewTarget) {
+    private fun retryDownload() {
+        val failed = (_state.value as? RemoteWorkspaceUiState.Ready)?.download as? RemoteFileDownloadUiState.Failed ?: return
+        val binding = downloadBinding ?: return
+        if (!failed.retryable || failed.target != binding.target ||
+            binding.generation != loadGeneration || binding.stopVersion != _stopVersion.value) return
+        downloadFile(binding.target, binding)
+    }
+
+    private fun downloadFile(target: FilePreviewTarget, previousBinding: DownloadBinding? = null) {
         val current = _state.value as? RemoteWorkspaceUiState.Ready ?: return
         if (current.busy || current.download is RemoteFileDownloadUiState.Loading ||
             current.download is RemoteFileDownloadUiState.AwaitingSave
         ) return
-        if (target.sessionId.isEmpty() && fileWorkspace == null && current.selected?.kind == "remote" && current.selected.remoteConnectionId.isNullOrBlank()) {
+        if (previousBinding == null && target.sessionId.isEmpty() && fileWorkspace == null && current.selected?.kind == "remote" && current.selected.remoteConnectionId.isNullOrBlank()) {
             failDownload(target, "Remote workspace connection identity is unavailable"); return
         }
-        val workspacePath = (fileWorkspace?.first ?: current.selected?.path).takeIf { target.sessionId.isEmpty() }
-        val connectionId = (fileWorkspace?.let { it.second } ?: current.selected?.remoteConnectionId.takeIf { fileWorkspace == null }).takeIf { target.sessionId.isEmpty() }
+        val binding = previousBinding ?: DownloadBinding(
+            target,
+            (fileWorkspace?.first ?: current.selected?.path).takeIf { target.sessionId.isEmpty() },
+            (fileWorkspace?.let { it.second } ?: current.selected?.remoteConnectionId.takeIf { fileWorkspace == null }).takeIf { target.sessionId.isEmpty() },
+            loadGeneration,
+            _stopVersion.value,
+        )
+        downloadBinding = binding
+        val workspacePath = binding.workspacePath
+        val connectionId = binding.connectionId
         downloadWork?.cancel()
         _state.value = current.copy(download = RemoteFileDownloadUiState.Loading(target, 0, 0))
         val downloadGeneration = loadGeneration
@@ -884,13 +954,7 @@ public class RemoteWorkspaceStore internal constructor(
         workspaces: List<RecentWorkspace>,
         assistants: List<WorkspaceAssistant>,
     ): List<RecentWorkspace> {
-        val merged = workspaces.toMutableList()
-        assistants.forEach { assistant ->
-            if (merged.none { it.path == assistant.path }) {
-                merged += RecentWorkspace(assistant.path, assistant.name, "", ASSISTANT_KIND)
-            }
-        }
-        return merged
+        return projectWorkspaceCatalog(workspaces, assistants).workspaces
     }
 
     public companion object {
