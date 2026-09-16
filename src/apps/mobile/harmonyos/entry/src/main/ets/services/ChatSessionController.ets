@@ -1,4 +1,5 @@
-import { PermissionControlOverlay, SessionInteractionMailbox } from './PermissionControlOverlay';
+import { InteractionMailboxStore } from './InteractionMailboxStore';
+import { InteractionMailboxAction, InteractionMailboxState } from '../model/InteractionMailbox';
 import { DurableSessionReducer } from './DurableSessionReducer';
 import { DurableSessionStream, DurableSessionEvent } from './DurableSessionStream';
 import {
@@ -31,10 +32,13 @@ export interface ChatSessionSnapshot {
   /** Exact completed turn whose terminal assistant is now durable. */
   completedTurnId: string;
   hasMoreMessages?: boolean;
+  historyLoading?: boolean;
+  historyFailed?: boolean;
 }
 
 export interface ChatSessionControllerCallbacks {
   onSnapshot: (snapshot: ChatSessionSnapshot) => void;
+  onMailbox?: (state: InteractionMailboxState) => void;
   onError: (error: Object) => void;
   canPoll: (sessionId: string) => boolean;
 }
@@ -47,8 +51,6 @@ export interface ChatSessionControllerOptions {
 
 /** Like Happy's normalized message reducer, history and realtime are one
  * stable-id collection. No separately timed transcript snapshot is merged in. */
-interface MailboxRequest { sessionId: string; }
-interface MailboxArgs { request: MailboxRequest; }
 
 export class ChatSessionController {
   private sessionManager: RemoteSessionManager;
@@ -57,75 +59,88 @@ export class ChatSessionController {
   private cursor: ChatSessionCursor = { pollVersion: 0, knownMessageCount: 0, knownModelCatalogVersion: 0 };
   private stream?: DurableSessionStream;
   private reducer: DurableSessionReducer = new DurableSessionReducer();
-  private controls: PermissionControlOverlay = new PermissionControlOverlay();
+  private mailbox: InteractionMailboxStore;
   private generation: number = 0;
   private stopped: boolean = true;
   private caughtUp: boolean = false;
   private sessionState: string = 'idle';
   private completedTurnId: string = '';
   private hasMoreMessages: boolean = false;
-  private mailboxRead?: Promise<void>;
-  private mailboxVersion: number = 0;
+  private historyLoading: boolean = false;
+  private historyFailed: boolean = false;
+  private modelReadVersion: number = 0;
+  private pendingModelCatalog?: RemoteModelCatalog;
 
   constructor(sessionManager: RemoteSessionManager, callbacks: ChatSessionControllerCallbacks,
     _options?: ChatSessionControllerOptions) {
     this.sessionManager = sessionManager; this.callbacks = callbacks;
+    this.mailbox = new InteractionMailboxStore(sessionManager, (state: InteractionMailboxState): void => { this.callbacks.onMailbox?.(state); });
   }
   start(sessionId: string, cursor: ChatSessionCursor, _activeTurn?: ChatMessage): void {
     if (!this.stopped && this.sessionId === sessionId && this.stream && !this.stream.isClosed()) {
       this.stream.wake(); return;
     }
     this.stop(); this.sessionId = sessionId; this.cursor = cursor;
-    this.reducer = new DurableSessionReducer(); this.controls = new PermissionControlOverlay(); this.stopped = false; this.caughtUp = false;
+    this.reducer = new DurableSessionReducer(); this.mailbox.select(sessionId); this.stopped = false; this.caughtUp = false;
     this.sessionState = 'idle'; this.completedTurnId = ''; this.hasMoreMessages = false;
+    this.historyLoading = false; this.historyFailed = false;
+    this.pendingModelCatalog = undefined;
     const epoch = this.generation;
+    void this.loadInitialModelCatalog(sessionId, epoch);
     try {
       this.stream = this.sessionManager.subscribeSession(sessionId, {
         onEvent: async (event: DurableSessionEvent): Promise<void> => {
           if (!this.current(epoch) || event.session_id !== sessionId) return;
-          if (event.event === 'session-interaction-changed') { await this.refreshMailbox(sessionId, epoch); return; }
-          const controlChanged = this.controls.apply(event);
-          if (!this.reducer.apply(event) && !controlChanged) return;
+          // Mailbox RPCs are independently coalesced and generation-fenced. They
+          // must not delay the serial transcript stream or its durable cursor.
+          if (event.event === 'session-interaction-changed') { void this.mailbox.refresh(); return; }
+          if (!this.reducer.apply(event)) return;
           if (this.caughtUp) this.publish();
         },
-        onResumed: async (): Promise<void> => { await this.refreshMailbox(sessionId, epoch); },
+        onResumed: async (): Promise<void> => { if (this.current(epoch)) void this.mailbox.refresh(); },
         onCaughtUp: async (): Promise<void> => {
           if (!this.current(epoch)) return;
           this.caughtUp = true; this.publish();
         },
         onHistory: (hasMore: boolean): void => { this.hasMoreMessages = hasMore; },
+        onHistoryState: (loading: boolean, failed: boolean): void => {
+          if (!this.current(epoch)) return;
+          this.historyLoading = loading; this.historyFailed = failed;
+          if (this.caughtUp) this.publish();
+        },
         onError: (error: Error): void => { if (this.current(epoch)) this.callbacks.onError(error); }
       });
     } catch (error) { this.callbacks.onError(error); }
   }
+  async refreshModelCatalog(): Promise<void> {
+    if (!this.stopped) await this.loadInitialModelCatalog(this.sessionId, this.generation);
+  }
+  private async loadInitialModelCatalog(sessionId: string, epoch: number): Promise<void> {
+    const version = ++this.modelReadVersion;
+    try {
+      const catalog = await this.sessionManager.getModelCatalog(sessionId);
+      if (!this.current(epoch) || version !== this.modelReadVersion) return;
+      this.pendingModelCatalog = catalog;
+      if (this.caughtUp) this.publish();
+    } catch (error) {
+      if (this.current(epoch) && version === this.modelReadVersion) this.callbacks.onError(error);
+    }
+  }
   stop(_clearActiveTurn: boolean = true): void {
-    this.generation++; this.stopped = true; this.mailboxRead = undefined; this.stream?.close(); this.stream = undefined;
+    this.generation++; this.stopped = true; this.mailbox.select(''); this.stream?.close(); this.stream = undefined;
   }
   loadOlder(): void { this.stream?.loadOlder(); }
   nudge(): void { this.stream?.wake(); }
   updateCursor(cursor: ChatSessionCursor): void { this.cursor = cursor; }
-  updateKnownModelCatalogVersion(version: number): void { this.cursor.knownModelCatalogVersion = version; }
+  updateKnownModelCatalogVersion(version: number): void {
+    this.modelReadVersion++;
+    this.pendingModelCatalog = undefined;
+    this.cursor.knownModelCatalogVersion = version;
+  }
   setKnownMessageCount(count: number): void { this.cursor.knownMessageCount = count; }
   clearActiveTurn(): void { /* Runtime message/state events own turn lifetime. */ }
-  private refreshMailbox(sessionId: string, epoch: number): Promise<void> {
-    this.mailboxVersion++;
-    if (this.mailboxRead) return this.mailboxRead;
-    const read = this.readMailbox(sessionId, epoch).finally(() => { if (this.mailboxRead === read) this.mailboxRead = undefined; });
-    this.mailboxRead = read; return read;
-  }
-  private async readMailbox(sessionId: string, epoch: number): Promise<void> {
-    try {
-      while (this.current(epoch)) {
-        const version = this.mailboxVersion; const revision = this.controls.revision;
-        const args: MailboxArgs = { request: { sessionId: sessionId } };
-        const pending = await this.sessionManager.hostInvoke<SessionInteractionMailbox>('get_session_interaction_mailbox', args);
-        if (!this.current(epoch)) return;
-        if (version !== this.mailboxVersion || revision !== this.controls.revision) continue;
-        this.controls.hydrateMailbox(pending);
-        if (this.caughtUp) this.publish();
-        return;
-      }
-    } catch (error) { if (this.current(epoch)) this.callbacks.onError(error); }
+  async dispatchMailbox(action: InteractionMailboxAction): Promise<void> {
+    if (!this.stopped && action.sessionId === this.sessionId) await this.mailbox.dispatch(action);
   }
   private current(epoch: number): boolean { return epoch === this.generation && !this.stopped; }
   async pollNow(): Promise<void> { this.stream?.wake(); }
@@ -133,7 +148,7 @@ export class ChatSessionController {
     if (this.stopped || !this.callbacks.canPoll(this.sessionId)) return;
     const persisted: ChatMessage[] = [];
     let active: ChatMessage | undefined = undefined;
-    this.controls.decorate(this.reducer.messages()).forEach((message: ChatMessage) => {
+    this.reducer.messages().forEach((message: ChatMessage) => {
       if (message.role === 'assistant' && (message.status === 'active' || message.status === 'running')) active = message;
       else {
         persisted.push(message);
@@ -141,11 +156,15 @@ export class ChatSessionController {
       }
     });
     this.cursor.knownMessageCount = persisted.length;
+    const catalog = this.pendingModelCatalog;
+    this.pendingModelCatalog = undefined;
+    if (catalog) this.cursor.knownModelCatalogVersion = catalog.version || 0;
     this.callbacks.onSnapshot({
-      sessionId: this.sessionId, cursor: this.cursor, changed: true, title: '',
+      sessionId: this.sessionId, cursor: this.cursor, changed: true, title: '', modelCatalog: catalog,
       sessionState: active ? 'active' : this.sessionState, newMessages: [],
       activeTurn: active, messageSnapshot: persisted, shouldSyncAfterTurnEnded: false,
-      historyRewritten: false, completedTurnId: this.completedTurnId, hasMoreMessages: this.hasMoreMessages
+      historyRewritten: false, completedTurnId: this.completedTurnId, hasMoreMessages: this.hasMoreMessages,
+      historyLoading: this.historyLoading, historyFailed: this.historyFailed
     });
   }
 }

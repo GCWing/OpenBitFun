@@ -191,6 +191,10 @@
     {
       "name": "welcome_secondary",
       "value": "#B9BCB9"
+    },
+    {
+      "name": "status_warning",
+      "value": "#FF8C00"
     }
   ]
 }

@@ -220,7 +220,7 @@ class ToolStatusRowTest {
             ToolStatusList(
                 tools = listOf(readTool("a", "One.kt"), readTool("b", "Two.kt")),
                 enabled = true,
-                onApprove = {},
+                onApprove = { _, _ -> },
                 onReject = { _, _ -> },
                 onCancel = { _, _ -> },
                 onAnswer = { _, _ -> },

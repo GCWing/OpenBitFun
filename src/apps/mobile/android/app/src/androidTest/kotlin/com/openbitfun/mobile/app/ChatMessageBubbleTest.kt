@@ -229,7 +229,7 @@ class ChatMessageBubbleTest {
         ChatMessageBubble(
             row = row,
             enabled = true,
-            onApproveTool = {},
+            onApproveTool = { _, _ -> },
             onRejectTool = { _, _ -> },
             onCancelTool = { _, _ -> },
             onAnswerTool = { _, _ -> },

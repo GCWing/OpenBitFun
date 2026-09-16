@@ -26,6 +26,54 @@ import kotlin.test.assertContentEquals
 @OptIn(ExperimentalCoroutinesApi::class)
 class RemoteWorkspaceStoreTest {
     @Test
+    fun rejectedProviderDoesNotPublishPreviousDirectoryResponse() = runTest {
+        val base = FakeWorkspaceTransport()
+        val response = CompletableDeferred<Unit>()
+        val transport = object : RemoteCommandTransport {
+            override suspend fun <T : CommandStatus> send(deserializer: DeserializationStrategy<T>, command: RemoteCommand, timeoutMs: Long): T {
+                if (command.command == "get_directory_children_paginated") {
+                    withContext(NonCancellable) { response.await() }
+                    return RelayJson.decodeFromString(deserializer,
+                        """{"resp":"host_invoke_result","ok":true,"value":{"children":[],"hasMore":false}}""")
+                }
+                return base.send(deserializer, command, timeoutMs)
+            }
+        }
+        val store = RemoteWorkspaceStore.create(this, transport, StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceTools("/previous", null)); runCurrent()
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceTools("/next", "missing-provider")); runCurrent()
+        assertTrue(assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).deviceTools.failed)
+        response.complete(Unit); advanceUntilIdle()
+        val ready = assertIs<RemoteWorkspaceUiState.Ready>(store.state.value)
+        assertTrue(ready.files.failed)
+        assertEquals("", ready.files.directory)
+        store.stop()
+    }
+
+    @Test
+    fun explicitLocalWorkspaceDoesNotInheritAnSshCatalogMatch() = runTest {
+        val base = FakeWorkspaceTransport()
+        val transport = object : RemoteCommandTransport {
+            override suspend fun <T : CommandStatus> send(deserializer: DeserializationStrategy<T>, command: RemoteCommand, timeoutMs: Long): T {
+                if (command.cmd == "list_recent_workspaces") return RelayJson.decodeFromString(deserializer,
+                    """{"resp":"ok","workspaces":[{"path":"/repo","name":"SSH","remote_connection_id":"ssh-saved","remote_ssh_host":"host"}]}""")
+                return base.send(deserializer, command, timeoutMs)
+            }
+        }
+        val store = RemoteWorkspaceStore.create(this, transport, StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        store.dispatch(RemoteWorkspaceIntent.SelectWorkspace("/repo", null, null, false)); advanceUntilIdle()
+        val explicit = base.commands.last { it.cmd == "set_workspace" }
+        assertEquals(null, explicit.remoteConnectionId)
+        assertEquals(null, explicit.remoteSshHost)
+        // Existing callers retain their saved-identity inference behavior.
+        store.dispatch(RemoteWorkspaceIntent.SelectWorkspace("/repo")); advanceUntilIdle()
+        assertEquals("ssh-saved", base.commands.last { it.cmd == "set_workspace" }.remoteConnectionId)
+        store.stop()
+    }
+
+    @Test
     fun deviceToolsUseRuntimeHomeAndExplicitProviderWithoutWorkspaceSelection() = runTest {
         val base = FakeWorkspaceTransport()
         val calls = mutableListOf<RemoteCommand>()
@@ -63,7 +111,32 @@ class RemoteWorkspaceStoreTest {
         store.dispatch(RemoteWorkspaceIntent.OpenDeviceTerminal("/repo", null)); advanceUntilIdle()
         store.dispatch(RemoteWorkspaceIntent.OpenDeviceTerminal("/repo", "saved-1")); advanceUntilIdle()
         assertEquals(2, terminalCount)
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceTools("/unified", "saved-1")); advanceUntilIdle()
+        var ready = assertIs<RemoteWorkspaceUiState.Ready>(store.state.value)
+        assertTrue(ready.deviceTools.visible)
+        assertEquals(DeviceToolsPanel.FILES, ready.deviceTools.panel)
+        assertEquals("/unified", ready.deviceTools.path)
+        assertEquals("saved-1", ready.deviceTools.connectionId)
+        assertEquals(null, ready.terminal.sessionId)
+        store.dispatch(RemoteWorkspaceIntent.SelectDeviceToolsPanel(DeviceToolsPanel.TERMINAL)); advanceUntilIdle()
+        assertEquals(2, terminalCount, "Selecting the terminal tab must not create a PTY")
+        store.dispatch(RemoteWorkspaceIntent.StartDeviceToolsTerminal); advanceUntilIdle()
+        val terminalId = assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).terminal.sessionId
+        assertEquals(3, terminalCount)
+        store.dispatch(RemoteWorkspaceIntent.SelectDeviceToolsPanel(DeviceToolsPanel.FILES)); advanceUntilIdle()
+        assertEquals(terminalId, assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).terminal.sessionId)
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceTools("/unified", null)); advanceUntilIdle()
+        assertEquals(null, assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).terminal.sessionId)
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceTools("/unified", "saved-1")); advanceUntilIdle()
+        assertEquals(terminalId, assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).terminal.sessionId)
+        assertEquals(3, terminalCount, "Returning to a location reuses its PTY")
+        store.dispatch(RemoteWorkspaceIntent.CloseDeviceTools); advanceUntilIdle()
+        ready = assertIs<RemoteWorkspaceUiState.Ready>(store.state.value)
+        assertFalse(ready.deviceTools.visible)
+        assertEquals(terminalId, ready.terminal.sessionId)
+        assertFalse(calls.any { it.cmd == "set_workspace" })
         store.stop()
+        assertFalse(assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).deviceTools.visible)
     }
 
     @Test
@@ -600,6 +673,59 @@ class RemoteWorkspaceStoreTest {
         assertIs<RemoteFilePreviewUiState.Failed>(assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).preview)
     }
 
+    @Test fun workspaceDownloadRetryRetainsOriginalSshScopeWithoutAChat() = runTest {
+        val transport = FakeWorkspaceTransport(downloadChunks = true).apply { savedConnection = "saved-ssh" }
+        val store = RemoteWorkspaceStore.create(this, transport, StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        store.dispatch(RemoteWorkspaceIntent.DownloadFile("/repo/main.rs", "main.rs", "")); advanceUntilIdle()
+        val first = assertIs<RemoteFileDownloadUiState.AwaitingSave>(assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).download)
+        store.dispatch(RemoteWorkspaceIntent.DownloadSaveFailed(first.target.path))
+        // Device tools may move to another location while the export error is visible.
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceFiles("/other", null)); advanceUntilIdle()
+        transport.commands.clear()
+        store.dispatch(RemoteWorkspaceIntent.RetryDownload); advanceUntilIdle()
+        val retried = assertIs<RemoteFileDownloadUiState.AwaitingSave>(assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).download)
+        assertEquals(first.target, retried.target)
+        val reads = transport.commands.filter { it.cmd in setOf("get_file_info", "read_file_chunk") }
+        assertEquals(3, reads.size)
+        assertTrue(reads.all { it.sessionId == null && it.workspacePath == "/repo" && it.remoteConnectionId == "saved-ssh" })
+        store.dispatch(RemoteWorkspaceIntent.DownloadSaveFailed(retried.target.path))
+        store.stop()
+        transport.commands.clear()
+        store.dispatch(RemoteWorkspaceIntent.RetryDownload); advanceUntilIdle()
+        assertTrue(transport.commands.isEmpty(), "A stopped device must not accept an old retry")
+    }
+
+    @Test fun deviceLocalDownloadDoesNotInheritSelectedSshWorkspace() = runTest {
+        val transport = FakeWorkspaceTransport(downloadChunks = true).apply { savedConnection = "saved-ssh" }
+        val store = RemoteWorkspaceStore.create(this, transport, StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceFiles("/repo", null)); advanceUntilIdle()
+        assertFalse(assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).files.failed)
+        transport.commands.clear()
+        store.dispatch(RemoteWorkspaceIntent.DownloadFile("/repo/main.rs", "main.rs", "")); advanceUntilIdle()
+        val download = assertIs<RemoteFileDownloadUiState.AwaitingSave>(assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).download)
+        val reads = transport.commands.filter { it.cmd in setOf("get_file_info", "read_file_chunk") }
+        assertEquals(3, reads.size)
+        assertTrue(reads.all { it.sessionId == null && it.workspacePath == "/repo" && it.remoteConnectionId == null })
+        store.dispatch(RemoteWorkspaceIntent.DownloadSaved(download.target.path)); store.stop()
+    }
+
+    @Test fun deviceSshDownloadDoesNotInheritSelectedLocalWorkspace() = runTest {
+        val transport = FakeWorkspaceTransport(downloadChunks = true)
+        val store = RemoteWorkspaceStore.create(this, transport, StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceFiles("/", "saved-1")); advanceUntilIdle()
+        assertFalse(assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).files.failed)
+        transport.commands.clear()
+        store.dispatch(RemoteWorkspaceIntent.DownloadFile("/tmp/main.rs", "main.rs", "")); advanceUntilIdle()
+        val download = assertIs<RemoteFileDownloadUiState.AwaitingSave>(assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).download)
+        val reads = transport.commands.filter { it.cmd in setOf("get_file_info", "read_file_chunk") }
+        assertEquals(3, reads.size)
+        assertTrue(reads.all { it.sessionId == null && it.workspacePath == "/" && it.remoteConnectionId == "saved-1" })
+        store.dispatch(RemoteWorkspaceIntent.DownloadSaved(download.target.path)); store.stop()
+    }
+
     @Test fun workspaceDownloadCapturesSavedConnectionForEveryChunk() = runTest {
         val transport = FakeWorkspaceTransport(downloadChunks = true).apply { savedConnection = "saved-ssh" }
         val store = RemoteWorkspaceStore.create(this, transport, StandardTestDispatcher(testScheduler))
@@ -800,7 +926,9 @@ private class FakeWorkspaceTransport(
         commands += command
         commandGates[command.cmd]?.await()
         val json = when (command.cmd) {
-            "host_invoke" -> """{"resp":"host_invoke_result","ok":true,"value":[{"id":"saved-1","name":"Saved host","host":"host"}]}"""
+            "host_invoke" -> if (command.command == "get_directory_children_paginated") {
+                """{"resp":"host_invoke_result","ok":true,"value":{"children":[],"hasMore":false}}"""
+            } else """{"resp":"host_invoke_result","ok":true,"value":[{"id":"saved-1","name":"Saved host","host":"host"}]}"""
             "list_recent_workspaces" ->
                 """{"resp":"ok","workspaces":[{"path":"/repo","name":"Repo","last_opened":"2026-08-09"}]}"""
             "list_assistants" ->

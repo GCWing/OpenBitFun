@@ -129,3 +129,162 @@ test('latest page beginning inside a fragmented event fetches its prefix', async
     assert.equal(h.applied[0].payload.id, 'split');
   } finally { stream.close(); }
 });
+
+test('backward pagination rejects a repeated fragment page instead of looping', async () => {
+  const h = harness([{ session_id: 'session', event: 'session-record', payload: { id: 'split' } }]);
+  let reads = 0;
+  h.transport.readBefore = async () => {
+    if (++reads > 2) throw Error('Unexpected additional history read');
+    return { messages: [h.pages[1]], hasMore: true };
+  };
+  const stream = new DurableSessionStream('session', h.transport, h.callbacks);
+  try {
+    await settle(() => h.errors.length === 1);
+    assert.equal(reads, 2);
+    assert.match(h.errors[0].message, /pagination did not advance/);
+    assert.deepEqual(h.applied, []);
+  } finally { stream.close(); }
+});
+
+test('failure in a fragmented next record resumes after the last committed event without duplicating it', async () => {
+  const h = harness([
+    { session_id: 'session', event: 'session-record', payload: { id: 'committed' } },
+    { session_id: 'session', event: 'session-record', payload: { id: 'interrupted' } },
+  ]);
+  const cursors = [];
+  const read = h.transport.read;
+  let failOnce = true;
+  h.transport.read = async (id, after) => {
+    cursors.push(after);
+    if (after === 3 && failOnce) { failOnce = false; throw new Error('Connection interrupted between fragments'); }
+    return read(id, after);
+  };
+  const stream = new DurableSessionStream('session', h.transport, h.callbacks);
+  try {
+    await settle(() => h.errors.length === 1);
+    assert.deepEqual(h.applied.map(event => event.payload.id), ['committed']);
+    h.reconnect();
+    await settle(() => h.caught === 1);
+    assert.deepEqual(cursors, [0, 1, 2, 3, 2, 3]);
+    assert.deepEqual(h.applied.map(event => event.payload.id), ['committed', 'interrupted']);
+  } finally { stream.close(); }
+});
+
+test('live records queued during backward history resume without losing the forward cursor', async () => {
+  const h = harness([
+    { session_id: 'session', event: 'session-record', payload: { id: 'old' } },
+    { session_id: 'session', event: 'session-record', payload: { id: 'new' } }
+  ]);
+  let releaseHistory;
+  let historyStarted = false;
+  const historyGate = new Promise(resolve => { releaseHistory = resolve; });
+  h.transport.readBefore = async (_id, before) => {
+    if (before !== Number.MAX_SAFE_INTEGER) { historyStarted = true; await historyGate; }
+    const rows = h.pages.filter(row => row.seq < before).reverse();
+    return { messages: rows.slice(0, 2), hasMore: rows.length > 2 };
+  };
+  const stream = new DurableSessionStream('session', h.transport, h.callbacks);
+  try {
+    await settle(() => h.caught === 1);
+    stream.loadOlder(); await settle(() => historyStarted);
+    const incoming = harness([{ session_id: 'session', event: 'session-record', payload: { id: 'live-final' } }]);
+    for (const row of incoming.pages) {
+      const fragment = JSON.parse(row.content.c); fragment.eventId = 'live-final';
+      const next = { seq: row.seq + 4, content: { t: 'encrypted', c: JSON.stringify(fragment) } };
+      h.pages.push(next); h.deliver(next);
+    }
+    releaseHistory();
+    await settle(() => h.applied.length === 3);
+    assert.deepEqual(h.applied.map(event => event.payload.id), ['new', 'old', 'live-final']);
+    h.reconnect(); await settle(() => h.caught >= 3);
+    assert.equal(h.applied.length, 3);
+    assert.deepEqual(h.errors, []);
+  } finally { releaseHistory(); stream.close(); }
+});
+
+test('history failure exposes retry state and manual retry resumes the same cursor', async () => {
+  const h = harness([
+    { session_id: 'session', event: 'session-record', payload: { id: 'old' } },
+    { session_id: 'session', event: 'session-record', payload: { id: 'new' } }
+  ]);
+  const states = [], cursors = [];
+  let reject = true;
+  h.callbacks.onHistoryState = (loading, failed) => states.push([loading, failed]);
+  h.transport.readBefore = async (_id, before) => {
+    cursors.push(before);
+    if (before !== Number.MAX_SAFE_INTEGER && reject) throw new Error('History request failed');
+    const rows = h.pages.filter(row => row.seq < before).reverse();
+    return { messages: rows.slice(0, 2), hasMore: rows.length > 2 };
+  };
+  const stream = new DurableSessionStream('session', h.transport, h.callbacks);
+  try {
+    await settle(() => h.caught === 1);
+    stream.loadOlder(); await settle(() => h.errors.length === 1);
+    assert.deepEqual(states.at(-1), [false, true]);
+    assert.deepEqual(h.applied.map(event => event.payload.id), ['new']);
+    reject = false;
+    stream.loadOlder();
+    assert.deepEqual(states.at(-1), [true, false]);
+    await settle(() => h.applied.length === 2 && states.at(-1)[0] === false);
+    assert.deepEqual(states.at(-1), [false, false]);
+    assert.deepEqual(cursors, [Number.MAX_SAFE_INTEGER, 3, 3]);
+    assert.deepEqual(h.applied.map(event => event.payload.id), ['new', 'old']);
+  } finally { stream.close(); }
+});
+
+test('older prefetch starts after the latest page and coalesces manual requests', async () => {
+  const timers = new Map(); let timerId = 0;
+  const module = {};
+  new Function('require', 'exports', 'setTimeout', 'clearTimeout', compiled)(
+    () => ({ Encoding }), module,
+    (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id; },
+    id => timers.delete(id));
+  const h = harness([
+    { session_id: 'session', event: 'session-record', payload: { id: 'old' } },
+    { session_id: 'session', event: 'session-record', payload: { id: 'new' } }
+  ]);
+  const cursors = []; let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  h.transport.readBefore = async (_id, before) => {
+    cursors.push(before);
+    if (before !== Number.MAX_SAFE_INTEGER) await gate;
+    const rows = h.pages.filter(row => row.seq < before).reverse();
+    return { messages: rows.slice(0, 2), hasMore: rows.length > 2 };
+  };
+  const stream = new module.DurableSessionStream('session', h.transport, h.callbacks);
+  try {
+    await settle(() => h.caught === 1);
+    assert.deepEqual(h.applied.map(event => event.payload.id), ['new']);
+    const timer = [...timers.entries()].find(([, value]) => value.delay === 250);
+    assert.ok(timer, 'latest page must schedule older prefetch');
+    timers.delete(timer[0]); timer[1].callback();
+    await settle(() => cursors.length === 2);
+    stream.loadOlder(); stream.loadOlder();
+    assert.equal(cursors.length, 2, 'manual clicks share the background history read');
+    release(); await settle(() => h.applied.length === 2);
+    assert.deepEqual(h.applied.map(event => event.payload.id), ['new', 'old']);
+    assert.equal(timers.size, 0, 'exhausted history must not poll');
+  } finally { release(); stream.close(); }
+});
+
+test('closing a session cancels scheduled history prefetch', async () => {
+  const timers = new Map(); let timerId = 0;
+  const module = {};
+  new Function('require', 'exports', 'setTimeout', 'clearTimeout', compiled)(
+    () => ({ Encoding }), module,
+    (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id; },
+    id => timers.delete(id));
+  const h = harness([{ session_id: 'session', event: 'session-record', payload: { id: 'new' } }]);
+  h.transport.readBefore = async () => ({ messages: h.pages, hasMore: true });
+  const stream = new module.DurableSessionStream('session', h.transport, h.callbacks);
+  try {
+    await settle(() => h.caught === 1);
+    assert.equal(timers.size, 1);
+    const staleCallback = [...timers.values()][0].callback;
+    stream.close();
+    assert.equal(timers.size, 0);
+    staleCallback();
+    assert.equal(h.caught, 1);
+    assert.equal(timers.size, 0);
+  } finally { stream.close(); }
+});

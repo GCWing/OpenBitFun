@@ -6,7 +6,7 @@ export class EncryptedPayload {
   nonce: string = '';
 }
 
-export interface WorkspaceInfo {
+export interface WorkspaceInfo extends RemoteWorkspaceIdentity {
   remoteConnectionId?: string;
   remoteSshHost?: string;
   path: string;
@@ -25,13 +25,19 @@ export interface InitialSyncResult {
   capabilities?: string[];
 }
 
-export interface RecentWorkspaceEntry {
+export interface RecentWorkspaceEntry extends RemoteWorkspaceIdentity {
   remoteConnectionId?: string;
   remoteSshHost?: string;
   path: string;
   name: string;
   lastOpened: string;
   workspaceKind: string;
+}
+
+export interface RemoteWorkspaceIdentity {
+  path: string;
+  remoteConnectionId?: string;
+  remoteSshHost?: string;
 }
 
 export interface RemoteSession {
@@ -44,6 +50,8 @@ export interface RemoteSession {
   messageCount: number;
   workspacePath?: string;
   workspaceName?: string;
+  /** Optional for legacy caches; assigned from the actual scoped listing request. */
+  workspaceIdentity?: RemoteWorkspaceIdentity;
   pinned?: boolean;
   titleGenerated?: boolean;
   /** Stamped by the phone after mapping; the wire payload has no device id. */
@@ -67,6 +75,7 @@ export interface ChatMessage {
 }
 
 export interface SessionSummary {
+  remoteSshHost?: string;
   remoteConnectionId?: string;
   sessionId: string;
   title: string;
@@ -76,6 +85,7 @@ export interface SessionSummary {
 }
 
 export interface CreateSessionOptions {
+  remoteSshHost?: string;
   remoteConnectionId?: string;
   agentType: string;
   title: string;
@@ -105,6 +115,7 @@ export interface SavedRuntimeConnection { id: string; name: string; host: string
 export interface SavedRuntimeConnectionsResponse extends CommandStatusResponse { ok: boolean; value?: SavedRuntimeConnection[]; error?: string; }
 
 export interface RemoteCommand {
+  remote_ssh_host?: string;
   command?: string;
   args?: Object;
   remote_connection_id?: string;
@@ -184,6 +195,7 @@ export interface RecentWorkspaceEntryResponse {
 }
 
 export interface RecentWorkspaceListResponse extends CommandStatusResponse {
+  opened_workspaces?: RecentWorkspaceEntryResponse[] | null;
   workspaces?: RecentWorkspaceEntryResponse[];
 }
 
@@ -288,6 +300,7 @@ export interface SessionListResult {
 }
 
 export interface CreateSessionResponse extends CommandStatusResponse {
+  remote_ssh_host?: string;
   workspace_path?: string;
   remote_connection_id?: string;
   session_id?: string;

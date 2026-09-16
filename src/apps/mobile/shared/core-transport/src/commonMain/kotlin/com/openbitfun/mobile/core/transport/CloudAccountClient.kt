@@ -1,5 +1,6 @@
 package com.openbitfun.mobile.core.transport
 
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.filter
@@ -138,7 +139,7 @@ public class CloudAccountClient internal constructor(
     private val client: HttpClient,
     private val log: TransportLog = TransportLog.None,
     legacyMobileDeviceNames: Set<String> = emptySet(),
-    private val realtimeFactory: (HttpClient, String, String) -> AccountRpcConnection = ::AccountRealtime,
+    private val realtimeFactory: (HttpClient, String, String) -> AccountRpcConnection = { client, url, token -> AccountRealtime(client, url, token, log) },
 ) {
     private class Connection(val url: String, val token: String, val socket: AccountRpcConnection)
     private val realtime = MutableStateFlow<Connection?>(null)
@@ -252,8 +253,25 @@ public class CloudAccountClient internal constructor(
         replica: SessionStreamReplica, onError: (Throwable) -> Unit, onCaughtUp: () -> Unit,
     ): kotlinx.coroutines.flow.Flow<JsonObject> {
         val socket = connection(relayUrl, session.token)
-        val grant = deviceRpc(relayUrl, session, targetDeviceId,
-            RemoteCommand(cmd = "get_session_key", sessionId = sessionId), SessionKeyGrant.serializer(), RELAY_DEFAULT_TIMEOUT_MS)
+        var grant: SessionKeyGrant
+        var retryMs = 1000L
+        while (true) {
+            check(realtime.value?.socket === socket) { "Account changed" }
+            try {
+                grant = deviceRpc(relayUrl, session, targetDeviceId,
+                    RemoteCommand(cmd = "get_session_key", sessionId = sessionId), SessionKeyGrant.serializer(), RELAY_DEFAULT_TIMEOUT_MS)
+                break
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Throwable) {
+                log.warn("session stream grant failed session=$sessionId type=${error::class.simpleName} failure=${(error as? CloudAccountException)?.failure}")
+                if (!isRetryableStreamFailure(error)) throw error
+                // Key retrieval is read-only. Do not extend this policy to user mutations.
+                onError(error)
+                delay(retryMs)
+                retryMs = (retryMs * 2).coerceAtMost(30000)
+            }
+        }
         check(grant.sessionId == sessionId) { "Session key grant binding mismatch" }
         val historyKey = targetDeviceId + ":" + sessionId
         val historyRequests = Channel<CompletableDeferred<Unit>>(Channel.RENDEZVOUS)
@@ -267,7 +285,11 @@ public class CloudAccountClient internal constructor(
                 check(realtime.value?.socket === socket) { "Account changed" }
                 requestWithoutBody(relayUrl, "/v3/sessions/" + encodePathSegment(grant.relaySessionId) + "/messages?before_seq=" + before + "&limit=100",
                     HttpMethod.Get, StreamPage.serializer(), session.token, RELAY_DEFAULT_TIMEOUT_MS)
-            }, olderRequests = historyRequests, onError = onError, onCaughtUp = onCaughtUp, prefetchOlder = sessionId != "@host/catalog").onCompletion {
+            }, olderRequests = historyRequests, onError = { error ->
+                log.warn("session stream read failed session=$sessionId type=${error::class.simpleName} failure=${(error as? CloudAccountException)?.failure}")
+                onError(error)
+            }, onCaughtUp = onCaughtUp, prefetchOlder = sessionId != "@host/catalog").onCompletion { cause ->
+                log.info("session stream ended session=$sessionId cause=${cause?.let { it::class.simpleName } ?: "none"}")
                 if (historyReaders[historyKey] === historyRequests) historyReaders.remove(historyKey)
                 historyRequests.close()
             }

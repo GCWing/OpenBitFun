@@ -155,6 +155,7 @@ internal fun CreateSessionScreen(
     var draft by rememberSaveable { mutableStateOf("") }
     var workspacePath by rememberSaveable { mutableStateOf("") }
     var workspaceConnectionId by rememberSaveable { mutableStateOf<String?>(null) }
+    var workspaceSshHost by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedModelId by rememberSaveable { mutableStateOf<String?>(null) }
     // Not saveable: an open sheet is a finger part-way through a gesture.
     var pickerKind by remember { mutableStateOf<CreateSelectionKind?>(null) }
@@ -173,6 +174,7 @@ internal fun CreateSessionScreen(
     val selectWorkspace: (WorkspaceChoice?) -> Unit = { workspace ->
         workspacePath = workspace?.path.orEmpty()
         workspaceConnectionId = workspace?.remoteConnectionId
+        workspaceSshHost = workspace?.remoteSshHost
     }
 
     val voiceInput = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -281,9 +283,11 @@ internal fun CreateSessionScreen(
                     ) {
                         WorkspacePicker(
                         workspaces = ready?.workspaces.orEmpty().map {
-                            WorkspaceChoice(path = it.path, name = it.displayName, remoteConnectionId = it.remoteConnectionId)
+                            WorkspaceChoice(path = it.path, name = it.displayName, remoteConnectionId = it.remoteConnectionId, remoteSshHost = it.remoteSshHost)
                         },
                         selectedPath = workspacePath,
+                        selectedConnectionId = workspaceConnectionId,
+                        selectedSshHost = workspaceSshHost,
                         showHeader = false,
                         onDismiss = { pickerKind = null },
                         onPick = { path ->
@@ -350,6 +354,7 @@ internal fun CreateSessionScreen(
                             modelId = selectedModelId,
                             workspacePath = workspacePath.takeIf { it.isNotBlank() },
                             remoteConnectionId = workspaceConnectionId,
+                            remoteSshHost = workspaceSshHost,
                         ),
                     )
                     draft = ""
@@ -364,9 +369,11 @@ internal fun CreateSessionScreen(
         ModalBottomSheet(onDismissRequest = { pickerKind = null }) {
             WorkspacePicker(
                 workspaces = ready?.workspaces.orEmpty().map {
-                    WorkspaceChoice(path = it.path, name = it.displayName, remoteConnectionId = it.remoteConnectionId)
+                    WorkspaceChoice(path = it.path, name = it.displayName, remoteConnectionId = it.remoteConnectionId, remoteSshHost = it.remoteSshHost)
                 },
                 selectedPath = workspacePath,
+                selectedConnectionId = workspaceConnectionId,
+                selectedSshHost = workspaceSshHost,
                 showHeader = true,
                 onDismiss = { pickerKind = null },
                 onPick = { path ->
@@ -389,7 +396,7 @@ private const val ASSISTANT_KIND = "assistant"
  * The workspace domain type carries a kind and a timestamp the picker has no use
  * for, and the app layer cannot see `core-domain` anyway.
  */
-private data class WorkspaceChoice(val path: String, val name: String, val remoteConnectionId: String?)
+private data class WorkspaceChoice(val path: String, val name: String, val remoteConnectionId: String?, val remoteSshHost: String?)
 
 /**
  * The tap target that puts the keyboard away.
@@ -487,6 +494,8 @@ private fun DevicePicker(
 private fun WorkspacePicker(
     workspaces: List<WorkspaceChoice>,
     selectedPath: String,
+    selectedConnectionId: String?,
+    selectedSshHost: String?,
     showHeader: Boolean,
     onDismiss: () -> Unit,
     onPick: (WorkspaceChoice?) -> Unit,
@@ -534,7 +543,8 @@ private fun WorkspacePicker(
                 // Two projects can share a name; the path is what tells them
                 // apart, and it is the only place the user can check.
                 subtitle = workspace.path,
-                selected = workspace.path == selectedPath,
+                selected = workspace.path == selectedPath && workspace.remoteConnectionId == selectedConnectionId &&
+                    workspace.remoteSshHost == selectedSshHost,
                 onClick = { onPick(workspace) },
             )
         }

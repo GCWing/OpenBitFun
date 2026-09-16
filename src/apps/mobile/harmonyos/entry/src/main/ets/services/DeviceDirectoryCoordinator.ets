@@ -1,3 +1,4 @@
+import { WorkspaceCatalog, mergeLegacyWorkspaces } from './WorkspaceCatalog';
 import { AssistantEntry, RecentWorkspaceEntry, RemoteSession } from '../model/RemoteModels';
 import { AccountDeviceDirectorySource } from './AccountDeviceDirectory';
 import {
@@ -40,11 +41,11 @@ export class DeviceDirectoryCoordinator {
   }
 
   async loadWorkspaces(deviceId: string): Promise<RecentWorkspaceEntry[]> {
-    const listed = await Promise.all([
-      this.directory.listRecentWorkspaces(deviceId),
-      this.directory.listAssistants(deviceId)
-    ]);
-    return DeviceDirectoryCoordinator.mergeWorkspaces(listed[0], listed[1]);
+    return (await this.loadWorkspaceCatalog(deviceId)).workspaces;
+  }
+
+  async loadWorkspaceCatalog(deviceId: string): Promise<WorkspaceCatalog> {
+    return await this.directory.listWorkspaceCatalog(deviceId);
   }
 
   async loadSessions(
@@ -54,7 +55,7 @@ export class DeviceDirectoryCoordinator {
     const groups = await mapInConcurrentBatches(
       workspaces,
       (entry: RecentWorkspaceEntry): Promise<RemoteSession[]> => {
-        return this.safeSessionsForWorkspace(deviceId, entry.path);
+        return this.safeSessionsForWorkspace(deviceId, entry.path, entry.remoteConnectionId, entry.remoteSshHost);
       },
       this.concurrency
     );
@@ -62,13 +63,13 @@ export class DeviceDirectoryCoordinator {
   }
 
   /** One explicit workspace listing; used by the lazy sidebar disclosure. */
-  async loadWorkspaceSessions(deviceId: string, path: string): Promise<RemoteSession[]> {
-    return stampRemoteSessionsWorkspace(await this.directory.listSessions(deviceId, path), path);
+  async loadWorkspaceSessions(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<RemoteSession[]> {
+    return stampRemoteSessionsWorkspace(await this.directory.listSessions(deviceId, path, remoteConnectionId, remoteSshHost), path, remoteConnectionId, remoteSshHost);
   }
 
-  private async safeSessionsForWorkspace(deviceId: string, path: string): Promise<RemoteSession[]> {
+  private async safeSessionsForWorkspace(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<RemoteSession[]> {
     try {
-      return await this.loadWorkspaceSessions(deviceId, path);
+      return await this.loadWorkspaceSessions(deviceId, path, remoteConnectionId, remoteSshHost);
     } catch (err) {
       // One unreadable workspace is not a reason to lose the other twenty.
       RemoteLogger.warn(`load workspace sessions failed device=${deviceId} path=${path}: ${String(err)}`);
@@ -80,18 +81,6 @@ export class DeviceDirectoryCoordinator {
     recent: RecentWorkspaceEntry[],
     assistants: AssistantEntry[]
   ): RecentWorkspaceEntry[] {
-    const all = recent.slice();
-    assistants.forEach((item: AssistantEntry) => {
-      if (all.some((existing: RecentWorkspaceEntry) => existing.path === item.path)) {
-        return;
-      }
-      all.push({
-        path: item.path,
-        name: item.name,
-        lastOpened: '',
-        workspaceKind: 'assistant'
-      });
-    });
-    return all;
+    return mergeLegacyWorkspaces(recent, assistants);
   }
 }

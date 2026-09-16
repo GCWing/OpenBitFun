@@ -114,6 +114,7 @@ public data class CreateSessionResponse(
     @SerialName("title") val title: String? = null,
     @SerialName("workspace_path") val workspacePath: String? = null,
     @SerialName("remote_connection_id") val remoteConnectionId: String? = null,
+    @SerialName("remote_ssh_host") val remoteSshHost: String? = null,
 ) : CommandStatus {
     /** `session_id` and `id` are the same field under two spellings. */
     public val resolvedSessionId: String? get() = sessionId ?: id

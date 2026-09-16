@@ -49,8 +49,10 @@ export DEVELOPER_DIR="$HOME/Downloads/Xcode.app/Contents/Developer"
 ./Testing/run-pure-swift-tests.sh
 ```
 
-When the framework has not been built yet, generate it with the same compatible
-toolchain before opening the Xcode project:
+After changing shared Kotlin code, regenerate the framework with the same compatible
+toolchain before building the Xcode project. Xcode links the existing XCFramework;
+its build does not rebuild Kotlin. Compiling a Kotlin target alone also does not
+update the XCFramework consumed by this app:
 
 ```bash
 export JAVA_HOME="/Applications/DevEco-Studio.app/Contents/jbr/Contents/Home"

@@ -1,3 +1,4 @@
+import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import {
   ConversationUiPlanTool,
@@ -65,6 +66,7 @@ interface ToolRenderEntry {
 
 @ComponentV2
 export struct ToolStatusList {
+  @Param interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   @Param tools: ConversationUiToolStatus[] = [];
   /** Reasoning that ran between these tools; folded away with them. */
   @Param thinkingParts: ActivityThinkingPart[] = [];
@@ -82,6 +84,7 @@ export struct ToolStatusList {
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
   @Local expanded: boolean = false;
   @Local expandedToolKey: string = '';
+  @Local editingApprovalKey: string = '';
 
   build() {
     Column({ space: 4 }) {
@@ -245,16 +248,27 @@ export struct ToolStatusList {
         }
       }
 
-      if (this.isPendingConfirmation(tool)) {
+      if (this.isPendingConfirmation(tool) && !this.interactionMailbox.ownsToolInteraction(tool.id || '')) {
+        if (this.hasEditableToolInput(tool)) {
+          Row() {
+            Blank()
+            Button(RemoteI18n.t(this.editingApprovalKey === this.toolKey(tool, index) ? 'chat.hideApprovalInput' : 'chat.editApprovalInput'))
+              .fontSize(MobileDesignTypography.labelSmall.size).fontColor(MUTED)
+              .backgroundColor(SOFT).height(32).padding({ left: 8, right: 8 })
+              .enabled(!this.isBusy)
+              .onClick(() => { this.editingApprovalKey = this.editingApprovalKey === this.toolKey(tool, index) ? '' : this.toolKey(tool, index); })
+          }.width('100%')
+        }
         ToolConfirmationPanel({
           toolId: tool.permission_request_id ? `permission:${tool.permission_request_id}` : tool.id || '',
           defaultInputText: this.defaultToolInputText(tool),
-          hasEditableInput: this.hasEditableToolInput(tool),
+          hasEditableInput: this.hasEditableToolInput(tool) && this.editingApprovalKey === this.toolKey(tool, index),
+          isBusy: this.isBusy,
           onApproveTool: this.onApproveTool,
           onRejectTool: this.onRejectTool
         })
       }
-      if (this.isQuestionTool(tool)) {
+      if (this.isQuestionTool(tool) && !this.interactionMailbox.ownsToolInteraction(tool.id || '')) {
         ToolQuestionAnswerPanel({
           toolId: tool.id || '',
           questionsJson: this.questionInputJson(tool),
@@ -262,7 +276,8 @@ export struct ToolStatusList {
           onAnswerQuestion: this.onAnswerQuestion
         })
       }
-      if (this.isRunningTool(tool) || this.isQuestionTool(tool)) {
+      if ((this.isRunningTool(tool) || this.isQuestionTool(tool)) &&
+        !(this.isQuestionTool(tool) && this.interactionMailbox.ownsToolInteraction(tool.id || ''))) {
         Row() {
           Blank()
           Text(RemoteI18n.t('chat.cancelTool'))

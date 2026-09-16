@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 
 class RemoteSidebarPresentationTest {
     @Test
-    fun selectedWorkspaceComesFirstWithoutDuplicatingItsRecentEntry() {
+    fun selectionDoesNotReorderOrRenameHostCatalog() {
         val rows = RemoteSidebarPresentation.workspaces(
             workspaceState = workspaceReady(
                 selected = selected("/repo/b", "Beta"),
@@ -30,22 +30,39 @@ class RemoteSidebarPresentationTest {
             ),
         )
 
-        assertEquals(listOf("/repo/b", "/repo/a"), rows.map { it.path })
-        assertEquals("Beta", rows.first().name)
-        assertTrue(rows.first().selected)
-        assertEquals(listOf("b-1"), rows.first().sessions.map { it.id })
-        assertEquals(listOf("a-1"), rows.last().sessions.map { it.id })
+        assertEquals(listOf("/repo/a", "/repo/b"), rows.map { it.path })
+        assertEquals("Old Beta", rows.last().name)
+        assertTrue(rows.last().selected)
+        assertEquals(listOf("b-1"), rows.last().sessions.map { it.id })
+        assertEquals(listOf("a-1"), rows.first().sessions.map { it.id })
     }
 
     @Test
-    fun sessionWithoutAWorkspacePathBelongsToTheSelectedWorkspace() {
+    fun selectedWorkspaceAndLegacySessionsCannotCreateCatalogRows() {
         val rows = RemoteSidebarPresentation.workspaces(
             workspaceState = workspaceReady(selected("/repo/current", "Current"), emptyList()),
             sessionState = sessionReady(listOf(session("legacy", null, "assistant"))),
         )
 
-        assertEquals(listOf("legacy"), rows.single().sessions.map { it.id })
-        assertEquals("assistant", rows.single().sessions.single().agentType)
+        assertTrue(rows.isEmpty())
+    }
+
+    @Test
+    fun sharedNativeProjectionDistinguishesHostsAndHonorsEmptyOpenedCatalog() {
+        val a = recent("/repo", "A").copy(remoteConnectionId = "saved", remoteSshHost = "host-a")
+        val b = a.copy(name = "B", remoteSshHost = "host-b")
+        val ready = workspaceReady(selected("/repo", "Selected").copy(remoteConnectionId = "saved", remoteSshHost = "host-b"), listOf(a, b))
+        val sessions = listOf(
+            session("a", "/repo", "code").copy(workspaceIdentity = com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity("/repo", "saved", "host-a")),
+            session("b", "/repo", "code").copy(workspaceIdentity = com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity("/repo", "saved", "host-b")),
+            session("legacy", "/repo", "code"),
+        )
+        val rows = RemoteSidebarPresentation.workspacesForSessions(ready, sessions)
+        assertEquals(listOf(false, true), rows.map { it.selected })
+        assertEquals(listOf(listOf("a"), listOf("b")), rows.map { it.sessions.map { row -> row.id } })
+        val empty = ready.copy(catalog = com.openbitfun.mobile.core.feature.workspace.WorkspaceCatalogUiState(
+            emptyList(), com.openbitfun.mobile.core.feature.workspace.WorkspaceCatalogSource.OPENED))
+        assertTrue(RemoteSidebarPresentation.workspacesForSessions(empty, sessions).isEmpty())
     }
 
     private fun workspaceReady(

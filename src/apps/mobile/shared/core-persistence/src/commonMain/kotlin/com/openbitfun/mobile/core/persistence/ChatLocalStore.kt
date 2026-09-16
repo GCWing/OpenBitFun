@@ -140,6 +140,13 @@ public class SqlDelightChatLocalStore public constructor(
 }
 
 @Serializable
+public data class PersistedWorkspaceIdentity(
+    public val path: String = "",
+    public val remoteConnectionId: String? = null,
+    public val remoteSshHost: String? = null,
+)
+
+@Serializable
 public data class PersistedRemoteSession public constructor(
     public val sessionId: String = "",
     public val title: String = "",
@@ -153,6 +160,8 @@ public data class PersistedRemoteSession public constructor(
     public val workspaceName: String? = null,
     /** True until a later server list observes this confirmed-created session id. */
     public val pendingConfirmed: Boolean = false,
+    /** Absent on legacy records; absence must not be interpreted as local ownership. */
+    public val workspaceIdentity: PersistedWorkspaceIdentity? = null,
 )
 
 @Serializable

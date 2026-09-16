@@ -1,5 +1,11 @@
 package com.openbitfun.mobile.core.feature.session
 
+import com.openbitfun.mobile.core.transport.RelayTransportException
+import com.openbitfun.mobile.core.transport.RelayFailure
+import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
+import com.openbitfun.mobile.core.domain.belongsTo
+import com.openbitfun.mobile.core.persistence.PersistedWorkspaceIdentity
+
 import com.openbitfun.mobile.core.feature.relay.HostCatalogNotice
 
 import com.openbitfun.mobile.core.domain.ChatSyncPhase
@@ -29,6 +35,7 @@ import com.openbitfun.mobile.core.protocol.RemoteToolStatusResponse
 import com.openbitfun.mobile.core.protocol.RemoteCommand
 import com.openbitfun.mobile.core.protocol.RemotePermissionMode
 import com.openbitfun.mobile.core.protocol.RemoteModelCatalog
+import com.openbitfun.mobile.core.protocol.isError
 import com.openbitfun.mobile.core.protocol.CommandStatusResponse
 import com.openbitfun.mobile.core.protocol.PermissionModeResponse
 import com.openbitfun.mobile.core.protocol.SetSessionModelResponse
@@ -44,6 +51,7 @@ import com.openbitfun.mobile.core.transport.send
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceIntent
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceStore
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceUiState
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -95,6 +103,7 @@ public class RemoteSessionStore internal constructor(
                         commitSessionPage(page)
                         if (persistenceEnabled && before.query.isEmpty() && before.agentFilter == SessionAgentFilter.ALL) savePersistedSessions(page.sessions, page.hasMore)
                         publishAuthorityReady(latest.copy(sessions = page.sessions, hasMore = page.hasMore))
+                        refreshModelCatalog(invalidated = true)
                         markConnected()
                     }
                 } catch (cancelled: CancellationException) { throw cancelled }
@@ -117,6 +126,9 @@ public class RemoteSessionStore internal constructor(
     private var activeCreateGeneration: Long? = null
     private var authorityRevision: Long = 0
     private var workGeneration: Long = 0
+    private var modelCatalogRefresh: Job? = null
+    private var modelCatalogDirty = false
+    private var permissionRefresh: Job? = null
     private val timelineStore = ChatTimelineStore()
     private val permissionMailbox = PermissionMailboxStore(scope, transport) { mailbox ->
         val ready = _state.value as? RemoteSessionUiState.Ready
@@ -124,6 +136,8 @@ public class RemoteSessionStore internal constructor(
     }
     private var sessionUpdates: Job? = null
     private var work: Job? = null
+    private var historyWork: Job? = null
+    private var historyGeneration = 0L
     private var healthWork: Job? = null
     private var healthGeneration: Long = 0
     private var modelCatalog: RemoteModelCatalog? = null
@@ -148,6 +162,7 @@ public class RemoteSessionStore internal constructor(
      * from the UI — the same shape as `RemoteSessionManager.workspace`.
      */
     private var workspaceConnectionId: String? = null
+    private var workspaceSshHost: String? = null
     private var workspacePath: String = ""
     private var hostCapabilities: List<String> = emptyList()
 
@@ -162,8 +177,8 @@ public class RemoteSessionStore internal constructor(
                 load(current?.query.orEmpty(), current?.agentFilter ?: SessionAgentFilter.ALL)
             RemoteSessionIntent.LoadMore -> loadMore()
             RemoteSessionIntent.LoadOlderMessages -> loadOlderMessages()
-            is RemoteSessionIntent.LoadWorkspaceSessions -> loadWorkspaceSessions(intent.path, false)
-            is RemoteSessionIntent.RetryWorkspaceSessions -> loadWorkspaceSessions(intent.path, true)
+            is RemoteSessionIntent.LoadWorkspaceSessions -> loadWorkspaceSessions(intent.path, false, intent.remoteConnectionId, intent.remoteSshHost)
+            is RemoteSessionIntent.RetryWorkspaceSessions -> loadWorkspaceSessions(intent.path, true, intent.remoteConnectionId, intent.remoteSshHost)
             is RemoteSessionIntent.Search ->
                 load(intent.query, current?.agentFilter ?: SessionAgentFilter.ALL)
             is RemoteSessionIntent.SetAgentFilter -> load(current?.query.orEmpty(), intent.filter)
@@ -171,7 +186,7 @@ public class RemoteSessionStore internal constructor(
             is RemoteSessionIntent.CreateSession -> createSession(intent, nextRequestId())
             is RemoteSessionIntent.CreateSessionOperation -> createSession(
                 RemoteSessionIntent.CreateSession(
-                    intent.agentType, intent.title, intent.instruction, intent.modelId, intent.workspacePath, intent.remoteConnectionId,
+                    intent.agentType, intent.title, intent.instruction, intent.modelId, intent.workspacePath, intent.remoteConnectionId, intent.remoteSshHost,
                 ),
                 intent.requestId.trim().ifEmpty { nextRequestId() },
             )
@@ -344,13 +359,16 @@ public class RemoteSessionStore internal constructor(
     }
 
     /** Loads one disclosed workspace without changing the desktop's active workspace. */
-    internal suspend fun sessionsForWorkspace(path: String): List<RemoteSession> {
+    internal suspend fun sessionsForWorkspace(path: String, remoteConnectionId: String? = null, remoteSshHost: String? = null): List<RemoteSession> {
+        val identity = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost)
         val normalizedPath = path.trim()
         if (normalizedPath.isEmpty()) return emptyList()
         val response = transport.send<SessionListResponse>(
             RemoteCommand(
                 cmd = "list_sessions",
                 workspacePath = normalizedPath,
+                remoteConnectionId = remoteConnectionId,
+                remoteSshHost = remoteSshHost,
                 limit = DIRECTORY_WORKSPACE_PAGE_SIZE,
                 offset = 0,
             ),
@@ -359,12 +377,12 @@ public class RemoteSessionStore internal constructor(
             .map(RemoteResponseMapper::session)
             .filter { SessionAgentTypes.isMobileVisible(it.agentType) }
             .map { session ->
-                if (session.workspacePath.isNullOrBlank()) session.copy(workspacePath = normalizedPath) else session
+                session.copy(workspacePath = session.workspacePath?.takeIf { it.isNotBlank() } ?: normalizedPath, workspaceIdentity = identity)
             }
         val serverIds = server.mapTo(mutableSetOf()) { it.id }
         serverIds.forEach(locallyCreatedSessions::remove)
         val pending = locallyCreatedSessions.values.filter { session ->
-            session.id !in serverIds && session.workspacePath.orEmpty().trim() == normalizedPath
+            session.id !in serverIds && session.belongsTo(identity, listOf(identity))
         }
         return pending + server
     }
@@ -374,55 +392,57 @@ public class RemoteSessionStore internal constructor(
         savePersistedSessions(sessions, false)
     }
 
-    private fun loadWorkspaceSessions(path: String, force: Boolean) {
+    private fun loadWorkspaceSessions(path: String, force: Boolean, remoteConnectionId: String?, remoteSshHost: String?) {
         val normalizedPath = normalizeWorkspacePath(path)
         if (normalizedPath.isEmpty()) return
-        if (workspaceDirectoryJobs[normalizedPath]?.isActive == true) return
-        val existing = _workspaceDirectory.value.workspace(normalizedPath)
+        val identity = RemoteWorkspaceIdentity(normalizedPath, remoteConnectionId, remoteSshHost)
+        val key = identity.key
+        if (workspaceDirectoryJobs[key]?.isActive == true) return
+        val existing = _workspaceDirectory.value.workspace(normalizedPath, remoteConnectionId, remoteSshHost)
         if (!force && existing?.status == WorkspaceSessionDirectoryStatus.READY) return
-        val generation = (workspaceDirectoryGenerations[normalizedPath] ?: 0L) + 1L
-        workspaceDirectoryGenerations[normalizedPath] = generation
-        updateWorkspaceDirectory(normalizedPath) {
+        val generation = (workspaceDirectoryGenerations[key] ?: 0L) + 1L
+        workspaceDirectoryGenerations[key] = generation
+        updateWorkspaceDirectory(identity) {
             it.copy(status = WorkspaceSessionDirectoryStatus.LOADING)
         }
         val job = scope.launch {
             try {
-                val loaded = sessionsForWorkspace(normalizedPath)
-                if (workspaceDirectoryGenerations[normalizedPath] != generation) return@launch
+                val loaded = sessionsForWorkspace(normalizedPath, remoteConnectionId, remoteSshHost)
+                if (workspaceDirectoryGenerations[key] != generation) return@launch
                 if (persistenceEnabled) {
                     val cached = cachedSessions()
-                    persistDirectorySessions(replaceWorkspaceSessions(cached, normalizedPath, loaded))
+                    persistDirectorySessions(replaceWorkspaceSessions(cached, identity, loaded))
                 }
-                updateWorkspaceDirectory(normalizedPath) {
+                updateWorkspaceDirectory(identity) {
                     it.copy(status = WorkspaceSessionDirectoryStatus.READY, sessions = loaded)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
-                if (workspaceDirectoryGenerations[normalizedPath] == generation) {
-                    updateWorkspaceDirectory(normalizedPath) {
+                if (workspaceDirectoryGenerations[key] == generation) {
+                    updateWorkspaceDirectory(identity) {
                         it.copy(status = WorkspaceSessionDirectoryStatus.FAILED)
                     }
                 }
             } finally {
-                if (workspaceDirectoryJobs[normalizedPath] === coroutineContext[Job]) {
-                    workspaceDirectoryJobs.remove(normalizedPath)
+                if (workspaceDirectoryJobs[key] === coroutineContext[Job]) {
+                    workspaceDirectoryJobs.remove(key)
                 }
             }
         }
-        workspaceDirectoryJobs[normalizedPath] = job
-        if (!job.isActive && workspaceDirectoryJobs[normalizedPath] === job) {
-            workspaceDirectoryJobs.remove(normalizedPath)
+        workspaceDirectoryJobs[key] = job
+        if (!job.isActive && workspaceDirectoryJobs[key] === job) {
+            workspaceDirectoryJobs.remove(key)
         }
     }
 
     private fun updateWorkspaceDirectory(
-        path: String,
+        identity: RemoteWorkspaceIdentity,
         transform: (WorkspaceSessionDirectoryEntry) -> WorkspaceSessionDirectoryEntry,
     ) {
         var found = false
         val entries = _workspaceDirectory.value.workspaces.map { entry ->
-            if (normalizeWorkspacePath(entry.path) == normalizeWorkspacePath(path)) {
+            if (entry.identity.matches(identity)) {
                 found = true
                 transform(entry)
             } else {
@@ -431,7 +451,7 @@ public class RemoteSessionStore internal constructor(
         }.toMutableList()
         if (!found) {
             entries += transform(
-                WorkspaceSessionDirectoryEntry(path, WorkspaceSessionDirectoryStatus.IDLE, emptyList()),
+                WorkspaceSessionDirectoryEntry(identity.path, WorkspaceSessionDirectoryStatus.IDLE, emptyList(), identity.remoteConnectionId, identity.remoteSshHost),
             )
         }
         _workspaceDirectory.value = WorkspaceSessionDirectoryUiState(entries)
@@ -439,14 +459,13 @@ public class RemoteSessionStore internal constructor(
 
     private fun replaceWorkspaceSessions(
         sessions: List<RemoteSession>,
-        path: String,
+        identity: RemoteWorkspaceIdentity,
         replacement: List<RemoteSession>,
     ): List<RemoteSession> {
-        val normalizedPath = normalizeWorkspacePath(path)
         val replacementIds = replacement.mapTo(mutableSetOf()) { it.id }
         val retained = sessions.filter { session ->
             session.id !in replacementIds &&
-                normalizeWorkspacePath(session.workspacePath.orEmpty()) != normalizedPath
+                !session.belongsTo(identity, _workspaceDirectory.value.workspaces.map { it.identity })
         }
         return replacement + retained
     }
@@ -508,6 +527,9 @@ public class RemoteSessionStore internal constructor(
     private fun beginWork(): Long {
         workGeneration += 1
         work?.cancel()
+        historyWork?.cancel()
+        modelCatalogRefresh?.cancel()
+        permissionRefresh?.cancel()
         return workGeneration
     }
 
@@ -577,18 +599,13 @@ public class RemoteSessionStore internal constructor(
                     failKnown(RemoteSessionFailureReason.NO_WORKSPACE, current)
                     return@launch
                 }
-                // The catalog is independent of the authoritative workspace/session
-                // projection. Start both requests together so a slow catalog cannot
-                // add its latency to the session-list request (while still awaiting
-                // both before publishing the existing Ready contract).
-                val (page, catalog) = coroutineScope {
-                    val pageRequest = async { listSessions(0, query, filter) }
-                    val catalogRequest = async { loadModelCatalog(force = false) }
-                    pageRequest.await() to catalogRequest.await()
-                }
+                // Catalog enrichment must not gate navigation or transcript loading.
+                // Keep it a child of this load so replacing/stopping the load cancels
+                // it, but publish the authoritative session page before awaiting it.
+                val catalogRequest = async { loadModelCatalog(force = false) }
+                val page = listSessions(0, query, filter)
                 if (!isCurrentWork(generation)) return@launch
                 commitSessionPage(page)
-                commitModelCatalog(catalog)
                 if (persistenceEnabled && query.isEmpty() && filter == SessionAgentFilter.ALL) {
                     savePersistedSessions(page.sessions, page.hasMore)
                 }
@@ -604,11 +621,19 @@ public class RemoteSessionStore internal constructor(
                     agentFilter = filter,
                     hasMore = page.hasMore,
                     hasMoreMessages = current?.hasMoreMessages ?: false,
-                    modelCatalog = catalog.catalog ?: current?.modelCatalog,
-                    modelCatalogFailure = catalog.failure,
+                    modelCatalog = modelCatalog ?: current?.modelCatalog,
+                    modelCatalogFailure = modelCatalogFailure,
                     draft = current?.draft ?: "",
                 ))
                 markConnected()
+                val catalog = catalogRequest.await()
+                if (!isCurrentWork(generation)) return@launch
+                commitModelCatalog(catalog)
+                val ready = _state.value as? RemoteSessionUiState.Ready ?: return@launch
+                _state.value = ready.copy(
+                    modelCatalog = catalog.catalog ?: ready.modelCatalog,
+                    modelCatalogFailure = catalog.failure,
+                )
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -662,12 +687,14 @@ public class RemoteSessionStore internal constructor(
         if (!isCurrentWork(operationToken)) return false
         workspacePath = (info.path ?: info.workspacePath).orEmpty().trim()
         workspaceConnectionId = info.remoteConnectionId
+        workspaceSshHost = info.remoteSshHost
         hostCapabilities = info.capabilities
         return workspacePath.isNotEmpty() && workspacePath != "/"
     }
 
     private suspend fun listSessions(offset: Int, query: String, filter: SessionAgentFilter, count: Int = PAGE_SIZE): SessionPage {
         val trimmedQuery = query.trim()
+        val identity = RemoteWorkspaceIdentity(workspacePath, workspaceConnectionId, workspaceSshHost)
         // `list_sessions` cannot apply either the mobile ACP visibility rule or
         // the agent tab. Pull from the start until there are enough visible rows
         // so an invisible server row never creates a short page or a dishonest
@@ -678,8 +705,8 @@ public class RemoteSessionStore internal constructor(
         var hasMore = true
         val pageSize = if (filter == SessionAgentFilter.ALL) PAGE_SIZE else FILTER_PAGE_SIZE
         while (hasMore && filtered.size < targetCount) {
-            val response = sendListSessions(pageSize, pageOffset, trimmedQuery)
-            val sessions = response.sessions.map(RemoteResponseMapper::session)
+            val response = sendListSessions(pageSize, pageOffset, trimmedQuery, identity)
+            val sessions = response.sessions.map(RemoteResponseMapper::session).map { it.copy(workspaceIdentity = identity) }
             sessions.filterTo(filtered) {
                 SessionAgentTypes.isMobileVisible(it.agentType) && filter.matches(it.agentType)
             }
@@ -730,12 +757,12 @@ public class RemoteSessionStore internal constructor(
      * [force] re-requests even when a catalog is already cached, which is how a
      * settings retry reaches a catalog that a transient failure lost.
      */
-    private suspend fun loadModelCatalog(force: Boolean): ModelCatalogLoadResult {
+    private suspend fun loadModelCatalog(force: Boolean, sessionId: String? = null): ModelCatalogLoadResult {
         if (!force) {
             modelCatalog?.let { return ModelCatalogLoadResult(it, null) }
         }
         return try {
-            val catalog = transport.send<ModelCatalogResponse>(RemoteCommand(cmd = "get_model_catalog")).catalog
+            val catalog = transport.send<ModelCatalogResponse>(RemoteCommand(cmd = "get_model_catalog", sessionId = sessionId)).catalog
                 ?.takeUnless { it.version == 0L && it.models.isEmpty() }
             ModelCatalogLoadResult(catalog, null)
         } catch (cancelled: CancellationException) {
@@ -755,11 +782,13 @@ public class RemoteSessionStore internal constructor(
         val failure: ModelCatalogFailure?,
     )
 
-    private suspend fun sendListSessions(limit: Int, offset: Int, query: String): SessionListResponse =
+    private suspend fun sendListSessions(limit: Int, offset: Int, query: String, identity: RemoteWorkspaceIdentity): SessionListResponse =
         transport.send(
             RemoteCommand(
                 cmd = "list_sessions",
-                workspacePath = workspacePath,
+                workspacePath = identity.path,
+                remoteConnectionId = identity.remoteConnectionId,
+                remoteSshHost = identity.remoteSshHost,
                 limit = limit,
                 offset = offset.toLong(),
                 query = query.takeIf(String::isNotEmpty),
@@ -853,6 +882,7 @@ public class RemoteSessionStore internal constructor(
                     revision = current?.revision ?: authorityRevision,
                 )
                 markConnected()
+                refreshModelCatalog()
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
@@ -867,11 +897,14 @@ public class RemoteSessionStore internal constructor(
 
     private fun publishDurableTimeline() {
         val current = _state.value as? RemoteSessionUiState.Ready ?: return
-        _state.value = current.copy(timeline = timelineStore.snapshot(), hasMoreMessages = sessionHistoryHasMore)
+        val snapshot = timelineStore.snapshot()
+        if (current.selectedSessionId != snapshot.sessionId) return
+        _state.value = current.copy(timeline = snapshot, hasMoreMessages = sessionHistoryHasMore)
         markConnected()
     }
 
-    private fun subscribeSessionUpdates(sessionId: String) {
+    private fun subscribeSessionUpdates(sessionId: String): CompletableDeferred<Unit> {
+        val initialHistory = CompletableDeferred<Unit>()
         permissionMailbox.select(sessionId)
         sessionUpdates?.cancel()
         sessionHistoryHasMore = false
@@ -883,7 +916,12 @@ public class RemoteSessionStore internal constructor(
                 var caughtUp = false
                 source.subscribe(sessionId, PersistentSessionReplica(store, source.streamIdentity + ":session:" + sessionId),
                     { handleFailure(it, _state.value as? RemoteSessionUiState.Ready) },
-                    { caughtUp = true; publishDurableTimeline(); persistTranscript(sessionId, preserveOlder = sessionHistoryHasMore) },
+                    {
+                        caughtUp = true
+                        publishDurableTimeline()
+                        persistTranscript(sessionId, preserveOlder = sessionHistoryHasMore)
+                        initialHistory.complete(Unit)
+                    },
                 ).collect { event ->
                     check(event["session_id"]?.jsonPrimitive?.content == sessionId) { "Session binding mismatch" }
                     val payload = event["payload"] as? JsonObject ?: error("Missing session event payload")
@@ -920,13 +958,19 @@ public class RemoteSessionStore internal constructor(
                                 "failed", "error" -> ChatSyncPhase.ERROR
                                 else -> ChatSyncPhase.IDLE
                             })
-                            publishDurableTimeline()
+                            if (caughtUp) publishDurableTimeline()
                         }
                     }
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Throwable) { handleFailure(error, _state.value as? RemoteSessionUiState.Ready) }
+            catch (error: Throwable) {
+                initialHistory.completeExceptionally(error)
+                handleFailure(error, _state.value as? RemoteSessionUiState.Ready)
+            } finally {
+                initialHistory.cancel()
+            }
         }
+        return initialHistory
     }
 
     /** Hydrate history once, then receive durable invalidations through the shared transport. */
@@ -936,8 +980,11 @@ public class RemoteSessionStore internal constructor(
         resumableCursor: ChatSessionCursor? = null,
     ): OpenedSession? {
         if (timelineStore.snapshot().sessionId != sessionId) timelineStore.reset(sessionId)
-        subscribeSessionUpdates(sessionId)
+        val initialHistory = subscribeSessionUpdates(sessionId)
         val permission = readPermissionMode()
+        // A successful permission RPC does not mean the durable transcript has
+        // arrived. Keep cached content/loading until the initial replay is atomic.
+        initialHistory.await()
         if (!isCurrentWork(operationToken)) return null
         return OpenedSession(permission, sessionHistoryHasMore)
     }
@@ -950,23 +997,37 @@ public class RemoteSessionStore internal constructor(
     private fun loadOlderMessages() {
         val current = _state.value as? RemoteSessionUiState.Ready ?: return
         val sessionId = current.selectedSessionId.orEmpty()
-        val beforeMessageId = current.timeline?.persistedMessages?.firstOrNull()?.id.orEmpty()
-        if (sessionId.isEmpty() || beforeMessageId.isEmpty() || !current.hasMoreMessages || current.busy) return
-        setBusy(current, true)
-        val operationToken = beginWork()
-        work = scope.launch {
+        // Pagination belongs to the durable cursor, including pages containing
+        // only deletions or control records with no visible chat message.
+        if (sessionId.isEmpty() || !current.hasMoreMessages || current.busy || historyWork?.isActive == true) return
+        // Pagination is an independent read, not a new session operation. It must
+        // not cancel model hydration or disable the composer while reading history.
+        val operationToken = workGeneration
+        val historyToken = ++historyGeneration
+        _state.value = current.copy(historyLoadState = HistoryLoadState.LOADING)
+        historyWork = scope.launch {
             try {
                 val source = transport as? RemoteSessionStreamTransport ?: error("Durable session transport unavailable")
                 source.loadOlder(sessionId)
                 if (!isCurrentWork(operationToken) || timelineStore.snapshot().sessionId != sessionId) return@launch
                 val ready = (_state.value as? RemoteSessionUiState.Ready) ?: current
-                _state.value = ready.copy(timeline = timelineStore.snapshot(), busy = false)
+                _state.value = ready.copy(timeline = timelineStore.snapshot())
 
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
                 if (isCurrentWork(operationToken)) {
-                    setBusy((_state.value as? RemoteSessionUiState.Ready) ?: current, false)
+                    (_state.value as? RemoteSessionUiState.Ready)?.let {
+                        _state.value = it.copy(historyLoadState = HistoryLoadState.FAILED)
+                    }
+                }
+            } finally {
+                if (historyToken == historyGeneration) {
+                    (_state.value as? RemoteSessionUiState.Ready)?.let {
+                        if (it.historyLoadState == HistoryLoadState.LOADING) {
+                            _state.value = it.copy(historyLoadState = HistoryLoadState.IDLE)
+                        }
+                    }
                 }
             }
         }
@@ -1032,13 +1093,18 @@ public class RemoteSessionStore internal constructor(
                     return@launch
                 }
                 val targetWorkspacePath = requestedWorkspacePath.ifEmpty { if (assistantCreate) "" else workspacePath }.takeIf { it.isNotEmpty() }
+                val targetConnectionId = if (assistantCreate && requestedWorkspacePath.isEmpty()) null else
+                    (if (requestedWorkspacePath.isNotEmpty()) intent.remoteConnectionId else workspaceConnectionId).orEmpty()
+                val targetSshHost = if (assistantCreate && requestedWorkspacePath.isEmpty()) null else
+                    if (requestedWorkspacePath.isNotEmpty()) intent.remoteSshHost else workspaceSshHost
                 val created = transport.send<CreateSessionResponse>(
                     RemoteCommand(
                         cmd = "create_session",
                         agentType = intent.agentType,
                         sessionName = SessionNaming.wireSessionName(intent.agentType, intent.title),
                         workspacePath = targetWorkspacePath,
-                        remoteConnectionId = if (assistantCreate && requestedWorkspacePath.isEmpty()) null else (if (requestedWorkspacePath.isNotEmpty()) intent.remoteConnectionId else workspaceConnectionId).orEmpty(),
+                        remoteConnectionId = targetConnectionId,
+                        remoteSshHost = targetSshHost,
                     ),
                 )
                 val sessionId = created.resolvedSessionId?.trim().orEmpty()
@@ -1051,6 +1117,12 @@ public class RemoteSessionStore internal constructor(
                 // before optional initialization so cancellation or failure below
                 // cannot turn an already-created remote session into a failed create.
                 val now = Clock.System.now().toString()
+                val confirmedPath = created.workspacePath ?: targetWorkspacePath
+                val confirmedIdentity = confirmedPath?.takeIf(String::isNotBlank)?.let { path ->
+                    RemoteWorkspaceIdentity(path,
+                        if (created.workspacePath != null) created.remoteConnectionId else targetConnectionId,
+                        if (created.workspacePath != null) created.remoteSshHost else targetSshHost)
+                }
                 val confirmedSession = RemoteSession(
                     id = sessionId,
                     title = created.title?.takeIf(String::isNotBlank)
@@ -1060,8 +1132,9 @@ public class RemoteSessionStore internal constructor(
                     updatedAt = now,
                     createdAt = now,
                     messageCount = 0,
-                    workspacePath = created.workspacePath?.takeIf(String::isNotBlank) ?: targetWorkspacePath,
+                    workspacePath = confirmedPath,
                     workspaceName = null,
+                    workspaceIdentity = confirmedIdentity,
                 )
                 if (!isCurrentWork(operationToken)) return@launch
                 val commitRevision = publishCommittedCreate(confirmedSession, current)
@@ -1107,6 +1180,7 @@ public class RemoteSessionStore internal constructor(
                     draft = "",
                 ))
                 markConnected()
+                refreshModelCatalog()
             } catch (cancelled: CancellationException) {
                 if (isCurrentWork(operationToken)) {
                     if (isCommittedCreate(requestId)) {
@@ -1473,14 +1547,23 @@ public class RemoteSessionStore internal constructor(
         val operationToken = beginWork()
         work = scope.launch {
             try {
-                transport.send<CommandStatusResponse>(
+                val response = transport.send<PermissionModeResponse>(
                     RemoteCommand(cmd = "set_permission_mode", mode = wireMode),
                 )
+                check(!response.isError) { response.message ?: "Permission mode update failed" }
+                // Older hosts acknowledge the mutation without returning the mode.
+                // Read their authority instead of reporting the requested value as fact.
+                val confirmed = response.mode ?: transport.send<PermissionModeResponse>(
+                    RemoteCommand(cmd = "get_permission_mode"),
+                ).let { snapshot ->
+                    check(!snapshot.isError) { snapshot.message ?: "Permission mode read failed" }
+                    snapshot.mode
+                }
                 if (!isCurrentWork(operationToken)) return@launch
                 val ready = (_state.value as? RemoteSessionUiState.Ready) ?: current
                 _state.value = ready.copy(
                     busy = false,
-                    permissionMode = intent.mode,
+                    permissionMode = confirmed?.toUiMode() ?: SessionPermissionMode.UNKNOWN,
                     permissionModeFailure = null,
                 )
             } catch (cancelled: CancellationException) {
@@ -1501,14 +1584,13 @@ public class RemoteSessionStore internal constructor(
 
     private fun refreshPermissionMode() {
         val current = _state.value as? RemoteSessionUiState.Ready ?: return
-        setBusy(current, true)
-        val operationToken = beginWork()
-        work = scope.launch {
+        if (current.busy || permissionRefresh?.isActive == true) return
+        val operationToken = workGeneration
+        permissionRefresh = scope.launch {
             val permission = readPermissionMode()
             if (!isCurrentWork(operationToken)) return@launch
             val ready = (_state.value as? RemoteSessionUiState.Ready) ?: current
             _state.value = ready.copy(
-                busy = false,
                 permissionMode = permission.mode ?: ready.permissionMode,
                 permissionModeFailure = permission.failure,
             )
@@ -1522,41 +1604,53 @@ public class RemoteSessionStore internal constructor(
      * [RemoteSessionUiState.Ready] with the typed failure instead of taking the
      * transcript down with it.
      */
-    private fun refreshModelCatalog() {
+    private fun refreshModelCatalog(invalidated: Boolean = false) {
         val current = _state.value as? RemoteSessionUiState.Ready ?: return
-        if (current.busy) return
+        if (modelCatalogRefresh?.isActive == true) {
+            if (invalidated) modelCatalogDirty = true
+            return
+        }
+        if (current.busy && !invalidated) return
         // Forward-compat: a future transport may produce a real unsupported-by-
         // peer signal. That is the only case where a retry cannot help, because
         // every generic failure is typed as LOAD_FAILED and remains retryable.
         if (modelCatalogFailure == ModelCatalogFailure.UNSUPPORTED_BY_PEER) return
-        setBusy(current, true)
-        val operationToken = beginWork()
-        work = scope.launch {
+        // A read of optional settings must not own the conversation's mutation
+        // slot. Superseding navigation/mutations still cancel and fence this read.
+        val operationToken = workGeneration
+        modelCatalogRefresh = scope.launch {
             try {
-                val result = loadModelCatalog(force = true)
-                if (!isCurrentWork(operationToken)) return@launch
-                commitModelCatalog(result)
-                val timeline = result.catalog?.let { catalog ->
-                    val snapshot = timelineStore.snapshot()
-                    if (snapshot.sessionId.isNotEmpty()) {
-                        timelineStore.setModelCatalog(catalog, snapshot.selectedModelId)
-                        timelineStore.snapshot()
-                    } else {
-                        null
+                do {
+                    modelCatalogDirty = false
+                    val result = loadModelCatalog(force = true, sessionId = current.selectedSessionId)
+                    if (!isCurrentWork(operationToken)) return@launch
+                    if (modelCatalogDirty) continue
+                    commitModelCatalog(result)
+                    val timeline = result.catalog?.let { catalog ->
+                        val snapshot = timelineStore.snapshot()
+                        if (snapshot.sessionId.isNotEmpty()) {
+                            timelineStore.setModelCatalog(
+                                catalog,
+                                catalog.sessionModelId?.takeIf(String::isNotEmpty) ?: snapshot.selectedModelId,
+                            )
+                            timelineStore.snapshot()
+                        } else {
+                            null
+                        }
                     }
-                }
-                val ready = (_state.value as? RemoteSessionUiState.Ready) ?: current
-                _state.value = ready.copy(
-                    busy = false,
-                    modelCatalog = result.catalog ?: ready.modelCatalog,
-                    modelCatalogFailure = result.failure,
-                    timeline = timeline ?: ready.timeline,
-                )
+                    val ready = (_state.value as? RemoteSessionUiState.Ready) ?: current
+                    _state.value = ready.copy(
+                        modelCatalog = result.catalog ?: ready.modelCatalog,
+                        modelCatalogFailure = result.failure,
+                        timeline = timeline ?: ready.timeline,
+                    )
+                } while (modelCatalogDirty)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
                 if (isCurrentWork(operationToken)) {
-                    setBusy((_state.value as? RemoteSessionUiState.Ready) ?: current, false)
+                    val ready = _state.value as? RemoteSessionUiState.Ready ?: return@launch
+                    _state.value = ready.copy(modelCatalogFailure = ModelCatalogFailure.LOAD_FAILED)
                 }
             }
         }
@@ -1589,12 +1683,17 @@ public class RemoteSessionStore internal constructor(
     }
 
     private fun runAction(sessionId: String, command: RemoteCommand) {
+        val toolId = command.toolId
+        val answers = command.answers as? JsonObject
+        if (command.cmd == "answer_question" && toolId != null && answers != null &&
+            permissionMailbox.answer(sessionId, toolId, answers)) return
         val current = _state.value as? RemoteSessionUiState.Ready ?: return
         setBusy(current, true)
         val operationToken = beginWork()
         work = scope.launch {
             try {
-                transport.send<CommandStatusResponse>(command.copy(sessionId = command.sessionId ?: sessionId))
+                val result = transport.send<CommandStatusResponse>(command.copy(sessionId = command.sessionId ?: sessionId))
+                check(!result.isError) { result.message ?: "Remote action failed" }
                 if (!isCurrentWork(operationToken)) return@launch
                 setBusy((_state.value as? RemoteSessionUiState.Ready) ?: current, false)
                 (transport as? RemoteSessionStreamTransport)?.wakeSessionStreams()
@@ -1670,6 +1769,7 @@ public class RemoteSessionStore internal constructor(
         id = s.sessionId, title = s.title, agentType = s.agentType, status = s.status,
         updatedAt = s.updatedAt, createdAt = s.createdAt, messageCount = s.messageCount,
         workspacePath = s.workspacePath, workspaceName = s.workspaceName,
+        workspaceIdentity = s.workspaceIdentity?.let { RemoteWorkspaceIdentity(it.path, it.remoteConnectionId, it.remoteSshHost) },
     )
 
     private fun toPersistedSession(s: RemoteSession): PersistedRemoteSession = PersistedRemoteSession(
@@ -1677,6 +1777,7 @@ public class RemoteSessionStore internal constructor(
         updatedAt = s.updatedAt, createdAt = s.createdAt, messageCount = s.messageCount,
         lastMessageId = "", workspacePath = s.workspacePath, workspaceName = s.workspaceName,
         pendingConfirmed = s.id in locallyCreatedSessions,
+        workspaceIdentity = s.workspaceIdentity?.let { PersistedWorkspaceIdentity(it.path, it.remoteConnectionId, it.remoteSshHost) },
     )
 
 
@@ -1712,7 +1813,8 @@ public class RemoteSessionStore internal constructor(
         _connectionPhase.value = ConnectionPhase.FAILED
     }
 
-    /** Open transcripts recover through their durable stream; idle lists need their own health check. */
+    /** Relay replay proves log availability, not that the controlled host is online.
+     * Keep foreground host probes for idle open conversations as well as lists. */
     private fun setForeground(active: Boolean) {
         if (active && healthWork?.isActive == true) return
         val generation = ++healthGeneration
@@ -1722,9 +1824,13 @@ public class RemoteSessionStore internal constructor(
         healthWork = scope.launch {
             while (generation == healthGeneration) {
                 val ready = _state.value as? RemoteSessionUiState.Ready
-                if (ready != null && !ready.busy && ready.timeline == null) {
+                if (ready != null && !ready.busy) {
                     try {
-                        transport.send<com.openbitfun.mobile.core.protocol.CommandStatusResponse>(RemoteCommand(cmd = "ping"))
+                        kotlinx.coroutines.withTimeoutOrNull(10_000) {
+                            transport.send<com.openbitfun.mobile.core.protocol.CommandStatusResponse>(
+                                RemoteCommand(cmd = "ping"), timeoutMs = 10_000,
+                            )
+                        } ?: throw RelayTransportException(RelayFailure.Timeout)
                         // A probe cannot overwrite a newer mutation's connection outcome.
                         if (generation == healthGeneration && _state.value === ready) markConnected()
                     } catch (cancelled: CancellationException) {

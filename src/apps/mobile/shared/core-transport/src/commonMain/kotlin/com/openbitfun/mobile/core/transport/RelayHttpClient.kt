@@ -45,7 +45,9 @@ public fun relayHttpClient(): HttpClient = HttpClient { configureForRelay() }
 
 private fun HttpClientConfig<*>.configureForRelay() {
     expectSuccess = false
-    install(io.ktor.client.plugins.websocket.WebSockets) { maxFrameSize = 256 * 1024 }
+    // OkHttp rejects session.maxFrameSize assignment during the handshake.
+    // Enforce the protocol limit in AccountRealtime before decoding instead.
+    install(io.ktor.client.plugins.websocket.WebSockets)
     install(HttpTimeout) {
         connectTimeoutMillis = RELAY_CONNECT_TIMEOUT_MS
         requestTimeoutMillis = RELAY_DEFAULT_TIMEOUT_MS

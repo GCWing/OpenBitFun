@@ -2249,11 +2249,22 @@ pub async fn scan_workspace_info(
     .map_err(|e| format!("Failed to scan workspace info: {}", e))
 }
 
-async fn ensure_directory_request_path(path: &str) -> Result<(), String> {
+async fn ensure_directory_request_path(
+    path: &str,
+    remote_connection_id: Option<&str>,
+) -> Result<(), String> {
     use openbitfun_core::service::remote_ssh::workspace_state::is_remote_path;
     use std::path::Path;
 
-    if is_remote_path(path).await {
+    if let Some(id) = remote_connection_id.filter(|id| !id.trim().is_empty()) {
+        openbitfun_core::service::filesystem::path_operations::resolve_explicit_path_connection(
+            path,
+            id.trim(),
+        )
+        .await?;
+        return Ok(());
+    }
+    if remote_connection_id != Some("") && is_remote_path(path).await {
         return Ok(());
     }
 
@@ -2308,7 +2319,7 @@ async fn get_file_tree_response(
 ) -> Result<serde_json::Value, String> {
     use std::path::Path;
 
-    ensure_directory_request_path(&request.path).await?;
+    ensure_directory_request_path(&request.path, request.remote_connection_id.as_deref()).await?;
 
     let preferred = request.remote_connection_id.as_deref();
     let filesystem_service = &state.filesystem_service;
@@ -2345,7 +2356,7 @@ async fn get_directory_children_response(
     state: &State<'_, AppState>,
     request: &GetDirectoryChildrenRequest,
 ) -> Result<serde_json::Value, String> {
-    ensure_directory_request_path(&request.path).await?;
+    ensure_directory_request_path(&request.path, request.remote_connection_id.as_deref()).await?;
 
     let preferred = request.remote_connection_id.as_deref();
     let filesystem_service = &state.filesystem_service;
@@ -2368,7 +2379,7 @@ async fn get_directory_children_paginated_response(
     let offset = request.offset.unwrap_or(0);
     let limit = request.limit.unwrap_or(100);
 
-    ensure_directory_request_path(&request.path).await?;
+    ensure_directory_request_path(&request.path, request.remote_connection_id.as_deref()).await?;
 
     let preferred = request.remote_connection_id.as_deref();
     let filesystem_service = &state.filesystem_service;
@@ -2383,6 +2394,14 @@ async fn get_directory_children_paginated_response(
                 request.sort_order.as_deref(),
             )?;
             let total = nodes.len();
+            debug!(
+                "Directory page read: explicit_local={}, remote_scope={}, offset={}, limit={}, total={}",
+                preferred == Some(""),
+                preferred.is_some_and(|value| !value.is_empty()),
+                offset,
+                limit,
+                total
+            );
             let has_more = total > offset.saturating_add(limit);
             let page_nodes: Vec<_> = nodes.into_iter().skip(offset).take(limit).collect();
 
@@ -4680,7 +4699,7 @@ pub async fn search_files(
             }
         }
     } else {
-        match resolve_desktop_path_target(
+        match crate::api::path_target::resolve_desktop_workspace_path_target(
             &state,
             &request.root_path,
             request.remote_connection_id.as_deref(),
@@ -4763,7 +4782,7 @@ pub async fn search_filenames(
         include_directories: request.include_directories,
     };
 
-    let result = match resolve_desktop_path_target(
+    let result = match crate::api::path_target::resolve_desktop_workspace_path_target(
         &state,
         &request.root_path,
         request.remote_connection_id.as_deref(),
@@ -4922,7 +4941,7 @@ pub async fn start_search_filenames_stream(
         include_directories: request.include_directories,
     };
 
-    let remote_search_target = match resolve_desktop_path_target(
+    let remote_search_target = match crate::api::path_target::resolve_desktop_workspace_path_target(
         &state,
         &request.root_path,
         request.remote_connection_id.as_deref(),

@@ -52,7 +52,7 @@ export struct MarkdownContent {
         .padding({ left: 9 + Math.max(0, block.level - 1) * 10 })
         .border({ width: { left: 2 }, color: LINE })
     } else if (block.type === 'list') {
-      this.MarkdownList(block.items)
+      this.MarkdownList(block.items, this.listMarkerWidth(block.items))
     } else if (block.type === 'table') {
       this.MarkdownTable(block.tableRows)
     } else if (block.type === 'divider') {
@@ -131,8 +131,22 @@ export struct MarkdownContent {
     }
   }
 
+  private listMarkerWidth(items: ParsedMarkdownListItem[]): number {
+    const context = this.getUIContext();
+    let width: number = 20;
+    for (const item of items) {
+      if (item.checked >= 0) continue;
+      const size = context.getMeasureUtils().measureTextSize({
+        textContent: item.marker,
+        fontSize: `${MobileDesignTypography.bodyLarge.size}fp`
+      });
+      width = Math.max(width, Math.ceil(context.px2vp(Number(size.width))));
+    }
+    return width;
+  }
+
   @Builder
-  MarkdownList(items: ParsedMarkdownListItem[]) {
+  MarkdownList(items: ParsedMarkdownListItem[], markerWidth: number) {
     Column({ space: 4 }) {
       ForEach(items, (item: ParsedMarkdownListItem) => {
         Row({ space: 7 }) {
@@ -151,7 +165,9 @@ export struct MarkdownContent {
             .borderRadius(4)
           } else {
             Text(item.marker)
-              .width(20)
+              .width(markerWidth)
+              .maxLines(1)
+              .flexShrink(0)
               .fontSize(MobileDesignTypography.bodyLarge.size)
               .lineHeight(MobileDesignTypography.bodyLarge.lineHeight)
               .fontColor(MUTED)

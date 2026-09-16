@@ -7,7 +7,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.HorizontalDivider
 import com.openbitfun.mobile.app.ui.shell.WelcomeBrandFlow
 import com.openbitfun.mobile.app.ui.theme.generated.MobileDesignGeometry
-import com.openbitfun.mobile.core.feature.session.SessionTimePresentation
+import com.openbitfun.mobile.core.feature.session.RecentSessionsPresentation
+import com.openbitfun.mobile.core.feature.session.RecentSessionUiState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -132,7 +134,6 @@ private fun RemoteConnectedScreen(
     connectionDetails: @Composable () -> Unit,
     modifier: Modifier,
 ) {
-    RemoteDownloadSaver(workspaceState, onWorkspaceIntent)
     val ready = remoteState as? RemoteSessionUiState.Ready
     // Route immediately. A previous session snapshot must never stand in for the requested one.
     val conversation = requestedSessionId?.takeIf { remoteState !is RemoteSessionUiState.Failed }?.let { requested ->
@@ -221,7 +222,6 @@ private fun RemoteConnectedScreen(
                 onOpenSession(id)
                 onSessionIntent(com.openbitfun.mobile.core.feature.session.RemoteSessionIntent.Open(id))
             },
-            onOpenRemoteSettings = onOpenRemoteSettings,
             modifier = modifier,
         )
     }
@@ -234,16 +234,15 @@ internal fun RemoteCompactHome(
     onOpenSidebar: (() -> Unit)?,
     onBrowse: (() -> Unit)?,
     onOpen: (String) -> Unit,
-    onOpenRemoteSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val ready = remoteState as? RemoteSessionUiState.Ready
-    val recent = ready?.sessions.orEmpty().filter { it.status != "archived" }.sortedByDescending {
-        SessionTimePresentation.timestampMs(it.updatedAt)?.takeIf { t -> t > 0 }
-            ?: SessionTimePresentation.timestampMs(it.createdAt) ?: 0
-    }.take(3)
+    val sessions = ready?.sessions.orEmpty()
+    val recent = RecentSessionsPresentation.sessionIds(sessions.map {
+        RecentSessionUiState(it.id, it.status, it.updatedAt, it.createdAt)
+    }).mapNotNull { id -> sessions.firstOrNull { it.id == id } }
     Column(modifier.fillMaxSize()) {
-        RemoteShellHeader(onOpenSidebar, desktopName, onOpenRemoteSettings)
+        RemoteShellHeader(onOpenSidebar, desktopName, null)
         Column(
             Modifier.weight(1f).align(Alignment.CenterHorizontally)
                 .widthIn(max = MobileDesignGeometry.RecentHomeMaxWidth).fillMaxWidth()
@@ -261,7 +260,10 @@ internal fun RemoteCompactHome(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.home_recent_recent), fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                if (onBrowse != null) TextButton(onClick = onBrowse) { Text(stringResource(R.string.home_recent_all), fontSize = 12.sp) }
+                if (onBrowse != null) TextButton(
+                    onClick = onBrowse,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurface),
+                ) { Text(stringResource(R.string.home_recent_all), fontSize = 12.sp) }
             }
             recent.forEach { session ->
                 Column(Modifier.fillMaxWidth().clickable(enabled = !ready!!.busy) { onOpen(session.id) }
@@ -313,7 +315,7 @@ private fun RemoteShellHeader(
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Text(
-                stringResource(R.string.navigation_remote),
+                stringResource(R.string.app_name),
                 fontSize = if (hasSubtitle) 18.sp else 17.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 1,

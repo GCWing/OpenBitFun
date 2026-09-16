@@ -1,7 +1,9 @@
+import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { ConversationUiQuestionAnswer } from '../state/ConversationUiModels';
 import { FilePreviewRequest } from '../../model/FilePreviewTarget';
 
 export enum ConversationIntentType {
+  Mailbox = 'mailbox',
   OpenSidebar = 'open_sidebar',
   Back = 'back',
   NewSession = 'new_session',
@@ -47,6 +49,7 @@ export class ConversationIntent {
   readonly answers?: ConversationUiQuestionAnswer;
   readonly filePreviewRequest?: FilePreviewRequest;
   readonly planBuildRequest?: PlanBuildRequest;
+  mailboxAction?: InteractionMailboxAction;
 
   constructor(
     type: ConversationIntentType,
@@ -68,6 +71,11 @@ export class ConversationIntent {
 }
 
 export class ConversationIntents {
+  static mailbox(action: InteractionMailboxAction): ConversationIntent {
+    const intent = new ConversationIntent(ConversationIntentType.Mailbox);
+    intent.mailboxAction = action;
+    return intent;
+  }
   static simple(type: ConversationIntentType): ConversationIntent {
     return new ConversationIntent(type);
   }

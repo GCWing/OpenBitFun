@@ -62,12 +62,11 @@ internal fun SidebarCircleButton(
 @Composable
 internal fun ConnectionDot(phase: ConnectionPhase) {
     val tone = ConnectionStatusPresenter.tone(phase)
-    // Same three colours `ConversationView.ets#connectionColor()` picks from;
-    // BUSY is the one addition, because a dot that only ever goes green or grey
-    // cannot say "connecting" while it is still trying.
+    // Keep recovery neutral across native sidebars; the status label and
+    // accessibility state distinguish checking from a disconnected link.
     val color: Color = when (tone) {
         ConnectionTone.OK -> openBitFunColors.statusSuccess
-        ConnectionTone.BUSY -> MaterialTheme.colorScheme.tertiary
+        ConnectionTone.BUSY -> MaterialTheme.colorScheme.onSurfaceVariant
         ConnectionTone.ERROR -> MaterialTheme.colorScheme.error
         ConnectionTone.MUTED -> MaterialTheme.colorScheme.onSurfaceVariant
     }

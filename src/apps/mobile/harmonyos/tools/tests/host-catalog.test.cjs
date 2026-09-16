@@ -23,7 +23,17 @@ test('host catalog bursts coalesce, reconnect resets invalidation and unchanged 
   await c.onResumed(); await c.onCaughtUp(); assert.equal(reads,1);
   await c.onCaughtUp(); assert.equal(reads,1);
   await c.onResumed(); await c.onCaughtUp(); assert.equal(reads,2);
-  f.observer.start('host'); await Promise.resolve(); assert.equal(f.streams.length,1); assert.equal(reads,3);
+  f.observer.start('host'); await Promise.resolve(); assert.equal(f.streams.length,1); assert.equal(reads,2);
+});
+test('a session refresh can ensure catalog observation without scheduling itself again', async()=>{
+  let reads=0;
+  const f=fixture(async()=>{reads++; if(reads<5) f.observer.start('host');});
+  f.observer.start('host');
+  await f.streams[0].callbacks.onCaughtUp();
+  assert.equal(reads,1);
+  await f.streams[0].callbacks.onEvent({event:'host-catalog-changed'});
+  await f.streams[0].callbacks.onCaughtUp();
+  assert.equal(reads,2);
 });
 test('switching runtime closes old catalog and ignores late old callbacks', async()=>{
   let reads=0; const f=fixture(async()=>{reads++;}); f.observer.start('a'); const old=f.streams[0];

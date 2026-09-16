@@ -3,6 +3,21 @@ package com.openbitfun.mobile.app.ui.chat
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
+import com.openbitfun.mobile.app.ui.theme.generated.MobileDesignGeometry
+import com.openbitfun.mobile.app.ui.theme.generated.MobileDesignTypography
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
@@ -215,13 +230,16 @@ internal fun ConversationView(
     }
 
     androidx.compose.runtime.CompositionLocalProvider(
+        com.openbitfun.mobile.app.ui.chat.tool.LocalPermissionMailbox provides state.permissionMailbox,
         com.openbitfun.mobile.app.ui.chat.tool.LocalPlanActions provides com.openbitfun.mobile.app.ui.chat.tool.PlanActions(
             supported = "plan_build_v1" in hostCapabilities,
             enabled = !state.busy && activeTurn == null && phase == ConnectionPhase.CONNECTED,
             build = { plan -> onIntent(RemoteSessionIntent.BuildPlan(sessionId, plan.path, plan.name)) },
         ),
     ) {
-        Column(modifier = modifier.fillMaxSize().testTag(CONVERSATION_TEST_TAG)) {
+        androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxSize()) {
+        val mailboxMaxHeight = maxHeight * 0.4f
+        Column(modifier = Modifier.fillMaxSize().testTag(CONVERSATION_TEST_TAG)) {
             ConversationHeader(
                 title = state.sessions.firstOrNull { it.id == sessionId }?.title.orEmpty(),
                 contextTitle = contextTitle,
@@ -241,28 +259,19 @@ internal fun ConversationView(
                 modifier = Modifier,
             )
 
-            if (phase != ConnectionPhase.CONNECTED && timeline != null) {
-                ChatStatusBar(
-                    phase = phase,
-                    canStop = activeTurn != null,
-                    onStop = {
-                        onIntent(RemoteSessionIntent.CancelTurn(sessionId, activeTurn?.turnId))
-                    },
-                )
-            }
-
-            PermissionMailboxView(state.permissionMailbox, sessionId, onIntent)
+            key(sessionId) { PermissionMailboxView(state.permissionMailbox, sessionId, mailboxMaxHeight, onIntent) }
             if (timeline == null) {
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     if (loadingVisible) ConversationLoadingState(Modifier.fillMaxSize())
                 }
-            } else if (visibleRows.isEmpty()) {
+            } else if (visibleRows.isEmpty() && !state.hasMoreMessages) {
                 ConversationEmptyState(modifier = Modifier.weight(1f).fillMaxWidth())
             } else {
                 key(attachmentOwner, sessionId) {
                     ConversationTimelineView(
                         rows = visibleRows,
                         hasMoreMessages = state.hasMoreMessages,
+                        historyLoadState = state.historyLoadState,
                         onLoadOlder = { onIntent(RemoteSessionIntent.LoadOlderMessages) },
                         enabled = !state.busy,
                         onApproveTool = { toolId, updatedInput ->
@@ -362,6 +371,7 @@ internal fun ConversationView(
                 },
             )
         }
+        }
 
     }
 
@@ -401,37 +411,66 @@ private fun ConversationLoadingState(modifier: Modifier) {
 }
 
 @Composable
-private fun PermissionMailboxView(state: com.openbitfun.mobile.core.feature.session.PermissionMailboxUiState, sessionId: String, onIntent: (RemoteSessionIntent) -> Unit) {
-    Column {
+internal fun PermissionMailboxView(state: com.openbitfun.mobile.core.feature.session.PermissionMailboxUiState, sessionId: String, maxHeight: androidx.compose.ui.unit.Dp, onIntent: (RemoteSessionIntent) -> Unit) {
+    if (!state.failed && state.requests.isEmpty() && state.questions.isEmpty()) return
+    Column(Modifier.fillMaxWidth().heightIn(max = maxHeight).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(MobileDesignGeometry.ApprovalCardGap)) {
         if (state.failed) Text(stringResource(R.string.permission_mailbox_failed))
         if (state.failed) androidx.compose.material3.TextButton(onClick = { onIntent(RemoteSessionIntent.RefreshPermissionMailbox) }) {
             Text(stringResource(R.string.sessions_retry))
         }
         state.questions.forEach { question ->
-        com.openbitfun.mobile.app.ui.chat.tool.ToolStatusList(listOf(question), enabled = !state.busy,
-            onApprove = { _, _ -> }, onReject = { _, _ -> },
-            onCancel = { id, reason -> onIntent(RemoteSessionIntent.CancelTool(sessionId, id, reason)) },
-            onAnswer = { id, answer -> onIntent(RemoteSessionIntent.AnswerQuestion(sessionId, id, answer)) },
-            onAnswerStructured = { id, answers -> onIntent(RemoteSessionIntent.AnswerStructuredQuestion(sessionId, id, answers)) },
-            onOpenFile = { _, _ -> }, modifier = Modifier.fillMaxWidth().pointerInput(question.id) {
-                awaitEachGesture { awaitFirstDown(requireUnconsumed = false); onIntent(RemoteSessionIntent.StartQuestionInteraction(question.id)) }
-            })
+            androidx.compose.runtime.key(sessionId, question.id) {
+                Column(Modifier.fillMaxWidth().pointerInput(question.id) {
+                    awaitEachGesture { awaitFirstDown(requireUnconsumed = false); onIntent(RemoteSessionIntent.StartQuestionInteraction(question.id)) }
+                }) {
+                    if (question.questions.isNotEmpty()) {
+                        com.openbitfun.mobile.app.ui.chat.tool.ToolStructuredQuestionPanel(
+                            toolId = question.id, questions = question.questions, enabled = !state.busy,
+                            onSubmit = { answers -> onIntent(RemoteSessionIntent.AnswerStructuredQuestion(sessionId, question.id, answers)) })
+                    } else {
+                        com.openbitfun.mobile.app.ui.chat.tool.ToolQuestionAnswerPanel(
+                            toolId = question.id, prompt = question.question ?: stringResource(R.string.tool_question_default), enabled = !state.busy,
+                            onSubmit = { answer -> onIntent(RemoteSessionIntent.AnswerQuestion(sessionId, question.id, answer)) })
+                    }
+                }
+            }
         }
         state.requests.forEach { request ->
-            androidx.compose.runtime.key(request.requestId) {
-                var edit by remember { mutableStateOf(false) }
-                var input by remember { mutableStateOf("{}") }
+            androidx.compose.runtime.key(sessionId, request.requestId) {
+                var edit by rememberSaveable { mutableStateOf(false) }
+                var input by rememberSaveable { mutableStateOf("{}") }
                 val valid = !edit || runCatching { org.json.JSONObject(input) }.isSuccess
-                Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                    Text(request.source.ifBlank { request.action })
-                    Text(request.action)
-                    Text(request.resources.joinToString("\n"))
+                Column(Modifier.fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(MobileDesignGeometry.ApprovalCardRadius))
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(MobileDesignGeometry.ApprovalCardRadius))
+                    .padding(MobileDesignGeometry.ApprovalCardPadding),
+                    verticalArrangement = Arrangement.spacedBy(MobileDesignGeometry.ApprovalCardGap)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Image(painterResource(R.drawable.approval_shield), contentDescription = null, modifier = Modifier.size(16.dp))
+                        Text(request.source.ifBlank { request.action }, modifier = Modifier.weight(1f), style = MobileDesignTypography.BodySmall)
+                        TextButton(onClick = { edit = !edit }, enabled = !state.busy,
+                            modifier = Modifier.height(32.dp), contentPadding = PaddingValues(horizontal = 8.dp)) {
+                            Text(stringResource(if (edit) R.string.tool_hide_approval_input else R.string.tool_edit_approval_input), style = MobileDesignTypography.LabelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (request.source.isNotBlank() && !request.source.equals(request.action, ignoreCase = true)) {
+                        Text(request.action, style = MobileDesignTypography.BodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (request.resources.isNotEmpty()) {
+                        Text(request.resources.joinToString("\n"), style = MobileDesignTypography.LabelSmall.copy(fontFamily = FontFamily.Monospace),
+                            modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)).padding(10.dp))
+                    }
                     if (edit) androidx.compose.material3.OutlinedTextField(value = input, onValueChange = { input = it }, enabled = !state.busy,
-                        isError = !valid, modifier = Modifier.fillMaxWidth())
-                    androidx.compose.foundation.layout.Row {
-                        androidx.compose.material3.TextButton(onClick = { edit = !edit }, enabled = !state.busy) { Text(stringResource(R.string.tool_edit_approval)) }
-                        androidx.compose.material3.TextButton(onClick = { onIntent(RemoteSessionIntent.RespondPermission(request.requestId, true, if (edit) input else null)) }, enabled = !state.busy && valid) { Text(stringResource(R.string.tool_approve)) }
-                        androidx.compose.material3.TextButton(onClick = { onIntent(RemoteSessionIntent.RespondPermission(request.requestId, false, null)) }, enabled = !state.busy) { Text(stringResource(R.string.tool_reject)) }
+                        isError = !valid, modifier = Modifier.fillMaxWidth().heightIn(max = 120.dp), textStyle = MobileDesignTypography.LabelSmall.copy(fontFamily = FontFamily.Monospace))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                        Button(onClick = { onIntent(RemoteSessionIntent.RespondPermission(request.requestId, false, null)) }, enabled = !state.busy,
+                            shape = RoundedCornerShape(MobileDesignGeometry.ApprovalActionRadius),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurface),
+                            modifier = Modifier.height(MobileDesignGeometry.ApprovalActionHeight)) { Text(stringResource(R.string.tool_reject), style = MobileDesignTypography.LabelMedium) }
+                        Button(onClick = { onIntent(RemoteSessionIntent.RespondPermission(request.requestId, true, if (edit) input else null)) }, enabled = !state.busy && valid,
+                            shape = RoundedCornerShape(MobileDesignGeometry.ApprovalActionRadius), modifier = Modifier.height(MobileDesignGeometry.ApprovalActionHeight)) {
+                            Text(stringResource(R.string.tool_approve), style = MobileDesignTypography.LabelMedium)
+                        }
                     }
                 }
             }

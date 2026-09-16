@@ -2,6 +2,7 @@ package com.openbitfun.mobile.core.feature.session
 
 import com.openbitfun.mobile.core.domain.ChatTimelineState
 import com.openbitfun.mobile.core.domain.RemoteSession
+import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
 import com.openbitfun.mobile.core.domain.SessionAgentTypes
 import com.openbitfun.mobile.core.protocol.RemoteModelCatalog
 
@@ -100,6 +101,9 @@ public enum class CreateSessionOperationFailure {
     CANCELLED,
 }
 
+/** Independent backward-page request state; never blocks live generation. */
+public enum class HistoryLoadState { IDLE, LOADING, FAILED }
+
 /** Why the optional model catalog could not be loaded. */
 public enum class ModelCatalogFailure {
     /**
@@ -161,22 +165,27 @@ public data class WorkspaceSessionDirectoryEntry public constructor(
     public val path: String,
     public val status: WorkspaceSessionDirectoryStatus,
     public val sessions: List<RemoteSession>,
-)
+    public val remoteConnectionId: String?,
+    public val remoteSshHost: String?,
+) {
+    public constructor(path: String, status: WorkspaceSessionDirectoryStatus, sessions: List<RemoteSession>) :
+        this(path, status, sessions, null, null)
+
+    public val identity: RemoteWorkspaceIdentity get() = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost)
+}
 
 public data class WorkspaceSessionDirectoryUiState public constructor(
     public val workspaces: List<WorkspaceSessionDirectoryEntry>,
 ) {
-    public fun workspace(path: String): WorkspaceSessionDirectoryEntry? {
-        val normalized = normalizeWorkspaceSessionPath(path)
-        return workspaces.firstOrNull { normalizeWorkspaceSessionPath(it.path) == normalized }
+    public fun workspace(path: String): WorkspaceSessionDirectoryEntry? = workspace(path, null, null)
+
+    public fun workspace(path: String, remoteConnectionId: String?, remoteSshHost: String?): WorkspaceSessionDirectoryEntry? {
+        val identity = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost)
+        return workspaces.firstOrNull { it.identity.matches(identity) }
     }
 }
 
-private fun normalizeWorkspaceSessionPath(path: String): String {
-    val trimmed = path.trim()
-    val normalized = trimmed.trimEnd('/')
-    return normalized.ifEmpty { trimmed }
-}
+
 
 public data class ComposerImage public constructor(
     public val id: String,
@@ -232,7 +241,17 @@ public sealed interface RemoteSessionUiState {
         public val revision: Long,
         public val lastSentMessage: SentChatMessage?,
         public val permissionMailbox: PermissionMailboxUiState,
+        public val historyLoadState: HistoryLoadState,
     ) : RemoteSessionUiState {
+        public constructor(
+            sessions: List<RemoteSession>, selectedSessionId: String?, timeline: ChatTimelineState?, busy: Boolean,
+            permissionMode: SessionPermissionMode?, permissionModeFailure: PermissionModeFailure?, query: String,
+            agentFilter: SessionAgentFilter, hasMore: Boolean, hasMoreMessages: Boolean,
+            modelCatalog: RemoteModelCatalog?, modelCatalogFailure: ModelCatalogFailure?, draft: String,
+            revision: Long, lastSentMessage: SentChatMessage?, permissionMailbox: PermissionMailboxUiState,
+        ) : this(sessions, selectedSessionId, timeline, busy, permissionMode, permissionModeFailure, query,
+            agentFilter, hasMore, hasMoreMessages, modelCatalog, modelCatalogFailure, draft, revision,
+            lastSentMessage, permissionMailbox, HistoryLoadState.IDLE)
         public constructor(
             sessions: List<RemoteSession>, selectedSessionId: String?, timeline: ChatTimelineState?, busy: Boolean,
             permissionMode: SessionPermissionMode?, permissionModeFailure: PermissionModeFailure?, query: String,
@@ -329,7 +348,7 @@ public sealed interface RemoteSessionIntent {
     public data class RespondPermission(public val requestId: String, public val approve: Boolean, public val updatedInput: String?) : RemoteSessionIntent
     public data object RefreshPermissionMailbox : RemoteSessionIntent
 
-    /** Native lifecycle controls the idle connection health probe. */
+    /** Native lifecycle controls foreground connection health probes. */
     public data class SetForeground(public val active: Boolean) : RemoteSessionIntent
 
     public data object Load : RemoteSessionIntent
@@ -345,11 +364,19 @@ public sealed interface RemoteSessionIntent {
     /** Load one sidebar workspace branch without changing the desktop's active workspace. */
     public data class LoadWorkspaceSessions public constructor(
         public val path: String,
-    ) : RemoteSessionIntent
+        public val remoteConnectionId: String?,
+        public val remoteSshHost: String?,
+    ) : RemoteSessionIntent {
+        public constructor(path: String) : this(path, null, null)
+    }
 
     public data class RetryWorkspaceSessions public constructor(
         public val path: String,
-    ) : RemoteSessionIntent
+        public val remoteConnectionId: String?,
+        public val remoteSshHost: String?,
+    ) : RemoteSessionIntent {
+        public constructor(path: String) : this(path, null, null)
+    }
 
     public data class Search public constructor(
         public val query: String,
@@ -377,7 +404,9 @@ public sealed interface RemoteSessionIntent {
         public val modelId: String?,
         public val workspacePath: String?,
         public val remoteConnectionId: String?,
+        public val remoteSshHost: String?,
     ) : RemoteSessionIntent {
+        public constructor(agentType: String, title: String, instruction: String, modelId: String?, workspacePath: String?, remoteConnectionId: String?) : this(agentType, title, instruction, modelId, workspacePath, remoteConnectionId, null)
         public constructor(agentType: String, title: String, instruction: String, modelId: String?, workspacePath: String?) : this(agentType, title, instruction, modelId, workspacePath, null)
         public constructor(
             agentType: String,
@@ -398,7 +427,9 @@ public sealed interface RemoteSessionIntent {
         public val modelId: String?,
         public val workspacePath: String?,
         public val remoteConnectionId: String?,
+        public val remoteSshHost: String?,
     ) : RemoteSessionIntent {
+        public constructor(requestId: String, agentType: String, title: String, instruction: String, modelId: String?, workspacePath: String?, remoteConnectionId: String?) : this(requestId, agentType, title, instruction, modelId, workspacePath, remoteConnectionId, null)
         public constructor(requestId: String, agentType: String, title: String, instruction: String, modelId: String?, workspacePath: String?) : this(requestId, agentType, title, instruction, modelId, workspacePath, null)
         public constructor(
             requestId: String,
@@ -496,9 +527,9 @@ public sealed interface RemoteSessionIntent {
      * the open transcript, as [RefreshPermissionMode] does for the permission
      * mode.
      *
-     * No session id, for the same reason [RefreshPermissionMode] carries none:
-     * `get_model_catalog` is addressed to the desktop and one catalog answers
-     * for every session on it.
+     * The store supplies the currently selected session id so the host also
+     * returns that session's authoritative model selection. Callers do not
+     * carry an id that could become stale after navigation.
      */
     public data object RefreshModelCatalog : RemoteSessionIntent
 

@@ -228,7 +228,7 @@ export class RemoteConnectionController {
 
   applyWorkspace(workspace: WorkspaceInfo): void {
     this.pageState.setWorkspace(workspace.name, workspace.path, workspace.assistantId || '', workspace.gitBranch,
-      workspace.workspaceKind || 'normal');
+      workspace.workspaceKind || 'normal', workspace.remoteConnectionId || '', workspace.remoteSshHost || '');
   }
 
   private applyRemoteUrl(remoteUrl: string): void {

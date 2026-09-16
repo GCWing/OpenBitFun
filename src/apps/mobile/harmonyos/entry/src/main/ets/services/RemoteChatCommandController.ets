@@ -96,8 +96,9 @@ export class RemoteChatCommandController {
   async forgetMessages(sessionId: string): Promise<void> { await this.cache.forget(sessionId); }
 
   async loadOlderMessages(sessionId: string, _currentPollVersion: number,
-    hasMoreMessages: boolean, isBusy: boolean): Promise<void> {
-    if (!sessionId || !hasMoreMessages || isBusy) return;
+    hasMoreMessages: boolean, _isBusy: boolean): Promise<void> {
+    // Active generation does not prevent reading earlier durable records.
+    if (!sessionId || !hasMoreMessages) return;
     this.requestHistory(sessionId, true);
   }
 

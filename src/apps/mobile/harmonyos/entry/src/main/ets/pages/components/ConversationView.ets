@@ -1,3 +1,5 @@
+import { InteractionMailboxPanel } from './InteractionMailboxPanel';
+import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { KeyboardAvoidMode } from '@kit.ArkUI';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
@@ -8,7 +10,6 @@ import { ChatComposerCapabilities } from '../state/ChatComposerCapabilities';
 import { ChatSurface } from '../state/ChatSurface';
 import { ConversationViewState } from '../state/ConversationViewState';
 import { ConversationIntent, ConversationIntents, ConversationIntentType } from '../actions/ConversationIntent';
-import { ChatStatusBar } from './ChatStatusBar';
 import { ChatTimeline } from './ChatTimeline';
 import { ConversationLoadingState } from './ConversationLoadingState';
 import {
@@ -61,6 +62,7 @@ export struct ConversationView {
     Stack() {
       Column() {
         this.Header()
+        this.Mailbox()
         if (this.hoverOperateMode) {
           this.HoverBody()
         } else {
@@ -106,10 +108,15 @@ export struct ConversationView {
   }
 
   @Builder
-  private ConversationBody() {
-    if (this.shouldShowStatusBar()) {
-      this.ExecutionStatusBar()
+  private Mailbox() {
+    if (this.surface === ChatSurface.Remote && this.state.interactionMailbox.sessionId === this.state.activeSession.sessionId) {
+      InteractionMailboxPanel({ state: this.state.interactionMailbox,
+        onAction: (action: InteractionMailboxAction): void => this.onIntent(ConversationIntents.mailbox(action)) })
     }
+  }
+
+  @Builder
+  private ConversationBody() {
     if (this.shouldCenterInlineStatus()) {
       this.CenteredInlineStatus()
     } else {
@@ -179,25 +186,15 @@ export struct ConversationView {
   }
 
   @Builder
-  ExecutionStatusBar() {
-    ChatStatusBar({
-      title: this.taskSummaryTitle(),
-      detail: this.taskSummaryDetail(),
-      color: this.statusColor(),
-      canStop: this.canStop,
-      onStop: () => {
-        this.onStop();
-      }
-    })
-  }
-
-  @Builder
   MessageList() {
     ChatTimeline({
+      interactionMailbox: this.state.interactionMailbox,
       surface: this.surface,
       timelineItems: this.visibleTimelineItems(),
       timelineRevision: this.timelineRevision,
       hasMoreMessages: this.hasMoreMessages,
+      historyLoading: this.state.historyLoading,
+      historyFailed: this.state.historyFailed,
       isBusy: this.isBusy || this.isLoadingConversation,
       connectionState: this.connectionState,
       statusText: this.statusText,
@@ -385,40 +382,6 @@ export struct ConversationView {
       return RemoteI18n.t('chat.executing');
     }
     return ConnectionStatusPresenter.detail(this.connectionState, this.statusText, '', '');
-  }
-
-  private statusColor(): ResourceColor {
-    if (this.canStop && this.connectionState === 'connected') {
-      return STATUS_SUCCESS;
-    }
-    return this.connectionColor();
-  }
-
-  private taskSummaryTitle(): string {
-    if (this.canStop) {
-      return RemoteI18n.t('chat.executing');
-    }
-    if (this.connectionState === 'failed') {
-      return RemoteI18n.t('chat.emptyConnectionError');
-    }
-    if (this.connectionState === 'reconnecting') {
-      return RemoteI18n.t('chat.emptyReconnecting');
-    }
-    return ConnectionStatusPresenter.label(this.connectionState);
-  }
-
-  private taskSummaryDetail(): string {
-    const detail = this.statusLine();
-    return detail === this.taskSummaryTitle() ? '' : detail;
-  }
-
-  private shouldShowStatusBar(): boolean {
-    return this.surface === ChatSurface.Remote &&
-      !this.isLoadingConversation &&
-      this.connectionState !== 'connected' &&
-      (this.activeSession.sessionId.length > 0 ||
-        this.connectionState === 'failed' ||
-        this.connectionState === 'reconnecting');
   }
 
   private headerTitle(): string {

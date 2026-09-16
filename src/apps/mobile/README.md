@@ -98,15 +98,21 @@ The mobile apps control a selected Desktop or CLI runtime. Workspace paths, file
 
 Android/iOS conversation synchronization uses the same revisioned rich session records for initial history, live updates, and recovery. The latest page opens first; earlier encrypted pages prefetch in the background through the same single flight used by explicit history requests. Complete fragment boundaries, stable record revisions, and ancestor deletion markers are preserved during backward reads. Encrypted fragments, the forward cursor, and the older-page boundary commit atomically to the local replica. Returning to the foreground actively checks the forward cursor even when the socket did not report a disconnect.
 
+HarmonyOS also publishes the latest page before scheduling older-page prefetch.
+Background and manual history requests share the same serialized reader, and
+leaving the session cancels scheduled prefetch.
+
 Workspace tools expose directory browsing, text editing with runtime-enforced content-hash conflict detection, file/folder creation, file renaming/deletion, binary upload/download, and bundled xterm PTY control. The terminal executes on the selected runtime or its saved SSH connection; durable notifications request incremental output from the runtime cursor.
 
 Pending approvals are a separate runtime mailbox, refreshed at initial attachment, reconnect/foreground recovery, and relevant permission control events. Android/iOS answer the stable request identity even when no tool call is attached, and support approving edited JSON input through the same runtime permission owner.
 
 Android, iOS, and HarmonyOS terminal WebViews share `src/shared/terminal/webview` assets. The native adapter only bridges keyboard input, dimensions, and cursor-derived output; it has no Relay token or local process access. Android/iOS downloads stage chunks into a controller-local temporary file and hand its URL or input stream to the platform document exporter. They do not retain the full download in a Kotlin ByteArray or Swift Data. Preview buffers have their own bounded presentation policy.
 
-Android and iOS expose a device-tools button at the bottom of the sidebar.
-It selects a runtime location (the controlled device or one of its saved SSH
-connections), then opens files or terminals independently of any workspace.
+Android, iOS, and HarmonyOS expose a device-tools button at the bottom of the sidebar.
+The page selects a runtime location (the controlled device or one of its saved SSH
+connections) and provides Files and Terminal tabs independently of any workspace.
+Switching tabs retains the selected location and does not create a terminal;
+opening a PTY is an explicit action.
 Local defaults come from the runtime's `get_system_info.homeDir`; SSH defaults to
 `/`. A successful directory change captures that directory and provider for file
 transfers. No workspace registration or current-workspace switch is required.
@@ -119,10 +125,9 @@ connection, plus server-side name and modification-time sorting before directory
 pagination. File editing opens a separate full-screen native view; returning
 preserves the directory and asks before discarding edits. Its line-number gutter
 shares vertical scrolling with unwrapped source text and never changes file
-contents. Rename and delete remain available in that editor. The terminal opens
-in a separate native view whose PTY viewport follows the remaining safe-area and
-keyboard-adjusted space; leaving the view keeps the terminal running until an
-explicit close. Native build checks cover integration, while keyboard, scrolling,
+contents. Rename and delete remain available in that editor. The terminal tab
+fits its PTY viewport into the remaining safe-area and keyboard-adjusted space;
+leaving the page keeps the terminal running until an explicit close. Native build checks cover integration, while keyboard, scrolling,
 and live runtime behavior still require device or simulator interaction checks.
 
 Creating an ordinary chat sends `Claw` without a workspace override and lets the
@@ -134,10 +139,14 @@ project carries its connection identity through the create request.
 
 ## Connection recovery
 
-Native iOS and Android controllers probe idle session lists while the app is in the
-foreground. An open transcript uses its durable session stream for recovery instead
-of duplicating the health request. Temporary transport failures keep the displayed
-list or transcript; a successful response restores the connected state.
+Native iOS and Android controllers probe the selected runtime while in the
+foreground, including idle open conversations. Each probe has a ten-second
+deadline, and the next starts fifteen seconds after the previous one finishes.
+Backgrounding cancels the probe. Durable replay recovers conversation records,
+but Relay availability alone does not prove the execution host is online.
+Temporary transport failures keep the displayed list, transcript, and draft; a
+successful response restores the connected state. Connection feedback stays in
+the sidebar instead of inserting a banner above the conversation.
 
 Account sign-in on Android, iOS and HarmonyOS opens the shared authorization page
 with separate GitHub and email-code options. Email users need no password and are

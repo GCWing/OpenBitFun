@@ -31,6 +31,7 @@ export const SOFT: ResourceColor = $r('app.color.soft');
 export const FLOATING_PANEL_BG: ResourceColor = $r('app.color.floating_panel_bg');
 export const STATUS_SUCCESS: ResourceColor = $r('app.color.status_success');
 export const STATUS_DANGER: ResourceColor = $r('app.color.status_danger');
+export const STATUS_WARNING: ResourceColor = $r('app.color.status_warning');
 export const CODE_LINE_NUMBER: ResourceColor = $r('app.color.code_line_number');
 export const CODE_KEYWORD: ResourceColor = $r('app.color.code_keyword');
 export const CODE_STRING: ResourceColor = $r('app.color.code_string');

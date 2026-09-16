@@ -59,6 +59,7 @@ export class MobileDesignColors {
   static readonly welcomeButton: MobileColorPair = new MobileColorPair("#FFFFFF", "#FFFFFF");
   static readonly welcomeButtonLabel: MobileColorPair = new MobileColorPair("#171917", "#171917");
   static readonly welcomeSecondary: MobileColorPair = new MobileColorPair("#B9BCB9", "#B9BCB9");
+  static readonly statusWarning: MobileColorPair = new MobileColorPair("#FF8C00", "#FF8C00");
 }
 
 export class MobileTypographyToken {
@@ -169,6 +170,11 @@ export class MobileDesignGeometry {
   static readonly recentHomeTitleSize: number = 25;
   static readonly recentHomeMaxWidth: number = 560;
   static readonly recentHomeRowPadding: number = 18;
+  static readonly approvalCardRadius: number = 12;
+  static readonly approvalCardPadding: number = 12;
+  static readonly approvalCardGap: number = 8;
+  static readonly approvalActionRadius: number = 8;
+  static readonly approvalActionHeight: number = 36;
 }
 
 export class MobileDesignBreakpoints {

@@ -47,7 +47,12 @@ public data class RemoteSession public constructor(
     public val messageCount: Int,
     public val workspacePath: String?,
     public val workspaceName: String?,
-)
+    public val workspaceIdentity: RemoteWorkspaceIdentity?,
+) {
+    public constructor(id: String, title: String, agentType: String, status: String, updatedAt: String,
+        createdAt: String, messageCount: Int, workspacePath: String?, workspaceName: String?) :
+        this(id, title, agentType, status, updatedAt, createdAt, messageCount, workspacePath, workspaceName, null)
+}
 
 public data class ChatSessionCursor public constructor(
     public val pollVersion: Int,

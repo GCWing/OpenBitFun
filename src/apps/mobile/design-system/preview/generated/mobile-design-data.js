@@ -197,6 +197,10 @@ export const mobileTokens = {
     "welcome_secondary": {
       "light": "#B9BCB9",
       "dark": "#B9BCB9"
+    },
+    "status_warning": {
+      "light": "#FF8C00",
+      "dark": "#FF8C00"
     }
   },
   "typography": {
@@ -361,7 +365,12 @@ export const mobileTokens = {
     "recent_home_mark_size": 132,
     "recent_home_title_size": 25,
     "recent_home_max_width": 560,
-    "recent_home_row_padding": 18
+    "recent_home_row_padding": 18,
+    "approval_card_radius": 12,
+    "approval_card_padding": 12,
+    "approval_card_gap": 8,
+    "approval_action_radius": 8,
+    "approval_action_height": 36
   },
   "breakpoints": {
     "wide": 600,
@@ -397,6 +406,67 @@ export const mobileComponents = {
         "ink"
       ],
       "platformNotes": "Keep the glyph's optical box separate from the touch target. Header and sidebar controls stay visually transparent at rest; reserve borders and elevation for the containing surface."
+    },
+    "interaction_question": {
+      "purpose": "Answer a runtime mailbox question independently of transcript tool state.",
+      "anatomy": [
+        "question_heading",
+        "choice_or_text_input",
+        "submit_action",
+        "failure_feedback"
+      ],
+      "states": [
+        "pending",
+        "editing",
+        "submitting",
+        "failed"
+      ],
+      "tokens": [
+        "content_gutter",
+        "body_medium",
+        "body_small",
+        "ink",
+        "muted",
+        "card",
+        "primary_action",
+        "content_on_action"
+      ],
+      "platformNotes": "Render a direct question form in the scrollable mailbox. Tool execution headers, result expansion and stop actions stay in the transcript or composer. Retain draft values through submission failure and queue reordering; remove the form only when authoritative mailbox state removes it."
+    },
+    "runtime_file_browser": {
+      "purpose": "Browse and manage files on the selected controlled runtime without changing the active chat workspace.",
+      "anatomy": [
+        "runtime_location",
+        "path_caption",
+        "single_row_navigation_sort_create_toolbar",
+        "scrolling_file_rows",
+        "row_overflow",
+        "contextual_transfer_feedback",
+        "on_demand_action_sheet"
+      ],
+      "states": [
+        "loading",
+        "ready",
+        "empty",
+        "failed",
+        "action_draft",
+        "action_busy",
+        "action_failed",
+        "editor"
+      ],
+      "tokens": [
+        "control_touch_size",
+        "content_gutter",
+        "body_medium",
+        "body_small",
+        "ink",
+        "muted",
+        "line",
+        "card",
+        "primary_action",
+        "content_on_action"
+      ],
+      "platformNotes": "Parent, refresh, sort and create share one toolbar row. Rows show file or folder glyphs and an overflow menu; mutation forms are not permanently visible. Compact forms use a bottom sheet with submit and cancel reachable while the native keyboard is open. Preserve failed drafts and route every action to the captured runtime provider. Native adapters own keyboard avoidance and file pickers."
     },
     "action_button": {
       "purpose": "Expresses one primary, secondary, quiet, or destructive workflow action with consistent emphasis.",
@@ -1003,6 +1073,36 @@ export const mobileComponents = {
         "startup_brand"
       ],
       "platformNotes": "Native cold-start overlay on HarmonyOS, Android and iOS; 6800ms timeline independent of network readiness. A cyan dot hops ahead of ten 42-unit letters with subtle letter bounce. At normalized text time 0.70–0.86 it arcs back to the dotless i, settling at 7.35 units diameter with one fading halo. Text time is min(progress / 0.65 * 0.9, 0.9). Logo expands from 0.65 to 1 with a small overshoot during progress 0.66–0.85 as the word moves down 42 units. Use a centered 280×240 stage, scaled down for narrow windows, 92-unit contour mark on Android/iOS and a 156vp mark on HarmonyOS, with platform-native soft sans typography. HarmonyOS positions the mark at (62, -34) to preserve separation from the settled wordmark. Fade the overlay over the last 3%. Reserve full glyph slots; no layout changes during reveal. Remove on completion or background and do not replay on activity recreation/foreground. Skip for reduced motion. Notification onboarding follows completion. The dedicated brand_dot token preserves identity independently of action/status colors."
+    },
+    "permission_request_panel": {
+      "purpose": "Answers an independent runtime permission request below the conversation header, outside the transcript, matching mobile-web.",
+      "anatomy": [
+        "warning_glyph_and_action",
+        "optional_source_identity",
+        "neutral_resource_preview",
+        "collapsed_input_editor",
+        "trailing_reject_and_allow_actions"
+      ],
+      "states": [
+        "pending",
+        "editing",
+        "busy",
+        "failed"
+      ],
+      "tokens": [
+        "approval_card_radius",
+        "approval_card_padding",
+        "approval_card_gap",
+        "approval_action_radius",
+        "approval_action_height",
+        "status_warning",
+        "card",
+        "soft",
+        "line",
+        "primary_action",
+        "content_on_action"
+      ],
+      "platformNotes": "Reference: desktop ChatInputApprovalBand and @openbitfun/ui raised Card, neutral resource Card, fill reject Button and primary allow Button. Preserve desktop 12-unit card radius/padding and 8-unit gaps, with 36-unit mobile actions. Resource content scrolls within the band; actions do not stretch across the card. JSON editing remains a quiet, collapsed mobile-web capability. status_warning ports desktop amber.550 for the short shield glyph: neither success/danger nor the blue file-link accent communicates pending approval."
     }
   }
 };

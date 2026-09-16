@@ -17,6 +17,8 @@ import org.hildan.socketio.EngineIOPacket
 import org.hildan.socketio.SocketIOPacket
 import kotlin.random.Random
 
+internal const val MAX_ACCOUNT_FRAME_BYTES = 256 * 1024
+
 internal interface AccountRpcConnection {
     val notifications: Flow<JsonObject> get() = emptyFlow()
     val connections: Flow<Long> get() = emptyFlow()
@@ -30,6 +32,7 @@ internal class AccountRealtime(
     private val http: HttpClient,
     private val relayUrl: String,
     private val token: String,
+    private val log: TransportLog = TransportLog.None,
 ) : AccountRpcConnection {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val state = MutableStateFlow<Epoch?>(null)
@@ -39,7 +42,11 @@ internal class AccountRealtime(
     private val connectionFailure = MutableStateFlow<Throwable?>(null)
     override val notifications: SharedFlow<JsonObject> = updates.asSharedFlow()
     override val connections: StateFlow<Long> = generation.asStateFlow()
-    private val owner = scope.launch { supervise() }
+    private val owner = scope.launch { supervise() }.also { job ->
+        job.invokeOnCompletion { cause ->
+            log.info("account realtime owner ended cancelled=${job.isCancelled} cause=${cause?.let { it::class.simpleName } ?: "none"}")
+        }
+    }
 
     private class Epoch(val socket: DefaultClientWebSocketSession) {
         val ready = CompletableDeferred<Unit>()
@@ -107,13 +114,16 @@ internal class AccountRealtime(
                 val socket = withTimeout(RELAY_CONNECT_TIMEOUT_MS) {
                     http.webSocketSession("$url/v1/updates/?EIO=4&transport=websocket")
                 }
+                log.info("account realtime socket opened")
                 epoch = Epoch(socket)
                 state.value = epoch
                 var idleMs = RELAY_CONNECT_TIMEOUT_MS
                 var engineOpened = false
                 while (currentCoroutineContext().isActive) {
                     val frame = withTimeout(idleMs) { socket.incoming.receive() }
-                    if (frame !is Frame.Text) throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE)
+                    if (frame !is Frame.Text || frame.data.size > MAX_ACCOUNT_FRAME_BYTES) {
+                        throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE)
+                    }
                     when (val packet = EngineIO.decodeSocketIO(frame.readText())) {
                         is EngineIOPacket.Open -> {
                             check(!engineOpened)
@@ -140,6 +150,7 @@ internal class AccountRealtime(
                                     epoch.ready.complete(Unit)
                                     delayMs = 1000
                                     generation.value += 1
+                                    log.info("account realtime authenticated generation=${generation.value}")
                                 }
                                 if (name == "update" || name == "ephemeral") {
                                     val value = message.payload.getOrNull(1)?.jsonObject
@@ -157,12 +168,18 @@ internal class AccountRealtime(
                     }
                 }
             } catch (cancelled: CancellationException) {
-                if (cancelled !is TimeoutCancellationException) throw cancelled
+                if (cancelled !is TimeoutCancellationException) {
+                    log.warn("account realtime receive cancelled ownerActive=${currentCoroutineContext().isActive} cause=${cancelled::class.simpleName}")
+                    throw cancelled
+                }
+                log.warn("account realtime timed out")
             } catch (failure: CloudAccountException) {
                 connectionFailure.value = failure
+                log.warn("account realtime failed type=${failure::class.simpleName}")
                 if (failure.failure == CloudAccountFailure.AUTHENTICATION) return
             } catch (failure: Exception) {
                 connectionFailure.value = failure
+                log.warn("account realtime failed type=${failure::class.simpleName}")
                 // Read/connect failures reconnect. Submitted calls fail in fail().
             } finally {
                 val old = epoch
@@ -180,5 +197,8 @@ internal class AccountRealtime(
         }
     }
 
-    override fun close() { scope.cancel() }
+    override fun close() {
+        log.info("account realtime close requested")
+        scope.cancel()
+    }
 }

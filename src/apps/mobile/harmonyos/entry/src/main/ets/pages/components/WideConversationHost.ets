@@ -178,6 +178,8 @@ export struct WideConversationHost {
       savedConnectionsTargetId: this.remotePageState.savedConnectionsTargetId,
       workspaceName: this.remotePageState.workspaceName,
       workspacePath: this.remotePageState.workspacePath,
+      workspaceConnectionId: this.remotePageState.workspaceConnectionId,
+      workspaceSshHost: this.remotePageState.workspaceSshHost,
       workspaceKind: this.remotePageState.workspaceKind,
       connectionState: this.remotePageState.connectionState,
       controlTargetType: this.remotePageState.controlTargetType,
@@ -191,17 +193,18 @@ export struct WideConversationHost {
         REMOTE_CAPABILITY_HARNESS_PROFILES_V1),
       workspacePickerPlacement: this.sessionDetailsPlacement,
       onOpenSession: this.actions.onRemoteHome.openSessionInPlace,
-      onCreateInWorkspace: (deviceId: string, path: string, agentType: string, connectionId?: string) => {
-        this.actions.onRemoteHome.createInWorkspaceInPlace(path, agentType, deviceId, connectionId);
+      onCreateInWorkspace: (deviceId: string, path: string, agentType: string, connectionId?: string, sshHost?: string) => {
+        this.actions.onRemoteHome.createInWorkspaceInPlace(path, agentType, deviceId, connectionId, sshHost);
       },
-      onOpenWorkspace: (deviceId: string, path: string, connectionId?: string) => {
-        this.actions.onRemoteHome.selectWorkspace(path, deviceId, connectionId);
+      onOpenWorkspace: (deviceId: string, path: string, connectionId?: string, sshHost?: string) => {
+        this.actions.onRemoteHome.selectWorkspace(path, deviceId, connectionId, sshHost);
       },
-      onExpandWorkspace: async (deviceId: string, path: string): Promise<void> => {
-        await this.actions.onRemoteHome.loadWorkspaceSessions(deviceId, path);
+      onExpandWorkspace: async (deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<void> => {
+        await this.actions.onRemoteHome.loadWorkspaceSessions(deviceId, path, remoteConnectionId, remoteSshHost);
       },
       onSelectDevice: this.actions.onRemoteHome.selectDirectoryDevice,
       onRetryDevice: this.actions.onRemoteHome.retryDirectoryDevice,
+      onReconnect: this.actions.onRemoteHome.reconnect,
       onAddWorkspace: this.actions.onRemoteHome.addDirectoryWorkspace,
       onRefreshDevices: this.actions.onSidebar.refreshDevices,
       onAddDevice: this.actions.onSidebar.addDesktop

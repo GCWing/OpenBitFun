@@ -8,7 +8,92 @@ import kotlinx.coroutines.test.*
 import kotlinx.serialization.json.*
 import kotlin.test.*
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SessionStreamTest {
+    @Test fun initialHistoryTimeoutRecoversWithoutResubscribingOrAdvancingCursor() = runTest {
+        var reads = 0; var caughtUp = 0
+        val failures = mutableListOf<Throwable>()
+        val replica = MemoryReplica()
+        val owner = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            sessionStream("session", "unused", "relay", emptyFlow(), emptyFlow(), replica,
+                readPage = { StreamPage(emptyList(), false) },
+                readBefore = { reads++; if (reads == 1) throw CloudAccountException(CloudAccountFailure.TIMEOUT); StreamPage(emptyList(), false) },
+                olderRequests = Channel(), onError = { failures.add(it) }, onCaughtUp = { caughtUp++ },
+                prefetchOlder = false,
+            ).collect()
+        }
+        runCurrent()
+        assertEquals(1, failures.size)
+        assertEquals(0, caughtUp)
+        assertEquals(0L, replica.cursor())
+        advanceTimeBy(1000); runCurrent()
+        assertEquals(2, reads)
+        assertEquals(1, caughtUp)
+        assertTrue(owner.isActive)
+        owner.cancel()
+    }
+
+    @Test fun initialHistoryWaitsForHostPublicationWithoutCommittingEmptyHistory() = runTest {
+        var reads = 0
+        var caughtUp = 0
+        val replica = MemoryReplica()
+        val owner = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            sessionStream("session", "unused", "relay", emptyFlow(), emptyFlow(), replica,
+                readPage = { StreamPage(emptyList(), false) },
+                readBefore = {
+                    reads++
+                    if (reads < 3) throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE, 404)
+                    StreamPage(emptyList(), false)
+                }, olderRequests = Channel(), onError = {}, onCaughtUp = { caughtUp++ }, prefetchOlder = false,
+            ).collect()
+        }
+        runCurrent()
+        advanceTimeBy(1000); runCurrent()
+        assertEquals(2, reads)
+        assertEquals(0, caughtUp)
+        assertEquals(0L, replica.historyBefore())
+        advanceTimeBy(2000); runCurrent()
+        assertEquals(3, reads)
+        assertEquals(1, caughtUp)
+        assertTrue(owner.isActive)
+        owner.cancel()
+    }
+
+    @Test fun stoppingDuringInitialBackoffCancelsFurtherReads() = runTest {
+        var reads = 0
+        val owner = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            sessionStream("session", "unused", "relay", emptyFlow(), emptyFlow(), MemoryReplica(),
+                readPage = { error("Must not read forward history") },
+                readBefore = { reads++; throw CloudAccountException(CloudAccountFailure.TIMEOUT) },
+                olderRequests = Channel(), onError = {}, onCaughtUp = {}, prefetchOlder = false,
+            ).collect()
+        }
+        runCurrent(); assertEquals(1, reads)
+        owner.cancelAndJoin()
+        advanceTimeBy(60_000); runCurrent()
+        assertEquals(1, reads)
+    }
+
+    @Test fun authenticationAndInvalidHistoryFailWithoutRetryOrCursorMutation() = runTest {
+        for (failure in listOf(CloudAccountException(CloudAccountFailure.AUTHENTICATION),
+            CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE), IllegalStateException("Invalid sequence"))) {
+            var reads = 0; var reported = 0
+            val replica = MemoryReplica()
+            val result = runCatching {
+                sessionStream("session", "unused", "relay", emptyFlow(), emptyFlow(), replica,
+                    readPage = { error("Must not read forward history") },
+                    readBefore = { reads++; throw failure }, olderRequests = Channel(),
+                    onError = { reported++ }, onCaughtUp = { error("Must not report connected") }, prefetchOlder = false,
+                ).collect()
+            }
+            val actual = assertNotNull(result.exceptionOrNull())
+            assertEquals(failure::class, actual::class)
+            assertEquals(failure.message, actual.message)
+            assertEquals(1, reads); assertEquals(1, reported)
+            assertEquals(0L, replica.cursor())
+        }
+    }
+
     @Test fun latestPageRepairsFragmentBoundaryAndOlderHistoryKeepsForwardCursor() = runTest {
         val fragments = RelayJson.decodeFromString<List<StreamFragment>>(FRAGMENTS)
         val messages = (0..1).flatMap { event -> fragments.mapIndexed { index, fragment ->

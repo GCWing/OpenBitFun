@@ -7,7 +7,6 @@ import UIKit
 struct ChatTimelineView: View {
     @ObservedObject var model: MobileAppModel
     var onLoadOlderMessages: (() -> Void)? = nil
-    @State private var expandedMailboxToolID: String?
     @StateObject private var scrollController = TimelineScrollController()
     @State private var historyAnchor: (id: String, top: CGFloat, firstID: String)?
 
@@ -41,28 +40,18 @@ struct ChatTimelineView: View {
                                 }
                             } label: {
                                 HStack(spacing: 7) {
-                                    if model.busy { ProgressView().controlSize(.small) }
-                                    Text(model.localized(model.busy ? "正在加载" : "加载更早消息"))
+                                    if model.remoteHistoryLoading { ProgressView().controlSize(.small) }
+                                    Text(model.localized(model.remoteHistoryLoading ? "正在加载" : (model.remoteHistoryFailed ? "Could not load earlier messages. Tap to retry." : "加载更早消息")))
                                         .font(MobileDesignTypography.labelSmall.font)
                                 }
                                 .foregroundStyle(OpenBitFunTheme.muted)
                                 .frame(maxWidth: .infinity, minHeight: 38)
                             }
                             .buttonStyle(.plain)
-                            .disabled(model.busy)
+                            .disabled(model.busy || model.remoteHistoryLoading)
                             .accessibilityIdentifier("timeline.loadOlder")
                         }
                         ForEach(historyRows) { row in timelineRow(row) }
-                    }
-                    if model.surface == .remote, let mailbox = model.permissionMailbox {
-                        if mailbox.failed { Text(model.localized("Permission request could not be completed. Retry to refresh pending requests.")); Button(model.localized("重试")) { model.refreshPermissionMailbox() } }
-                        ForEach(mailbox.questions, id: \.id) { question in
-                            ToolStatusList(tools: [MobileAppModel.mapTool(question)], model: model, expandedToolID: $expandedMailboxToolID)
-                                .simultaneousGesture(TapGesture().onEnded { model.startQuestionInteraction(question.id) })
-                        }
-                        ForEach(mailbox.requests, id: \.requestId) { request in
-                            PermissionMailboxRow(request: request, busy: mailbox.busy, model: model)
-                        }
                     }
                     // Keep the user's message and its reply in the same measured
                     // tail, including acknowledgement and completion transitions.
@@ -769,6 +758,7 @@ private struct MarkdownBlockView: View {
                 .overlay(alignment: .leading) { Rectangle().fill(OpenBitFunTheme.line).frame(width: 2) }
                 .textSelection(.enabled)
         case "list":
+            let markerWidth = listMarkerWidth
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(block.items, id: \.id) { item in
                     HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -786,7 +776,8 @@ private struct MarkdownBlockView: View {
                             .padding(.horizontal, 2)
                         } else {
                             Text(item.marker).foregroundStyle(OpenBitFunTheme.muted)
-                                .frame(width: 20, alignment: .trailing)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(width: markerWidth, alignment: .trailing)
                         }
                         Text(listItemInlineString(item)).foregroundStyle(OpenBitFunTheme.ink)
                             .lineSpacing(MobileDesignTypography.bodyLarge.lineSpacing)
@@ -822,6 +813,16 @@ private struct MarkdownBlockView: View {
         if prefix == "[x]" { return true }
         if prefix == "[ ]" { return false }
         return nil
+    }
+
+    private var listMarkerWidth: CGFloat {
+        let token = MobileDesignTypography.bodyLarge
+        let font = UIFontMetrics(forTextStyle: token.textStyle).scaledFont(
+            for: UIFont.systemFont(ofSize: token.size, weight: token.weight)
+        )
+        return block.items.reduce(CGFloat(20)) { width, item in
+            max(width, ceil((item.marker as NSString).size(withAttributes: [.font: font]).width))
+        }
     }
 
     private func listItemInlineString(_ item: MarkdownListItem) -> AttributedString {
@@ -1229,9 +1230,27 @@ private struct ToolStatusRow: View {
     @State private var selectedOptions: [Int: Set<String>] = [:]
     @State private var otherAnswers: [Int: String] = [:]
 
-    private var emphasized: Bool { !tool.actions.isEmpty || expanded || tool.phase == "FAILED" }
+    private var transcriptActions: Set<String> {
+        guard model.permissionMailbox?.ownsToolInteraction(toolId: tool.id) == true else { return tool.actions }
+        return tool.actions.subtracting(["ANSWER", "APPROVE", "REJECT"])
+            .subtracting(tool.actions.contains("ANSWER") ? ["CANCEL"] : [])
+    }
 
+    private var emphasized: Bool { !transcriptActions.isEmpty || expanded || tool.phase == "FAILED" }
+
+    var mailboxQuestion = false
+
+    @ViewBuilder
     var body: some View {
+        if mailboxQuestion {
+            if tool.questions.isEmpty { legacyAnswerPanel }
+            else { structuredAnswerPanel }
+        } else {
+            toolRow
+        }
+    }
+
+    private var toolRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 if !tool.input.isEmpty || !tool.output.isEmpty || !tool.filePath.isEmpty {
@@ -1266,23 +1285,42 @@ private struct ToolStatusRow: View {
                 if !tool.output.isEmpty { detailText(model.localized("输出"), tool.output) }
             }
 
-            if tool.actions.contains("ANSWER") {
+            if transcriptActions.contains("ANSWER") {
                 if tool.questions.isEmpty {
                     legacyAnswerPanel
                 } else {
                     structuredAnswerPanel
                 }
-            } else if tool.actions.contains("APPROVE") || tool.actions.contains("REJECT") {
-                if tool.actions.contains("APPROVE") {
-                    Button(model.localized("编辑后批准")) { approvalInput = tool.input.isEmpty ? "{}" : tool.input; editingApproval.toggle() }
-                    if editingApproval { TextEditor(text: $approvalInput).frame(minHeight: 120) }
+            } else if transcriptActions.contains("APPROVE") || transcriptActions.contains("REJECT") {
+                if transcriptActions.contains("APPROVE") {
+                    HStack {
+                        Spacer(minLength: 0)
+                        Button(model.localized(editingApproval ? "收起参数" : "编辑参数")) {
+                            if !editingApproval && approvalInput.isEmpty { approvalInput = tool.input.isEmpty ? "{}" : tool.input }
+                            editingApproval.toggle()
+                        }
+                        .font(MobileDesignTypography.labelSmall.font).foregroundStyle(OpenBitFunTheme.muted)
+                        .frame(minHeight: 32)
+                    }
+                    if editingApproval {
+                        TextEditor(text: $approvalInput).font(.system(size: MobileDesignTypography.labelSmall.size, design: .monospaced))
+                            .frame(height: 96).scrollContentBackground(.hidden)
+                            .padding(8).background(OpenBitFunTheme.card, in: RoundedRectangle(cornerRadius: 8))
+                    }
                 }
-                HStack(spacing: 8) {
-                    if tool.actions.contains("REJECT") { toolAction(model.localized("拒绝"), primary: false) { model.rejectTool(tool.id) } }
-                    if tool.actions.contains("APPROVE") { toolAction(model.localized("允许"), primary: true) { model.approveTool(tool.id, updatedInput: editingApproval ? approvalInput : nil) }.disabled(editingApproval && ((try? JSONSerialization.jsonObject(with: Data(approvalInput.utf8))) as? [String: Any]) == nil) }
+                HStack(spacing: MobileDesignGeometry.approvalCardGap) {
+                    Spacer(minLength: 0)
+                    if transcriptActions.contains("REJECT") {
+                        compactApprovalAction(model.localized("拒绝"), primary: false) { model.rejectTool(tool.id) }
+                    }
+                    if transcriptActions.contains("APPROVE") {
+                        compactApprovalAction(model.localized("批准"), primary: true) {
+                            model.approveTool(tool.id, updatedInput: editingApproval ? approvalInput : nil)
+                        }.disabled(editingApproval && ((try? JSONSerialization.jsonObject(with: Data(approvalInput.utf8))) as? [String: Any]) == nil)
+                    }
                 }
             }
-            if tool.actions.contains("CANCEL") {
+            if transcriptActions.contains("CANCEL") {
                 Button { model.cancelTool(tool.id) } label: {
                     Text(model.localized("停止执行"))
                         .font(MobileDesignTypography.labelMedium.font).foregroundStyle(OpenBitFunTheme.statusDanger)
@@ -1297,6 +1335,16 @@ private struct ToolStatusRow: View {
         .overlay { if emphasized { RoundedRectangle(cornerRadius: 14).stroke(OpenBitFunTheme.line, lineWidth: 1) } }
     }
 
+    private func compactApprovalAction(_ title: String, primary: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(MobileDesignTypography.labelMedium.font).padding(.horizontal, 16)
+                .frame(height: MobileDesignGeometry.approvalActionHeight)
+                .foregroundStyle(primary ? OpenBitFunTheme.contentOnAction : OpenBitFunTheme.ink)
+                .background(primary ? MobileDesignColors.primaryAction : OpenBitFunTheme.card,
+                    in: RoundedRectangle(cornerRadius: MobileDesignGeometry.approvalActionRadius))
+        }.buttonStyle(.plain)
+    }
+
     private var legacyAnswerPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(tool.question ?? model.localized("请输入回复")).font(MobileDesignTypography.bodySmall.font)
@@ -1305,7 +1353,7 @@ private struct ToolStatusRow: View {
                 .font(MobileDesignTypography.bodyLarge.font).lineLimit(2...5).padding(10)
                 .background(OpenBitFunTheme.card).clipShape(RoundedRectangle(cornerRadius: 11))
                 .overlay(RoundedRectangle(cornerRadius: 11).stroke(OpenBitFunTheme.line, lineWidth: 1))
-            Button { model.answerTool(tool.id, answer: answer); answer = "" } label: {
+            Button { model.answerTool(tool.id, answer: answer) } label: {
                 Text(model.localized("发送回复"))
                     .font(MobileDesignTypography.labelMedium.font).foregroundStyle(OpenBitFunTheme.contentOnAction)
                     .frame(maxWidth: .infinity, minHeight: 40)
@@ -1341,6 +1389,7 @@ private struct ToolStatusRow: View {
                             .padding(.vertical, 5)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("question.option.\(tool.id).\(question.index).\(option.label)")
                         .disabled(model.busy)
                         if selected && isOther(option) {
                             TextField(model.localized("请输入回复"), text: Binding(
@@ -1365,7 +1414,7 @@ private struct ToolStatusRow: View {
                 .background(structuredAnswersValid && !model.busy ? OpenBitFunTheme.accent : OpenBitFunTheme.muted)
                 .clipShape(Capsule())
             }
-            .buttonStyle(.plain).disabled(!structuredAnswersValid || model.busy)
+            .buttonStyle(.plain).accessibilityIdentifier("question.submit.\(tool.id)").disabled(!structuredAnswersValid || model.busy)
         }
     }
 
@@ -1495,6 +1544,65 @@ private struct ToolStatusRow: View {
     }
 }
 
+private struct PermissionMailboxMaxHeightKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 280
+}
+
+extension EnvironmentValues {
+    var permissionMailboxMaxHeight: CGFloat {
+        get { self[PermissionMailboxMaxHeightKey.self] }
+        set { self[PermissionMailboxMaxHeightKey.self] = newValue }
+    }
+}
+
+struct PermissionMailboxPanel: View {
+    @ObservedObject var model: MobileAppModel
+    @Environment(\.permissionMailboxMaxHeight) private var maxHeight
+    @State private var expandedMailboxToolID: String?
+    @State private var contentHeight: CGFloat = 1
+    var body: some View {
+        if model.surface == .remote, let mailbox = model.permissionMailbox,
+           mailbox.failed || !mailbox.requests.isEmpty || !mailbox.questions.isEmpty {
+            ScrollView {
+                VStack(alignment: .leading, spacing: MobileDesignGeometry.approvalCardGap) {
+                    if mailbox.failed {
+                        HStack {
+                            Text(model.localized("Permission request could not be completed. Retry to refresh pending requests."))
+                                .foregroundStyle(OpenBitFunTheme.statusDanger)
+                            Button(model.localized("重试")) { model.refreshPermissionMailbox() }.disabled(mailbox.busy)
+                        }.font(MobileDesignTypography.bodySmall.font)
+                    }
+                    ForEach(mailbox.questions, id: \.id) { question in
+                        ToolStatusRow(tool: MobileAppModel.mapTool(question), model: model, expandedToolID: $expandedMailboxToolID, mailboxQuestion: true)
+                            .disabled(mailbox.busy)
+                            .simultaneousGesture(TapGesture().onEnded { model.startQuestionInteraction(question.id) })
+                    }
+                    ForEach(mailbox.requests, id: \.requestId) { request in
+                        PermissionMailboxRow(request: request, busy: mailbox.busy, model: model)
+                    }
+                }
+                .padding(.horizontal, MobileDesignGeometry.contentGutter).padding(.vertical, 8)
+                .background(GeometryReader { proxy in
+                    Color.clear.preference(key: PermissionMailboxHeightKey.self, value: proxy.size.height)
+                })
+            }
+            .frame(height: min(contentHeight, maxHeight))
+            .onPreferenceChange(PermissionMailboxHeightKey.self) { height in
+                contentHeight = height
+                #if DEBUG
+                Logger(subsystem: "com.openbitfun.mobile.ios", category: "permission-mailbox").info("Mailbox layout height=\(height) limit=\(maxHeight) requests=\(mailbox.requests.count)")
+                #endif
+            }
+            .id(model.selectedSessionID)
+        }
+    }
+}
+
+private struct PermissionMailboxHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 1
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 private struct PermissionMailboxRow: View {
     let request: PermissionMailboxRequest
     let busy: Bool
@@ -1507,16 +1615,52 @@ private struct PermissionMailboxRow: View {
         return object is [String: Any]
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(request.source.isEmpty ? request.action : request.source)
-            Text(request.action)
-            Text(request.resources.joined(separator: "\n"))
-            if editing { TextEditor(text: $input).frame(minHeight: 90).disabled(busy) }
-            HStack {
-                Button(model.localized("编辑后批准")) { editing.toggle() }.disabled(busy)
-                Button(model.localized("批准")) { model.respondPermission(request.requestId, approve: true, updatedInput: editing ? input : nil) }.disabled(busy || !valid)
-                Button(model.localized("拒绝")) { model.respondPermission(request.requestId, approve: false, updatedInput: nil) }.disabled(busy)
+        VStack(alignment: .leading, spacing: MobileDesignGeometry.approvalCardGap) {
+            HStack(spacing: 8) {
+                Image("ApprovalShield").resizable().frame(width: 16, height: 16)
+                Text(request.source.isEmpty ? request.action : request.source)
+                    .font(MobileDesignTypography.bodySmall.font).foregroundStyle(OpenBitFunTheme.ink)
+                Spacer(minLength: 8)
+                Button(model.localized(editing ? "收起参数" : "编辑参数")) { editing.toggle() }
+                    .font(MobileDesignTypography.labelSmall.font).foregroundStyle(OpenBitFunTheme.muted)
+                    .frame(minHeight: 32).disabled(busy)
             }
-        }.padding(12)
+            if !request.source.isEmpty && request.source.lowercased() != request.action.lowercased() {
+                Text(request.action).font(MobileDesignTypography.bodySmall.font).foregroundStyle(OpenBitFunTheme.muted)
+            }
+            if !request.resources.isEmpty {
+                Text(request.resources.joined(separator: "\n"))
+                    .font(.system(size: MobileDesignTypography.labelSmall.size, design: .monospaced))
+                    .foregroundStyle(OpenBitFunTheme.ink).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10).background(OpenBitFunTheme.soft, in: RoundedRectangle(cornerRadius: 8))
+                    .textSelection(.enabled)
+            }
+            if editing {
+                TextEditor(text: $input).font(.system(size: MobileDesignTypography.labelSmall.size, design: .monospaced))
+                    .frame(height: 96).disabled(busy).scrollContentBackground(.hidden)
+                    .padding(8).background(OpenBitFunTheme.soft, in: RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(valid ? OpenBitFunTheme.line : OpenBitFunTheme.statusDanger, lineWidth: 1))
+            }
+            HStack(spacing: MobileDesignGeometry.approvalCardGap) {
+                Spacer(minLength: 0)
+                Button { model.respondPermission(request.requestId, approve: false, updatedInput: nil) } label: {
+                    Text(model.localized("拒绝")).padding(.horizontal, 16)
+                        .frame(height: MobileDesignGeometry.approvalActionHeight)
+                        .foregroundStyle(OpenBitFunTheme.ink)
+                        .background(OpenBitFunTheme.soft, in: RoundedRectangle(cornerRadius: MobileDesignGeometry.approvalActionRadius))
+                }.disabled(busy)
+                .accessibilityIdentifier("permission.reject.\(request.requestId)")
+                Button { model.respondPermission(request.requestId, approve: true, updatedInput: editing ? input : nil) } label: {
+                    Text(model.localized("批准")).padding(.horizontal, 16)
+                        .frame(height: MobileDesignGeometry.approvalActionHeight)
+                        .foregroundStyle(OpenBitFunTheme.contentOnAction)
+                        .background(MobileDesignColors.primaryAction, in: RoundedRectangle(cornerRadius: MobileDesignGeometry.approvalActionRadius))
+                }.disabled(busy || !valid).opacity(busy || !valid ? 0.5 : 1)
+                .accessibilityIdentifier("permission.approve.\(request.requestId)")
+            }.font(MobileDesignTypography.labelMedium.font)
+        }
+        .buttonStyle(.plain).padding(MobileDesignGeometry.approvalCardPadding)
+        .background(OpenBitFunTheme.card, in: RoundedRectangle(cornerRadius: MobileDesignGeometry.approvalCardRadius))
+        .overlay(RoundedRectangle(cornerRadius: MobileDesignGeometry.approvalCardRadius).stroke(OpenBitFunTheme.line, lineWidth: 1))
     }
 }

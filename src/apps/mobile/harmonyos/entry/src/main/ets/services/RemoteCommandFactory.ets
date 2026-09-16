@@ -27,7 +27,8 @@ export class RemoteCommandFactory {
     };
   }
 
-  static listSessions(workspacePath: string, limit: number, offset: number, query: string): RemoteCommand {
+  static listSessions(workspacePath: string, limit: number, offset: number, query: string,
+    remoteConnectionId?: string, remoteSshHost?: string): RemoteCommand {
     const command: RemoteCommand = {
       cmd: 'list_sessions',
       workspace_path: workspacePath,
@@ -37,6 +38,8 @@ export class RemoteCommandFactory {
     if (query.trim().length > 0) {
       command.query = query.trim();
     }
+    if (remoteConnectionId !== undefined) command.remote_connection_id = remoteConnectionId;
+    if (remoteSshHost !== undefined) command.remote_ssh_host = remoteSshHost;
     return command;
   }
 
@@ -49,7 +52,8 @@ export class RemoteCommandFactory {
       agent_type: options.agentType,
       session_name: options.title.trim() || defaultTitle,
       workspace_path: workspacePath || undefined,
-      remote_connection_id: workspacePath ? options.remoteConnectionId || '' : undefined
+      remote_connection_id: workspacePath ? options.remoteConnectionId || '' : undefined,
+      remote_ssh_host: workspacePath ? options.remoteSshHost : undefined
     };
   }
 

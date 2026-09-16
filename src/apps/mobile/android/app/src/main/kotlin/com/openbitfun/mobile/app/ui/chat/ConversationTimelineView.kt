@@ -1,5 +1,7 @@
 package com.openbitfun.mobile.app.ui.chat
 
+import com.openbitfun.mobile.core.feature.session.HistoryLoadState
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -81,6 +84,7 @@ internal fun ConversationTimelineView(
     onDownloadFile: (String, String) -> Unit,
     downloadEnabled: Boolean,
     modifier: Modifier,
+    historyLoadState: HistoryLoadState = HistoryLoadState.IDLE,
 ) {
     val listState = rememberLazyListState()
     var stickToBottom by rememberSaveable { mutableStateOf(true) }
@@ -126,8 +130,16 @@ internal fun ConversationTimelineView(
             if (hasMoreMessages) {
                 item(key = "load-older-messages") {
                     Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        TextButton(onClick = { stickToBottom = false; onLoadOlder() }, enabled = enabled) {
-                            Text(stringResource(R.string.chat_load_older_messages))
+                        TextButton(
+                            onClick = { stickToBottom = false; onLoadOlder() },
+                            enabled = enabled && historyLoadState != HistoryLoadState.LOADING,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+                        ) {
+                            Text(stringResource(when (historyLoadState) {
+                                HistoryLoadState.LOADING -> R.string.chat_loading_older_messages
+                                HistoryLoadState.FAILED -> R.string.chat_load_older_failed
+                                else -> R.string.chat_load_older_messages
+                            }))
                         }
                     }
                 }

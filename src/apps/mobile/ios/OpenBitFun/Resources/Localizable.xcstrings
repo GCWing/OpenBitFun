@@ -1,6 +1,22 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "旧版设备：显示最近访问的工作区": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Older device: showing recent workspaces"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "旧版设备：显示最近访问的工作区"
+          }
+        }
+      }
+    },
     "查看设备": {
       "localizations": {
         "en": {
@@ -7899,16 +7915,6 @@
         }
       }
     },
-    "使用邮箱或 GitHub 登录": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign in with email or GitHub"
-          }
-        }
-      }
-    },
     "请使用当前版本的 OpenBitFun 设备二维码。": {
       "localizations": {
         "en": {
@@ -8473,6 +8479,16 @@
         }
       }
     },
+    "终端": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal"
+          }
+        }
+      }
+    },
     "打开终端": {
       "localizations": {
         "en": {
@@ -8889,6 +8905,86 @@
           "stringUnit": {
             "state": "translated",
             "value": "设备工具"
+          }
+        }
+      }
+    },
+    "编辑参数": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Edit input"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "编辑参数"
+          }
+        }
+      }
+    },
+    "收起参数": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide input"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "收起参数"
+          }
+        }
+      }
+    },
+    "File name": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File name"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件名"
+          }
+        }
+      }
+    },
+    "File changed on the computer. Your draft is preserved. Copy it before reopening the file to load the latest version.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File changed on the computer. Your draft is preserved. Copy it before reopening the file to load the latest version."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "电脑上的文件已被修改，当前草稿仍保留。请先复制草稿，再重新打开文件以读取最新内容。"
+          }
+        }
+      }
+    },
+    "Could not load earlier messages. Tap to retry.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not load earlier messages. Tap to retry."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "加载更早消息失败，点按重试。"
           }
         }
       }

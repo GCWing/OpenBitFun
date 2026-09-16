@@ -834,6 +834,26 @@ final class GitHubLoginPresentationUITests: XCTestCase {
 }
 
 final class MobileParityUITests: XCTestCase {
+    func testFilePreviewPresentsDownloadExporterAbovePreview() {
+        let app = XCUIApplication(bundleIdentifier: "com.openbitfun.mobile.ios")
+        app.launchArguments = ["--harness-preview", "--file-preview", "--download-preview", "--simplified-chinese"]
+        app.launchMobileReady()
+        let save = app.buttons.matching(NSPredicate(format: "label IN %@", ["存储", "保存", "Save"])).firstMatch
+        XCTAssertTrue(save.waitForExistence(timeout: 15))
+        let evidence = XCTAttachment(screenshot: app.screenshot())
+        evidence.name = "FilePreviewDownloadExporter"
+        evidence.lifetime = .keepAlways
+        add(evidence)
+        let cancel = app.buttons.matching(NSPredicate(format: "label IN %@", ["取消", "Cancel"])).firstMatch
+        if !cancel.exists {
+            let locations = app.buttons["BackButton"]
+            XCTAssertTrue(locations.exists); locations.tap()
+        }
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5)); cancel.tap()
+        let code = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "fn main()")).firstMatch
+        XCTAssertTrue(code.waitForExistence(timeout: 10))
+    }
+
     func testPlanCardExplainsUnsupportedHost() {
         let app = XCUIApplication(bundleIdentifier: "com.openbitfun.mobile.ios")
         app.launchArguments = ["--harness-preview", "--plan-preview", "--simplified-chinese"]
@@ -922,8 +942,8 @@ private extension XCUIApplication {
             let disappeared = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: startup)
             XCTAssertEqual(XCTWaiter.wait(for: [disappeared], timeout: 15), .completed)
         }
-        let later = alerts.buttons["稍后"]
-        if later.exists { later.tap() }
+        let later = buttons["稍后"]
+        if later.waitForExistence(timeout: 3) { later.tap() }
     }
 }
 
@@ -1348,5 +1368,379 @@ final class RemoteTimelineScrollProbeUITests: XCTestCase {
         afterScreenshot.name = "RemoteTimelineAfterDrag"
         afterScreenshot.lifetime = .keepAlways
         add(afterScreenshot)
+    }
+}
+
+/// Opt-in live Relay probe. The caller supplies the exact authorized desktop;
+/// ordinary test runs skip it and never choose a user's device implicitly.
+final class RemoteTerminalLiveUITests: XCTestCase {
+    func testNativeTerminalInputAndClose() throws {
+        let target = ProcessInfo.processInfo.environment["OPENBITFUN_LIVE_TERMINAL_DEVICE"] ?? ""
+        try XCTSkipIf(target.isEmpty, "Set OPENBITFUN_LIVE_TERMINAL_DEVICE to an authorized test desktop.")
+        let sshName = ProcessInfo.processInfo.environment["OPENBITFUN_LIVE_TERMINAL_SSH"] ?? ""
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.openbitfun.mobile.ios")
+        app.launch()
+        defer {
+            let capture = XCTAttachment(screenshot: app.screenshot())
+            capture.name = "LiveTerminalFinal"; capture.lifetime = .keepAlways; add(capture)
+            let hierarchy = XCTAttachment(string: app.debugDescription)
+            hierarchy.name = "LiveTerminalHierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+        }
+        let sidebar = app.buttons["打开侧栏"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 30))
+        let sidebarReady = NSPredicate { object, _ in (object as? XCUIElement)?.isHittable == true }
+        expectation(for: sidebarReady, evaluatedWith: sidebar); waitForExpectations(timeout: 30)
+        sidebar.tap()
+        let device = app.buttons["sidebar.device.\(target)"]
+        XCTAssertTrue(device.waitForExistence(timeout: 30))
+        let hittable = NSPredicate { object, _ in (object as? XCUIElement)?.isHittable == true }
+        expectation(for: hittable, evaluatedWith: device); waitForExpectations(timeout: 15)
+        device.tap()
+        let tools = app.buttons["sidebar.deviceTools"]
+        let enabled = NSPredicate { object, _ in (object as? XCUIElement)?.isEnabled == true }
+        expectation(for: enabled, evaluatedWith: tools); waitForExpectations(timeout: 30)
+        tools.tap()
+        if !sshName.isEmpty {
+            let location = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "受控设备本机")).firstMatch
+            XCTAssertTrue(location.waitForExistence(timeout: 20)); location.tap()
+            let saved = app.buttons[sshName]
+            XCTAssertTrue(saved.waitForExistence(timeout: 10)); saved.tap()
+            let entry = app.staticTexts["boot"]
+            XCTAssertTrue(entry.waitForExistence(timeout: 30), "Saved SSH root listing must hydrate.")
+            let listing = XCTAttachment(screenshot: app.screenshot()); listing.name = "LiveSshFiles"; listing.lifetime = .keepAlways; add(listing)
+        }
+        let terminalTab = app.buttons["device.tools.panel.terminal"]
+        XCTAssertTrue(terminalTab.waitForExistence(timeout: 20)); terminalTab.tap()
+        let openTerminal = app.buttons["device.tools.openTerminal"]
+        XCTAssertTrue(openTerminal.waitForExistence(timeout: 20))
+        if ProcessInfo.processInfo.environment["OPENBITFUN_LIVE_TOOLS_TABS_ONLY"] == "1" {
+            XCTAssertTrue(terminalTab.isSelected)
+            let filesTab = app.buttons["device.tools.panel.files"]
+            filesTab.tap()
+            XCTAssertTrue(filesTab.isSelected)
+            XCTAssertFalse(openTerminal.exists)
+            terminalTab.tap()
+            XCTAssertTrue(openTerminal.waitForExistence(timeout: 10))
+            XCTAssertTrue(terminalTab.isSelected)
+            XCTAssertFalse(app.textViews["Terminal input"].exists)
+            if ProcessInfo.processInfo.environment["OPENBITFUN_LIVE_TOOLS_ROTATE"] == "1" {
+                defer { XCUIDevice.shared.orientation = .portrait }
+                XCUIDevice.shared.orientation = .landscapeLeft
+                XCTAssertTrue(openTerminal.waitForExistence(timeout: 15))
+                XCTAssertTrue(terminalTab.isSelected)
+                let wide = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+                wide.name = "DeviceToolsWide"; wide.lifetime = .keepAlways; add(wide)
+                filesTab.tap()
+                XCTAssertTrue(filesTab.isSelected)
+                terminalTab.tap()
+                XCTAssertTrue(openTerminal.waitForExistence(timeout: 10))
+            }
+            return
+        }
+        openTerminal.tap()
+        let terminal = app.webViews.firstMatch
+        XCTAssertTrue(terminal.waitForExistence(timeout: 20))
+        let input = app.textViews["Terminal input"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10))
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)).tap()
+        input.typeText(sshName.isEmpty ? "echo IOS_TERMINAL_PARITY\n" : "uname -s\n")
+        // The screenshot records the actual remote response; layout and input
+        // checks alone do not prove that the host executed the command.
+        let output = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", sshName.isEmpty ? "IOS_TERMINAL_PARITY" : "Linux")).firstMatch
+        _ = output.waitForExistence(timeout: 8)
+        let capture = XCTAttachment(screenshot: app.screenshot())
+        capture.name = "LiveTerminalOutput"; capture.lifetime = .keepAlways; add(capture)
+        XCTAssertTrue(app.buttons["停止"].exists)
+        app.buttons["关闭终端"].tap()
+        XCTAssertTrue(app.buttons["device.tools.openTerminal"].waitForExistence(timeout: 20))
+        let back = app.buttons["返回"].firstMatch
+        expectation(for: hittable, evaluatedWith: back); waitForExpectations(timeout: 10)
+        let closed = XCTAttachment(screenshot: app.screenshot())
+        closed.name = "ClosedTerminalNavigation"; closed.lifetime = .keepAlways; add(closed)
+        app.buttons["device.tools.openTerminal"].tap()
+        XCTAssertTrue(input.waitForExistence(timeout: 20))
+        terminal.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.2)).tap()
+        input.typeText("pwd\n")
+        let reopened = app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", sshName.isEmpty ? "/Users/" : "/home/")).firstMatch
+        _ = reopened.waitForExistence(timeout: 8)
+        let second = XCTAttachment(screenshot: app.screenshot())
+        second.name = "ReopenedTerminalOutput"; second.lifetime = .keepAlways; add(second)
+        app.buttons["关闭终端"].tap()
+        XCTAssertTrue(app.buttons["device.tools.openTerminal"].waitForExistence(timeout: 20))
+    }
+}
+
+/// Opt-in real filesystem write. The caller must provide an authorized device
+/// and a fresh temporary destination; the host rejects overwriting an old file.
+final class RemoteHomeLiveUITests: XCTestCase {
+    func testSelectedDeviceHomeAndSidebar() throws {
+        let target = ProcessInfo.processInfo.environment["OPENBITFUN_LIVE_FILE_DEVICE"] ?? ""
+        try XCTSkipIf(target.isEmpty, "Supply an authorized device.")
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.openbitfun.mobile.ios")
+        app.launchMobileReady()
+        let sidebar = app.buttons["打开侧栏"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 30)); sidebar.tap()
+        let device = app.buttons["sidebar.device.\(target)"]
+        XCTAssertTrue(device.waitForExistence(timeout: 30)); device.tap()
+        let tools = app.buttons["sidebar.deviceTools"]
+        expectation(for: NSPredicate { object, _ in (object as? XCUIElement)?.isEnabled == true }, evaluatedWith: tools)
+        waitForExpectations(timeout: 30)
+        let drawer = XCTAttachment(screenshot: app.screenshot()); drawer.name = "LiveSelectedDeviceSidebar"; drawer.lifetime = .keepAlways; add(drawer)
+        if ProcessInfo.processInfo.environment["OPENBITFUN_LIVE_HEALTH_OUTAGE"] == "1" {
+            let retry = app.buttons["sidebar.retryConnection"]
+            XCTAssertFalse(retry.exists)
+            print("LIVE_HEALTH_READY_FOR_HOST_PAUSE")
+            XCTAssertTrue(retry.waitForExistence(timeout: 90))
+            XCTAssertTrue(device.exists, "A lost host must not remove the selected device.")
+            let outage = XCTAttachment(screenshot: app.screenshot())
+            outage.name = "LiveHostUnavailableSidebar"; outage.lifetime = .keepAlways; add(outage)
+            expectation(for: NSPredicate { object, _ in !(object as? XCUIElement ?? retry).exists }, evaluatedWith: retry)
+            waitForExpectations(timeout: 90)
+            XCTAssertTrue(device.exists)
+            let recovered = XCTAttachment(screenshot: app.screenshot())
+            recovered.name = "LiveHostRecoveredSidebar"; recovered.lifetime = .keepAlways; add(recovered)
+        }
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.45)).tap()
+        let recent = app.staticTexts["最近会话"]
+        XCTAssertTrue(recent.waitForExistence(timeout: 30))
+        let home = XCTAttachment(screenshot: app.screenshot()); home.name = "LiveSelectedDeviceHome"; home.lifetime = .keepAlways; add(home)
+    }
+}
+
+final class RemoteFileBrowserLiveUITests: XCTestCase {
+    func testCreateFileFromDeviceToolsWithKeyboardOpen() throws {
+        XCUIDevice.shared.orientation = .portrait
+        let environment = ProcessInfo.processInfo.environment
+        let target = environment["OPENBITFUN_LIVE_FILE_DEVICE"] ?? ""
+        let path = environment["OPENBITFUN_LIVE_FILE_PATH"] ?? ""
+        try XCTSkipIf(target.isEmpty || path.isEmpty, "Supply an authorized device and fresh temporary file path.")
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.openbitfun.mobile.ios")
+        app.launch()
+        defer {
+            let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "LiveFilesFinal"; capture.lifetime = .keepAlways; add(capture)
+            let hierarchy = XCTAttachment(string: app.debugDescription); hierarchy.name = "LiveFilesHierarchy"; hierarchy.lifetime = .keepAlways; add(hierarchy)
+        }
+        let sidebar = app.buttons["打开侧栏"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 30))
+        let hittable = NSPredicate { object, _ in (object as? XCUIElement)?.isHittable == true }
+        expectation(for: hittable, evaluatedWith: sidebar); waitForExpectations(timeout: 30); sidebar.tap()
+        let device = app.buttons["sidebar.device.\(target)"]
+        XCTAssertTrue(device.waitForExistence(timeout: 30)); expectation(for: hittable, evaluatedWith: device); waitForExpectations(timeout: 15); device.tap()
+        let tools = app.buttons["sidebar.deviceTools"]
+        expectation(for: NSPredicate { object, _ in (object as? XCUIElement)?.isEnabled == true }, evaluatedWith: tools); waitForExpectations(timeout: 30); tools.tap()
+        let sshName = environment["OPENBITFUN_LIVE_FILE_SSH"] ?? ""
+        if !sshName.isEmpty {
+            let location = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "受控设备本机")).firstMatch
+            XCTAssertTrue(location.waitForExistence(timeout: 20)); location.tap()
+            let saved = app.buttons[sshName]
+            XCTAssertTrue(saved.waitForExistence(timeout: 10)); saved.tap()
+            XCTAssertTrue(app.staticTexts["boot"].waitForExistence(timeout: 30))
+        }
+        let create = app.buttons["file.browser.create"]
+        XCTAssertTrue(create.waitForExistence(timeout: 30)); expectation(for: NSPredicate { object, _ in (object as? XCUIElement)?.isEnabled == true }, evaluatedWith: create); waitForExpectations(timeout: 30)
+        let listing = XCTAttachment(screenshot: app.screenshot()); listing.name = "LiveFileListing"; listing.lifetime = .keepAlways; add(listing)
+        let editRelativePath = environment["OPENBITFUN_LIVE_FILE_EDIT_RELATIVE_PATH"] ?? ""
+        if !editRelativePath.isEmpty {
+            defer { XCUIDevice.shared.orientation = .portrait }
+            app.buttons["文件排序"].tap()
+            app.buttons["修改时间：最新优先"].tap()
+            for component in editRelativePath.split(separator: "/").map(String.init) {
+                let entry = app.buttons[component].firstMatch
+                _ = entry.waitForExistence(timeout: 10)
+                for _ in 0..<12 {
+                    if entry.exists && entry.isHittable { break }
+                    app.swipeUp()
+                }
+                XCTAssertTrue(entry.isHittable, "Expected owned test entry \(component)")
+                entry.tap()
+            }
+            let editor = app.textViews.matching(NSPredicate(format: "enabled == true")).firstMatch
+            XCTAssertTrue(editor.waitForExistence(timeout: 20)); editor.tap()
+            editor.typeText(" ios-lifecycle-draft")
+            let draft = editor.value as? String
+            XCTAssertTrue(draft?.contains("ios-lifecycle-draft") == true)
+            XCUIDevice.shared.orientation = .landscapeLeft
+            XCTAssertEqual(editor.value as? String, draft)
+            XCUIDevice.shared.press(.home)
+            app.activate()
+            XCTAssertTrue(editor.waitForExistence(timeout: 10))
+            XCTAssertEqual(editor.value as? String, draft)
+            XCUIDevice.shared.orientation = .portrait
+            XCTAssertEqual(editor.value as? String, draft)
+            let capture = XCTAttachment(screenshot: app.screenshot()); capture.name = "LiveDraftAfterLifecycle"; capture.lifetime = .keepAlways; add(capture)
+            app.buttons["返回"].firstMatch.tap()
+            let cancel = app.buttons["取消"].firstMatch
+            if cancel.exists { cancel.tap() }
+            else {
+                // Native popover confirmation omits Cancel; outside tap dismisses it.
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).tap()
+            }
+            XCTAssertEqual(editor.value as? String, draft)
+            app.buttons["返回"].firstMatch.tap()
+            app.buttons["放弃"].firstMatch.tap()
+            XCTAssertTrue(create.waitForExistence(timeout: 10))
+            return
+        }
+        if environment["OPENBITFUN_LIVE_FILE_DOWNLOAD"] == "1" {
+            let components = path.split(separator: "/").map(String.init)
+            for component in components.dropLast() {
+                let folder = app.buttons[component].firstMatch
+                for _ in 0..<12 {
+                    if folder.exists && folder.isHittable { break }
+                    app.swipeUp()
+                }
+                XCTAssertTrue(folder.isHittable, "Expected remote directory \(component)")
+                folder.tap()
+                XCTAssertTrue(create.waitForExistence(timeout: 20))
+                expectation(for: NSPredicate { object, _ in (object as? XCUIElement)?.isEnabled == true }, evaluatedWith: create)
+                waitForExpectations(timeout: 30)
+            }
+            let actions = app.buttons["file.browser.actions.\(path)"]
+            XCTAssertTrue(actions.waitForExistence(timeout: 20)); actions.tap()
+            app.buttons["下载"].tap()
+            let save = app.buttons.matching(NSPredicate(format: "label IN %@", ["存储", "保存", "Save"])).firstMatch
+            XCTAssertTrue(save.waitForExistence(timeout: 30))
+            let export = XCTAttachment(screenshot: app.screenshot()); export.name = "LiveDownloadExporter"; export.lifetime = .keepAlways; add(export)
+            save.tap()
+            expectation(for: NSPredicate { object, _ in (object as? XCUIElement)?.exists == false }, evaluatedWith: save)
+            waitForExpectations(timeout: 30)
+            return
+        }
+        let verifyUploadCancel = environment["OPENBITFUN_LIVE_FILE_UPLOAD_CANCEL"] == "1"
+        let uploadSource = environment["OPENBITFUN_LIVE_FILE_UPLOAD_SOURCE"] ?? ""
+        create.tap(); app.buttons[(verifyUploadCancel || !uploadSource.isEmpty) ? "上传文件" : "新建文件"].tap()
+        let input = app.textFields["file.action.name"]
+        XCTAssertTrue(input.waitForExistence(timeout: 10)); input.tap(); input.typeText(path)
+        let submit = app.buttons["file.action.submit"]
+        XCTAssertTrue(submit.isHittable)
+        let form = XCTAttachment(screenshot: app.screenshot()); form.name = "LiveFileFormKeyboard"; form.lifetime = .keepAlways; add(form)
+        submit.tap()
+        if !uploadSource.isEmpty {
+            let browse = app.buttons["浏览"].firstMatch
+            XCTAssertTrue(browse.waitForExistence(timeout: 15)); browse.tap()
+            let onPhone = app.staticTexts.matching(NSPredicate(format: "label IN %@", ["我的 iPhone", "我的iPhone", "On My iPhone"])).firstMatch
+            if onPhone.waitForExistence(timeout: 5) { onPhone.tap() }
+            let picker = XCTAttachment(string: app.debugDescription); picker.name = "LiveUploadBrowseHierarchy"; picker.lifetime = .keepAlways; add(picker)
+            let file = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", uploadSource)).firstMatch
+            XCTAssertTrue(file.waitForExistence(timeout: 15)); file.tap()
+        }
+        if verifyUploadCancel {
+            let cancel = app.buttons["Cancel"].firstMatch
+            let localizedCancel = app.buttons["取消"].firstMatch
+            XCTAssertTrue(cancel.waitForExistence(timeout: 10) || localizedCancel.waitForExistence(timeout: 10))
+            let picker = XCTAttachment(screenshot: app.screenshot()); picker.name = "LiveUploadPicker"; picker.lifetime = .keepAlways; add(picker)
+            let tree = XCTAttachment(string: app.debugDescription); tree.name = "LiveUploadPickerHierarchy"; tree.lifetime = .keepAlways; add(tree)
+            (cancel.exists ? cancel : localizedCancel).tap()
+            XCTAssertTrue(input.waitForExistence(timeout: 10))
+            XCTAssertEqual(input.value as? String, path, "Cancelling selection must preserve the upload destination.")
+            XCTAssertTrue(submit.isEnabled)
+            app.buttons["取消"].firstMatch.tap()
+        }
+        expectation(for: NSPredicate { object, _ in (object as? XCUIElement)?.exists == false }, evaluatedWith: input); waitForExpectations(timeout: 30)
+    }
+}
+
+/// Opt-in live host check using an explicitly named disposable test conversation.
+final class RemoteMailboxLiveUITests: XCTestCase {
+    func testQuestionRoundTrip() throws {
+        let env = ProcessInfo.processInfo.environment
+        let permissionReply = env["OPENBITFUN_LIVE_MAILBOX_PERMISSION_REPLY"]
+        let title = env["OPENBITFUN_LIVE_MAILBOX_TITLE"] ?? ""
+        let deviceID = env["OPENBITFUN_LIVE_FILE_DEVICE"] ?? ""
+        let workspacePath = env["OPENBITFUN_LIVE_MAILBOX_WORKSPACE"] ?? ""
+        try XCTSkipIf(title.isEmpty || deviceID.isEmpty || workspacePath.isEmpty, "Supply the authorized test conversation title.")
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "com.openbitfun.mobile.ios")
+        app.launch()
+        defer {
+            let image = XCTAttachment(screenshot: app.screenshot()); image.name = "MailboxFinal"; image.lifetime = .keepAlways; add(image)
+            let tree = XCTAttachment(string: app.debugDescription); tree.name = "MailboxHierarchy"; tree.lifetime = .keepAlways; add(tree)
+        }
+        let sidebar = app.buttons["打开侧栏"]
+        XCTAssertTrue(sidebar.waitForExistence(timeout: 30))
+        let hittable = NSPredicate { object, _ in (object as? XCUIElement)?.isHittable == true }
+        expectation(for: hittable, evaluatedWith: sidebar); waitForExpectations(timeout: 30)
+        sidebar.tap()
+        let device = app.buttons["sidebar.device.\(deviceID)"]
+        XCTAssertTrue(device.waitForExistence(timeout: 30))
+        if !device.isHittable { sidebar.tap() }
+        expectation(for: hittable, evaluatedWith: device); waitForExpectations(timeout: 30); device.tap()
+        let workspacePrefix = env["OPENBITFUN_LIVE_MAILBOX_DISCLOSURE"] == "1" ? "sidebar.workspaceDisclosure" : "sidebar.workspace"
+        let workspace = app.buttons["\(workspacePrefix).\(deviceID).\(workspacePath)"]
+        XCTAssertTrue(workspace.waitForExistence(timeout: 30)); workspace.tap()
+        let session = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "sidebar.session.", title)).firstMatch
+        XCTAssertTrue(session.waitForExistence(timeout: 30)); session.tap()
+        if env["OPENBITFUN_LIVE_MAILBOX_READ_ONLY"] == "1" {
+            let message = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "message.user.")).firstMatch
+            XCTAssertTrue(message.waitForExistence(timeout: 60), "Existing conversation must hydrate without sending another message.")
+            if let marker = env["OPENBITFUN_LIVE_INCOMING_MARKER"], !marker.isEmpty {
+                let incoming = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", marker)).firstMatch
+                XCTAssertTrue(incoming.waitForExistence(timeout: 120), "Another controller's message must arrive without reopening the conversation.")
+                if let reply = env["OPENBITFUN_LIVE_INCOMING_REPLY"], !reply.isEmpty {
+                    XCTAssertTrue(app.staticTexts[reply].waitForExistence(timeout: 120), "The other controller's completed reply must arrive on the same subscription.")
+                }
+            }
+            if let expectedModel = env["OPENBITFUN_LIVE_EXPECTED_MODEL"], !expectedModel.isEmpty {
+                let input = app.textFields["composer.input"]
+                XCTAssertTrue(input.waitForExistence(timeout: 15)); input.tap()
+                let modelLabel = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", expectedModel)).firstMatch
+                XCTAssertTrue(modelLabel.waitForExistence(timeout: 30), "The opened session must hydrate its model without a manual refresh.")
+                let image = XCTAttachment(screenshot: app.screenshot())
+                image.name = "InitialSessionModel"; image.lifetime = .keepAlways; add(image)
+                if let changedModel = env["OPENBITFUN_LIVE_CHANGED_MODEL"], !changedModel.isEmpty {
+                    print("LIVE_MODEL_READY_FOR_EXTERNAL_CHANGE")
+                    let changed = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", changedModel)).firstMatch
+                    XCTAssertTrue(changed.waitForExistence(timeout: 90), "Another controller's model change must arrive without reopening or refreshing.")
+                    let changedImage = XCTAttachment(screenshot: app.screenshot())
+                    changedImage.name = "ExternalSessionModel"; changedImage.lifetime = .keepAlways; add(changedImage)
+                }
+            }
+            if env["OPENBITFUN_LIVE_SIDEBAR_CAPTURE"] == "1" {
+                XCTAssertTrue(sidebar.waitForExistence(timeout: 10)); sidebar.tap()
+                XCTAssertTrue(app.buttons["刷新设备"].waitForExistence(timeout: 10))
+                XCTAssertTrue(session.waitForExistence(timeout: 10))
+                let image = XCTAttachment(screenshot: app.screenshot())
+                image.name = "SelectedSessionSidebar"; image.lifetime = .keepAlways; add(image)
+            }
+            return
+        }
+        if env["OPENBITFUN_LIVE_MAILBOX_RESUME"] != "1" {
+            let input = app.textFields["composer.input"]
+            XCTAssertTrue(input.waitForExistence(timeout: 30)); input.tap()
+            input.typeText(permissionReply == nil ?
+                "UI test: Please use AskUserQuestion again to ask me to choose Alpha or Beta. Wait for my answer. Do not modify files." :
+                "Approval test. Use ExecCommand to run ls -ld /tmp. If rejected stop. Do not retry or modify files.")
+            app.buttons["发送"].tap()
+        }
+        if let permissionReply {
+            XCTAssertTrue(["reject", "approve"].contains(permissionReply))
+            let buttons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "permission.\(permissionReply)."))
+            let reply = buttons.firstMatch
+            XCTAssertTrue(reply.waitForExistence(timeout: 180))
+            XCTAssertEqual(buttons.count, 1, "Only the mailbox owns the pending permission action.")
+            XCTAssertTrue(reply.isEnabled)
+            let image = XCTAttachment(screenshot: app.screenshot()); image.name = "MailboxPermission"; image.lifetime = .keepAlways; add(image)
+            reply.tap()
+            expectation(for: NSPredicate { object, _ in (object as? XCUIElement)?.exists == false }, evaluatedWith: reply)
+            waitForExpectations(timeout: 60)
+            XCTAssertEqual(buttons.count, 0)
+            return
+        }
+        let choices = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND identifier ENDSWITH %@", "question.option.", ".Beta"))
+        let choice = choices.firstMatch
+        let questionTimeout = min(300, max(60, Double(env["OPENBITFUN_LIVE_MAILBOX_WAIT_SECONDS"] ?? "60") ?? 60))
+        XCTAssertTrue(choice.waitForExistence(timeout: questionTimeout))
+        XCTAssertEqual(choices.count, 1, "The mailbox and transcript must not expose duplicate answer forms.")
+        choice.tap()
+        let submit = app.buttons["发送回复"].firstMatch
+        XCTAssertTrue(submit.waitForExistence(timeout: 10)); XCTAssertTrue(submit.isEnabled)
+        let image = XCTAttachment(screenshot: app.screenshot()); image.name = "MailboxQuestion"; image.lifetime = .keepAlways; add(image)
+        submit.tap()
+        expectation(for: NSPredicate { object, _ in (object as? XCUIElement)?.exists == false }, evaluatedWith: submit)
+        waitForExpectations(timeout: 30)
+        XCTAssertEqual(choices.count, 0, "An answered mailbox must not reopen its stale transcript form.")
     }
 }

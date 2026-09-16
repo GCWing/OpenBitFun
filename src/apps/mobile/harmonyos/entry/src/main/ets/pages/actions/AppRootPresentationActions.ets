@@ -36,7 +36,7 @@ export interface RemoteHomePresentationActions {
   readonly refresh: () => void;
   readonly showWorkspaces: () => void;
   readonly showAssistants: () => void;
-  readonly selectWorkspace: (path: string, deviceId?: string, connectionId?: string) => void;
+  readonly selectWorkspace: (path: string, deviceId?: string, connectionId?: string, sshHost?: string) => void;
   readonly selectAssistant: (path: string) => void;
   readonly cancelWorkspace: () => void;
   readonly cancelAssistant: () => void;
@@ -48,12 +48,12 @@ export interface RemoteHomePresentationActions {
   readonly clearPairing: () => void;
   readonly create: (agentType: string) => void;
   readonly createInPlace: (agentType: string) => void;
-  readonly createInWorkspace: (path: string, agentType: string, deviceId?: string, connectionId?: string) => void;
-  readonly createInWorkspaceInPlace: (path: string, agentType: string, deviceId?: string, connectionId?: string) => void;
+  readonly createInWorkspace: (path: string, agentType: string, deviceId?: string, connectionId?: string, sshHost?: string) => void;
+  readonly createInWorkspaceInPlace: (path: string, agentType: string, deviceId?: string, connectionId?: string, sshHost?: string) => void;
   readonly selectDirectoryDevice: (deviceId: string) => void;
   readonly addDirectoryWorkspace: (deviceId: string) => void;
   readonly retryDirectoryDevice: (deviceId: string) => void;
-  readonly loadWorkspaceSessions: (deviceId: string, path: string) => Promise<void>;
+  readonly loadWorkspaceSessions: (deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string) => Promise<void>;
   readonly openSession: (session: RemoteSession) => void;
   readonly openSessionInPlace: (session: RemoteSession) => void;
   readonly deleteSession: (session: RemoteSession) => void;

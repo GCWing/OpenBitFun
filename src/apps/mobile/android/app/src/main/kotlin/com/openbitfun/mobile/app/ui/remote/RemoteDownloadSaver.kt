@@ -62,13 +62,19 @@ internal fun RemoteDownloadSaver(
     }
     val awaiting = (state as? RemoteWorkspaceUiState.Ready)?.download
         as? RemoteFileDownloadUiState.AwaitingSave
-    LaunchedEffect(awaiting?.target?.controlTargetEpoch) {
+    LaunchedEffect(awaiting?.localReference) {
         if (awaiting == null || pending != null) return@LaunchedEffect
         pending = awaiting
         launcher.launch(
             Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
-                type = awaiting.mimeType.ifBlank { "application/octet-stream" }
+                // DocumentsUI appends its MIME extension when it disagrees with
+                // the supplied filename (for example source.ts -> source.ts.txt).
+                val extension = awaiting.name.substringAfterLast('.', "").lowercase()
+                type = documentExportMimeType(
+                    awaiting.mimeType,
+                    android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension),
+                )
                 putExtra(Intent.EXTRA_TITLE, awaiting.name)
             },
         )

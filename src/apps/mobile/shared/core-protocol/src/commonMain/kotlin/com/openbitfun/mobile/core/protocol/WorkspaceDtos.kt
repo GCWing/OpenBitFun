@@ -82,6 +82,8 @@ public data class RecentWorkspaceListResponse(
     @SerialName("resp") override val resp: String? = null,
     @SerialName("message") override val message: String? = null,
     @SerialName("workspaces") val workspaces: List<RecentWorkspaceEntryResponse> = emptyList(),
+    /** Null means legacy host; an empty list is an authoritative empty catalog. */
+    @SerialName("opened_workspaces") val openedWorkspaces: List<RecentWorkspaceEntryResponse>? = null,
 ) : CommandStatus
 
 @Serializable

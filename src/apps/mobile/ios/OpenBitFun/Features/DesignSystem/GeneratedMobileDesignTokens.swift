@@ -70,6 +70,7 @@ enum MobileDesignColors {
     static let welcomeButton = dynamic(light: 0xFFFFFFFF, dark: 0xFFFFFFFF)
     static let welcomeButtonLabel = dynamic(light: 0xFF171917, dark: 0xFF171917)
     static let welcomeSecondary = dynamic(light: 0xFFB9BCB9, dark: 0xFFB9BCB9)
+    static let statusWarning = dynamic(light: 0xFFFF8C00, dark: 0xFFFF8C00)
 
     private static func dynamic(light: UInt32, dark: UInt32) -> Color {
         Color(uiColor: UIColor { traits in
@@ -183,6 +184,11 @@ enum MobileDesignGeometry {
     static let recentHomeTitleSize: CGFloat = 25
     static let recentHomeMaxWidth: CGFloat = 560
     static let recentHomeRowPadding: CGFloat = 18
+    static let approvalCardRadius: CGFloat = 12
+    static let approvalCardPadding: CGFloat = 12
+    static let approvalCardGap: CGFloat = 8
+    static let approvalActionRadius: CGFloat = 8
+    static let approvalActionHeight: CGFloat = 36
 }
 
 enum MobileDesignBreakpoints {

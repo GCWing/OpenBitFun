@@ -63,6 +63,7 @@
     "abilities": [
       {
         "name": "EntryAbility",
+        "orientation": "auto_rotation_unspecified",
         "srcEntry": "./ets/entryability/EntryAbility.ets",
         "description": "$string:EntryAbility_desc",
         "icon": "$media:openbitfun_app_icon",

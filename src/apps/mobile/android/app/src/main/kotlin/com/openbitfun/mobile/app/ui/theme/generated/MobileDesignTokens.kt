@@ -57,6 +57,7 @@ internal object MobileDesignColors {
         val WelcomeButton = Color(0xFFFFFFFF)
         val WelcomeButtonLabel = Color(0xFF171917)
         val WelcomeSecondary = Color(0xFFB9BCB9)
+        val StatusWarning = Color(0xFFFF8C00)
     }
 
     object Dark {
@@ -108,6 +109,7 @@ internal object MobileDesignColors {
         val WelcomeButton = Color(0xFFFFFFFF)
         val WelcomeButtonLabel = Color(0xFF171917)
         val WelcomeSecondary = Color(0xFFB9BCB9)
+        val StatusWarning = Color(0xFFFF8C00)
     }
 }
 
@@ -207,6 +209,11 @@ internal object MobileDesignGeometry {
     val RecentHomeTitleSize = 25.dp
     val RecentHomeMaxWidth = 560.dp
     val RecentHomeRowPadding = 18.dp
+    val ApprovalCardRadius = 12.dp
+    val ApprovalCardPadding = 12.dp
+    val ApprovalCardGap = 8.dp
+    val ApprovalActionRadius = 8.dp
+    val ApprovalActionHeight = 36.dp
 }
 
 internal object MobileDesignBreakpoints {

@@ -421,6 +421,20 @@ fn workspace_metadata_string(
 }
 
 #[cfg(feature = "remote-connect")]
+fn remote_workspace_metadata(
+    kind: &crate::service::workspace::WorkspaceKind,
+    metadata: &std::collections::HashMap<String, serde_json::Value>,
+    key: &str,
+) -> Option<String> {
+    // Local persistence uses sshHost=localhost as an identity marker. It is
+    // not an SSH routing hint; real SSH connections to localhost remain remote.
+    if *kind != crate::service::workspace::WorkspaceKind::Remote {
+        return None;
+    }
+    workspace_metadata_string(metadata, key)
+}
+
+#[cfg(feature = "remote-connect")]
 pub(crate) fn remote_workspace_display_name(
     workspace: &crate::service::workspace::WorkspaceInfo,
 ) -> &str {
@@ -449,9 +463,17 @@ pub(crate) async fn remote_opened_workspace_catalog(
             name: remote_workspace_display_name(&workspace).to_string(),
             path: workspace.root_path.to_string_lossy().to_string(),
             last_opened: workspace.last_accessed.to_rfc3339(),
-            kind: remote_workspace_kind(workspace.workspace_kind),
-            remote_connection_id: workspace_metadata_string(&workspace.metadata, "connectionId"),
-            remote_ssh_host: workspace_metadata_string(&workspace.metadata, "sshHost"),
+            kind: remote_workspace_kind(workspace.workspace_kind.clone()),
+            remote_connection_id: remote_workspace_metadata(
+                &workspace.workspace_kind,
+                &workspace.metadata,
+                "connectionId",
+            ),
+            remote_ssh_host: remote_workspace_metadata(
+                &workspace.workspace_kind,
+                &workspace.metadata,
+                "sshHost",
+            ),
         })
         .collect()
 }
@@ -468,13 +490,18 @@ async fn current_remote_workspace_facts() -> Option<RemoteWorkspaceFacts> {
                 path: root_path.to_string_lossy().to_string(),
                 name: workspace.name,
                 git_branch: git_branch_for_workspace_path(&root_path),
-                kind: remote_workspace_kind(workspace.workspace_kind),
+                kind: remote_workspace_kind(workspace.workspace_kind.clone()),
                 assistant_id: workspace.assistant_id,
-                remote_connection_id: workspace_metadata_string(
+                remote_connection_id: remote_workspace_metadata(
+                    &workspace.workspace_kind,
                     &workspace.metadata,
                     "connectionId",
                 ),
-                remote_ssh_host: workspace_metadata_string(&workspace.metadata, "sshHost"),
+                remote_ssh_host: remote_workspace_metadata(
+                    &workspace.workspace_kind,
+                    &workspace.metadata,
+                    "sshHost",
+                ),
             }
         })
 }
@@ -501,13 +528,8 @@ async fn open_workspace_with_snapshot(
         .await
         .map_err(|error| error.to_string())?;
     let remote_connection_id = info.remote_ssh_connection_id().map(str::to_string);
-    let remote_ssh_host = info
-        .metadata
-        .get("sshHost")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string);
+    let remote_ssh_host =
+        remote_workspace_metadata(&info.workspace_kind, &info.metadata, "sshHost");
     Ok(RemoteWorkspaceUpdate {
         path: info.root_path.to_string_lossy().to_string(),
         name: info.name,
@@ -2919,12 +2941,17 @@ impl RemoteWorkspaceRuntimeHost for CoreRemoteWorkspaceRuntimeHost {
                 path: workspace.root_path.to_string_lossy().to_string(),
                 name: workspace.name.clone(),
                 last_opened: workspace.last_accessed.to_rfc3339(),
-                kind: remote_workspace_kind(workspace.workspace_kind),
-                remote_connection_id: workspace_metadata_string(
+                kind: remote_workspace_kind(workspace.workspace_kind.clone()),
+                remote_connection_id: remote_workspace_metadata(
+                    &workspace.workspace_kind,
                     &workspace.metadata,
                     "connectionId",
                 ),
-                remote_ssh_host: workspace_metadata_string(&workspace.metadata, "sshHost"),
+                remote_ssh_host: remote_workspace_metadata(
+                    &workspace.workspace_kind,
+                    &workspace.metadata,
+                    "sshHost",
+                ),
             })
             .collect()
     }
@@ -3346,6 +3373,33 @@ mod tests {
     };
     use crate::OpenBitFunError;
 
+    #[test]
+    fn local_workspace_marker_is_not_remote_routing_authority() {
+        use crate::service::workspace::WorkspaceKind;
+        let metadata = std::collections::HashMap::from([
+            ("sshHost".to_string(), serde_json::json!("localhost")),
+            (
+                "connectionId".to_string(),
+                serde_json::json!("saved-localhost-ssh"),
+            ),
+        ]);
+        for kind in [WorkspaceKind::Normal, WorkspaceKind::Assistant] {
+            assert_eq!(remote_workspace_metadata(&kind, &metadata, "sshHost"), None);
+            assert_eq!(
+                remote_workspace_metadata(&kind, &metadata, "connectionId"),
+                None
+            );
+        }
+        assert_eq!(
+            remote_workspace_metadata(&WorkspaceKind::Remote, &metadata, "sshHost"),
+            Some("localhost".into())
+        );
+        assert_eq!(
+            remote_workspace_metadata(&WorkspaceKind::Remote, &metadata, "connectionId"),
+            Some("saved-localhost-ssh".into())
+        );
+    }
+
     #[tokio::test]
     async fn missing_output_session_cannot_borrow_the_selected_workspace() {
         let missing = "missing-output-session-route-test";
@@ -3400,6 +3454,9 @@ mod tests {
 
         let opened = remote_opened_workspace_catalog(&service).await;
         assert_eq!(opened.len(), 2);
+        assert!(opened
+            .iter()
+            .all(|row| row.remote_connection_id.is_none() && row.remote_ssh_host.is_none()));
         let assistant_row = opened
             .iter()
             .find(|row| row.path == assistant.root_path.to_string_lossy())

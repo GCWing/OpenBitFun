@@ -32,7 +32,7 @@ extension MobileAppModel {
         remoteCreateRequestEpoch = remoteTargetEpoch
         remoteCreateRequestDeviceKey = nil
         pendingRemoteWorkspaceCreate = nil
-        pendingRemoteSessionRefreshWorkspacePath = nil
+        pendingRemoteSessionRefreshWorkspace = nil
         pendingRemoteAssistantCreate = false
         remoteSessionSelected = false
     }
@@ -67,8 +67,9 @@ extension MobileAppModel {
         remoteSessions = []
         remoteWorkspaces = []
         workspaceCatalog = []
+        remoteSidebarWorkspaceState = nil
         pendingRemoteWorkspaceCreate = nil
-        pendingRemoteSessionRefreshWorkspacePath = nil
+        pendingRemoteSessionRefreshWorkspace = nil
         pendingRemoteAssistantCreate = false
         selectedRemoteWorkspaceKind = ""
         messages = []
@@ -130,6 +131,7 @@ extension MobileAppModel {
             remoteSessions = []
             remoteWorkspaces = []
             workspaceCatalog = []
+            remoteSidebarWorkspaceState = nil
             workspaceSelectionBusy = false
             remoteCreateWorkspacePhase = .unavailable
             pendingRemoteWorkspaceCreate = nil
@@ -196,6 +198,11 @@ extension MobileAppModel {
         guard !accountLoginPreview, !localActionPreview, !remoteCreatePreview,
               generation == accountGeneration else { return }
         accountGeneration = generation
+        if let ready = state as? AccountUiStateReady, let failure = ready.refreshFailure {
+            accountDirectoryError = accountErrorMessage(failure.name, stage: "DEVICE_LIST")
+        } else {
+            accountDirectoryError = nil
+        }
         accountBusy = state is AccountUiStateSigningIn || state is AccountUiStateAuthorizing
         let previousAuthorizationURL = accountAuthorizationURL
         accountAuthorizationURL = (state as? AccountUiStateAuthorizing).flatMap { authorization in
@@ -260,9 +267,6 @@ extension MobileAppModel {
                 connectionPhase = ready.selectedDeviceId == nil ? .disconnected : .reconnecting
             }
             surface = .remote
-            if ready.refreshFailure != nil {
-                showToast(localized("设备列表刷新失败，仍显示上次结果"))
-            }
         } else if let failed = state as? AccountUiStateFailed {
             accountBusy = false
             accountFailureStage = failed.stage.name

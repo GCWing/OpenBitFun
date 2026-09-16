@@ -1,7 +1,11 @@
 package com.openbitfun.mobile.core.feature.directory
 
+import com.openbitfun.mobile.core.domain.identity
+import com.openbitfun.mobile.core.domain.belongsTo
+import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
 import com.openbitfun.mobile.core.domain.RecentWorkspace
 import com.openbitfun.mobile.core.domain.RemoteSession
+import com.openbitfun.mobile.core.feature.workspace.WorkspaceCatalogSource
 
 /**
  * Where one device's directory entry is in its load lifecycle.
@@ -35,7 +39,12 @@ public data class WorkspaceDirectoryEntry public constructor(
     public val path: String,
     public val expanded: Boolean,
     public val status: WorkspaceDirectoryStatus,
-)
+    public val remoteConnectionId: String?,
+    public val remoteSshHost: String?,
+) {
+    public constructor(path: String, expanded: Boolean, status: WorkspaceDirectoryStatus) : this(path, expanded, status, null, null)
+    public val identity: RemoteWorkspaceIdentity get() = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost)
+}
 
 /** Why a device's directory content cannot be shown. */
 public enum class DeviceDirectoryFailure {
@@ -69,7 +78,10 @@ public data class DeviceDirectoryEntry public constructor(
     public val workspaces: List<RecentWorkspace>,
     public val sessions: List<RemoteSession>,
     public val workspaceDirectory: List<WorkspaceDirectoryEntry>,
+    public val catalogSource: WorkspaceCatalogSource?,
+    public val recentWorkspaces: List<RecentWorkspace>,
 ) {
+    public constructor(deviceId: String, deviceName: String, online: Boolean, expanded: Boolean, status: DeviceDirectoryStatus, error: DeviceDirectoryFailure?, workspaces: List<RecentWorkspace>, sessions: List<RemoteSession>, workspaceDirectory: List<WorkspaceDirectoryEntry>) : this(deviceId, deviceName, online, expanded, status, error, workspaces, sessions, workspaceDirectory, null, workspaces)
     public constructor(
         deviceId: String,
         deviceName: String,
@@ -81,9 +93,16 @@ public data class DeviceDirectoryEntry public constructor(
         sessions: List<RemoteSession>,
     ) : this(deviceId, deviceName, online, expanded, status, error, workspaces, sessions, emptyList())
 
-    public fun workspace(path: String): WorkspaceDirectoryEntry? {
-        val normalized = normalizeWorkspacePath(path)
-        return workspaceDirectory.firstOrNull { normalizeWorkspacePath(it.path) == normalized }
+    public fun sessionsForWorkspace(path: String, remoteConnectionId: String?, remoteSshHost: String?): List<RemoteSession> {
+        val identity = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost)
+        return sessions.filter { it.belongsTo(identity, workspaces.map { row -> row.identity() }) }
+    }
+
+    public fun workspace(path: String): WorkspaceDirectoryEntry? = workspace(path, null, null)
+
+    public fun workspace(path: String, remoteConnectionId: String?, remoteSshHost: String?): WorkspaceDirectoryEntry? {
+        val identity = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost)
+        return workspaceDirectory.firstOrNull { it.identity.matches(identity) }
     }
 
     public companion object {
@@ -155,12 +174,20 @@ public sealed interface DeviceDirectoryIntent {
         public val deviceId: String,
         public val path: String,
         public val expanded: Boolean,
-    ) : DeviceDirectoryIntent
+        public val remoteConnectionId: String?,
+        public val remoteSshHost: String?,
+    ) : DeviceDirectoryIntent {
+        public constructor(deviceId: String, path: String, expanded: Boolean) : this(deviceId, path, expanded, null, null)
+    }
 
     public data class RetryWorkspace public constructor(
         public val deviceId: String,
         public val path: String,
-    ) : DeviceDirectoryIntent
+        public val remoteConnectionId: String?,
+        public val remoteSshHost: String?,
+    ) : DeviceDirectoryIntent {
+        public constructor(deviceId: String, path: String) : this(deviceId, path, null, null)
+    }
 
     public data object Stop : DeviceDirectoryIntent
 }

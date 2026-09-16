@@ -148,6 +148,19 @@ public data class SavedRuntimeConnectionUiState public constructor(
     public val id: String, public val name: String, public val host: String,
 )
 
+/** Device tools are independent of chat/workspace selection. Labels stay native. */
+public enum class DeviceToolsPanel { FILES, TERMINAL }
+public data class DeviceToolsUiState public constructor(
+    public val visible: Boolean,
+    public val panel: DeviceToolsPanel,
+    public val path: String,
+    public val connectionId: String?,
+    public val busy: Boolean,
+    public val failed: Boolean,
+) {
+    public constructor() : this(false, DeviceToolsPanel.FILES, "", null, false, false)
+}
+
 public sealed interface RemoteWorkspaceUiState {
     public data object Idle : RemoteWorkspaceUiState
     public data object Loading : RemoteWorkspaceUiState
@@ -167,7 +180,11 @@ public sealed interface RemoteWorkspaceUiState {
         public val terminal: RuntimeTerminalUiState,
         public val files: RuntimeFilesUiState,
         public val directoryPicker: RuntimeFilesUiState,
+        public val catalog: WorkspaceCatalogUiState?,
+        public val deviceTools: DeviceToolsUiState,
     ) : RemoteWorkspaceUiState {
+        public constructor(workspaces: List<RecentWorkspace>, assistants: List<WorkspaceAssistant>, selected: SelectedWorkspace?, preview: RemoteFilePreviewUiState, busy: Boolean, download: RemoteFileDownloadUiState, loadFailure: Boolean, hostCapabilities: List<String>, savedConnections: List<SavedRuntimeConnectionUiState>, savedConnectionsFailure: Boolean, terminal: RuntimeTerminalUiState, files: RuntimeFilesUiState, directoryPicker: RuntimeFilesUiState, catalog: WorkspaceCatalogUiState?) : this(workspaces, assistants, selected, preview, busy, download, loadFailure, hostCapabilities, savedConnections, savedConnectionsFailure, terminal, files, directoryPicker, catalog, DeviceToolsUiState())
+        public constructor(workspaces: List<RecentWorkspace>, assistants: List<WorkspaceAssistant>, selected: SelectedWorkspace?, preview: RemoteFilePreviewUiState, busy: Boolean, download: RemoteFileDownloadUiState, loadFailure: Boolean, hostCapabilities: List<String>, savedConnections: List<SavedRuntimeConnectionUiState>, savedConnectionsFailure: Boolean, terminal: RuntimeTerminalUiState, files: RuntimeFilesUiState, directoryPicker: RuntimeFilesUiState) : this(workspaces, assistants, selected, preview, busy, download, loadFailure, hostCapabilities, savedConnections, savedConnectionsFailure, terminal, files, directoryPicker, null)
         public constructor(workspaces: List<RecentWorkspace>, assistants: List<WorkspaceAssistant>, selected: SelectedWorkspace?, preview: RemoteFilePreviewUiState, busy: Boolean, download: RemoteFileDownloadUiState, loadFailure: Boolean, hostCapabilities: List<String>, savedConnections: List<SavedRuntimeConnectionUiState>, savedConnectionsFailure: Boolean, terminal: RuntimeTerminalUiState, files: RuntimeFilesUiState) : this(workspaces, assistants, selected, preview, busy, download, loadFailure, hostCapabilities, savedConnections, savedConnectionsFailure, terminal, files, RuntimeFilesUiState("", emptyList(), false, null, "", false, false))
         public constructor(
             workspaces: List<RecentWorkspace>, assistants: List<WorkspaceAssistant>, selected: SelectedWorkspace?,
@@ -196,6 +213,13 @@ public sealed interface RemoteWorkspaceIntent {
     public data class ResizeTerminal(public val cols: Int, public val rows: Int) : RemoteWorkspaceIntent
     public data class UploadFile(public val path: String, public val source: RuntimeUploadSource) : RemoteWorkspaceIntent
     public data object Load : RemoteWorkspaceIntent
+    public data class OpenDeviceTools(public val path: String, public val connectionId: String?) : RemoteWorkspaceIntent {
+        public constructor() : this("", null)
+        public constructor(connectionId: String?) : this("", connectionId)
+    }
+    public data class SelectDeviceToolsPanel(public val panel: DeviceToolsPanel) : RemoteWorkspaceIntent
+    public data object CloseDeviceTools : RemoteWorkspaceIntent
+    public data object StartDeviceToolsTerminal : RemoteWorkspaceIntent
     public data class OpenDeviceFiles(public val path: String, public val remoteConnectionId: String?) : RemoteWorkspaceIntent
     public data class OpenDeviceTerminal(public val path: String, public val remoteConnectionId: String?) : RemoteWorkspaceIntent
     public data class BrowseFiles(public val path: String, public val append: Boolean) : RemoteWorkspaceIntent
@@ -208,10 +232,17 @@ public sealed interface RemoteWorkspaceIntent {
     public data class RenameFile(public val path: String) : RemoteWorkspaceIntent
     public data object DeleteFile : RemoteWorkspaceIntent
     public data class CreateDirectory(public val path: String) : RemoteWorkspaceIntent
+    public data class UploadFileEntry(public val name: String, public val source: RuntimeUploadSource) : RemoteWorkspaceIntent
+    public data class CreateFileEntry(public val name: String, public val directory: Boolean) : RemoteWorkspaceIntent
+    public data class RenameFileEntry(public val path: String, public val name: String) : RemoteWorkspaceIntent
+    public data class DeleteFileEntry(public val path: String) : RemoteWorkspaceIntent
     public data object OpenTerminal : RemoteWorkspaceIntent
+    public data object ReopenTerminal : RemoteWorkspaceIntent
     public data object CloseTerminal : RemoteWorkspaceIntent
     public data class WriteTerminal(public val data: String) : RemoteWorkspaceIntent
-    public data class SelectWorkspace public constructor(public val path: String, public val remoteConnectionId: String?, public val remoteSshHost: String?) : RemoteWorkspaceIntent {
+    /** Explicit location pickers disable inference: null then means the controlled host itself. */
+    public data class SelectWorkspace public constructor(public val path: String, public val remoteConnectionId: String?, public val remoteSshHost: String?, public val inferSavedIdentity: Boolean) : RemoteWorkspaceIntent {
+        public constructor(path: String, remoteConnectionId: String?, remoteSshHost: String?) : this(path, remoteConnectionId, remoteSshHost, true)
         public constructor(path: String) : this(path, null, null)
     }
     public data class SelectAssistant public constructor(public val path: String) : RemoteWorkspaceIntent
@@ -230,6 +261,7 @@ public sealed interface RemoteWorkspaceIntent {
         public val label: String,
         public val sessionId: String,
     ) : RemoteWorkspaceIntent
+    public data object RetryDownload : RemoteWorkspaceIntent
     public data class DownloadSaved public constructor(public val reference: String) : RemoteWorkspaceIntent
     public data class DownloadSaveFailed public constructor(public val reference: String) : RemoteWorkspaceIntent
     public data object DismissPreview : RemoteWorkspaceIntent

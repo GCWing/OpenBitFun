@@ -172,7 +172,8 @@ export class RemoteSessionController {
     instruction: string = '',
     modelId: string = '',
     workspacePath: string = '',
-    remoteConnectionId?: string
+    remoteConnectionId?: string,
+    remoteSshHost?: string
   ): Promise<SessionSummary | undefined> {
     if (isBusy || !remoteAvailable) {
       return undefined;
@@ -193,7 +194,8 @@ export class RemoteSessionController {
         instruction,
         modelId,
         workspacePath,
-        remoteConnectionId
+        remoteConnectionId,
+      remoteSshHost
       }, handleAllocated);
       if (!allocationHandled) {
         await handleAllocated(session);
@@ -234,7 +236,9 @@ export class RemoteSessionController {
       const session: SessionSummary = {
         sessionId: item.id,
         title: item.title,
-        workspacePath,
+        workspacePath: item.workspaceIdentity?.path || workspacePath,
+        remoteConnectionId: item.workspaceIdentity?.remoteConnectionId,
+        remoteSshHost: item.workspaceIdentity?.remoteSshHost,
         agentType: item.agentType
       };
       this.callbacks.onActiveSession(session);
