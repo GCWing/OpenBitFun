@@ -9,6 +9,10 @@
     "list": {
       "title": "工具列表",
       "description": "共 {{count}} 個可用工具"
+    },
+    "subagents": {
+      "title": "子智慧體",
+      "description": "設定子智慧體的預設模型、任務並行方式與並行上限"
     }
   },
   "config": {
@@ -35,7 +39,11 @@
       "forceParallel": "盡量並行",
       "forceParallelDesc": "盡可能同時執行多個任務"
     },
-    "seconds": "秒"
+    "seconds": "秒",
+    "subagentModelSettings": "前往智慧體頁面為子智慧體個別設定模型",
+    "subagentModelInherit": "繼承父會話",
+    "subagentDefaultModel": "Subagent 預設模型",
+    "subagentDefaultModelDesc": "未個別指定模型的子智慧體使用此設定。"
   },
   "filters": {
     "all": "全部",

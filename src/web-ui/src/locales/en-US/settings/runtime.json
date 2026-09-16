@@ -48,7 +48,7 @@
   },
   "toolExecution": {
     "sectionTitle": "Tool execution",
-    "sectionDescription": "Set tool timeouts and concurrent task limits."
+    "sectionDescription": "Set timeouts for tool execution and user questions."
   },
   "permissionPolicy": {
     "sectionTitle": "Tool permissions",

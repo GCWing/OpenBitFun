@@ -48,7 +48,7 @@
   },
   "toolExecution": {
     "sectionTitle": "工具运行",
-    "sectionDescription": "设置工具超时和并行任务数量。"
+    "sectionDescription": "设置工具运行和用户提问的超时时间。"
   },
   "permissionPolicy": {
     "sectionTitle": "工具权限",

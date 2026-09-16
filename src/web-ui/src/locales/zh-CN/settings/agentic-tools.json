@@ -9,6 +9,10 @@
     "list": {
       "title": "工具列表",
       "description": "共 {{count}} 个可用工具"
+    },
+    "subagents": {
+      "title": "子智能体",
+      "description": "配置子智能体的默认模型、任务并行方式与并发上限"
     }
   },
   "config": {
@@ -35,7 +39,11 @@
       "forceParallel": "尽量并行",
       "forceParallelDesc": "尽可能同时运行多个任务"
     },
-    "seconds": "秒"
+    "seconds": "秒",
+    "subagentModelSettings": "前往智能体页面为子智能体单独设置模型",
+    "subagentModelInherit": "继承父会话",
+    "subagentDefaultModel": "Subagent 默认模型",
+    "subagentDefaultModelDesc": "未单独指定模型的子智能体使用此设置。"
   },
   "filters": {
     "all": "全部",

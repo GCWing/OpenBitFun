@@ -1,5 +1,6 @@
 import { OverflowText,
   Button,
+  Combobox,
   Icon,
   IconButton,
   NumberInput,
@@ -55,12 +56,16 @@ import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 import { useNotification, notificationService } from '@/shared/notification-system';
 import type {
+  AIModelConfig,
+  SubagentModelSelection,
   PermissionRule,
   ToolPermissionConfig,
 } from '../types';
 import { GlobalPermissionRulesDialog } from './GlobalPermissionRulesDialog';
+import { useModelSelectPresentation } from './ModelSelectPresentation';
 import SessionTitleConfig from './SessionTitleConfig';
 import DefaultHarnessConfig from './DefaultHarnessConfig';
+import { useSceneStore } from '@/app/stores/sceneStore';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import { isRemoteWorkspace } from '@/shared/types/global-state';
 import { WORKSPACE_SEARCH_AVAILABLE } from '@/infrastructure/config/workspaceSearchAvailability';
@@ -166,6 +171,10 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
   const { t: tNavigation } = useTranslation('settings');
   const { t: tTools } = useTranslation('settings/agentic-tools');
   const notification = useNotification();
+  const { t: tModels } = useTranslation('settings/models');
+  const { buildModelOption } = useModelSelectPresentation();
+  const [subagentDefaultModel, setSubagentDefaultModel] = useState<SubagentModelSelection>({ kind: 'fixed', model_id: 'fast' });
+  const [configuredModels, setConfiguredModels] = useState<AIModelConfig[]>([]);
 
   // ── Session config state ─────────────────────────────────────────────────
   const [isLoading, setIsLoading] = useState(true);
@@ -341,6 +350,8 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
         setSettings(await aiExperienceConfigService.getSettingsAsync());
       } else if (page === 'execution') {
         const [
+          loadedSubagentDefaultModel,
+          loadedModels,
           deferredToolLoadingEnabled,
           loadedSubagentMaxConcurrency,
           loadedSwarmMaxConcurrency,
@@ -350,6 +361,8 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
           loadedUserQuestionTimeout,
           loadedPermissionModeControlVisibility,
         ] = await Promise.all([
+          configManager.getConfig<SubagentModelSelection>('ai.agent_model_defaults.subagents.default'),
+          configManager.getConfig<AIModelConfig[]>('ai.models'),
           configManager.getConfig<boolean>('ai.enable_deferred_tool_loading'),
           configManager.getConfig<number | null>('ai.subagent_max_concurrency'),
           configManager.getConfig<number | null>('ai.swarm_max_concurrency'),
@@ -359,6 +372,8 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
           configManager.getOptionalConfig<number | null>('ai.user_question_timeout_secs'),
           configManager.getOptionalConfig<boolean>(SHOW_PERMISSION_MODE_CONTROL_CONFIG_PATH),
         ]);
+        setSubagentDefaultModel(loadedSubagentDefaultModel ?? { kind: 'fixed', model_id: 'fast' });
+        setConfiguredModels(loadedModels ?? []);
         setEnableDeferredToolLoading(deferredToolLoadingEnabled ?? true);
         setSubagentMaxConcurrency(loadedSubagentMaxConcurrency != null
           ? loadedSubagentMaxConcurrency
@@ -633,6 +648,40 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
         `${tTools('messages.saveFailed')}: ` + (error instanceof Error ? error.message : String(error))
       );
       setSubagentBatchExecutionPolicy(previousPolicy);
+    } finally {
+      setToolExecConfigLoading(false);
+    }
+  };
+
+  const subagentModelValue = subagentDefaultModel.kind === 'inherit' ? 'inherit' : subagentDefaultModel.model_id;
+  const subagentModelOptions: ComboboxOption[] = [
+    { value: 'inherit', label: tTools('config.subagentModelInherit') },
+    { value: 'fast', label: tModels('sessionTitle.model.fast') },
+    { value: 'primary', label: tModels('sessionTitle.model.primary') },
+    ...configuredModels.filter(model => model.enabled && model.id).map(buildModelOption),
+  ];
+  if (!subagentModelOptions.some(option => option.value === subagentModelValue)) {
+    subagentModelOptions.push({
+      value: subagentModelValue,
+      label: tModels('sessionTitle.models.unavailable', { id: subagentModelValue }),
+      disabled: true,
+    });
+  }
+
+  const handleSubagentDefaultModelChange = async (value: string | number) => {
+    const selection: SubagentModelSelection = value === 'inherit'
+      ? { kind: 'inherit' }
+      : { kind: 'fixed', model_id: String(value) };
+    setToolExecConfigLoading(true);
+    try {
+      await configManager.setConfig('ai.agent_model_defaults.subagents.default', selection);
+      setSubagentDefaultModel(selection);
+      notificationService.success(tTools('messages.saveSuccess'), { duration: 2000 });
+    } catch (error) {
+      log.error('Failed to save default subagent model', error);
+      notificationService.error(
+        `${tTools('messages.saveFailed')}: ${error instanceof Error ? error.message : String(error)}`
+      );
     } finally {
       setToolExecConfigLoading(false);
     }
@@ -1284,6 +1333,42 @@ const RuntimeSettingsPage: React.FC<RuntimeSettingsPageProps> = ({
                 size="sm"
                 variant="compact"
                 disabled={toolExecConfigLoading}
+              />
+            </div>
+          </ConfigPageRow>
+        </ConfigPageSection>
+
+        <ConfigPageSection
+          title={tTools('section.subagents.title')}
+          description={tTools('section.subagents.description')}
+        >
+          <ConfigPageRow
+            className="openbitfun-runtime-settings__subagent-model-row"
+            label={
+              <span className="openbitfun-runtime-settings__subagent-model-label">
+                {tTools('config.subagentDefaultModel')}
+                <Tooltip content={tTools('config.subagentModelSettings')}>
+                  <IconButton
+                    type="button"
+                    size="sm"
+                    className="openbitfun-runtime-settings__subagent-model-settings"
+                    aria-label={tTools('config.subagentModelSettings')}
+                    icon={<Icon name="settings" size="sm" />}
+                    onClick={() => useSceneStore.getState().openScene('agents')}
+                  />
+                </Tooltip>
+              </span>
+            }
+            description={tTools('config.subagentDefaultModelDesc')}
+            align="center"
+          >
+            <div className="openbitfun-runtime-settings__row-control" data-openbitfun-component="runtime-settings" data-openbitfun-part="control">
+              <Combobox
+                value={subagentModelValue}
+                options={subagentModelOptions}
+                size="sm"
+                disabled={toolExecConfigLoading}
+                onValueChange={(value) => void handleSubagentDefaultModelChange(value)}
               />
             </div>
           </ConfigPageRow>

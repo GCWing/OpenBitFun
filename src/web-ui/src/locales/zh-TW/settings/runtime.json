@@ -48,7 +48,7 @@
   },
   "toolExecution": {
     "sectionTitle": "工具執行",
-    "sectionDescription": "設定工具逾時和並行任務數量。"
+    "sectionDescription": "設定工具執行和使用者提問的逾時時間。"
   },
   "permissionPolicy": {
     "sectionTitle": "工具權限",

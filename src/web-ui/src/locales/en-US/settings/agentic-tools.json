@@ -9,6 +9,10 @@
     "list": {
       "title": "Tool List",
       "description": "{{count}} tools available."
+    },
+    "subagents": {
+      "title": "Subagents",
+      "description": "Configure the default subagent model, task parallelism, and concurrency limits"
     }
   },
   "config": {
@@ -35,7 +39,11 @@
       "forceParallel": "Prefer parallel",
       "forceParallelDesc": "Run multiple tasks together whenever possible"
     },
-    "seconds": "sec"
+    "seconds": "sec",
+    "subagentModelSettings": "Go to the Agents page to set models for individual subagents",
+    "subagentModelInherit": "Inherit parent session",
+    "subagentDefaultModel": "Subagent default model",
+    "subagentDefaultModelDesc": "Used by subagents without an individual model override."
   },
   "filters": {
     "all": "All",
