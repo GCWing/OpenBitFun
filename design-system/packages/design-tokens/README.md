@@ -84,5 +84,17 @@ The outer line box retains any larger leading supplied by its owning control.
 
 `layout.searchDialog` owns the shared Lab/product search composition: 800 × 460
 when space permits, 20px inset and query-to-scope gap, and a 30px query row.
-Only the query shell scopes `control.height.sm`; general Input and Button sizes
+Only the query shell scopes `control.searchField.height.sm`; general Input and Button sizes
 retain their defaults. Results scroll within the available viewport.
+
+## Search geometry
+
+`control.searchField.height.sm/md/lg` owns search input-row layout heights.
+These alias `control.height.sm/md/lg`, except compact `sm` is 30px to preserve
+the original search component's 22px action and 4px top/bottom/end clearance.
+The generic compact input remains 28px. This separate owner is necessary because
+changing the generic height would resize unrelated controls.
+SearchField draws a centered decorative outline outside the layout calculation;
+action clearance is derived from row height and `control.iconButton.xsSize`.
+Spacing and action shape reuse the existing system scales. Density overrides
+and Design Lab edits therefore update geometry without product-specific CSS.

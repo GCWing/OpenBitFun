@@ -31,6 +31,20 @@ test("system tokens remain color and brand independent", async () => {
   );
 });
 
+test("search height preserves the compact reference and follows other density scales", () => {
+  const value = (name, mode) => tokenCatalog.find(token => token.name === name).values[mode];
+  for (const mode of tokenModes) {
+    for (const size of ["sm", "md", "lg"]) {
+      const height = value(`control.searchField.height.${size}`, mode);
+      assert.equal(height, mode === "compact" && size === "sm" ? "30px" : value(`control.height.${size}`, mode));
+      assert.ok(parseFloat(height) > parseFloat(value("control.iconButton.xsSize", mode)));
+    }
+  }
+  assert.equal(value("control.height.sm", "compact"), "28px");
+  assert.equal(value("control.iconButton.xsSize", "compact"), "22px");
+  assert.equal(value("space.component.inline", "compact"), "10px");
+});
+
 test("Switch geometry preserves the compact reference contract", () => {
   assert.equal(tokens["control.switch.trackWidth"], "28px");
   assert.equal(tokens["control.switch.trackHeight"], "16px");

@@ -12,6 +12,11 @@
       "md": { "$type": "dimension", "$value": "36px" },
       "lg": { "$type": "dimension", "$value": "44px" }
     },
+    "searchField": {
+      "height": {
+        "sm": { "$type": "dimension", "$value": "30px" }
+      }
+    },
     "hitTarget": { "$type": "dimension", "$value": "36px" }
   }
 }

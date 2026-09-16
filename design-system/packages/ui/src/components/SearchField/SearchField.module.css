@@ -1,39 +1,56 @@
 @layer openbitfun.components {
   .root {
+    --_search-field-height: var(--openbitfun-control-search-field-height-sm);
+
     display: inline-flex;
     min-inline-size: 0;
   }
 
-  .field {
+  .root[data-size="md"] {
+    --_search-field-height: var(--openbitfun-control-search-field-height-md);
+  }
+
+  .root[data-size="lg"] {
+    --_search-field-height: var(--openbitfun-control-search-field-height-lg);
+  }
+
+  .root .field {
+    box-sizing: border-box;
     inline-size: 100%;
+    block-size: var(--_search-field-height);
+    gap: var(--openbitfun-space-1);
+    padding-inline-start: var(--openbitfun-space-component-inline);
+    border: 0;
     border-radius: var(--openbitfun-radius-pill);
+    box-shadow: none;
+  }
+
+  .root[data-variant="default"] .field {
+    /* Match Figma's centered stroke without changing the input-row layout box. */
+    outline: var(--openbitfun-border-width-default) solid var(--openbitfun-color-field-border);
+    outline-offset: calc(-0.5 * var(--openbitfun-border-width-default));
+  }
+
+  .root[data-variant="default"] .field[data-invalid="true"] {
+    outline-color: var(--openbitfun-color-status-danger-border);
   }
 
   /* Search owns a quiet focus treatment without changing general-purpose Input. */
   .root[data-variant="default"] .field:where(:not([data-invalid="true"])) {
-    border-color: var(--openbitfun-color-border-subtle);
+    outline-color: var(--openbitfun-color-border-subtle);
   }
 
   .root[data-variant="default"] .field:where(:not([data-invalid="true"], [data-disabled="true"])):is(:hover, :focus-within) {
-    border-color: var(--openbitfun-color-border-default);
+    outline-color: var(--openbitfun-color-border-default);
   }
 
   .field [data-openbitfun-part="trailing"] {
     gap: var(--openbitfun-space-1);
   }
 
-  .root .clear {
-    /* The clear action is already composited inside Input's field surface. */
-    --_icon-button-background: transparent;
-    --_icon-button-background-hover: transparent;
-    --_icon-button-background-active: transparent;
-    --_icon-button-content: var(--openbitfun-color-field-placeholder);
-
-    background: transparent;
-  }
-
-  .root .clear:disabled {
-    --_icon-button-content: var(--openbitfun-color-content-disabled);
+  .root:not([data-variant="embedded"]) .fieldWithAction {
+    /* End clearance and centered block clearance share the same layout geometry. */
+    padding-inline-end: max(0px, calc((var(--_search-field-height) - var(--openbitfun-control-icon-button-xs-size)) / 2));
   }
 
   .root[data-variant="embedded"] .field,
@@ -41,6 +58,7 @@
     block-size: 100%;
     padding: 0;
     border: 0;
+    outline: none;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
@@ -50,7 +68,7 @@
     flex-direction: column;
     border-radius: var(--openbitfun-radius-lg);
     outline: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-    outline-offset: calc(-1 * var(--openbitfun-border-width-default));
+    outline-offset: calc(-0.5 * var(--openbitfun-border-width-default));
     color: var(--openbitfun-color-content-primary);
     background: var(--openbitfun-color-surface-raised);
     box-shadow: var(--openbitfun-shadow-overlay);
@@ -67,7 +85,8 @@
   .root[data-variant="panel"] .field,
   .root[data-variant="panel"] .field:is(:hover, :focus-within, [data-invalid="true"]) {
     /* Preserve the input row's geometry when a pill expands into a panel. */
-    border: var(--openbitfun-border-width-default) solid transparent;
+    border: 0;
+    outline: none;
     border-radius: inherit;
     background: transparent;
     box-shadow: none;
@@ -80,7 +99,7 @@
     justify-content: space-between;
     gap: var(--openbitfun-space-2);
     min-inline-size: 0;
-    min-block-size: calc(var(--openbitfun-control-height-sm) + var(--openbitfun-space-1) - var(--openbitfun-border-width-default));
+    min-block-size: calc(var(--_search-field-height) + var(--openbitfun-space-1) - var(--openbitfun-border-width-default));
     padding: var(--openbitfun-space-1) var(--openbitfun-space-2);
     border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
     font-family: var(--openbitfun-type-meta-font-family);
@@ -116,11 +135,11 @@
   @media (forced-colors: active) {
     .root[data-variant="default"] .field,
     .root[data-variant="default"] .field:is(:hover, :focus-within) {
-      border-color: ButtonText;
+      outline-color: ButtonText;
     }
 
     .root[data-variant="default"] .field:focus-within {
-      border-color: Highlight;
+      outline-color: Highlight;
     }
 
     .root[data-variant="panel"],

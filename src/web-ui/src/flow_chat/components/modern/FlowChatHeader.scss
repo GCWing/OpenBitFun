@@ -154,7 +154,7 @@
     min-width: 0;
     max-width: 100%;
     // Only the input row participates in header layout; results float over the transcript.
-    height: var(--openbitfun-control-height-sm);
+    height: var(--openbitfun-control-search-field-height-sm);
   }
 
   &__search-field {

@@ -556,6 +556,15 @@
       "md": { "$value": "40px" },
       "lg": { "$value": "48px" }
     },
+    "searchField": {
+      "$description": "Search input-row layout height, independent of decorative strokes. Compact sm follows the original 30px search geometry without changing generic controls.",
+      "height": {
+        "$type": "dimension",
+        "sm": { "$value": "{control.height.sm}" },
+        "md": { "$value": "{control.height.md}" },
+        "lg": { "$value": "{control.height.lg}" }
+      }
+    },
     "hitTarget": {
       "$type": "dimension",
       "$value": "40px"

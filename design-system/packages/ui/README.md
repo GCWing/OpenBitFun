@@ -384,9 +384,23 @@ Selection visuals now come from the public field/menu semantic tokens.
 SearchField sizes its decorative wrapper through Input's icon slot, so default
 catalog icons and native SVGs occupy the same region. Shortcut hints and clear
 actions can coexist; disabled and read-only fields disable the clear action.
+Use `trailing` for inline text or indicators and `trailingAction` for terminal
+`IconButton size="xs" shape="square"` controls (including tooltip-wrapped controls). Actions
+follow the shortcut hint, with the built-in clear action last. Standalone and
+panel fields inset terminal actions equally from the inline-end and block
+layout edges using `(input row height - action size) / 2`. The search outline
+is centered on those edges and does not participate in layout; its inner edge
+reduces each visible clearance equally by half the stroke width. Text-only trailing content retains
+the ordinary trailing input padding; embedded fields retain container-owned geometry.
+Search rows use `control.searchField.height.sm/md/lg`; compact `sm` is 30px,
+while other sizes and densities alias the generic control heights. Leading
+padding uses `space.component.inline` and icon-to-text spacing uses `space.1`.
+An absolute-positioned search host must reserve that same search-row height.
+The built-in clear action uses the shared square xs quiet-button hover feedback.
 
 Choose `size` explicitly when composing form rows: selectors default to `md`,
-while `Input` defaults to `sm`. The shared `control.height.sm/md/lg` tokens and
+while `Input` defaults to `sm`. Except for SearchField's dedicated row contract,
+the shared `control.height.sm/md/lg` tokens and
 active density own the actual heights; consumers must not replace them with
 page-level heights or padding overrides. Picker bodies stay single-line and
 token-sized, with labels and validation messages outside that height. Select

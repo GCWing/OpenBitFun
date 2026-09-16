@@ -1096,16 +1096,23 @@ body,
   outline-offset: var(--openbitfun-focus-offset);
 }
 
-[data-openbitfun-component="input"].lab-force-hover,
-[data-openbitfun-component="search-field"].lab-force-hover [data-openbitfun-component="input"] {
+[data-openbitfun-component="input"].lab-force-hover {
   border-color: var(--openbitfun-color-field-border-hover);
   background: var(--openbitfun-color-field-background-hover);
 }
 
-[data-openbitfun-component="input"].lab-force-focus,
-[data-openbitfun-component="search-field"].lab-force-focus [data-openbitfun-component="input"] {
+[data-openbitfun-component="input"].lab-force-focus {
   border-color: var(--openbitfun-color-field-border-active);
   box-shadow: none;
+}
+
+[data-openbitfun-component="search-field"][data-variant="default"]:is(.lab-force-hover, .lab-force-focus) [data-openbitfun-component="input"],
+[data-openbitfun-component="search-field"][data-variant="panel"]:is(.lab-force-hover, .lab-force-focus) {
+  outline-color: var(--openbitfun-color-border-default);
+}
+
+[data-openbitfun-component="search-field"][data-variant="default"].lab-force-hover [data-openbitfun-component="input"] {
+  background: var(--openbitfun-color-field-background-hover);
 }
 
 .component-code-panel {
@@ -2931,7 +2938,15 @@ body,
 }
 
 .pattern-command-query {
-  --openbitfun-control-height-sm: var(--openbitfun-layout-search-dialog-query-height);
+  --openbitfun-control-search-field-height-sm: var(--openbitfun-layout-search-dialog-query-height);
+}
+
+.component-search-field-examples,
+.component-search-field-example {
+  display: grid;
+  min-inline-size: 0;
+  inline-size: 100%;
+  gap: var(--openbitfun-space-3);
 }
 
 .pattern-command-query > [data-openbitfun-component="search-field"] {

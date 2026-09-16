@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { SearchField } from "../dist/index.js";
+import { IconButton, SearchField, Tooltip } from "../dist/index.js";
 
 test("SearchField composes search semantics with icon and shortcut slots", () => {
   const markup = renderToStaticMarkup(
@@ -88,6 +88,27 @@ test("SearchField only exposes its footer in the panel variant and preserves inp
   }
 });
 
+test("SearchField sizes both row and panel while retaining tooltip-wrapped terminal actions", () => {
+  for (const size of ["sm", "md", "lg"]) {
+    for (const variant of ["default", "panel", "embedded"]) {
+      const markup = renderToStaticMarkup(createElement(SearchField, {
+        "aria-label": "Search", size, variant,
+        trailing: createElement("span", null, "Matches"),
+        shortcut: "Ctrl K",
+        trailingAction: createElement(Tooltip, { content: "Close" },
+          createElement(IconButton, { "aria-label": "Close", icon: "X", size: "xs", shape: "square" })),
+        clearLabel: "Clear", onClear() {},
+      }));
+      assert.match(markup, new RegExp(`data-openbitfun-component="search-field" data-variant="${variant}" data-size="${size}"`));
+      assert.match(markup, new RegExp(`data-openbitfun-component="input"[^>]*data-size="${size}"`));
+      assert.ok(markup.indexOf("Matches") < markup.indexOf("Ctrl K"));
+      assert.ok(markup.indexOf("Ctrl K") < markup.indexOf('aria-label="Close"'));
+      assert.ok(markup.indexOf('aria-label="Close"') < markup.indexOf('aria-label="Clear"'));
+      assert.doesNotMatch(markup, /<input[^>]*(?:trailingAction|variant|footer)=/);
+    }
+  }
+});
+
 test("SearchField panel uses canonical frosted tokens with an opaque reduced-transparency fallback", async () => {
   const styles = await readFile(
     new URL("../src/components/SearchField/SearchField.module.css", import.meta.url),
@@ -111,25 +132,23 @@ test("SearchField exposes a labeled clear action without hiding it from assistiv
 
   assert.match(markup, /aria-label="Clear search"/);
   assert.match(markup, /data-openbitfun-component="icon-button"/);
-  assert.match(markup, /data-openbitfun-shape="circle"/);
+  assert.match(markup, /data-openbitfun-shape="square"/);
   assert.match(markup, /data-size="xs"/);
 });
 
-test("SearchField keeps its clear action inset, background-free, and focus-preserving", async () => {
+test("SearchField keeps its clear action quiet and focus-preserving", async () => {
   const source = await readFile(
     new URL("../src/components/SearchField/SearchField.tsx", import.meta.url),
     "utf8",
   );
-  const styles = await readFile(
-    new URL("../src/components/SearchField/SearchField.module.css", import.meta.url),
-    "utf8",
-  );
-
   assert.match(source, /onMouseDown=\{\(event\) => event\.preventDefault\(\)\}/);
-  assert.match(
-    styles,
-    /\.root \.clear\s*\{[^}]*--_icon-button-background:\s*transparent[^}]*--_icon-button-background-hover:\s*transparent[^}]*--_icon-button-background-active:\s*transparent[^}]*background:\s*transparent/s,
-  );
+  for (const state of [{}, { disabled: true }, { readOnly: true }]) {
+    const markup = renderToStaticMarkup(createElement(SearchField, {
+      "aria-label": "Search", clearLabel: "Clear", onClear() {}, ...state,
+    }));
+    assert.match(markup, /data-openbitfun-variant="quiet"/);
+    assert.equal(/<button[^>]*disabled=""/.test(markup), Boolean(state.disabled || state.readOnly));
+  }
 });
 
 test("SearchField owns pill composition while reusing Input behavior", async () => {
@@ -157,8 +176,8 @@ test("SearchField owns a quiet single-border focus without changing Input's focu
   )?.[1];
 
   assert.ok(searchFocusRule);
-  assert.match(searchFocusRule, /border-color: var\(--openbitfun-color-border-default\)/);
-  assert.doesNotMatch(searchFocusRule, /box-shadow|border-width|outline/);
+  assert.match(searchFocusRule, /outline-color: var\(--openbitfun-color-border-default\)/);
+  assert.doesNotMatch(searchFocusRule, /box-shadow|border-width|outline-width|outline-offset/);
   assert.ok(panelFocusRule);
   assert.match(panelFocusRule, /outline-color: var\(--openbitfun-color-border-default\)/);
   assert.ok(focusRule);

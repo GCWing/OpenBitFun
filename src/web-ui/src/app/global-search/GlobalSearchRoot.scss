@@ -786,7 +786,7 @@
 
 .global-search--modal {
   .global-search__query-system-shell {
-    --openbitfun-control-height-sm: var(--openbitfun-layout-search-dialog-query-height);
+    --openbitfun-control-search-field-height-sm: var(--openbitfun-layout-search-dialog-query-height);
   }
 
   > .global-search__header,

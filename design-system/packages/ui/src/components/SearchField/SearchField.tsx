@@ -23,6 +23,8 @@ export interface SearchFieldProps
   shortcut?: ReactNode;
   /** Custom inline content before the clear action, e.g. match counts or a busy indicator. */
   trailing?: ReactNode;
+  /** Terminal xs IconButton(s), after shortcut content, with an inset matching the input row's vertical clearance. */
+  trailingAction?: ReactNode;
 }
 
 export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(function SearchField({
@@ -36,7 +38,9 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
   onSearch,
   readOnly,
   shortcut,
+  size = "sm",
   trailing,
+  trailingAction,
   variant = "default",
   ...props
 }, ref) {
@@ -50,14 +54,13 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
     ? (
         <IconButton
           aria-label={clearLabel}
-          className={styles.clear}
           disabled={disabled || readOnly}
           icon={<Icon name="xmark" />}
           onClick={(event) => {
             if (!disabled && !readOnly) onClear(event);
           }}
           onMouseDown={(event) => event.preventDefault()}
-          shape="circle"
+          shape="square"
           size="xs"
           variant="quiet"
         />
@@ -66,21 +69,23 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
   const shortcutHint = shortcut === undefined ? undefined : (
     <span aria-hidden="true" className={styles.shortcut}>{shortcut}</span>
   );
-  const trailingContent = trailing === undefined && shortcutHint === undefined && clearAction === undefined
+  const hasTrailingAction = (trailingAction != null && trailingAction !== false) || clearAction !== undefined;
+  const trailingContent = trailing === undefined && shortcutHint === undefined && !hasTrailingAction
     ? undefined
     : (
         <>
           {trailing}
           {shortcutHint}
+          {trailingAction}
           {clearAction}
         </>
       );
 
   return (
-    <span className={classNames(styles.root, className)} data-openbitfun-component="search-field" data-variant={variant}>
+    <span className={classNames(styles.root, className)} data-openbitfun-component="search-field" data-variant={variant} data-size={size}>
       <Input
         {...props}
-        className={styles.field}
+        className={classNames(styles.field, hasTrailingAction && styles.fieldWithAction)}
         disabled={disabled}
         leading={leadingIcon === undefined ? undefined : (
           <span aria-hidden="true" className={styles.icon} data-openbitfun-part="icon">{leadingIcon}</span>
@@ -88,6 +93,7 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
         onKeyDown={handleKeyDown}
         ref={ref}
         readOnly={readOnly}
+        size={size}
         trailing={trailingContent}
         type="search"
       />

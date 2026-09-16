@@ -304,21 +304,54 @@ function NumberInputPreview({ state }: { state: string }) {
 function SearchFieldStatePreview({ state }: { state: string }) {
   const { t } = useI18n();
   const [value, setValue] = useState(state === "default" ? "" : "OpenBitFun");
+  const sharedProps = {
+    disabled: state === "disabled",
+    invalid: state === "invalid",
+    readOnly: state === "read-only",
+    onValueChange: setValue,
+    value,
+    className: state === "hover" ? "lab-force-hover" : state === "focus-visible" ? "lab-force-focus" : undefined,
+  };
   return (
-    <SearchField
-      aria-label={t("components.preview.searchLabel")}
-      className={state === "hover" ? "lab-force-hover" : state === "focus-visible" ? "lab-force-focus" : undefined}
-      clearLabel={t("components.preview.searchClear")}
-      disabled={state === "disabled"}
-      invalid={state === "invalid"}
-      leadingIcon={<Icon name="search" />}
-      onClear={() => setValue("")}
-      onValueChange={setValue}
-      placeholder={t("components.preview.searchPlaceholder")}
-      readOnly={state === "read-only"}
-      shortcut={<KeyHint icon={<Icon name="command-mac" />}>K</KeyHint>}
-      value={value}
-    />
+    <div className="component-search-field-examples">
+      {(["sm", "md", "lg"] as const).map((size) => (
+        <div className="component-search-field-example" key={size}>
+          <code>{size}</code>
+          <SearchField
+            {...sharedProps}
+            size={size}
+            aria-label={t("components.preview.searchLabel")}
+            clearLabel={t("components.preview.searchClear")}
+            leadingIcon={<Icon name="search" />}
+            onClear={() => setValue("")}
+            placeholder={t("components.preview.searchPlaceholder")}
+            shortcut={<KeyHint icon={<Icon name="command-mac" />}>K</KeyHint>}
+          />
+          <SearchField
+            {...sharedProps}
+            size={size}
+            variant="panel"
+            aria-label={t("components.preview.searchLabel")}
+            placeholder={t("components.preview.searchPlaceholder")}
+            leadingIcon={<Icon name="search" />}
+            footer={<span>{t("components.preview.searchResults")}</span>}
+            trailingAction={(
+              <Tooltip content={t("components.preview.close")}>
+                <IconButton
+                  aria-label={t("components.preview.close")}
+                  disabled={sharedProps.disabled || sharedProps.readOnly}
+                  icon={<Icon name="xmark" />}
+                  size="xs"
+                  shape="square"
+                  onClick={() => setValue("")}
+                  onMouseDown={(event) => event.preventDefault()}
+                />
+              </Tooltip>
+            )}
+          />
+        </div>
+      ))}
+    </div>
   );
 }
 

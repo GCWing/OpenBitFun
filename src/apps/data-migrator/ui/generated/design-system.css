@@ -106,6 +106,9 @@
     --openbitfun-control-launcher-button-min-inline-size: 72px;
     --openbitfun-control-launcher-button-padding-inline: 10px;
     --openbitfun-control-launcher-button-radius: var(--openbitfun-radius-lg);
+    --openbitfun-control-search-field-height-lg: var(--openbitfun-control-height-lg);
+    --openbitfun-control-search-field-height-md: var(--openbitfun-control-height-md);
+    --openbitfun-control-search-field-height-sm: var(--openbitfun-control-height-sm);
     --openbitfun-control-segmented-control-gap: var(--openbitfun-space-1);
     --openbitfun-control-segmented-control-icon-size: 12px;
     --openbitfun-control-segmented-control-icon-size-md: 14px;
@@ -666,6 +669,9 @@
     --openbitfun-control-height-sm: 28px;
     --openbitfun-control-hit-target: 36px;
     --openbitfun-control-launcher-button-block-size: var(--openbitfun-control-height-md);
+    --openbitfun-control-search-field-height-lg: var(--openbitfun-control-height-lg);
+    --openbitfun-control-search-field-height-md: var(--openbitfun-control-height-md);
+    --openbitfun-control-search-field-height-sm: 30px;
     --openbitfun-control-tab-group-item-height: var(--openbitfun-control-height-md);
     --openbitfun-space-component-block: 6px;
     --openbitfun-space-component-inline: 10px;
@@ -679,6 +685,9 @@
     --openbitfun-control-height-sm: 40px;
     --openbitfun-control-hit-target: 48px;
     --openbitfun-control-launcher-button-block-size: var(--openbitfun-control-height-md);
+    --openbitfun-control-search-field-height-lg: var(--openbitfun-control-height-lg);
+    --openbitfun-control-search-field-height-md: var(--openbitfun-control-height-md);
+    --openbitfun-control-search-field-height-sm: var(--openbitfun-control-height-sm);
     --openbitfun-control-tab-group-item-height: var(--openbitfun-control-height-md);
     --openbitfun-space-component-block: 12px;
     --openbitfun-space-component-inline: 16px;

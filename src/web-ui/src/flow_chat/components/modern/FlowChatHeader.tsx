@@ -638,7 +638,7 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
                   </span>
                 </>
               ) : undefined}
-              trailing={
+              trailingAction={
                 <span
                   className="flowchat-header__search-controls"
                   data-openbitfun-component="flow-chat-header"
