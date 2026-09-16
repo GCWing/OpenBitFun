@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { aiApi } from '@/infrastructure/api/service-api/AIApi';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { setRecentReasoningPreset } from './reasoningPresets';
-import { resolveReasoningPresetForSessionCreation } from './modelResolution';
+import {
+  getModelMaxTokens,
+  resolveModelReference,
+  resolveModelSelection,
+  resolveReasoningPresetForSessionCreation,
+} from './modelResolution';
+import type { AIModelConfig } from '@/infrastructure/config/types';
 
 vi.mock('@/infrastructure/api/service-api/AIApi', () => ({
   aiApi: { getModelCatalog: vi.fn() },
@@ -15,6 +21,62 @@ vi.mock('@/infrastructure/api/service-api/AIApi', () => ({
 vi.mock('@/infrastructure/config/services/ConfigManager', () => ({
   configManager: { getConfigs: vi.fn() },
 }));
+
+describe('configured model identity', () => {
+  const first: AIModelConfig = {
+    id: 'model-first', name: 'MOCK-8000', model_name: 'asdf',
+    provider: 'openai', base_url: 'https://example.test', enabled: true,
+    category: 'general_chat', capabilities: ['text_chat'], context_window: 32000,
+    metadata: { provider_instance_id: 'account-1' },
+  };
+  const selected: AIModelConfig = {
+    ...first, id: 'asdf', name: 'MOCK-8000-2', context_window: 64000,
+    metadata: { provider_instance_id: 'account-2' },
+  };
+  const models = [first, selected];
+
+  it.each([models, [selected, first]])('preserves the selected account regardless of catalog order: %j', (...ordered) => {
+    const result = resolveModelSelection({ models: ordered, sessionModelId: 'asdf' });
+    expect(result).toMatchObject({
+      model: selected, selectorId: 'asdf', concreteModelId: 'asdf',
+      source: 'session', recovered: false,
+    });
+  });
+
+  it('does not match a display name even when it equals another config ID', () => {
+    expect(resolveModelReference([{ ...first, name: 'asdf' }, selected], 'asdf')).toBe(selected);
+    expect(resolveModelReference(models, 'MOCK-8000-2')).toBeNull();
+    expect(resolveModelReference([first], 'asdf')).toBeNull();
+  });
+
+  it.each(['primary', 'fast'])('resolves the %s alias through the exact configured ID', selector => {
+    expect(resolveModelSelection({
+      models, sessionModelId: selector, defaultModels: { primary: 'asdf', fast: 'asdf' },
+    })).toMatchObject({ model: selected, selectorId: selector, concreteModelId: 'asdf' });
+  });
+
+  it('keeps Fast fallback to the configured Primary ID', () => {
+    expect(resolveModelReference(models, 'fast', { fast: 'missing', primary: 'asdf' })).toBe(selected);
+  });
+
+  it.each(['missing', 'MOCK-8000-2'])('marks an unavailable pinned reference %s without choosing another account', sessionModelId => {
+    expect(resolveModelSelection({ models, sessionModelId, defaultModels: { primary: 'model-first' } }))
+      .toEqual({ model: null, source: 'session', recovered: true });
+  });
+
+  it('rejects disabled, missing-ID and duplicate-ID entries', () => {
+    expect(resolveModelReference([first, { ...selected, enabled: false }], 'asdf')).toBeNull();
+    expect(resolveModelSelection({ models: [{ ...selected, id: undefined }] }).model).toBeNull();
+    expect(resolveModelReference([selected, { ...first, id: 'asdf' }], 'asdf')).toBeNull();
+  });
+
+  it('uses the selected account context window', async () => {
+    vi.mocked(configManager.getConfigs).mockResolvedValue({
+      'ai.models': models, 'ai.default_models': { primary: 'model-first' },
+    });
+    await expect(getModelMaxTokens('asdf')).resolves.toBe(64000);
+  });
+});
 
 describe('reasoning preset session creation resolution', () => {
   beforeEach(() => {

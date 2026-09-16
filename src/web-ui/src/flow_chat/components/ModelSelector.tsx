@@ -841,6 +841,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       status = 'unconfigured';
     } else if (availableModels.length === 0) {
       status = 'no-enabled-chat-model';
+    } else if (!nativeModelResolution.model) {
+      status = 'target-model-unavailable';
     } else if (catalogLoadState === 'error') {
       status = 'catalog-unavailable';
     } else if (nativeModelResolution.recovered) {
@@ -851,13 +853,14 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
     return {
       status,
-      canSend: configLoadState === 'ready' && availableModels.length > 0,
+      canSend: configLoadState === 'ready' && nativeModelResolution.model !== null,
     };
   }, [
     allModels.length,
     availableModels.length,
     catalogLoadState,
     configLoadState,
+    nativeModelResolution.model,
     nativeModelResolution.recovered,
   ]);
 

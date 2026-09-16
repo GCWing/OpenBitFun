@@ -517,6 +517,29 @@ describe('ModelSelector provider levels', () => {
     )).not.toBeNull();
   });
 
+  it('blocks sending with a missing pinned ID while keeping replacement models selectable', async () => {
+    const onAvailabilityChange = vi.fn();
+    flowChatStoreMocks.sessions.set('missing-model-session', {
+      config: { agentType: 'Standard', modelName: 'removed-id' },
+    });
+    vi.mocked(configManager.getConfigs).mockResolvedValue({
+      'ai.models': CATALOG_MODELS,
+      'ai.default_models': { primary: 'acme-fast' },
+      'ai.agent_model_defaults': { mode: 'primary' },
+    });
+    await act(async () => {
+      root.render(<ModelSelector currentMode="Standard" sessionId="missing-model-session"
+        onAvailabilityChange={onAvailabilityChange} />);
+      await Promise.resolve();
+    });
+    expect(onAvailabilityChange).toHaveBeenLastCalledWith({
+      status: 'target-model-unavailable', canSend: false,
+    });
+    await openMenu();
+    await openProvider('provider-acme');
+    expect(modelOption('acme-fast')).not.toBeNull();
+  });
+
   it('distinguishes configured models from enabled chat models', async () => {
     const onAvailabilityChange = vi.fn();
     vi.mocked(configManager.getConfigs).mockResolvedValue({

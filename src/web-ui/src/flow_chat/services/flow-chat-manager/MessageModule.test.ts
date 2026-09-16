@@ -980,6 +980,29 @@ describe('MessageModule detached dispatch', () => {
 });
 
 describe('MessageModule model synchronization', () => {
+  function modelSyncContext(modelName: string) {
+    const session = {
+      sessionId: 'same-name-session',
+      config: { modelName, workspacePath: '/remote/repo' },
+      remoteConnectionId: 'ssh-1', remoteSshHost: 'example.test',
+      maxContextTokens: 32000,
+    };
+    const context: any = {
+      flowChatStore: {
+        getSurfaceGeneration: () => 0,
+        getState: () => ({ sessions: new Map([[session.sessionId, session]]) }),
+        updateSessionModelName: vi.fn(),
+        updateSessionMaxContextTokens: vi.fn(),
+      },
+    };
+    return { context, session };
+  }
+
+  const sameNameModels = [
+    { id: 'model-first', name: 'MOCK-8000', model_name: 'asdf', enabled: true, context_window: 32000 },
+    { id: 'asdf', name: 'MOCK-8000-2', model_name: 'asdf', enabled: true, context_window: 64000 },
+  ];
+
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetConfigs.mockResolvedValue({
@@ -991,6 +1014,31 @@ describe('MessageModule model synchronization', () => {
       'ai.default_models': { primary: 'primary-model' },
     });
     mockUpdateSessionModel.mockResolvedValue(undefined);
+  });
+
+  it('sends the exact selected account ID with the original remote routing', async () => {
+    mockGetConfigs.mockResolvedValue({
+      'ai.models': sameNameModels, 'ai.default_models': { primary: 'model-first' },
+    });
+    const { context, session } = modelSyncContext('asdf');
+    await syncSessionModelSelection(context, session.sessionId, 'Standard');
+    expect(context.flowChatStore.updateSessionModelName).not.toHaveBeenCalled();
+    expect(context.flowChatStore.updateSessionMaxContextTokens).toHaveBeenCalledWith(session.sessionId, 64000);
+    expect(mockUpdateSessionModel).toHaveBeenCalledWith(expect.objectContaining({
+      modelName: 'asdf', remoteConnectionId: 'ssh-1', remoteSshHost: 'example.test',
+      workspacePath: '/remote/repo',
+    }));
+  });
+
+  it.each(['MOCK-8000', 'asdf', 'removed-model'])('does not replace unavailable ID %s with a name match or Primary', async modelName => {
+    mockGetConfigs.mockResolvedValue({
+      'ai.models': [sameNameModels[0]], 'ai.default_models': { primary: 'model-first' },
+    });
+    const { context, session } = modelSyncContext(modelName);
+    await expect(syncSessionModelSelection(context, session.sessionId, 'Standard'))
+      .rejects.toThrow('model configuration ID');
+    expect(context.flowChatStore.updateSessionModelName).not.toHaveBeenCalled();
+    expect(mockUpdateSessionModel).not.toHaveBeenCalled();
   });
 
   it('keeps an explicit primary selector when synchronizing before send', async () => {

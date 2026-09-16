@@ -50,9 +50,9 @@ export interface ModelSelectionResolution {
 function findSelectableModel(models: readonly AIModelConfig[], modelRef: string | null | undefined): AIModelConfig | null {
   const value = modelRef?.trim();
   if (!value) return null;
-  return models.find(model => isSelectableTextChatModel(model)
-    && (model.id === value || model.name === value || model.model_name === value)
-  ) ?? null;
+  // Config IDs identify credentials; display and upstream names do not.
+  const matches = models.filter(model => isSelectableTextChatModel(model) && model.id === value);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 function resolveModelForContextWindow(
@@ -135,20 +135,24 @@ export function resolveModelSelection({
     if (model) {
       const selectorId = ref === 'primary' || ref === 'fast'
         ? ref
-        : model.id?.trim() || model.model_name.trim();
+        : model.id;
       return {
         model,
         selectorId,
-        concreteModelId: model.id?.trim() || model.model_name.trim(),
+        concreteModelId: model.id,
         source: candidate.source,
         recovered,
       };
+    }
+    // A pinned session must not silently switch accounts when its ID is unavailable.
+    if (candidate.source === 'session') {
+      return { model: null, source: 'session', recovered: true };
     }
     recovered = true;
   }
 
   const fallback = selectableModels[0];
-  const concreteModelId = fallback.id?.trim() || fallback.model_name.trim();
+  const concreteModelId = fallback.id;
   return {
     model: fallback,
     selectorId: concreteModelId,
