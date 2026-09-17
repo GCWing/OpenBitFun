@@ -87,7 +87,8 @@ const COPY = {
     issueDetailLabel: '任务详情与进展',
     retryEnvironment: '重新检查环境',
     environmentRechecked: '环境检查已更新',
-    installLoopx: '安装兼容版本',
+    installLoopx: '安装 LoopX {version}',
+    installLoopxUnknown: '安装 LoopX',
     installNode: '安装便携 Node.js',
     installGit: '安装便携 Git',
     installing: '安装中…',
@@ -649,7 +650,8 @@ const COPY = {
     issueDetailLabel: 'Task details and progress',
     retryEnvironment: 'Check environment again',
     environmentRechecked: 'Environment check updated.',
-    installLoopx: 'Install LoopX',
+    installLoopx: 'Install LoopX {version}',
+    installLoopxUnknown: 'Install LoopX',
     installNode: 'Install Node.js',
     installGit: 'Install Git',
     installing: 'Installing...',
@@ -2826,11 +2828,20 @@ function environmentFact(name, label, fact, action) {
   return element;
 }
 
-function loopxInstallAction() {
+function loopxInstallTargetVersion(fact) {
+  const detail = String(fact && fact.detail || '');
+  const expected = (detail.match(/expected loopx\s+([^\s,)]+)/i) || [])[1];
+  return expected || (fact && fact.version) || '';
+}
+
+function loopxInstallAction(fact) {
   const pending = state.environmentInstallObserved
     && state.environmentInstallRuntime === 'loopx';
+  const version = loopxInstallTargetVersion(fact);
   return {
-    label: text('installLoopx'),
+    label: version
+      ? text('installLoopx', { version })
+      : text('installLoopxUnknown'),
     pending,
     disabled: pending || state.environmentInstallPending,
     onClick: () => installLoopxFromGithub(),
@@ -2857,7 +2868,7 @@ function environmentFactAction(kind, fact) {
   if (!fact) return null;
   const remediationAction = fact.remediationAction;
   if (kind === 'loopx' && remediationAction === 'install_loopx') {
-    return loopxInstallAction();
+    return loopxInstallAction(fact);
   }
   if (kind === 'node' && remediationAction === 'install_node') {
     return runtimeInstallAction('node');
@@ -7206,10 +7217,7 @@ function installLoopxFromGithub() {
     && state.snapshot.environment
     && state.snapshot.environment.core
     && state.snapshot.environment.core.sidecar;
-  const installTargetVersion = (String(installSidecar && installSidecar.detail || '')
-    .match(/expected loopx\s+([^\s,]+)/i) || [])[1]
-    || (installSidecar && installSidecar.version)
-    || '';
+  const installTargetVersion = loopxInstallTargetVersion(installSidecar);
   showNotice(text('loopxInstallStarted', { version: installTargetVersion }));
   emitInstallDiagnostic('ui_pending_rendered');
   window.setTimeout(() => {

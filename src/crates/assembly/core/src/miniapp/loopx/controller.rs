@@ -5997,13 +5997,26 @@ fn unavailable_environment_fact(
     }
 }
 
+/// The MiniApp labels the LoopX install action with the pinned version, which it
+/// reads out of the fact detail in the `expected loopx <version>` form. A version
+/// mismatch already carries it; a missing or failed sidecar does not, so add it
+/// here instead of leaving the install button without a version.
+fn loopx_expected_version_detail(detail: impl Into<String>) -> String {
+    let detail = detail.into();
+    if detail.to_ascii_lowercase().contains("expected loopx") {
+        detail
+    } else {
+        format!("{detail} (expected loopx {LOOPX_PINNED_VERSION})")
+    }
+}
+
 fn unavailable_loopx_environment_fact(
     detail: impl Into<String>,
     checked_at: Option<i64>,
 ) -> LoopxEnvironmentFact {
     LoopxEnvironmentFact {
         status: LoopxEnvironmentFactStatus::Unavailable,
-        detail: Some(detail.into()),
+        detail: Some(loopx_expected_version_detail(detail)),
         remediation: Some(
             "Download the pinned LoopX source from GitHub into BitFun-managed storage".to_string(),
         ),
