@@ -24,6 +24,35 @@ class SessionRecordReplicaTest {
         assertEquals("hello world", messages[1].text)
         assertEquals("completed", messages[1].status)
     }
+    @Test fun turnRecordUserMessageOutlivesTheHeadersItsChildrenRepeat() {
+        val replica = SessionRecordReplica("s")
+        replica.apply(buildJsonObject {
+            put("sessionId", "s"); put("id", "turn/t"); put("revision", 1)
+            put("turn", buildJsonObject {
+                put("sessionId", "s"); put("turnId", "t"); put("turnIndex", 0); put("status", "inprogress")
+                put("userMessage", buildJsonObject {
+                    put("id", "u"); put("content", "look at this"); put("timestamp", 1)
+                    put("metadata", buildJsonObject {
+                        put("images", buildJsonArray {
+                            add(buildJsonObject { put("name", "shot.png"); put("data_url", "data:image/png;base64,AA") })
+                            add(buildJsonObject { put("name", "unreachable.png"); put("image_path", "/Users/dev/gone.png") })
+                        })
+                    })
+                })
+            })
+        })
+        // Attachments are drawn from the pixels recorded with the turn; one that
+        // kept only a host path has none to hand a client that cannot reach it.
+        assertEquals(listOf("shot.png"), replica.messages()[0].images.orEmpty().map { it.name })
+
+        // A round or item record repeats the turn as a parent header, without
+        // those pixels. It must not replace the turn record it descends from.
+        replica.apply(record(5, "inprogress", "on it"))
+        val messages = replica.messages()
+        assertEquals("look at this", messages[0].text)
+        assertEquals(listOf("data:image/png;base64,AA"), messages[0].images.orEmpty().map { it.dataUrl })
+        assertEquals("on it", messages[1].text)
+    }
     @Test fun tombstonesPreventOldReplayResurrection() {
         val replica = SessionRecordReplica("s")
         replica.apply(record(3, "completed", "final"))

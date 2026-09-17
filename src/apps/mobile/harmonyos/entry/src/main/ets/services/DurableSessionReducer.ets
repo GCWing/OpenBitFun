@@ -15,7 +15,7 @@ interface ItemData {
 }
 interface ItemRecord { type: string; data: ItemData; }
 export interface SessionRecord { sessionId: string; id: string; revision: number; deleted?: boolean; turn?: TurnRecord; round?: RoundRecord; item?: ItemRecord; }
-interface StoredTurn { revision: number; data?: TurnRecord; }
+interface StoredTurn { revision: number; data?: TurnRecord; authoritative?: boolean; }
 interface StoredRound { revision: number; data?: RoundRecord; }
 interface StoredItem { revision: number; turnId: string; roundId: string; data: ItemRecord; }
 
@@ -56,7 +56,13 @@ export class DurableSessionReducer {
     if (record.item && !record.round) throw new Error('Session item is missing its round');
     this.records.set(record.id, record);
     const turn = this.turns.get(data.turnId);
-    if (!turn || turn.revision < record.revision) this.turns.set(data.turnId, { revision: record.revision, data: data });
+    // A round or item record repeats its parent turn so a partial page still
+    // reads, but that copy is a header, not the turn's own state: the turn
+    // record is what the user message and its attachment pixels come from, so a
+    // header fills a turn it has never seen and never overwrites one.
+    const header = !!record.round;
+    if (!turn || (turn.revision < record.revision && !(header && turn.authoritative)))
+      this.turns.set(data.turnId, { revision: record.revision, data: data, authoritative: !header });
     if (record.round) {
       const round = this.rounds.get(record.round.id);
       if (!round || round.revision < record.revision) this.rounds.set(record.round.id, { revision: record.revision, data: record.round });

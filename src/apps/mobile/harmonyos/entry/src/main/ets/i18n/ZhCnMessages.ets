@@ -514,6 +514,7 @@ export const ZH_CN_MESSAGES: [string, string][] = [
   ['chat.voiceListeningPlaceholder', '正在听，请说话...'],
   ['chat.queuedAfterRunningTurn', '已排队，当前任务结束后执行'],
   ['chat.image', '图片'],
+  ['chat.imageUnavailable', '图片未同步到此设备'],
   ['chat.thinkingRunning', '运行中'],
   ['chat.thinkingDone', '已完成'],
   ['chat.thinkingInProgress', '正在思考'],

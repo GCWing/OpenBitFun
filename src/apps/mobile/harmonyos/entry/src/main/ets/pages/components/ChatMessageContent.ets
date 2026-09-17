@@ -9,7 +9,7 @@ import {
 import { FileReferenceCard } from './FileReferenceCard';
 import { MarkdownContent } from './MarkdownContent';
 import { StreamingMarkdownContent } from './StreamingMarkdownContent';
-import { LINE } from './Theme';
+import { LINE, MEDIA_BACKGROUND, MUTED } from './Theme';
 
 @ComponentV2
 export struct MessageImageGallery {
@@ -19,16 +19,45 @@ export struct MessageImageGallery {
   build() {
     Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
       ForEach(this.images, (image: ConversationUiImage, index: number) => {
-        Image(image.data_url)
-          .width(this.userStyle ? 112 : 92)
-          .height(this.userStyle ? 112 : 92)
-          .objectFit(ImageFit.Cover)
-          .borderRadius(this.userStyle ? 12 : 14)
-          .border({ width: 1, color: LINE })
-          .margin({
-            right: this.userStyle ? (index % 2 === 0 && this.images.length > 1 ? 8 : 0) : 8,
-            bottom: this.userStyle ? (index < this.images.length - 2 ? 8 : 0) : 8
-          })
+        Stack() {
+          if (ConversationMessageRenderPolicy.hasRenderableImagePixels(image)) {
+            Image(image.data_url)
+              .width('100%')
+              .height('100%')
+              .objectFit(ImageFit.Cover)
+          } else {
+            // Without pixels an Image() draws an unexplained blank box, so name
+            // the attachment instead and say why it is not here.
+            Column() {
+              Text(image.name || RemoteI18n.t('chat.image'))
+                .fontSize(11)
+                .fontColor(MUTED)
+                .maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .textAlign(TextAlign.Center)
+              Text(RemoteI18n.t('chat.imageUnavailable'))
+                .fontSize(10)
+                .fontColor(MUTED)
+                .maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .textAlign(TextAlign.Center)
+                .margin({ top: 4 })
+            }
+            .width('100%')
+            .padding(8)
+            .justifyContent(FlexAlign.Center)
+          }
+        }
+        .width(this.userStyle ? 112 : 92)
+        .height(this.userStyle ? 112 : 92)
+        .backgroundColor(MEDIA_BACKGROUND)
+        .borderRadius(this.userStyle ? 12 : 14)
+        .border({ width: 1, color: LINE })
+        .clip(true)
+        .margin({
+          right: this.userStyle ? (index % 2 === 0 && this.images.length > 1 ? 8 : 0) : 8,
+          bottom: this.userStyle ? (index < this.images.length - 2 ? 8 : 0) : 8
+        })
       }, (image: ConversationUiImage, index: number) => `${image.name}-${index}`)
     }
     .width(this.userStyle ? (this.images.length > 1 ? 232 : 112) : '100%')

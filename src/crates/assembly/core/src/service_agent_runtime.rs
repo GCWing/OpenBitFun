@@ -614,15 +614,40 @@ async fn load_remote_session_metadata_for_workspace(
             format!("Failed to list sessions for workspace: {error}")
         })?;
 
+    use openbitfun_services_core::session::SessionRelationshipKind;
+
     Ok(metadata
         .into_iter()
-        .map(|session| RemoteSessionMetadata {
-            session_id: session.session_id,
-            name: session.session_name,
-            agent_type: session.agent_type,
-            created_at_ms: session.created_at,
-            last_active_at_ms: session.last_active_at,
-            turn_count: session.turn_count,
+        .map(|session| {
+            // Legacy sessions keep their lineage in `custom_metadata`, so the
+            // normalized view is the only source that sees every child session.
+            let relationship =
+                openbitfun_services_core::session::normalized_session_relationship(&session);
+            let relationship_kind = relationship
+                .as_ref()
+                .and_then(|relationship| relationship.kind.as_ref())
+                .map(|kind| {
+                    match kind {
+                        SessionRelationshipKind::Btw => "btw",
+                        SessionRelationshipKind::Review => "review",
+                        SessionRelationshipKind::DeepReview => "deep_review",
+                        SessionRelationshipKind::Miniapp => "miniapp",
+                        SessionRelationshipKind::Subagent => "subagent",
+                    }
+                    .to_string()
+                });
+            let parent_session_id =
+                relationship.and_then(|relationship| relationship.parent_session_id);
+            RemoteSessionMetadata {
+                session_id: session.session_id,
+                name: session.session_name,
+                agent_type: session.agent_type,
+                created_at_ms: session.created_at,
+                last_active_at_ms: session.last_active_at,
+                turn_count: session.turn_count,
+                parent_session_id,
+                relationship_kind,
+            }
         })
         .collect())
 }
@@ -660,24 +685,58 @@ fn remote_model_capability_fact(capability: ModelCapability) -> RemoteModelCapab
     }
 }
 
+/// An attachment recorded before pixels travelled inline holds a host path and
+/// nothing else, and only this host can resolve it. Above this size the image is
+/// left as a name: reading it would cost more than the thumbnail is worth.
+#[cfg(feature = "remote-connect")]
+const MAX_REMOTE_CHAT_IMAGE_SOURCE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Read the pixels behind an attachment path so clients that cannot reach this
+/// filesystem still see the picture. A path that no longer resolves is not an
+/// error here — the attachment simply keeps travelling as a name.
+#[cfg(feature = "remote-connect")]
+fn read_remote_chat_image_pixels(image_path: &str) -> Option<Vec<u8>> {
+    let path = std::path::Path::new(image_path);
+    // Turn metadata records where the user took the file from, always as an
+    // absolute host path. A relative one would resolve against whatever
+    // directory this process happens to be in, which is never what was meant.
+    if !path.is_absolute() {
+        return None;
+    }
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_REMOTE_CHAT_IMAGE_SOURCE_BYTES {
+        return None;
+    }
+    std::fs::read(path).ok()
+}
+
 /// Convert persisted turns into mobile ChatMessages.
 /// This is the same data source the desktop frontend uses.
 #[cfg(feature = "remote-connect")]
-fn remote_chat_messages_from_turns(turns: &[DialogTurnData]) -> Vec<ChatMessage> {
+fn remote_chat_messages_from_turns(
+    turns: &[DialogTurnData],
+    read_image_pixels: &dyn Fn(&str) -> Option<Vec<u8>>,
+) -> Vec<ChatMessage> {
     let projected_turns = turns
         .iter()
         .filter(|turn| turn.kind.is_model_visible())
-        .map(remote_chat_history_turn_from_core_turn)
+        .map(|turn| remote_chat_history_turn_from_core_turn(turn, read_image_pixels))
         .collect::<Vec<_>>();
     build_remote_chat_messages(projected_turns)
 }
 
 #[cfg(feature = "remote-connect")]
-fn remote_chat_history_turn_from_core_turn(turn: &DialogTurnData) -> RemoteChatHistoryTurn {
+fn remote_chat_history_turn_from_core_turn(
+    turn: &DialogTurnData,
+    read_image_pixels: &dyn Fn(&str) -> Option<Vec<u8>>,
+) -> RemoteChatHistoryTurn {
     let prompt_visible_content =
         crate::agentic::core::strip_prompt_markup(&turn.user_message.content);
-    let user_projection =
-        project_remote_chat_user(turn.user_message.metadata.as_ref(), &prompt_visible_content);
+    let user_projection = project_remote_chat_user(
+        turn.user_message.metadata.as_ref(),
+        &prompt_visible_content,
+        read_image_pixels,
+    );
 
     let rounds = turn
         .model_rounds
@@ -1811,7 +1870,11 @@ impl CoreServiceAgentRuntime {
                 .ok_or_else(||anyhow::anyhow!("Session storage is unavailable on this host"))?;
             let coordinator=get_global_coordinator().ok_or_else(||anyhow::anyhow!("Runtime is unavailable"))?;
             let turns=coordinator.load_relay_session_turns(&directory,session_id,turn_id).await?;
-            openbitfun_services_integrations::remote_connect::session_records::records_from_turns(&turns)
+            // Attachment paths are read and images re-encoded here, so the work
+            // leaves the reactor rather than stalling the session's other events.
+            tokio::task::spawn_blocking(move||{
+                openbitfun_services_integrations::remote_connect::session_records::records_from_turns(&turns,&read_remote_chat_image_pixels)
+            }).await?
         }).await.map_err(|error|error.to_string())
     }
 
@@ -1827,7 +1890,15 @@ impl CoreServiceAgentRuntime {
             .load_visible_persisted_session_turns(session_storage_dir, session_id)
             .await
             .map_err(|error| error.to_string())?;
-        Ok((remote_chat_messages_from_turns(&turns), false))
+        // Projecting a history decodes and re-encodes every attachment, and now
+        // reads the ones stored as a path, so it does not belong on the thread
+        // driving the remote-connect server.
+        let messages = tokio::task::spawn_blocking(move || {
+            remote_chat_messages_from_turns(&turns, &read_remote_chat_image_pixels)
+        })
+        .await
+        .map_err(|error| format!("Remote history projection failed: {error}"))?;
+        Ok((messages, false))
     }
 
     #[cfg(feature = "remote-connect")]
@@ -3365,6 +3436,7 @@ mod tests {
     use std::collections::HashSet;
 
     use openbitfun_runtime_ports::SessionTranscriptReader;
+    use openbitfun_services_integrations::remote_connect::no_host_image_pixels;
 
     use super::*;
     use crate::service::session::{
@@ -3919,7 +3991,7 @@ mod tests {
             })),
         );
 
-        let messages = remote_chat_messages_from_turns(&[turn]);
+        let messages = remote_chat_messages_from_turns(&[turn], &no_host_image_pixels);
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "user");
@@ -3948,7 +4020,7 @@ mod tests {
     fn core_service_agent_runtime_owner_preserves_in_progress_remote_assistant_history() {
         let turn = remote_history_test_turn(TurnStatus::InProgress, None);
 
-        let messages = remote_chat_messages_from_turns(&[turn]);
+        let messages = remote_chat_messages_from_turns(&[turn], &no_host_image_pixels);
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "user");
@@ -3963,7 +4035,7 @@ mod tests {
         let mut turn = remote_history_test_turn(TurnStatus::InProgress, None);
         turn.model_rounds.clear();
 
-        let messages = remote_chat_messages_from_turns(&[turn]);
+        let messages = remote_chat_messages_from_turns(&[turn], &no_host_image_pixels);
 
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].role, "user");
@@ -3975,7 +4047,7 @@ mod tests {
         let mut turn = remote_history_test_turn(TurnStatus::Error, None);
         turn.error = Some("AI client could not reach the configured proxy".to_string());
 
-        let messages = remote_chat_messages_from_turns(&[turn]);
+        let messages = remote_chat_messages_from_turns(&[turn], &no_host_image_pixels);
 
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[1].turn_id.as_deref(), Some("turn-1"));
@@ -3992,7 +4064,7 @@ mod tests {
         turn.user_message.content =
             "User uploaded a file.\nUser's question:\n  explain this  ".to_string();
 
-        let messages = remote_chat_messages_from_turns(&[turn]);
+        let messages = remote_chat_messages_from_turns(&[turn], &no_host_image_pixels);
 
         assert_eq!(messages[0].content, "explain this");
     }

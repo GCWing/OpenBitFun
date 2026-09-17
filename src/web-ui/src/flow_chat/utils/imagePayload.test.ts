@@ -21,6 +21,10 @@ const clipboard: ImageContext = {
   imageName: 'screen.png', fileSize: 3, mimeType: 'image/png', source: 'clipboard',
   isLocal: false, dataUrl: 'data:image/png;base64,YQ==',
 };
+const dropped: ImageContext = {
+  ...clipboard, id: 'dropped-1', isLocal: true, dataUrl: undefined,
+  imagePath: '/remote/workspace/chart.png', imageName: 'chart.png',
+};
 
 beforeEach(() => {
   mocks.surfaceId = 'local';
@@ -59,9 +63,29 @@ describe('image payload host ownership', () => {
     await expect(buildImagePayload([clipboard])).rejects.toThrow('surface changed');
   });
 
-  it('retains remote workspace paths when no inline pixels exist', async () => {
-    const result = await buildImagePayload([{ ...clipboard, isLocal: true, dataUrl: undefined, imagePath: '/remote/workspace/chart.png' }]);
-    expect(result?.imageContexts[0].image_path).toBe('/remote/workspace/chart.png');
+  it('inlines pixels for a dropped local file so path-blind clients can draw it', async () => {
+    mocks.invoke.mockResolvedValue('YQ==');
+    const result = await buildImagePayload([dropped]);
+    expect(mocks.invoke).toHaveBeenCalledWith('read_file_content', {
+      request: { filePath: dropped.imagePath, encoding: 'base64', remoteConnectionId: undefined },
+    });
+    expect(result?.imageContexts[0].image_path).toBe(dropped.imagePath);
+    expect(result?.imageContexts[0].data_url).toBe('data:image/png;base64,YQ==');
+    expect(result?.imageDisplayData[0].dataUrl).toBe('data:image/png;base64,YQ==');
+    expect(mocks.assertCurrent).toHaveBeenCalled();
+  });
+
+  it('keeps the attachment on an unreadable path instead of failing the send', async () => {
+    mocks.invoke.mockRejectedValue(new Error('gone'));
+    const result = await buildImagePayload([dropped]);
+    expect(result?.imageContexts[0].image_path).toBe(dropped.imagePath);
+    expect(result?.imageContexts[0].data_url).toBeUndefined();
+  });
+
+  it('leaves oversized local images as a path so turn storage stays bounded', async () => {
+    const result = await buildImagePayload([{ ...dropped, fileSize: 9 * 1024 * 1024 }]);
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(result?.imageContexts[0].image_path).toBe(dropped.imagePath);
     expect(result?.imageContexts[0].data_url).toBeUndefined();
   });
 });

@@ -514,6 +514,7 @@ export const EN_US_MESSAGES: [string, string][] = [
   ['chat.voiceListeningPlaceholder', 'Listening, please speak...'],
   ['chat.queuedAfterRunningTurn', 'Queued. It will run after the current task finishes.'],
   ['chat.image', 'Image'],
+  ['chat.imageUnavailable', 'Image not synced to this device'],
   ['chat.thinkingRunning', 'Running'],
   ['chat.thinkingDone', 'Done'],
   ['chat.thinkingInProgress', 'Thinking'],

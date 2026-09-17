@@ -6,7 +6,7 @@ import kotlinx.serialization.json.*
 
 /** Revisioned canonical records retain the complete host DTO; rendering is a mobile adapter. */
 internal class SessionRecordReplica(private val sessionId: String) {
-    private data class Versioned(val revision: Long, val value: JsonObject)
+    private data class Versioned(val revision: Long, val value: JsonObject, val authoritative: Boolean = false)
     private val turns = linkedMapOf<String, Versioned>()
     private val rounds = linkedMapOf<String, Versioned>()
     private val items = linkedMapOf<String, Versioned>()
@@ -26,6 +26,15 @@ internal class SessionRecordReplica(private val sessionId: String) {
     private val itemRounds = mutableMapOf<String, String>()
     private fun put(map: MutableMap<String, Versioned>, id: String, revision: Long, value: JsonObject) {
         if (revision > (map[id]?.revision ?: -1)) map[id] = Versioned(revision, value)
+    }
+    /** A round or item record repeats its parent turn so a partial page still reads,
+     * but that copy is a header, not the turn's own state: the turn record is what the
+     * user message and its attachment pixels come from, so a header fills a turn it has
+     * never seen and never overwrites one. */
+    private fun putTurn(id: String, revision: Long, value: JsonObject, authoritative: Boolean) {
+        val stored = turns[id]
+        if (stored != null && (revision <= stored.revision || (!authoritative && stored.authoritative))) return
+        turns[id] = Versioned(revision, value, authoritative)
     }
     fun apply(payload: JsonObject) {
         check(payload.string("sessionId") == sessionId) { "Session record binding mismatch" }
@@ -61,7 +70,7 @@ internal class SessionRecordReplica(private val sessionId: String) {
         // Validate the complete ancestry before changing either data or replay fences.
         // A rejected record must leave a corrected delivery at the same revision usable.
         recordVersions[recordId] = revision
-        put(turns, turnId, revision, turn)
+        putTurn(turnId, revision, turn, recordRound == null)
         if (turns[turnId]?.value?.string("status") != "inprogress") controls.entries.removeAll { it.value.first == turnId }
         if (recordRound != null && roundId != null) {
             put(rounds, roundId, revision, recordRound)
@@ -102,12 +111,19 @@ internal class SessionRecordReplica(private val sessionId: String) {
         val controlTools = controls.values.filter { it.first == turnId }.map { it.second }
         val shownItems = rendered.map { item -> item.tool?.id?.let { id -> controlTools.firstOrNull { it.id == id } }?.let { item.copy(tool = it) } ?: item } +
             controlTools.filter { tool -> rendered.none { it.tool?.id == tool.id } }.map { ChatMessageItemResponse(type = "tool", tool = it) }
-        listOf(RemoteResponseMapper.chatMessage(ChatMessageResponse(id = user.string("id"), role = "user", content = user.string("content"), turnId = turnId, metadata = user["metadata"], timestamp = user.string("timestamp"))),
+        listOf(RemoteResponseMapper.chatMessage(ChatMessageResponse(id = user.string("id"), role = "user", content = user.string("content"), turnId = turnId, metadata = user["metadata"], images = userImages(user), timestamp = user.string("timestamp"))),
             RemoteResponseMapper.chatMessage(ChatMessageResponse(id = "${turnId}_assistant", role = "assistant", turnId = turnId,
                 content = rendered.filter { it.type == "text" && it.isSubagent != true }.joinToString("") { it.content.orEmpty() },
                 thinking = rendered.filter { it.type == "thinking" && it.isSubagent != true }.joinToString("") { it.content.orEmpty() },
                 items = shownItems, status = when (turn.string("status")) { "inprogress" -> "streaming"; "error" -> "failed"; else -> turn.string("status") }, error = turn.string("error"), metadata = turn)))
     }
+    /** Attachments are recorded with the turn; one that kept only a host path has no
+     * pixels to hand a client that cannot reach that filesystem. */
+    private fun userImages(user: JsonObject): List<ImageAttachment> =
+        (((user["metadata"] as? JsonObject)?.get("images") as? JsonArray) ?: emptyList()).mapNotNull { entry ->
+            val image = entry as? JsonObject ?: return@mapNotNull null
+            image.string("data_url").takeIf { it.isNotEmpty() }?.let { ImageAttachment(name = image.string("name"), dataUrl = it) }
+        }
     private fun JsonObject.string(key: String): String = (get(key) as? JsonPrimitive)?.contentOrNull.orEmpty()
     private fun JsonObject.number(key: String): Long = (get(key) as? JsonPrimitive)?.longOrNull ?: 0
 }
