@@ -8,6 +8,7 @@ import { ChatTimelineItem, ChatTimelineProjector } from '../main/ets/services/Ch
 import { ChatTimelineStore } from '../main/ets/services/ChatTimelineStore';
 import { ConversationEvent } from '../main/ets/services/ConversationEvent';
 import { AsyncLifecycleGate } from '../main/ets/services/AsyncLifecycleGate';
+import { DeferredLoadingGate } from '../main/ets/services/DeferredLoadingGate';
 import { Encoding } from '../main/ets/services/Encoding';
 import {
   GeneralChatDraftStore,
@@ -386,6 +387,46 @@ export default function lifecycleUnitTest() {
 
       gate.invalidate();
       expect(gate.isCurrent(second)).assertFalse();
+    });
+  });
+
+  const settleAfter = (delayMs: number): Promise<void> =>
+    new Promise<void>((resolve: () => void) => setTimeout(resolve, delayMs));
+
+  describe('DeferredLoadingGate', () => {
+    it('announces a wait the content has not ended and caps one nothing ever ends', 0, async () => {
+      const seen: boolean[] = [];
+      const gate = new DeferredLoadingGate(10, (visible: boolean): void => { seen.push(visible); }, 60);
+
+      // A wait the content ends: the command that started it returning is not
+      // what closes the gate, so the skeleton stands until `settle` says the
+      // transcript arrived.
+      gate.arm();
+      await settleAfter(30);
+      expect(seen.length).assertEqual(1);
+      expect(seen[0]).assertTrue();
+      gate.settle();
+      expect(seen.length).assertEqual(2);
+      expect(seen[1]).assertFalse();
+
+      // A wait nothing ends: the cap takes the skeleton down rather than
+      // leaving a placeholder standing over content that never came.
+      gate.arm();
+      await settleAfter(30);
+      expect(seen.length).assertEqual(3);
+      expect(seen[2]).assertTrue();
+      await settleAfter(90);
+      expect(seen.length).assertEqual(4);
+      expect(seen[3]).assertFalse();
+
+      // A superseded wait never announces itself, so a second tap during the
+      // first open cannot be described by the first one's timers.
+      gate.arm();
+      gate.arm();
+      gate.settle();
+      await settleAfter(40);
+      expect(seen.length).assertEqual(5);
+      expect(seen[4]).assertFalse();
     });
   });
 

@@ -288,6 +288,21 @@ class ConversationViewTest {
         composeRule.onNodeWithTag(CHAT_STATUS_BAR_TEST_TAG).assertDoesNotExist()
     }
 
+    /**
+     * A placeholder that outlives its subject reads as a hang, so the skeleton
+     * gives up on a transcript that never lands and lets the pane speak for
+     * itself. Matches HarmonyOS's `DeferredLoadingGate` cap.
+     */
+    @Test
+    fun loadingSkeletonStopsStandingForATranscriptThatNeverArrives() {
+        composeRule.mainClock.autoAdvance = false
+        setConversationContent(state = { readyState(sessionId = "pending") })
+        composeRule.mainClock.advanceTimeBy(200)
+        composeRule.onNodeWithTag(CONVERSATION_LOADING_TEST_TAG).assertIsDisplayed()
+        composeRule.mainClock.advanceTimeBy(20_000)
+        composeRule.onNodeWithTag(CONVERSATION_LOADING_TEST_TAG).assertDoesNotExist()
+    }
+
     @Test
     fun composerShowsTheStoreDraftAndTypingDispatchesUpdateDraft() {
         val intents = mutableListOf<RemoteSessionIntent>()

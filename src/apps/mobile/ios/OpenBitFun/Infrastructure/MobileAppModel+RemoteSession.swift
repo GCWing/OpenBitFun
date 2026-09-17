@@ -369,6 +369,10 @@ extension MobileAppModel {
         coreAdapter?.openRemoteSession(sessionID: pending.sessionID)
     }
 
+    /// How long an open may be announced as a wait. Matched to HarmonyOS's
+    /// `DeferredLoadingGate` cap and Android's `CONVERSATION_LOADING_MAX_VISIBLE_MS`.
+    static let remoteConversationLoadingMaxVisibleNanoseconds: UInt64 = 20_000_000_000
+
     /// Mirrors HarmonyOS's deferred conversation-loading gate. Cached transcripts
     /// normally arrive inside the grace period; a relay fetch gets an explicit
     /// skeleton instead of leaving the previous session visible.
@@ -400,6 +404,19 @@ extension MobileAppModel {
                   self.remoteConversationLoadGeneration == generation,
                   self.remoteConversationOpeningSessionID == sessionID else { return }
             self.remoteConversationLoading = true
+            // What ends this wait is the transcript arriving. One that never
+            // arrives would otherwise leave the skeleton standing for the rest
+            // of the session, and a placeholder that outlives its subject reads
+            // as a hang. Past the cap the pane stops saying "loading" and lets
+            // whatever it does have speak for itself.
+            do {
+                try await Task.sleep(nanoseconds: Self.remoteConversationLoadingMaxVisibleNanoseconds)
+            } catch {
+                return
+            }
+            guard self.remoteConversationLoadGeneration == generation,
+                  self.remoteConversationOpeningSessionID == sessionID else { return }
+            self.remoteConversationLoading = false
         }
     }
 

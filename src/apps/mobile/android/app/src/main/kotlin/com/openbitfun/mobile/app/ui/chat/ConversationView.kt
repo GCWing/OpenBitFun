@@ -80,6 +80,18 @@ internal const val CONVERSATION_BACK_TEST_TAG: String = "conversation-back"
 internal const val CONVERSATION_LOADING_TEST_TAG: String = "conversation-loading"
 
 /**
+ * Grace before a conversation open is announced as a wait, and how long that
+ * announcement may stand. A cached transcript normally arrives inside the
+ * grace period, and swapping it for a skeleton and back reads as a stall
+ * rather than as speed. The cap is the other end: a transcript that never
+ * lands would otherwise leave the skeleton standing for the rest of the
+ * session, and a placeholder that outlives its subject reads as a hang.
+ * Matched to HarmonyOS's `DeferredLoadingGate` and iOS's open gate.
+ */
+private const val CONVERSATION_LOADING_DELAY_MS: Long = 140
+private const val CONVERSATION_LOADING_MAX_VISIBLE_MS: Long = 20_000
+
+/**
  * The transcript itself, tagged so a test can scroll it to a row.
  *
  * Separate from [CONVERSATION_TEST_TAG] because that one sits on the whole
@@ -142,8 +154,10 @@ internal fun ConversationView(
     LaunchedEffect(state.selectedSessionId, timeline == null) {
         loadingVisible = false
         if (timeline == null) {
-            kotlinx.coroutines.delay(140)
+            kotlinx.coroutines.delay(CONVERSATION_LOADING_DELAY_MS)
             loadingVisible = true
+            kotlinx.coroutines.delay(CONVERSATION_LOADING_MAX_VISIBLE_MS)
+            loadingVisible = false
         }
     }
     val activeTurn = timeline?.activeTurn

@@ -36,6 +36,7 @@ export class ConversationViewState {
   composerCapabilities: ChatComposerCapabilities = GENERAL_CHAT_COMPOSER_CAPABILITIES;
   isBusy: boolean = false;
   isLoadingConversation: boolean = false;
+  isLoadingTranscript: boolean = false;
   canStop: boolean = false;
   hasMoreMessages: boolean = false;
   historyLoading: boolean = false;
@@ -72,6 +73,10 @@ export class ConversationViewState {
     state.workspaceBranch = remote.workspaceBranch;
     state.connectionState = remote.connectionState;
     state.isLoadingConversation = remote.isLoadingConversation;
+    // Nothing is being waited for once the pane has no session: a skeleton left
+    // standing after a disconnect or a delete would describe a load that was
+    // abandoned rather than one still running.
+    state.isLoadingTranscript = remote.isLoadingTranscript && remote.activeSession.sessionId.length > 0;
     if (state.isLoadingConversation) {
       state.activeSession = ConversationViewState.emptySession();
     }

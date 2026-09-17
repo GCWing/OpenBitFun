@@ -37,9 +37,10 @@ export class RemoteSessionViewModel {
   private readonly files: RemoteFileDownloadController;
   private readonly hooks: RemoteSessionViewModelHooks;
   // Long enough that a cached transcript never flashes a skeleton on its way in,
-  // short enough that a transcript coming over the relay still says so.
+  // short enough that a transcript coming over the relay still says so. The cap
+  // is the backstop for a session whose records never arrive at all.
   private readonly openLoadingGate: DeferredLoadingGate =
-    new DeferredLoadingGate(140, (visible: boolean): void => this.pageState.setConversationLoading(visible));
+    new DeferredLoadingGate(140, (visible: boolean): void => this.pageState.setTranscriptLoading(visible), 20000);
   // How many opens this view model has started and not yet settled. Opening a
   // session raises the busy flag, so without this the flag an open sets would
   // read, to the next tap, as a run in progress.
@@ -270,6 +271,7 @@ export class RemoteSessionViewModel {
     // straight from one conversation to the next.
     const loadingToken = this.openLoadingGate.arm();
     const openGeneration = ++this.openGeneration;
+    let requested = false;
     onRouteChat(item.id);
     RemoteLogger.info(`session open routed session=${RemoteSessionViewModel.shortId(item.id)}`);
     this.openInFlight += 1;
@@ -301,11 +303,20 @@ export class RemoteSessionViewModel {
             this.pageState.activeSession.sessionId === session.sessionId) {
             this.hooks.onStartPolling();
           }
+          requested = true;
         }
       );
     } finally {
       this.openInFlight -= 1;
-      this.openLoadingGate.release(loadingToken);
+      // The command returning is not the transcript arriving. `open` hands the
+      // durable record stream a request for this session's history and comes
+      // back in a few milliseconds; the records themselves land seconds later,
+      // and releasing here left that whole gap blank with nothing to read.
+      // `settleTranscriptLoading` ends the wait when the records do arrive.
+      // An open that never got as far as asking has nothing to wait for.
+      if (!requested) {
+        this.openLoadingGate.release(loadingToken);
+      }
       // Only the tap that still owns the gate owns the highlight: a second tap
       // during the first open has already moved both.
       if (loadingToken === this.openLoadingGate.currentToken()) {
@@ -313,6 +324,11 @@ export class RemoteSessionViewModel {
       }
       RemoteLogger.info(`session open settled session=${RemoteSessionViewModel.shortId(item.id)}`);
     }
+  }
+
+  /** The transcript reached the pane, so the wait an open started is over. */
+  settleTranscriptLoading(): void {
+    this.openLoadingGate.settle();
   }
 
   async deleteSession(item: RemoteSession, currentWorkspacePath: string): Promise<void> {

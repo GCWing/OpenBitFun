@@ -62,6 +62,11 @@ export class RemotePageState {
   @Trace hasMoreSessions: boolean = false;
   @Trace isLoadingSessions: boolean = false;
   @Trace isLoadingConversation: boolean = false;
+  // Separate from isLoadingConversation, which means the session itself is not
+  // known yet and so blanks the header. Here the session is known and named;
+  // only its transcript is still on the way, and the header should keep saying
+  // which conversation the pane is about while the body says it is filling.
+  @Trace isLoadingTranscript: boolean = false;
   @Trace pendingSessionId: string = '';
   @Trace isConversationDismissed: boolean = false;
   @Trace sessionErrorText: string = '';
@@ -239,6 +244,7 @@ export class RemotePageState {
     this.interactionMailbox = new InteractionMailboxState();
     this.conversation.clearActiveSession();
     this.isLoadingConversation = false;
+    this.isLoadingTranscript = false;
     this.pendingSessionId = '';
     this.isConversationDismissed = false;
     this.setModelCatalog(RemoteUiState.emptyModelCatalog(), '');
@@ -325,6 +331,10 @@ export class RemotePageState {
     this.isLoadingConversation = loading;
   }
 
+  setTranscriptLoading(loading: boolean): void {
+    this.isLoadingTranscript = loading;
+  }
+
   setPendingSessionId(sessionId: string): void {
     this.pendingSessionId = sessionId;
   }
@@ -343,6 +353,7 @@ export class RemotePageState {
     this.hasMoreSessions = false;
     this.isLoadingSessions = false;
     this.isLoadingConversation = false;
+    this.isLoadingTranscript = false;
     this.pendingSessionId = '';
     this.isConversationDismissed = false;
     this.isLoadingHome = false;
@@ -357,6 +368,7 @@ export class RemotePageState {
     this.hasMoreSessions = false;
     this.isLoadingSessions = false;
     this.isLoadingConversation = false;
+    this.isLoadingTranscript = false;
     this.pendingSessionId = '';
     this.isConversationDismissed = false;
     this.isLoadingHome = false;

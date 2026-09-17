@@ -130,7 +130,7 @@ export struct ConversationView {
         }
         .width('100%')
         .height('100%')
-        if (this.isLoadingConversation) {
+        if (this.isLoadingTranscript) {
           ConversationLoadingState({
             maxContentWidth: this.composerPresentation === ComposerPresentation.Floating ? 760 : 0
           })
@@ -435,6 +435,14 @@ export struct ConversationView {
   private get composerCapabilities(): ChatComposerCapabilities { return this.state.composerCapabilities; }
   private get isBusy(): boolean { return this.state.isBusy; }
   private get isLoadingConversation(): boolean { return this.state.isLoadingConversation; }
+  /**
+   * The skeleton stands for a body with nothing in it yet, which is true both
+   * while the session is being identified and while its transcript is still
+   * crossing the relay. Only the first of those blanks the header.
+   */
+  private get isLoadingTranscript(): boolean {
+    return this.state.isLoadingConversation || this.state.isLoadingTranscript;
+  }
   private get canStop(): boolean { return this.state.canStop; }
   private get hasMoreMessages(): boolean { return this.state.hasMoreMessages; }
   private get timelineItems(): ObservableChatTimelineItem[] { return this.state.timelineItems; }

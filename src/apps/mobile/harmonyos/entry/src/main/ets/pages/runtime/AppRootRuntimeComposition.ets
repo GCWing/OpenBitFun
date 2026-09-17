@@ -398,7 +398,7 @@ export abstract class AppRootRuntimeComposition {
           this.conversationController.updateKnownMessageCount(pollVersion, knownMessageCount);
         },
         onTimelineReady: () => {
-          this.remotePageState.setConversationLoading(false);
+          this.remoteSessionViewModel.settleTranscriptLoading();
         },
         onComposerSubmitted: (sessionId: string, text: string, images: SelectedImageAttachment[]) => {
           if (this.remotePageState.activeSession.sessionId !== sessionId) {
@@ -528,6 +528,10 @@ export abstract class AppRootRuntimeComposition {
           }
         },
         onSnapshot: (snapshot: RemoteChatPollingSnapshot) => {
+          // A snapshot is the transcript on screen, which is what an open was
+          // waiting for. Snapshots are already fenced to the active session by
+          // the poller's canPoll guard, so this cannot end another tap's wait.
+          this.remoteSessionViewModel.settleTranscriptLoading();
           this.remotePageState.setConversationLoading(false);
           if (snapshot.hasMoreMessages !== undefined) this.remotePageState.setHasMoreMessages(snapshot.hasMoreMessages);
           this.remotePageState.setHistoryLoadState(snapshot.historyLoading === true, snapshot.historyFailed === true);
@@ -553,6 +557,7 @@ export abstract class AppRootRuntimeComposition {
           }
         },
         onError: (error: Object) => {
+          this.remoteSessionViewModel.settleTranscriptLoading();
           this.remotePageState.setConversationLoading(false);
           this.remotePageState.setStatusText(ConnectionErrorPolicy.errorText(error));
         }
