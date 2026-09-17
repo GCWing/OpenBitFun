@@ -18,7 +18,7 @@
         </div>
       </div>
 
-      <form id="intake-form" class="intake-form" aria-label="创建 LoopX 修复任务">
+      <form id="intake-form" class="intake-form" aria-label="创建 LoopX 修复任务" data-i18n-aria-label="intakeFormLabel">
         <label class="sr-only" for="intake-input" data-i18n="intakeLabel">GitHub Issue、Pull Request 或仓库链接</label>
         <span class="field-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
@@ -70,19 +70,11 @@
                 <span id="install-loopx-label" data-i18n="installLoopx">安装兼容版本</span>
               </button>
             </div>
-            <section aria-labelledby="core-env-title">
+            <section aria-labelledby="environment-requirements-title">
               <div class="section-heading">
-                <h2 id="core-env-title" data-i18n="coreEnvironment">核心环境</h2>
-                <span data-i18n="required">必需</span>
+                <h2 id="environment-requirements-title" data-i18n="environmentRequirements">基础要求</h2>
               </div>
-              <div id="core-environment-list" class="environment-grid"></div>
-            </section>
-            <section aria-labelledby="optional-env-title">
-              <div class="section-heading">
-                <h2 id="optional-env-title" data-i18n="optionalEnvironment">增强能力</h2>
-                <span data-i18n="optional">可选</span>
-              </div>
-              <div id="optional-environment-list" class="environment-grid"></div>
+              <div id="environment-list" class="environment-grid"></div>
             </section>
             <button id="retry-environment" class="text-button" type="button" data-i18n="retryEnvironment">重新检查环境</button>
           </div>
@@ -123,7 +115,7 @@
     </section>
 
     <div class="workbench">
-      <aside id="task-rail" class="task-rail" aria-label="LoopX 任务列表">
+      <aside id="task-rail" class="task-rail" aria-label="LoopX 任务列表" data-i18n-aria-label="taskRailLabel">
         <div class="task-rail__header">
           <div>
             <h2 data-i18n="tasks">任务</h2>
@@ -134,7 +126,7 @@
             <span class="sr-only" data-i18n="collapseTasks">收起任务栏</span>
           </button>
         </div>
-        <nav id="task-list" class="task-list" aria-label="LoopX 任务">
+        <nav id="task-list" class="task-list" aria-label="LoopX 任务" data-i18n-aria-label="taskListLabel">
           <div id="repository-actions" class="repository-actions" hidden>
             <p id="repository-actions-title" class="repository-actions__title"></p>
             <button id="resume-repository" class="primary-button" type="button"></button>
@@ -161,9 +153,11 @@
         </div>
 
         <div id="issue-empty" class="issue-empty" hidden>
-          <span aria-hidden="true">◎</span>
-          <p id="issue-empty-title" data-i18n="emptyNoTask">暂无任务</p>
-          <p id="issue-empty-hint" data-i18n="emptyNoTaskHint">在上方粘贴 GitHub Issue 或 Pull Request 链接创建修复任务；运行过程会实时展示在这里。</p>
+          <div class="issue-empty__center">
+            <span aria-hidden="true">◎</span>
+            <p id="issue-empty-title" data-i18n="emptyNoTask">暂无任务</p>
+            <p id="issue-empty-hint" data-i18n="emptyNoTaskHint">在上方粘贴 GitHub Issue 或 Pull Request 链接创建修复任务；运行过程会实时展示在这里。</p>
+          </div>
         </div>
 
         <section id="issue-view" class="issue-view" hidden>
@@ -186,7 +180,7 @@
           </header>
 
           <div class="issue-columns">
-            <section id="issue-detail" class="issue-detail" aria-label="任务详情与进展">
+            <section id="issue-detail" class="issue-detail" aria-label="任务详情与进展" data-i18n-aria-label="issueDetailLabel">
               <section id="issue-approval-panel" class="issue-approval-panel" aria-labelledby="issue-approval-title" hidden>
                 <div class="issue-approval-head">
                   <span class="issue-approval-head__icon" aria-hidden="true">

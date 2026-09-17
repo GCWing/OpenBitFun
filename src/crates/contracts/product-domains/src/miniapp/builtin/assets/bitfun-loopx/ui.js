@@ -79,10 +79,11 @@ const COPY = {
     unsupportedTitle: '当前执行位置不支持 LoopX',
     unsupportedDefault: 'LoopX 目前只支持本地 Desktop 工作区；远程工作区不会静默改在本机执行。',
     environment: '环境',
-    coreEnvironment: '核心环境',
-    optionalEnvironment: '增强能力',
-    required: '必需',
-    optional: '可选',
+    environmentRequirements: '基础要求',
+    intakeFormLabel: '创建 LoopX 修复任务',
+    taskRailLabel: 'LoopX 任务列表',
+    taskListLabel: 'LoopX 任务',
+    issueDetailLabel: '任务详情与进展',
     retryEnvironment: '重新检查环境',
     installLoopx: '安装兼容版本',
     loopxInstallStarted: '正在从官方 GitHub 源仓库下载并校验 LoopX {version}…',
@@ -628,10 +629,11 @@ const COPY = {
     unsupportedTitle: 'LoopX is unavailable in this execution location',
     unsupportedDefault: 'LoopX currently supports local Desktop workspaces only. Remote workspaces will not silently run on this device instead.',
     environment: 'Environment',
-    coreEnvironment: 'Core environment',
-    optionalEnvironment: 'Optional capabilities',
-    required: 'Required',
-    optional: 'Optional',
+    environmentRequirements: 'Basic requirements',
+    intakeFormLabel: 'Create a LoopX repair task',
+    taskRailLabel: 'LoopX task list',
+    taskListLabel: 'LoopX tasks',
+    issueDetailLabel: 'Task details and progress',
     retryEnvironment: 'Check environment again',
     installLoopx: 'Install compatible version',
     loopxInstallStarted: 'Downloading and verifying LoopX {version} from the official GitHub source repository...',
@@ -1170,8 +1172,7 @@ const view = {
   environmentRemediationProgress: byId('environment-remediation-progress'),
   installLoopx: byId('install-loopx'),
   installLoopxLabel: byId('install-loopx-label'),
-  coreEnvironmentList: byId('core-environment-list'),
-  optionalEnvironmentList: byId('optional-environment-list'),
+  environmentList: byId('environment-list'),
   retryEnvironment: byId('retry-environment'),
   taskRail: byId('task-rail'),
   railSplitter: byId('rail-splitter'),
@@ -1371,6 +1372,9 @@ function applyLocale() {
     const value = text(element.dataset.i18nTitle);
     element.setAttribute('title', value);
     if (element.getAttribute('aria-label')) element.setAttribute('aria-label', value);
+  });
+  document.querySelectorAll('[data-i18n-aria-label]').forEach((element) => {
+    element.setAttribute('aria-label', text(element.dataset.i18nAriaLabel));
   });
   view.intakeForm.setAttribute('aria-label', text('intakeLabel'));
   view.modelSelect.setAttribute('aria-label', text('model'));
@@ -2484,7 +2488,7 @@ function applySnapshot(snapshot) {
   }
   state.connected = true;
   state.lastHostSignalAt = Date.now();
-  view.connectionLabel.textContent = text('connected');
+  setConnectionLabel(text('connected'), true);
   view.root.setAttribute('aria-busy', 'false');
   renderAll();
   if (state.environmentInstallObserved) {
@@ -2551,7 +2555,7 @@ async function attachSnapshot(loadHistory = false, resumeDetected = false) {
       state.pendingResumeSignal = false;
       const knownStreamId = state.snapshot && state.snapshot.streamId;
       const afterCursor = state.snapshot && state.snapshot.cursor;
-      if (!state.connected) view.connectionLabel.textContent = text('connecting');
+      if (!state.connected) setConnectionLabel(text('connecting'));
       const response = await withBridgeTimeout(
         app.loopx.attach({
           ...(knownStreamId ? { knownStreamId } : {}),
@@ -2574,7 +2578,7 @@ async function attachSnapshot(loadHistory = false, resumeDetected = false) {
     } while (state.syncRequested);
   } catch (error) {
     state.connected = false;
-    view.connectionLabel.textContent = text('connectionFailed');
+    setConnectionLabel(text('connectionFailed'));
     showNotice(errorMessage(error), 'error');
   } finally {
     state.syncing = false;
@@ -2645,10 +2649,15 @@ function onLoopxEvent(payload) {
   }
 }
 
+function setConnectionLabel(message, hidden = false) {
+  view.connectionLabel.textContent = message;
+  view.connectionLabel.hidden = hidden;
+}
+
 function showBridgeUnavailable() {
   state.connected = false;
   view.root.setAttribute('aria-busy', 'false');
-  view.connectionLabel.textContent = text('connectionFailed');
+  setConnectionLabel(text('connectionFailed'));
   view.unsupportedReason.textContent = text('bridgeUnavailable');
   view.unsupportedBanner.hidden = false;
   view.resolveButton.disabled = true;
@@ -2753,8 +2762,8 @@ function renderEnvironment() {
 
   const core = environment && environment.core ? environment.core : {};
   const optional = environment && environment.optional ? environment.optional : {};
-  const nodeRuntimeFact = core.node_runtime && typeof core.node_runtime === 'object'
-    ? core.node_runtime
+  const nodeRuntimeFact = core.nodeRuntime && typeof core.nodeRuntime === 'object'
+    ? core.nodeRuntime
     : {};
   const nodeRuntime = nodeRuntimeFact.status && nodeRuntimeFact.status !== 'unknown'
     ? nodeRuntimeFact
@@ -2764,24 +2773,23 @@ function renderEnvironment() {
       detail: nodeRuntimeFact.detail || text('nodeRuntimeUnknownDetail'),
     };
   renderEnvironmentRemediation(core.sidecar);
-  view.coreEnvironmentList.replaceChildren(
-    environmentFact('sidecar', text('sidecar'), core.sidecar),
-    environmentFact('nodeRuntime', text('nodeRuntime'), nodeRuntime),
-    environmentFact('gitWorktree', text('gitWorktree'), core.gitWorktree),
-    environmentFact('agentModel', text('agentModel'), core.agentModel),
-  );
-  // The optional list only shows capabilities that apply to the selected
-  // runtime: `unknown` means the capability is not part of it - e.g. the Python
-  // fallback is a build-time concern for the bundled sidecar, not a runtime
-  // dependency the owner installs (live 2026-09-16) - so rendering it as
-  // "未知 / not required" only adds noise.
+  // All owner-facing environment requirements render in one list. Facts that
+  // are `unknown` describe capabilities that do not apply to the selected
+  // runtime (for example the Python fallback with the bundled sidecar), so they
+  // are omitted instead of being shown as a misleading "unknown" requirement.
   const optionalFacts = [
     ['pythonFallback', optional.pythonFallback],
     ['githubAuth', optional.githubAuth],
   ]
     .filter(([, fact]) => fact && fact.status !== 'unknown')
     .map(([key, fact]) => environmentFact(key, text(key), fact));
-  view.optionalEnvironmentList.replaceChildren(...optionalFacts);
+  view.environmentList.replaceChildren(
+    environmentFact('sidecar', text('sidecar'), core.sidecar),
+    environmentFact('nodeRuntime', text('nodeRuntime'), nodeRuntime),
+    environmentFact('gitWorktree', text('gitWorktree'), core.gitWorktree),
+    environmentFact('agentModel', text('agentModel'), core.agentModel),
+    ...optionalFacts,
+  );
 }
 
 const ERROR_TASK_STATES = new Set(['recovery_required', 'failed']);

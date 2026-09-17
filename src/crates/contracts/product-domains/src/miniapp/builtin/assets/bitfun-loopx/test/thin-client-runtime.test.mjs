@@ -113,6 +113,7 @@ function controllerSnapshot(now, task) {
       status: 'degraded',
       core: {
         sidecar: available('1.0.1', 'Pinned adapter ready'),
+        nodeRuntime: available('v24.14.1', 'Node runtime ready'),
         gitWorktree: available('2.51.0', 'Worktree service ready'),
         agentModel: available('primary', 'Model available'),
       },
@@ -344,7 +345,8 @@ test('thin client boots from host state and completes the confirmed intake flow'
     assert.equal(window.document.querySelector('#task-count').textContent, '1');
     assert.match(window.document.querySelector('#task-items').textContent, /GCWing\/BitFun · Issue #2382/);
     assert.equal(window.document.querySelector('#environment-status').textContent, 'Degraded');
-    assert.match(window.document.querySelector('#core-environment-list').textContent, /1\.0\.1/);
+    assert.match(window.document.querySelector('#environment-list').textContent, /1\.0\.1/);
+    assert.match(window.document.querySelector('#environment-list').textContent, /v24\.14\.1/);
     assert.match(window.document.querySelector('#log-list').textContent, /Issue #2382/);
     assert.match(window.document.querySelector('#log-list').textContent, /Inspecting the issue/);
     assert.match(window.document.querySelector('#log-list').textContent, /cargo test -p bitfun-core/);
@@ -400,6 +402,7 @@ test('thin client boots from host state and completes the confirmed intake flow'
     await new Promise((resolve) => setTimeout(resolve, 0));
     connectionObserver.disconnect();
     assert.equal(window.document.querySelector('#connection-label').textContent, 'Connected');
+    assert.equal(window.document.querySelector('#connection-label').hidden, true);
     assert.ok(!connectionChanges.includes('Resynchronizing'));
 
     const originalDateNow = window.Date.now;
