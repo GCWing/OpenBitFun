@@ -189,8 +189,8 @@ test('LoopX HTML exposes an accessible intake, task rail, and log-first workspac
   assert.match(html, /\bid\s*=\s*(['"])timeline-title\1/i);
   assert.match(html, /\bid\s*=\s*(['"])log-empty-text\1/i);
   assert.match(html, /\bid\s*=\s*(['"])approval-alert\1/i);
-  assert.match(html, /\bid\s*=\s*(['"])environment-remediation\1/i);
-  assert.match(html, /\bid\s*=\s*(['"])install-loopx\1/i);
+  assert.match(html, /\bid\s*=\s*(['"])environment-list\1/i);
+  assert.match(html, /\bid\s*=\s*(['"])retry-environment\1/i);
   assert.match(html, /\bid\s*=\s*(['"])issue-approval-panel\1/i);
   assert.match(html, /\bid\s*=\s*(['"])issue-approval-approve\1/i);
   assert.match(html, /\bid\s*=\s*(['"])issue-approval-reject\1/i);

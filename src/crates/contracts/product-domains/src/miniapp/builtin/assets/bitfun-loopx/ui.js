@@ -86,9 +86,11 @@ const COPY = {
     taskListLabel: 'LoopX 任务',
     issueDetailLabel: '任务详情与进展',
     retryEnvironment: '重新检查环境',
+    environmentRechecked: '环境检查已更新',
     installLoopx: '安装兼容版本',
     installNode: '安装便携 Node.js',
     installGit: '安装便携 Git',
+    installing: '安装中…',
     nodeInstallStarted: '正在下载并校验便携 Node.js…',
     gitInstallStarted: '正在下载并校验便携 Git…',
     nodeInstallComplete: 'Node.js {version} 已安装，环境检查已更新。',
@@ -646,9 +648,11 @@ const COPY = {
     taskListLabel: 'LoopX tasks',
     issueDetailLabel: 'Task details and progress',
     retryEnvironment: 'Check environment again',
+    environmentRechecked: 'Environment check updated.',
     installLoopx: 'Install compatible version',
     installNode: 'Install portable Node.js',
     installGit: 'Install portable Git',
+    installing: 'Installing...',
     nodeInstallStarted: 'Downloading and verifying portable Node.js...',
     gitInstallStarted: 'Downloading and verifying portable Git...',
     nodeInstallComplete: 'Node.js {version} is installed and the environment check is up to date.',
@@ -1190,12 +1194,6 @@ const view = {
   environmentPlatformNote: byId('environment-platform-note'),
   environmentPlatformNoteTitle: byId('environment-platform-note-title'),
   environmentPlatformNoteDetail: byId('environment-platform-note-detail'),
-  environmentRemediation: byId('environment-remediation'),
-  environmentRemediationTitle: byId('environment-remediation-title'),
-  environmentRemediationDetail: byId('environment-remediation-detail'),
-  environmentRemediationProgress: byId('environment-remediation-progress'),
-  installLoopx: byId('install-loopx'),
-  installLoopxLabel: byId('install-loopx-label'),
   environmentList: byId('environment-list'),
   retryEnvironment: byId('retry-environment'),
   taskRail: byId('task-rail'),
@@ -2718,86 +2716,114 @@ function renderExecutionSupport() {
   view.resumeAllLoopx.title = suspended ? text('resumeAllHint') : text('resumeAll');
 }
 
+function environmentInstallIcon() {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', '15');
+  svg.setAttribute('height', '15');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.8');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  svg.setAttribute('aria-hidden', 'true');
+  for (const pathData of ['M12 3v12', 'm7 10 5 5 5-5', 'M5 21h14a2 2 0 0 0 2-2v-4', 'M3 15v4a2 2 0 0 0 2 2']) {
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', pathData);
+    svg.append(path);
+  }
+  return svg;
+}
+
 function environmentFact(name, label, fact, action) {
   const element = document.createElement('article');
   const status = fact && fact.status ? fact.status : 'unknown';
   element.className = 'environment-fact';
   element.dataset.status = status;
+  element.dataset.fact = name;
 
   const title = document.createElement('div');
   title.className = 'environment-fact__title';
   const strong = document.createElement('strong');
   strong.textContent = label;
-  const value = document.createElement('span');
-  value.textContent = statusLabel(status);
   const statusActions = document.createElement('div');
   statusActions.className = 'environment-fact__status-actions';
+  const value = document.createElement('span');
+  value.textContent = statusLabel(status);
   statusActions.append(value);
-  if (action && action.label) {
+
+  if (action) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = 'environment-fact__action';
-    button.textContent = action.label;
+    button.className = 'primary-button environment-fact__action';
     button.disabled = Boolean(action.disabled);
+    button.append(environmentInstallIcon());
+    const buttonLabel = document.createElement('span');
+    buttonLabel.textContent = action.pending ? text('installing') : action.label;
+    button.append(buttonLabel);
     button.addEventListener('click', () => action.onClick());
+    if (action.onPointerDown) {
+      button.addEventListener('pointerdown', action.onPointerDown);
+    }
     statusActions.append(button);
   }
   title.append(strong, statusActions);
   element.append(title);
 
-  const detail = document.createElement('p');
+  // Keep the row compact: only the short version stays visible; the long host
+  // detail (English prose) lives in the tooltip instead.
   const version = fact && fact.version ? fact.version : '';
+  if (version) {
+    const versionLine = document.createElement('p');
+    versionLine.className = 'environment-fact__version';
+    versionLine.textContent = version;
+    element.append(versionLine);
+  }
   const description = (fact && (fact.detail || fact.remediation)) || '';
-  detail.textContent = [version, description].filter(Boolean).join(' · ') || statusLabel(status);
-  detail.title = detail.textContent;
-  element.append(detail);
-  element.dataset.fact = name;
+  element.title = [version, description].filter(Boolean).join(' · ');
   return element;
 }
 
-function renderEnvironmentRemediation(sidecar) {
-  // A checking sidecar fact carries the install target version only for the
-  // managed-source install flow; plain environment probes check without one.
-  const installChecking = Boolean(
-    sidecar
-    && sidecar.status === 'checking'
-    && sidecar.version
-  );
-  const installAvailable = Boolean(
-    sidecar
-    && sidecar.remediationAction === 'install_loopx'
-  );
-  const installing = state.environmentInstallPending || installChecking;
-  view.environmentRemediation.hidden = !installAvailable && !installing;
-  if (view.environmentRemediation.hidden) return;
-
-  view.environmentRemediation.dataset.state = installing ? 'installing' : 'blocked';
-  const detail = String(sidecar && sidecar.detail || '');
-  const currentVersion = (detail.match(/got loopx\s+([^\s]+)/i) || [])[1] || statusLabel('unavailable');
-  const targetVersion = (detail.match(/expected loopx\s+([^\s,]+)/i) || [])[1]
-    || (sidecar && sidecar.version)
-    || '';
-  view.environmentRemediationTitle.textContent = text(
-    installing ? 'loopxInstallingTitle' : 'loopxRepairTitle',
-    { version: targetVersion },
-  );
-  view.environmentRemediationDetail.textContent = installing
-    ? text('loopxInstallingDetail')
-    : text('loopxRepairDetail', { current: currentVersion, version: targetVersion });
-  view.environmentRemediationProgress.hidden = !installing;
-  view.installLoopx.hidden = installing;
-  view.installLoopx.disabled = installing;
-  view.installLoopxLabel.textContent = text('installLoopx');
+function loopxInstallAction() {
+  const pending = state.environmentInstallObserved
+    && state.environmentInstallRuntime === 'loopx';
+  return {
+    label: text('installLoopx'),
+    pending,
+    disabled: pending || state.environmentInstallPending,
+    onClick: () => installLoopxFromGithub(),
+    onPointerDown: (event) => {
+      if (event.button !== 0 || state.environmentInstallPending) return;
+      state.environmentInstallRequestId = state.environmentInstallRequestId || requestId();
+      emitInstallDiagnostic('pointer_down');
+    },
+  };
 }
 
-function runtimeInstallAction(runtime, fact) {
-  const action = fact && fact.remediationAction;
-  if (action !== `install_${runtime}`) return null;
+function runtimeInstallAction(runtime) {
+  const pending = state.environmentInstallObserved
+    && state.environmentInstallRuntime === runtime;
   return {
     label: text(runtime === 'git' ? 'installGit' : 'installNode'),
-    disabled: state.environmentInstallPending,
+    pending,
+    disabled: pending || state.environmentInstallPending,
     onClick: () => installRuntimeFromGithub(runtime),
   };
+}
+
+function environmentFactAction(kind, fact) {
+  if (!fact) return null;
+  const remediationAction = fact.remediationAction;
+  if (kind === 'loopx' && remediationAction === 'install_loopx') {
+    return loopxInstallAction();
+  }
+  if (kind === 'node' && remediationAction === 'install_node') {
+    return runtimeInstallAction('node');
+  }
+  if (kind === 'git' && remediationAction === 'install_git') {
+    return runtimeInstallAction('git');
+  }
+  return null;
 }
 
 function renderEnvironment() {
@@ -2834,7 +2860,6 @@ function renderEnvironment() {
       status: 'unknown',
       detail: nodeRuntimeFact.detail || text('nodeRuntimeUnknownDetail'),
     };
-  renderEnvironmentRemediation(core.sidecar);
   // All owner-facing environment requirements render in one list. Facts that
   // are `unknown` describe capabilities that do not apply to the selected
   // runtime (for example the Python fallback with the bundled sidecar), so they
@@ -2846,9 +2871,9 @@ function renderEnvironment() {
     .filter(([, fact]) => fact && fact.status !== 'unknown')
     .map(([key, fact]) => environmentFact(key, text(key), fact));
   view.environmentList.replaceChildren(
-    environmentFact('sidecar', text('sidecar'), core.sidecar),
-    environmentFact('nodeRuntime', text('nodeRuntime'), nodeRuntime, runtimeInstallAction('node', nodeRuntime)),
-    environmentFact('gitWorktree', text('gitWorktree'), core.gitWorktree, runtimeInstallAction('git', core.gitWorktree)),
+    environmentFact('sidecar', text('sidecar'), core.sidecar, environmentFactAction('loopx', core.sidecar)),
+    environmentFact('nodeRuntime', text('nodeRuntime'), nodeRuntime, environmentFactAction('node', nodeRuntime)),
+    environmentFact('gitWorktree', text('gitWorktree'), core.gitWorktree, environmentFactAction('git', core.gitWorktree)),
     environmentFact('agentModel', text('agentModel'), core.agentModel),
     ...optionalFacts,
   );
@@ -6972,6 +6997,7 @@ function actionAppliedNotice(action, task, extra, response) {
     return text('approvalAppliedGeneric', { title: presentation.title });
   }
   if (action === 'reject' && task) return text('approvalRejectedNotice');
+  if (action === 'retry_environment') return text('environmentRechecked');
   const actionKey = ACTION_APPLIED_TEXT_KEY[action];
   if (actionKey) {
     const item = task && task.identity && task.identity.item;
@@ -7519,16 +7545,14 @@ function bindEvents() {
     event.preventDefault();
     void resetLoopx();
   });
-  view.installLoopx.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || state.environmentInstallPending) return;
-    state.environmentInstallRequestId = state.environmentInstallRequestId || requestId();
-    emitInstallDiagnostic('pointer_down');
-  });
-  view.installLoopx.addEventListener('click', () => {
-    void installLoopxFromGithub();
-  });
   view.retryEnvironment.addEventListener('click', async () => {
-    await performAction('retry_environment', null);
+    if (view.retryEnvironment.disabled) return;
+    view.retryEnvironment.disabled = true;
+    try {
+      await performAction('retry_environment', null);
+    } finally {
+      renderEnvironment();
+    }
   });
   view.resumeRepository.addEventListener('click', () => {
     if (view.repositoryActions.dataset.action === 'resume-suite') {
