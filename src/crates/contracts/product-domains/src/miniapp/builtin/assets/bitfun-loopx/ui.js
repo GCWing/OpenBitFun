@@ -81,6 +81,7 @@ const COPY = {
     environment: '环境',
     environmentRequirements: '基础要求',
     intakeFormLabel: '创建 LoopX 修复任务',
+    intakeHistoryLabel: 'LoopX 输入历史',
     taskRailLabel: 'LoopX 任务列表',
     taskListLabel: 'LoopX 任务',
     issueDetailLabel: '任务详情与进展',
@@ -631,6 +632,7 @@ const COPY = {
     environment: 'Environment',
     environmentRequirements: 'Basic requirements',
     intakeFormLabel: 'Create a LoopX repair task',
+    intakeHistoryLabel: 'LoopX intake history',
     taskRailLabel: 'LoopX task list',
     taskListLabel: 'LoopX tasks',
     issueDetailLabel: 'Task details and progress',
@@ -1149,6 +1151,7 @@ const view = {
   intakeForm: byId('intake-form'),
   intakeInput: byId('intake-input'),
   intakeHistory: byId('intake-history'),
+  intakeHistoryMenu: byId('intake-history-menu'),
   modelSelect: byId('model-select'),
   resolveButton: byId('resolve-button'),
   resetLoopx: byId('reset-loopx'),
@@ -1972,6 +1975,7 @@ async function loadIntakeHistory() {
       ? stored.filter((value) => typeof value === 'string' && value.trim()).slice(0, MAX_INTAKE_HISTORY)
       : [];
     renderIntakeHistory();
+    if (document.activeElement === view.intakeInput) renderIntakeHistoryMenu();
   } catch (_error) {
     state.intakeHistory = [];
   }
@@ -7508,6 +7512,7 @@ function handleHostSurfaceReturn() {
 
 async function start() {
   bindEvents();
+  bindIntakeHistoryMenu();
   applyLocale();
   void loadIntakeHistory();
   void loadModelCatalog();
@@ -7538,3 +7543,143 @@ async function start() {
 }
 
 void start();
+
+function intakeHistoryMatches() {
+  const query = view.intakeInput.value.trim().toLowerCase();
+  return state.intakeHistory
+    .filter((url) => !query || url.toLowerCase().includes(query))
+    .slice(0, 6);
+}
+
+function positionIntakeHistoryMenu() {
+  const menu = view.intakeHistoryMenu;
+  if (!menu || menu.hidden) return;
+  const rect = view.intakeInput.getBoundingClientRect();
+  const height = Math.min(240, menu.scrollHeight || 240);
+  const spaceBelow = window.innerHeight - rect.bottom;
+  const openUpward = spaceBelow < height + 8 && rect.top > spaceBelow;
+  menu.style.left = `${Math.max(8, rect.left)}px`;
+  menu.style.width = `${rect.width}px`;
+  if (openUpward) {
+    menu.style.top = 'auto';
+    menu.style.bottom = `${window.innerHeight - rect.top + 6}px`;
+  } else {
+    menu.style.top = `${rect.bottom + 6}px`;
+    menu.style.bottom = 'auto';
+  }
+}
+
+function closeIntakeHistoryMenu() {
+  const menu = view.intakeHistoryMenu;
+  if (!menu) return;
+  menu.hidden = true;
+  menu.replaceChildren();
+  view.intakeInput.setAttribute('aria-expanded', 'false');
+  view.intakeInput.removeAttribute('aria-activedescendant');
+}
+
+function intakeHistoryOptions() {
+  return [...view.intakeHistoryMenu.querySelectorAll('.intake-history-menu__option')];
+}
+
+function setActiveIntakeHistory(index) {
+  const options = intakeHistoryOptions();
+  options.forEach((option, optionIndex) => {
+    const active = optionIndex === index;
+    option.classList.toggle('is-active', active);
+    option.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  const active = options[index];
+  if (active) {
+    view.intakeInput.setAttribute('aria-activedescendant', active.id);
+    active.scrollIntoView?.({ block: 'nearest' });
+  } else {
+    view.intakeInput.removeAttribute('aria-activedescendant');
+  }
+}
+
+function moveActiveIntakeHistory(delta) {
+  const options = intakeHistoryOptions();
+  if (!options.length) return;
+  const activeIndex = options.findIndex((option) => option.classList.contains('is-active'));
+  const nextIndex = Math.min(options.length - 1, Math.max(0, (activeIndex < 0 ? -delta : activeIndex) + delta));
+  setActiveIntakeHistory(nextIndex);
+}
+
+function chooseIntakeHistory(url) {
+  view.intakeInput.value = url;
+  closeIntakeHistoryMenu();
+  view.intakeInput.focus();
+}
+
+function renderIntakeHistoryMenu() {
+  const menu = view.intakeHistoryMenu;
+  if (!menu || document.activeElement !== view.intakeInput) return;
+  const matches = intakeHistoryMatches();
+  if (!matches.length) {
+    closeIntakeHistoryMenu();
+    return;
+  }
+  const fragment = document.createDocumentFragment();
+  matches.forEach((url, index) => {
+    const option = document.createElement('button');
+    option.type = 'button';
+    option.id = `intake-history-option-${index}`;
+    option.className = 'intake-history-menu__option';
+    option.dataset.value = url;
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', 'false');
+    option.textContent = url;
+    option.title = url;
+    option.addEventListener('mousedown', (event) => event.preventDefault());
+    option.addEventListener('click', () => chooseIntakeHistory(url));
+    fragment.append(option);
+  });
+  menu.replaceChildren(fragment);
+  menu.hidden = false;
+  view.intakeInput.setAttribute('aria-expanded', 'true');
+  positionIntakeHistoryMenu();
+}
+
+function bindIntakeHistoryMenu() {
+  if (!view.intakeHistoryMenu || view.intakeInput.dataset.intakeHistoryBound === 'true') return;
+  view.intakeInput.dataset.intakeHistoryBound = 'true';
+  view.intakeInput.removeAttribute('list');
+  view.intakeInput.setAttribute('aria-autocomplete', 'list');
+  view.intakeInput.setAttribute('aria-expanded', 'false');
+  view.intakeInput.addEventListener('focus', () => {
+    renderIntakeHistoryMenu();
+  });
+  view.intakeInput.addEventListener('input', () => {
+    renderIntakeHistoryMenu();
+  });
+  view.intakeInput.addEventListener('keydown', (event) => {
+    if (event.isComposing) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (view.intakeHistoryMenu.hidden) renderIntakeHistoryMenu();
+      moveActiveIntakeHistory(event.key === 'ArrowDown' ? 1 : -1);
+    } else if (event.key === 'Enter' && !view.intakeHistoryMenu.hidden) {
+      const active = view.intakeHistoryMenu.querySelector('.intake-history-menu__option.is-active');
+      if (active) {
+        event.preventDefault();
+        chooseIntakeHistory(active.dataset.value);
+      }
+    } else if (event.key === 'Escape' && !view.intakeHistoryMenu.hidden) {
+      event.preventDefault();
+      closeIntakeHistoryMenu();
+    }
+  });
+  view.intakeForm.addEventListener('submit', () => {
+    closeIntakeHistoryMenu();
+  });
+  document.addEventListener('click', (event) => {
+    const menu = view.intakeHistoryMenu;
+    if (!menu || menu.hidden) return;
+    if (event.target === view.intakeInput || menu.contains(event.target)) return;
+    closeIntakeHistoryMenu();
+  });
+  window.addEventListener('resize', () => {
+    if (!view.intakeHistoryMenu.hidden) positionIntakeHistoryMenu();
+  });
+}

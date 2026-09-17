@@ -145,6 +145,44 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   background: var(--lx-elevated);
 }
 .intake-form:focus-within { border-color: var(--lx-accent); }
+
+.intake-history-menu {
+  position: fixed;
+  z-index: 60;
+  display: grid;
+  gap: 2px;
+  max-height: min(240px, calc(100dvh - 140px));
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--lx-border-strong);
+  border-radius: var(--lx-radius);
+  background: var(--lx-elevated);
+  box-shadow: 0 14px 36px color-mix(in srgb, var(--lx-bg) 62%, transparent);
+}
+
+.intake-history-menu[hidden] { display: none; }
+
+.intake-history-menu__option {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--lx-text-soft);
+  font: 11.5px/1.45 var(--lx-font);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.intake-history-menu__option:hover,
+.intake-history-menu__option.is-active {
+  background: var(--lx-hover);
+  color: var(--lx-text);
+}
 .field-icon { display: grid; place-items: center; color: var(--lx-text-muted); }
 .intake-form input {
   min-width: 0;
