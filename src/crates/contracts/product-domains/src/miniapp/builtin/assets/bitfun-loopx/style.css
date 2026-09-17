@@ -649,18 +649,19 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 /* With no tasks the rail must hand the free space to the placeholder; the task
    list otherwise keeps its flex growth and pins the placeholder to the bottom. */
 .task-rail.is-empty .task-list { flex: 0 0 auto; }
-/* The rail has a fixed header, so centering the placeholder in the remaining
-   flex space puts its label lower than the main pane's empty-state label. Let
-   the empty placeholder span the whole rail while empty so both labels share
-   the same vertical baseline. */
+/* Keep one full-width grid column while empty. Without the explicit column,
+   auto-placement gives .task-list its own implicit column, which breaks the
+   placeholder's horizontal centering. Center it in the content row below the
+   fixed header so both axes match the visible task-list area. */
 .task-rail.is-empty {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr;
 }
 .task-rail.is-empty .task-rail__header { grid-row: 1; }
-.task-rail.is-empty .task-list { grid-row: 2; align-self: start; }
+.task-rail.is-empty .task-list { grid-row: 2; grid-column: 1; align-self: start; }
 .task-rail.is-empty .task-empty {
-  grid-row: 1 / -1;
+  grid-row: 2;
   grid-column: 1;
   align-self: center;
   justify-self: center;
