@@ -724,13 +724,30 @@ impl LoopxController {
             operation_id: format!("environment-agent-{probe_id}"),
             model_id: Some("auto".to_string()),
         });
+        let node_runtime = self.cli.probe_node_runtime(
+            LoopxCliProbeNodeRuntimeRequest {
+                call: LoopxCliCallContext {
+                    operation_id: format!("environment-node-{probe_id}"),
+                    deadline_at: None,
+                },
+            },
+            &progress,
+        );
         let github_auth = self.probe_github_auth();
-        let (handshake, workspace, agent, github_auth) =
-            tokio::join!(handshake, workspace, agent, github_auth);
+        let (handshake, workspace, agent, github_auth, node_runtime) =
+            tokio::join!(handshake, workspace, agent, github_auth, node_runtime);
+        let node_runtime = match node_runtime {
+            Ok(fact) => fact,
+            Err(error) => LoopxNodeRuntimeFact {
+                available: false,
+                version: None,
+                minimum_version: String::new(),
+                detail: Some(format!("Node.js probe failed: {error}")),
+            },
+        };
         self.record_progress(progress.take()).await?;
-        self.commit_environment(handshake, workspace, agent, github_auth)
+        self.commit_environment(handshake, workspace, agent, github_auth, node_runtime)
             .await?;
-        self.reconcile_goal_projections(true).await;
         Ok(())
     }
 
@@ -4213,6 +4230,7 @@ impl LoopxController {
         workspace: LoopxHostResult<LoopxWorkspaceProbeResult>,
         agent: LoopxHostResult<LoopxAgentProbeResult>,
         github_auth: LoopxGithubAuthProbe,
+        node_runtime_probe: LoopxNodeRuntimeFact,
     ) -> Result<(), String> {
         let _mutation = self.mutation_lock.lock().await;
         let mut state = self.state.write().await;
@@ -4260,13 +4278,13 @@ impl LoopxController {
                 (
                     unavailable_loopx_environment_fact(error.to_string(), checked_at),
                     LoopxEnvironmentFact::default(),
-                    blocked_node_environment_fact(checked_at),
+                    loopx_node_environment_fact(&node_runtime_probe, checked_at),
                 )
             }
             Err(error) => (
                 unavailable_environment_fact(error.to_string(), checked_at),
                 LoopxEnvironmentFact::default(),
-                blocked_node_environment_fact(checked_at),
+                loopx_node_environment_fact(&node_runtime_probe, checked_at),
             ),
         };
         let git_worktree = match workspace {
@@ -5841,6 +5859,7 @@ fn loopx_node_environment_fact(
             };
             detail.to_string()
         }),
+        checked_at,
         remediation_action: if probe.available || !managed_runtime_install_supported() {
             LoopxEnvironmentRemediationAction::None
         } else {
@@ -5965,17 +5984,6 @@ fn checking_environment_fact(checked_at: Option<i64>) -> LoopxEnvironmentFact {
     }
 }
 
-fn blocked_node_environment_fact(checked_at: Option<i64>) -> LoopxEnvironmentFact {
-    LoopxEnvironmentFact {
-        status: LoopxEnvironmentFactStatus::Unavailable,
-        detail: Some(
-            "LoopX engine is unavailable; install LoopX before checking the Node.js runtime".to_string(),
-        ),
-        remediation: Some("Install LoopX first, then re-check this environment".to_string()),
-        checked_at,
-        ..LoopxEnvironmentFact::default()
-    }
-}
 
 fn unavailable_environment_fact(
     detail: impl Into<String>,
@@ -6788,17 +6796,19 @@ mod tests {
         assert!(rejected.ends_with("the requested owner decision"));
     }
     #[test]
-    fn unavailable_loopx_engine_blocks_node_runtime_instead_of_checking_forever() {
-        let fact = blocked_node_environment_fact(Some(42));
+    fn independently_probed_node_never_stays_checking_when_the_engine_is_missing() {
+        // P0 regression: the engine handshake can fail before its own Node
+        // probe runs, so the controller probes Node independently. That fact
+        // must settle to a real status, never `Checking`.
+        let probe = LoopxNodeRuntimeFact {
+            available: false,
+            version: None,
+            minimum_version: "22.6.0".to_string(),
+            detail: Some("Node.js was not found on PATH".to_string()),
+        };
+        let fact = loopx_node_environment_fact(&probe, Some(42));
         assert_eq!(fact.status, LoopxEnvironmentFactStatus::Unavailable);
-        assert!(fact
-            .detail
-            .as_deref()
-            .is_some_and(|detail| detail.contains("LoopX engine is unavailable")));
-        assert!(fact
-            .remediation
-            .as_deref()
-            .is_some_and(|detail| detail.contains("Install LoopX first")));
+        assert_ne!(fact.status, LoopxEnvironmentFactStatus::Checking);
     }
     #[test]
     fn read_only_user_gates_accept_untyped_public_content_reads() {

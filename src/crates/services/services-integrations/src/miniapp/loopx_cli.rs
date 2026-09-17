@@ -797,7 +797,7 @@ impl LoopxCliProcessAdapter {
     /// handshake itself stays about the sidecar; a missing or too-old Node is
     /// reported as a manifest fact so the environment surface can show the
     /// precise remediation instead of a generic sidecar failure.
-    async fn probe_node_runtime(
+    async fn probe_node_runtime_inner(
         &self,
         operation_id: &str,
         cancellation: CancellationToken,
@@ -1622,6 +1622,32 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
         })
     }
 
+    fn probe_node_runtime<'a>(
+        &'a self,
+        request: loopx_contract::LoopxCliProbeNodeRuntimeRequest,
+        progress: &'a dyn loopx_contract::LoopxCliProgressSink,
+    ) -> loopx_contract::LoopxCliFuture<'a, loopx_contract::LoopxNodeRuntimeFact> {
+        Box::pin(async move {
+            let operation_id = request.call.operation_id;
+            validate_operation_id(&operation_id)?;
+            if !self.config.probe_node_runtime {
+                return Ok(loopx_contract::LoopxNodeRuntimeFact::default());
+            }
+            let (cancellation, _registration) = self
+                .register_operation(&operation_id)
+                .map_err(|error| map_port_error(error, &operation_id))?;
+            let observer = PortProcessObserver {
+                progress,
+                fallback: self.observer.as_ref(),
+                task_id: None,
+                stage: loopx_contract::LoopxCliProgressStage::StartingSidecar,
+            };
+            Ok(self
+                .probe_node_runtime_inner(&operation_id, cancellation, &observer)
+                .await)
+        })
+    }
+
     fn handshake<'a>(
         &'a self,
         request: loopx_contract::LoopxCliHandshakeRequest,
@@ -1694,7 +1720,7 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 capabilities.push("intake_metadata_provider_v1".to_string());
             }
             let node_runtime = if self.config.probe_node_runtime {
-                self.probe_node_runtime(&request.call.operation_id, cancellation.clone(), &observer)
+                self.probe_node_runtime_inner(&request.call.operation_id, cancellation.clone(), &observer)
                     .await
             } else {
                 loopx_contract::LoopxNodeRuntimeFact::default()

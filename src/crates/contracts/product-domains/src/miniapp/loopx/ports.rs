@@ -200,6 +200,13 @@ pub struct LoopxNodeRuntimeFact {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
+pub struct LoopxCliProbeNodeRuntimeRequest {
+    #[serde(flatten)]
+    pub call: LoopxCliCallContext,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
 pub struct LoopxCliInstallManagedSourceRequest {
     #[serde(flatten)]
     pub call: LoopxCliCallContext,
@@ -632,6 +639,15 @@ pub trait LoopxCliPort: Send + Sync {
         request: LoopxCliInstallManagedSourceRequest,
         progress: &'a dyn LoopxCliProgressSink,
     ) -> LoopxCliFuture<'a, LoopxCliInstallManagedSourceResult>;
+
+    /// Probes the Node.js runtime independently of the LoopX engine so the
+    /// environment surface can report and remediate Node even when the engine
+    /// is missing (the handshake fails closed before its own Node probe runs).
+    fn probe_node_runtime<'a>(
+        &'a self,
+        request: LoopxCliProbeNodeRuntimeRequest,
+        progress: &'a dyn LoopxCliProgressSink,
+    ) -> LoopxCliFuture<'a, LoopxNodeRuntimeFact>;
 
     /// Downloads and extracts a pinned portable runtime (`node` or `git`) into
     /// BitFun-managed storage so the environment surface can remediate a
