@@ -108,6 +108,29 @@
       }
     },
     {
+      "name": "child session carries its parent",
+      "wire": {
+        "id": "sess_btw",
+        "title": "why did it grep with bash",
+        "updated_at": "2026-08-06T11:04:22Z",
+        "parent_session_id": "sess_parent",
+        "relationship_kind": "btw"
+      },
+      "expected": {
+        "id": "sess_btw",
+        "title": "why did it grep with bash",
+        "agentType": null,
+        "status": null,
+        "updatedAt": "2026-08-06T11:04:22Z",
+        "createdAt": "",
+        "messageCount": null,
+        "workspacePath": null,
+        "workspaceName": null,
+        "parentSessionId": "sess_parent",
+        "relationshipKind": "btw"
+      }
+    },
+    {
       "name": "unknown fields are ignored, not fatal",
       "wire": {
         "id": "sess_future",

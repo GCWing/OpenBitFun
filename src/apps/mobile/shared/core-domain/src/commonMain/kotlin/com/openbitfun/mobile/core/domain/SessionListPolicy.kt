@@ -36,6 +36,21 @@ public object SessionAgentTypes {
 }
 
 /**
+ * Which sessions belong in a flat mobile session list.
+ *
+ * Desktop renders child sessions (its 侧问 / review / mini app / subagent) nested
+ * under the conversation they were asked from. Mobile has no nesting yet, so a
+ * child would otherwise read as an unrelated standalone conversation.
+ */
+public object SessionListVisibility {
+    public fun isMobileVisible(session: RemoteSession): Boolean =
+        SessionAgentTypes.isMobileVisible(session.agentType) && !isChild(session)
+
+    public fun isChild(session: RemoteSession): Boolean =
+        !session.parentSessionId.isNullOrBlank()
+}
+
+/**
  * Workspace paths as identity, from `ConversationSessionFilterPolicy`.
  *
  * The desktop sends the same workspace with and without its trailing separator

@@ -21,7 +21,7 @@ import com.openbitfun.mobile.core.persistence.PersistedRemoteMessage
 import com.openbitfun.mobile.core.persistence.PersistedRemoteSession
 import com.openbitfun.mobile.core.domain.RemoteSession
 import com.openbitfun.mobile.core.domain.SessionNaming
-import com.openbitfun.mobile.core.domain.SessionAgentTypes
+import com.openbitfun.mobile.core.domain.SessionListVisibility
 import com.openbitfun.mobile.core.domain.TranscriptIntegrityPolicy
 import com.openbitfun.mobile.core.feature.connection.ConnectionPhase
 import com.openbitfun.mobile.core.protocol.ActiveTurnSnapshotResponse
@@ -375,7 +375,7 @@ public class RemoteSessionStore internal constructor(
         )
         val server = response.sessions
             .map(RemoteResponseMapper::session)
-            .filter { SessionAgentTypes.isMobileVisible(it.agentType) }
+            .filter { SessionListVisibility.isMobileVisible(it) }
             .map { session ->
                 session.copy(workspacePath = session.workspacePath?.takeIf { it.isNotBlank() } ?: normalizedPath, workspaceIdentity = identity)
             }
@@ -708,7 +708,7 @@ public class RemoteSessionStore internal constructor(
             val response = sendListSessions(pageSize, pageOffset, trimmedQuery, identity)
             val sessions = response.sessions.map(RemoteResponseMapper::session).map { it.copy(workspaceIdentity = identity) }
             sessions.filterTo(filtered) {
-                SessionAgentTypes.isMobileVisible(it.agentType) && filter.matches(it.agentType)
+                SessionListVisibility.isMobileVisible(it) && filter.matches(it.agentType)
             }
             hasMore = response.hasMore
             pageOffset += sessions.size
@@ -734,7 +734,7 @@ public class RemoteSessionStore internal constructor(
         val known = sessions.mapTo(mutableSetOf()) { it.id }
         val local = locallyCreatedSessions.values.filter { session ->
             session.id !in known &&
-                SessionAgentTypes.isMobileVisible(session.agentType) &&
+                SessionListVisibility.isMobileVisible(session) &&
                 filter.matches(session.agentType) &&
                 (query.isEmpty() || session.title.contains(query, ignoreCase = true) ||
                     session.workspaceName.orEmpty().contains(query, ignoreCase = true) ||
@@ -1928,6 +1928,10 @@ internal object RemoteResponseMapper {
             messageCount = item.messageCount ?: 0,
             workspacePath = item.workspacePath,
             workspaceName = item.workspaceName,
+            // Callers attach the identity of the workspace they listed under.
+            workspaceIdentity = null,
+            parentSessionId = item.parentSessionId,
+            relationshipKind = item.relationshipKind,
         )
     }
 

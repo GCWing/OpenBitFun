@@ -39,6 +39,9 @@ public data class SessionItemResponse(
     val messageCount: Int? = null,
     val workspacePath: String? = null,
     val workspaceName: String? = null,
+    /** Set when the session hangs off another one (btw/review/miniapp/subagent). */
+    val parentSessionId: String? = null,
+    val relationshipKind: String? = null,
 )
 
 public object SessionItemResponseSerializer : KSerializer<SessionItemResponse> {
@@ -56,6 +59,8 @@ public object SessionItemResponseSerializer : KSerializer<SessionItemResponse> {
             messageCount = json.wireInt("message_count"),
             workspacePath = json.wireString("workspace_path"),
             workspaceName = json.wireString("workspace_name"),
+            parentSessionId = json.wireString("parent_session_id"),
+            relationshipKind = json.wireString("relationship_kind"),
         )
     }
 
@@ -77,6 +82,8 @@ public object SessionItemResponseSerializer : KSerializer<SessionItemResponse> {
                 value.messageCount?.let { put("message_count", it) }
                 value.workspacePath?.let { put("workspace_path", it) }
                 value.workspaceName?.let { put("workspace_name", it) }
+                value.parentSessionId?.let { put("parent_session_id", it) }
+                value.relationshipKind?.let { put("relationship_kind", it) }
             },
         )
     }

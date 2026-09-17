@@ -2011,6 +2011,27 @@ export default function transportAndGeneralChatUnitTest() {
       expect(raw.length).assertEqual(3);
     });
 
+    it('hides child sessions so Desktop side questions are not standalone rows', 0, () => {
+      const items: SessionItemResponse[] = [{
+        session_id: 'parent-session',
+        name: 'iOS sidebar spacing'
+      }, {
+        session_id: 'btw-session',
+        name: 'why did it grep with bash',
+        parent_session_id: 'parent-session',
+        relationship_kind: 'btw'
+      }];
+
+      const visible = RemoteResponseMapper.sessions(items);
+      const raw = RemoteResponseMapper.allSessions(items);
+
+      expect(visible.length).assertEqual(1);
+      expect(visible[0].id).assertEqual('parent-session');
+      expect(raw.length).assertEqual(2);
+      expect(raw[1].parentSessionId).assertEqual('parent-session');
+      expect(raw[1].relationshipKind).assertEqual('btw');
+    });
+
     it('maps alternate session time fields', 0, () => {
       const sessions = RemoteResponseMapper.sessions([{
         session_id: 'session-time',

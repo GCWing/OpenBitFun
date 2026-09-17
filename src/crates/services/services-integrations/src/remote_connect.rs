@@ -28,8 +28,8 @@ pub mod session_store;
 pub mod session_subscriber;
 
 pub use chat_projection::{
-    agent_input_attachment_from_remote_image_context, project_remote_chat_user,
-    RemoteChatUserProjection,
+    agent_input_attachment_from_remote_image_context, no_host_image_pixels,
+    project_remote_chat_user, RemoteChatUserProjection,
 };
 pub use device::DeviceIdentity;
 pub use encryption::{decrypt_from_base64, encrypt_to_base64, KeyPair};
@@ -1117,7 +1117,24 @@ pub fn remote_session_info(
         message_count: metadata.turn_count,
         workspace_path: workspace_path.map(ToOwned::to_owned),
         workspace_name: workspace_name.map(ToOwned::to_owned),
+        parent_session_id: metadata.parent_session_id.clone(),
+        relationship_kind: metadata.relationship_kind.clone(),
     }
+}
+
+/// Child sessions (btw/review/miniapp/subagent) belong under their parent.
+///
+/// Desktop groups them through `build_session_metadata_page`, but the remote
+/// command path is flat, so they would surface as standalone conversations.
+/// Drop them here, before pagination, so `has_more` counts what is actually
+/// sent.
+pub fn visible_remote_sessions(
+    metadata: Vec<RemoteSessionMetadata>,
+) -> Vec<RemoteSessionMetadata> {
+    metadata
+        .into_iter()
+        .filter(|session| !session.is_child_session())
+        .collect()
 }
 
 pub fn remote_session_list_response(
@@ -1127,6 +1144,7 @@ pub fn remote_session_list_response(
     limit: usize,
     offset: usize,
 ) -> RemoteResponse {
+    let metadata = visible_remote_sessions(metadata);
     let page_size = limit.min(100);
     let total = metadata.len();
     let has_more = offset.saturating_add(page_size) < total;
@@ -1251,6 +1269,7 @@ where
     let (sessions, has_more) = if let Some(path) = workspace_path.as_deref() {
         match host.list_session_metadata(path, workspace_identity).await {
             Ok(metadata) => {
+                let metadata = visible_remote_sessions(metadata);
                 let total = metadata.len();
                 let page_size = 100usize;
                 (
@@ -2017,6 +2036,11 @@ pub struct SessionInfo {
     pub workspace_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_name: Option<String>,
+    /// Set when this session hangs off another one (btw/review/miniapp/subagent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relationship_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -4316,6 +4340,8 @@ mod tests {
                     created_at_ms: 1_000,
                     last_active_at_ms: 2_000,
                     turn_count: 3,
+                    parent_session_id: None,
+                    relationship_kind: None,
                 },
                 RemoteSessionMetadata {
                     session_id: "session-b".to_string(),
@@ -4324,6 +4350,8 @@ mod tests {
                     created_at_ms: 1_000,
                     last_active_at_ms: 2_000,
                     turn_count: 1,
+                    parent_session_id: None,
+                    relationship_kind: None,
                 },
             ])
         }

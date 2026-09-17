@@ -34,6 +34,40 @@ class SessionListPolicyTest {
     }
 
     @Test
+    fun childSessionsStayOffTheFlatMobileList() {
+        // Desktop's 侧问 keeps its own session, nested under the conversation it
+        // was asked from. A flat list would show it as an unrelated thread.
+        val parent = session(id = "parent")
+        val child = session(id = "btw", parentSessionId = "parent", relationshipKind = "btw")
+
+        assertTrue(SessionListVisibility.isMobileVisible(parent))
+        assertFalse(SessionListVisibility.isMobileVisible(child))
+        assertTrue(SessionListVisibility.isChild(child))
+        assertFalse(SessionListVisibility.isChild(session(id = "blank", parentSessionId = "  ")))
+        assertFalse(SessionListVisibility.isMobileVisible(session(id = "acp", agentType = "acp:codex")))
+    }
+
+    private fun session(
+        id: String,
+        agentType: String = "code",
+        parentSessionId: String? = null,
+        relationshipKind: String? = null,
+    ) = RemoteSession(
+        id = id,
+        title = id,
+        agentType = agentType,
+        status = "idle",
+        updatedAt = "",
+        createdAt = "",
+        messageCount = 0,
+        workspacePath = null,
+        workspaceName = null,
+        workspaceIdentity = null,
+        parentSessionId = parentSessionId,
+        relationshipKind = relationshipKind,
+    )
+
+    @Test
     fun untitledSessionsGetTheAgentSpecificWireName() {
         assertEquals("Remote Code Session", SessionNaming.wireSessionName("code", "   "))
         assertEquals("Remote Cowork Session", SessionNaming.wireSessionName("cowork", ""))

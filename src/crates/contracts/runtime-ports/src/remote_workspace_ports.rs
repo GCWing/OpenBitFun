@@ -103,6 +103,20 @@ pub struct RemoteSessionMetadata {
     pub created_at_ms: u64,
     pub last_active_at_ms: u64,
     pub turn_count: usize,
+    /// Parent session id for child sessions (btw/review/miniapp/subagent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    /// Relationship kind as the snake_case tag persisted by Services
+    /// (`btw`, `review`, `deep_review`, `miniapp`, `subagent`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relationship_kind: Option<String>,
+}
+
+impl RemoteSessionMetadata {
+    /// Child sessions belong under their parent, not in a flat session list.
+    pub fn is_child_session(&self) -> bool {
+        self.parent_session_id.is_some()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -245,6 +259,8 @@ mod tests {
             created_at_ms: 10,
             last_active_at_ms: 20,
             turn_count: 3,
+            parent_session_id: None,
+            relationship_kind: None,
         };
 
         assert_eq!(workspace.kind.as_wire_str(), "remote");
