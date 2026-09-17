@@ -1714,6 +1714,9 @@ fn main() {
         .stack_size(16 * 1024 * 1024)
         .spawn(|| {
             let runtime = tokio::runtime::Builder::new_multi_thread()
+                // Agent execution can exceed Tokio's default stack in debug builds.
+                // Runtime threads do not inherit the outer thread's stack size.
+                .thread_stack_size(16 * 1024 * 1024)
                 .enable_all()
                 .build()
                 .expect("failed to build tokio runtime");
