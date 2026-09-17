@@ -412,25 +412,33 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   background: var(--lx-element);
 }
 .environment-fact__title {
-  display: grid;
-  grid-template-columns: 116px minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
 }
-.environment-fact__title strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-/* 一行只有一个动作按钮：可用时它就是「可用」按钮，不可用时点击即安装；
-   按钮铺满标签右侧的剩余宽度，所以三行对齐，右侧不再留大块空白。 */
-.environment-fact .environment-fact__action {
-  width: 100%;
+.environment-fact__title strong {
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 一行只有一个动作按钮：可用时它就是「可用」按钮，不可用时点击即安装。
+   做成固定宽度的小胶囊、靠右对齐，既整齐又不会占满整行。 */
+.environment-fact .environment-fact__action {
+  flex: 0 0 auto;
+  width: 128px;
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   min-height: 32px;
-  padding: 4px 10px;
+  padding: 4px 8px;
   border: 1px solid var(--lx-border);
-  border-radius: 7px;
+  border-radius: 999px;
   background: transparent;
   color: var(--lx-text-soft);
   font-family: inherit;
@@ -438,12 +446,12 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   font-weight: 600;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 90ms ease, filter 90ms ease;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 140ms cubic-bezier(.34, 1.56, .64, 1), filter 90ms ease;
 }
 .environment-fact__action span { color: inherit; font: inherit; letter-spacing: 0; }
-.environment-fact__action svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.environment-fact__action svg { width: 12px; height: 12px; flex: 0 0 auto; }
 .environment-fact__action[data-state="install"] {
-  border-color: var(--lx-accent);
+  border-color: color-mix(in srgb, var(--lx-accent) 78%, var(--lx-border-strong));
   background: var(--lx-accent);
   color: var(--openbitfun-text-on-accent);
 }
@@ -451,8 +459,9 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   border-color: var(--lx-accent-hover);
   background: var(--lx-accent-hover);
 }
-/* 点击立刻下沉变暗；宿主开始安装后按钮自己切成 spinner。 */
-.environment-fact__action:not(:disabled):active { transform: translateY(1px); filter: brightness(.95); }
+/* 悬停轻轻浮起、按下立刻回弹缩小，点击手感更明显。 */
+.environment-fact__action:not(:disabled):hover { transform: translateY(-1px); }
+.environment-fact__action:not(:disabled):active { transform: translateY(0) scale(.95); filter: brightness(.95); }
 .environment-fact__action[data-state="installing"] {
   border-color: var(--lx-border-strong);
   background: var(--lx-muted-surface);
@@ -460,12 +469,13 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   cursor: progress;
 }
 .environment-fact__action[data-state="available"] {
-  border-color: color-mix(in srgb, var(--lx-success) 40%, var(--lx-border));
-  background: color-mix(in srgb, var(--lx-success) 12%, transparent);
-  color: var(--lx-success);
+  border-color: color-mix(in srgb, var(--lx-success) 38%, var(--lx-border));
+  background: color-mix(in srgb, var(--lx-success) 13%, var(--lx-element));
+  color: color-mix(in srgb, var(--lx-success) 72%, var(--lx-text));
   cursor: default;
 }
 .environment-fact__action[data-state="status"] {
+  border-color: var(--lx-border);
   background: transparent;
   color: var(--lx-text-muted);
   cursor: default;
@@ -1619,7 +1629,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .header-actions { grid-column: 2; grid-row: 1; }
   .environment-body { grid-template-columns: 1fr; align-items: stretch; }
   .environment-grid { grid-template-columns: 1fr; }
-  .environment-fact__title { grid-template-columns: 96px minmax(0, 1fr); gap: 6px; }
+  .environment-fact__title { gap: 8px; }
 }
 
 /* 宽屏三列（任务 | 详情 | 日志）；只在右侧工作区真正变窄时上下堆叠。 */
@@ -1640,7 +1650,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 
 @media (max-width: 680px) {
   .environment-grid { grid-template-columns: 1fr; }
-  .environment-fact__title { grid-template-columns: 96px minmax(0, 1fr); gap: 6px; }
+  .environment-fact__title { gap: 8px; }
   .workbench { grid-template-columns: 1fr; grid-template-rows: minmax(92px, 30dvh) minmax(0, 1fr); }
   .workbench.tasks-collapsed { grid-template-columns: 1fr; grid-template-rows: 44px minmax(0, 1fr); }
   .rail-splitter { display: none; }
