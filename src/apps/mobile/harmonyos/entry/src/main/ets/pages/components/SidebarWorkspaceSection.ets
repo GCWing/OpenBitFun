@@ -106,7 +106,7 @@ export struct SidebarWorkspaceSection {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .margin({ top: 18 })
+    .margin({ top: 10 })
     .bindSheet($$this.showWorkspacePicker, this.WorkspacePicker(), this.workspacePickerSheetOptions())
   }
 

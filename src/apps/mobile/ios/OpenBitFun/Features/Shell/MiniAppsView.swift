@@ -25,7 +25,8 @@ struct MiniAppsButton: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(OpenBitFunTheme.ink)
                 .accessibilityLabel(model.localized("小应用"))
-                .padding(.vertical, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
             } else {
                 Button(model.localized("小应用")) { open = true }
                     .frame(minHeight: 44)

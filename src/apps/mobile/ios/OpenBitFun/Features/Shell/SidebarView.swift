@@ -296,7 +296,7 @@ struct SidebarView: View {
 
             }
             .frame(height: 38)
-            .padding(.top, 18)
+            .padding(.top, 10)
 
             if let error = model.accountDirectoryError {
                 Button { model.refreshRemoteDevices() } label: {

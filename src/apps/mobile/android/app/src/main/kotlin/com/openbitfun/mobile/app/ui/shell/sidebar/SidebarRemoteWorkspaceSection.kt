@@ -90,7 +90,7 @@ internal fun SidebarRemoteWorkspaceSection(
     var visibleDeviceCount by rememberSaveable { mutableStateOf(DEVICES_PER_BATCH) }
     val workspacePanels = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().height(38.dp),
             verticalAlignment = Alignment.CenterVertically,

@@ -54,7 +54,7 @@ internal fun MiniAppsButton(
 ) {
     var open by rememberSaveable { mutableStateOf(false) }
     if (sidebar) {
-        Row(Modifier.fillMaxWidth().padding(vertical = 16.dp).heightIn(min = 48.dp)
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp).heightIn(min = 48.dp)
             .clip(RoundedCornerShape(12.dp)).clickable { open = true }
             .padding(start = 4.dp, end = 8.dp).testTag("sidebar-miniapps"),
             horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {

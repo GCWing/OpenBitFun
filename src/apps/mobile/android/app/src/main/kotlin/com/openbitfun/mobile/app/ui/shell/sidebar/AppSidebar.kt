@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -104,11 +103,12 @@ internal fun AppSidebar(
     var remoteDetailsSessionId by rememberSaveable { mutableStateOf<String?>(null) }
 
     Box(modifier = modifier.fillMaxSize().testTag(SIDEBAR_TEST_TAG)) {
+        // No spacedBy: the MiniApps row carries its own 4dp/8dp rhythm, and a
+        // column-level gap on top of it would push the section header away.
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (signedIn) {
                 SidebarAuthenticatedHeader(searchOpen, query, onQueryChange, onToggleSearch)

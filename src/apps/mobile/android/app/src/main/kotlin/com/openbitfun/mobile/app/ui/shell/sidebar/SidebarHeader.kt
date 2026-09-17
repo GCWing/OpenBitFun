@@ -75,6 +75,9 @@ private fun SidebarSearchField(query: String, onQueryChange: (String) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // The header column adds no spacing of its own, so the field keeps
+            // its own gap under the title, matching the source's 12dp.
+            .padding(top = 12.dp)
             .height(42.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
