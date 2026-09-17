@@ -1091,6 +1091,16 @@ impl LoopxController {
                 ..LoopxActionResponse::default()
             });
         }
+        if request.action == LoopxActionKind::InstallNodeRuntime {
+            return self
+                .start_runtime_install(&request, LoopxManagedRuntimeKind::Node)
+                .await;
+        }
+        if request.action == LoopxActionKind::InstallGitRuntime {
+            return self
+                .start_runtime_install(&request, LoopxManagedRuntimeKind::Git)
+                .await;
+        }
         if request.action == LoopxActionKind::InstallLoopx {
             return self.start_loopx_install(&request).await;
         }
@@ -1174,7 +1184,9 @@ impl LoopxController {
             | LoopxActionKind::ResetAll
             | LoopxActionKind::PauseAll
             | LoopxActionKind::ResumeAll
-            | LoopxActionKind::InstallLoopx => unreachable!(),
+            | LoopxActionKind::InstallLoopx
+            | LoopxActionKind::InstallNodeRuntime
+            | LoopxActionKind::InstallGitRuntime => unreachable!(),
             LoopxActionKind::Approve | LoopxActionKind::Reject => {
                 self.answer_gate(&task, &runtime, &request).await
             }
@@ -1358,6 +1370,187 @@ impl LoopxController {
             level: LoopxEventLevel::Error,
             source: LoopxEventSource::System,
             message: format!("LoopX managed source installation failed: {error}"),
+            important: true,
+            occurred_at: now_ms(),
+            ..LoopxEvent::default()
+        });
+        let persisted = state.clone();
+        drop(state);
+        self.store.save(&persisted).await?;
+        self.broadcast_new_events(&persisted, start_cursor);
+        Ok(())
+    }
+
+    async fn start_runtime_install(
+        self: &Arc<Self>,
+        request: &LoopxActionRequest,
+        runtime: LoopxManagedRuntimeKind,
+    ) -> Result<LoopxActionResponse, String> {
+        let started_at = Instant::now();
+        if request.client_request_id.trim().is_empty() {
+            return Err("clientRequestId is required".to_string());
+        }
+        {
+            let state = self.state.read().await;
+            if state.has_processed_request(&request.client_request_id) {
+                return Ok(LoopxActionResponse {
+                    status: LoopxActionStatus::Duplicate,
+                    current_revision: state.revision,
+                    message: Some("Runtime installation request was already applied".to_string()),
+                    ..LoopxActionResponse::default()
+                });
+            }
+            if environment_fact_for(&state.environment.core, runtime).status
+                == LoopxEnvironmentFactStatus::Available
+            {
+                return Ok(LoopxActionResponse {
+                    status: LoopxActionStatus::Duplicate,
+                    current_revision: state.revision,
+                    message: Some("The requested runtime is already available".to_string()),
+                    ..LoopxActionResponse::default()
+                });
+            }
+        }
+        if self
+            .install_in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Ok(LoopxActionResponse {
+                status: LoopxActionStatus::Duplicate,
+                current_revision: self.state.read().await.revision,
+                message: Some("An environment installation is already running".to_string()),
+                ..LoopxActionResponse::default()
+            });
+        }
+        let current_revision = match self
+            .mark_runtime_installing(runtime, &request.client_request_id)
+            .await
+        {
+            Ok(revision) => revision,
+            Err(error) => {
+                self.install_in_progress.store(false, Ordering::Release);
+                return Err(error);
+            }
+        };
+        log::info!(
+            "LoopX managed runtime installation state persisted: request_id={}, runtime={:?}, revision={}, duration_ms={}",
+            request.client_request_id,
+            runtime,
+            current_revision,
+            elapsed_ms_u64(started_at)
+        );
+        let request_id = request.client_request_id.clone();
+        let controller = Arc::clone(self);
+        tokio::spawn(async move {
+            let _install_guard = InProgressGuard(&controller.install_in_progress);
+            if let Err(error) = controller.run_runtime_install(runtime, &request_id).await {
+                log::error!(
+                    "LoopX managed runtime installation failed: request_id={request_id}, runtime={runtime:?}, error={error}"
+                );
+                let _ = controller.mark_runtime_install_failed(runtime, &error).await;
+            }
+        });
+        Ok(LoopxActionResponse {
+            status: LoopxActionStatus::Applied,
+            current_revision,
+            message: Some("Runtime installation started".to_string()),
+            ..LoopxActionResponse::default()
+        })
+    }
+
+    async fn run_runtime_install(
+        self: &Arc<Self>,
+        runtime: LoopxManagedRuntimeKind,
+        request_id: &str,
+    ) -> Result<(), String> {
+        let progress = BufferedProgress::default();
+        let operation_id = format!("install-runtime-{}", uuid::Uuid::new_v4());
+        let started_at = Instant::now();
+        let result = self
+            .cli
+            .install_managed_runtime(
+                LoopxCliInstallRuntimeRequest {
+                    call: LoopxCliCallContext {
+                        operation_id: operation_id.clone(),
+                        deadline_at: None,
+                    },
+                    runtime,
+                },
+                &progress,
+            )
+            .await;
+        self.record_progress(progress.take()).await?;
+        let installed = result.map_err(|error| error.to_string())?;
+        log::info!(
+            "LoopX managed runtime installation completed: request_id={request_id}, runtime={runtime:?}, version={}, install_path={}, duration_ms={}",
+            installed.version,
+            installed.install_path,
+            elapsed_ms_u64(started_at)
+        );
+        self.refresh_environment().await?;
+        Ok(())
+    }
+
+    async fn mark_runtime_installing(
+        &self,
+        runtime: LoopxManagedRuntimeKind,
+        request_id: &str,
+    ) -> Result<u64, String> {
+        let _mutation = self.mutation_lock.lock().await;
+        let mut state = self.state.write().await;
+        let checked_at = Some(now_ms());
+        state.environment.revision = state.environment.revision.saturating_add(1);
+        state.environment.status = LoopxEnvironmentStatus::Checking;
+        state.environment.checked_at = checked_at;
+        {
+            let fact = environment_fact_for_mut(&mut state.environment.core, runtime);
+            *fact = checking_runtime_environment_fact(
+                format!("Downloading the pinned {} runtime", runtime_label(runtime)),
+                checked_at,
+            );
+        }
+        state.record_processed_request(request_id.to_string());
+        state.revision = state.revision.saturating_add(1);
+        let current_revision = state.revision;
+        let start_cursor = state.cursor;
+        state.append_event(LoopxEvent {
+            kind: LoopxEventKind::EnvironmentChanged,
+            source: LoopxEventSource::System,
+            message: format!("{} runtime installation started", runtime_label(runtime)),
+            occurred_at: now_ms(),
+            ..LoopxEvent::default()
+        });
+        let persisted = state.clone();
+        drop(state);
+        self.store.save(&persisted).await?;
+        self.broadcast_new_events(&persisted, start_cursor);
+        Ok(current_revision)
+    }
+
+    async fn mark_runtime_install_failed(
+        &self,
+        runtime: LoopxManagedRuntimeKind,
+        error: &str,
+    ) -> Result<(), String> {
+        let _mutation = self.mutation_lock.lock().await;
+        let mut state = self.state.write().await;
+        let checked_at = Some(now_ms());
+        state.environment.revision = state.environment.revision.saturating_add(1);
+        state.environment.checked_at = checked_at;
+        {
+            let fact = environment_fact_for_mut(&mut state.environment.core, runtime);
+            *fact = runtime_unavailable_fact(runtime, error, checked_at);
+        }
+        state.environment.status =
+            derive_environment_status(&state.environment.core, &state.environment.optional);
+        state.revision = state.revision.saturating_add(1);
+        let start_cursor = state.cursor;
+        state.append_event(LoopxEvent {
+            kind: LoopxEventKind::EnvironmentChanged,
+            level: LoopxEventLevel::Error,
+            source: LoopxEventSource::System,
+            message: format!("{} runtime installation failed: {error}", runtime_label(runtime)),
             important: true,
             occurred_at: now_ms(),
             ..LoopxEvent::default()
@@ -4073,7 +4266,7 @@ impl LoopxController {
                 checked_at,
                 ..LoopxEnvironmentFact::default()
             },
-            Err(error) => unavailable_environment_fact(error.to_string(), checked_at),
+            Err(error) => git_worktree_environment_fact(error.to_string(), checked_at),
         };
         let agent_model = match agent {
             Ok(probe) => LoopxEnvironmentFact {
@@ -5629,9 +5822,123 @@ fn loopx_node_environment_fact(
         version: probe.version.clone(),
         detail: probe.detail.clone(),
         remediation: (!probe.available).then(|| {
-            "Install Node.js from https://nodejs.org (or via your package manager),              then re-check this environment"
+            "Install the app-managed Node.js runtime, or install Node.js 22.6+ from https://nodejs.org, then re-check this environment"
                 .to_string()
         }),
+        remediation_action: if probe.available {
+            LoopxEnvironmentRemediationAction::None
+        } else {
+            LoopxEnvironmentRemediationAction::InstallNode
+        },
+        checked_at,
+        ..LoopxEnvironmentFact::default()
+    }
+}
+
+fn runtime_label(runtime: LoopxManagedRuntimeKind) -> &'static str {
+    match runtime {
+        LoopxManagedRuntimeKind::Node => "Node.js",
+        LoopxManagedRuntimeKind::Git => "Git",
+    }
+}
+
+fn environment_fact_for(
+    core: &LoopxCoreEnvironmentFacts,
+    runtime: LoopxManagedRuntimeKind,
+) -> &LoopxEnvironmentFact {
+    match runtime {
+        LoopxManagedRuntimeKind::Node => &core.node_runtime,
+        LoopxManagedRuntimeKind::Git => &core.git_worktree,
+    }
+}
+
+fn environment_fact_for_mut(
+    core: &mut LoopxCoreEnvironmentFacts,
+    runtime: LoopxManagedRuntimeKind,
+) -> &mut LoopxEnvironmentFact {
+    match runtime {
+        LoopxManagedRuntimeKind::Node => &mut core.node_runtime,
+        LoopxManagedRuntimeKind::Git => &mut core.git_worktree,
+    }
+}
+
+fn runtime_unavailable_fact(
+    runtime: LoopxManagedRuntimeKind,
+    detail: &str,
+    checked_at: Option<i64>,
+) -> LoopxEnvironmentFact {
+    let remediation =
+        "Retry the app-managed install; if it keeps failing, install the runtime manually"
+            .to_string();
+    let action = match runtime {
+        LoopxManagedRuntimeKind::Node => LoopxEnvironmentRemediationAction::InstallNode,
+        LoopxManagedRuntimeKind::Git => LoopxEnvironmentRemediationAction::InstallGit,
+    };
+    LoopxEnvironmentFact {
+        status: LoopxEnvironmentFactStatus::Unavailable,
+        detail: Some(detail.to_string()),
+        remediation: Some(remediation),
+        remediation_action: action,
+        checked_at,
+        ..LoopxEnvironmentFact::default()
+    }
+}
+
+/// Git worktree availability. A missing Git binary is a first-class
+/// remediation (app-managed portable Git) instead of a generic failure.
+fn git_worktree_environment_fact(
+    detail: impl Into<String>,
+    checked_at: Option<i64>,
+) -> LoopxEnvironmentFact {
+    let detail = detail.into();
+    let git_missing = git_missing_from_detail(&detail);
+    // Only Windows ships a first-party portable Git archive; other hosts use
+    // the system package manager, so no app-managed install button there.
+    let managed_git_available = cfg!(windows) && git_missing;
+    let remediation = if managed_git_available {
+        Some(
+            "Install app-managed portable Git, or install Git with your package manager, then re-check this environment"
+                .to_string(),
+        )
+    } else if git_missing {
+        Some(
+            "Install Git with your package manager (or `xcode-select --install` on macOS), then re-check this environment"
+                .to_string(),
+        )
+    } else {
+        None
+    };
+    LoopxEnvironmentFact {
+        status: LoopxEnvironmentFactStatus::Unavailable,
+        detail: Some(detail),
+        remediation,
+        remediation_action: if managed_git_available {
+            LoopxEnvironmentRemediationAction::InstallGit
+        } else {
+            LoopxEnvironmentRemediationAction::None
+        },
+        checked_at,
+        ..LoopxEnvironmentFact::default()
+    }
+}
+
+fn git_missing_from_detail(detail: &str) -> bool {
+    let lower = detail.to_ascii_lowercase();
+    if !lower.contains("git") {
+        return false;
+    }
+    ["could not start", "not found", "no such file", "cannot find", "os error 2"]
+        .iter()
+        .any(|marker| lower.contains(marker))
+}
+
+fn checking_runtime_environment_fact(
+    detail: impl Into<String>,
+    checked_at: Option<i64>,
+) -> LoopxEnvironmentFact {
+    LoopxEnvironmentFact {
+        status: LoopxEnvironmentFactStatus::Checking,
+        detail: Some(detail.into()),
         checked_at,
         ..LoopxEnvironmentFact::default()
     }
@@ -6503,5 +6810,68 @@ mod tests {
             None,
             Some("Approve a gated read, then publish the pull request"),
         ));
+    }
+    #[cfg(windows)]
+    fn git_missing_detail_becomes_an_install_git_remediation() {
+        let fact = git_worktree_environment_fact(
+            "workspace Git command could not start: program not found",
+            Some(42),
+        );
+        assert_eq!(fact.status, LoopxEnvironmentFactStatus::Unavailable);
+        assert_eq!(
+            fact.remediation_action,
+            LoopxEnvironmentRemediationAction::InstallGit
+        );
+        assert!(fact.remediation.is_some());
+    }
+
+    #[test]
+    fn git_missing_markers_are_detected_without_a_platform_install() {
+        assert!(git_missing_from_detail(
+            "workspace Git command could not start: program not found"
+        ));
+        assert!(!git_missing_from_detail("workspace root is not writable"));
+    }
+
+    #[test]
+    fn unrelated_workspace_failure_keeps_a_generic_git_fact() {
+        let fact = git_worktree_environment_fact("workspace root is not writable", Some(42));
+        assert_eq!(
+            fact.remediation_action,
+            LoopxEnvironmentRemediationAction::None
+        );
+        assert!(fact.remediation.is_none());
+    }
+
+    #[test]
+    fn missing_node_offers_the_app_managed_install_action() {
+        let probe = LoopxNodeRuntimeFact {
+            available: false,
+            version: None,
+            minimum_version: "22.6.0".to_string(),
+            detail: Some("Node.js was not found on PATH".to_string()),
+        };
+        let fact = loopx_node_environment_fact(&probe, Some(42));
+        assert_eq!(
+            fact.remediation_action,
+            LoopxEnvironmentRemediationAction::InstallNode
+        );
+        assert!(fact.remediation.is_some());
+    }
+
+    #[test]
+    fn available_node_has_no_remediation_action() {
+        let probe = LoopxNodeRuntimeFact {
+            available: true,
+            version: Some("v24.21.0".to_string()),
+            minimum_version: "22.6.0".to_string(),
+            detail: None,
+        };
+        let fact = loopx_node_environment_fact(&probe, Some(42));
+        assert_eq!(
+            fact.remediation_action,
+            LoopxEnvironmentRemediationAction::None
+        );
+        assert!(fact.remediation.is_none());
     }
 }

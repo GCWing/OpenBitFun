@@ -9,6 +9,8 @@ pub mod loopx_cli;
 #[cfg(feature = "miniapp-loopx")]
 pub mod loopx_github;
 #[cfg(feature = "miniapp-loopx")]
+pub mod loopx_runtime;
+#[cfg(feature = "miniapp-loopx")]
 pub mod loopx_workspace;
 #[cfg(feature = "miniapp-runtime")]
 pub mod storage;

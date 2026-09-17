@@ -6687,6 +6687,7 @@ dependencies = [
  "dirs 6.0.0",
  "dunce",
  "encoding_rs",
+ "flate2",
  "fs2",
  "futures",
  "futures-util",

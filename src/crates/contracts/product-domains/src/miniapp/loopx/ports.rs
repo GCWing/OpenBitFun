@@ -215,6 +215,31 @@ pub struct LoopxCliInstallManagedSourceResult {
     pub loopx_version: String,
 }
 
+/// Which app-managed portable runtime a remediation install targets.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopxManagedRuntimeKind {
+    #[default]
+    Node,
+    Git,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxCliInstallRuntimeRequest {
+    #[serde(flatten)]
+    pub call: LoopxCliCallContext,
+    pub runtime: LoopxManagedRuntimeKind,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct LoopxCliInstallRuntimeResult {
+    pub runtime: LoopxManagedRuntimeKind,
+    pub version: String,
+    pub install_path: String,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct LoopxCliTodoPlan {
@@ -607,6 +632,15 @@ pub trait LoopxCliPort: Send + Sync {
         request: LoopxCliInstallManagedSourceRequest,
         progress: &'a dyn LoopxCliProgressSink,
     ) -> LoopxCliFuture<'a, LoopxCliInstallManagedSourceResult>;
+
+    /// Downloads and extracts a pinned portable runtime (`node` or `git`) into
+    /// BitFun-managed storage so the environment surface can remediate a
+    /// missing dependency without a system-level installer.
+    fn install_managed_runtime<'a>(
+        &'a self,
+        request: LoopxCliInstallRuntimeRequest,
+        progress: &'a dyn LoopxCliProgressSink,
+    ) -> LoopxCliFuture<'a, LoopxCliInstallRuntimeResult>;
 
     fn handshake<'a>(
         &'a self,

@@ -73,6 +73,8 @@ const ACTION_KINDS = new Set<LoopxActionKind>([
   'archive',
   'restore',
   'install_loopx',
+  'install_node_runtime',
+  'install_git_runtime',
   'retry_environment',
 ]);
 

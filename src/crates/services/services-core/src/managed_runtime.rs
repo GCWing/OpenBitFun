@@ -10,9 +10,9 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 const DEFAULT_RUNTIME_COMMANDS: &[&str] = &[
-    "node", "npm", "npx", "python", "python3", "pandoc", "soffice", "pdftoppm",
+    "node", "npm", "npx", "python", "python3", "git", "pandoc", "soffice", "pdftoppm",
 ];
-const MANAGED_COMPONENTS: &[&str] = &["node", "python", "pandoc", "office", "poppler"];
+const MANAGED_COMPONENTS: &[&str] = &["node", "python", "git", "pandoc", "office", "poppler"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -239,6 +239,20 @@ impl ManagedRuntimeResolver {
     }
 }
 
+/// Prepends app-managed runtime directories to the current process PATH so
+/// child processes spawned later (LoopX sidecar, git worktrees, tool hosts)
+/// resolve managed commands without a restart.
+pub fn prepend_managed_runtime_path(runtime_root: &Path) {
+    let resolver = ManagedRuntimeResolver::new(runtime_root);
+    if resolver.managed_path_entries().is_empty() {
+        return;
+    }
+    let existing = std::env::var("PATH").ok();
+    if let Some(merged) = resolver.merged_path_env(existing.as_deref()) {
+        std::env::set_var("PATH", merged);
+    }
+}
+
 fn normalize_command_alias(command: &str) -> String {
     match command.to_ascii_lowercase().as_str() {
         "node.exe" => "node".to_string(),
@@ -247,6 +261,7 @@ fn normalize_command_alias(command: &str) -> String {
         "python.exe" => "python".to_string(),
         "python3.exe" => "python3".to_string(),
         "soffice.exe" => "soffice".to_string(),
+        "git.exe" => "git".to_string(),
         "pdftoppm.exe" => "pdftoppm".to_string(),
         other => other.to_string(),
     }
@@ -290,6 +305,17 @@ fn managed_command_spec(command: &str) -> Option<ManagedCommandSpec> {
                 "bin/python.exe",
             ],
         }),
+        "git" => Some(ManagedCommandSpec {
+            component: "git",
+            candidates: &[
+                "git",
+                "git.exe",
+                "bin/git",
+                "bin/git.exe",
+                "cmd/git.exe",
+                "mingw64/bin/git.exe",
+            ],
+        }),
         "pandoc" => Some(ManagedCommandSpec {
             component: "pandoc",
             candidates: &["pandoc", "pandoc.exe", "bin/pandoc", "bin/pandoc.exe"],
@@ -323,6 +349,7 @@ fn managed_component_path_entries(component: &str) -> &'static [&'static str] {
     match component {
         "node" => &["", "bin"],
         "python" => &["", "bin", "Scripts"],
+        "git" => &["", "cmd", "bin", "mingw64/bin"],
         "pandoc" => &["", "bin"],
         "office" => &["", "program", "bin"],
         "poppler" => &["", "bin", "Library/bin"],
@@ -406,6 +433,23 @@ mod tests {
 
         assert!(parsed.iter().any(|p| p == &node_bin || p == &node_root));
         assert!(parsed.iter().any(|p| p == &PathBuf::from(existing)));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn resolves_mingit_layout_from_the_managed_runtime_root() {
+        let root = temp_runtime_root();
+        let git_path = root.join("git").join("current").join("cmd").join("git.exe");
+        create_test_file(&git_path);
+
+        let manager = ManagedRuntimeResolver::new(root.clone());
+        let resolved = manager.find_managed_command_path("git");
+        assert_eq!(resolved.as_deref(), Some(git_path.as_path()));
+        assert!(manager
+            .managed_path_entries()
+            .iter()
+            .any(|p| p == &root.join("git").join("current").join("cmd")));
 
         let _ = fs::remove_dir_all(root);
     }

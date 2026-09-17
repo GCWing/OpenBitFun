@@ -31,6 +31,7 @@ async-trait = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 openbitfun-services-core = { path = "../services-core", optional = true }
 bzip2 = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
 dunce = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
@@ -210,6 +211,7 @@ miniapp-loopx = [
     "dep:openbitfun-product-domains",
     "dunce",
     "dep:encoding_rs",
+    "flate2",
     "hex",
     "reqwest",
     "reqwest/json",
@@ -223,10 +225,12 @@ miniapp-loopx = [
     "tokio/rt",
     "tokio/sync",
     "tokio/time",
+    "tar",
     "tokio-util",
     "url",
     "uuid",
     "which",
+    "zip",
 ]
 account-identity = [
     "dep:openbitfun-product-domains",

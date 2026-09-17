@@ -201,6 +201,13 @@ pub enum LoopxEnvironmentFactStatus {
 #[serde(rename_all = "snake_case")]
 pub enum LoopxEnvironmentRemediationAction {
     InstallLoopx,
+    /// Download a pinned portable Node.js runtime into BitFun-managed storage
+    /// and put it on the LoopX child-process PATH.
+    InstallNode,
+    /// Download a pinned portable Git runtime into BitFun-managed storage and
+    /// put it on the LoopX child-process PATH (Windows only; other platforms
+    /// rely on the system package manager).
+    InstallGit,
     #[default]
     #[serde(other)]
     None,
@@ -683,6 +690,8 @@ pub enum LoopxActionKind {
     Archive,
     Restore,
     InstallLoopx,
+    InstallNodeRuntime,
+    InstallGitRuntime,
     RetryEnvironment,
     #[serde(other)]
     Unsupported,

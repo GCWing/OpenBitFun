@@ -87,6 +87,13 @@ const COPY = {
     issueDetailLabel: '任务详情与进展',
     retryEnvironment: '重新检查环境',
     installLoopx: '安装兼容版本',
+    installNode: '安装便携 Node.js',
+    installGit: '安装便携 Git',
+    nodeInstallStarted: '正在下载并校验便携 Node.js…',
+    gitInstallStarted: '正在下载并校验便携 Git…',
+    nodeInstallComplete: 'Node.js {version} 已安装，环境检查已更新。',
+    gitInstallComplete: 'Git {version} 已安装，环境检查已更新。',
+    runtimeInstallFailed: '{runtime} 安装失败：{message}',
     loopxInstallStarted: '正在从官方 GitHub 源仓库下载并校验 LoopX {version}…',
     loopxInstallQueued: '安装已在后台开始，可以继续使用当前窗口。',
     loopxInstallComplete: 'LoopX {version} 已安装，环境检查已更新。',
@@ -638,6 +645,13 @@ const COPY = {
     issueDetailLabel: 'Task details and progress',
     retryEnvironment: 'Check environment again',
     installLoopx: 'Install compatible version',
+    installNode: 'Install portable Node.js',
+    installGit: 'Install portable Git',
+    nodeInstallStarted: 'Downloading and verifying portable Node.js...',
+    gitInstallStarted: 'Downloading and verifying portable Git...',
+    nodeInstallComplete: 'Node.js {version} is installed and the environment check is up to date.',
+    gitInstallComplete: 'Git {version} is installed and the environment check is up to date.',
+    runtimeInstallFailed: '{runtime} installation failed: {message}',
     loopxInstallStarted: 'Downloading and verifying LoopX {version} from the official GitHub source repository...',
     loopxInstallQueued: 'Installation started in the background. You can keep using this window.',
     loopxInstallComplete: 'LoopX {version} is installed and the environment check is up to date.',
@@ -1344,6 +1358,9 @@ const state = {
   environmentInstallPending: false,
   environmentInstallObserved: false,
   environmentInstallRequestId: null,
+  // Which app-managed runtime the pending environment install targets
+  // ('loopx' | 'node' | 'git'), used to observe the matching environment fact.
+  environmentInstallRuntime: null,
   resetPending: false,
 };
 
@@ -2496,25 +2513,27 @@ function applySnapshot(snapshot) {
   view.root.setAttribute('aria-busy', 'false');
   renderAll();
   if (state.environmentInstallObserved) {
-    const sidecar = snapshot.environment
-      && snapshot.environment.core
-      && snapshot.environment.core.sidecar;
-    if (sidecar && sidecar.status === 'available') {
-      emitInstallDiagnostic('environment_available');
-      state.environmentInstallObserved = false;
-      state.environmentInstallRequestId = null;
-      showNotice(text('loopxInstallComplete', { version: sidecar.version || '' }), 'success');
-    } else if (
-      previousSidecarStatus === 'checking'
-      && sidecar
-      && sidecar.status === 'unavailable'
-    ) {
-      emitInstallDiagnostic('environment_unavailable');
-      state.environmentInstallObserved = false;
-      state.environmentInstallRequestId = null;
-      showNotice(text('loopxInstallFailed', {
-        message: sidecar.detail || statusLabel('unavailable'),
-      }), 'error');
+    if (state.environmentInstallRuntime === 'loopx') {
+      const sidecar = snapshot.environment
+        && snapshot.environment.core
+        && snapshot.environment.core.sidecar;
+      if (sidecar && sidecar.status === 'available') {
+        emitInstallDiagnostic('environment_available');
+        clearEnvironmentInstallObservation();
+        showNotice(text('loopxInstallComplete', { version: sidecar.version || '' }), 'success');
+      } else if (
+        previousSidecarStatus === 'checking'
+        && sidecar
+        && sidecar.status === 'unavailable'
+      ) {
+        emitInstallDiagnostic('environment_unavailable');
+        clearEnvironmentInstallObservation();
+        showNotice(text('loopxInstallFailed', {
+          message: sidecar.detail || statusLabel('unavailable'),
+        }), 'error');
+      }
+    } else {
+      observeRuntimeInstall(snapshot);
     }
   }
   if (state.pendingApprovalPrompt) {
@@ -2692,7 +2711,7 @@ function renderExecutionSupport() {
   view.resumeAllLoopx.title = suspended ? text('resumeAllHint') : text('resumeAll');
 }
 
-function environmentFact(name, label, fact) {
+function environmentFact(name, label, fact, action) {
   const element = document.createElement('article');
   const status = fact && fact.status ? fact.status : 'unknown';
   element.className = 'environment-fact';
@@ -2707,6 +2726,15 @@ function environmentFact(name, label, fact) {
   const statusActions = document.createElement('div');
   statusActions.className = 'environment-fact__status-actions';
   statusActions.append(value);
+  if (action && action.label) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'environment-fact__action';
+    button.textContent = action.label;
+    button.disabled = Boolean(action.disabled);
+    button.addEventListener('click', () => action.onClick());
+    statusActions.append(button);
+  }
   title.append(strong, statusActions);
   element.append(title);
 
@@ -2755,6 +2783,16 @@ function renderEnvironmentRemediation(sidecar) {
   view.installLoopxLabel.textContent = text('installLoopx');
 }
 
+function runtimeInstallAction(runtime, fact) {
+  const action = fact && fact.remediationAction;
+  if (action !== `install_${runtime}`) return null;
+  return {
+    label: text(runtime === 'git' ? 'installGit' : 'installNode'),
+    disabled: state.environmentInstallPending,
+    onClick: () => installRuntimeFromGithub(runtime),
+  };
+}
+
 function renderEnvironment() {
   const environment = state.snapshot && state.snapshot.environment;
   const status = environment && environment.status ? environment.status : 'unknown';
@@ -2789,8 +2827,8 @@ function renderEnvironment() {
     .map(([key, fact]) => environmentFact(key, text(key), fact));
   view.environmentList.replaceChildren(
     environmentFact('sidecar', text('sidecar'), core.sidecar),
-    environmentFact('nodeRuntime', text('nodeRuntime'), nodeRuntime),
-    environmentFact('gitWorktree', text('gitWorktree'), core.gitWorktree),
+    environmentFact('nodeRuntime', text('nodeRuntime'), nodeRuntime, runtimeInstallAction('node', nodeRuntime)),
+    environmentFact('gitWorktree', text('gitWorktree'), core.gitWorktree, runtimeInstallAction('git', core.gitWorktree)),
     environmentFact('agentModel', text('agentModel'), core.agentModel),
     ...optionalFacts,
   );
@@ -7009,9 +7047,68 @@ async function performAction(action, task, extra = {}) {
   }
 }
 
+function clearEnvironmentInstallObservation() {
+  state.environmentInstallObserved = false;
+  state.environmentInstallRequestId = null;
+  state.environmentInstallRuntime = null;
+}
+
+function observeRuntimeInstall(snapshot) {
+  const runtime = state.environmentInstallRuntime;
+  const core = snapshot.environment && snapshot.environment.core;
+  const fact = runtime === 'git'
+    ? core && core.gitWorktree
+    : core && core.nodeRuntime;
+  if (!runtime || !fact) return;
+  if (fact.status === 'available') {
+    clearEnvironmentInstallObservation();
+    showNotice(text(runtime === 'git' ? 'gitInstallComplete' : 'nodeInstallComplete', {
+      version: fact.version || '',
+    }), 'success');
+    return;
+  }
+  if (fact.status === 'unavailable' && !state.environmentInstallPending) {
+    clearEnvironmentInstallObservation();
+    showNotice(text('runtimeInstallFailed', {
+      runtime: text(runtime === 'git' ? 'installGit' : 'installNode'),
+      message: fact.detail || statusLabel('unavailable'),
+    }), 'error');
+  }
+}
+
+function installRuntimeFromGithub(runtime) {
+  if (state.environmentInstallPending) return;
+  state.environmentInstallRequestId = state.environmentInstallRequestId || requestId();
+  state.environmentInstallRuntime = runtime;
+  state.environmentInstallPending = true;
+  state.environmentInstallObserved = true;
+  renderEnvironment();
+  showNotice(text(runtime === 'git' ? 'gitInstallStarted' : 'nodeInstallStarted'));
+  window.setTimeout(() => {
+    void submitRuntimeInstallation(runtime);
+  }, 50);
+}
+
+async function submitRuntimeInstallation(runtime) {
+  try {
+    const started = await performAction(runtime === 'git' ? 'install_git_runtime' : 'install_node_runtime', null, {
+      clientRequestId: state.environmentInstallRequestId,
+    });
+    if (started) {
+      await attachSnapshot(false);
+    } else {
+      clearEnvironmentInstallObservation();
+    }
+  } finally {
+    state.environmentInstallPending = false;
+    renderEnvironment();
+  }
+}
+
 function installLoopxFromGithub() {
   if (state.environmentInstallPending) return;
   state.environmentInstallRequestId = state.environmentInstallRequestId || requestId();
+  state.environmentInstallRuntime = 'loopx';
   emitInstallDiagnostic('click_handler_entered');
   state.environmentInstallPending = true;
   state.environmentInstallObserved = true;

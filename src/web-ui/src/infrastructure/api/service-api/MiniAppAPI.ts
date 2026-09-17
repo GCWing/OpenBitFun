@@ -254,12 +254,13 @@ export interface LoopxEnvironmentFact {
   version: string | null;
   detail: string | null;
   remediation: string | null;
-  remediationAction: 'none' | 'install_loopx';
+  remediationAction: 'none' | 'install_loopx' | 'install_node' | 'install_git';
   checkedAt: number | null;
 }
 
 export interface LoopxCoreEnvironmentFacts {
   sidecar: LoopxEnvironmentFact;
+  nodeRuntime: LoopxEnvironmentFact;
   gitWorktree: LoopxEnvironmentFact;
   agentModel: LoopxEnvironmentFact;
 }
@@ -482,6 +483,8 @@ export type LoopxActionKind =
   | 'archive'
   | 'restore'
   | 'install_loopx'
+  | 'install_node_runtime'
+  | 'install_git_runtime'
   | 'retry_environment';
 
 export interface LoopxActionRequest {

@@ -84,6 +84,9 @@ pub enum LoopxSystemFallbackPolicy {
 pub struct LoopxCliAdapterConfig {
     pub resource_dir: PathBuf,
     pub managed_source_dir: Option<PathBuf>,
+    /// BitFun-managed runtime root (`runtimes/<component>/current`) used to
+    /// install portable Node.js / Git for environment remediation.
+    pub managed_runtime_root: Option<PathBuf>,
     pub system_fallback: LoopxSystemFallbackPolicy,
     pub startup_deadline: Duration,
     pub command_deadline: Duration,
@@ -101,6 +104,7 @@ impl LoopxCliAdapterConfig {
         Self {
             resource_dir: resource_dir.into(),
             managed_source_dir: None,
+            managed_runtime_root: None,
             system_fallback: LoopxSystemFallbackPolicy::Disabled,
             startup_deadline: Duration::from_secs(60),
             command_deadline: Duration::from_secs(180),
@@ -108,6 +112,11 @@ impl LoopxCliAdapterConfig {
             terminate_grace: Duration::from_secs(2),
             probe_node_runtime: true,
         }
+    }
+
+    pub fn with_managed_runtime_root(mut self, managed_runtime_root: impl Into<PathBuf>) -> Self {
+        self.managed_runtime_root = Some(managed_runtime_root.into());
+        self
     }
 
     pub fn with_managed_source_dir(mut self, managed_source_dir: impl Into<PathBuf>) -> Self {
@@ -1564,6 +1573,52 @@ impl loopx_contract::LoopxCliPort for LoopxCliProcessAdapter {
                 install_path: target_dir.to_string_lossy().into_owned(),
                 loopx_version: LOOPX_PINNED_VERSION.to_string(),
             })
+        })
+    }
+
+    fn install_managed_runtime<'a>(
+        &'a self,
+        request: loopx_contract::LoopxCliInstallRuntimeRequest,
+        progress: &'a dyn loopx_contract::LoopxCliProgressSink,
+    ) -> loopx_contract::LoopxCliFuture<'a, loopx_contract::LoopxCliInstallRuntimeResult> {
+        Box::pin(async move {
+            let operation_id = request.call.operation_id.clone();
+            validate_operation_id(&operation_id)?;
+            let Some(runtime_root) = self.config.managed_runtime_root.clone() else {
+                return Err(port_error(
+                    loopx_contract::LoopxCliErrorKind::Backend,
+                    &operation_id,
+                    "app-managed runtime installation is not configured",
+                    false,
+                ));
+            };
+            let _install = self.install_lock.lock().await;
+            let installer = crate::miniapp::loopx_runtime::LoopxRuntimeInstaller::new(runtime_root)
+                .map_err(|error| {
+                    port_error(
+                        loopx_contract::LoopxCliErrorKind::Io,
+                        &operation_id,
+                        error.to_string(),
+                        true,
+                    )
+                })?;
+            let installed = installer
+                .install(request.runtime, &operation_id, progress)
+                .await
+                .map_err(|error| {
+                    port_error(
+                        loopx_contract::LoopxCliErrorKind::Io,
+                        &operation_id,
+                        error.to_string(),
+                        true,
+                    )
+                })?;
+            // Make the fresh runtime visible to child processes (LoopX sidecar,
+            // git worktrees) without requiring an app restart.
+            openbitfun_services_core::managed_runtime::prepend_managed_runtime_path(
+                installer.runtime_root(),
+            );
+            Ok(installed)
         })
     }
 

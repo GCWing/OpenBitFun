@@ -672,6 +672,13 @@ pub async fn run() {
     let terminal_state = api::terminal_api::TerminalState::new();
 
     let path_manager = get_path_manager_arc();
+    // Managed runtimes installed by the LoopX environment surface must be
+    // visible to every child process (LoopX sidecar, git worktrees) for the
+    // rest of this session, including a restart that picks up a previous
+    // install, without mutating the user's system PATH.
+    openbitfun_services_core::managed_runtime::prepend_managed_runtime_path(
+        &path_manager.managed_runtimes_dir(),
+    );
     let frontend_workbench = Arc::new(frontend_workbench::FrontendWorkbenchManager::new(
         &path_manager.user_data_dir(),
     ));
@@ -694,7 +701,8 @@ pub async fn run() {
                     .join("missing-bundled-loopx")
             }),
         )
-        .with_managed_source_dir(managed_loopx_source_dir);
+        .with_managed_source_dir(managed_loopx_source_dir)
+        .with_managed_runtime_root(path_manager.managed_runtimes_dir());
     if loopx_resource_dir.is_none() {
         loopx_cli_config.system_fallback =
             openbitfun_services_integrations::miniapp::loopx_cli::LoopxSystemFallbackPolicy::ExactPinned;
