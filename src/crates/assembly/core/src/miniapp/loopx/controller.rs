@@ -4056,13 +4056,13 @@ impl LoopxController {
                 (
                     unavailable_loopx_environment_fact(error.to_string(), checked_at),
                     LoopxEnvironmentFact::default(),
-                    checking_environment_fact(checked_at),
+                    blocked_node_environment_fact(checked_at),
                 )
             }
             Err(error) => (
                 unavailable_environment_fact(error.to_string(), checked_at),
                 LoopxEnvironmentFact::default(),
-                checking_environment_fact(checked_at),
+                blocked_node_environment_fact(checked_at),
             ),
         };
         let git_worktree = match workspace {
@@ -5645,6 +5645,18 @@ fn checking_environment_fact(checked_at: Option<i64>) -> LoopxEnvironmentFact {
     }
 }
 
+fn blocked_node_environment_fact(checked_at: Option<i64>) -> LoopxEnvironmentFact {
+    LoopxEnvironmentFact {
+        status: LoopxEnvironmentFactStatus::Unavailable,
+        detail: Some(
+            "LoopX engine is unavailable; install LoopX before checking the Node.js runtime".to_string(),
+        ),
+        remediation: Some("Install LoopX first, then re-check this environment".to_string()),
+        checked_at,
+        ..LoopxEnvironmentFact::default()
+    }
+}
+
 fn unavailable_environment_fact(
     detail: impl Into<String>,
     checked_at: Option<i64>,
@@ -6454,6 +6466,19 @@ mod tests {
             "Rejection applied; the task will continue without the declined action: ",
         ));
         assert!(rejected.ends_with("the requested owner decision"));
+    }
+    #[test]
+    fn unavailable_loopx_engine_blocks_node_runtime_instead_of_checking_forever() {
+        let fact = blocked_node_environment_fact(Some(42));
+        assert_eq!(fact.status, LoopxEnvironmentFactStatus::Unavailable);
+        assert!(fact
+            .detail
+            .as_deref()
+            .is_some_and(|detail| detail.contains("LoopX engine is unavailable")));
+        assert!(fact
+            .remediation
+            .as_deref()
+            .is_some_and(|detail| detail.contains("Install LoopX first")));
     }
     #[test]
     fn read_only_user_gates_accept_untyped_public_content_reads() {
