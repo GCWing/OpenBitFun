@@ -761,7 +761,8 @@ Output:
             let active =
                 crate::agentic::execution::edit_constraint_guard::has_active_shell_constraints(
                     context,
-                );
+                )
+                .await;
             #[cfg(test)]
             let active = active
                 || self

@@ -2974,7 +2974,9 @@ impl ExecutionEngine {
         // Edit constraint guard: process each distinct user instruction once.
         // The fast extractor receives the active state so explicit additions
         // and revocations form an auditable session-persistent state machine.
-        if !original_user_input.trim().is_empty() {
+        if crate::agentic::execution::edit_constraint_guard::is_enabled().await
+            && !original_user_input.trim().is_empty()
+        {
             let revocation_authorized = context
                 .context
                 .get("edit_constraint_revocation_authorized")

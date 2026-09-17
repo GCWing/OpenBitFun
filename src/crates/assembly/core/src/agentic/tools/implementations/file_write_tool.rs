@@ -537,7 +537,8 @@ impl Tool for FileWriteTool {
             "Write",
             "write",
             &resolved.logical_path,
-        );
+        )
+        .await;
         if !file_already_exists {
             crate::agentic::execution::edit_constraint_guard::remember_agent_created_file(
                 context,
@@ -953,27 +954,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn validate_input_rejects_stale_force_without_runtime_context() {
+    async fn validate_input_stale_force_without_runtime_context_respects_guard_gate() {
         let tool = FileWriteTool::new();
-        let validation = tool
-            .validate_input(
-                &json!({
-                    "payload": "+++ new.txt\nalpha",
-                    "force": true
-                }),
-                None,
-            )
-            .await;
+        let input = json!({
+            "payload": "+++ new.txt\nalpha",
+            "force": true
+        });
+        for enabled in [false, true, false] {
+            let validation = crate::agentic::execution::edit_constraint_guard::TEST_ENABLED
+                .scope(enabled, tool.validate_input(&input, None))
+                .await;
 
-        assert!(!validation.result);
-        assert_eq!(validation.error_code, Some(403));
-        assert_eq!(
-            validation
-                .meta
-                .as_ref()
-                .and_then(|meta| meta["guard_decision"].as_str()),
-            Some("force_denied")
-        );
+            assert_eq!(validation.result, !enabled);
+            if enabled {
+                assert_eq!(validation.error_code, Some(403));
+                assert!(validation.blocks_input_rewrite());
+                assert_eq!(
+                    validation
+                        .meta
+                        .as_ref()
+                        .and_then(|meta| meta["guard_decision"].as_str()),
+                    Some("force_denied")
+                );
+            } else {
+                assert!(!validation.blocks_input_rewrite());
+            }
+        }
     }
 
     #[tokio::test]

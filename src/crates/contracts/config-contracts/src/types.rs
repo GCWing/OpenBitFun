@@ -1043,6 +1043,10 @@ pub struct AIConfig {
     #[serde(default = "default_true", skip_serializing_if = "is_true")]
     pub enable_context_compression_prefetch: bool,
 
+    /// Enable the evaluation-oriented edit constraint guard.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub enable_edit_constraint_guard: bool,
+
     /// Allows broad JSON repair for non-Write tool arguments only after a
     /// provider confirms a normal tool-use completion.
     #[serde(default = "default_true")]
@@ -1399,6 +1403,10 @@ pub struct AgentProfileView {
 
 fn default_true() -> bool {
     true
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 fn is_true(value: &bool) -> bool {
@@ -1937,6 +1945,7 @@ impl Default for AIConfig {
             user_question_timeout_secs: default_user_question_timeout(),
             enable_deferred_tool_loading: default_enable_deferred_tool_loading(),
             enable_context_compression_prefetch: true,
+            enable_edit_constraint_guard: false,
             allow_tool_json_repair: true,
             computer_use_enabled: false,
             browser_control_preferred_browser: String::new(),
@@ -2953,6 +2962,31 @@ mod tests {
             config.agent_model_defaults.subagents.fork,
             SubagentModelSelection::Inherit
         );
+    }
+
+    #[test]
+    fn edit_constraint_guard_defaults_off_and_round_trips_explicit_opt_in() {
+        assert!(!AIConfig::default().enable_edit_constraint_guard);
+        let legacy: AIConfig =
+            serde_json::from_value(serde_json::json!({"max_rounds": 42})).unwrap();
+        assert!(!legacy.enable_edit_constraint_guard);
+        let payload = serde_json::to_value(&legacy).unwrap();
+        assert!(payload.get("enable_edit_constraint_guard").is_none());
+        let reloaded: AIConfig = serde_json::from_value(payload).unwrap();
+        assert!(!reloaded.enable_edit_constraint_guard);
+        assert_eq!(reloaded.max_rounds, 42);
+        for enabled in [false, true] {
+            let config: AIConfig = serde_json::from_value(serde_json::json!({
+                "enable_edit_constraint_guard": enabled
+            }))
+            .unwrap();
+            let payload = serde_json::to_value(config).unwrap();
+            if enabled {
+                assert_eq!(payload["enable_edit_constraint_guard"], true);
+            }
+            let reloaded: AIConfig = serde_json::from_value(payload).unwrap();
+            assert_eq!(reloaded.enable_edit_constraint_guard, enabled);
+        }
     }
 
     #[test]

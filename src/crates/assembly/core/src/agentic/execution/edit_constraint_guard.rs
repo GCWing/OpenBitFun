@@ -30,8 +30,8 @@ pub use complete_shell::check_exec_command;
 #[cfg(test)]
 pub(crate) use complete_shell::check_with_state as check_shell_with_state;
 
-pub(crate) fn has_active_shell_constraints(context: &ToolUseContext) -> bool {
-    complete_shell::active_state(context).is_some()
+pub(crate) async fn has_active_shell_constraints(context: &ToolUseContext) -> bool {
+    complete_shell::active_state(context).await.is_some()
 }
 
 pub use model::{
@@ -51,6 +51,27 @@ const MAX_MODEL_ATTEMPTS: usize = 2;
 const MAX_RECURSIVE_INSPECTION_ENTRIES: usize = 100_000;
 const TELEMETRY_RELATIVE_PATH: &str = "telemetry/edit-constraint-guard.jsonl";
 const TELEMETRY_ENV: &str = "OPENBITFUN_EDIT_CONSTRAINT_TELEMETRY";
+
+#[cfg(test)]
+tokio::task_local! {
+    pub(crate) static TEST_ENABLED: bool;
+}
+
+/// The guard is an evaluation-oriented feature and is disabled for normal
+/// product sessions unless explicitly enabled in AI settings.
+pub async fn is_enabled() -> bool {
+    #[cfg(test)]
+    if let Ok(enabled) = TEST_ENABLED.try_with(|enabled| *enabled) {
+        return enabled;
+    }
+    let Ok(service) = crate::service::config::get_global_config_service().await else {
+        return false;
+    };
+    service
+        .get_config::<bool>(Some("ai.enable_edit_constraint_guard"))
+        .await
+        .unwrap_or(false)
+}
 
 const EXTRACTION_SYSTEM_PROMPT: &str = r#"You update the active file-edit prohibitions for a software task.
 
@@ -422,6 +443,15 @@ pub async fn extract_constraints_with_active(
 /// real user submission. Internal follow-ups may add protections but must
 /// never relax a protection on the user's behalf.
 pub async fn extract_constraints_with_active_and_revocation_authorization(
+    user_message: &str,
+    active_constraints: &[ExtractedConstraint],
+    revocation_authorized: bool,
+) -> ConstraintExtractionRecord {
+    let message = if is_enabled().await { user_message } else { "" };
+    extract_instruction(message, active_constraints, revocation_authorized).await
+}
+
+async fn extract_instruction(
     user_message: &str,
     active_constraints: &[ExtractedConstraint],
     revocation_authorized: bool,
@@ -884,7 +914,7 @@ fn decision_result(
 ///
 /// `force` is no longer a model-controlled escape hatch. A stale caller that
 /// still sends it is rejected and recorded explicitly.
-pub fn check(
+fn check(
     context: Option<&ToolUseContext>,
     tool_name: &str,
     operation: &str,
@@ -1045,6 +1075,9 @@ pub async fn check_write(
     file_path: &str,
     force_requested: bool,
 ) -> Option<ValidationResult> {
+    if !is_enabled().await {
+        return None;
+    }
     let state = context
         .and_then(|value| value.session_id.as_deref())
         .and_then(|session_id| {
@@ -1095,13 +1128,16 @@ pub async fn check_write(
 
 /// Guard an Edit operation while preserving the session provenance of helper
 /// tests the agent created itself.
-pub fn check_edit(
+pub async fn check_edit(
     context: Option<&ToolUseContext>,
     tool_name: &str,
     operation: &str,
     file_path: &str,
     force_requested: bool,
 ) -> Option<ValidationResult> {
+    if !is_enabled().await {
+        return None;
+    }
     let state = context
         .and_then(|value| value.session_id.as_deref())
         .and_then(|session_id| {
@@ -1148,21 +1184,27 @@ pub fn check_edit(
 /// Guard a Delete operation while allowing the agent to clean up a test file
 /// it created in this session. A user-authored delete-only prohibition remains
 /// strict and is never relaxed by file provenance.
-pub fn check_delete(
+pub async fn check_delete(
     context: Option<&ToolUseContext>,
     tool_name: &str,
     operation: &str,
     file_path: &str,
     force_requested: bool,
 ) -> Option<ValidationResult> {
-    check_edit(context, tool_name, operation, file_path, force_requested)
+    check_edit(context, tool_name, operation, file_path, force_requested).await
 }
 
 /// Preflight file targets in terminal commands. Explicit targets are checked
 /// directly. When constraints are active, high-risk commands whose targets
 /// remain dynamic or implicit are rejected before execution; ordinary build,
 /// test, and read-only commands retain the normal shell path.
-pub fn check_bash_command(context: &ToolUseContext, command: &str) -> Option<ValidationResult> {
+pub async fn check_bash_command(
+    context: &ToolUseContext,
+    command: &str,
+) -> Option<ValidationResult> {
+    if !is_enabled().await {
+        return None;
+    }
     let has_active_constraints = context.session_id.as_deref().is_some_and(|session_id| {
         get_global_coordinator()
             .and_then(|coordinator| {
@@ -1221,7 +1263,7 @@ pub fn check_bash_command(context: &ToolUseContext, command: &str) -> Option<Val
     None
 }
 
-pub fn check_git_command(
+pub async fn check_git_command(
     context: &ToolUseContext,
     operation: &str,
     arguments: &str,
@@ -1231,7 +1273,7 @@ pub fn check_git_command(
     } else {
         format!("git {operation} {}", arguments.trim())
     };
-    check_bash_command(context, &command)
+    check_bash_command(context, &command).await
 }
 
 /// Checks the target and every non-symlink descendant before recursive delete.
@@ -1242,13 +1284,18 @@ pub async fn check_recursive_delete(
     root_path: &str,
     force_requested: bool,
 ) -> Option<ValidationResult> {
+    if !is_enabled().await {
+        return None;
+    }
     if let Some(rejection) = check_delete(
         context,
         "Delete",
         "recursive_delete",
         root_path,
         force_requested,
-    ) {
+    )
+    .await
+    {
         return Some(rejection);
     }
     let context = context?;
@@ -1530,6 +1577,9 @@ fn check_local_recursive_delete(
 /// This provenance is persisted with the session so later Write/Edit/Delete
 /// calls can clean up the helper without being confused for repository tests.
 pub async fn remember_agent_created_file(context: &ToolUseContext, file_path: &str) {
+    if !is_enabled().await {
+        return;
+    }
     let Some(session_id) = context.session_id.as_deref() else {
         return;
     };
@@ -1576,6 +1626,9 @@ pub async fn remember_agent_created_file(context: &ToolUseContext, file_path: &s
 
 /// Clears agent-created provenance after a successful direct delete.
 pub async fn forget_agent_created_file(context: &ToolUseContext, file_path: &str) {
+    if !is_enabled().await {
+        return;
+    }
     let Some(session_id) = context.session_id.as_deref() else {
         return;
     };
@@ -1617,12 +1670,15 @@ pub async fn forget_agent_created_file(context: &ToolUseContext, file_path: &str
 }
 
 /// Records a successful direct mutation when product diagnostics are enabled.
-pub fn record_mutation_applied(
+pub async fn record_mutation_applied(
     context: &ToolUseContext,
     tool_name: &str,
     operation: &str,
     file_path: &str,
 ) {
+    if !is_enabled().await {
+        return;
+    }
     if !edit_constraint_telemetry_enabled() {
         return;
     }

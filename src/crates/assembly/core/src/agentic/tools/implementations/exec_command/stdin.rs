@@ -178,6 +178,7 @@ Output is only what was produced during this tool call's wait window."#
         {
             if let Some(rejection) =
                 crate::agentic::execution::edit_constraint_guard::check_bash_command(context, chars)
+                    .await
             {
                 return rejection;
             }
@@ -199,6 +200,7 @@ Output is only what was produced during this tool call's wait window."#
             return ValidationResult::default();
         };
         crate::agentic::execution::edit_constraint_guard::check_bash_command(context, chars)
+            .await
             .unwrap_or_default()
     }
 

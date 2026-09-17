@@ -757,7 +757,7 @@ async fn blank_input_is_no_constraints_not_failure() {
 async fn irrelevant_follow_up_with_active_constraints_skips_model() {
     let active = constraint("don't touch tests", ConstraintMatcher::TestFiles);
     let extraction =
-        extract_constraints_with_active("Continue with the implementation.", &[active]).await;
+        extract_instruction("Continue with the implementation.", &[active], true).await;
 
     assert_eq!(extraction.status, ExtractionStatus::NoConstraints);
     assert_eq!(extraction.model_attempts, 0);
@@ -952,4 +952,44 @@ fn complete_shell_normal_sample_replay() {
     }
     assert_eq!(rows.len(), 60);
     fs::write(output, serde_json::to_vec_pretty(&rows).unwrap()).unwrap();
+}
+
+#[tokio::test]
+async fn disabled_guard_skips_extraction_and_all_tool_entry_points() {
+    TEST_ENABLED
+        .scope(false, async {
+            let record = extract_constraints("Do not modify test files.").await;
+            assert_eq!(record.model_attempts, 0);
+            assert!(record.constraints.is_empty());
+            assert!(!extraction_requires_session_state(&record));
+            let context = ToolUseContext::for_tool_listing(None, None);
+            assert!(
+                check_edit(Some(&context), "Edit", "edit", "tests/a.rs", true)
+                    .await
+                    .is_none()
+            );
+            assert!(
+                check_write(Some(&context), "Write", "write", "tests/a.rs", true)
+                    .await
+                    .is_none()
+            );
+            assert!(
+                check_delete(Some(&context), "Delete", "delete", "tests/a.rs", true)
+                    .await
+                    .is_none()
+            );
+            assert!(check_recursive_delete(Some(&context), "tests", true)
+                .await
+                .is_none());
+            assert!(check_bash_command(&context, "rm tests/a.rs")
+                .await
+                .is_none());
+            assert!(
+                check_exec_command(&context, "Get-Location", "powershell", r"E:\guard-repro")
+                    .await
+                    .is_none()
+            );
+            assert!(!has_active_shell_constraints(&context).await);
+        })
+        .await;
 }

@@ -64,3 +64,14 @@ cargo test --locked -p openbitfun-agent-runtime --no-default-features --features
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib compression
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib compaction
 ```
+
+Edit constraint enforcement is opt-in through `ai.enable_edit_constraint_guard`
+(default false, omitted when false). This advanced evaluation setting has no UI
+switch. Disabled runtimes skip extraction, model calls, enforcement, provenance
+updates and guard telemetry even when old session constraints exist. Persisted
+state remains readable and is retained for re-enablement and rollback. Enabling
+this setting retains the existing POSIX-only complete shell analysis limitations;
+it does not add Windows/PowerShell support. The setting belongs to the host running
+the Agent (including peer and detached hosts), not a remote controller. Older hosts
+without this setting retain their old behavior; changing a controller setting is
+not evidence that an older target disabled enforcement.

@@ -371,6 +371,8 @@ export interface AIConfig {
   tool_execution_timeout_secs?: number | null;
   /** Seconds until first interaction; null or zero disables timeout. Default: 180. */
   user_question_timeout_secs?: number | null;
+  /** Opt-in evaluation edit constraint guard; defaults to false. */
+  enable_edit_constraint_guard?: boolean;
   allow_tool_json_repair?: boolean;
   subagent_batch_execution_policy?: 'safe_only' | 'force_parallel' | 'serial';
   computer_use_enabled?: boolean;

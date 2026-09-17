@@ -4,7 +4,10 @@ use super::*;
 use openbitfun_runtime_ports::WorkspacePathKind;
 use tool_runtime::shell_analysis::{analyze, AnalysisStatus, FileOperation, Span};
 
-pub(super) fn active_state(context: &ToolUseContext) -> Option<EditConstraintState> {
+pub(super) async fn active_state(context: &ToolUseContext) -> Option<EditConstraintState> {
+    if !is_enabled().await {
+        return None;
+    }
     let state = get_global_coordinator()?
         .get_session_manager()
         .edit_constraint_state(context.session_id.as_deref()?)?;
@@ -17,8 +20,21 @@ pub async fn check_exec_command(
     shell_kind: &str,
     workdir: &str,
 ) -> Option<ValidationResult> {
-    let state = active_state(context)?;
-    check_with_state(context, command, shell_kind, workdir, &state).await
+    let state = active_state(context).await?;
+    check_enabled_with_state(context, command, shell_kind, workdir, &state).await
+}
+
+async fn check_enabled_with_state(
+    context: &ToolUseContext,
+    command: &str,
+    shell_kind: &str,
+    workdir: &str,
+    state: &EditConstraintState,
+) -> Option<ValidationResult> {
+    if !is_enabled().await {
+        return None;
+    }
+    check_with_state(context, command, shell_kind, workdir, state).await
 }
 
 pub(crate) async fn check_with_state(
@@ -365,6 +381,43 @@ mod tests {
             assert!(!fs.seen.lock().unwrap().is_empty());
         }
     }
+    #[tokio::test]
+    async fn complete_shell_disabled_ignores_restored_windows_constraints() {
+        let state: EditConstraintState = serde_json::from_value(serde_json::json!({
+            "schema_version": 6,
+            "constraints": [{
+                "id": "legacy:test", "description": "Do not modify tests",
+                "matcher": {"kind": "test_files"}
+            }],
+            "extractions": []
+        }))
+        .unwrap();
+        assert!(state.has_enforceable_constraints());
+        let context = ToolUseContext::for_tool_listing(None, None);
+        for enabled in [false, true, false] {
+            let result = TEST_ENABLED
+                .scope(
+                    enabled,
+                    check_enabled_with_state(
+                        &context,
+                        "Get-Location",
+                        "powershell",
+                        r"E:\guard-repro",
+                        &state,
+                    ),
+                )
+                .await;
+            assert_eq!(result.is_some(), enabled);
+            if let Some(rejection) = result {
+                assert!(rejection
+                    .message
+                    .unwrap()
+                    .contains("non-POSIX working directory"));
+            }
+        }
+        assert!(state.has_enforceable_constraints());
+    }
+
     #[tokio::test]
     async fn complete_shell_no_constraints_preserves_unknown_dialect() {
         let context = ToolUseContext::for_tool_listing(None, None);

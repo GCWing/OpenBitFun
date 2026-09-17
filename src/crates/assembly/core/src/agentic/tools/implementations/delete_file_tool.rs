@@ -170,6 +170,7 @@ Important notes:
             crate::agentic::execution::edit_constraint_guard::check_delete(
                 context, "Delete", "delete", path_str, force,
             )
+            .await
         };
         if let Some(rejection) = rejection {
             return rejection;
@@ -366,7 +367,8 @@ Important notes:
                 "delete"
             },
             &resolved.logical_path,
-        );
+        )
+        .await;
         crate::agentic::execution::edit_constraint_guard::forget_agent_created_file(
             context,
             &resolved.logical_path,

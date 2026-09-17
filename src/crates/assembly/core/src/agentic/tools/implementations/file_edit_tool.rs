@@ -272,6 +272,7 @@ impl Tool for FileEditTool {
             file_path,
             force_requested,
         )
+        .await
         .unwrap_or_default()
     }
 
@@ -335,7 +336,8 @@ impl Tool for FileEditTool {
             "Edit",
             "edit",
             &resolved.logical_path,
-        );
+        )
+        .await;
 
         let result = ToolResult::Result {
             data: json!({
@@ -413,15 +415,19 @@ mod tests {
 
     #[tokio::test]
     async fn non_relaxable_edit_invariant_precedes_repairable_schema_errors() {
-        let validation = FileEditTool::new()
-            .validate_input(
-                &json!({
-                    "file_path": "tests/a.rs",
-                    "old_string": "x",
-                    "force": true
-                }),
-                None,
-            )
+        let validation = crate::agentic::execution::edit_constraint_guard::TEST_ENABLED
+            .scope(true, async {
+                FileEditTool::new()
+                    .validate_input(
+                        &json!({
+                            "file_path": "tests/a.rs",
+                            "old_string": "x",
+                            "force": true
+                        }),
+                        None,
+                    )
+                    .await
+            })
             .await;
 
         assert_eq!(validation.error_code, Some(403));
