@@ -5202,7 +5202,7 @@ function compactToolSummary(toolName, raw) {
     .replace(/\$env:[A-Za-z0-9_]+=[^;]*;\s*/g, '')
     .replace(/cd\s+"[^"]*";\s*/gi, '')
     .replace(/&?\s*"[A-Za-z]:\\[^"]*?loopx\.exe"\s*/gi, 'loopx.exe ')
-    .replace(/--format\s+json\s+--registry\s+"[^"]*"/gi, '')
+    .replace(/--format\s+json\s+--registr[y]\s+"[^"]*"/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
   if (compact.length > 120) compact = `${compact.slice(0, 117)}…`;
