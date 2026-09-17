@@ -418,28 +418,71 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   gap: 8px;
 }
 .environment-fact__title strong { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.environment-fact__title span { color: var(--lx-text-muted); font: 11px/1.2 var(--lx-mono); }
-.environment-fact__status-actions {
-  display: grid;
-  grid-template-columns: auto 128px;
-  align-items: center;
-  justify-content: start;
-  gap: 8px;
-}
+/* 一行只有一个动作按钮：可用时它就是「可用」按钮，不可用时点击即安装；
+   按钮铺满标签右侧的剩余宽度，所以三行对齐，右侧不再留大块空白。 */
 .environment-fact .environment-fact__action {
   width: 100%;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 5px;
   min-height: 32px;
   padding: 4px 10px;
+  border: 1px solid var(--lx-border);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--lx-text-soft);
+  font-family: inherit;
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 90ms ease, filter 90ms ease;
 }
 .environment-fact__action span { color: inherit; font: inherit; letter-spacing: 0; }
 .environment-fact__action svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.environment-fact__action[data-state="install"] {
+  border-color: var(--lx-accent);
+  background: var(--lx-accent);
+  color: var(--openbitfun-text-on-accent);
+}
+.environment-fact__action[data-state="install"]:hover:not(:disabled) {
+  border-color: var(--lx-accent-hover);
+  background: var(--lx-accent-hover);
+}
+/* 点击立刻下沉变暗；宿主开始安装后按钮自己切成 spinner。 */
+.environment-fact__action:not(:disabled):active { transform: translateY(1px); filter: brightness(.95); }
+.environment-fact__action[data-state="installing"] {
+  border-color: var(--lx-border-strong);
+  background: var(--lx-muted-surface);
+  color: var(--lx-text-soft);
+  cursor: progress;
+}
+.environment-fact__action[data-state="available"] {
+  border-color: color-mix(in srgb, var(--lx-success) 40%, var(--lx-border));
+  background: color-mix(in srgb, var(--lx-success) 12%, transparent);
+  color: var(--lx-success);
+  cursor: default;
+}
+.environment-fact__action[data-state="status"] {
+  background: transparent;
+  color: var(--lx-text-muted);
+  cursor: default;
+}
+.environment-fact__action[data-state="install"]:disabled {
+  border-color: var(--lx-border-strong);
+  background: var(--lx-muted-surface);
+  color: var(--lx-text-muted);
+  opacity: .55;
+  cursor: not-allowed;
+}
+.environment-fact__action:disabled { cursor: default; opacity: 1; }
+.environment-fact__action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--lx-accent) 45%, transparent);
+  outline-offset: 1px;
+}
+.environment-fact__spinner { transform-origin: center; animation: lx-spin .8s linear infinite; }
 .environment-fact__version { margin: 3px 0 0; overflow: hidden; color: var(--lx-text-muted); font: 11px/1.2 var(--lx-mono); text-overflow: ellipsis; white-space: nowrap; }
 @keyframes lx-spin { to { transform: rotate(360deg); } }
 
@@ -1577,7 +1620,6 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   .environment-body { grid-template-columns: 1fr; align-items: stretch; }
   .environment-grid { grid-template-columns: 1fr; }
   .environment-fact__title { grid-template-columns: 96px minmax(0, 1fr); gap: 6px; }
-  .environment-fact__status-actions { grid-template-columns: auto minmax(110px, 128px); gap: 6px; }
 }
 
 /* 宽屏三列（任务 | 详情 | 日志）；只在右侧工作区真正变窄时上下堆叠。 */
@@ -1599,7 +1641,6 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 @media (max-width: 680px) {
   .environment-grid { grid-template-columns: 1fr; }
   .environment-fact__title { grid-template-columns: 96px minmax(0, 1fr); gap: 6px; }
-  .environment-fact__status-actions { grid-template-columns: auto minmax(110px, 128px); gap: 6px; }
   .workbench { grid-template-columns: 1fr; grid-template-rows: minmax(92px, 30dvh) minmax(0, 1fr); }
   .workbench.tasks-collapsed { grid-template-columns: 1fr; grid-template-rows: 44px minmax(0, 1fr); }
   .rail-splitter { display: none; }

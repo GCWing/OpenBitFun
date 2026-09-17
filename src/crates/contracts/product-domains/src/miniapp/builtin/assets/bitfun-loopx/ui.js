@@ -2716,22 +2716,47 @@ function renderExecutionSupport() {
   view.resumeAllLoopx.title = suspended ? text('resumeAllHint') : text('resumeAll');
 }
 
-function environmentInstallIcon() {
+function environmentIcon(paths) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('width', '15');
-  svg.setAttribute('height', '15');
   svg.setAttribute('fill', 'none');
   svg.setAttribute('stroke', 'currentColor');
   svg.setAttribute('stroke-width', '1.8');
   svg.setAttribute('stroke-linecap', 'round');
   svg.setAttribute('stroke-linejoin', 'round');
   svg.setAttribute('aria-hidden', 'true');
-  for (const pathData of ['M12 3v12', 'm7 10 5 5 5-5', 'M5 21h14a2 2 0 0 0 2-2v-4', 'M3 15v4a2 2 0 0 0 2 2']) {
+  for (const pathData of paths) {
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     path.setAttribute('d', pathData);
     svg.append(path);
   }
+  return svg;
+}
+
+function environmentInstallIcon() {
+  return environmentIcon([
+    'M12 3v12',
+    'm7 10 5 5 5-5',
+    'M5 21h14a2 2 0 0 0 2-2v-4',
+    'M3 15v4a2 2 0 0 0 2 2',
+  ]);
+}
+
+function environmentCheckIcon() {
+  return environmentIcon(['M20 6 9 17l-5-5']);
+}
+
+function environmentSpinnerIcon() {
+  const svg = environmentIcon([]);
+  const track = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  track.setAttribute('cx', '12');
+  track.setAttribute('cy', '12');
+  track.setAttribute('r', '8');
+  track.setAttribute('opacity', '0.28');
+  const arc = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  arc.setAttribute('d', 'M20 12a8 8 0 0 0-8-8');
+  svg.append(track, arc);
+  svg.classList.add('environment-fact__spinner');
   return svg;
 }
 
@@ -2746,28 +2771,45 @@ function environmentFact(name, label, fact, action) {
   title.className = 'environment-fact__title';
   const strong = document.createElement('strong');
   strong.textContent = label;
-  const statusActions = document.createElement('div');
-  statusActions.className = 'environment-fact__status-actions';
-  const value = document.createElement('span');
-  value.textContent = statusLabel(status);
-  statusActions.append(value);
 
-  if (action) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'primary-button environment-fact__action';
+  // One button carries the whole row state: install -> installing -> available.
+  // A click flips the local pending flag synchronously, so the spinner shows
+  // before the host round-trip finishes.
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'environment-fact__action';
+  let buttonState;
+  let buttonLabel;
+  if (action && action.pending) {
+    buttonState = 'installing';
+    buttonLabel = text('installing');
+    button.disabled = true;
+    button.append(environmentSpinnerIcon());
+  } else if (action) {
+    buttonState = 'install';
+    buttonLabel = action.label;
     button.disabled = Boolean(action.disabled);
     button.append(environmentInstallIcon());
-    const buttonLabel = document.createElement('span');
-    buttonLabel.textContent = action.pending ? text('installing') : action.label;
-    button.append(buttonLabel);
     button.addEventListener('click', () => action.onClick());
     if (action.onPointerDown) {
       button.addEventListener('pointerdown', action.onPointerDown);
     }
-    statusActions.append(button);
+  } else if (status === 'available') {
+    buttonState = 'available';
+    buttonLabel = statusLabel(status);
+    button.disabled = true;
+    button.append(environmentCheckIcon());
+  } else {
+    buttonState = 'status';
+    buttonLabel = statusLabel(status);
+    button.disabled = true;
   }
-  title.append(strong, statusActions);
+  button.dataset.state = buttonState;
+  const buttonLabelElement = document.createElement('span');
+  buttonLabelElement.textContent = buttonLabel;
+  button.append(buttonLabelElement);
+
+  title.append(strong, button);
   element.append(title);
 
   // Keep the row compact: only the short version stays visible; the long host
