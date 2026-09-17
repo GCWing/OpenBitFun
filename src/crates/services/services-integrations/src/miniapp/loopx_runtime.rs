@@ -7,13 +7,21 @@
 //! (`<user-config>/openbitfun/runtimes/<component>/current`) and verifies them
 //! against a pinned SHA-256 before the archive is unpacked.
 //!
+//! # Platform scope (2026-09-17)
+//!
+//! App-managed runtime installation is **Windows-only for now**. macOS and
+//! Linux depend on packaging/signing work that is tracked separately (codesign
+//! + notarization, executable bits/glibc floor, nested signing), so the
+//! product policy refuses installs there and the environment surface instead
+//! tells the user to use the system package manager. The per-platform Node.js
+//! artifact table below is kept so that follow-up only has to flip the gate.
 //! The managed layout is the one `ManagedRuntimeResolver` already understands,
 //! so installed runtimes become visible to every BitFun child process (and to
 //! the LoopX sidecar) without touching the system PATH.
 
 use openbitfun_product_domains::miniapp::loopx::{
-    LoopxCliInstallRuntimeResult, LoopxCliProgressSink, LoopxManagedRuntimeKind,
-    LoopxCliProgressStage,
+    managed_runtime_install_supported, LoopxCliInstallRuntimeResult, LoopxCliProgressSink,
+    LoopxCliProgressStage, LoopxManagedRuntimeKind, MANAGED_RUNTIME_PLATFORM_UNSUPPORTED_DETAIL,
 };
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
@@ -281,9 +289,25 @@ impl LoopxRuntimeInstaller {
 fn artifact_for(
     kind: LoopxManagedRuntimeKind,
 ) -> Result<RuntimeArtifact, LoopxRuntimeInstallError> {
+    // Product policy: see the module-level "Platform scope" note. Keeping the
+    // gate here means callers get a typed, user-facing error instead of a
+    // half-working download on an unvalidated platform.
+    if !managed_runtime_install_supported() {
+        return Err(LoopxRuntimeInstallError::UnsupportedPlatform {
+            runtime: runtime_label_for_policy(kind),
+            detail: MANAGED_RUNTIME_PLATFORM_UNSUPPORTED_DETAIL.to_string(),
+        });
+    }
     match kind {
         LoopxManagedRuntimeKind::Node => node_artifact(),
         LoopxManagedRuntimeKind::Git => git_artifact(),
+    }
+}
+
+fn runtime_label_for_policy(kind: LoopxManagedRuntimeKind) -> &'static str {
+    match kind {
+        LoopxManagedRuntimeKind::Node => "Node.js",
+        LoopxManagedRuntimeKind::Git => "Git",
     }
 }
 
@@ -614,5 +638,18 @@ mod tests {
         assert!(target.join("marker").is_file());
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn artifact_gate_follows_the_platform_policy() {
+        let result = artifact_for(LoopxManagedRuntimeKind::Node);
+        if managed_runtime_install_supported() {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(
+                result,
+                Err(LoopxRuntimeInstallError::UnsupportedPlatform { .. })
+            ));
+        }
     }
 }

@@ -325,6 +325,10 @@ impl LoopxController {
             Ok(None) => (LoopxPersistedState::new(now), None),
             Err(error) => (LoopxPersistedState::new(now), Some(error)),
         };
+        // The platform capability is derived from the host OS, never from a
+        // persisted snapshot written by an older build.
+        persisted.environment.runtime_install_supported =
+            Some(managed_runtime_install_supported());
         let restart_changed = load_error.is_none() && persisted.apply_restart_policy(now);
         let (event_sender, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         let (task_sender, mut task_receiver) = mpsc::unbounded_channel::<ScheduledTask>();
@@ -858,6 +862,9 @@ impl LoopxController {
         if request.client_request_id.trim().is_empty() {
             return Err("clientRequestId is required".to_string());
         }
+        if !managed_runtime_install_supported() {
+            return Err(MANAGED_RUNTIME_PLATFORM_UNSUPPORTED_DETAIL.to_string());
+        }
         if self.state.read().await.suspended {
             return Err("LoopX is stopped; resume the suite before creating tasks".to_string());
         }
@@ -1389,6 +1396,9 @@ impl LoopxController {
         let started_at = Instant::now();
         if request.client_request_id.trim().is_empty() {
             return Err("clientRequestId is required".to_string());
+        }
+        if !managed_runtime_install_supported() {
+            return Err(MANAGED_RUNTIME_PLATFORM_UNSUPPORTED_DETAIL.to_string());
         }
         {
             let state = self.state.read().await;
@@ -4173,6 +4183,7 @@ impl LoopxController {
         state.environment.revision = state.environment.revision.saturating_add(1);
         state.environment.status = LoopxEnvironmentStatus::Checking;
         state.environment.checked_at = checked_at;
+        state.environment.runtime_install_supported = Some(managed_runtime_install_supported());
         state.environment.core.sidecar = checking_environment_fact(checked_at);
         state.environment.core.node_runtime = checking_environment_fact(checked_at);
         state.environment.core.git_worktree = checking_environment_fact(checked_at);
@@ -4286,6 +4297,7 @@ impl LoopxController {
         };
         state.environment.revision = state.environment.revision.saturating_add(1);
         state.environment.checked_at = checked_at;
+        state.environment.runtime_install_supported = Some(managed_runtime_install_supported());
         state.environment.core.sidecar = sidecar;
         state.environment.core.node_runtime = node_runtime;
         state.environment.core.git_worktree = git_worktree;
@@ -5822,15 +5834,18 @@ fn loopx_node_environment_fact(
         version: probe.version.clone(),
         detail: probe.detail.clone(),
         remediation: (!probe.available).then(|| {
-            "Install the app-managed Node.js runtime, or install Node.js 22.6+ from https://nodejs.org, then re-check this environment"
-                .to_string()
+            let detail = if managed_runtime_install_supported() {
+                "Install the app-managed Node.js runtime, or install Node.js 22.6+ from https://nodejs.org, then re-check this environment"
+            } else {
+                MANAGED_RUNTIME_PLATFORM_UNSUPPORTED_DETAIL
+            };
+            detail.to_string()
         }),
-        remediation_action: if probe.available {
+        remediation_action: if probe.available || !managed_runtime_install_supported() {
             LoopxEnvironmentRemediationAction::None
         } else {
             LoopxEnvironmentRemediationAction::InstallNode
         },
-        checked_at,
         ..LoopxEnvironmentFact::default()
     }
 }
@@ -5892,19 +5907,17 @@ fn git_worktree_environment_fact(
 ) -> LoopxEnvironmentFact {
     let detail = detail.into();
     let git_missing = git_missing_from_detail(&detail);
-    // Only Windows ships a first-party portable Git archive; other hosts use
-    // the system package manager, so no app-managed install button there.
-    let managed_git_available = cfg!(windows) && git_missing;
+    // App-managed portable runtimes are Windows-only for now; macOS/Linux
+    // users are explicitly told to use the system package manager instead of
+    // being shown a one-click action that cannot work yet.
+    let managed_git_available = managed_runtime_install_supported() && git_missing;
     let remediation = if managed_git_available {
         Some(
             "Install app-managed portable Git, or install Git with your package manager, then re-check this environment"
                 .to_string(),
         )
     } else if git_missing {
-        Some(
-            "Install Git with your package manager (or `xcode-select --install` on macOS), then re-check this environment"
-                .to_string(),
-        )
+        Some(MANAGED_RUNTIME_PLATFORM_UNSUPPORTED_DETAIL.to_string())
     } else {
         None
     };
@@ -6873,5 +6886,30 @@ mod tests {
             LoopxEnvironmentRemediationAction::None
         );
         assert!(fact.remediation.is_none());
+    }
+
+    #[test]
+    fn platform_capability_is_projected_from_the_host_os() {
+        assert_eq!(managed_runtime_install_supported(), cfg!(windows));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn missing_node_has_no_install_action_off_windows() {
+        let probe = LoopxNodeRuntimeFact {
+            available: false,
+            version: None,
+            minimum_version: "22.6.0".to_string(),
+            detail: Some("Node.js was not found on PATH".to_string()),
+        };
+        let fact = loopx_node_environment_fact(&probe, Some(42));
+        assert_eq!(
+            fact.remediation_action,
+            LoopxEnvironmentRemediationAction::None
+        );
+        assert!(fact
+            .remediation
+            .as_deref()
+            .is_some_and(|detail| detail.contains("Windows-only")));
     }
 }

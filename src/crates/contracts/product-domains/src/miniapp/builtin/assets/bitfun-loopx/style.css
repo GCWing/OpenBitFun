@@ -386,6 +386,15 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   box-shadow: 0 14px 36px color-mix(in srgb, var(--lx-bg) 62%, transparent);
 }
 .environment-checked { grid-column: 1 / -1; color: var(--lx-text-muted); font-size: 11px; }
+.environment-platform-note {
+  grid-column: 1 / -1;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--lx-warning) 34%, var(--lx-border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--lx-warning) 6%, var(--lx-elevated));
+}
+.environment-platform-note strong { display: block; font-size: 11.5px; }
+.environment-platform-note p { margin: 2px 0 0; color: var(--lx-text-soft); font-size: 11px; }
 .environment-remediation {
   grid-column: 1 / -1;
   display: grid;

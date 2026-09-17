@@ -277,6 +277,9 @@ export interface LoopxEnvironmentSnapshot {
   status: LoopxEnvironmentStatus;
   core: LoopxCoreEnvironmentFacts;
   optional: LoopxOptionalEnvironmentFacts;
+  /** App-managed runtime installs are Windows-only for now; null on
+   *  snapshots persisted before the platform capability was projected. */
+  runtimeInstallSupported: boolean | null;
   checkedAt: number | null;
 }
 

@@ -94,6 +94,8 @@ const COPY = {
     nodeInstallComplete: 'Node.js {version} 已安装，环境检查已更新。',
     gitInstallComplete: 'Git {version} 已安装，环境检查已更新。',
     runtimeInstallFailed: '{runtime} 安装失败：{message}',
+    runtimePlatformNoteTitle: '此平台暂不支持一键安装运行时',
+    runtimePlatformNoteDetail: '当前版本只在 Windows 提供 Node.js / Git 便携运行时的自动安装。macOS / Linux 请用系统包管理器安装 Node.js 22.6+ 与 Git（macOS 可用 xcode-select --install），然后重新检查环境。',
     loopxInstallStarted: '正在从官方 GitHub 源仓库下载并校验 LoopX {version}…',
     loopxInstallQueued: '安装已在后台开始，可以继续使用当前窗口。',
     loopxInstallComplete: 'LoopX {version} 已安装，环境检查已更新。',
@@ -652,6 +654,8 @@ const COPY = {
     nodeInstallComplete: 'Node.js {version} is installed and the environment check is up to date.',
     gitInstallComplete: 'Git {version} is installed and the environment check is up to date.',
     runtimeInstallFailed: '{runtime} installation failed: {message}',
+    runtimePlatformNoteTitle: 'App-managed runtime installs are Windows-only for now',
+    runtimePlatformNoteDetail: 'This version installs portable Node.js / Git runtimes on Windows only. On macOS/Linux, install Node.js 22.6+ and Git with your system package manager (on macOS run xcode-select --install), then check the environment again.',
     loopxInstallStarted: 'Downloading and verifying LoopX {version} from the official GitHub source repository...',
     loopxInstallQueued: 'Installation started in the background. You can keep using this window.',
     loopxInstallComplete: 'LoopX {version} is installed and the environment check is up to date.',
@@ -1183,6 +1187,9 @@ const view = {
   environmentDot: byId('environment-dot'),
   environmentStatus: byId('environment-status'),
   environmentChecked: byId('environment-checked'),
+  environmentPlatformNote: byId('environment-platform-note'),
+  environmentPlatformNoteTitle: byId('environment-platform-note-title'),
+  environmentPlatformNoteDetail: byId('environment-platform-note-detail'),
   environmentRemediation: byId('environment-remediation'),
   environmentRemediationTitle: byId('environment-remediation-title'),
   environmentRemediationDetail: byId('environment-remediation-detail'),
@@ -2801,6 +2808,19 @@ function renderEnvironment() {
   view.environmentChecked.textContent = environment && environment.checkedAt
     ? text('updated', { duration: relativeLabel(environment.checkedAt) })
     : '';
+
+  // Product policy: app-managed runtime installation is Windows-only for now.
+  // macOS/Linux users must see why there is no one-click button instead of a
+  // silently missing action.
+  const runtimeInstallSupported = environment
+    ? environment.runtimeInstallSupported
+    : null;
+  const showPlatformNote = runtimeInstallSupported === false;
+  view.environmentPlatformNote.hidden = !showPlatformNote;
+  if (showPlatformNote) {
+    view.environmentPlatformNoteTitle.textContent = text('runtimePlatformNoteTitle');
+    view.environmentPlatformNoteDetail.textContent = text('runtimePlatformNoteDetail');
+  }
 
   const core = environment && environment.core ? environment.core : {};
   const optional = environment && environment.optional ? environment.optional : {};

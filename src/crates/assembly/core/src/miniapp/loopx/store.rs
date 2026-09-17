@@ -77,7 +77,13 @@ impl LoopxPersistedState {
             stream_id: uuid::Uuid::new_v4().to_string(),
             cursor: 0,
             revision: 0,
-            environment: LoopxEnvironmentSnapshot::default(),
+            environment: {
+                let mut environment = LoopxEnvironmentSnapshot::default();
+                environment.runtime_install_supported = Some(
+                    openbitfun_product_domains::miniapp::loopx::managed_runtime_install_supported(),
+                );
+                environment
+            },
             tasks: Vec::new(),
             runtime: BTreeMap::new(),
             events: Vec::new(),

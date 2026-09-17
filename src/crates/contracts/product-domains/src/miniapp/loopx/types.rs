@@ -256,6 +256,20 @@ pub enum LoopxEnvironmentStatus {
     Unknown,
 }
 
+/// App-managed portable runtimes (Node.js, Git) are currently installed only
+/// on Windows. The macOS/Linux packaging + signing follow-up is tracked
+/// separately; until it lands the product must tell macOS/Linux users to
+/// use their system package manager instead of offering a broken one-click
+/// action.
+pub fn managed_runtime_install_supported() -> bool {
+    cfg!(windows)
+}
+
+/// User-facing explanation used whenever app-managed runtime installation
+/// is unavailable on the current platform.
+pub const MANAGED_RUNTIME_PLATFORM_UNSUPPORTED_DETAIL: &str =
+    "App-managed runtime installation is currently Windows-only. On macOS/Linux, install Node.js 22.6+ and Git with your system package manager (or from nodejs.org; run `xcode-select --install` on macOS), then re-check the environment.";
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct LoopxEnvironmentSnapshot {
@@ -263,6 +277,10 @@ pub struct LoopxEnvironmentSnapshot {
     pub status: LoopxEnvironmentStatus,
     pub core: LoopxCoreEnvironmentFacts,
     pub optional: LoopxOptionalEnvironmentFacts,
+    /// `Some(true)` on platforms where the environment surface can install
+    /// app-managed runtimes (currently Windows only). `None` for snapshots
+    /// persisted before the field existed.
+    pub runtime_install_supported: Option<bool>,
     pub checked_at: Option<i64>,
 }
 
