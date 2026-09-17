@@ -58,7 +58,10 @@
             <strong id="environment-status">--</strong>
           </summary>
           <div class="environment-body">
-            <div id="environment-checked" class="environment-checked"></div>
+            <div class="environment-toolbar">
+              <div id="environment-checked" class="environment-checked"></div>
+              <button id="retry-environment" class="text-button" type="button" data-i18n="retryEnvironment">重新检查环境</button>
+            </div>
             <div id="environment-platform-note" class="environment-platform-note" role="note" hidden>
               <strong id="environment-platform-note-title"></strong>
               <p id="environment-platform-note-detail"></p>
@@ -69,7 +72,6 @@
               </div>
               <div id="environment-list" class="environment-grid"></div>
             </section>
-            <button id="retry-environment" class="text-button" type="button" data-i18n="retryEnvironment">重新检查环境</button>
           </div>
         </details>
         <button id="pause-all-loopx" class="icon-button" type="button" title="停止全部任务" data-i18n-title="pauseAll">
