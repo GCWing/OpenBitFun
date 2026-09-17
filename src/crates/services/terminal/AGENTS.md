@@ -22,6 +22,7 @@ infrastructure, not a product command or UI layer.
 
 ```bash
 cargo check -p terminal-core
+cargo test -p terminal-core --lib exec:: # process output, encoding, polling and lifecycle
 cargo test -p terminal-core --lib workspace_origin_contract_tests # terminal response compatibility
 node scripts/check-core-boundaries.mjs
 ```
