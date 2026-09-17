@@ -1,5 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+/// Optional tool failure classification, preserved across events and history.
+/// Open strings allow older consumers to retain unfamiliar codes and kinds.
+/// This describes the failure; it does not authorize automatic retries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolErrorDetail {
+    pub code: String,
+    pub kind: String,
+}
+
 /// Error category for classifying dialog turn failures.
 /// Used by the frontend to show user-friendly error messages without string matching.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

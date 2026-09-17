@@ -4518,6 +4518,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                     tool_call_id.clone(),
                                     TASK_TOOL_NAME,
                                 ),
+                                error_detail: None,
                                 error: error_text.clone(),
                                 duration_ms: Some(duration_ms),
                                 queue_wait_ms: None,

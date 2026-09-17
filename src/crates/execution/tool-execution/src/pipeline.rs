@@ -111,6 +111,7 @@ pub enum ToolStateEventKind {
     },
     Failed {
         error: String,
+        error_detail: Option<openbitfun_core_types::errors::ToolErrorDetail>,
         duration_ms: Option<u64>,
         queue_wait_ms: Option<u64>,
         preflight_ms: Option<u64>,
@@ -307,6 +308,7 @@ pub fn tool_state_event_data(facts: ToolStateEventFacts) -> ToolEventData {
             execution_ms,
         },
         ToolStateEventKind::Failed {
+            error_detail,
             error,
             duration_ms,
             queue_wait_ms,
@@ -315,6 +317,7 @@ pub fn tool_state_event_data(facts: ToolStateEventFacts) -> ToolEventData {
             execution_ms,
         } => ToolEventData::Failed {
             identity,
+            error_detail,
             error,
             duration_ms,
             queue_wait_ms,
@@ -368,6 +371,30 @@ mod tests {
     use super::{sanitize_tool_result_for_event, tool_state_event_data, ToolStateEventFacts};
     use openbitfun_events::{ToolEventData, ToolEventIdentity};
     use serde_json::json;
+
+    #[test]
+    fn failed_event_preserves_classification() {
+        let detail = openbitfun_core_types::errors::ToolErrorDetail {
+            code: "edit_target_not_found".into(),
+            kind: "guidance".into(),
+        };
+        let event = tool_state_event_data(ToolStateEventFacts {
+            identity: ToolEventIdentity::direct("edit-1", "Edit"),
+            state: ToolStateEventKind::Failed {
+                error: "Read again".into(),
+                error_detail: Some(detail.clone()),
+                duration_ms: None,
+                queue_wait_ms: None,
+                preflight_ms: None,
+                confirmation_wait_ms: None,
+                execution_ms: None,
+            },
+        });
+        let ToolEventData::Failed { error_detail, .. } = event else {
+            panic!("expected failure")
+        };
+        assert_eq!(error_detail, Some(detail));
+    }
 
     #[test]
     fn completed_event_preserves_image_attachments() {

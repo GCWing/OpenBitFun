@@ -237,6 +237,8 @@ filter rather than a product-wide build):
 ```bash
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git,document-read --lib file_read_tool::tests
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib file_write_tool::tests
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib file_edit_tool::tests
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib classified_edit
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib delete_file_tool::tests
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,remote-workspace,git --lib service::snapshot::
 ```

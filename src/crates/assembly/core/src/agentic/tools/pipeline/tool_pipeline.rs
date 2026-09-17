@@ -300,12 +300,15 @@ fn build_error_execution_result(
                 None,
             )
         };
-    let presentation = build_tool_execution_error_presentation(
+    let mut presentation = build_tool_execution_error_presentation(
         &effective_tool_name,
         category,
         &error_message,
         provided_arguments,
     );
+    if let Some(detail) = error.tool_error_detail() {
+        presentation.result_json["error_detail"] = serde_json::json!(detail);
+    }
     let persisted_effective_tool_name =
         persisted_effective_tool_name(&wire_tool_name, &effective_tool_name);
 
@@ -1867,6 +1870,7 @@ impl ToolPipeline {
                 .update_state(
                     &tool_id,
                     ToolExecutionState::Failed {
+                        error_detail: None,
                         error: error_msg.clone(),
                         is_retryable: false,
                         duration_ms: None,
@@ -1892,6 +1896,7 @@ impl ToolPipeline {
                 .update_state(
                     &tool_id,
                     ToolExecutionState::Failed {
+                        error_detail: None,
                         error: error_msg.clone(),
                         is_retryable: false,
                         duration_ms: None,
@@ -1950,6 +1955,7 @@ impl ToolPipeline {
                 .update_state(
                     &tool_id,
                     ToolExecutionState::Failed {
+                        error_detail: None,
                         error: error_msg,
                         is_retryable: false,
                         duration_ms: None,
@@ -2004,10 +2010,16 @@ impl ToolPipeline {
             let error_msg = validation
                 .message
                 .unwrap_or_else(|| format!("Invalid input for tool '{}'", tool_name));
+            let error_detail = validation
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("error_detail"))
+                .and_then(|detail| serde_json::from_value(detail.clone()).ok());
             self.state_manager
                 .update_state(
                     &tool_id,
                     ToolExecutionState::Failed {
+                        error_detail: error_detail.clone(),
                         error: error_msg.clone(),
                         is_retryable: false,
                         duration_ms: None,
@@ -2018,7 +2030,13 @@ impl ToolPipeline {
                     },
                 )
                 .await;
-            return Err(OpenBitFunError::Validation(error_msg));
+            return Err(match error_detail {
+                Some(detail) => OpenBitFunError::ClassifiedTool {
+                    message: error_msg,
+                    detail,
+                },
+                None => OpenBitFunError::Validation(error_msg),
+            });
         }
         if let Some(message) = validation
             .message
@@ -2356,6 +2374,7 @@ impl ToolPipeline {
                     .update_state(
                         &tool_id,
                         ToolExecutionState::Failed {
+                            error_detail: e.tool_error_detail().cloned(),
                             error: error_msg.clone(),
                             is_retryable,
                             duration_ms: Some(elapsed_ms_u64(start_time)),
@@ -5096,6 +5115,29 @@ mod tests {
             result.result.result_for_assistant.as_deref(),
             Some(USER_STEERING_INTERRUPTED_MESSAGE)
         );
+    }
+
+    #[test]
+    fn classified_edit_failure_preserves_model_error_and_persisted_detail() {
+        let error = OpenBitFunError::ClassifiedTool {
+            message: "[guidance] new_string must be different from old_string".into(),
+            detail: openbitfun_core_types::errors::ToolErrorDetail {
+                code: "edit_no_change".into(),
+                kind: "guidance".into(),
+            },
+        };
+        let result = build_error_execution_result("edit-1", None, &error);
+        assert!(result.result.is_error);
+        assert_eq!(
+            result.result.result["error_detail"]["code"],
+            "edit_no_change"
+        );
+        assert!(result
+            .result
+            .result_for_assistant
+            .unwrap()
+            .contains("new_string must be different"));
+        assert!(!should_retry_tool_error(&error));
     }
 
     #[test]

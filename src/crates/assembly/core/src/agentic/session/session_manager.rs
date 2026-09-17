@@ -7712,7 +7712,11 @@ impl SessionManager {
                                         result_for_assistant: assistant_text,
                                         image_attachments: image_attachments.clone(),
                                         error: if *is_error {
-                                            serde_json::to_string(result).ok()
+                                            result
+                                                .get("error")
+                                                .and_then(serde_json::Value::as_str)
+                                                .map(str::to_owned)
+                                                .or_else(|| serde_json::to_string(result).ok())
                                         } else {
                                             None
                                         },
@@ -9816,6 +9820,42 @@ mod tests {
     use std::sync::Arc;
     use std::time::{Duration, SystemTime};
     use uuid::Uuid;
+
+    #[test]
+    fn classified_edit_history_preserves_detail_and_readable_error() {
+        let assistant = Message::assistant_with_tools(
+            String::new(),
+            vec![ToolCall {
+                tool_id: "edit-1".into(),
+                tool_name: "Edit".into(),
+                arguments: json!({}),
+                raw_arguments: None,
+                is_error: false,
+                parse_error: None,
+                recovered_from_truncation: false,
+                repair_kind: Default::default(),
+            }],
+        );
+        let result = Message::tool_result(ToolResult {
+            tool_id: "edit-1".into(),
+            tool_name: "Edit".into(),
+            effective_tool_name: None,
+            result: json!({"error":"[guidance] Inputs are equal", "error_detail":{"code":"edit_no_change", "kind":"guidance"}}),
+            result_for_assistant: None,
+            is_error: true,
+            duration_ms: None,
+            image_attachments: None,
+        });
+        let rounds =
+            SessionManager::build_model_rounds_from_messages(&[assistant, result], "turn-1", 1);
+        let encoded = serde_json::to_value(&rounds[0]).unwrap();
+        let restored: crate::service::session::ModelRoundData =
+            serde_json::from_value(encoded).unwrap();
+        let result = restored.tool_items[0].tool_result.as_ref().unwrap();
+        assert!(!result.success);
+        assert_eq!(result.error.as_deref(), Some("[guidance] Inputs are equal"));
+        assert_eq!(result.result["error_detail"]["code"], "edit_no_change");
+    }
 
     #[tokio::test]
     async fn runtime_model_is_visible_to_turn_admission_config() {

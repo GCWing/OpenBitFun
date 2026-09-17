@@ -117,6 +117,7 @@ fn context_compression_tool_event(
             ..
         } => Some(ToolEventData::Failed {
             identity: ToolEventIdentity::direct(compression_id, "ContextCompression"),
+            error_detail: None,
             error: error.clone(),
             duration_ms: None,
             queue_wait_ms: None,

@@ -373,6 +373,7 @@ export interface CompletedToolEvent extends BaseToolEvent<'Completed'> {
 
 export interface FailedToolEvent extends BaseToolEvent<'Failed'> {
   error: string;
+  error_detail?: { code: string; kind: string };
   duration_ms?: number;
   queue_wait_ms?: number;
   preflight_ms?: number;
