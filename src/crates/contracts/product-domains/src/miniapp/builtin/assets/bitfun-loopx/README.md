@@ -186,6 +186,12 @@ built-in source、非本地覆盖和本地执行域。伪造 id、draft、市场
 
 ## 平台支持
 
+- **App-managed 便携运行时（Node.js / Git）目前仅 Windows 支持。** macOS/Linux 还需要
+  打包/签名后续工作（codesign + notarization、可执行位/glibc 下限、嵌套签名），因此
+  宿主在非 Windows 平台拒绝 `install_node_runtime` / `install_git_runtime`，环境卡片
+  会显示明确提示，引导用户用系统包管理器安装 Node.js 22.6+ 与 Git。Node.js 各平台
+  产物表与安装器代码保留在单一平台开关之后，后续只需放开该开关。
+
 - Desktop 安装包携带固定版本的 LoopX sidecar；资源缺失或系统版本不匹配时，用户可从
   环境卡片显式触发安装：宿主从官方 GitHub 仓库 clone 固定 pin 版本（当前
   `v1.0.1`）/commit 到
