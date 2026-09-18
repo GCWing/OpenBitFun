@@ -1,5 +1,15 @@
 # FlowChat History Paging
 
+The anchor renews its settle budget only when a correction reduces its measured
+residual (or reaches tolerance), or while a missing Turn is still awaited.
+An ineffective correction is remembered for that exact anchor/viewport geometry;
+it is retried after geometry changes or a new anchor is captured, not on every
+frame. Identical resize notifications do not renew the budget. The comparison
+includes the anchor's content coordinate, so displacement at unchanged total
+height still opens a settle. Item changes, snapshot restores and host resumes
+remain explicit settle triggers. No sign-change count or overall time limit
+terminates valid corrections.
+
 Older Turns are fetched when the reader approaches the head of the loaded
 window, prepended above them, and paid for by moving the viewport down by
 exactly what arrived. This document covers the whole of that: when the ask goes

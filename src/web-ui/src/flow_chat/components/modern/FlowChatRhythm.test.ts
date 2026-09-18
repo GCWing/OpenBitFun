@@ -12,6 +12,15 @@ function readSource(relativePath: string): string {
 }
 
 describe('FlowChat transcript rhythm', () => {
+  it('contains descendant spacing within the measured virtual row without clipping controls', () => {
+    const styles = readSource('./VirtualItemRenderer.scss');
+    const wrapper = styles.slice(styles.indexOf('.virtual-item-wrapper {'), styles.indexOf("&[data-item-type='user-message']"));
+
+    // This is a stylesheet contract; browser margin geometry needs real layout.
+    expect(wrapper).toContain('display: flow-root;');
+    expect(wrapper).not.toMatch(/overflow(?:-x|-y)?:\s*(?:hidden|clip|auto|scroll)\s*;/);
+  });
+
   function modelRound(
     turnId: string,
     roundId: string,

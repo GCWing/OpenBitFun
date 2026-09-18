@@ -1,5 +1,14 @@
 # FlowChat Virtualization
 
+## Measured row spacing
+
+`VirtualItemRenderer` establishes a `flow-root` on the measured wrapper so
+descendant block margins remain inside its border box. A row replaced by virtual
+padding must retain its full occupied height, including trailing item spacing.
+Do not substitute clipping overflow: user-message decorations and controls can
+extend outside the reading column. The rhythm test protects this stylesheet
+contract; it does not prove browser layout or end-to-end scroll stability.
+
 ## Interrupted turn continuity
 
 Cancelled rounds remain in the ordinary transcript. The display projection removes

@@ -1,5 +1,15 @@
 # FlowChat Viewport Register
 
+Anchor diagnostics distinguish `anchor.correct` (a requested shift) from
+`anchor.correctionResult` (actual scroll travel, residual and progress). Results
+include the trigger source, anchor row key, rendered first index/count, frame
+timestamp, and cumulative correction/travel/reversal counts since capture.
+Reversals are evidence, not a stop condition. `anchor.settleOpened` records
+items/resize/snapshot/resume triggers and the previous budget; `anchor.settleEnded`
+records the final outcome. Repeating events use the existing gated coalescer;
+none contain message or tool content. Read suppressed counts as well as emitted
+samples. These diagnostics do not prove that a correction painted on screen.
+
 Every deliberate write to the FlowChat scroller goes through one register, which
 decides whether the writer may act. This document covers the register, what it
 replaced, the two writers that stand outside it, and the trail it leaves.

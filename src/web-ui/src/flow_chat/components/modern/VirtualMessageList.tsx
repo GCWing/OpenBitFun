@@ -926,7 +926,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   ]);
 
   useLayoutEffect(() => {
-    viewportAnchor.openSettleWindow();
+    viewportAnchor.openSettleWindow('items');
   }, [viewportAnchor, virtualItems]);
 
   const updateVisibleTurnInfoFromViewport = useCallback(() => {
@@ -1143,7 +1143,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     // Seed the ordinary settle loop from the restored relationship so later
     // virtual-item measurements keep the same Turn at the same viewport offset.
     viewportAnchor.captureAnchor();
-    viewportAnchor.openSettleWindow();
+    viewportAnchor.openSettleWindow('snapshot');
     traceViewport({
       location: 'viewport.sessionSnapshotRestored',
       message: 'FlowChat restored a session anchor from its semantic snapshot',
@@ -1479,7 +1479,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         });
         restoredScrollTopFallback = true;
       }
-      viewportAnchor.openSettleWindow();
+      viewportAnchor.openSettleWindow('resume');
     }
 
     traceViewport({
@@ -1718,7 +1718,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       if (viewportBoxChanged) {
         viewportAnchor.captureAnchor();
       } else {
-        viewportAnchor.openSettleWindow();
+        viewportAnchor.openSettleWindow('resize');
       }
 
       if (tailRealignCallbacksRef.current > 0) {

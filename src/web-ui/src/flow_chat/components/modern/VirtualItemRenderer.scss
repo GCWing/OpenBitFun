@@ -11,6 +11,11 @@
   @include markdownTypography.apply;
   @include transcriptLayout.reading-column;
 
+  // Keep descendant margins inside the border box measured by the virtualizer.
+  // Escaped margins otherwise disappear when a row is replaced by virtual padding.
+  // Unlike overflow: hidden, this preserves outlying decorations and controls.
+  display: flow-root;
+
   /*
    * Single reading column shared by every item type (model rounds, explore
    * groups, user messages, notices). Matches ChatInput's 900px so headers,
