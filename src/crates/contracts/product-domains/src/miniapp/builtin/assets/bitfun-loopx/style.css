@@ -1255,7 +1255,10 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .task-actions { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .task-actions { justify-content: flex-end; }
 .task-actions button { min-height: 32px; padding: 4px 10px; font-size: 11px; white-space: nowrap; }
-.task-actions button.is-pending { color: var(--lx-warning); }
+.task-actions button.is-pending, .issue-decision-card__actions button.is-pending { color: var(--lx-warning); }
+/* In-flight owner action (resume / archive / re-check): a tiny ring spins so
+   the press is visible before the host answers. */
+button.is-pending::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 5px; border: 1.5px solid color-mix(in srgb, currentColor 40%, transparent); border-top-color: currentColor; border-radius: 50%; vertical-align: -1px; animation: spin .9s linear infinite; }
 
 .log-scroll { position: relative; min-height: 0; flex: 1 1 auto; overflow: auto; scrollbar-gutter: stable; }
 .log-list { min-height: 100%; margin: 0; padding: 5px 0 24px; list-style: none; }

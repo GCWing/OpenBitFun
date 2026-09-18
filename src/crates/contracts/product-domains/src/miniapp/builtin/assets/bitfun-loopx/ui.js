@@ -3722,9 +3722,22 @@ function makeActionButton(label, action, task, tone) {
     : (tone === 'primary' ? 'primary-button' : 'text-button');
   button.dataset.action = action;
   button.textContent = label;
-  button.addEventListener('click', () => {
+  let activated = false;
+  const activate = () => {
+    if (activated) return;
+    activated = true;
     void performAction(action, task);
+  };
+  // The rail and the decision card are rebuilt on every snapshot, so a press
+  // whose mouseup lands on a replacement node is dispatched on the common
+  // ancestor and this button never sees its click (live 2026-09-18: only one
+  // of two "resume" presses reached the host). Start on pointerdown for
+  // mouse/pen; touch and keyboard keep the plain click path.
+  button.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || event.pointerType === 'touch') return;
+    activate();
   });
+  button.addEventListener('click', activate);
   return button;
 }
 
@@ -4458,24 +4471,33 @@ function renderIssueStatus(task) {
   }
   const actions = document.createElement('div');
   actions.className = 'issue-decision-card__actions';
-  if (recovery) {
-    actions.append(makeActionButton(text('decisionResume'), 'resume', task, 'primary'));
-  }
-  // Owner-action park (waiting without a live typed gate): the card is the
-  // attention surface. The external step (open/merge the PR) is the primary
-  // action above; the in-host re-check is secondary and labelled with its
-  // real semantics — it re-verifies the external state, it does not
-  // "continue" anything. A live typed gate keeps approve/reject as the
-  // single entry.
-  if (externalWait) {
-    actions.append(makeOwnerActionRecheckButton(task));
-  } else if (waiting && !task.pendingGateId) {
-    actions.append(makeActionButton(
-      text('decisionContinueAfterOwnerAction'),
-      'resume',
-      task,
-      'primary',
-    ));
+  const pendingAction = pendingActionFor(task);
+  if (pendingAction) {
+    // Show the in-flight action instead of a button that still looks
+    // untouched: the host round-trip owns the transition, and a task that
+    // only gets re-queued behind its repository has no other visible
+    // change (live 2026-09-18, "the click did nothing").
+    actions.append(makePendingActionButton(task));
+  } else {
+    if (recovery) {
+      actions.append(makeActionButton(text('decisionResume'), 'resume', task, 'primary'));
+    }
+    // Owner-action park (waiting without a live typed gate): the card is the
+    // attention surface. The external step (open/merge the PR) is the primary
+    // action above; the in-host re-check is secondary and labelled with its
+    // real semantics — it re-verifies the external state, it does not
+    // "continue" anything. A live typed gate keeps approve/reject as the
+    // single entry.
+    if (externalWait) {
+      actions.append(makeOwnerActionRecheckButton(task));
+    } else if (waiting && !task.pendingGateId) {
+      actions.append(makeActionButton(
+        text('decisionContinueAfterOwnerAction'),
+        'resume',
+        task,
+        'primary',
+      ));
+    }
   }
   card.append(actions);
 }
@@ -7052,6 +7074,7 @@ async function performAction(action, task, extra = {}) {
     renderTasks();
     renderIssueView();
   }
+  let applied = false;
   try {
     let response = await sendActionRequest(request);
     if (
@@ -7098,6 +7121,7 @@ async function performAction(action, task, extra = {}) {
           : actionAppliedNotice(action, task, extra, response),
         'success',
       );
+      applied = true;
       await attachSnapshot(false);
     }
     return true;
@@ -7107,9 +7131,18 @@ async function performAction(action, task, extra = {}) {
     return false;
   } finally {
     if (task && task.taskId && state.taskActionPending.get(task.taskId) === action) {
-      state.taskActionPending.delete(task.taskId);
-      renderTasks();
-      renderIssueView();
+      const settlePendingAction = () => {
+        if (state.taskActionPending.get(task.taskId) !== action) return;
+        state.taskActionPending.delete(task.taskId);
+        renderTasks();
+        renderIssueView();
+      };
+      // Keep the in-flight label visible for a beat after an applied action:
+      // the host answers in ~30 ms, and a task that is only re-queued keeps
+      // the same rendered state, so clearing immediately read as "the click
+      // did nothing" (live 2026-09-18).
+      if (applied) window.setTimeout(settlePendingAction, 800);
+      else settlePendingAction();
     }
   }
 }
