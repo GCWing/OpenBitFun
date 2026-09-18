@@ -543,6 +543,11 @@ impl LoopxPythonLocator for SystemLoopxPythonLocator {
 pub enum LoopxCliAdapterError {
     #[error("compatible LoopX runtime is not available")]
     Unavailable,
+    /// The machine itself cannot satisfy a prerequisite of the managed
+    /// source install (Python 3.11+ / Git). Kept out of `Manifest` so the
+    /// panel does not blame a packaged bundle that is not involved.
+    #[error("{message}")]
+    LocalPrerequisites { message: String },
     #[error("invalid packaged LoopX manifest: {message}")]
     Manifest { message: String },
     #[error("LoopX version mismatch: expected {expected}, got {actual}")]
@@ -1149,8 +1154,8 @@ impl LoopxCliProcessAdapter {
         let python = self
             .python_locator
             .locate()
-            .map_err(|message| LoopxCliAdapterError::Manifest { message })?
-            .ok_or_else(|| LoopxCliAdapterError::Manifest {
+            .map_err(|message| LoopxCliAdapterError::LocalPrerequisites { message })?
+            .ok_or_else(|| LoopxCliAdapterError::LocalPrerequisites {
                 message: "Python 3.11 or newer is required to run managed LoopX source".to_string(),
             })?;
         let mut environment = BTreeMap::new();
@@ -1183,8 +1188,8 @@ impl LoopxCliProcessAdapter {
         let python = self
             .python_locator
             .locate()
-            .map_err(|message| LoopxCliAdapterError::Manifest { message })?
-            .ok_or_else(|| LoopxCliAdapterError::Manifest {
+            .map_err(|message| LoopxCliAdapterError::LocalPrerequisites { message })?
+            .ok_or_else(|| LoopxCliAdapterError::LocalPrerequisites {
                 message: "Python 3.11 or newer is required to install LoopX from source"
                     .to_string(),
             })?;
@@ -1221,14 +1226,14 @@ impl LoopxCliProcessAdapter {
             python_version.stdout
         };
         if !python_version_supported(&version_text) {
-            return Err(LoopxCliAdapterError::Manifest {
+            return Err(LoopxCliAdapterError::LocalPrerequisites {
                 message: format!(
                     "Python 3.11 or newer is required to install LoopX from source; found {}",
                     version_text.trim()
                 ),
             });
         }
-        let git = which::which("git").map_err(|error| LoopxCliAdapterError::Manifest {
+        let git = which::which("git").map_err(|error| LoopxCliAdapterError::LocalPrerequisites {
             message: format!("Git is required to download LoopX source: {error}"),
         })?;
 
@@ -5813,6 +5818,9 @@ fn map_port_error(
 ) -> loopx_contract::LoopxCliError {
     let (kind, retryable) = match &error {
         LoopxCliAdapterError::Unavailable => (loopx_contract::LoopxCliErrorKind::NotFound, true),
+        LoopxCliAdapterError::LocalPrerequisites { .. } => {
+            (loopx_contract::LoopxCliErrorKind::Backend, true)
+        }
         LoopxCliAdapterError::Manifest { .. } => (loopx_contract::LoopxCliErrorKind::Io, false),
         LoopxCliAdapterError::VersionMismatch { .. } => {
             (loopx_contract::LoopxCliErrorKind::VersionMismatch, false)
