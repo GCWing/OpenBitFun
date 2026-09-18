@@ -1362,12 +1362,11 @@ const state = {
   approvedWaitingTasks: new Set(),
   modelCatalogLoading: false,
   modelCatalogLoaded: false,
-  environmentInstallPending: false,
-  environmentInstallObserved: false,
-  environmentInstallRequestId: null,
-  // Which app-managed runtime the pending environment install targets
-  // ('loopx' | 'node' | 'git'), used to observe the matching environment fact.
-  environmentInstallRuntime: null,
+  // Per-runtime install tracking: runtime ('loopx' | 'node' | 'git') ->
+  // { requestId, inFlight, snapshotCheckedAt }. Every requirement row owns
+  // its own progress, so repairing Node.js never disables or mislabels the
+  // Git and LoopX buttons.
+  environmentInstalls: new Map(),
   resetPending: false,
 };
 
@@ -2071,7 +2070,7 @@ async function notifyGateSystemDecision(task, gate) {
 
 function emitInstallDiagnostic(
   phase,
-  request = state.environmentInstallRequestId,
+  request = installRequestId('loopx'),
   action = 'install_loopx',
 ) {
   const requestIdValue = request || 'unassigned';
@@ -2499,11 +2498,7 @@ function applySnapshot(snapshot) {
     throw new Error('The host returned an invalid LoopX snapshot.');
   }
   const previousStreamId = state.snapshot && state.snapshot.streamId;
-  const previousSidecarStatus = state.snapshot
-    && state.snapshot.environment
-    && state.snapshot.environment.core
-    && state.snapshot.environment.core.sidecar
-    && state.snapshot.environment.core.sidecar.status;
+
   const streamChanged = previousStreamId && previousStreamId !== snapshot.streamId;
   state.snapshot = snapshot;
   if (streamChanged) {
@@ -2519,30 +2514,9 @@ function applySnapshot(snapshot) {
   setConnectionLabel(text('connected'), true);
   view.root.setAttribute('aria-busy', 'false');
   renderAll();
-  if (state.environmentInstallObserved) {
-    if (state.environmentInstallRuntime === 'loopx') {
-      const sidecar = snapshot.environment
-        && snapshot.environment.core
-        && snapshot.environment.core.sidecar;
-      if (sidecar && sidecar.status === 'available') {
-        emitInstallDiagnostic('environment_available');
-        clearEnvironmentInstallObservation();
-        showNotice(text('loopxInstallComplete', { version: sidecar.version || '' }), 'success');
-      } else if (
-        previousSidecarStatus === 'checking'
-        && sidecar
-        && sidecar.status === 'unavailable'
-      ) {
-        emitInstallDiagnostic('environment_unavailable');
-        clearEnvironmentInstallObservation();
-        showNotice(text('loopxInstallFailed', {
-          message: sidecar.detail || statusLabel('unavailable'),
-        }), 'error');
-      }
-    } else {
-      observeRuntimeInstall(snapshot);
-    }
-  }
+  observeEnvironmentInstall(snapshot, 'loopx');
+  observeEnvironmentInstall(snapshot, 'node');
+  observeEnvironmentInstall(snapshot, 'git');
   if (state.pendingApprovalPrompt) {
     syncApprovalAttention(true);
     if (currentApprovalAttention()) state.pendingApprovalPrompt = false;
@@ -2706,7 +2680,7 @@ function renderExecutionSupport() {
   view.resolveButton.disabled = !supported || environmentBusyOrBlocked || state.resetPending;
   view.retryEnvironment.disabled = !supported
     || environmentStatus === 'checking'
-    || state.environmentInstallPending;
+    || environmentInstallInFlight();
   const anyActive = Boolean(snapshot)
     && snapshot.tasks.some((task) =>
       ['preparing', 'queued', 'running'].includes(task.state)
@@ -2835,31 +2809,28 @@ function loopxInstallTargetVersion(fact) {
 }
 
 function loopxInstallAction(fact) {
-  const pending = state.environmentInstallObserved
-    && state.environmentInstallRuntime === 'loopx';
+  const pending = Boolean(environmentInstallEntry('loopx'));
   const version = loopxInstallTargetVersion(fact);
   return {
     label: version
       ? text('installLoopx', { version })
       : text('installLoopxUnknown'),
     pending,
-    disabled: pending || state.environmentInstallPending,
+    disabled: pending,
     onClick: () => installLoopxFromGithub(),
     onPointerDown: (event) => {
-      if (event.button !== 0 || state.environmentInstallPending) return;
-      state.environmentInstallRequestId = state.environmentInstallRequestId || requestId();
+      if (event.button !== 0 || environmentInstallEntry('loopx')) return;
       emitInstallDiagnostic('pointer_down');
     },
   };
 }
 
 function runtimeInstallAction(runtime) {
-  const pending = state.environmentInstallObserved
-    && state.environmentInstallRuntime === runtime;
+  const pending = Boolean(environmentInstallEntry(runtime));
   return {
     label: text(runtime === 'git' ? 'installGit' : 'installNode'),
     pending,
-    disabled: pending || state.environmentInstallPending,
+    disabled: pending,
     onClick: () => installRuntimeFromGithub(runtime),
   };
 }
@@ -7146,71 +7117,123 @@ async function performAction(action, task, extra = {}) {
   }
 }
 
-function clearEnvironmentInstallObservation() {
-  state.environmentInstallObserved = false;
-  state.environmentInstallRequestId = null;
-  state.environmentInstallRuntime = null;
+function environmentInstallEntry(runtime) {
+  return state.environmentInstalls.get(runtime) || null;
 }
 
-function observeRuntimeInstall(snapshot) {
-  const runtime = state.environmentInstallRuntime;
-  const core = snapshot.environment && snapshot.environment.core;
-  const fact = runtime === 'git'
-    ? core && core.gitWorktree
-    : core && core.nodeRuntime;
-  if (!runtime || !fact) return;
+function installRequestId(runtime) {
+  const entry = environmentInstallEntry(runtime);
+  return entry ? entry.requestId : null;
+}
+
+function environmentInstallInFlight() {
+  for (const entry of state.environmentInstalls.values()) {
+    if (entry.inFlight) return true;
+  }
+  return false;
+}
+
+function environmentFactFor(snapshot, runtime) {
+  const core = snapshot && snapshot.environment && snapshot.environment.core;
+  if (!core) return null;
+  if (runtime === 'loopx') return core.sidecar || null;
+  return (runtime === 'git' ? core.gitWorktree : core.nodeRuntime) || null;
+}
+
+function beginEnvironmentInstall(runtime) {
+  const current = state.snapshot ? environmentFactFor(state.snapshot, runtime) : null;
+  const request = requestId();
+  state.environmentInstalls.set(runtime, {
+    requestId: request,
+    inFlight: true,
+    snapshotCheckedAt: current ? current.checkedAt : null,
+  });
+  return request;
+}
+
+function endEnvironmentInstall(runtime, request) {
+  const entry = environmentInstallEntry(runtime);
+  if (!entry || (request && entry.requestId !== request)) return;
+  state.environmentInstalls.delete(runtime);
+}
+
+function finishEnvironmentInstallRequest(runtime, request) {
+  const entry = environmentInstallEntry(runtime);
+  if (entry && entry.requestId === request) entry.inFlight = false;
+}
+
+function environmentInstallActionName(runtime) {
+  return runtime === 'loopx' ? 'install_loopx' : 'install_' + runtime + '_runtime';
+}
+
+// A runtime install is observed to completion through its own environment fact:
+// the host flips the fact to `checking` while it works, then to `available` or
+// `unavailable`. The snapshot `checkedAt` separates a fresh probe from the
+// stale push that was already in flight when the click happened, so each row
+// reports only its own outcome.
+function observeEnvironmentInstall(snapshot, runtime) {
+  const entry = environmentInstallEntry(runtime);
+  if (!entry) return;
+  const fact = environmentFactFor(snapshot, runtime);
+  if (!fact) return;
+  if (entry.snapshotCheckedAt !== null && fact.checkedAt === entry.snapshotCheckedAt) return;
+  entry.snapshotCheckedAt = fact.checkedAt;
+  if (fact.status === 'checking') return;
+  const action = environmentInstallActionName(runtime);
   if (fact.status === 'available') {
-    clearEnvironmentInstallObservation();
-    showNotice(text(runtime === 'git' ? 'gitInstallComplete' : 'nodeInstallComplete', {
-      version: fact.version || '',
-    }), 'success');
+    emitInstallDiagnostic('environment_available', entry.requestId, action);
+    endEnvironmentInstall(runtime, entry.requestId);
+    const completeKey = runtime === 'loopx'
+      ? 'loopxInstallComplete'
+      : (runtime === 'git' ? 'gitInstallComplete' : 'nodeInstallComplete');
+    showNotice(text(completeKey, { version: fact.version || '' }), 'success');
     return;
   }
-  if (fact.status === 'unavailable' && !state.environmentInstallPending) {
-    clearEnvironmentInstallObservation();
-    showNotice(text('runtimeInstallFailed', {
-      runtime: text(runtime === 'git' ? 'installGit' : 'installNode'),
+  if (fact.status !== 'unavailable') return;
+  emitInstallDiagnostic('environment_unavailable', entry.requestId, action);
+  endEnvironmentInstall(runtime, entry.requestId);
+  if (runtime === 'loopx') {
+    showNotice(text('loopxInstallFailed', {
       message: fact.detail || statusLabel('unavailable'),
     }), 'error');
+    return;
   }
+  showNotice(text('runtimeInstallFailed', {
+    runtime: text(runtime === 'git' ? 'installGit' : 'installNode'),
+    message: fact.detail || statusLabel('unavailable'),
+  }), 'error');
 }
 
 function installRuntimeFromGithub(runtime) {
-  if (state.environmentInstallPending) return;
-  state.environmentInstallRequestId = state.environmentInstallRequestId || requestId();
-  state.environmentInstallRuntime = runtime;
-  state.environmentInstallPending = true;
-  state.environmentInstallObserved = true;
+  if (environmentInstallEntry(runtime)) return;
+  const request = beginEnvironmentInstall(runtime);
   renderEnvironment();
   showNotice(text(runtime === 'git' ? 'gitInstallStarted' : 'nodeInstallStarted'));
   window.setTimeout(() => {
-    void submitRuntimeInstallation(runtime);
+    void submitRuntimeInstallation(runtime, request);
   }, 50);
 }
 
-async function submitRuntimeInstallation(runtime) {
+async function submitRuntimeInstallation(runtime, request) {
   try {
     const started = await performAction(runtime === 'git' ? 'install_git_runtime' : 'install_node_runtime', null, {
-      clientRequestId: state.environmentInstallRequestId,
+      clientRequestId: request,
     });
     if (started) {
       await attachSnapshot(false);
     } else {
-      clearEnvironmentInstallObservation();
+      endEnvironmentInstall(runtime, request);
     }
   } finally {
-    state.environmentInstallPending = false;
+    finishEnvironmentInstallRequest(runtime, request);
     renderEnvironment();
   }
 }
 
 function installLoopxFromGithub() {
-  if (state.environmentInstallPending) return;
-  state.environmentInstallRequestId = state.environmentInstallRequestId || requestId();
-  state.environmentInstallRuntime = 'loopx';
-  emitInstallDiagnostic('click_handler_entered');
-  state.environmentInstallPending = true;
-  state.environmentInstallObserved = true;
+  if (environmentInstallEntry('loopx')) return;
+  const request = beginEnvironmentInstall('loopx');
+  emitInstallDiagnostic('click_handler_entered', request);
   renderExecutionSupport();
   renderEnvironment();
   const installSidecar = state.snapshot
@@ -7219,33 +7242,33 @@ function installLoopxFromGithub() {
     && state.snapshot.environment.core.sidecar;
   const installTargetVersion = loopxInstallTargetVersion(installSidecar);
   showNotice(text('loopxInstallStarted', { version: installTargetVersion }));
-  emitInstallDiagnostic('ui_pending_rendered');
+  emitInstallDiagnostic('ui_pending_rendered', request);
   window.setTimeout(() => {
-    emitInstallDiagnostic('request_task_started');
+    emitInstallDiagnostic('request_task_started', request);
     void submitLoopxInstallation();
   }, 50);
 }
 
 async function submitLoopxInstallation() {
+  const request = installRequestId('loopx');
+  if (!request) return;
   try {
-    emitInstallDiagnostic('bridge_call_started');
+    emitInstallDiagnostic('bridge_call_started', request);
     const started = await performAction('install_loopx', null, {
-      clientRequestId: state.environmentInstallRequestId,
+      clientRequestId: request,
     });
-    emitInstallDiagnostic(started ? 'bridge_call_completed' : 'bridge_call_rejected');
+    emitInstallDiagnostic(started ? 'bridge_call_completed' : 'bridge_call_rejected', request);
     if (started) {
       await attachSnapshot(false);
     } else {
-      state.environmentInstallObserved = false;
-      state.environmentInstallRequestId = null;
+      endEnvironmentInstall('loopx', request);
     }
   } finally {
-    state.environmentInstallPending = false;
+    finishEnvironmentInstallRequest('loopx', request);
     renderExecutionSupport();
     renderEnvironment();
   }
 }
-
 async function answerTaskGate(task, action, note = '') {
   const gate = task && latestGate(task.taskId);
   if (!task || !gate) {

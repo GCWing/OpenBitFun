@@ -262,6 +262,30 @@ struct ScheduledTask {
     task_id: String,
 }
 
+/// One install slot per app-managed component. The environment panel lets the
+/// owner repair Node.js, Git and the LoopX sidecar independently, so a running
+/// repair only blocks its own row instead of serialising every remediation
+/// behind one global guard.
+#[derive(Debug, Default)]
+struct RuntimeInstallSlots {
+    loopx: AtomicBool,
+    node: AtomicBool,
+    git: AtomicBool,
+}
+
+impl RuntimeInstallSlots {
+    fn loopx(&self) -> &AtomicBool {
+        &self.loopx
+    }
+
+    fn runtime(&self, runtime: LoopxManagedRuntimeKind) -> &AtomicBool {
+        match runtime {
+            LoopxManagedRuntimeKind::Node => &self.node,
+            LoopxManagedRuntimeKind::Git => &self.git,
+        }
+    }
+}
+
 struct InProgressGuard<'a>(&'a AtomicBool);
 
 impl Drop for InProgressGuard<'_> {
@@ -308,7 +332,7 @@ pub struct LoopxController {
     event_sender: broadcast::Sender<LoopxEvent>,
     task_sender: mpsc::UnboundedSender<ScheduledTask>,
     load_error: RwLock<Option<String>>,
-    install_in_progress: AtomicBool,
+    install_in_progress: RuntimeInstallSlots,
     reset_in_progress: AtomicBool,
 }
 
@@ -348,7 +372,7 @@ impl LoopxController {
             event_sender,
             task_sender,
             load_error: RwLock::new(load_error),
-            install_in_progress: AtomicBool::new(false),
+            install_in_progress: RuntimeInstallSlots::default(),
             reset_in_progress: AtomicBool::new(false),
         });
         if restart_changed {
@@ -1272,6 +1296,7 @@ impl LoopxController {
         }
         if self
             .install_in_progress
+            .loopx()
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
@@ -1285,7 +1310,7 @@ impl LoopxController {
         let current_revision = match self.mark_loopx_installing(&request.client_request_id).await {
             Ok(revision) => revision,
             Err(error) => {
-                self.install_in_progress.store(false, Ordering::Release);
+                self.install_in_progress.loopx().store(false, Ordering::Release);
                 return Err(error);
             }
         };
@@ -1298,7 +1323,7 @@ impl LoopxController {
         let request_id = request.client_request_id.clone();
         let controller = Arc::clone(self);
         tokio::spawn(async move {
-            let _install_guard = InProgressGuard(&controller.install_in_progress);
+            let _install_guard = InProgressGuard(controller.install_in_progress.loopx());
             log::info!("LoopX installation background task started: request_id={request_id}");
             if let Err(error) = controller.run_loopx_install(&request_id).await {
                 log::error!(
@@ -1440,13 +1465,17 @@ impl LoopxController {
         }
         if self
             .install_in_progress
+            .runtime(runtime)
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
         {
             return Ok(LoopxActionResponse {
                 status: LoopxActionStatus::Duplicate,
                 current_revision: self.state.read().await.revision,
-                message: Some("An environment installation is already running".to_string()),
+                message: Some(format!(
+                    "{} runtime installation is already running",
+                    runtime_label(runtime)
+                )),
                 ..LoopxActionResponse::default()
             });
         }
@@ -1456,7 +1485,7 @@ impl LoopxController {
         {
             Ok(revision) => revision,
             Err(error) => {
-                self.install_in_progress.store(false, Ordering::Release);
+                self.install_in_progress.runtime(runtime).store(false, Ordering::Release);
                 return Err(error);
             }
         };
@@ -1470,7 +1499,7 @@ impl LoopxController {
         let request_id = request.client_request_id.clone();
         let controller = Arc::clone(self);
         tokio::spawn(async move {
-            let _install_guard = InProgressGuard(&controller.install_in_progress);
+            let _install_guard = InProgressGuard(controller.install_in_progress.runtime(runtime));
             if let Err(error) = controller.run_runtime_install(runtime, &request_id).await {
                 log::error!(
                     "LoopX managed runtime installation failed: request_id={request_id}, runtime={runtime:?}, error={error}"
@@ -6934,5 +6963,28 @@ mod tests {
             .remediation
             .as_deref()
             .is_some_and(|detail| detail.contains("Windows-only")));
+    }
+
+    #[test]
+    fn runtime_install_slots_are_independent() {
+        use std::sync::atomic::Ordering;
+
+        let slots = RuntimeInstallSlots::default();
+
+        // Repairing one component must not claim the others: the owner can
+        // start Node.js, Git and the LoopX sidecar from the same panel.
+        assert!(!slots
+            .runtime(LoopxManagedRuntimeKind::Node)
+            .swap(true, Ordering::AcqRel));
+        assert!(!slots
+            .runtime(LoopxManagedRuntimeKind::Git)
+            .swap(true, Ordering::AcqRel));
+        assert!(!slots.loopx().swap(true, Ordering::AcqRel));
+
+        // The same component still cannot be claimed twice.
+        assert!(slots
+            .runtime(LoopxManagedRuntimeKind::Node)
+            .swap(true, Ordering::AcqRel));
+        assert!(slots.loopx().swap(true, Ordering::AcqRel));
     }
 }
