@@ -1414,6 +1414,20 @@ impl SessionManager {
         )))
     }
 
+    /// Attach an explicit owner; cwd never establishes ownership.
+    pub async fn set_owner(
+        &self,
+        session_id: &str,
+        owner: super::SessionOwner,
+    ) -> TerminalResult<()> {
+        let mut sessions = self.sessions.write().await;
+        let session = sessions
+            .get_mut(session_id)
+            .ok_or_else(|| TerminalError::SessionNotFound(session_id.to_owned()))?;
+        session.metadata.owner = Some(owner);
+        Ok(())
+    }
+
     /// Get a session by ID
     pub async fn get_session(&self, session_id: &str) -> Option<TerminalSession> {
         let sessions = self.sessions.read().await;

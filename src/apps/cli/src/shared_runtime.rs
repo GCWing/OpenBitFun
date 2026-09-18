@@ -46,6 +46,7 @@ struct SubagentRoute {
 type SubagentRoutes = Mutex<HashMap<String, SubagentRoute>>;
 
 pub(crate) struct SharedRuntimeHandler {
+    workspace_id: Option<String>,
     runtime: AgentRuntime,
     compatibility: Option<CoreAgentRuntimeCompatibility>,
     workspace: PathBuf,
@@ -59,20 +60,30 @@ impl SharedRuntimeHandler {
     pub(crate) fn build(
         runtime: AgentRuntime,
         compatibility: CoreAgentRuntimeCompatibility,
-        workspace: &Path,
+        workspace: &openbitfun_core::service::workspace::WorkspaceInfo,
     ) -> Result<Self> {
-        Self::build_optional(runtime, Some(compatibility), workspace)
+        Self::build_optional(
+            runtime,
+            Some(compatibility),
+            &workspace.root_path,
+            Some(workspace.id.clone()),
+        )
     }
 
     #[cfg(test)]
-    pub(crate) fn build_for_test(runtime: AgentRuntime, workspace: &Path) -> Result<Self> {
-        Self::build_optional(runtime, None, workspace)
+    pub(crate) fn build_for_test(
+        runtime: AgentRuntime,
+        workspace: &Path,
+        workspace_id: &str,
+    ) -> Result<Self> {
+        Self::build_optional(runtime, None, workspace, Some(workspace_id.to_string()))
     }
 
     fn build_optional(
         runtime: AgentRuntime,
         compatibility: Option<CoreAgentRuntimeCompatibility>,
         workspace: &Path,
+        workspace_id: Option<String>,
     ) -> Result<Self> {
         let mut agent_events = runtime
             .subscribe_events()
@@ -207,6 +218,7 @@ impl SharedRuntimeHandler {
         });
 
         Ok(Self {
+            workspace_id,
             runtime,
             compatibility,
             workspace: dunce::canonicalize(workspace)
@@ -242,7 +254,11 @@ impl RuntimeIpcRequestHandler for SharedRuntimeHandler {
                 let binding = match session_id {
                     Some(session_id) => self.session_workspace_binding(&session_id).await?,
                     None => AgentSessionWorkspaceBinding {
-                        workspace_id: None,
+                        workspace_kind: Some(
+                            openbitfun_core::service::workspace::WorkspaceKind::Normal,
+                        ),
+                        project_workspace_id: self.workspace_id.clone(),
+                        workspace_id: self.workspace_id.clone(),
                         workspace_path: self.workspace.to_string_lossy().to_string(),
                         project_workspace_path: Some(self.workspace.to_string_lossy().to_string()),
                         execution_target: Some(
@@ -260,10 +276,9 @@ impl RuntimeIpcRequestHandler for SharedRuntimeHandler {
                         error
                     );
                 }
-                let workspace = PathBuf::from(&binding.workspace_path);
                 if let Err(error) =
                     openbitfun_core::external_sources::ensure_external_source_workspace_snapshot(
-                        Some(&workspace),
+                        binding.workspace_id.as_deref(),
                     )
                     .await
                 {
@@ -275,7 +290,8 @@ impl RuntimeIpcRequestHandler for SharedRuntimeHandler {
                 let modes = self
                     .runtime
                     .list_agent_modes(AgentModeCatalogQuery {
-                        workspace_root: Some(workspace.to_string_lossy().to_string()),
+                        workspace_id: binding.workspace_id.clone(),
+                        workspace_root: None,
                         include_external: true,
                     })
                     .await
@@ -312,6 +328,7 @@ impl RuntimeIpcRequestHandler for SharedRuntimeHandler {
                 let restored = self
                     .runtime
                     .restore_session(AgentSessionRestoreRequest {
+                        workspace_id: request.workspace_id,
                         workspace_path: request.workspace_path,
                         session_id: request.session_id,
                         include_internal: false,
@@ -355,12 +372,12 @@ impl RuntimeIpcRequestHandler for SharedRuntimeHandler {
                 })
             }
             RuntimeIpcOperation::ForkSession { request } => {
-                let workspace_path = self.workspace.to_string_lossy().into_owned();
                 let forked = match request.before_turn_id {
                     Some(source_turn_id) => {
                         self.runtime
                             .fork_session_before_turn(AgentSessionForkBeforeTurnRequest {
-                                workspace_path: workspace_path.clone(),
+                                workspace_id: self.workspace_id.clone(),
+                                workspace_path: String::new(),
                                 source_session_id: request.session_id,
                                 source_turn_id,
                                 remote_connection_id: None,
@@ -371,7 +388,8 @@ impl RuntimeIpcRequestHandler for SharedRuntimeHandler {
                     None => {
                         self.runtime
                             .fork_session(AgentSessionForkRequest {
-                                workspace_path: workspace_path.clone(),
+                                workspace_id: self.workspace_id.clone(),
+                                workspace_path: String::new(),
                                 source_session_id: request.session_id,
                                 remote_connection_id: None,
                                 remote_ssh_host: None,
@@ -383,7 +401,8 @@ impl RuntimeIpcRequestHandler for SharedRuntimeHandler {
                 let restored = self
                     .runtime
                     .restore_session(AgentSessionRestoreRequest {
-                        workspace_path,
+                        workspace_id: self.workspace_id.clone(),
+                        workspace_path: String::new(),
                         session_id: forked.session_id.clone(),
                         include_internal: false,
                         remote_connection_id: None,
@@ -411,7 +430,14 @@ impl RuntimeIpcRequestHandler for SharedRuntimeHandler {
                 })
             }
             RuntimeIpcOperation::DeleteSession { session_id } => {
-                delete_owned_session(&self.runtime, &self.workspace, session_id).await?;
+                delete_owned_session(
+                    &self.runtime,
+                    self.workspace_id
+                        .as_deref()
+                        .ok_or_else(workspace_mismatch_error)?,
+                    session_id,
+                )
+                .await?;
                 Ok(RuntimeIpcOperationResult::Unit)
             }
             RuntimeIpcOperation::UpdateSessionMode { request } => {
@@ -429,7 +455,14 @@ impl RuntimeIpcRequestHandler for SharedRuntimeHandler {
                 Ok(RuntimeIpcOperationResult::Unit)
             }
             RuntimeIpcOperation::RenameSession { request } => {
-                rename_owned_session(&self.runtime, &self.workspace, request).await?;
+                rename_owned_session(
+                    &self.runtime,
+                    self.workspace_id
+                        .as_deref()
+                        .ok_or_else(workspace_mismatch_error)?,
+                    request,
+                )
+                .await?;
                 Ok(RuntimeIpcOperationResult::Unit)
             }
             RuntimeIpcOperation::ReloadSessionContext { request } => {
@@ -708,11 +741,12 @@ fn runtime_session_state(
 }
 
 fn owned_session_rename_request(
-    workspace: &Path,
+    workspace_id: &str,
     request: RuntimeSessionRenameRequest,
 ) -> AgentSessionRenameRequest {
     AgentSessionRenameRequest {
-        workspace_path: workspace.to_string_lossy().to_string(),
+        workspace_id: Some(workspace_id.to_owned()),
+        workspace_path: String::new(),
         session_id: request.session_id,
         session_name: request.session_name,
         remote_connection_id: None,
@@ -722,23 +756,24 @@ fn owned_session_rename_request(
 
 async fn rename_owned_session(
     runtime: &AgentRuntime,
-    workspace: &Path,
+    workspace_id: &str,
     request: RuntimeSessionRenameRequest,
 ) -> std::result::Result<(), RuntimeIpcError> {
     runtime
-        .rename_session(owned_session_rename_request(workspace, request))
+        .rename_session(owned_session_rename_request(workspace_id, request))
         .await
         .map_err(runtime_ipc_error)
 }
 
 async fn delete_owned_session(
     runtime: &AgentRuntime,
-    workspace: &Path,
+    workspace_id: &str,
     session_id: String,
 ) -> std::result::Result<(), RuntimeIpcError> {
     runtime
         .delete_session(AgentSessionDeleteRequest {
-            workspace_path: workspace.to_string_lossy().to_string(),
+            workspace_id: Some(workspace_id.to_owned()),
+            workspace_path: String::new(),
             session_id,
             remote_connection_id: None,
             remote_ssh_host: None,
@@ -850,7 +885,17 @@ impl SharedRuntimeHandler {
         operation: &RuntimeIpcOperation,
     ) -> std::result::Result<(), RuntimeIpcError> {
         let requested = match operation {
-            RuntimeIpcOperation::ListSessions { request } => Some(request.workspace_path.as_str()),
+            RuntimeIpcOperation::ListSessions { request } => {
+                if let Some(id) = request.workspace_id.as_deref() {
+                    return if self.workspace_id.as_deref() == Some(id) {
+                        Ok(())
+                    } else {
+                        Err(workspace_mismatch_error())
+                    };
+                }
+                // Pre-ID IPC compatibility; current clients send an ID.
+                Some(request.workspace_path.as_str())
+            }
             RuntimeIpcOperation::CreateSession { request } => Some(
                 request
                     .workspace_path
@@ -858,6 +903,13 @@ impl SharedRuntimeHandler {
                     .ok_or_else(workspace_mismatch_error)?,
             ),
             RuntimeIpcOperation::RestoreSession { request } => {
+                if let Some(id) = request.workspace_id.as_deref() {
+                    return if self.workspace_id.as_deref() == Some(id) {
+                        Ok(())
+                    } else {
+                        Err(workspace_mismatch_error())
+                    };
+                }
                 Some(request.workspace_path.as_str())
             }
             RuntimeIpcOperation::SubmitTurn { request } => Some(
@@ -1096,7 +1148,7 @@ pub(crate) async fn run_service(workspace: PathBuf, expected_identity: String) -
     let handler = Arc::new(SharedRuntimeHandler::build(
         runtime.agent_runtime().clone(),
         runtime.compatibility().clone(),
-        &workspace,
+        runtime.workspace(),
     )?);
     let server = RuntimeIpcServer::bind_with_handler(
         &ipc_root()?,
@@ -1584,14 +1636,15 @@ mod tests {
     #[test]
     fn shared_rename_uses_the_server_workspace_and_no_remote_identity() {
         let request = owned_session_rename_request(
-            std::path::Path::new("D:/workspace/project"),
+            "workspace-1",
             RuntimeSessionRenameRequest {
                 session_id: "session-1".to_string(),
                 session_name: "Auth refactor".to_string(),
             },
         );
 
-        assert_eq!(request.workspace_path, "D:/workspace/project");
+        assert_eq!(request.workspace_id.as_deref(), Some("workspace-1"));
+        assert!(request.workspace_path.is_empty());
         assert_eq!(request.session_id, "session-1");
         assert_eq!(request.session_name, "Auth refactor");
         assert!(request.remote_connection_id.is_none());
@@ -1610,6 +1663,7 @@ mod tests {
             .unwrap();
         let (available, _) = watch::channel(true);
         let handler = super::SharedRuntimeHandler {
+            workspace_id: Some("test-shared-workspace".into()),
             runtime,
             compatibility: None,
             workspace: std::env::temp_dir(),
@@ -1667,9 +1721,6 @@ mod tests {
 
     #[tokio::test]
     async fn embedded_and_shared_rename_reach_the_same_runtime_owner() {
-        let workspace = tempfile::tempdir().expect("workspace");
-        let canonical_workspace = dunce::canonicalize(workspace.path()).expect("workspace path");
-        let workspace_path = canonical_workspace.to_string_lossy().to_string();
         let port = Arc::new(RecordingSessionPort::default());
         let runtime = AgentRuntimeBuilder::new()
             .with_submission_port(port.clone())
@@ -1677,7 +1728,8 @@ mod tests {
             .build()
             .expect("runtime");
         let expected = AgentSessionRenameRequest {
-            workspace_path: workspace_path.clone(),
+            workspace_id: Some("workspace-1".into()),
+            workspace_path: String::new(),
             session_id: "session-1".to_string(),
             session_name: "Auth refactor".to_string(),
             remote_connection_id: None,
@@ -1691,7 +1743,7 @@ mod tests {
 
         rename_owned_session(
             &runtime,
-            &canonical_workspace,
+            "workspace-1",
             RuntimeSessionRenameRequest {
                 session_id: "session-1".to_string(),
                 session_name: "Auth refactor".to_string(),
@@ -1708,9 +1760,6 @@ mod tests {
 
     #[tokio::test]
     async fn embedded_and_shared_delete_reach_the_same_runtime_owner() {
-        let workspace = tempfile::tempdir().expect("workspace");
-        let canonical_workspace = dunce::canonicalize(workspace.path()).expect("workspace path");
-        let workspace_path = canonical_workspace.to_string_lossy().to_string();
         let port = Arc::new(RecordingSessionPort::default());
         let runtime = AgentRuntimeBuilder::new()
             .with_submission_port(port.clone())
@@ -1718,7 +1767,8 @@ mod tests {
             .build()
             .expect("runtime");
         let expected = AgentSessionDeleteRequest {
-            workspace_path,
+            workspace_id: Some("workspace-1".into()),
+            workspace_path: String::new(),
             session_id: "session-2".to_string(),
             remote_connection_id: None,
             remote_ssh_host: None,
@@ -1729,7 +1779,7 @@ mod tests {
             .await
             .expect("embedded delete");
 
-        delete_owned_session(&runtime, &canonical_workspace, "session-2".to_string())
+        delete_owned_session(&runtime, "workspace-1", "session-2".to_string())
             .await
             .expect("shared delete");
 

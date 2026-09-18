@@ -20,11 +20,12 @@ use openbitfun_services_core::session::{
 use openbitfun_services_core::session_projection_format::validate_runtime_event_log;
 use openbitfun_services_core::workspace_identity::build_project_runtime_slug;
 use openbitfun_services_core::workspace_identity::{
-    canonicalize_local_workspace_root, normalize_remote_workspace_path, LOCAL_WORKSPACE_SSH_HOST,
+    canonicalize_local_workspace_root, local_workspace_stable_storage_id,
+    normalize_remote_workspace_path, remote_workspace_stable_id, LOCAL_WORKSPACE_SSH_HOST,
 };
 use openbitfun_services_core::workspace_persistence::{
-    current_workspace_storage_id, validate_workspace_persistence_data, WorkspacePersistenceData,
-    WORKSPACE_PERSISTENCE_FORMAT_VERSION,
+    unsupported_workspace_persistence, validate_workspace_persistence_data,
+    WorkspacePersistenceData, WORKSPACE_PERSISTENCE_FORMAT_VERSION,
 };
 use openbitfun_services_core::workspace_records::{
     PrimaryAssistantKey, WorkspaceInfo, WorkspaceKind,
@@ -860,7 +861,7 @@ fn plan_workspace_sessions(roots: &MigrationRoots) -> LegacyMigrationResult<Work
                 workspace.root_path = target_path.clone();
             }
             normalize_legacy_workspace_for_current(&mut workspace)?;
-            let target_id = current_workspace_storage_id(&workspace)
+            let target_id = legacy_workspace_storage_id(&workspace)
                 .map_err(|error| owner_error("convert legacy Workspace id", error))?;
             workspace.id = target_id.clone();
             if workspace.workspace_kind != WorkspaceKind::Remote
@@ -2307,7 +2308,7 @@ mod tests {
 
         normalize_legacy_workspace_for_current(&mut workspace).unwrap();
         assert_eq!(workspace.root_path.to_string_lossy(), "/srv/repo");
-        assert!(current_workspace_storage_id(&workspace)
+        assert!(legacy_workspace_storage_id(&workspace)
             .unwrap()
             .starts_with("remote_"));
     }
@@ -2650,4 +2651,92 @@ mod tests {
             .tempdir_in(root)
             .unwrap()
     }
+}
+
+// Temporary pre-1.0 import conversion only. Existing registry IDs are opaque;
+// normal catalog loading must never recompute identity from a filesystem path.
+fn legacy_workspace_storage_id(
+    workspace: &WorkspaceInfo,
+) -> openbitfun_services_core::storage_error::StorageResult<String> {
+    match workspace.workspace_kind {
+        WorkspaceKind::Remote => {
+            let ssh_host = workspace
+                .metadata
+                .get("sshHost")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    unsupported_workspace_persistence(format!(
+                        "remote workspace '{}' is missing sshHost",
+                        workspace.id
+                    ))
+                })?;
+            workspace.remote_ssh_connection_id().ok_or_else(|| {
+                unsupported_workspace_persistence(format!(
+                    "remote workspace '{}' is missing connectionId",
+                    workspace.id
+                ))
+            })?;
+
+            let stored_root = workspace.root_path.to_string_lossy().replace('\\', "/");
+            let normalized_root = normalize_remote_workspace_path(&stored_root);
+            if !normalized_root.starts_with('/') {
+                return Err(unsupported_workspace_persistence(format!(
+                    "remote workspace '{}' does not use an absolute POSIX root",
+                    workspace.id
+                )));
+            }
+            if stored_root != normalized_root {
+                return Err(unsupported_workspace_persistence(format!(
+                    "remote workspace '{}' rootPath is not normalized",
+                    workspace.id
+                )));
+            }
+            Ok(remote_workspace_stable_id(ssh_host, &normalized_root))
+        }
+        WorkspaceKind::Normal | WorkspaceKind::Assistant => {
+            let ssh_host = workspace
+                .metadata
+                .get("sshHost")
+                .and_then(|value| value.as_str())
+                .map(str::trim);
+            if ssh_host != Some(LOCAL_WORKSPACE_SSH_HOST) {
+                return Err(unsupported_workspace_persistence(format!(
+                    "local workspace '{}' does not declare sshHost=localhost",
+                    workspace.id
+                )));
+            }
+            expected_persisted_local_workspace_id(&workspace.root_path).map_err(|error| {
+                unsupported_workspace_persistence(format!(
+                    "local workspace '{}' is not canonical: {error}",
+                    workspace.id
+                ))
+            })
+        }
+    }
+}
+
+fn expected_persisted_local_workspace_id(root_path: &Path) -> Result<String, String> {
+    if !root_path.is_absolute() {
+        return Err(format!(
+            "local workspace rootPath is not absolute: {}",
+            root_path.display()
+        ));
+    }
+
+    let normalized_root = if root_path.exists() {
+        let (canonical_root, normalized_root) = canonicalize_local_workspace_root(root_path)?;
+        if canonical_root != root_path {
+            return Err(format!(
+                "local workspace rootPath is not canonical: {}",
+                root_path.display()
+            ));
+        }
+        normalized_root
+    } else {
+        root_path.to_string_lossy().replace('\\', "/")
+    };
+
+    Ok(local_workspace_stable_storage_id(&normalized_root))
 }

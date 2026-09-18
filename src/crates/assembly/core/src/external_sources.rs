@@ -1244,6 +1244,38 @@ impl ExternalSourcePreferenceStore {
         ))
     }
 
+    async fn upgrade_workspace_policy(&self, workspace_id: &str) -> Result<(), String> {
+        let registry = crate::service::workspace::get_global_workspace_service()
+            .ok_or("Workspace service is unavailable")?;
+        let records = registry.list_workspace_infos().await;
+        let key = workspace_policy_key(Some(workspace_id)).ok_or("Missing workspace policy key")?;
+        let upgrade = |config: &mut ExternalSourcesConfig| -> Result<bool, String> {
+            let Some(document) = config.integration_policy.known_mut() else {
+                return Ok(false);
+            };
+            crate::service::workspace::legacy_compat::upgrade_external_policy_key(
+                &mut document.workspace_overrides,
+                &records,
+                workspace_id,
+                &key,
+            )
+        };
+        let mut config = self.read().await?;
+        if !upgrade(&mut config)? {
+            return Ok(());
+        }
+        let (result, _) = self
+            .update(|config| {
+                let changed = upgrade(config)?;
+                if changed {
+                    config.preference_revision += 1;
+                }
+                Ok::<(), String>(())
+            })
+            .await?;
+        result
+    }
+
     async fn read(&self) -> Result<ExternalSourcesConfig, String> {
         JsonFileStore
             .read_locked_optional(&self.path)
@@ -1330,8 +1362,8 @@ pub(crate) fn host_execution_domain_id() -> Result<ExecutionDomainId, String> {
     ExecutionDomainId::new(LEGACY_LOCAL_EXECUTION_DOMAIN_ID).map_err(|error| error.to_string())
 }
 
-fn workspace_policy_key(workspace_root: Option<&Path>) -> Option<String> {
-    let route = workspace_route_key(workspace_root);
+fn workspace_policy_key(workspace_id: Option<&str>) -> Option<String> {
+    let route = workspace_route_key(workspace_id);
     workspace_policy_key_from_route(&route)
 }
 
@@ -1339,11 +1371,8 @@ fn workspace_policy_key_from_route(route: &str) -> Option<String> {
     if route == "<global>" {
         return None;
     }
-    let normalized = route.replace('\\', "/");
-    #[cfg(windows)]
-    let normalized = normalized.to_ascii_lowercase();
     let mut hasher = Sha256::new();
-    hasher.update(normalized.as_bytes());
+    hasher.update(route.as_bytes());
     Some(format!(
         "workspace:{}",
         hex::encode(&hasher.finalize()[..16])
@@ -1376,13 +1405,13 @@ fn set_external_source_safe_mode_for(
 
 fn integration_policy_snapshot(
     preferences: &ExternalSourcesConfig,
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
 ) -> Result<ExternalIntegrationPolicySnapshot, String> {
     let ecosystems = default_external_integration_ecosystems();
     match preferences.integration_policy.known() {
         Some(document) => external_integration_policy_snapshot(
             document,
-            workspace_policy_key(workspace_root).as_deref(),
+            workspace_policy_key(workspace_id).as_deref(),
             ecosystems,
         ),
         None => incompatible_external_integration_policy_snapshot(
@@ -1602,6 +1631,7 @@ enum ExternalSourceServiceProfile {
 
 struct WorkspaceExternalSourceService {
     profile: ExternalSourceServiceProfile,
+    workspace_id: Option<String>,
     workspace_root: Option<PathBuf>,
     execution_domain_id: ExecutionDomainId,
     mcp_revision_key: ExternalMcpRevisionKey,
@@ -1633,16 +1663,16 @@ impl WorkspaceExternalSourceService {
         preferences: &ExternalSourcesConfig,
     ) -> Result<ExternalIntegrationPolicySnapshot, String> {
         if self.profile != ExternalSourceServiceProfile::DiscoveryCatalog {
-            return integration_policy_snapshot(preferences, self.workspace_root.as_deref());
+            return integration_policy_snapshot(preferences, self.workspace_id.as_deref());
         }
         let Some(stored) = preferences.integration_policy.known() else {
-            return integration_policy_snapshot(preferences, self.workspace_root.as_deref());
+            return integration_policy_snapshot(preferences, self.workspace_id.as_deref());
         };
         // This policy is used only by static discovery lanes. Runtime decisions
         // and the public policy snapshot continue to use the original document.
         let mut discovery = stored.clone();
         discovery.user_defaults.enabled = true;
-        if let Some(key) = workspace_policy_key(self.workspace_root.as_deref()) {
+        if let Some(key) = workspace_policy_key(self.workspace_id.as_deref()) {
             discovery
                 .workspace_overrides
                 .entry(key)
@@ -1651,7 +1681,7 @@ impl WorkspaceExternalSourceService {
         }
         external_integration_policy_snapshot(
             &discovery,
-            workspace_policy_key(self.workspace_root.as_deref()).as_deref(),
+            workspace_policy_key(self.workspace_id.as_deref()).as_deref(),
             default_external_integration_ecosystems(),
         )
         .map_err(|error| format!("policy_unavailable: {error}"))
@@ -1668,7 +1698,7 @@ impl WorkspaceExternalSourceService {
             .is_some_and(|document| {
                 automatic_discovery_enabled(
                     document,
-                    workspace_policy_key(self.workspace_root.as_deref()).as_deref(),
+                    workspace_policy_key(self.workspace_id.as_deref()).as_deref(),
                 )
             }))
     }
@@ -1683,7 +1713,7 @@ impl WorkspaceExternalSourceService {
                 .is_some_and(|document| {
                     automatic_discovery_enabled(
                         document,
-                        workspace_policy_key(self.workspace_root.as_deref()).as_deref(),
+                        workspace_policy_key(self.workspace_id.as_deref()).as_deref(),
                     )
                 })
         {
@@ -1694,6 +1724,7 @@ impl WorkspaceExternalSourceService {
     }
 
     async fn create(
+        workspace_id: Option<String>,
         workspace_root: Option<PathBuf>,
         profile: ExternalSourceServiceProfile,
     ) -> Result<Arc<Self>, String> {
@@ -1776,19 +1807,20 @@ impl WorkspaceExternalSourceService {
             control_plane.subagents(|coordinator| coordinator.snapshot().generation);
         initial_snapshot.preference_revision = preferences.preference_revision;
         initial_snapshot.integration_policy =
-            integration_policy_snapshot(&preferences, workspace_root.as_deref())?;
+            integration_policy_snapshot(&preferences, workspace_id.as_deref())?;
         let automatic_discovery = preferences
             .integration_policy
             .known()
             .is_some_and(|document| {
                 automatic_discovery_enabled(
                     document,
-                    workspace_policy_key(workspace_root.as_deref()).as_deref(),
+                    workspace_policy_key(workspace_id.as_deref()).as_deref(),
                 )
             });
         let (updates, _) = broadcast::channel(32);
         let service = Arc::new(Self {
             profile,
+            workspace_id,
             workspace_root,
             execution_domain_id,
             mcp_revision_key,
@@ -1977,14 +2009,14 @@ impl WorkspaceExternalSourceService {
         if self.profile == ExternalSourceServiceProfile::LocalExecution
             && matches!(recovery_policy, WorkerRecoveryPolicy::ResetAndAttempt)
         {
-            reset_external_tool_workspace_recovery_budget(self.workspace_root.as_deref()).await;
+            reset_external_tool_workspace_recovery_budget(self.workspace_id.as_deref()).await;
         }
         let recovery_targets = if self.profile == ExternalSourceServiceProfile::LocalExecution
             && matches!(
                 recovery_policy,
                 WorkerRecoveryPolicy::PendingOnce | WorkerRecoveryPolicy::ResetAndAttempt
             ) {
-            begin_external_tool_workspace_recovery(self.workspace_root.as_deref()).await
+            begin_external_tool_workspace_recovery(self.workspace_id.as_deref()).await
         } else {
             BTreeSet::new()
         };
@@ -2162,7 +2194,7 @@ impl WorkspaceExternalSourceService {
         let _rebuild_guard = self.product_rebuild_gate.lock().await;
         let command_snapshot = lock_coordinator(&self.control_plane).snapshot();
         let mut preferences = read_external_sources_config().await?;
-        let mut policy = integration_policy_snapshot(&preferences, self.workspace_root.as_deref())?;
+        let mut policy = integration_policy_snapshot(&preferences, self.workspace_id.as_deref())?;
         if self.profile != ExternalSourceServiceProfile::LocalExecution {
             return self
                 .rebuild_read_only_projection(command_snapshot, preferences, policy)
@@ -2197,7 +2229,7 @@ impl WorkspaceExternalSourceService {
             ecosystems_with_active_capability(&policy, EXTERNAL_CAPABILITY_MCP)
         };
         let mut state = reconcile_external_tools(
-            self.workspace_root.as_deref(),
+            self.workspace_id.as_deref(),
             self.execution_domain_id.as_str(),
             &self.control_plane,
             ExternalToolDecisions {
@@ -2223,7 +2255,7 @@ impl WorkspaceExternalSourceService {
         let tool_snapshot = lock_tool_coordinator(&self.control_plane).snapshot();
         let mut snapshot = merge_tool_state(command_snapshot, &tool_snapshot, state);
         let mcp_snapshot = lock_mcp_coordinator(&self.control_plane).snapshot();
-        let mcp_workspace_key = workspace_route_key(self.workspace_root.as_deref());
+        let mcp_workspace_key = workspace_route_key(self.workspace_id.as_deref());
         let native_mcp_candidates = if !mcp_active_ecosystems.is_empty() {
             load_native_mcp_candidates(&self.mcp_revision_key).await
         } else {
@@ -2267,6 +2299,7 @@ impl WorkspaceExternalSourceService {
         merge_mcp_state(&mut snapshot, &mcp_snapshot, mcp_state);
         let subagent_snapshot = lock_subagent_coordinator(&self.control_plane).snapshot();
         let mut subagent_state = reconcile_external_subagents(
+            self.workspace_id.as_deref(),
             self.workspace_root.as_deref(),
             self.execution_domain_id.as_str(),
             &subagent_snapshot,
@@ -2300,6 +2333,7 @@ impl WorkspaceExternalSourceService {
                     preferences = authoritative;
                     if decisions_changed {
                         subagent_state = reconcile_external_subagents(
+                            self.workspace_id.as_deref(),
                             self.workspace_root.as_deref(),
                             self.execution_domain_id.as_str(),
                             &subagent_snapshot,
@@ -2348,9 +2382,9 @@ impl WorkspaceExternalSourceService {
             &mut snapshot.command_conflicts,
             &active_subagents,
         );
-        if let Some(workspace_root) = self.workspace_root.as_deref() {
+        if let Some(workspace_id) = self.workspace_id.as_deref() {
             crate::agentic::agents::get_agent_registry().install_external_subagent_routes(
-                workspace_root,
+                workspace_id,
                 subagent_state.registrations,
                 subagent_state.routes,
             );
@@ -2412,7 +2446,7 @@ impl WorkspaceExternalSourceService {
             snapshot.sources.clear();
             snapshot.diagnostics.clear();
         }
-        policy = integration_policy_snapshot(&preferences, self.workspace_root.as_deref())?;
+        policy = integration_policy_snapshot(&preferences, self.workspace_id.as_deref())?;
         snapshot.integration_policy = policy;
         assign_external_source_presentation_groups(&mut snapshot);
         sanitize_external_snapshot_locations(&mut snapshot, self.workspace_root.as_deref());
@@ -2474,7 +2508,7 @@ impl WorkspaceExternalSourceService {
         let mut snapshot = merge_tool_state(command_snapshot, &tool_snapshot, tool_state);
 
         let mcp_snapshot = lock_mcp_coordinator(&self.control_plane).snapshot();
-        let mcp_workspace_key = workspace_route_key(self.workspace_root.as_deref());
+        let mcp_workspace_key = workspace_route_key(self.workspace_id.as_deref());
         let mut mcp_state = reconcile_external_mcp_catalog(
             self.execution_domain_id.as_str(),
             &mcp_workspace_key,
@@ -2503,6 +2537,7 @@ impl WorkspaceExternalSourceService {
 
         let subagent_snapshot = lock_subagent_coordinator(&self.control_plane).snapshot();
         let subagent_state = project_external_subagents_read_only(
+            self.workspace_id.as_deref(),
             self.workspace_root.as_deref(),
             self.execution_domain_id.as_str(),
             &subagent_snapshot,
@@ -2577,7 +2612,7 @@ impl WorkspaceExternalSourceService {
             .collect::<BTreeMap<_, _>>();
         let desired_ids = desired.keys().cloned().collect::<BTreeSet<_>>();
         let mut managed = self.active_mcp_runtime_ids.lock().await.clone();
-        let workspace_key = workspace_route_key(self.workspace_root.as_deref());
+        let workspace_key = workspace_route_key(self.workspace_id.as_deref());
         if let Err(reason) = self
             .mcp_runtime
             .replace_workspace_route(
@@ -3096,7 +3131,7 @@ impl WorkspaceExternalSourceService {
                 if Arc::strong_count(&service) > 1 {
                     continue;
                 }
-                let key = service.workspace_root.clone();
+                let key = service.workspace_id.clone();
                 let services = workspace_services_for_profile(service.profile);
                 if let Some(entry) = services.get(&key) {
                     let should_remove = entry
@@ -3130,9 +3165,9 @@ impl WorkspaceExternalSourceService {
                         services.remove(&key);
                         if service.profile == ExternalSourceServiceProfile::LocalExecution {
                             release_external_tool_workspace(key.as_deref()).await;
-                            if let Some(workspace_root) = key.as_deref() {
+                            if let Some(workspace_id) = service.workspace_id.as_deref() {
                                 crate::agentic::agents::get_agent_registry()
-                                    .release_external_subagent_workspace(workspace_root);
+                                    .release_external_subagent_workspace(workspace_id);
                             }
                         }
                     }
@@ -3150,7 +3185,7 @@ impl WorkspaceExternalSourceService {
         #[cfg(feature = "opencode-plugin-host")]
         if self.profile != ExternalSourceServiceProfile::DiscoveryCatalog {
             for message in crate::plugin_host::configured_plugin_activation_failures(
-                self.workspace_root.as_deref(),
+                self.workspace_id.as_deref(),
             ) {
                 if !snapshot.diagnostics.iter().any(|diagnostic| {
                     diagnostic.code == "plugin.activation_failed" && diagnostic.message == message
@@ -3208,14 +3243,14 @@ impl WorkspaceExternalSourceService {
     fn safe_mode_enabled(&self) -> bool {
         external_source_safe_mode_enabled_for(
             self.execution_domain_id.as_str(),
-            &workspace_route_key(self.workspace_root.as_deref()),
+            &workspace_route_key(self.workspace_id.as_deref()),
         )
     }
 
     fn write_safe_mode(&self, enabled: bool) {
         set_external_source_safe_mode_for(
             self.execution_domain_id.as_str(),
-            &workspace_route_key(self.workspace_root.as_deref()),
+            &workspace_route_key(self.workspace_id.as_deref()),
             enabled,
         );
     }
@@ -3443,7 +3478,7 @@ impl WorkspaceExternalSourceService {
         mutation: ExternalIntegrationPolicyMutation,
     ) -> Result<ExternalSourceCatalogSnapshot, String> {
         let preferences =
-            persist_integration_policy_mutation(self.workspace_root.as_deref(), mutation).await?;
+            persist_integration_policy_mutation(self.workspace_id.as_deref(), mutation).await?;
         propagate_integration_policy_preferences(&preferences, self);
         self.refresh_preserving_worker_recovery().await
     }
@@ -4453,11 +4488,10 @@ fn lock_snapshot(
     }
 }
 
-static WORKSPACE_SERVICES: OnceLock<
-    DashMap<Option<PathBuf>, Weak<WorkspaceExternalSourceService>>,
-> = OnceLock::new();
+static WORKSPACE_SERVICES: OnceLock<DashMap<Option<String>, Weak<WorkspaceExternalSourceService>>> =
+    OnceLock::new();
 static READ_ONLY_WORKSPACE_SERVICES: OnceLock<
-    DashMap<Option<PathBuf>, Weak<WorkspaceExternalSourceService>>,
+    DashMap<Option<String>, Weak<WorkspaceExternalSourceService>>,
 > = OnceLock::new();
 static SAFE_MODE_WORKSPACES: OnceLock<DashMap<String, ()>> = OnceLock::new();
 
@@ -4467,25 +4501,25 @@ fn safe_mode_workspaces() -> &'static DashMap<String, ()> {
 static TOOL_REGISTRY_CHANGE_EPOCH: AtomicU64 = AtomicU64::new(0);
 static TOOL_REGISTRY_REBUILD_SCHEDULED: AtomicBool = AtomicBool::new(false);
 
-fn workspace_services() -> &'static DashMap<Option<PathBuf>, Weak<WorkspaceExternalSourceService>> {
+fn workspace_services() -> &'static DashMap<Option<String>, Weak<WorkspaceExternalSourceService>> {
     WORKSPACE_SERVICES.get_or_init(DashMap::new)
 }
 
 fn read_only_workspace_services(
-) -> &'static DashMap<Option<PathBuf>, Weak<WorkspaceExternalSourceService>> {
+) -> &'static DashMap<Option<String>, Weak<WorkspaceExternalSourceService>> {
     READ_ONLY_WORKSPACE_SERVICES.get_or_init(DashMap::new)
 }
 
 fn discovery_workspace_services(
-) -> &'static DashMap<Option<PathBuf>, Weak<WorkspaceExternalSourceService>> {
-    static SERVICES: OnceLock<DashMap<Option<PathBuf>, Weak<WorkspaceExternalSourceService>>> =
+) -> &'static DashMap<Option<String>, Weak<WorkspaceExternalSourceService>> {
+    static SERVICES: OnceLock<DashMap<Option<String>, Weak<WorkspaceExternalSourceService>>> =
         OnceLock::new();
     SERVICES.get_or_init(DashMap::new)
 }
 
 fn workspace_services_for_profile(
     profile: ExternalSourceServiceProfile,
-) -> &'static DashMap<Option<PathBuf>, Weak<WorkspaceExternalSourceService>> {
+) -> &'static DashMap<Option<String>, Weak<WorkspaceExternalSourceService>> {
     match profile {
         ExternalSourceServiceProfile::LocalExecution => workspace_services(),
         ExternalSourceServiceProfile::ReadOnlyProjection => read_only_workspace_services(),
@@ -4496,20 +4530,6 @@ fn workspace_services_for_profile(
 fn workspace_service_gate() -> &'static tokio::sync::Mutex<()> {
     static GATE: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
     GATE.get_or_init(|| tokio::sync::Mutex::new(()))
-}
-
-pub(crate) fn normalize_workspace_root(
-    workspace_root: Option<&Path>,
-) -> Result<Option<PathBuf>, String> {
-    let Some(workspace_root) = workspace_root else {
-        return Ok(None);
-    };
-    if !workspace_root.is_absolute() {
-        return Err("external source workspace root must be absolute".to_string());
-    }
-    Ok(Some(
-        crate::agentic::workspace::canonical_local_workspace_path(workspace_root),
-    ))
 }
 
 fn relative_display_path(location: &str, root: &Path) -> Option<String> {
@@ -5004,9 +5024,9 @@ fn merge_mcp_state(
 }
 
 async fn service_for(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
 ) -> Result<Arc<WorkspaceExternalSourceService>, String> {
-    service_for_profile(workspace_root, ExternalSourceServiceProfile::LocalExecution).await
+    service_for_profile(workspace_id, ExternalSourceServiceProfile::LocalExecution).await
 }
 
 fn mcp_import_discovery_complete(
@@ -5020,13 +5040,10 @@ fn mcp_import_discovery_complete(
 }
 
 pub(crate) async fn collect_external_mcp_import_candidates(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
 ) -> Result<Vec<crate::external_mcp_import::ExternalMcpImportCandidate>, String> {
-    let service = service_for_profile(
-        workspace_root,
-        ExternalSourceServiceProfile::DiscoveryCatalog,
-    )
-    .await?;
+    let service =
+        service_for_profile(workspace_id, ExternalSourceServiceProfile::DiscoveryCatalog).await?;
     service.refresh_mcp_import_sources().await?;
     // Provider preparation performs bounded synchronous file reads. Keep it off
     // the async workers serving UI requests and connection lifecycle.
@@ -5088,27 +5105,48 @@ pub(crate) async fn collect_external_mcp_import_candidates(
 }
 
 async fn read_only_service_for(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
 ) -> Result<Arc<WorkspaceExternalSourceService>, String> {
     service_for_profile(
-        workspace_root,
+        workspace_id,
         ExternalSourceServiceProfile::ReadOnlyProjection,
     )
     .await
 }
 
 async fn service_for_profile(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     profile: ExternalSourceServiceProfile,
 ) -> Result<Arc<WorkspaceExternalSourceService>, String> {
-    let workspace_root = normalize_workspace_root(workspace_root)?;
+    let workspace = match workspace_id {
+        Some(id) => {
+            let registry = crate::service::workspace::get_global_workspace_service()
+                .ok_or("Workspace service is unavailable")?;
+            let record = registry
+                .require_workspace(id)
+                .await
+                .map_err(|error| error.to_string())?;
+            if record.workspace_kind == crate::service::workspace::WorkspaceKind::Remote {
+                return Err("External source discovery does not support remote workspaces".into());
+            }
+            Some(record)
+        }
+        None => None,
+    };
+    if let Some(id) = workspace_id {
+        ExternalSourcePreferenceStore::global()?
+            .upgrade_workspace_policy(id)
+            .await?;
+    }
+    let workspace_root = workspace.as_ref().map(|record| record.root_path.clone());
+    let workspace_id = workspace_id.map(str::to_owned);
     // Serialize cache acquisition with idle retirement. Without this lease
     // gate, a caller could upgrade the weak entry after the retirement count
     // check and have its newly acquired routes removed underneath it.
     let _service_gate = workspace_service_gate().lock().await;
     let services = workspace_services_for_profile(profile);
     if let Some(service) = services
-        .get(&workspace_root)
+        .get(&workspace_id)
         .and_then(|service| service.value().upgrade())
     {
         service.touch();
@@ -5132,8 +5170,13 @@ async fn service_for_profile(
         }
         return Ok(service);
     }
-    let created = WorkspaceExternalSourceService::create(workspace_root.clone(), profile).await?;
-    let service = match services.entry(workspace_root) {
+    let created = WorkspaceExternalSourceService::create(
+        workspace_id.clone(),
+        workspace_root.clone(),
+        profile,
+    )
+    .await?;
+    let service = match services.entry(workspace_id) {
         Entry::Occupied(mut entry) => match entry.get().upgrade() {
             Some(existing) => existing,
             None => {
@@ -5175,9 +5218,9 @@ fn acknowledged_ecosystem_key(execution_domain_id: &str, ecosystem_id: &str) -> 
 /// drift apart. An ecosystem only qualifies once discovery actually found a
 /// source for it: a registered adapter with nothing to offer is not news.
 pub async fn unacknowledged_external_ecosystems(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
 ) -> Result<Vec<String>, String> {
-    let service = read_only_service_for(workspace_root).await?;
+    let service = read_only_service_for(workspace_id).await?;
     let execution_domain_id = service.execution_domain_id.clone();
     let discovered = service
         .snapshot()
@@ -5214,13 +5257,13 @@ pub async fn unacknowledged_external_ecosystems(
 /// The execution domain is resolved from the workspace's own service so hosts
 /// never pass an identity that disagrees with the one discovery recorded.
 pub async fn acknowledge_external_ecosystems(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     ecosystem_ids: Vec<String>,
 ) -> Result<(), String> {
     if ecosystem_ids.is_empty() {
         return Ok(());
     }
-    let execution_domain_id = read_only_service_for(workspace_root)
+    let execution_domain_id = read_only_service_for(workspace_id)
         .await?
         .execution_domain_id
         .clone();
@@ -6128,14 +6171,14 @@ fn apply_workspace_policy_operation(
 }
 
 async fn persist_integration_policy_mutation(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     mutation: ExternalIntegrationPolicyMutation,
 ) -> Result<ExternalSourcesConfig, String> {
     validate_integration_policy_operation(mutation.scope, &mutation.change)?;
     let workspace_key = match mutation.scope {
         ExternalIntegrationPolicyScope::User => None,
         ExternalIntegrationPolicyScope::Workspace => {
-            Some(workspace_policy_key(workspace_root).ok_or_else(|| {
+            Some(workspace_policy_key(workspace_id).ok_or_else(|| {
                 invalid_operation_error("Workspace policy scope requires a workspace")
             })?)
         }
@@ -6418,7 +6461,7 @@ pub(crate) fn notify_external_tool_registry_changed() {
 
 async fn sync_service_preferences(service: &WorkspaceExternalSourceService) -> Result<(), String> {
     let preferences = read_external_sources_config().await?;
-    let policy = integration_policy_snapshot(&preferences, service.workspace_root.as_deref())?;
+    let policy = integration_policy_snapshot(&preferences, service.workspace_id.as_deref())?;
     let suppressed_sources = preferences
         .suppressed_source_keys
         .iter()
@@ -6674,10 +6717,10 @@ fn project_native_prompt_command_conflicts(
 }
 
 pub async fn native_prompt_command_conflicts(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     native_commands: Vec<NativePromptCommandDescriptor>,
 ) -> Result<NativePromptCommandConflictSnapshot, String> {
-    let snapshot = external_source_snapshot(workspace_root, false).await?;
+    let snapshot = external_source_snapshot(workspace_id, false).await?;
     let preferences = read_external_sources_config().await?;
     project_native_prompt_command_conflicts(
         &snapshot,
@@ -6689,12 +6732,12 @@ pub async fn native_prompt_command_conflicts(
 }
 
 pub async fn set_native_prompt_command_conflict_choice(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     native_commands: Vec<NativePromptCommandDescriptor>,
     selected_candidate_id: &str,
     expected_preference_revision: u64,
 ) -> Result<NativePromptCommandConflictSnapshot, String> {
-    let snapshot = external_source_snapshot(workspace_root, false).await?;
+    let snapshot = external_source_snapshot(workspace_id, false).await?;
     let preferences = read_external_sources_config().await?;
     if preferences.preference_revision != expected_preference_revision {
         return Err(stale_operation_error(
@@ -7045,26 +7088,26 @@ fn validate_native_prompt_command_expansion_guard(
 }
 
 pub async fn set_external_prompt_command_conflict_choice(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     conflict_key: &str,
     candidate_id: &str,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
     validate_conflict_preference(conflict_key, candidate_id)?;
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .set_conflict_choice(conflict_key, candidate_id, expected_preference_revision)
         .await
 }
 
 pub async fn set_external_tool_target_decision(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     approval_key: &str,
     decision_key: &str,
     approved: bool,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .set_tool_target_decision(
             approval_key,
@@ -7076,13 +7119,13 @@ pub async fn set_external_tool_target_decision(
 }
 
 pub async fn set_external_tool_targets_enabled(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     decisions: Vec<(String, String)>,
     enabled: bool,
     expected_catalog_generation: u64,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .set_tool_targets_enabled(
             decisions,
@@ -7094,26 +7137,26 @@ pub async fn set_external_tool_targets_enabled(
 }
 
 pub async fn set_external_tool_conflict_choice(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     conflict_key: &str,
     candidate_id: &str,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .set_tool_conflict_choice(conflict_key, candidate_id, expected_preference_revision)
         .await
 }
 
 pub async fn set_external_mcp_server_decision(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     candidate_id: &str,
     decision_key: &str,
     approved: bool,
     expected_mcp_generation: u64,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .set_mcp_server_decision(
             candidate_id,
@@ -7126,13 +7169,13 @@ pub async fn set_external_mcp_server_decision(
 }
 
 pub async fn set_external_mcp_servers_enabled(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     decisions: Vec<(String, String)>,
     enabled: bool,
     expected_mcp_generation: u64,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .set_mcp_servers_enabled(
             decisions,
@@ -7144,14 +7187,14 @@ pub async fn set_external_mcp_servers_enabled(
 }
 
 pub async fn choose_external_mcp_conflict(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     conflict_key: &str,
     candidate_id: &str,
     approve_external: bool,
     expected_mcp_generation: u64,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .choose_mcp_conflict(
             conflict_key,
@@ -7164,14 +7207,14 @@ pub async fn choose_external_mcp_conflict(
 }
 
 pub async fn set_external_subagent_activation(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     candidate_id: &str,
     approved: bool,
     expected_subagent_generation: u64,
     expected_preference_revision: u64,
     decision_key: &str,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .set_subagent_activation(
             candidate_id,
@@ -7184,13 +7227,13 @@ pub async fn set_external_subagent_activation(
 }
 
 pub async fn set_external_subagents_enabled(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     decisions: Vec<(String, String)>,
     enabled: bool,
     expected_subagent_generation: u64,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .set_subagents_enabled(
             decisions,
@@ -7202,13 +7245,13 @@ pub async fn set_external_subagents_enabled(
 }
 
 pub async fn set_external_subagent_model_binding(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     binding_key: &str,
     target: Option<ExternalSubagentModelBindingTarget>,
     expected_subagent_generation: u64,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .set_subagent_model_binding(
             binding_key,
@@ -7220,14 +7263,14 @@ pub async fn set_external_subagent_model_binding(
 }
 
 pub async fn choose_external_subagent_conflict(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     conflict_key: &str,
     candidate_id: &str,
     approve_external: bool,
     expected_subagent_generation: u64,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .choose_subagent_conflict(
             conflict_key,
@@ -7240,10 +7283,10 @@ pub async fn choose_external_subagent_conflict(
 }
 
 pub async fn external_source_snapshot(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     force_refresh: bool,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    let service = service_for(workspace_root).await?;
+    let service = service_for(workspace_id).await?;
     if force_refresh {
         service.refresh_with_runtime_invalidation().await
     } else {
@@ -7253,11 +7296,11 @@ pub async fn external_source_snapshot(
 }
 
 pub async fn workspace_reference_snapshot(
-    workspace_root: &Path,
+    workspace_id: &str,
     native_related_paths: &[crate::service::workspace::RelatedPath],
     force_refresh: bool,
 ) -> Result<WorkspaceReferenceSnapshot, String> {
-    let service = service_for(Some(workspace_root)).await?;
+    let service = service_for(Some(workspace_id)).await?;
     sync_service_preferences(&service).await?;
     if force_refresh {
         service.refresh_workspace_references(true).await?;
@@ -7334,25 +7377,23 @@ fn native_workspace_reference_key(related_path: &crate::service::workspace::Rela
 /// Resolves an opaque source identity to its host-local location for a host
 /// action. The raw path must not be serialized into the public snapshot.
 pub async fn external_source_location_for_host_action(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     stable_key: &str,
 ) -> Result<PathBuf, String> {
-    service_for(workspace_root)
-        .await?
-        .source_location(stable_key)
+    service_for(workspace_id).await?.source_location(stable_key)
 }
 
 pub async fn get_external_source_control_snapshot(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     force_refresh: bool,
     host_capabilities: ExternalSourceHostCapabilities,
 ) -> ExternalSourceOperationResult<ExternalSourceSurfaceSnapshotV1> {
     use openbitfun_product_domains::external_source_control::ExternalSourceOperationStage;
 
     let service = if host_capabilities.can_execute_external_assets {
-        service_for(workspace_root).await
+        service_for(workspace_id).await
     } else {
-        read_only_service_for(workspace_root).await
+        read_only_service_for(workspace_id).await
     }
     .map_err(|error| {
         sanitize_external_source_operation_error(error)
@@ -7373,13 +7414,13 @@ pub async fn get_external_source_control_snapshot(
 }
 
 pub async fn apply_external_source_control_action(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     request: ExternalSourceControlRequestV1,
 ) -> ExternalSourceOperationResult<ExternalSourceSurfaceSnapshotV1> {
     use openbitfun_product_domains::external_source_control::ExternalSourceOperationStage;
 
     let operation_id = request.operation_id.clone();
-    let service = service_for(workspace_root).await.map_err(|error| {
+    let service = service_for(workspace_id).await.map_err(|error| {
         typed_control_operation_error(
             error,
             &operation_id,
@@ -7392,10 +7433,10 @@ pub async fn apply_external_source_control_action(
 /// Returns a static, sanitized projection for Hosts that may inspect external
 /// configuration but must never load external code or alter runtime routes.
 pub async fn external_source_read_only_snapshot(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     force_refresh: bool,
 ) -> Result<ExternalSourcePublicSnapshot, String> {
-    let service = read_only_service_for(workspace_root).await?;
+    let service = read_only_service_for(workspace_id).await?;
     let snapshot = if force_refresh {
         service.refresh().await?
     } else {
@@ -7408,15 +7449,12 @@ pub async fn external_source_read_only_snapshot(
 }
 
 pub async fn external_source_discovery_snapshot(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     force_refresh: bool,
     host_capabilities: ExternalSourceHostCapabilities,
 ) -> Result<ExternalSourceDiscoverySnapshotV1, String> {
-    let service = service_for_profile(
-        workspace_root,
-        ExternalSourceServiceProfile::DiscoveryCatalog,
-    )
-    .await?;
+    let service =
+        service_for_profile(workspace_id, ExternalSourceServiceProfile::DiscoveryCatalog).await?;
     if force_refresh {
         service.refresh().await?;
     } else {
@@ -7431,7 +7469,7 @@ pub async fn external_source_discovery_snapshot(
         .is_some_and(|document| {
             automatic_discovery_enabled(
                 document,
-                workspace_policy_key(service.workspace_root.as_deref()).as_deref(),
+                workspace_policy_key(service.workspace_id.as_deref()).as_deref(),
             )
         });
     let has_scanned = service.initial_refresh_completed.load(Ordering::Acquire);
@@ -7463,7 +7501,7 @@ pub async fn external_source_discovery_snapshot(
     let mut catalog = ExternalSourcePublicSnapshot::from(service.snapshot());
     catalog.host_capabilities = ExternalSourceHostCapabilities::read_only_projection();
     catalog.integration_policy =
-        integration_policy_snapshot(&preferences, service.workspace_root.as_deref())?;
+        integration_policy_snapshot(&preferences, service.workspace_id.as_deref())?;
     catalog.preference_revision = preferences.preference_revision;
     catalog.discovery_pending = service.background_refresh_scheduled.load(Ordering::Acquire)
         || service.refresh_gate.try_lock().is_err()
@@ -7485,7 +7523,7 @@ pub async fn external_source_discovery_snapshot(
 }
 
 pub async fn update_external_integration_policy(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     mutation: ExternalIntegrationPolicyMutation,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
     let expected_revision = mutation.expected_preference_revision;
@@ -7495,17 +7533,15 @@ pub async fn update_external_integration_policy(
         ExternalIntegrationPolicyOperation::SetAutomaticDiscovery { .. }
     ) {
         async {
-            persist_integration_policy_mutation(workspace_root, mutation).await?;
-            let service = service_for_profile(
-                workspace_root,
-                ExternalSourceServiceProfile::DiscoveryCatalog,
-            )
-            .await?;
+            persist_integration_policy_mutation(workspace_id, mutation).await?;
+            let service =
+                service_for_profile(workspace_id, ExternalSourceServiceProfile::DiscoveryCatalog)
+                    .await?;
             service.ensure_initial_refresh().await
         }
         .await
     } else {
-        match service_for(workspace_root).await {
+        match service_for(workspace_id).await {
             Ok(service) => service.update_integration_policy(mutation).await,
             Err(error) => Err(error),
         }
@@ -7591,7 +7627,7 @@ fn safe_external_log_token(value: &str) -> String {
         .collect()
 }
 
-fn external_log_scope(workspace_root: Option<&Path>) -> &'static str {
+fn external_log_scope<T>(workspace_root: Option<T>) -> &'static str {
     if workspace_root.is_some() {
         "workspace"
     } else {
@@ -7712,17 +7748,17 @@ pub(crate) fn external_integration_error_code(error: &str) -> String {
 /// This is the shared discovery gate for selectors and execution routing; it
 /// does not start or recover any executable extension runtime.
 pub async fn ensure_external_source_workspace_snapshot(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
 ) -> Result<(), String> {
-    ensure_initial_external_source_workspace_service(workspace_root)
+    ensure_initial_external_source_workspace_service(workspace_id)
         .await
         .map(|_| ())
 }
 
 async fn ensure_initial_external_source_workspace_service(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
 ) -> Result<Arc<WorkspaceExternalSourceService>, String> {
-    let service = service_for(workspace_root).await?;
+    let service = service_for(workspace_id).await?;
     service.ensure_initial_refresh().await?;
     Ok(service)
 }
@@ -7732,23 +7768,23 @@ async fn ensure_initial_external_source_workspace_service(
 /// idle-retired workspace can restore approved routes before the catalog is
 /// exposed to the model. Existing services are only touched; file watchers and
 /// explicit refreshes remain responsible for later source changes.
-pub(crate) async fn ensure_external_source_workspace_runtime(workspace_root: Option<&Path>) {
-    let service = match ensure_initial_external_source_workspace_service(workspace_root).await {
+pub(crate) async fn ensure_external_source_workspace_runtime(workspace_id: Option<&str>) {
+    let service = match ensure_initial_external_source_workspace_service(workspace_id).await {
         Ok(service) => service,
         Err(error) => {
             log::warn!(
                 "Could not initialize external source workspace runtime scope={} error_category={}",
-                external_log_scope(workspace_root),
+                external_log_scope(workspace_id),
                 external_log_error_category(&error),
             );
             return;
         }
     };
-    if external_tool_workspace_requires_recovery(workspace_root).await {
+    if external_tool_workspace_requires_recovery(workspace_id).await {
         if let Err(error) = service.refresh_worker_loss_once().await {
             log::warn!(
                 "Could not recover external source tool runtime scope={} error_category={}",
-                external_log_scope(workspace_root),
+                external_log_scope(workspace_id),
                 external_log_error_category(&error),
             );
         }
@@ -7756,19 +7792,19 @@ pub(crate) async fn ensure_external_source_workspace_runtime(workspace_root: Opt
 }
 
 pub async fn set_external_source_enabled(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     source_key: &str,
     enabled: bool,
     expected_preference_revision: u64,
 ) -> Result<ExternalSourceCatalogSnapshot, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .set_source_enabled(source_key, enabled, expected_preference_revision)
         .await
 }
 
 pub async fn expand_external_prompt_command(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     name: &str,
     arguments: &str,
     native_commands: Vec<NativePromptCommandDescriptor>,
@@ -7778,7 +7814,7 @@ pub async fn expand_external_prompt_command(
     expected_preference_revision: Option<u64>,
     shell_review_decision: Option<&PromptCommandShellReviewDecision>,
 ) -> Result<PromptCommandInvocationOutcome, String> {
-    service_for(workspace_root)
+    service_for(workspace_id)
         .await?
         .expand_command(
             name,
@@ -7794,9 +7830,9 @@ pub async fn expand_external_prompt_command(
 }
 
 pub async fn subscribe_external_source_updates(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
 ) -> Result<ExternalSourceSubscription, String> {
-    let service = service_for(workspace_root).await?;
+    let service = service_for(workspace_id).await?;
     let receiver = service.updates.subscribe();
     service.ensure_background_refresh();
     Ok(ExternalSourceSubscription {
@@ -9012,7 +9048,7 @@ mod tests {
             assert!(!category.contains("opencode"));
         }
         assert_eq!(external_log_scope(Some(Path::new("C:/repo"))), "workspace");
-        assert_eq!(external_log_scope(None), "user-global");
+        assert_eq!(external_log_scope::<&str>(None), "user-global");
     }
 
     #[test]
@@ -9359,6 +9395,7 @@ mod tests {
             integration_policy_snapshot(&ExternalSourcesConfig::default(), None)
                 .expect("built-in integration policy is valid");
         Arc::new(WorkspaceExternalSourceService {
+            workspace_id: None,
             profile: ExternalSourceServiceProfile::LocalExecution,
             workspace_root: None,
             execution_domain_id: ExecutionDomainId::new(LEGACY_LOCAL_EXECUTION_DOMAIN_ID).unwrap(),
@@ -9629,6 +9666,7 @@ mod tests {
             discovery_calls,
         )]);
         let service_inner = Arc::get_mut(&mut service).expect("test owns the service");
+        service_inner.workspace_id = Some(uuid::Uuid::new_v4().to_string());
         service_inner.workspace_root = Some(workspace.path().to_path_buf());
         service_inner.mcp_runtime = runtime.clone();
 
@@ -9684,6 +9722,7 @@ mod tests {
         Arc::get_mut(&mut service)
             .expect("test owns the service")
             .workspace_root = Some(workspace.path().to_path_buf());
+        Arc::get_mut(&mut service).unwrap().workspace_id = Some(uuid::Uuid::new_v4().to_string());
         let revision = read_external_sources_config()
             .await
             .unwrap()
@@ -10203,7 +10242,7 @@ mod tests {
     #[test]
     fn integration_policy_mutations_share_revision_and_keep_workspace_paths_private() {
         let temp = tempfile::tempdir().unwrap();
-        let workspace_key = workspace_policy_key(Some(temp.path())).expect("workspace has a key");
+        let workspace_key = workspace_policy_key(Some("workspace-1")).expect("workspace has a key");
         assert!(workspace_key.starts_with("workspace:"));
         assert!(!workspace_key.contains(&temp.path().to_string_lossy().to_string()));
 

@@ -95,6 +95,8 @@ import {
   stripOptimisticTurnAdoption,
 } from '../../utils/optimisticTurnAdoption';
 import { isAcpFlowSession } from '../../utils/acpSession';
+import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
+import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 
 const pendingImageAnalysisTurns = new Map<string, string>();
 
@@ -506,11 +508,14 @@ function ensureSubagentSession(
   const parentTurnIndex = parentSession
     ? absoluteSessionTurnIndexForId(parentSession, parentInfo.dialogTurnId)
     : undefined;
+  const subagentWorkspace = parentSession
+    ? { workspaceId: parentSession.workspaceId, workspacePath: parentSession.workspacePath }
+    : resolveExternalSessionWorkspace(context, event);
   store.addExternalSession(
     subagentSessionId,
     buildSubagentSessionTitleWithType(parentInfo, explicitSubagentType),
     subagentType || parentSession?.mode || 'Standard',
-    parentSession?.workspacePath || resolveExternalSessionWorkspacePath(context, event),
+    subagentWorkspace.workspacePath,
     {
       parentSessionId: parentInfo.sessionId,
       sessionKind: 'subagent',
@@ -527,7 +532,7 @@ function ensureSubagentSession(
         || parentSession?.config.projectWorkspacePath
         || parentSession?.workspacePath,
       executionTarget: parentSession?.config.executionTarget,
-      workspaceId: parentSession?.workspaceId,
+      workspaceId: subagentWorkspace.workspaceId,
     },
     parentSession?.remoteConnectionId || extractEventRemoteConnectionId(event),
     parentSession?.remoteSshHost || extractEventRemoteSshHost(event),
@@ -1000,10 +1005,11 @@ async function handleAcpPermissionRequest(rawEvent: unknown): Promise<void> {
  */
 function handleSessionCreated(context: FlowChatContext, event: any): void {
   const { sessionId, sessionName, agentType } = event;
+  if (agentType === 'OpenBitFun') return; // The control host registers its dedicated presentation reference.
 
   const store = FlowChatStore.getInstance();
   const existing = store.getState().sessions.get(sessionId);
-  const workspacePath = resolveExternalSessionWorkspacePath(context, event);
+  const { workspaceId, workspacePath } = resolveExternalSessionWorkspace(context, event);
   const projectWorkspacePath =
     (typeof event.projectWorkspacePath === 'string' && event.projectWorkspacePath)
     || (typeof event.project_workspace_path === 'string' && event.project_workspace_path)
@@ -1014,10 +1020,6 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
       : event.execution_target && typeof event.execution_target === 'object'
         ? event.execution_target
         : undefined;
-  const workspaceId =
-    (typeof event.workspaceId === 'string' && event.workspaceId)
-    || (typeof event.workspace_id === 'string' && event.workspace_id)
-    || undefined;
   const remoteConnectionId = extractEventRemoteConnectionId(event);
   const remoteSshHost = extractEventRemoteSshHost(event);
 
@@ -1038,17 +1040,64 @@ function handleSessionCreated(context: FlowChatContext, event: any): void {
   );
 }
 
-function resolveExternalSessionWorkspacePath(
+interface ExternalSessionWorkspace {
+  /** Owning workspace ID; the identity every projection is keyed by. */
+  workspaceId?: string;
+  /** Execution root of the session; an IO operand, never identity. */
+  workspacePath?: string;
+}
+
+/**
+ * Attribute an externally created session (remote control, bot, MiniApp,
+ * another surface) to a workspace.
+ *
+ * Order of authority:
+ * 1. `workspaceId` on the event.
+ * 2. A legacy `workspacePath` on the event, upgraded to an opened record once
+ *    through the compatibility resolver. A path that names no opened record
+ *    is kept as an IO projection only; it never silently becomes the current
+ *    workspace.
+ * 3. No workspace facts at all: the event belongs to the workspace this
+ *    manager is initialized for (the host only forwards events for the
+ *    workspaces this surface subscribed to).
+ */
+function resolveExternalSessionWorkspace(
   context: FlowChatContext,
   event?: Record<string, unknown> | null,
-): string | undefined {
-  const candidate =
-    (typeof event?.workspacePath === 'string' && event.workspacePath) ||
-    (typeof event?.workspace_path === 'string' && event.workspace_path) ||
-    context.currentWorkspacePath ||
-    undefined;
+): ExternalSessionWorkspace {
+  const eventWorkspaceId =
+    (typeof event?.workspaceId === 'string' && event.workspaceId.trim())
+    || (typeof event?.workspace_id === 'string' && event.workspace_id.trim())
+    || undefined;
+  const eventWorkspacePath =
+    (typeof event?.workspacePath === 'string' && event.workspacePath)
+    || (typeof event?.workspace_path === 'string' && event.workspace_path)
+    || undefined;
 
-  return candidate || undefined;
+  if (eventWorkspaceId) {
+    const record = workspaceManager.getState().openedWorkspaces.get(eventWorkspaceId);
+    return { workspaceId: eventWorkspaceId, workspacePath: eventWorkspacePath || record?.rootPath };
+  }
+  if (eventWorkspacePath) {
+    const record = resolveLegacySessionWorkspace(
+      {
+        workspacePath: eventWorkspacePath,
+        remoteConnectionId: extractEventRemoteConnectionId(event),
+        remoteSshHost: extractEventRemoteSshHost(event),
+      },
+      [...workspaceManager.getState().openedWorkspaces.values()],
+    );
+    if (!record) {
+      log.warn('External session event names a workspace path with no opened record', {
+        workspacePath: eventWorkspacePath,
+      });
+    }
+    return { workspaceId: record?.id, workspacePath: eventWorkspacePath };
+  }
+  return {
+    workspaceId: context.currentWorkspaceId || undefined,
+    workspacePath: context.currentWorkspacePath || undefined,
+  };
 }
 
 function extractEventRemoteConnectionId(event?: Record<string, unknown> | null): string | undefined {
@@ -1617,12 +1666,13 @@ function handleImageAnalysisStarted(context: FlowChatContext, event: ImageAnalys
   let session = store.getState().sessions.get(sessionId);
 
   if (!session) {
+    const workspace = resolveExternalSessionWorkspace(context, event as any);
     store.addExternalSession(
       sessionId,
       'Remote Session',
       'Standard',
-      resolveExternalSessionWorkspacePath(context, event as any),
-      undefined,
+      workspace.workspacePath,
+      { workspaceId: workspace.workspaceId },
       extractEventRemoteConnectionId(event as any),
       extractEventRemoteSshHost(event as any)
     );
@@ -1773,14 +1823,15 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
     // `surface: 'miniapp_agent'`. Register them as transient miniapp sessions
     // so they stay out of the session list and the agent companion bubbles.
     log.warn('DialogTurnStarted: session not in store, creating placeholder', { sessionId, sessionsCount: state.sessions.size, isMiniAppAgentRun });
+    const workspace = resolveExternalSessionWorkspace(context, event);
     store.addExternalSession(
       sessionId,
       isMiniAppAgentRun ? (miniAppId ? `MiniApp: ${miniAppId}` : 'MiniApp Agent') : 'Remote Session',
       'Standard',
-      resolveExternalSessionWorkspacePath(context, event),
+      workspace.workspacePath,
       isMiniAppAgentRun
-        ? { sessionKind: 'miniapp', isTransient: true, agentBackedTransient: true }
-        : undefined,
+        ? { sessionKind: 'miniapp', isTransient: true, agentBackedTransient: true, workspaceId: workspace.workspaceId }
+        : { workspaceId: workspace.workspaceId },
       extractEventRemoteConnectionId(event),
       extractEventRemoteSshHost(event)
     );

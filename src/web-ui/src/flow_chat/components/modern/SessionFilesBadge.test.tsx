@@ -76,8 +76,14 @@ vi.mock('../../../infrastructure/api', () => ({
 
 vi.mock('../../../infrastructure/contexts/WorkspaceContext', () => ({
   useWorkspaceContext: () => ({
-    currentWorkspace: { rootPath: 'D:/workspace/project' },
+    currentWorkspace: { id: 'workspace-1', workspaceKind: 'local', rootPath: 'D:/workspace/project' },
   }),
+}));
+
+// The session-driver registry pulls in the local driver and its runtime
+// services; this badge only needs the session's workspace ID from it.
+vi.mock('../../session-drivers/sessionFileNavigation', () => ({
+  sessionWorkspaceId: (sessionId: string | undefined) => (sessionId === 'session-1' ? 'workspace-1' : undefined),
 }));
 
 vi.mock('../../../shared/notification-system', () => ({

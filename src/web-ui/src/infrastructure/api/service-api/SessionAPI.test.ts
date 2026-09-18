@@ -17,107 +17,12 @@ describe('SessionAPI paged metadata reads', () => {
     invokeMock.mockReset();
   });
 
-  it('requests a top-level session metadata page with cursor and remote identity', async () => {
-    const page = {
-      sessions: [],
-      totalTopLevelCount: 12,
-      loadedTopLevelCount: 5,
-      nextCursor: '5',
-      hasMore: true,
-    };
+  it.each(['local-project', 'remote-loopback', 'remote-project'])('reads %s by ID without path or SSH hints', async workspaceId => {
+    const page = { sessions: [], hasMore: false };
     invokeMock.mockResolvedValueOnce(page);
-
-    await expect(
-      sessionAPI.listSessionsPage({
-        workspacePath: '/repo',
-        limit: 5,
-        cursor: '0',
-        remoteConnectionId: 'remote-1',
-        remoteSshHost: 'host',
-      })
-    ).resolves.toBe(page);
-
+    await expect(sessionAPI.listSessionsPage({ workspaceId, limit: 5, cursor: '0' })).resolves.toBe(page);
     expect(invokeMock).toHaveBeenCalledWith('list_persisted_sessions_page', {
-      request: {
-        workspace_path: '/repo',
-        limit: 5,
-        cursor: '0',
-        remote_connection_id: 'remote-1',
-        remote_ssh_host: 'host',
-      },
-    });
-  });
-
-  it('omits a local workspace host sentinel without a remote connection id', async () => {
-    const page = {
-      sessions: [],
-      totalTopLevelCount: 0,
-      loadedTopLevelCount: 0,
-      hasMore: false,
-    };
-    invokeMock.mockResolvedValueOnce(page);
-
-    await sessionAPI.listSessionsPage({
-      workspacePath: 'D:/repo',
-      limit: 5,
-      remoteSshHost: 'localhost',
-    });
-
-    expect(invokeMock).toHaveBeenCalledWith('list_persisted_sessions_page', {
-      request: {
-        workspace_path: 'D:/repo',
-        limit: 5,
-      },
-    });
-  });
-
-  it('preserves localhost when a remote connection id disambiguates the scope', async () => {
-    const page = {
-      sessions: [],
-      totalTopLevelCount: 0,
-      loadedTopLevelCount: 0,
-      hasMore: false,
-    };
-    invokeMock.mockResolvedValueOnce(page);
-
-    await sessionAPI.listSessionsPage({
-      workspacePath: '/srv/repo',
-      limit: 5,
-      remoteConnectionId: 'connection-1',
-      remoteSshHost: 'localhost',
-    });
-
-    expect(invokeMock).toHaveBeenCalledWith('list_persisted_sessions_page', {
-      request: {
-        workspace_path: '/srv/repo',
-        limit: 5,
-        remote_connection_id: 'connection-1',
-        remote_ssh_host: 'localhost',
-      },
-    });
-  });
-
-  it('preserves a legacy non-local host without a remote connection id', async () => {
-    const page = {
-      sessions: [],
-      totalTopLevelCount: 0,
-      loadedTopLevelCount: 0,
-      hasMore: false,
-    };
-    invokeMock.mockResolvedValueOnce(page);
-
-    await sessionAPI.listSessionsPage({
-      workspacePath: '/srv/repo',
-      limit: 5,
-      remoteSshHost: 'legacy.example',
-    });
-
-    expect(invokeMock).toHaveBeenCalledWith('list_persisted_sessions_page', {
-      request: {
-        workspace_path: '/srv/repo',
-        limit: 5,
-        remote_ssh_host: 'legacy.example',
-      },
+      request: { workspace_id: workspaceId, limit: 5, cursor: '0' },
     });
   });
 
@@ -127,17 +32,13 @@ describe('SessionAPI paged metadata reads', () => {
 
     await expect(sessionAPI.getSessionLineage({
       sessionId: 'child',
-      workspacePath: '/repo',
-      remoteConnectionId: 'remote-1',
-      remoteSshHost: 'host',
+      workspaceId: 'workspace-remote',
     })).resolves.toBe(snapshot);
 
     expect(invokeMock).toHaveBeenCalledWith('get_session_lineage', {
       request: {
         session_id: 'child',
-        workspace_path: '/repo',
-        remote_connection_id: 'remote-1',
-        remote_ssh_host: 'host',
+        workspace_id: 'workspace-remote',
       },
     });
   });
@@ -172,7 +73,7 @@ describe('SessionAPI paged metadata reads', () => {
     await expect(
       sessionAPI.getSessionUsageReport({
         sessionId: 'session-1',
-        workspacePath: '/repo',
+        workspaceId: 'workspace-remote',
         includeHiddenSubagents: false,
       })
     ).resolves.toBe(report);
@@ -180,7 +81,7 @@ describe('SessionAPI paged metadata reads', () => {
     expect(invokeMock).toHaveBeenCalledWith('get_session_usage_report', {
       request: {
         session_id: 'session-1',
-        workspace_path: '/repo',
+        workspace_id: 'workspace-remote',
         include_hidden_subagents: false,
       },
     });
@@ -190,6 +91,7 @@ describe('SessionAPI paged metadata reads', () => {
     invokeMock.mockRejectedValueOnce(new Error('search unavailable'));
 
     const error = await sessionAPI.searchSessionContent({
+      workspaceId: 'workspace-1',
       workspacePath: '/private/customer/repository',
       remoteConnectionId: 'remote-1',
       query: 'confidential roadmap',
@@ -214,6 +116,7 @@ describe('SessionAPI paged metadata reads', () => {
     invokeMock.mockRejectedValueOnce(abortError);
 
     await expect(sessionAPI.searchSessionContent({
+      workspaceId: 'workspace-1',
       workspacePath: '/repo',
       query: 'cancelled search',
     })).rejects.toBe(abortError);

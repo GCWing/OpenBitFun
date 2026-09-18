@@ -48,6 +48,9 @@ public data class RemoteSession public constructor(
     public val workspacePath: String?,
     public val workspaceName: String?,
     public val workspaceIdentity: RemoteWorkspaceIdentity?,
+    /** Set when the session hangs off another one (btw/review/miniapp/subagent). */
+    public val parentSessionId: String? = null,
+    public val relationshipKind: String? = null,
 ) {
     public constructor(id: String, title: String, agentType: String, status: String, updatedAt: String,
         createdAt: String, messageCount: Int, workspacePath: String?, workspaceName: String?) :

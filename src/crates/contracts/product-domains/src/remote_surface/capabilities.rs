@@ -29,6 +29,10 @@ pub enum PeerHostCapability {
     InlineImageAttachmentsV1,
     /// `btw_ask_stream` applies initial model and reasoning selection before the first turn.
     BtwInitialModelSelectionV1,
+    /// Persistent control conversations and idempotent voice history are available.
+    ControlConversationV1,
+    /// A fresh persistent control conversation can be selected without deleting history.
+    ControlConversationResetV1,
     /// Identity-based `rollback_session_to_turn` is implemented.
     TargetedSessionRollback,
     /// `get_token_usage_statistics` is implemented.
@@ -49,6 +53,8 @@ pub enum PeerHostCapability {
     ToolCatalog,
     /// Mode/workspace-scoped `get_chat_mcp_catalog` is implemented.
     ChatMcpCatalogV1,
+    /// Workspace references can carry the owning host's persisted ID.
+    WorkspaceIdReferencesV1,
     /// `submit_user_answers` is implemented for Runtime-owned questions.
     UserQuestionResponse,
     /// First human interaction disables the unattended question timeout.
@@ -61,6 +67,8 @@ impl PeerHostCapability {
         Self::IdempotentDialogSubmit,
         Self::InlineImageAttachmentsV1,
         Self::BtwInitialModelSelectionV1,
+        Self::ControlConversationV1,
+        Self::ControlConversationResetV1,
         Self::TargetedSessionRollback,
         Self::TokenUsageStatistics,
         Self::MiniappAgentContextFilesV1,
@@ -71,6 +79,7 @@ impl PeerHostCapability {
         Self::CancelTool,
         Self::ToolCatalog,
         Self::ChatMcpCatalogV1,
+        Self::WorkspaceIdReferencesV1,
         Self::UserQuestionResponse,
         Self::UserQuestionInteractionV1,
     ];
@@ -80,6 +89,8 @@ impl PeerHostCapability {
         match self {
             Self::IdempotentDialogSubmit => "idempotent_dialog_submit",
             Self::InlineImageAttachmentsV1 => "inline_image_attachments_v1",
+            Self::ControlConversationV1 => "control_conversation_v1",
+            Self::ControlConversationResetV1 => "control_conversation_reset_v1",
             Self::BtwInitialModelSelectionV1 => "btw_initial_model_selection_v1",
             Self::TargetedSessionRollback => "targeted_session_rollback",
             Self::TokenUsageStatistics => "token_usage_statistics",
@@ -91,6 +102,7 @@ impl PeerHostCapability {
             Self::CancelTool => "cancel_tool",
             Self::ToolCatalog => "tool_catalog",
             Self::ChatMcpCatalogV1 => "chat_mcp_catalog_v1",
+            Self::WorkspaceIdReferencesV1 => "workspace_id_references_v1",
             Self::UserQuestionResponse => "user_question_response",
             Self::UserQuestionInteractionV1 => "user_question_interaction_v1",
         }
@@ -107,6 +119,8 @@ const DESKTOP_CAPABILITIES: &[PeerHostCapability] = PeerHostCapability::ALL;
 /// The CLI peer host has no MiniApp runtime, WSL connection setup, host-native
 /// ProductControl providers, or presentation surface.
 const CLI_CAPABILITIES: &[PeerHostCapability] = &[
+    PeerHostCapability::ControlConversationV1,
+    PeerHostCapability::ControlConversationResetV1,
     PeerHostCapability::IdempotentDialogSubmit,
     PeerHostCapability::InlineImageAttachmentsV1,
     PeerHostCapability::TargetedSessionRollback,
@@ -115,6 +129,7 @@ const CLI_CAPABILITIES: &[PeerHostCapability] = &[
     PeerHostCapability::CancelTool,
     PeerHostCapability::ToolCatalog,
     PeerHostCapability::ChatMcpCatalogV1,
+    PeerHostCapability::WorkspaceIdReferencesV1,
     PeerHostCapability::UserQuestionResponse,
     PeerHostCapability::UserQuestionInteractionV1,
 ];

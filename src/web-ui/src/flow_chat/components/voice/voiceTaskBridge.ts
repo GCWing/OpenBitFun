@@ -3,12 +3,14 @@ import { FlowChatManager } from '@/flow_chat/services/FlowChatManager';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { stateMachineManager } from '@/flow_chat/state-machine';
 import { SessionExecutionState } from '@/flow_chat/state-machine/types';
+import { pendingQueueManager } from '@/flow_chat/services/flow-chat-manager/PendingQueueModule';
 import type { DialogTurn, FlowTextItem, Session } from '@/flow_chat/types/flow-chat';
 import {
   subscribeAgentCompanionActivity,
   type AgentCompanionTaskStatus,
 } from '@/flow_chat/utils/agentCompanionActivity';
 import type { WorkspaceInfo } from '@/shared/types';
+import { getActiveSurfaceScope, type SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 
 const TASK_TIMEOUT_MS = 30 * 60 * 1000;
 const HEARTBEAT_INTERVAL_MS = 20_000;
@@ -141,12 +143,10 @@ function latestTurn(session: Session): DialogTurn | undefined {
 export function selectVoiceTaskTurn(
   session: Session,
   baselineTurnIds: ReadonlySet<string>,
+  taskId?: string,
 ): DialogTurn | undefined {
-  for (let index = session.dialogTurns.length - 1; index >= 0; index -= 1) {
-    const turn = session.dialogTurns[index];
-    if (!baselineTurnIds.has(turn.id)) return turn;
-  }
-  return undefined;
+  return session.dialogTurns.find(turn => !baselineTurnIds.has(turn.id)
+    && (!taskId || turn.userMessage.metadata?.voiceTaskId === taskId));
 }
 
 function truncateBriefText(text: string, maxChars: number): string {
@@ -323,10 +323,18 @@ export function extractVoiceTaskSummary(session: Session): string {
     });
   });
   const summary = parts.join(' ').trim();
-  if (summary.length <= MAX_RESULT_CHARS) {
+  if (new TextEncoder().encode(summary).length <= MAX_RESULT_CHARS) {
     return summary || 'OpenBitFun completed the task without a text response.';
   }
-  return `${summary.slice(0, MAX_RESULT_CHARS - 1)}…`;
+  // UTF-8 tool-result limits also apply to CJK and emoji responses.
+  let result = '';
+  let bytes = 3;
+  for (const point of summary) {
+    bytes += new TextEncoder().encode(point).length;
+    if (bytes > MAX_RESULT_CHARS) break;
+    result += point;
+  }
+  return `${result}…`;
 }
 
 export function extractVoiceTaskConclusion(session: Session): string {
@@ -348,14 +356,18 @@ export function extractVoiceTaskConclusion(session: Session): string {
 async function waitForSettledSession(
   sessionId: string,
   baselineTurnIds: ReadonlySet<string>,
+  scope: SurfaceScope,
+  taskId?: string,
 ): Promise<void> {
+  scope.assertCurrent('observe voice task');
   const isSettled = () => {
+    if (!scope.isCurrent()) return false;
     const state = stateMachineManager.getCurrentState(sessionId);
-    if (state !== SessionExecutionState.IDLE && state !== SessionExecutionState.ERROR) {
+    if (!taskId && state !== SessionExecutionState.IDLE && state !== SessionExecutionState.ERROR) {
       return false;
     }
     const session = FlowChatManager.getInstance().getFlowChatState().sessions.get(sessionId);
-    const turn = session ? selectVoiceTaskTurn(session, baselineTurnIds) : undefined;
+    const turn = session ? selectVoiceTaskTurn(session, baselineTurnIds, taskId) : undefined;
     return Boolean(turn && !['pending', 'processing', 'finishing', 'cancelling'].includes(turn.status));
   };
 
@@ -370,6 +382,7 @@ async function waitForSettledSession(
       window.clearTimeout(activeTimeoutId);
       stateSubscription.dispose();
       flowSubscription.dispose();
+      scope.signal.removeEventListener('abort', disconnected);
       resolve();
     };
     const timeoutId = window.setTimeout(() => {
@@ -377,8 +390,18 @@ async function waitForSettledSession(
       finished = true;
       stateSubscription.dispose();
       flowSubscription.dispose();
+      scope.signal.removeEventListener('abort', disconnected);
       reject(new Error('OpenBitFun task timed out after 30 minutes'));
     }, TASK_TIMEOUT_MS);
+    function disconnected() {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timeoutId);
+      stateSubscription.dispose();
+      flowSubscription.dispose();
+      try { scope.assertCurrent('observe voice task'); } catch (error) { reject(error); }
+    }
+    scope.signal.addEventListener('abort', disconnected, { once: true });
     stateSubscription.dispose = stateMachineManager.subscribeGlobal((changedSessionId) => {
       if (changedSessionId !== sessionId || !isSettled()) return;
       finish(timeoutId);
@@ -400,11 +423,15 @@ async function observeVoiceTaskSession(
   baselineTurnIds: ReadonlySet<string>,
   options: ObserveVoiceTaskOptions,
   startTask: () => Promise<void>,
+  scope: SurfaceScope = getActiveSurfaceScope(),
+  taskId?: string,
 ): Promise<VoiceTaskResult> {
+  scope.assertCurrent('start voice task');
   const manager = FlowChatManager.getInstance();
 
   let lastUserUpdateAt = Date.now();
   const emitProgress = (phase: VoiceTaskProgressPhase) => {
+    if (!scope.isCurrent()) return;
     lastUserUpdateAt = Date.now();
     options.onProgress?.({ sessionId, phase });
   };
@@ -429,7 +456,7 @@ async function observeVoiceTaskSession(
     textProgressTimer = null;
     const text = pendingTextProgress;
     pendingTextProgress = '';
-    if (!text || text === lastTextProgress) return;
+    if (!scope.isCurrent() || !text || text === lastTextProgress) return;
     lastTextProgress = text;
     lastUserUpdateAt = Date.now();
     options.onTextProgress?.(text);
@@ -446,9 +473,11 @@ async function observeVoiceTaskSession(
     }
   };
   const unsubscribeState = manager.onFlowChatStateChange(state => {
+    if (!scope.isCurrent()) return;
     const session = state.sessions.get(sessionId) as Session | undefined;
-    if (!session || !selectVoiceTaskTurn(session, baselineTurnIds)) return;
-    extractVoiceTaskProgressTexts(session).forEach(update => {
+    const turn = session && selectVoiceTaskTurn(session, baselineTurnIds, taskId);
+    if (!session || !turn) return;
+    extractVoiceTaskProgressTexts({ ...session, dialogTurns: [turn] }).forEach(update => {
       if (seenTextProgress.has(update.id)) return;
       seenTextProgress.add(update.id);
       queueTextProgress(update.text);
@@ -462,6 +491,13 @@ async function observeVoiceTaskSession(
 
   let cancellationInFlight: Promise<boolean> | null = null;
   const requestCancellation = (): Promise<boolean> => {
+    // A detached observer must never cancel the same id on the next device.
+    if (!scope.isCurrent()) return Promise.resolve(false);
+    if (taskId) {
+      const session = manager.getFlowChatState().sessions.get(sessionId);
+      const turn = session && selectVoiceTaskTurn(session, baselineTurnIds, taskId);
+      if (!turn || !['pending', 'processing', 'finishing', 'cancelling'].includes(turn.status)) return Promise.resolve(false);
+    }
     if (cancellationInFlight) return cancellationInFlight;
     cancellationInFlight = manager.cancelSessionTask(sessionId).finally(() => {
       cancellationInFlight = null;
@@ -479,6 +515,7 @@ async function observeVoiceTaskSession(
     }
     try {
       await startTask();
+      scope.assertCurrent('submit voice task');
     } catch (error) {
       if (!options.signal?.aborted) throw error;
       await requestCancellation().catch(() => false);
@@ -487,12 +524,13 @@ async function observeVoiceTaskSession(
     if (options.signal?.aborted) {
       await requestCancellation();
     }
-    await waitForSettledSession(sessionId, baselineTurnIds);
+    await waitForSettledSession(sessionId, baselineTurnIds, scope, taskId);
+    scope.assertCurrent('complete voice task');
     const session = manager.getFlowChatState().sessions.get(sessionId);
     if (!session) {
       throw new Error('OpenBitFun task session disappeared before completion');
     }
-    const turn = selectVoiceTaskTurn(session, baselineTurnIds);
+    const turn = selectVoiceTaskTurn(session, baselineTurnIds, taskId);
     if (!turn || turn.status === 'error') {
       throw new Error(turn?.error || session.error || 'OpenBitFun task failed');
     }
@@ -538,10 +576,12 @@ export async function runOpenBitFunVoiceTask(
     throw new Error('OpenBitFun task description is empty');
   }
 
+  const scope = getActiveSurfaceScope();
   const manager = FlowChatManager.getInstance();
   const sessionId = await manager.createChatSession(
     flowChatSessionConfigForWorkspace(options.workspace),
   );
+  scope.assertCurrent('create voice task session');
   options.onSessionCreated?.(sessionId);
   if (options.showSession !== false) {
     await openMainSession(sessionId);
@@ -556,7 +596,7 @@ export async function runOpenBitFunVoiceTask(
       undefined,
       { userMessageMetadata: { source: 'realtime_voice' } },
     )
-  ));
+  ), scope);
 }
 
 /**
@@ -580,6 +620,7 @@ export async function runMiniAppVoiceTask(
   if (!session) {
     throw new Error('MiniApp task session is no longer available');
   }
+  assertVoiceTaskAdmission(session);
   const baselineTurnIds = new Set(session.dialogTurns.map(turn => turn.id));
   options.onSessionCreated?.(options.sessionId);
   return observeVoiceTaskSession(
@@ -588,4 +629,26 @@ export async function runMiniAppVoiceTask(
     options,
     () => options.submit(options.signal),
   );
+}
+
+/** Text and voice share admission, permissions, cancellation and the same Agent. */
+function assertVoiceTaskAdmission(session: Session) {
+  if (session.dialogTurns.some(turn => ['pending', 'processing', 'finishing', 'cancelling', 'image_analyzing'].includes(turn.status))
+    || pendingQueueManager.list(session.sessionId).length > 0) {
+    throw new Error('This conversation already has a running or queued task. Wait for it to finish before starting another voice task.');
+  }
+}
+
+export async function runBoundVoiceTask(task: string, options: Omit<RunMiniAppVoiceTaskOptions, 'submit'> & { exchangeId?: string }): Promise<VoiceTaskResult> {
+  const manager = FlowChatManager.getInstance();
+  const session = manager.getFlowChatState().sessions.get(options.sessionId);
+  if (!session) throw new Error('The bound voice conversation is unavailable');
+  assertVoiceTaskAdmission(session);
+  const taskId = options.exchangeId ?? crypto.randomUUID();
+  const baseline = new Set(session.dialogTurns.map(turn => turn.id));
+  options.onSessionCreated?.(options.sessionId);
+  return observeVoiceTaskSession(options.sessionId, baseline, options, () => manager.sendMessage(
+    task, options.sessionId, task, session.mode, undefined,
+    { userMessageMetadata: { source: 'realtime_voice', voiceTaskId: taskId } },
+  ), getActiveSurfaceScope(), taskId);
 }

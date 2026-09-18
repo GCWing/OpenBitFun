@@ -1,3 +1,4 @@
+use super::subagent_api::local_workspace_from_request;
 use crate::api::app_state::AppState;
 use log::{debug, warn};
 use openbitfun_core::agentic::agents::{
@@ -7,21 +8,14 @@ use openbitfun_core::agentic::agents::{
 };
 use serde::Deserialize;
 use std::collections::HashSet;
-use std::path::PathBuf;
 use tauri::State;
 
 const AGENT_ID_REGEX: &str = "^[a-zA-Z][a-zA-Z0-9_-]*$";
 
-fn workspace_root_from_request(workspace_path: Option<&str>) -> Option<PathBuf> {
-    workspace_path
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-}
-
 fn reject_external_agent_mutation(
     state: &AppState,
     agent_id: &str,
-    workspace: Option<&std::path::Path>,
+    workspace: Option<&str>,
 ) -> Result<(), String> {
     if state
         .agent_registry
@@ -98,12 +92,9 @@ fn ensure_review_tools_are_readonly(
     ))
 }
 
-async fn existing_agent_ids(state: &AppState, workspace: Option<&PathBuf>) -> HashSet<String> {
+async fn existing_agent_ids(state: &AppState, workspace: Option<&str>) -> HashSet<String> {
     let modes = state.agent_registry.get_modes_info().await;
-    let subagents = state
-        .agent_registry
-        .get_subagents_info(workspace.map(PathBuf::as_path))
-        .await;
+    let subagents = state.agent_registry.get_subagents_info(workspace).await;
     modes
         .iter()
         .map(|mode| mode.id.to_lowercase())
@@ -115,6 +106,9 @@ async fn existing_agent_ids(state: &AppState, workspace: Option<&PathBuf>) -> Ha
 #[serde(rename_all = "camelCase")]
 pub struct GetCustomAgentDetailRequest {
     pub agent_id: String,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -123,7 +117,12 @@ pub async fn get_custom_agent_detail(
     state: State<'_, AppState>,
     request: GetCustomAgentDetailRequest,
 ) -> Result<CustomAgentDetail, String> {
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let workspace = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     reject_external_agent_mutation(&state, &request.agent_id, workspace.as_deref())?;
     state
         .agent_registry
@@ -146,6 +145,9 @@ pub struct CreateCustomAgentRequest {
     pub review: Option<bool>,
     pub model: Option<String>,
     pub user_context_policy: Option<Vec<UserContextSection>>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -164,7 +166,12 @@ pub async fn create_custom_agent(
         return Err("Prompt cannot be empty".to_string());
     }
 
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let workspace = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     let level = request.level.unwrap_or(CustomAgentLevel::User);
 
     if request.kind == CustomAgentKind::Mode && level == CustomAgentLevel::Project {
@@ -179,7 +186,7 @@ pub async fn create_custom_agent(
         .load_custom_agents(workspace.as_deref())
         .await;
 
-    let existing_ids = existing_agent_ids(&state, workspace.as_ref()).await;
+    let existing_ids = existing_agent_ids(&state, workspace.as_deref()).await;
     if existing_ids.contains(&id.to_lowercase()) {
         return Err(format!("Id '{}' conflicts with an existing agent", id));
     }
@@ -188,8 +195,13 @@ pub async fn create_custom_agent(
     let agents_dir = match level {
         CustomAgentLevel::User => path_manager.user_agents_dir(),
         CustomAgentLevel::Project => {
-            let root = workspace.as_deref().ok_or("Workspace path not available")?;
-            path_manager.project_agents_dir(root)
+            let id = workspace.as_deref().ok_or("Workspace ID not available")?;
+            let record = state
+                .workspace_service
+                .require_workspace(id)
+                .await
+                .map_err(|error| error.to_string())?;
+            path_manager.project_agents_dir(&record.root_path)
         }
     };
     std::fs::create_dir_all(&agents_dir)
@@ -300,6 +312,9 @@ pub struct UpdateCustomAgentRequest {
     pub review: Option<bool>,
     pub model: Option<String>,
     pub user_context_policy: Option<Vec<UserContextSection>>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -316,7 +331,12 @@ pub async fn update_custom_agent(
         return Err("Prompt cannot be empty".to_string());
     }
 
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let workspace = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     reject_external_agent_mutation(&state, &request.agent_id, workspace.as_deref())?;
     let current = state
         .agent_registry
@@ -367,6 +387,9 @@ pub async fn update_custom_agent(
 #[serde(rename_all = "camelCase")]
 pub struct DeleteCustomAgentRequest {
     pub agent_id: String,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -376,7 +399,12 @@ pub async fn delete_custom_agent(
     request: DeleteCustomAgentRequest,
 ) -> Result<(), String> {
     let agent_id = request.agent_id;
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let workspace = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     reject_external_agent_mutation(&state, &agent_id, workspace.as_deref())?;
 
     if let Some(path) = state
@@ -425,6 +453,9 @@ pub async fn delete_custom_agent(
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReloadCustomAgentsRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -433,7 +464,12 @@ pub async fn reload_custom_agents(
     state: State<'_, AppState>,
     request: ReloadCustomAgentsRequest,
 ) -> Result<(), String> {
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let workspace = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     state
         .agent_registry
         .load_custom_agents(workspace.as_deref())

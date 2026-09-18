@@ -4,6 +4,24 @@ import { APPEARANCE_THEME_TOKEN_NAMES } from './catalog';
 import { composeAppearancePackage } from './composeAppearancePackage';
 
 describe('composeAppearancePackage', () => {
+  it.each(['light', 'dark'] as const)('supplies annotation cyan to legacy %s packages without replacing their accent', mode => {
+    const original: AppearancePackage = {
+      schema: 'openbitfun.appearance', schemaVersion: 2,
+      id: 'example.legacy-annotations', name: 'Legacy annotations', version: '1.0.0', mode,
+      renderers: { 'theme-tokens': { version: 1, settings: {
+        tokens: { '--openbitfun-color-accent-default': '#7755aa' },
+      } } },
+    };
+    const resolved = composeAppearancePackage(JSON.parse(JSON.stringify(original)));
+    const tokens = resolved.renderers!['theme-tokens']!.settings.tokens;
+    expect(tokens['--openbitfun-component-conversation-excerpt-accent']).toBe('#059cb0');
+    expect(tokens['--openbitfun-color-accent-default']).toBe('#7755aa');
+    expect(composeAppearancePackage(JSON.parse(JSON.stringify(resolved))).renderers?.['theme-tokens'])
+      .toEqual(resolved.renderers?.['theme-tokens']);
+    expect(original.renderers!['theme-tokens']!.settings.tokens)
+      .not.toHaveProperty('--openbitfun-component-conversation-excerpt-accent');
+  });
+
   it('preserves legacy action-card backgrounds in root and chrome across old-payload round trips', () => {
     const original: AppearancePackage = {
       schema: 'openbitfun.appearance', schemaVersion: 2,

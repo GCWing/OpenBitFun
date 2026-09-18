@@ -246,6 +246,132 @@ from a container workspace. That would bypass the selected workspace and its
 security boundary. Host diagnosis, if added later, must be a typed, read-only
 capability with a distinct confirmation and audit surface.
 
+## Workspace identity contract
+
+A workspace reference is `(owning host, workspace ID)`. Resolve that ID against
+that host's persisted workspace catalog before choosing execution services.
+`WorkspaceInfo.workspace_kind` is the authority for Normal, Assistant, or Remote;
+an SSH connection ID is a property of a Remote workspace, not a type predicate.
+A missing ID or unavailable record must not fall through to another workspace
+with the same path. SSH endpoints named `localhost` remain Remote.
+
+Keep three different location roles separate:
+
+- The workspace record's root is the project directory on the execution host.
+- A session execution target may select a registered worktree within that project.
+- The persistence owner computes the local session storage directory. This
+  directory is never an execution root, workspace ID, or input to workspace selection.
+
+Paths remain necessary for file operations, terminal working directories and
+new-folder creation. They must not key workspace catalogs, subscriptions, routing,
+selection, or cache ownership. UI events retain workspace IDs through every
+adapter; session operations recover their workspace from the session's stored ID.
+Across devices, IDs are interpreted only by the selected owning host.
+
+Persisted IDs are opaque. Catalog validation checks record/map-key agreement and
+reference integrity; it must not recompute IDs from paths or require a working
+SSH profile. Keep unavailable records in the catalog. Activation validates the
+selected record's IO requirements and reports unavailability. The pre-1.0 offline
+import adapter may calculate historical destination IDs as part of its explicit
+migration plan; that algorithm is not a runtime catalog API.
+
+### Temporary upgrade adapter and sunset
+
+`WorkspaceService::resolve_legacy_workspace_reference` in `workspace/legacy_compat.rs`
+is the temporary conversion boundary for pre-ID data and protocols, including
+1.0.0. It is not a workspace lookup API for new business code. Explicit IDs never
+fall back to path matching. Legacy paths may select exactly one persisted record;
+ambiguous or missing references retain the original data and require reselection.
+Local hidden session storage paths must never be treated as project roots.
+Successful conversions retain the record ID for subsequent requests and saves.
+
+Linked worktrees persist `worktree.mainWorkspaceId` as the project relationship.
+`mainRepoPath` remains readable as a filesystem projection for older builds; it is
+not a join key for session storage or navigation. The upgrade adapter converts
+legacy relationships using only unambiguous local workspace records. Remote
+records with the same POSIX path are not eligible local project parents. Once an
+ID is present, a stale path cannot redirect it. The upgrade may register an existing local main folder once when 1.0.0 never
+opened it; unavailable folders and hidden runtime directories remain
+recoverable errors; loading or importing an unavailable workspace must not delete
+it. Remote workspaces are never inspected with the controller's local Git scanner.
+
+Filesystem IO providers receive an explicit local or SSH target selected from the
+ID-owned record's `workspaceKind`. They must not scan a remote workspace registry
+to infer the provider from the requested filename. Directory browsing before a
+workspace exists is an explicit device/connection operation, not workspace lookup.
+Desktop file IO ingress accepts the workspace ID, including read/write, metadata,
+rename/delete/create, and runtime-artifact reads. A `current` artifact URI resolves
+against the request ID; a URI naming a different workspace is rejected. Legacy
+file routing is isolated in the upgrade adapter and rejects a path shared by
+multiple filesystem providers instead of using the active SSH connection.
+Remote search binds its provider directly to the ID-owned record and validates
+subsequent IO scope without looking up the workspace a second time by its root.
+
+Snapshot command ingress resolves the ID before selecting local/remote behavior.
+The local snapshot port takes IDs and rejects remote records before accessing IO.
+Local writer, read-only view, initialization-lock, and bound remote snapshot caches
+are keyed by workspace ID. Their on-disk layout is an IO projection and remains
+unchanged for history upgrades.
+Session history storage is resolved independently from the execution directory.
+Remote full rollback remains unsupported; it must fail before changing files or
+messages. Persisted remote operation reads retain their connection-scoped history.
+The current client sends an ID; the negotiated old-host projection includes both
+connection ID and SSH host. Client in-flight cache ownership includes the driving host and workspace ID.
+
+Session list, restore and coordinator-load requests carry a workspace ID. A
+current client does not supply an execution directory or hidden history directory
+as the selector. History hydration and context-restore deduplication use host,
+workspace ID and session ID. A session creation with an explicit unavailable ID
+must fail; it cannot choose the active workspace by matching a folder or SSH host.
+
+Session fork requests also carry workspace IDs. Fork validates both the persisted
+and loaded source against that ID under the session mutation lock; worktree
+execution IDs retain their explicit project-ID relationship. Stale path and SSH
+projections cannot override the registered kind. Only the temporary fork ingress
+adapter accepts a 1.0.0 resolved session-directory payload, and only after locating
+the source by its registered workspace ID and checking the exact storage projection.
+
+Child detail hydration first reads missing metadata through the parent's project
+workspace ID, then uses the child's own execution workspace ID. A child's worktree
+ID must not be replaced with the parent's ID. Metadata completion preserves live
+turns and UI state.
+
+Scheduled-job filters match workspace IDs exactly, including after upgrading
+persisted 1.0.0 targets through the temporary adapter. Missing IDs are not wildcard
+matches. Workspace job execution refreshes its binding from the catalog, and the
+editor requires explicit reselection for an unresolved target. HTML preview also
+resolves its root and SSH provider by ID; file paths remain IO operands.
+
+The private Shared TUI protocol advertises `workspace_id_references` in version 19.
+Current clients can read version 18 discovery and handshake responses; absent
+capability means the adapter emits the legacy payload using the selected object's
+root. `legacy_workspace_operation` is an outbound part of this temporary boundary,
+not a path lookup API. Its sunset is removal of private protocol 18 support. The
+Shared Runtime list and restore handlers compare workspace IDs; the predecessor payload is
+accepted only at legacy ingress.
+
+External integration settings written under the retired path-hash key are copied
+once to the ID-derived key by this same upgrade boundary. Keep the old entry for
+rollback, never overwrite an existing ID entry, and reject a legacy key shared by
+multiple workspace records. Discovery caches, MCP routes and tool routes use the
+ID thereafter; the root derived from the record is only an IO parameter. A missing
+workspace ID is not the user-global scope: only an explicitly unscoped request may
+read global settings.
+
+New peer hosts advertise `workspace_id_references_v1`. An old-protocol serializer
+may translate an ID-selected object into the old payload only after negotiating
+legacy support; it may not resolve identity from a path or guess another host.
+Legacy fields remain readable with defaults and unrelated future fields remain
+ignored. Do not delete sessions, credentials or workspace records on conversion
+failure. Tests must include real 1.0.0 payload shapes, unknown IDs, same-path
+local/SSH and multiple-host records, storage/execution separation and restart.
+
+Sunset the adapter when persisted references have migrated and every supported
+peer can negotiate ID references. Until then, keep path conversion isolated at
+upgrade/old-protocol ingress. New internal APIs and new protocol consumers must
+not acquire a path-based workspace key. Removing the adapter is a coordinated
+minimum-peer-version change, not an opportunistic deletion of user data.
+
 ## Upgrade compatibility
 
 New configuration fields have Serde defaults. Profiles written before this

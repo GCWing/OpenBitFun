@@ -7,6 +7,7 @@ use openbitfun_core::service::review_platform::{
     ReviewPlatformError, ReviewPlatformIssueEvidence, ReviewPlatformKind, ReviewPlatformListState,
     ReviewPlatformPullRequestDetail, ReviewPlatformPullRequestDetailPage,
     ReviewPlatformPullRequestReviewTarget, ReviewPlatformService, ReviewPlatformWorkspaceSnapshot,
+    ReviewRepositoryLocator,
 };
 use serde::Deserialize;
 use tauri::State;
@@ -14,6 +15,9 @@ use tauri::State;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformWorkspaceSnapshotRequest {
+    /// Owning workspace ID; authoritative for local/remote Git routing.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: Option<String>,
     pub page: Option<u32>,
@@ -25,6 +29,8 @@ pub struct ReviewPlatformWorkspaceSnapshotRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformWorkspaceContextRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: Option<String>,
 }
@@ -32,6 +38,8 @@ pub struct ReviewPlatformWorkspaceContextRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformPullRequestDetailRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: String,
     pub pull_request_id: String,
@@ -40,6 +48,8 @@ pub struct ReviewPlatformPullRequestDetailRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformPullRequestDetailPageRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: String,
     pub pull_request_id: String,
@@ -51,6 +61,8 @@ pub struct ReviewPlatformPullRequestDetailPageRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformPullRequestCiLogRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: String,
     pub pull_request_id: String,
@@ -73,13 +85,27 @@ pub struct ReviewPlatformClearAuthTokenRequest {
     pub host: String,
 }
 
+fn review_repository(
+    workspace_id: &Option<String>,
+    repository_path: &str,
+) -> ReviewRepositoryLocator {
+    ReviewRepositoryLocator::new(workspace_id.clone(), repository_path)
+}
+
+fn optional_review_repository(
+    workspace_id: &Option<String>,
+    repository_path: Option<&str>,
+) -> Option<ReviewRepositoryLocator> {
+    repository_path.map(|path| ReviewRepositoryLocator::new(workspace_id.clone(), path))
+}
+
 #[tauri::command]
 pub async fn review_platform_get_workspace_snapshot(
     _state: State<'_, AppState>,
     request: ReviewPlatformWorkspaceSnapshotRequest,
 ) -> Result<ReviewPlatformWorkspaceSnapshot, String> {
     ReviewPlatformService::workspace_snapshot_with_state(
-        &request.repository_path,
+        &review_repository(&request.workspace_id, &request.repository_path),
         request.remote_id.as_deref(),
         request.page,
         request.per_page,
@@ -100,18 +126,18 @@ pub async fn review_platform_get_workspace_context(
     _state: State<'_, AppState>,
     request: ReviewPlatformWorkspaceContextRequest,
 ) -> Result<ReviewPlatformWorkspaceSnapshot, String> {
-    ReviewPlatformService::workspace_context(&request.repository_path, request.remote_id.as_deref())
-        .await
-        .map_err(|error| {
-            error!(
-                "Failed to get review platform workspace context: path={}, remote_id={:?}, error={}",
-                request.repository_path, request.remote_id, error
-            );
-            review_platform_command_error(
-                "Failed to get review platform workspace context",
-                &error,
-            )
-        })
+    ReviewPlatformService::workspace_context(
+        &review_repository(&request.workspace_id, &request.repository_path),
+        request.remote_id.as_deref(),
+    )
+    .await
+    .map_err(|error| {
+        error!(
+            "Failed to get review platform workspace context: path={}, remote_id={:?}, error={}",
+            request.repository_path, request.remote_id, error
+        );
+        review_platform_command_error("Failed to get review platform workspace context", &error)
+    })
 }
 
 #[tauri::command]
@@ -120,7 +146,7 @@ pub async fn review_platform_get_pull_request_detail(
     request: ReviewPlatformPullRequestDetailRequest,
 ) -> Result<ReviewPlatformPullRequestDetail, String> {
     ReviewPlatformService::pull_request_detail(
-        &request.repository_path,
+        &review_repository(&request.workspace_id, &request.repository_path),
         &request.remote_id,
         &request.pull_request_id,
     )
@@ -146,7 +172,7 @@ pub async fn review_platform_get_pull_request_review_target(
     request: ReviewPlatformPullRequestDetailRequest,
 ) -> Result<ReviewPlatformPullRequestReviewTarget, String> {
     ReviewPlatformService::pull_request_review_target(
-        &request.repository_path,
+        &review_repository(&request.workspace_id, &request.repository_path),
         &request.remote_id,
         &request.pull_request_id,
     )
@@ -175,7 +201,8 @@ pub async fn review_platform_get_issue(
         &request.issue_id,
         request.page,
         request.per_page,
-        request.repository_path.as_deref(),
+        optional_review_repository(&request.workspace_id, request.repository_path.as_deref())
+            .as_ref(),
     )
     .await
     .map_err(|error| {
@@ -202,7 +229,8 @@ pub async fn review_platform_get_pull_request_review_target_by_identity(
         &request.host,
         &request.project_path,
         &request.pull_request_id,
-        request.repository_path.as_deref(),
+        optional_review_repository(&request.workspace_id, request.repository_path.as_deref())
+            .as_ref(),
     )
     .await
     .map_err(|error| {
@@ -265,7 +293,7 @@ pub async fn review_platform_get_pull_request_detail_page(
     request: ReviewPlatformPullRequestDetailPageRequest,
 ) -> Result<ReviewPlatformPullRequestDetailPage, String> {
     ReviewPlatformService::pull_request_detail_page(
-        &request.repository_path,
+        &review_repository(&request.workspace_id, &request.repository_path),
         &request.remote_id,
         &request.pull_request_id,
         request.section,
@@ -297,7 +325,7 @@ pub async fn review_platform_get_pull_request_ci_log(
     request: ReviewPlatformPullRequestCiLogRequest,
 ) -> Result<ReviewPlatformCiLog, String> {
     ReviewPlatformService::pull_request_ci_log(
-        &request.repository_path,
+        &review_repository(&request.workspace_id, &request.repository_path),
         &request.remote_id,
         &request.pull_request_id,
         &request.ci_item_id,
@@ -358,6 +386,8 @@ pub struct ReviewPlatformIssueRequest {
     pub issue_id: String,
     pub page: Option<u32>,
     pub per_page: Option<u32>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub repository_path: Option<String>,
 }
 
@@ -368,6 +398,8 @@ pub struct ReviewPlatformPullRequestIdentityRequest {
     pub host: String,
     pub project_path: String,
     pub pull_request_id: String,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub repository_path: Option<String>,
 }
 

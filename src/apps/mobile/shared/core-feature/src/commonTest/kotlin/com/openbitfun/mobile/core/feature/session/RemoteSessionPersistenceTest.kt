@@ -173,6 +173,46 @@ class RemoteSessionPersistenceTest {
     }
 
     @Test
+    fun replayRebuildsTheTranscriptOnceInsteadOfPerRecord() = runTest {
+        // A long session replays record by record, and rebuilding the whole
+        // transcript on each of them is what made the first seconds after an
+        // open impossible to scroll. Nothing can read the result before
+        // catch-up, so one rebuild and one write is the whole job.
+        val stores = MemoryPersistence()
+        val transport = PersistenceTransport().apply {
+            initialRecords = (0 until 8).map { richRecord("server", "t-$it", it, 1, "completed", "msg $it") }
+        }
+        val store = RemoteSessionStore.create(this, transport, "device-a", stores.stores)
+        store.dispatch(RemoteSessionIntent.Open("server")); runCurrent()
+        assertEquals(1, stores.transcripts.replaces)
+        val timeline = assertIs<RemoteSessionUiState.Ready>(store.state.value).timeline
+        assertEquals("msg 7", timeline?.persistedMessages?.last()?.text)
+        store.stop()
+    }
+
+    @Test
+    fun streamingChunksShareOneTranscriptWriteAndSettleImmediately() = runTest {
+        val stores = MemoryPersistence()
+        val transport = PersistenceTransport().apply {
+            initialRecords = listOf(richRecord("server", "t-1", 0, 1, "completed", "done"))
+        }
+        val store = RemoteSessionStore.create(this, transport, "device-a", stores.stores)
+        store.dispatch(RemoteSessionIntent.Open("server")); runCurrent()
+        val afterOpen = stores.transcripts.replaces
+        (2..6).forEach { revision ->
+            transport.records.emit(richRecord("server", "t-2", 1, revision.toLong(), "inprogress", "chunk $revision"))
+            runCurrent()
+        }
+        assertEquals(afterOpen, stores.transcripts.replaces)
+        advanceTimeBy(600); runCurrent()
+        assertEquals(afterOpen + 1, stores.transcripts.replaces)
+        transport.records.emit(richRecord("server", "t-2", 1, 7, "completed", "chunk done")); runCurrent()
+        assertEquals(afterOpen + 2, stores.transcripts.replaces)
+        assertEquals("chunk done", stores.transcripts.rows.getValue("device-a::server").last().text)
+        store.stop()
+    }
+
+    @Test
     fun streamDisconnectRetainsPersistedTranscriptAndRecovers() = runTest {
         val stores = MemoryPersistence()
         val transport = PersistenceTransport().apply {
@@ -433,9 +473,10 @@ private class MemorySessions : RemoteSessionListStore {
 private class MemoryTranscripts : RemoteTranscriptStore {
     val rows = mutableMapOf<String, List<PersistedRemoteMessage>>()
     val cursors = mutableMapOf<String, PersistedRemoteCursor>()
+    var replaces = 0
     override fun load(deviceKey: String, sessionId: String) = rows["$deviceKey::$sessionId"].orEmpty()
     override fun append(deviceKey: String, sessionId: String, startSeq: Int, messages: List<PersistedRemoteMessage>) = Unit
-    override fun replace(deviceKey: String, sessionId: String, messages: List<PersistedRemoteMessage>) { rows["$deviceKey::$sessionId"] = messages }
+    override fun replace(deviceKey: String, sessionId: String, messages: List<PersistedRemoteMessage>) { replaces++; rows["$deviceKey::$sessionId"] = messages }
     override fun loadCursor(deviceKey: String, sessionId: String) = cursors["$deviceKey::$sessionId"]
     override fun saveCursor(deviceKey: String, sessionId: String, cursor: PersistedRemoteCursor) { cursors["$deviceKey::$sessionId"] = cursor }
     override fun delete(deviceKey: String, sessionId: String) {

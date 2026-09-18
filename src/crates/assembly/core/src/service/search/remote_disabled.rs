@@ -24,9 +24,8 @@ impl RemoteWorkspaceSearchService {
     }
 }
 
-pub async fn remote_workspace_search_service_for_path(
-    _root_path: &str,
-    _preferred_connection_id: Option<String>,
+pub async fn remote_workspace_search_service_for_workspace(
+    _workspace_id: &str,
 ) -> Result<RemoteWorkspaceSearchService, String> {
     Err(unsupported())
 }

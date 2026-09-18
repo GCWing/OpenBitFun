@@ -142,13 +142,15 @@ struct ResolvedModelRequest {
 }
 
 pub(super) async fn reconcile_external_subagents(
+    workspace_id: Option<&str>,
     workspace_root: Option<&Path>,
     execution_domain_id: &str,
     snapshot: &ExternalSubagentCoordinatorSnapshot,
     decisions: ExternalSubagentDecisions<'_>,
 ) -> ExternalSubagentProductState {
-    let facts = gather_product_facts(workspace_root, &snapshot.definitions).await;
+    let facts = gather_product_facts(workspace_id, &snapshot.definitions).await;
     reconcile_with_facts(
+        workspace_id,
         workspace_root,
         execution_domain_id,
         snapshot,
@@ -161,6 +163,7 @@ pub(super) async fn reconcile_external_subagents(
 /// the tool registry, or the agent registry, and it never produces routes or
 /// runtime registrations.
 pub(super) fn project_external_subagents_read_only(
+    workspace_id: Option<&str>,
     workspace_root: Option<&Path>,
     execution_domain_id: &str,
     snapshot: &ExternalSubagentCoordinatorSnapshot,
@@ -175,6 +178,7 @@ pub(super) fn project_external_subagents_read_only(
     let mut state = ExternalSubagentProductState::default();
     for definition in &snapshot.definitions {
         let resolved = resolve_external_candidate(
+            workspace_id,
             workspace_root,
             execution_domain_id,
             definition,
@@ -218,7 +222,7 @@ pub(super) fn project_external_subagents_read_only(
 }
 
 async fn gather_product_facts(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     definitions: &[ExternalSubagentDefinition],
 ) -> ProductFacts {
     let ai_config = match GlobalConfigManager::get_service().await {
@@ -262,7 +266,7 @@ async fn gather_product_facts(
         if !requested_names.contains(&name) {
             continue;
         }
-        let Some(selected) = resolve_external_tool_for_workspace(registered, workspace_root) else {
+        let Some(selected) = resolve_external_tool_for_workspace(registered, workspace_id) else {
             continue;
         };
         if !selected.is_enabled().await {
@@ -295,7 +299,7 @@ async fn gather_product_facts(
     let registry = get_agent_registry();
     let mut locals = BTreeMap::new();
     for info in registry
-        .get_local_agents_for_external_resolution(workspace_root)
+        .get_local_agents_for_external_resolution(workspace_id)
         .await
     {
         let logical_key = normalize_logical_id(&info.id);
@@ -312,7 +316,7 @@ async fn gather_product_facts(
             (None, _) => "main-agent-profile".to_string(),
             (Some(_), Some(ai_config)) => {
                 let model_selection = registry
-                    .get_explicit_subagent_model_selection(&info.id, workspace_root)
+                    .get_explicit_subagent_model_selection(&info.id, workspace_id)
                     .unwrap_or_else(|| {
                         ai_config
                             .agent_model_defaults
@@ -714,13 +718,14 @@ fn resolve_model_request(
 }
 
 fn reconcile_with_facts(
+    workspace_id: Option<&str>,
     workspace_root: Option<&Path>,
     execution_domain_id: &str,
     snapshot: &ExternalSubagentCoordinatorSnapshot,
     decisions: ExternalSubagentDecisions<'_>,
     facts: &ProductFacts,
 ) -> ExternalSubagentProductState {
-    let workspace_scope = workspace_scope_key(workspace_root);
+    let workspace_scope = workspace_scope_key(workspace_id);
     let source_map = snapshot
         .sources
         .iter()
@@ -732,6 +737,7 @@ fn reconcile_with_facts(
 
     for definition in &snapshot.definitions {
         let resolved = resolve_external_candidate(
+            workspace_id,
             workspace_root,
             execution_domain_id,
             definition,
@@ -953,6 +959,7 @@ fn finalized_model_binding_groups(
 }
 
 fn resolve_external_candidate(
+    workspace_id: Option<&str>,
     workspace_root: Option<&Path>,
     execution_domain_id: &str,
     definition: &ExternalSubagentDefinition,
@@ -1008,7 +1015,7 @@ fn resolve_external_candidate(
         definition,
         ecosystem_id.as_ref(),
         scope,
-        &workspace_scope_key(workspace_root),
+        &workspace_scope_key(workspace_id),
         execution_domain_id,
         facts.ai_config.as_ref(),
         model_bindings,
@@ -1427,13 +1434,8 @@ fn has_runtime_unavailable_diagnostic(candidate: &ResolvedExternalCandidate) -> 
     })
 }
 
-fn workspace_scope_key(workspace_root: Option<&Path>) -> String {
-    let normalized = workspace_route_key(workspace_root).replace('\\', "/");
-    if cfg!(windows) {
-        normalized.to_ascii_lowercase()
-    } else {
-        normalized
-    }
+fn workspace_scope_key(workspace_id: Option<&str>) -> String {
+    workspace_route_key(workspace_id)
 }
 
 fn normalize_logical_id(value: &str) -> String {
@@ -1736,6 +1738,7 @@ mod tests {
         let empty_bindings = BTreeMap::new();
 
         let unbound = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -1763,6 +1766,7 @@ mod tests {
             ExternalSubagentModelBindingTarget::Fast,
         )]);
         let bound = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -1789,6 +1793,7 @@ mod tests {
 
         definition_snapshot.definitions[0].requested_model = ExternalSubagentModelRequest::Default;
         let default_unbound = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -1862,6 +1867,7 @@ mod tests {
         let product_facts = facts();
 
         let unbound = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -1885,6 +1891,7 @@ mod tests {
             ExternalSubagentModelBindingTarget::Fast,
         )]);
         let bound = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -1918,6 +1925,7 @@ mod tests {
         let empty_map = BTreeMap::new();
 
         let state = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -1959,6 +1967,7 @@ mod tests {
         let empty_bindings = BTreeMap::new();
 
         let unbound = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -1995,6 +2004,7 @@ mod tests {
 
         let inactive_ecosystems = BTreeSet::new();
         let inactive = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -2016,6 +2026,7 @@ mod tests {
             ExternalSubagentModelBindingTarget::Primary,
         )]);
         let bound = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -2056,6 +2067,7 @@ mod tests {
             },
         )]);
         let unavailable = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -2109,6 +2121,7 @@ mod tests {
         };
 
         let first = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo-a")),
             "local-user",
             &definition_snapshot,
@@ -2122,7 +2135,8 @@ mod tests {
         );
 
         let second = reconcile_with_facts(
-            Some(Path::new("C:/repo-b")),
+            Some("workspace-2"),
+            Some(Path::new("C:/repo-a")),
             "local-user",
             &definition_snapshot,
             ExternalSubagentDecisions {
@@ -2149,6 +2163,7 @@ mod tests {
         let empty_decisions = BTreeMap::new();
         let empty_bindings = BTreeMap::new();
         let preview = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -2172,6 +2187,7 @@ mod tests {
 
         let approved = BTreeSet::from([preview.summaries[0].decision_key.clone()]);
         let active = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -2243,6 +2259,7 @@ mod tests {
         let definition_snapshot = snapshot("behavior-v1", "catalog-v1");
         let healthy_facts = facts();
         let preview = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -2261,6 +2278,7 @@ mod tests {
         unavailable_facts.ai_config = None;
 
         let state = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -2295,6 +2313,7 @@ mod tests {
         assert!(state.registrations.is_empty());
 
         let recovered = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -2328,6 +2347,7 @@ mod tests {
             };
 
         let state = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &definition_snapshot,
@@ -2391,6 +2411,7 @@ mod tests {
         let empty_set = BTreeSet::new();
         let empty_map = BTreeMap::new();
         let preview = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &first,
@@ -2408,6 +2429,7 @@ mod tests {
         let approved = BTreeSet::from([approval]);
         let updated = snapshot("behavior-v1", "catalog-v2");
         let state = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &updated,
@@ -2437,6 +2459,7 @@ mod tests {
         let empty_set = BTreeSet::new();
         let empty_map = BTreeMap::new();
         let first = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2452,6 +2475,7 @@ mod tests {
         );
         let approved = BTreeSet::from([first.summaries[0].decision_key.clone()]);
         let updated = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v2", "catalog-v2"),
@@ -2477,6 +2501,7 @@ mod tests {
         let empty_set = BTreeSet::new();
         let empty_map = BTreeMap::new();
         let first = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2497,6 +2522,7 @@ mod tests {
         );
 
         let updated = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &tightened_snapshot,
@@ -2519,6 +2545,7 @@ mod tests {
 
         let reapproved = BTreeSet::from([updated.summaries[0].decision_key.clone()]);
         let activated = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &tightened_snapshot,
@@ -2550,6 +2577,7 @@ mod tests {
         let empty_map = BTreeMap::new();
         let first_facts = facts();
         let first = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2575,6 +2603,7 @@ mod tests {
         )];
         updated_config.default_models.fast = Some("model_new".to_string());
         let updated = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2610,6 +2639,7 @@ mod tests {
         let empty_map = BTreeMap::new();
         let first_facts = facts();
         let first = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2631,6 +2661,7 @@ mod tests {
         updated_config.models[0].model_name = "replacement-model".to_string();
         updated_config.models[0].base_url = "https://models.example/v2".to_string();
         let updated = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2674,6 +2705,7 @@ mod tests {
             .default_selection = SubagentModelSelection::Inherit;
 
         let state = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2712,6 +2744,7 @@ mod tests {
         let empty_set = BTreeSet::new();
         let empty_map = BTreeMap::new();
         let preview = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2745,6 +2778,7 @@ mod tests {
         let choices = BTreeMap::from([(preview.conflicts[0].conflict_key.clone(), external_id)]);
         let approved = BTreeSet::from([approval]);
         let active = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2787,6 +2821,7 @@ mod tests {
             let healthy_ai_config = product_facts.ai_config.take();
 
             let unavailable = reconcile_with_facts(
+                Some("workspace-1"),
                 Some(Path::new("C:/repo")),
                 "local-user",
                 &snapshot("behavior-v1", "catalog-v1"),
@@ -2819,6 +2854,7 @@ mod tests {
 
             product_facts.ai_config = healthy_ai_config;
             let recovered = reconcile_with_facts(
+                Some("workspace-1"),
                 Some(Path::new("C:/repo")),
                 "local-user",
                 &snapshot("behavior-v1", "catalog-v1"),
@@ -2872,6 +2908,7 @@ mod tests {
         let empty_set = BTreeSet::new();
         let empty_map = BTreeMap::new();
         let preview = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2900,6 +2937,7 @@ mod tests {
         let empty_map = BTreeMap::new();
 
         let shrunk = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &snapshot("behavior-v1", "catalog-v1"),
@@ -2940,6 +2978,7 @@ mod tests {
         without_external.definitions.clear();
 
         let shrunk = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &without_external,
@@ -2975,6 +3014,7 @@ mod tests {
         without_external.definitions.clear();
 
         let shrunk = reconcile_with_facts(
+            Some("workspace-1"),
             Some(Path::new("C:/repo")),
             "local-user",
             &without_external,

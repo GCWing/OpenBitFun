@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CanvasStoreModeContext,
   clearAgentCanvasForPeerSwitch,
@@ -28,6 +28,21 @@ import { resolveSessionSceneTarget } from '@/app/services/sessionSceneTarget';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import { drainPendingTabs } from '@/shared/services/pendingTabQueue';
+
+// Content scopes are owned by workspace ID. Provide the records that the
+// file opens below name so that the ID-first scope capture can resolve them.
+vi.mock('@/infrastructure/services/business/workspaceManager', () => {
+  const sshWorkspace = {
+    id: 'ssh-workspace-record', rootPath: '/workspace', workspaceKind: 'remote', connectionId: 'ssh-workspace',
+  };
+  const workspace = { id: 'workspace', rootPath: '/workspace', workspaceKind: 'normal' };
+  return {
+    workspaceManager: { getState: () => ({
+      currentWorkspace: workspace, recentWorkspaces: [],
+      openedWorkspaces: new Map([[workspace.id, workspace], [sshWorkspace.id, sshWorkspace]]),
+    }) },
+  };
+});
 import { usePanelTabCoordinator } from './usePanelTabCoordinator';
 import { useTabLifecycle } from './useTabLifecycle';
 
@@ -115,7 +130,7 @@ describe('canvas host panel ownership', () => {
     window.addEventListener(TAB_EVENTS.EXPAND_RIGHT_PANEL, onRightPanelRequest);
     try {
       await act(async () => {
-        const options = { filePath: '/workspace/example.ts', workspacePath: '/workspace',
+        const options = { filePath: '/workspace/example.ts', workspaceId: 'ssh-workspace-record', workspacePath: '/workspace',
           remoteConnectionId: 'ssh-workspace', mode: 'project' as const };
         fileTabManager.openFile(options);
         fileTabManager.openFile({ ...options, jumpToLine: 12 });
@@ -150,13 +165,13 @@ describe('canvas host panel ownership', () => {
   it('opens session file links in the right panel and reveals an existing file again', async () => {
     flowChatStore.setState(state => ({ ...state, activeSessionId: 'session-a', sessions: new Map([['session-a', {
       sessionId: 'session-a', title: 'Session', status: 'idle', config: {}, dialogTurns: [],
-      createdAt: 1, lastActiveAt: 1, error: null, workspacePath: '/workspace', sessionKind: 'normal',
+      createdAt: 1, lastActiveAt: 1, error: null, workspacePath: '/workspace', workspaceId: 'workspace', sessionKind: 'normal',
     }]]) }));
     useSceneStore.getState().openSessionScene(resolveSessionSceneTarget(
       flowChatStore.getActiveSession()!, workspaceManager.getState().openedWorkspaces.values(), getActiveSurfaceId(),
     ));
     await act(async () => root.render(<Hosts />));
-    const options = { filePath: '/workspace/session.ts', workspacePath: '/workspace', mode: 'agent' as const };
+    const options = { filePath: '/workspace/session.ts', workspaceId: 'workspace', workspacePath: '/workspace', mode: 'agent' as const };
     await act(async () => {
       fileTabManager.openFile(options);
       collapseSessionAuxPane();
@@ -175,12 +190,13 @@ describe('canvas host panel ownership', () => {
   it('routes legacy content events to the top when the selected session has no open tab', async () => {
     flowChatStore.setState(state => ({ ...state, activeSessionId: 'cached-session', sessions: new Map([['cached-session', {
       sessionId: 'cached-session', title: 'Session', status: 'idle', config: {}, dialogTurns: [],
-      createdAt: 1, lastActiveAt: 1, error: null, workspacePath: '/workspace', sessionKind: 'normal',
+      createdAt: 1, lastActiveAt: 1, error: null, workspacePath: '/workspace', workspaceId: 'workspace', sessionKind: 'normal',
     }]]) }));
     await act(async () => root.render(<Hosts />));
     await act(async () => {
       window.dispatchEvent(new CustomEvent(TAB_EVENTS.AGENT_CREATE_TAB, { detail: {
-        type: 'code-editor', title: 'session.ts', data: { filePath: '/workspace/session.ts', workspacePath: '/workspace' },
+        type: 'code-editor', title: 'session.ts',
+        data: { filePath: '/workspace/session.ts', workspaceId: 'workspace', workspacePath: '/workspace' },
       } }));
     });
     expect(useSceneStore.getState().activeTabId).toMatch(/^content:/);

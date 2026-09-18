@@ -36,6 +36,9 @@ export interface OpenContentOptions {
 /** Emitted by the filesystem adapter after a successful rename on the captured device. */
 export interface FileResourceRenamedEvent {
   surfaceId: string;
+  /** Owning workspace ID; authoritative when present. */
+  workspaceId?: string;
+  /** Legacy owner selector for renames issued without a workspace ID. */
   remoteConnectionId?: string;
   oldPath: string;
   newPath: string;

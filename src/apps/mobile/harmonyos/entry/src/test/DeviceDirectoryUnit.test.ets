@@ -1,6 +1,12 @@
 import { WorkspaceCatalog, mergeLegacyWorkspaces } from '../main/ets/services/WorkspaceCatalog';
 import { describe, it, expect } from '@ohos/hypium';
-import { AssistantEntry, RecentWorkspaceEntry, RemoteSession, SessionListResult } from '../main/ets/model/RemoteModels';
+import {
+  AssistantEntry,
+  RecentWorkspaceEntry,
+  RemoteSession,
+  RemoteWorkspaceIdentity,
+  SessionListResult
+} from '../main/ets/model/RemoteModels';
 import { AccountDeviceDirectorySource } from '../main/ets/services/AccountDeviceDirectory';
 import { CloudAccountDevice } from '../main/ets/services/CloudAccountClient';
 import {
@@ -40,12 +46,15 @@ class FakeAccountDeviceDirectory implements AccountDeviceDirectorySource {
     return this.assistantsByDevice.get(deviceId) || [];
   }
 
-  async listSessions(deviceId: string, workspacePath: string): Promise<RemoteSession[]> {
-    this.listedWorkspacePaths.push(`${deviceId}:${workspacePath}`);
-    if (this.failingPaths.includes(`${deviceId}:${workspacePath}`)) {
+  /** Sessions are keyed by `${deviceId}:${workspaceId}` when the row has an ID, else by device and path. */
+  async listSessions(deviceId: string, workspace: RemoteWorkspaceIdentity): Promise<RemoteSession[]> {
+    const workspacePath = workspace.path;
+    const key = workspace.workspaceId ? `${deviceId}:${workspace.workspaceId}` : `${deviceId}:${workspacePath}`;
+    this.listedWorkspacePaths.push(key);
+    if (this.failingPaths.includes(key)) {
       throw new Error(`workspace unavailable: ${workspacePath}`);
     }
-    return this.sessionsByDevicePath.get(`${deviceId}:${workspacePath}`) || [];
+    return this.sessionsByDevicePath.get(key) || [];
   }
 }
 
@@ -83,10 +92,10 @@ class GatedAccountDeviceDirectory extends FakeAccountDeviceDirectory {
     return super.listRecentWorkspaces(deviceId);
   }
 
-  async listSessions(deviceId: string, workspacePath: string): Promise<RemoteSession[]> {
+  async listSessions(deviceId: string, workspace: RemoteWorkspaceIdentity): Promise<RemoteSession[]> {
     this.notifyWorkspacesListed();
     await this.sessionHold;
-    return super.listSessions(deviceId, workspacePath);
+    return super.listSessions(deviceId, workspace);
   }
 }
 

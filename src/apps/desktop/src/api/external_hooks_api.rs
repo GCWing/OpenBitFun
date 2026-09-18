@@ -14,6 +14,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExternalHookCatalogRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only reference from pre-ID clients.
     pub workspace_path: Option<String>,
     #[serde(default)]
     pub force_refresh: bool,
@@ -24,6 +27,9 @@ pub type ExternalHookCatalogResponse = ExternalHookCatalogSnapshotV1;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExternalHookImportSnapshotRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only reference from pre-ID clients.
     pub workspace_path: Option<String>,
     #[serde(default)]
     pub refresh_updates: bool,
@@ -32,6 +38,9 @@ pub struct ExternalHookImportSnapshotRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PlanExternalHookImportRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only reference from pre-ID clients.
     pub workspace_path: Option<String>,
     pub source: SourceKey,
 }
@@ -39,6 +48,9 @@ pub struct PlanExternalHookImportRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ApplyExternalHookImportRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only reference from pre-ID clients.
     pub workspace_path: Option<String>,
     pub import_request: ExternalHookImportApplyRequestV1,
 }
@@ -46,6 +58,9 @@ pub struct ApplyExternalHookImportRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MutateExternalHookImportRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only reference from pre-ID clients.
     pub workspace_path: Option<String>,
     pub mutation: ExternalHookImportMutationRequestV1,
 }
@@ -54,9 +69,12 @@ pub struct MutateExternalHookImportRequest {
 pub async fn get_external_hook_catalog(
     request: ExternalHookCatalogRequest,
 ) -> ExternalSourceOperationResult<ExternalHookCatalogResponse> {
-    let workspace =
-        super::external_sources_api::require_local_workspace(request.workspace_path.as_deref())
-            .await?;
+    let workspace_id = super::external_sources_api::require_local_workspace(
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
+    let workspace = workspace_id.as_deref();
     local_external_hook_catalog_snapshot(workspace, request.force_refresh).await
 }
 
@@ -64,9 +82,12 @@ pub async fn get_external_hook_catalog(
 pub async fn get_external_hook_import_snapshot(
     request: ExternalHookImportSnapshotRequest,
 ) -> ExternalSourceOperationResult<ExternalHookImportSnapshotV1> {
-    let workspace =
-        super::external_sources_api::require_local_workspace(request.workspace_path.as_deref())
-            .await?;
+    let workspace_id = super::external_sources_api::require_local_workspace(
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
+    let workspace = workspace_id.as_deref();
     openbitfun_core::external_hook_import::external_hook_import_snapshot(
         workspace,
         request.refresh_updates,
@@ -78,9 +99,12 @@ pub async fn get_external_hook_import_snapshot(
 pub async fn plan_external_hook_import_command(
     request: PlanExternalHookImportRequest,
 ) -> ExternalSourceOperationResult<ExternalHookImportPlanV1> {
-    let workspace =
-        super::external_sources_api::require_local_workspace(request.workspace_path.as_deref())
-            .await?;
+    let workspace_id = super::external_sources_api::require_local_workspace(
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
+    let workspace = workspace_id.as_deref();
     openbitfun_core::external_hook_import::plan_external_hook_import(workspace, request.source)
         .await
 }
@@ -89,9 +113,12 @@ pub async fn plan_external_hook_import_command(
 pub async fn apply_external_hook_import_command(
     request: ApplyExternalHookImportRequest,
 ) -> ExternalSourceOperationResult<ExternalHookImportApplyResultV1> {
-    let workspace =
-        super::external_sources_api::require_local_workspace(request.workspace_path.as_deref())
-            .await?;
+    let workspace_id = super::external_sources_api::require_local_workspace(
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
+    let workspace = workspace_id.as_deref();
     openbitfun_core::external_hook_import::apply_external_hook_import(
         workspace,
         request.import_request,
@@ -103,9 +130,12 @@ pub async fn apply_external_hook_import_command(
 pub async fn mutate_external_hook_import_command(
     request: MutateExternalHookImportRequest,
 ) -> ExternalSourceOperationResult<ExternalHookImportSnapshotV1> {
-    let workspace =
-        super::external_sources_api::require_local_workspace(request.workspace_path.as_deref())
-            .await?;
+    let workspace_id = super::external_sources_api::require_local_workspace(
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
+    let workspace = workspace_id.as_deref();
     openbitfun_core::external_hook_import::mutate_external_hook_import(workspace, request.mutation)
         .await
 }

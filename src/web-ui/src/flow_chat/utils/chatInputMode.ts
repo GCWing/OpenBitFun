@@ -1,4 +1,5 @@
 import { HARNESS_IDS, canonicalAgentId, canonicalHarnessId, type HarnessId } from '@/shared/agents/identity';
+import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 
 const MAIN_AGENT_EXCLUDED_MODE_IDS = new Set([
@@ -88,24 +89,11 @@ function normalizeWorkspacePath(value: string | null | undefined): string | null
   return trimmed.replace(/[\\/]+$/, '');
 }
 
-function isWorkspaceConnectionCompatible(
-  workspaceConnectionId: string | null | undefined,
-  sessionRemoteConnectionId: string | null | undefined,
-): boolean {
-  const normalizedWorkspaceConnectionId = normalizeOptionalString(workspaceConnectionId);
-  const normalizedSessionRemoteConnectionId = normalizeOptionalString(sessionRemoteConnectionId);
-
-  if (normalizedSessionRemoteConnectionId && normalizedWorkspaceConnectionId) {
-    return normalizedWorkspaceConnectionId === normalizedSessionRemoteConnectionId;
-  }
-
-  if (normalizedSessionRemoteConnectionId && !normalizedWorkspaceConnectionId) {
-    return false;
-  }
-
-  return true;
-}
-
+/**
+ * Locate the workspace record a session belongs to. The workspace ID is the
+ * identity; a path-only session is a pre-ID record and goes through the shared
+ * legacy-compat resolver, which refuses ambiguous path matches.
+ */
 function resolveSessionWorkspaceMatch(params: {
   currentWorkspace?: WorkspaceResolutionInfo | null;
   sessionWorkspaceId?: string | null;
@@ -115,60 +103,30 @@ function resolveSessionWorkspaceMatch(params: {
 }): WorkspaceResolutionInfo | null {
   const normalizedSessionWorkspaceId = normalizeOptionalString(params.sessionWorkspaceId);
   const normalizedSessionWorkspacePath = normalizeWorkspacePath(params.sessionWorkspacePath);
-  const normalizedSessionRemoteConnectionId = normalizeOptionalString(params.sessionRemoteConnectionId);
   const currentWorkspace = params.currentWorkspace ?? null;
-  const openedWorkspaces = params.openedWorkspaces ?? [];
+  const records: WorkspaceResolutionInfo[] = [];
+  const pushRecord = (workspace: WorkspaceResolutionInfo | null | undefined) => {
+    if (workspace && !records.some(candidate => candidate.id === workspace.id)) {
+      records.push(workspace);
+    }
+  };
+  pushRecord(currentWorkspace);
+  for (const workspace of params.openedWorkspaces ?? []) {
+    pushRecord(workspace);
+  }
 
   if (normalizedSessionWorkspaceId) {
-    if (currentWorkspace?.id === normalizedSessionWorkspaceId) {
-      return currentWorkspace;
-    }
-
-    for (const workspace of openedWorkspaces) {
-      if (workspace.id === normalizedSessionWorkspaceId) {
-        return workspace;
-      }
-    }
+    return records.find(workspace => workspace.id === normalizedSessionWorkspaceId) ?? null;
   }
 
   if (!normalizedSessionWorkspacePath) {
     return null;
   }
 
-  const matchingWorkspaces: WorkspaceResolutionInfo[] = [];
-  const pushIfMatching = (workspace: WorkspaceResolutionInfo | null | undefined) => {
-    if (!workspace) {
-      return;
-    }
-
-    if (normalizeWorkspacePath(workspace.rootPath) !== normalizedSessionWorkspacePath) {
-      return;
-    }
-
-    if (!isWorkspaceConnectionCompatible(workspace.connectionId, normalizedSessionRemoteConnectionId)) {
-      return;
-    }
-
-    if (!matchingWorkspaces.some(candidate => candidate.id === workspace.id)) {
-      matchingWorkspaces.push(workspace);
-    }
-  };
-
-  pushIfMatching(currentWorkspace);
-  for (const workspace of openedWorkspaces) {
-    pushIfMatching(workspace);
-  }
-
-  if (normalizedSessionRemoteConnectionId) {
-    const exactConnectionMatch = matchingWorkspaces.find(
-      (workspace) => normalizeOptionalString(workspace.connectionId) === normalizedSessionRemoteConnectionId,
-    );
-    if (exactConnectionMatch) {
-      return exactConnectionMatch;
-    }
-  }
-
-  return matchingWorkspaces[0] ?? null;
+  return resolveLegacySessionWorkspace({
+    workspacePath: normalizedSessionWorkspacePath,
+    remoteConnectionId: normalizeOptionalString(params.sessionRemoteConnectionId) ?? undefined,
+  }, records) ?? null;
 }
 
 export function normalizeUserDefaultChatInputModeId(value: unknown): string | null {

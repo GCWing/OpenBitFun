@@ -22,61 +22,115 @@ pub use openbitfun_services_integrations::review_platform::{
     ReviewPlatformReplyToThreadRequest, ReviewPlatformRepositoryRef,
     ReviewPlatformRequestChangesRequest, ReviewPlatformResolveThreadRequest,
     ReviewPlatformSubmitReviewRequest, ReviewPlatformThread, ReviewPlatformThreadKind,
-    ReviewPlatformWorkspaceSnapshot, ReviewSubmitEvent,
+    ReviewPlatformWorkspaceSnapshot, ReviewRepositoryLocator, ReviewSubmitEvent,
 };
 
+use crate::service::workspace::{WorkspaceInfo, WorkspaceKind};
 use openbitfun_services_integrations::review_platform::{
-    ReviewPlatformService as ReviewPlatformOwnerService, ReviewPlatformWorkspaceClassifier,
-    REVIEW_PLATFORM_TOKEN_FILE_NAME,
+    ReviewGitExecution, ReviewPlatformService as ReviewPlatformOwnerService,
+    ReviewPlatformWorkspaceClassifier, ReviewRemoteGitTarget, REVIEW_PLATFORM_TOKEN_FILE_NAME,
 };
 
 pub struct ReviewPlatformService;
 
 struct CoreReviewPlatformWorkspaceClassifier;
 
+/// Resolves the workspace record that owns a review repository locator.
+///
+/// An explicit `workspace_id` is authoritative. A legacy path-only locator is
+/// only accepted through the workspace legacy-compat boundary, which fails on
+/// ambiguous paths instead of guessing a connection.
+async fn resolve_review_workspace(
+    repository: &ReviewRepositoryLocator,
+) -> Result<Option<WorkspaceInfo>, ReviewPlatformError> {
+    let Some(service) = crate::service::workspace::get_global_workspace_service() else {
+        if repository.workspace_id.is_some() {
+            return Err(ReviewPlatformError::InvalidRepository(
+                "Workspace service is not initialized; cannot resolve the review workspace"
+                    .to_string(),
+            ));
+        }
+        return Ok(None);
+    };
+    match repository.workspace_id.as_deref() {
+        Some(workspace_id) => service
+            .require_workspace(workspace_id)
+            .await
+            .map(Some)
+            .map_err(|error| ReviewPlatformError::InvalidRepository(error.to_string())),
+        None => service
+            .resolve_legacy_workspace_reference(None, &repository.repository_path, None, None)
+            .await
+            .map_err(|error| ReviewPlatformError::InvalidRepository(error.to_string())),
+    }
+}
+
+fn remote_git_target(
+    workspace: &WorkspaceInfo,
+) -> Result<ReviewRemoteGitTarget, ReviewPlatformError> {
+    let connection_id = workspace
+        .remote_ssh_connection_id()
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| {
+            ReviewPlatformError::InvalidRepository(format!(
+                "Remote workspace {} has no SSH connection bound to it",
+                workspace.id
+            ))
+        })?;
+    Ok(ReviewRemoteGitTarget {
+        workspace_id: workspace.id.clone(),
+        connection_id: connection_id.to_string(),
+    })
+}
+
 #[async_trait::async_trait]
 impl ReviewPlatformWorkspaceClassifier for CoreReviewPlatformWorkspaceClassifier {
-    /// With `remote-workspace` this consults the SSH registry. Without it the
-    /// compat facade still recognises an opened workspace record of kind
-    /// `Remote`, and the owner then routes Git probes to
-    /// [`Self::execute_remote_git_command`], which refuses below instead of
-    /// running `git` against the controller filesystem.
-    async fn is_remote_workspace_path(&self, path: &str) -> bool {
+    /// Classification is keyed by the owning workspace record: `workspace_kind`
+    /// decides local vs. remote and the record's SSH connection carries remote
+    /// Git probes. A legacy path that is not bound to any open workspace runs
+    /// locally only when no remote registry claims it; a remote path without a
+    /// workspace record is rejected instead of guessing a connection.
+    async fn classify_repository(
+        &self,
+        repository: &ReviewRepositoryLocator,
+    ) -> Result<ReviewGitExecution, ReviewPlatformError> {
+        if let Some(workspace) = resolve_review_workspace(repository).await? {
+            return if workspace.workspace_kind == WorkspaceKind::Remote {
+                remote_git_target(&workspace).map(ReviewGitExecution::Remote)
+            } else {
+                Ok(ReviewGitExecution::Local)
+            };
+        }
+
         #[cfg(any(feature = "remote-workspace", feature = "agent-runtime"))]
         {
-            return crate::service::remote_ssh::workspace_state::is_remote_path(path).await;
+            if crate::service::remote_ssh::workspace_state::is_remote_path(
+                &repository.repository_path,
+            )
+            .await
+            {
+                return Err(ReviewPlatformError::InvalidRepository(format!(
+                    "Remote repository path {} is not bound to an open workspace; select the workspace by its ID",
+                    repository.repository_path
+                )));
+            }
         }
-        #[cfg(not(any(feature = "remote-workspace", feature = "agent-runtime")))]
-        {
-            // No SSH registry and no workspace records exist in this build,
-            // so nothing can mark a path as remote.
-            let _ = path;
-            false
-        }
+        Ok(ReviewGitExecution::Local)
     }
 
     async fn execute_remote_git_command(
         &self,
-        workspace_path: &str,
+        target: &ReviewRemoteGitTarget,
         current_dir: &str,
         args: &[&str],
     ) -> Result<String, ReviewPlatformError> {
         #[cfg(feature = "remote-workspace")]
         {
-            use crate::service::remote_ssh::workspace_state::{
-                get_remote_workspace_manager, lookup_remote_connection,
-            };
+            use crate::service::remote_ssh::workspace_state::get_remote_workspace_manager;
             use openbitfun_services_integrations::remote_ssh::{
                 build_remote_git_command, normalize_remote_workspace_path,
             };
 
-            let entry = lookup_remote_connection(workspace_path)
-                .await
-                .ok_or_else(|| {
-                    ReviewPlatformError::InvalidRepository(format!(
-                        "No SSH connection is registered for remote workspace {workspace_path}"
-                    ))
-                })?;
             let manager = match get_remote_workspace_manager() {
                 Some(state) => state.get_ssh_manager().await,
                 None => None,
@@ -90,11 +144,12 @@ impl ReviewPlatformWorkspaceClassifier for CoreReviewPlatformWorkspaceClassifier
             let command =
                 build_remote_git_command(&normalize_remote_workspace_path(current_dir), args);
             let (stdout, stderr, exit_code) = manager
-                .execute_command(&entry.connection_id, &command)
+                .execute_command(&target.connection_id, &command)
                 .await
                 .map_err(|error| {
                     ReviewPlatformError::InvalidRepository(format!(
-                        "Failed to execute git command on remote workspace: {error}"
+                        "Failed to execute git command on remote workspace {}: {error}",
+                        target.workspace_id
                     ))
                 })?;
 
@@ -115,7 +170,8 @@ impl ReviewPlatformWorkspaceClassifier for CoreReviewPlatformWorkspaceClassifier
         {
             let _ = (current_dir, args);
             Err(ReviewPlatformError::InvalidRepository(format!(
-                "Remote workspaces are not compiled into this OpenBitFun host (feature `remote-workspace`); refusing to run Git against the local filesystem for a remote workspace: {workspace_path}"
+                "Remote workspaces are not compiled into this OpenBitFun host (feature `remote-workspace`); refusing to run Git against the local filesystem for remote workspace {}",
+                target.workspace_id
             )))
         }
     }
@@ -134,60 +190,60 @@ fn owner_service() -> Result<ReviewPlatformOwnerService, ReviewPlatformError> {
 
 impl ReviewPlatformService {
     pub async fn discover_remotes(
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
     ) -> Result<Vec<ReviewPlatformRemote>, ReviewPlatformError> {
-        owner_service()?.discover_remotes(repository_path).await
+        owner_service()?.discover_remotes(repository).await
     }
 
     pub async fn workspace_snapshot(
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: Option<&str>,
         page: Option<u32>,
         per_page: Option<u32>,
     ) -> Result<ReviewPlatformWorkspaceSnapshot, ReviewPlatformError> {
         owner_service()?
-            .workspace_snapshot(repository_path, remote_id, page, per_page)
+            .workspace_snapshot(repository, remote_id, page, per_page)
             .await
     }
 
     pub async fn workspace_context(
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: Option<&str>,
     ) -> Result<ReviewPlatformWorkspaceSnapshot, ReviewPlatformError> {
         owner_service()?
-            .workspace_context(repository_path, remote_id)
+            .workspace_context(repository, remote_id)
             .await
     }
 
     pub async fn workspace_snapshot_with_state(
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: Option<&str>,
         page: Option<u32>,
         per_page: Option<u32>,
         state: ReviewPlatformListState,
     ) -> Result<ReviewPlatformWorkspaceSnapshot, ReviewPlatformError> {
         owner_service()?
-            .workspace_snapshot_with_state(repository_path, remote_id, page, per_page, state)
+            .workspace_snapshot_with_state(repository, remote_id, page, per_page, state)
             .await
     }
 
     pub async fn pull_request_detail(
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: &str,
         pull_request_id: &str,
     ) -> Result<ReviewPlatformPullRequestDetail, ReviewPlatformError> {
         owner_service()?
-            .pull_request_detail(repository_path, remote_id, pull_request_id)
+            .pull_request_detail(repository, remote_id, pull_request_id)
             .await
     }
 
     pub async fn pull_request_review_target(
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: &str,
         pull_request_id: &str,
     ) -> Result<ReviewPlatformPullRequestReviewTarget, ReviewPlatformError> {
         owner_service()?
-            .pull_request_review_target(repository_path, remote_id, pull_request_id)
+            .pull_request_review_target(repository, remote_id, pull_request_id)
             .await
     }
 
@@ -198,7 +254,7 @@ impl ReviewPlatformService {
         issue_id: &str,
         page: Option<u32>,
         per_page: Option<u32>,
-        repository_path: Option<&str>,
+        repository: Option<&ReviewRepositoryLocator>,
     ) -> Result<ReviewPlatformIssueEvidence, ReviewPlatformError> {
         owner_service()?
             .issue(
@@ -208,7 +264,7 @@ impl ReviewPlatformService {
                 issue_id,
                 page,
                 per_page,
-                repository_path,
+                repository,
             )
             .await
     }
@@ -218,7 +274,7 @@ impl ReviewPlatformService {
         host: &str,
         project_path: &str,
         pull_request_id: &str,
-        repository_path: Option<&str>,
+        repository: Option<&ReviewRepositoryLocator>,
     ) -> Result<ReviewPlatformPullRequestReviewTarget, ReviewPlatformError> {
         owner_service()?
             .pull_request_review_target_by_identity(
@@ -226,7 +282,7 @@ impl ReviewPlatformService {
                 host,
                 project_path,
                 pull_request_id,
-                repository_path,
+                repository,
             )
             .await
     }
@@ -241,7 +297,7 @@ impl ReviewPlatformService {
         expected_head_revision: &str,
         file_path: &str,
         file_page_hint: Option<u32>,
-        repository_path: Option<&str>,
+        repository: Option<&ReviewRepositoryLocator>,
     ) -> Result<ReviewPlatformPullRequestFileDiff, ReviewPlatformError> {
         owner_service()?
             .pull_request_file_diff_by_identity(
@@ -253,13 +309,13 @@ impl ReviewPlatformService {
                 expected_head_revision,
                 file_path,
                 file_page_hint,
-                repository_path,
+                repository,
             )
             .await
     }
 
     pub async fn pull_request_file_diff(
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: &str,
         pull_request_id: &str,
         expected_base_revision: &str,
@@ -269,7 +325,7 @@ impl ReviewPlatformService {
     ) -> Result<ReviewPlatformPullRequestFileDiff, ReviewPlatformError> {
         owner_service()?
             .pull_request_file_diff(
-                repository_path,
+                repository,
                 remote_id,
                 pull_request_id,
                 expected_base_revision,
@@ -281,7 +337,7 @@ impl ReviewPlatformService {
     }
 
     pub async fn pull_request_detail_page(
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: &str,
         pull_request_id: &str,
         section: ReviewPlatformDetailSection,
@@ -290,7 +346,7 @@ impl ReviewPlatformService {
     ) -> Result<ReviewPlatformPullRequestDetailPage, ReviewPlatformError> {
         owner_service()?
             .pull_request_detail_page(
-                repository_path,
+                repository,
                 remote_id,
                 pull_request_id,
                 section,
@@ -301,7 +357,7 @@ impl ReviewPlatformService {
     }
 
     pub async fn pull_request_ci_log(
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: &str,
         pull_request_id: &str,
         ci_item_id: &str,
@@ -309,7 +365,7 @@ impl ReviewPlatformService {
     ) -> Result<ReviewPlatformCiLog, ReviewPlatformError> {
         owner_service()?
             .pull_request_ci_log(
-                repository_path,
+                repository,
                 remote_id,
                 pull_request_id,
                 ci_item_id,
@@ -384,12 +440,15 @@ mod tests {
 
     #[cfg(feature = "remote-workspace")]
     #[tokio::test]
-    async fn remote_git_execution_fails_loudly_without_registered_connection() {
+    async fn remote_git_execution_fails_loudly_without_ssh_manager() {
         let classifier = CoreReviewPlatformWorkspaceClassifier;
 
         let error = classifier
             .execute_remote_git_command(
-                "/openbitfun-tests/unregistered-remote-workspace",
+                &ReviewRemoteGitTarget {
+                    workspace_id: "ws-unregistered".to_string(),
+                    connection_id: "conn-unregistered".to_string(),
+                },
                 "/openbitfun-tests/unregistered-remote-workspace",
                 &["remote", "-v"],
             )
@@ -398,7 +457,8 @@ mod tests {
 
         let message = error.to_string();
         assert!(
-            message.contains("No SSH connection is registered"),
+            message.contains("SSH connection manager is not initialized")
+                || message.contains("Failed to execute git command on remote workspace"),
             "unexpected error message: {message}"
         );
     }
@@ -408,14 +468,35 @@ mod tests {
     async fn remote_git_execution_fails_loudly_without_remote_workspace_capability() {
         let classifier = CoreReviewPlatformWorkspaceClassifier;
 
-        assert!(!classifier.is_remote_workspace_path("/remote/project").await);
         let error = classifier
-            .execute_remote_git_command("/remote/project", "/remote/project", &["status"])
+            .execute_remote_git_command(
+                &ReviewRemoteGitTarget {
+                    workspace_id: "ws-remote".to_string(),
+                    connection_id: "conn".to_string(),
+                },
+                "/remote/project",
+                &["status"],
+            )
             .await
             .expect_err("a narrow review-platform build must reject remote execution");
 
         assert!(error
             .to_string()
-            .contains("Remote workspace support is not available in this build"));
+            .contains("Remote workspaces are not compiled into this OpenBitFun host"));
+    }
+
+    #[tokio::test]
+    async fn unknown_workspace_id_is_rejected_instead_of_falling_back_to_path() {
+        let classifier = CoreReviewPlatformWorkspaceClassifier;
+        let result = classifier
+            .classify_repository(&ReviewRepositoryLocator::new(
+                Some("ws-does-not-exist".to_string()),
+                "/tmp/some-local-repo",
+            ))
+            .await;
+        assert!(
+            result.is_err(),
+            "an explicit but unknown workspace ID must not degrade to path classification"
+        );
     }
 }

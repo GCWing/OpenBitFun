@@ -25,6 +25,7 @@ use openbitfun_services_integrations::script_tool::NodeScriptToolRuntime;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+#[cfg(all(test, feature = "opencode-plugin-host"))]
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, OnceLock, RwLock as StdRwLock};
@@ -514,7 +515,7 @@ impl ExternalToolMux {
             // a local route solely because the remote path text matches.
             return self.original();
         }
-        let workspace_key = workspace_route_key(context.and_then(ToolUseContext::workspace_root));
+        let workspace_key = workspace_route_key(context.and_then(ToolUseContext::workspace_id));
         match self
             .routes
             .read()
@@ -545,8 +546,8 @@ impl ExternalToolMux {
         }
     }
 
-    fn selected_for_workspace(&self, workspace_root: Option<&Path>) -> Option<Arc<dyn Tool>> {
-        let workspace_key = workspace_route_key(workspace_root);
+    fn selected_for_workspace(&self, workspace_id: Option<&str>) -> Option<Arc<dyn Tool>> {
+        let workspace_key = workspace_route_key(workspace_id);
         match self
             .routes
             .read()
@@ -708,7 +709,7 @@ impl Tool for ExternalToolMux {
                 .call(input, context)
                 .await;
         }
-        let workspace_key = workspace_route_key(context.workspace_root());
+        let workspace_key = workspace_route_key(context.workspace_id());
         let route = self
             .routes
             .read()
@@ -1137,7 +1138,7 @@ impl ExternalToolRouter {
     fn resolve_registered_tool(
         &self,
         tool: Arc<dyn Tool>,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> Option<Arc<dyn Tool>> {
         let mux = self
             .muxes
@@ -1146,7 +1147,7 @@ impl ExternalToolRouter {
             .get(tool.name())
             .cloned();
         match mux {
-            Some(mux) => mux.selected_for_workspace(workspace_root),
+            Some(mux) => mux.selected_for_workspace(workspace_id),
             None => Some(tool),
         }
     }
@@ -1190,13 +1191,13 @@ pub(crate) fn intercept_external_tool_registry_registration(tool: Arc<dyn Tool>)
 }
 
 pub(crate) async fn register_live_external_tool_candidate(
-    workspace_root: &Path,
+    workspace_id: &str,
     tool: Arc<dyn Tool>,
     provider_id: &str,
     content_version: String,
     native_agent_visible: bool,
 ) {
-    let workspace_key = workspace_route_key(Some(workspace_root));
+    let workspace_key = workspace_route_key(Some(workspace_id));
     router().register_live_candidate(
         &workspace_key,
         tool.clone(),
@@ -1212,11 +1213,11 @@ pub(crate) async fn register_live_external_tool_candidate(
 }
 
 pub(crate) async fn unregister_live_external_tool_candidate(
-    workspace_root: &Path,
+    workspace_id: &str,
     name: &str,
     provider_id: &str,
 ) {
-    let workspace_key = workspace_route_key(Some(workspace_root));
+    let workspace_key = workspace_route_key(Some(workspace_id));
     router().unregister_live_candidate(&workspace_key, name, provider_id);
     router()
         .withdraw_live_candidate_route(&workspace_key, name)
@@ -1234,9 +1235,9 @@ pub(crate) fn retain_external_tool_muxes_for_prefix(prefix: &str) -> Vec<Arc<dyn
 
 pub(crate) fn resolve_external_tool_for_workspace(
     tool: Arc<dyn Tool>,
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
 ) -> Option<Arc<dyn Tool>> {
-    router().resolve_registered_tool(tool, workspace_root)
+    router().resolve_registered_tool(tool, workspace_id)
 }
 
 pub(crate) fn resolve_external_tool_for_context(
@@ -1248,16 +1249,16 @@ pub(crate) fn resolve_external_tool_for_context(
 
 #[cfg(test)]
 pub(crate) fn external_tool_route_root(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     is_remote: bool,
-) -> Option<&Path> {
+) -> Option<&str> {
     if is_remote {
         // External-source workspace roots must be absolute. This deliberately
         // non-routable key selects only the displaced local implementation
         // while remote Tool Runtime ownership is unavailable.
-        Some(Path::new("\0"))
+        Some("<unsupported-remote>")
     } else {
-        workspace_root
+        workspace_id
     }
 }
 
@@ -1602,25 +1603,23 @@ async fn report_external_tool_worker_lost(
     crate::external_sources::notify_external_tool_registry_changed();
 }
 
-pub(super) async fn external_tool_workspace_requires_recovery(
-    workspace_root: Option<&Path>,
-) -> bool {
+pub(super) async fn external_tool_workspace_requires_recovery(workspace_id: Option<&str>) -> bool {
     runtime_manager()
-        .workspace_requires_recovery(&workspace_route_key(workspace_root))
+        .workspace_requires_recovery(&workspace_route_key(workspace_id))
         .await
 }
 
 pub(super) async fn begin_external_tool_workspace_recovery(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
 ) -> BTreeSet<String> {
     runtime_manager()
-        .begin_workspace_recovery(&workspace_route_key(workspace_root))
+        .begin_workspace_recovery(&workspace_route_key(workspace_id))
         .await
 }
 
-pub(super) async fn reset_external_tool_workspace_recovery_budget(workspace_root: Option<&Path>) {
+pub(super) async fn reset_external_tool_workspace_recovery_budget(workspace_id: Option<&str>) {
     runtime_manager()
-        .reset_workspace_recovery_budget(&workspace_route_key(workspace_root))
+        .reset_workspace_recovery_budget(&workspace_route_key(workspace_id))
         .await;
 }
 
@@ -1628,20 +1627,20 @@ pub(super) async fn invalidate_external_tool_runtime_availability() {
     runtime_manager().invalidate_availability().await;
 }
 
-pub(super) async fn release_external_tool_workspace(workspace_root: Option<&Path>) {
-    let workspace_key = workspace_route_key(workspace_root);
+pub(super) async fn release_external_tool_workspace(workspace_id: Option<&str>) {
+    let workspace_key = workspace_route_key(workspace_id);
     router().apply_routes(&workspace_key, BTreeMap::new()).await;
     runtime_manager().release_workspace(&workspace_key).await;
 }
 
 pub(super) async fn reconcile_external_tools(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     execution_domain_id: &str,
     control_plane: &Arc<ExternalSourceControlPlane>,
     decisions: ExternalToolDecisions<'_>,
     worker_recovery_targets: &BTreeSet<String>,
 ) -> ExternalToolProductState {
-    let workspace_key = workspace_route_key(workspace_root);
+    let workspace_key = workspace_route_key(workspace_id);
     let snapshot = control_plane.tools(|coordinator| coordinator.snapshot());
     let mut state = ExternalToolProductState::default();
     let mut live_candidates_by_name = router().live_candidates(&workspace_key);
@@ -2530,7 +2529,7 @@ mod tests {
         crate::agentic::tools::tool_context_runtime::build_tool_description_context(
             runtime_agent_key,
             Some(&crate::agentic::WorkspaceBinding::new(
-                None,
+                Some("test-workspace".into()),
                 workspace_root.to_path_buf(),
             )),
             None,
@@ -2680,7 +2679,7 @@ mod tests {
         });
         let mux = ExternalToolMux::new(tool_name, Some(original.clone()));
         mux.set_route(
-            workspace_route_key(Some(&workspace)),
+            workspace_route_key(Some("test-workspace")),
             WorkspaceRoute::Live {
                 tool: plugin.clone(),
                 native_agent_visible: false,
@@ -2731,7 +2730,7 @@ mod tests {
         });
         let mux = Arc::new(ExternalToolMux::new(tool_name, None));
         mux.set_route(
-            workspace_route_key(Some(&workspace)),
+            workspace_route_key(Some("test-workspace")),
             WorkspaceRoute::Live {
                 tool: plugin.clone(),
                 native_agent_visible: true,
@@ -2768,7 +2767,7 @@ mod tests {
         });
         let mux = ExternalToolMux::new(tool_name, Some(original.clone()));
         mux.set_route(
-            workspace_route_key(Some(&workspace)),
+            workspace_route_key(Some("test-workspace")),
             WorkspaceRoute::Live {
                 tool: plugin.clone(),
                 native_agent_visible: true,
@@ -2795,7 +2794,7 @@ mod tests {
     #[tokio::test]
     async fn initial_tool_only_plugin_collision_keeps_native_tool() {
         let workspace = std::env::current_dir().expect("absolute workspace");
-        let workspace_key = workspace_route_key(Some(&workspace));
+        let workspace_key = workspace_route_key(Some("test-workspace"));
         let tool_name = "initial_plugin_tool_only_conflict_contract".to_string();
         let original: Arc<dyn Tool> = Arc::new(TestTool {
             name: tool_name.clone(),
@@ -2870,7 +2869,7 @@ mod tests {
         };
 
         let directory = tempfile::tempdir().expect("temporary workspace");
-        let workspace_key = workspace_route_key(Some(directory.path()));
+        let workspace_key = workspace_route_key(Some("test-workspace"));
         let tool_name = format!("live_plugin_conflict_{}", std::process::id());
         let original: Arc<dyn Tool> = Arc::new(TestTool {
             name: tool_name.clone(),
@@ -2910,7 +2909,7 @@ mod tests {
         let empty_map = BTreeMap::new();
 
         let unresolved = reconcile_external_tools(
-            Some(directory.path()),
+            Some("test-workspace"),
             "test-domain",
             &control_plane,
             ExternalToolDecisions {
@@ -2935,14 +2934,14 @@ mod tests {
             .cloned()
             .expect("installed mux");
         assert!(Arc::ptr_eq(
-            &mux.selected_for_workspace(Some(directory.path())).unwrap(),
+            &mux.selected_for_workspace(Some("test-workspace")).unwrap(),
             &original
         ));
 
         let choices =
             BTreeMap::from([(unresolved.conflicts[0].conflict_key.clone(), candidate_id)]);
         let selected = reconcile_external_tools(
-            Some(directory.path()),
+            Some("test-workspace"),
             "test-domain",
             &control_plane,
             ExternalToolDecisions {
@@ -2959,13 +2958,13 @@ mod tests {
             Some(format!("external:live:opencode-plugin:{tool_name}"))
         );
         assert!(Arc::ptr_eq(
-            &mux.selected_for_workspace(Some(directory.path())).unwrap(),
+            &mux.selected_for_workspace(Some("test-workspace")).unwrap(),
             &live
         ));
 
         router().unregister_live_candidate(&workspace_key, &tool_name, "opencode-plugin");
         let withdrawn = reconcile_external_tools(
-            Some(directory.path()),
+            Some("test-workspace"),
             "test-domain",
             &control_plane,
             ExternalToolDecisions {
@@ -2979,7 +2978,7 @@ mod tests {
         .await;
         assert_eq!(withdrawn.conflicts.len(), 1);
         assert_eq!(withdrawn.conflicts[0].selected_candidate_id, None);
-        assert!(mux.selected_for_workspace(Some(directory.path())).is_none());
+        assert!(mux.selected_for_workspace(Some("test-workspace")).is_none());
 
         router().apply_routes(&workspace_key, BTreeMap::new()).await;
         router()
@@ -3308,7 +3307,7 @@ mod tests {
             revision: "v1".to_string(),
             approval_key: "approval".to_string(),
             source_preference_key: "test:source".to_string(),
-            workspace_key: workspace_route_key(Some(&root)),
+            workspace_key: workspace_route_key(Some("test-workspace")),
             target_tool_names: Arc::new(vec![tool_name.clone()]),
             worktree_root: None,
             runtime: Arc::new(NodeScriptToolRuntime::discover()),
@@ -3317,7 +3316,7 @@ mod tests {
         let mux = ExternalToolMux::new(tool_name, Some(original));
         assert!(!mux.manages_own_execution_timeout());
         mux.set_route(
-            workspace_route_key(Some(&root)),
+            workspace_route_key(Some("test-workspace")),
             WorkspaceRoute::External {
                 tool: external,
                 conflict: None,

@@ -382,6 +382,32 @@ describe('dispatchJobStore', () => {
     ).toBeUndefined();
   });
 
+  it('restores an outbound job owned by workspace ID even without a source path', () => {
+    const record = {
+      jobId: 'job-id-owned',
+      sessionId: 'session-id-owned',
+      target: {
+        kind: 'ssh' as const,
+        connectionId: 'ssh-1',
+        workspacePath: '/target/repo',
+        displayName: 'build-host',
+      },
+      sourceWorkspaceId: 'workspace-moved',
+      workspacePath: '/target/repo',
+      promptPreview: 'Prompt preview',
+      lastCursor: 0,
+      lastState: 'running' as const,
+      createdAt: '2026-07-28T00:00:00Z',
+      updatedAt: '2026-07-28T00:00:01Z',
+    };
+
+    dispatchJobStore.getState().mergeOutboundRecords([record]);
+
+    const job = dispatchJobStore.getState().jobs['job-id-owned'];
+    expect(job?.sourceWorkspaceId).toBe('workspace-moved');
+    expect(job?.sourceWorkspacePath).toBeUndefined();
+  });
+
   it('uses the stable baseline project when a linked source checkout is unavailable', () => {
     const record = {
       jobId: 'job-stable-project',

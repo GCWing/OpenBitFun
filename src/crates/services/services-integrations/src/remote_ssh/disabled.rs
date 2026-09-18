@@ -809,6 +809,7 @@ impl RemoteFileService {
 
 #[derive(Debug, Clone)]
 pub struct RemoteTerminalSession {
+    pub workspace_id: Option<String>,
     pub id: String,
     pub name: String,
     pub connection_id: String,
@@ -855,6 +856,8 @@ impl RemoteTerminalManager {
     ) -> anyhow::Result<CreateSessionResult> {
         Err(unsupported())
     }
+
+    pub async fn set_workspace_id(&self, _session_id: &str, _workspace_id: Option<String>) {}
 
     pub async fn get_session(&self, _session_id: &str) -> Option<RemoteTerminalSession> {
         None

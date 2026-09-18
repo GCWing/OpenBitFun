@@ -46,6 +46,26 @@ export class CloudAccountRequestError extends Error {
   }
 }
 
+/**
+ * Whether a failed sign-in poll should be tried again inside the window.
+ *
+ * Retry what the next tick could plausibly get past: a transport failure, and
+ * a relay that is rate limiting or briefly unavailable. Stop for anything the
+ * relay meant — a rejected transaction stays rejected however long the phone
+ * keeps asking.
+ *
+ * Kept in step with `shared/core-feature/.../AccountStore.kt`, which carries
+ * the same decision for the Android and iOS clients.
+ */
+export function retryableAuthorizationPollError(err: Object): boolean {
+  if (err instanceof CloudAccountTransportError) return true;
+  if (err instanceof CloudAccountRequestError) {
+    const status: number = err.statusCode;
+    return status === 429 || (status >= 500 && status < 600);
+  }
+  return false;
+}
+
 export interface CloudAccountSession {
   token: string;
   userId: string;
@@ -178,11 +198,27 @@ export class CloudAccountClient {
     }
     if (!await openAuthorization(start.authorizationUrl)) throw new Error('Could not open account sign-in.');
     const deadline = Math.min(start.expiresAt * 1000, Date.now() + 600000);
+    let lastTransient: Error | undefined = undefined;
     while (Date.now() < deadline && generation === this.authorizationGeneration) {
       await new Promise<void>((resolve) => setTimeout(resolve, Math.min(30, Math.max(1, start.pollIntervalSeconds)) * 1000));
       if (generation !== this.authorizationGeneration) break;
       const request: GitHubPollRequest = { transactionId: start.transactionId, transactionSecret: start.transactionSecret };
-      const poll = await this.post<GitHubPoll>(relayUrl, '/api/auth/github/poll', request);
+      let poll: GitHubPoll;
+      try {
+        poll = await this.post<GitHubPoll>(relayUrl, '/api/auth/github/poll', request);
+      } catch (err) {
+        // The poll window spans the minutes the user spends in a browser and a
+        // mail app, which is exactly when a phone drops a connection, hops
+        // networks, or sleeps its radio. Ending the sign-in on the first hiccup
+        // would send them back to the start for something the next tick fixes
+        // by itself, so only a refusal the relay actually means stops the loop.
+        const failure = err as Error;
+        if (!retryableAuthorizationPollError(failure)) throw failure;
+        lastTransient = failure;
+        RemoteLogger.warn('account authorization poll retrying');
+        continue;
+      }
+      lastTransient = undefined;
       if (generation !== this.authorizationGeneration) break;
       if (poll.status === 'authorized' && poll.tokens?.accessToken) {
         if (deviceSecret.length !== 32) throw new Error('Invalid device identity.');
@@ -204,6 +240,9 @@ export class CloudAccountClient {
       }
       if (poll.status === 'expired' || poll.status === 'denied') break;
     }
+    // A window that ran out while every poll was failing is a network problem,
+    // not a rejected sign-in: report the one the user can act on.
+    if (lastTransient !== undefined) throw lastTransient;
     throw new Error('GitHub sign-in expired or was cancelled.');
   }
 

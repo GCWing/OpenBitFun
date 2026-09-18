@@ -102,6 +102,9 @@ pub struct AcpClientPermissionResponse {
 pub struct SetAcpSessionModelRequest {
     pub client_id: String,
     pub session_id: String,
+    /// Workspace identity; authoritative when present.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     #[serde(default)]
     pub workspace_path: Option<String>,
     #[serde(default)]
@@ -116,6 +119,9 @@ pub struct SetAcpSessionModelRequest {
 pub struct SetAcpSessionConfigOptionRequest {
     pub client_id: String,
     pub session_id: String,
+    /// Workspace identity; authoritative when present.
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     #[serde(default)]
     pub workspace_path: Option<String>,
     #[serde(default)]
@@ -232,9 +238,12 @@ impl AcpClientService {
         }))
     }
 
+    /// `workspace_id` is the persisted identity of the owning workspace;
+    /// `workspace_path` is its execution root recorded as an IO projection.
     pub async fn create_flow_session_record(
         &self,
         session_storage_path: &Path,
+        workspace_id: &str,
         workspace_path: &str,
         client_id: &str,
         session_name: Option<String>,
@@ -242,6 +251,7 @@ impl AcpClientService {
         self.session_persistence
             .create_flow_session_record(
                 session_storage_path,
+                workspace_id,
                 workspace_path,
                 client_id,
                 session_name,

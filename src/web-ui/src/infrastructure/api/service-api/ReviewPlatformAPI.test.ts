@@ -78,36 +78,42 @@ describe('ReviewPlatformAPI identity evidence wire', () => {
     invokeMock.mockResolvedValueOnce(context);
 
     await expect(
-      reviewPlatformAPI.getWorkspaceContext('D:/workspace/example', 'origin:github:example__repo'),
+      reviewPlatformAPI.getWorkspaceContext(
+        { workspaceId: 'ws-1', repositoryPath: 'D:/workspace/example' },
+        'origin:github:example__repo',
+      ),
     ).resolves.toBe(context);
 
     expect(invokeMock).toHaveBeenCalledWith('review_platform_get_workspace_context', {
       request: {
+        workspaceId: 'ws-1',
         repositoryPath: 'D:/workspace/example',
         remoteId: 'origin:github:example__repo',
       },
     });
   });
 
+  const repo = { workspaceId: 'ws-1', repositoryPath: '/repo' };
+
   it('sends a repository state filter together with its page', async () => {
     const snapshot = { capabilities: { supportedPullRequestStates: ['all', 'merged'] } };
     invokeMock.mockResolvedValue(snapshot);
-    await expect(reviewPlatformAPI.getWorkspaceSnapshot('/repo', 'origin', 2, 10, 'merged')).resolves.toBe(snapshot);
+    await expect(reviewPlatformAPI.getWorkspaceSnapshot(repo, 'origin', 2, 10, 'merged')).resolves.toBe(snapshot);
     expect(invokeMock).toHaveBeenCalledWith('review_platform_get_workspace_snapshot', {
-      request: { repositoryPath: '/repo', remoteId: 'origin', page: 2, perPage: 10, state: 'merged' },
+      request: { workspaceId: 'ws-1', repositoryPath: '/repo', remoteId: 'origin', page: 2, perPage: 10, state: 'merged' },
     });
   });
 
   it('preserves the legacy All request and accepts older hosts', async () => {
     const snapshot = { capabilities: {} };
     invokeMock.mockResolvedValue(snapshot);
-    await expect(reviewPlatformAPI.getWorkspaceSnapshot('/repo', 'origin', 1, 10, 'all')).resolves.toBe(snapshot);
+    await expect(reviewPlatformAPI.getWorkspaceSnapshot(repo, 'origin', 1, 10, 'all')).resolves.toBe(snapshot);
     expect(invokeMock.mock.calls[0][1].request).not.toHaveProperty('state');
   });
 
   it('rejects an older host that silently ignores a requested state', async () => {
     invokeMock.mockResolvedValue({ capabilities: {}, pullRequests: [{ state: 'open' }] });
-    await expect(reviewPlatformAPI.getWorkspaceSnapshot('/repo', 'origin', 1, 10, 'merged'))
+    await expect(reviewPlatformAPI.getWorkspaceSnapshot(repo, 'origin', 1, 10, 'merged'))
       .rejects.toThrow('review_platform_state_filter_unsupported');
   });
 });

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const invokeMock = vi.hoisted(() => vi.fn());
 const listenMock = vi.hoisted(() => vi.fn(() => () => {}));
 
+vi.mock('@/infrastructure/services/business/workspaceManager', () => ({ workspaceManager: { getState: () => ({ openedWorkspaces: new Map(), recentWorkspaces: [] }) } }));
 vi.mock('@/infrastructure/api/service-api/ApiClient', () => ({
   api: {
     invoke: invokeMock,

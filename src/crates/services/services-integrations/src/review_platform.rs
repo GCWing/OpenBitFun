@@ -508,6 +508,9 @@ pub enum ReviewSubmitEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformCreatePullRequestRequest {
+    /// Owning workspace ID; authoritative for local/remote routing when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: Option<String>,
     pub title: String,
@@ -520,6 +523,9 @@ pub struct ReviewPlatformCreatePullRequestRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformReplyToThreadRequest {
+    /// Owning workspace ID; authoritative for local/remote routing when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: String,
     pub pull_request_id: String,
@@ -530,6 +536,9 @@ pub struct ReviewPlatformReplyToThreadRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformSubmitReviewRequest {
+    /// Owning workspace ID; authoritative for local/remote routing when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: String,
     pub pull_request_id: String,
@@ -540,6 +549,9 @@ pub struct ReviewPlatformSubmitReviewRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformResolveThreadRequest {
+    /// Owning workspace ID; authoritative for local/remote routing when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: String,
     pub pull_request_id: String,
@@ -550,6 +562,9 @@ pub struct ReviewPlatformResolveThreadRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformApprovalRequest {
+    /// Owning workspace ID; authoritative for local/remote routing when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: String,
     pub pull_request_id: String,
@@ -559,10 +574,49 @@ pub struct ReviewPlatformApprovalRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewPlatformRequestChangesRequest {
+    /// Owning workspace ID; authoritative for local/remote routing when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub repository_path: String,
     pub remote_id: String,
     pub pull_request_id: String,
     pub body: String,
+}
+
+impl ReviewPlatformCreatePullRequestRequest {
+    pub fn repository(&self) -> ReviewRepositoryLocator {
+        ReviewRepositoryLocator::new(self.workspace_id.clone(), self.repository_path.clone())
+    }
+}
+
+impl ReviewPlatformReplyToThreadRequest {
+    pub fn repository(&self) -> ReviewRepositoryLocator {
+        ReviewRepositoryLocator::new(self.workspace_id.clone(), self.repository_path.clone())
+    }
+}
+
+impl ReviewPlatformSubmitReviewRequest {
+    pub fn repository(&self) -> ReviewRepositoryLocator {
+        ReviewRepositoryLocator::new(self.workspace_id.clone(), self.repository_path.clone())
+    }
+}
+
+impl ReviewPlatformResolveThreadRequest {
+    pub fn repository(&self) -> ReviewRepositoryLocator {
+        ReviewRepositoryLocator::new(self.workspace_id.clone(), self.repository_path.clone())
+    }
+}
+
+impl ReviewPlatformApprovalRequest {
+    pub fn repository(&self) -> ReviewRepositoryLocator {
+        ReviewRepositoryLocator::new(self.workspace_id.clone(), self.repository_path.clone())
+    }
+}
+
+impl ReviewPlatformRequestChangesRequest {
+    pub fn repository(&self) -> ReviewRepositoryLocator {
+        ReviewRepositoryLocator::new(self.workspace_id.clone(), self.repository_path.clone())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -616,31 +670,80 @@ pub struct ReviewPlatformWorkspaceSnapshot {
 /// fetched over HTTP from the host running OpenBitFun. Remote SSH workspaces are
 /// therefore fully supported as long as the product runtime can execute those
 /// Git probes on the remote host, which is what this port injects.
+/// Identifies the repository a review-platform operation runs against.
+///
+/// `workspace_id` is the authoritative identity: it decides whether Git probes
+/// run locally or on a remote host, and which connection carries them.
+/// `repository_path` is only the IO operand (the directory the probes run in);
+/// it never selects a workspace on its own once an ID is present.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReviewRepositoryLocator {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    pub repository_path: String,
+}
+
+impl ReviewRepositoryLocator {
+    pub fn new(workspace_id: Option<String>, repository_path: impl Into<String>) -> Self {
+        Self {
+            workspace_id: workspace_id.filter(|id| !id.trim().is_empty()),
+            repository_path: repository_path.into(),
+        }
+    }
+
+    /// Legacy locator for callers that predate workspace IDs. The host
+    /// classifier must resolve the path through its legacy-compat boundary.
+    pub fn legacy_path(repository_path: impl Into<String>) -> Self {
+        Self::new(None, repository_path)
+    }
+}
+
+/// Remote execution target resolved from a workspace ID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReviewRemoteGitTarget {
+    pub workspace_id: String,
+    pub connection_id: String,
+}
+
+/// How Git probes for one repository locator must execute.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReviewGitExecution {
+    Local,
+    Remote(ReviewRemoteGitTarget),
+}
+
 #[async_trait::async_trait]
 pub trait ReviewPlatformWorkspaceClassifier: Send + Sync {
-    /// True when `path` belongs to a remote workspace whose Git repository is
-    /// not reachable through the local filesystem.
-    async fn is_remote_workspace_path(&self, path: &str) -> bool;
+    /// Resolves whether the repository lives on the local filesystem or inside
+    /// a remote workspace, keyed by the owning workspace ID. Hosts may accept
+    /// a legacy path-only locator through their legacy-compat boundary, but
+    /// must never pick a remote connection from an ambiguous path.
+    async fn classify_repository(
+        &self,
+        repository: &ReviewRepositoryLocator,
+    ) -> Result<ReviewGitExecution, ReviewPlatformError>;
 
     /// Executes a Git command inside a remote workspace and returns stdout.
     ///
-    /// Only called for paths where [`Self::is_remote_workspace_path`] returned
-    /// `true`. `workspace_path` identifies the remote connection; `current_dir`
-    /// is the remote directory the Git command must run in (it may differ from
-    /// `workspace_path` once the repository root has been resolved).
+    /// Only called for locators that [`Self::classify_repository`] resolved to
+    /// [`ReviewGitExecution::Remote`]. `current_dir` is the remote directory
+    /// the Git command must run in (it may differ from the locator path once
+    /// the repository root has been resolved).
     ///
-    /// The default implementation fails loudly so hosts that classify paths as
-    /// remote without wiring remote Git execution surface a clear error instead
-    /// of silently degrading.
+    /// The default implementation fails loudly so hosts that classify
+    /// repositories as remote without wiring remote Git execution surface a
+    /// clear error instead of silently degrading.
     async fn execute_remote_git_command(
         &self,
-        workspace_path: &str,
+        target: &ReviewRemoteGitTarget,
         current_dir: &str,
         args: &[&str],
     ) -> Result<String, ReviewPlatformError> {
         let _ = (current_dir, args);
         Err(ReviewPlatformError::InvalidRepository(format!(
-            "Remote workspace Git execution is not wired for {workspace_path}"
+            "Remote workspace Git execution is not wired for workspace {}",
+            target.workspace_id
         )))
     }
 }
@@ -652,16 +755,13 @@ pub struct ReviewPlatformService {
     workspace_classifier: Arc<dyn ReviewPlatformWorkspaceClassifier>,
 }
 
-/// Resolved Git execution scope for one workspace path.
+/// Resolved Git execution scope for one repository locator.
 #[derive(Debug, Clone)]
 struct WorkspaceGitScope {
-    /// Original workspace path; identifies the remote connection for remote
-    /// scopes (the repository root may sit above the registered workspace
-    /// root and would not resolve a connection on its own).
-    workspace_path: String,
     /// Git repository root the probes must run in.
     repository_root: String,
-    remote: bool,
+    /// Local process or remote execution keyed by the owning workspace ID.
+    execution: ReviewGitExecution,
 }
 
 /// Test-only classifier that treats every path as local. Production hosts
@@ -674,8 +774,11 @@ struct LocalOnlyReviewPlatformWorkspaceClassifier;
 #[cfg(test)]
 #[async_trait::async_trait]
 impl ReviewPlatformWorkspaceClassifier for LocalOnlyReviewPlatformWorkspaceClassifier {
-    async fn is_remote_workspace_path(&self, _path: &str) -> bool {
-        false
+    async fn classify_repository(
+        &self,
+        _repository: &ReviewRepositoryLocator,
+    ) -> Result<ReviewGitExecution, ReviewPlatformError> {
+        Ok(ReviewGitExecution::Local)
     }
 }
 
@@ -853,43 +956,42 @@ impl ReviewPlatformService {
         &self.token_store_path
     }
 
-    async fn is_remote_workspace_path(&self, repository_path: &str) -> bool {
-        self.workspace_classifier
-            .is_remote_workspace_path(repository_path)
-            .await
-    }
-
-    /// Resolves how Git probes must run for `repository_path` (local process
-    /// vs. remote execution through the injected workspace runtime).
+    /// Resolves how Git probes must run for `repository` (local process vs.
+    /// remote execution through the injected workspace runtime).
     async fn workspace_git_scope(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
     ) -> Result<WorkspaceGitScope, ReviewPlatformError> {
-        if self.is_remote_workspace_path(repository_path).await {
-            let output = self
-                .workspace_classifier
-                .execute_remote_git_command(
-                    repository_path,
-                    repository_path,
-                    &["rev-parse", "--show-toplevel"],
-                )
-                .await?;
-            // Remote roots are POSIX paths on the remote host; never apply
-            // local (Windows) path normalization to them.
-            let root = parse_repository_root_output(&output)?;
-            return Ok(WorkspaceGitScope {
-                workspace_path: repository_path.to_string(),
-                repository_root: root,
-                remote: true,
-            });
+        let execution = self
+            .workspace_classifier
+            .classify_repository(repository)
+            .await?;
+        match execution {
+            ReviewGitExecution::Remote(target) => {
+                let output = self
+                    .workspace_classifier
+                    .execute_remote_git_command(
+                        &target,
+                        &repository.repository_path,
+                        &["rev-parse", "--show-toplevel"],
+                    )
+                    .await?;
+                // Remote roots are POSIX paths on the remote host; never apply
+                // local (Windows) path normalization to them.
+                let root = parse_repository_root_output(&output)?;
+                Ok(WorkspaceGitScope {
+                    repository_root: root,
+                    execution: ReviewGitExecution::Remote(target),
+                })
+            }
+            ReviewGitExecution::Local => {
+                let root = get_repository_root(&repository.repository_path).await?;
+                Ok(WorkspaceGitScope {
+                    repository_root: root,
+                    execution: ReviewGitExecution::Local,
+                })
+            }
         }
-
-        let root = get_repository_root(repository_path).await?;
-        Ok(WorkspaceGitScope {
-            workspace_path: repository_path.to_string(),
-            repository_root: root,
-            remote: false,
-        })
     }
 
     async fn execute_scope_git_command(
@@ -897,21 +999,22 @@ impl ReviewPlatformService {
         scope: &WorkspaceGitScope,
         args: &[&str],
     ) -> Result<String, ReviewPlatformError> {
-        if scope.remote {
-            self.workspace_classifier
-                .execute_remote_git_command(&scope.workspace_path, &scope.repository_root, args)
-                .await
-        } else {
-            execute_git_command(&scope.repository_root, args).await
+        match &scope.execution {
+            ReviewGitExecution::Remote(target) => {
+                self.workspace_classifier
+                    .execute_remote_git_command(target, &scope.repository_root, args)
+                    .await
+            }
+            ReviewGitExecution::Local => execute_git_command(&scope.repository_root, args).await,
         }
     }
 
     pub async fn discover_remotes(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
     ) -> Result<Vec<ReviewPlatformRemote>, ReviewPlatformError> {
         let auth_tokens = self.load_stored_tokens().await?;
-        let scope = self.workspace_git_scope(repository_path).await?;
+        let scope = self.workspace_git_scope(repository).await?;
         self.discover_remotes_in_scope(&scope, &auth_tokens).await
     }
 
@@ -965,13 +1068,13 @@ impl ReviewPlatformService {
 
     pub async fn workspace_snapshot(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: Option<&str>,
         page: Option<u32>,
         per_page: Option<u32>,
     ) -> Result<ReviewPlatformWorkspaceSnapshot, ReviewPlatformError> {
         self.workspace_snapshot_with_state(
-            repository_path,
+            repository,
             remote_id,
             page,
             per_page,
@@ -982,23 +1085,23 @@ impl ReviewPlatformService {
 
     pub async fn workspace_snapshot_with_state(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: Option<&str>,
         page: Option<u32>,
         per_page: Option<u32>,
         state: ReviewPlatformListState,
     ) -> Result<ReviewPlatformWorkspaceSnapshot, ReviewPlatformError> {
-        self.workspace_snapshot_internal(repository_path, remote_id, page, per_page, true, state)
+        self.workspace_snapshot_internal(repository, remote_id, page, per_page, true, state)
             .await
     }
 
     pub async fn workspace_context(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: Option<&str>,
     ) -> Result<ReviewPlatformWorkspaceSnapshot, ReviewPlatformError> {
         self.workspace_snapshot_internal(
-            repository_path,
+            repository,
             remote_id,
             None,
             None,
@@ -1010,7 +1113,7 @@ impl ReviewPlatformService {
 
     async fn workspace_snapshot_internal(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: Option<&str>,
         page: Option<u32>,
         per_page: Option<u32>,
@@ -1019,7 +1122,7 @@ impl ReviewPlatformService {
     ) -> Result<ReviewPlatformWorkspaceSnapshot, ReviewPlatformError> {
         let pagination_request = PullRequestPagination::new(page, per_page);
         let auth_tokens = self.load_stored_tokens().await?;
-        let scope = self.workspace_git_scope(repository_path).await?;
+        let scope = self.workspace_git_scope(repository).await?;
         let root = scope.repository_root.clone();
         let remotes = self.discover_remotes_in_scope(&scope, &auth_tokens).await?;
         let selected_remote = select_remote(&remotes, remote_id).cloned();
@@ -1185,12 +1288,12 @@ impl ReviewPlatformService {
 
     pub async fn pull_request_detail(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: &str,
         pull_request_id: &str,
     ) -> Result<ReviewPlatformPullRequestDetail, ReviewPlatformError> {
         let auth_tokens = self.load_stored_tokens().await?;
-        let scope = self.workspace_git_scope(repository_path).await?;
+        let scope = self.workspace_git_scope(repository).await?;
         let remotes = self.discover_remotes_in_scope(&scope, &auth_tokens).await?;
         let remote = remotes
             .into_iter()
@@ -1207,12 +1310,12 @@ impl ReviewPlatformService {
 
     pub async fn pull_request_review_target(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: &str,
         pull_request_id: &str,
     ) -> Result<ReviewPlatformPullRequestReviewTarget, ReviewPlatformError> {
         let ctx = self
-            .provider_context_for_repository(repository_path, Some(remote_id))
+            .provider_context_for_repository(repository, Some(remote_id))
             .await?;
         provider_for(ctx.remote.platform)
             .pull_request_review_target(&ctx, pull_request_id)
@@ -1227,7 +1330,7 @@ impl ReviewPlatformService {
         issue_id: &str,
         page: Option<u32>,
         per_page: Option<u32>,
-        repository_path: Option<&str>,
+        repository: Option<&ReviewRepositoryLocator>,
     ) -> Result<ReviewPlatformIssueEvidence, ReviewPlatformError> {
         let auth_tokens = self.load_stored_tokens().await?;
         let identity = ProviderIssueIdentity::new(platform, host, project_path, issue_id)?;
@@ -1236,7 +1339,7 @@ impl ReviewPlatformService {
                 identity.platform,
                 &identity.host,
                 &identity.project_path,
-                repository_path,
+                repository,
                 &auth_tokens,
             )
             .await?;
@@ -1249,7 +1352,7 @@ impl ReviewPlatformService {
         host: &str,
         project_path: &str,
         pull_request_id: &str,
-        repository_path: Option<&str>,
+        repository: Option<&ReviewRepositoryLocator>,
     ) -> Result<ReviewPlatformPullRequestReviewTarget, ReviewPlatformError> {
         let auth_tokens = self.load_stored_tokens().await?;
         let pull_request_id = normalize_provider_item_id(pull_request_id, "Pull request")?;
@@ -1258,7 +1361,7 @@ impl ReviewPlatformService {
                 platform,
                 host,
                 project_path,
-                repository_path,
+                repository,
                 &auth_tokens,
             )
             .await?;
@@ -1278,7 +1381,7 @@ impl ReviewPlatformService {
         expected_head_revision: &str,
         file_path: &str,
         file_page_hint: Option<u32>,
-        repository_path: Option<&str>,
+        repository: Option<&ReviewRepositoryLocator>,
     ) -> Result<ReviewPlatformPullRequestFileDiff, ReviewPlatformError> {
         let pull_request_id = normalize_provider_item_id(pull_request_id, "Pull request")?;
         let auth_tokens = self.load_stored_tokens().await?;
@@ -1287,7 +1390,7 @@ impl ReviewPlatformService {
                 platform,
                 host,
                 project_path,
-                repository_path,
+                repository,
                 &auth_tokens,
             )
             .await?;
@@ -1305,7 +1408,7 @@ impl ReviewPlatformService {
 
     pub async fn pull_request_file_diff(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: &str,
         pull_request_id: &str,
         expected_base_revision: &str,
@@ -1314,7 +1417,7 @@ impl ReviewPlatformService {
         file_page_hint: Option<u32>,
     ) -> Result<ReviewPlatformPullRequestFileDiff, ReviewPlatformError> {
         let ctx = self
-            .provider_context_for_repository(repository_path, Some(remote_id))
+            .provider_context_for_repository(repository, Some(remote_id))
             .await?;
         provider_for(ctx.remote.platform)
             .pull_request_file_diff(
@@ -1330,7 +1433,7 @@ impl ReviewPlatformService {
 
     pub async fn pull_request_detail_page(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: &str,
         pull_request_id: &str,
         section: ReviewPlatformDetailSection,
@@ -1338,7 +1441,7 @@ impl ReviewPlatformService {
         per_page: Option<u32>,
     ) -> Result<ReviewPlatformPullRequestDetailPage, ReviewPlatformError> {
         let ctx = self
-            .provider_context_for_repository(repository_path, Some(remote_id))
+            .provider_context_for_repository(repository, Some(remote_id))
             .await?;
         provider_for(ctx.remote.platform)
             .pull_request_detail_page(
@@ -1352,14 +1455,14 @@ impl ReviewPlatformService {
 
     pub async fn pull_request_ci_log(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: &str,
         pull_request_id: &str,
         ci_item_id: &str,
         ci_item_name: &str,
     ) -> Result<ReviewPlatformCiLog, ReviewPlatformError> {
         let ctx = self
-            .provider_context_for_repository(repository_path, Some(remote_id))
+            .provider_context_for_repository(repository, Some(remote_id))
             .await?;
         provider_for(ctx.remote.platform)
             .pull_request_ci_log(&ctx, pull_request_id, ci_item_id, ci_item_name)
@@ -1371,7 +1474,7 @@ impl ReviewPlatformService {
         request: ReviewPlatformCreatePullRequestRequest,
     ) -> Result<ReviewPlatformActionResult, ReviewPlatformError> {
         let ctx = self
-            .provider_context_for_repository(&request.repository_path, request.remote_id.as_deref())
+            .provider_context_for_repository(&request.repository(), request.remote_id.as_deref())
             .await?;
         provider_for(ctx.remote.platform)
             .create_pull_request(&ctx, &request)
@@ -1384,7 +1487,7 @@ impl ReviewPlatformService {
     ) -> Result<ReviewPlatformActionResult, ReviewPlatformError> {
         let ctx = self
             .provider_context_for_repository(
-                &request.repository_path,
+                &request.repository(),
                 Some(request.remote_id.as_str()),
             )
             .await?;
@@ -1399,7 +1502,7 @@ impl ReviewPlatformService {
     ) -> Result<ReviewPlatformActionResult, ReviewPlatformError> {
         let ctx = self
             .provider_context_for_repository(
-                &request.repository_path,
+                &request.repository(),
                 Some(request.remote_id.as_str()),
             )
             .await?;
@@ -1414,7 +1517,7 @@ impl ReviewPlatformService {
     ) -> Result<ReviewPlatformActionResult, ReviewPlatformError> {
         let ctx = self
             .provider_context_for_repository(
-                &request.repository_path,
+                &request.repository(),
                 Some(request.remote_id.as_str()),
             )
             .await?;
@@ -1429,7 +1532,7 @@ impl ReviewPlatformService {
     ) -> Result<ReviewPlatformActionResult, ReviewPlatformError> {
         let ctx = self
             .provider_context_for_repository(
-                &request.repository_path,
+                &request.repository(),
                 Some(request.remote_id.as_str()),
             )
             .await?;
@@ -1444,7 +1547,7 @@ impl ReviewPlatformService {
     ) -> Result<ReviewPlatformActionResult, ReviewPlatformError> {
         let ctx = self
             .provider_context_for_repository(
-                &request.repository_path,
+                &request.repository(),
                 Some(request.remote_id.as_str()),
             )
             .await?;
@@ -1459,7 +1562,7 @@ impl ReviewPlatformService {
     ) -> Result<ReviewPlatformActionResult, ReviewPlatformError> {
         let ctx = self
             .provider_context_for_repository(
-                &request.repository_path,
+                &request.repository(),
                 Some(request.remote_id.as_str()),
             )
             .await?;
@@ -1470,11 +1573,11 @@ impl ReviewPlatformService {
 
     async fn provider_context_for_repository(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         remote_id: Option<&str>,
     ) -> Result<ProviderContext, ReviewPlatformError> {
         let auth_tokens = self.load_stored_tokens().await?;
-        let scope = self.workspace_git_scope(repository_path).await?;
+        let scope = self.workspace_git_scope(repository).await?;
         let remotes = self.discover_remotes_in_scope(&scope, &auth_tokens).await?;
         let remote = select_remote_for_action(&remotes, remote_id)?.clone();
         if !remote.supported {
@@ -1488,16 +1591,16 @@ impl ReviewPlatformService {
         platform: ReviewPlatformKind,
         host: &str,
         project_path: &str,
-        repository_path: Option<&str>,
+        repository: Option<&ReviewRepositoryLocator>,
         auth_tokens: &ReviewPlatformAuthTokens,
     ) -> Result<ProviderContext, ReviewPlatformError> {
         let host = normalize_provider_host(host)?;
         let project_path = normalize_project_path(platform, project_path)?;
         let trusted_remote = if auth_tokens.get(platform, &host).is_none() {
-            match repository_path {
-                Some(repository_path) => {
+            match repository {
+                Some(repository) => {
                     self.repository_trusts_provider_identity(
-                        repository_path,
+                        repository,
                         platform,
                         &host,
                         &project_path,
@@ -1520,7 +1623,7 @@ impl ReviewPlatformService {
 
     async fn repository_trusts_provider_identity(
         &self,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         platform: ReviewPlatformKind,
         host: &str,
         project_path: &str,
@@ -1531,7 +1634,7 @@ impl ReviewPlatformService {
         ) {
             return false;
         }
-        let Ok(scope) = self.workspace_git_scope(repository_path).await else {
+        let Ok(scope) = self.workspace_git_scope(repository).await else {
             return false;
         };
         let Ok(output) = self
@@ -7758,8 +7861,17 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ReviewPlatformWorkspaceClassifier for AlwaysRemoteWorkspace {
-        async fn is_remote_workspace_path(&self, _path: &str) -> bool {
-            true
+        async fn classify_repository(
+            &self,
+            repository: &ReviewRepositoryLocator,
+        ) -> Result<ReviewGitExecution, ReviewPlatformError> {
+            Ok(ReviewGitExecution::Remote(ReviewRemoteGitTarget {
+                workspace_id: repository
+                    .workspace_id
+                    .clone()
+                    .unwrap_or_else(|| "remote-workspace".to_string()),
+                connection_id: "conn-1".to_string(),
+            }))
         }
     }
 
@@ -7772,18 +7884,27 @@ mod tests {
 
     #[async_trait::async_trait]
     impl ReviewPlatformWorkspaceClassifier for RecordingRemoteGitRuntime {
-        async fn is_remote_workspace_path(&self, _path: &str) -> bool {
-            true
+        async fn classify_repository(
+            &self,
+            repository: &ReviewRepositoryLocator,
+        ) -> Result<ReviewGitExecution, ReviewPlatformError> {
+            Ok(ReviewGitExecution::Remote(ReviewRemoteGitTarget {
+                workspace_id: repository
+                    .workspace_id
+                    .clone()
+                    .unwrap_or_else(|| "remote-workspace".to_string()),
+                connection_id: "conn-1".to_string(),
+            }))
         }
 
         async fn execute_remote_git_command(
             &self,
-            workspace_path: &str,
+            target: &ReviewRemoteGitTarget,
             current_dir: &str,
             args: &[&str],
         ) -> Result<String, ReviewPlatformError> {
             self.commands.lock().expect("commands lock").push((
-                workspace_path.to_string(),
+                target.workspace_id.clone(),
                 current_dir.to_string(),
                 args.iter().map(|arg| arg.to_string()).collect(),
             ));
@@ -8297,7 +8418,15 @@ mod tests {
         let service = ReviewPlatformService::new(path, Arc::new(AlwaysRemoteWorkspace));
 
         let error = service
-            .workspace_snapshot("not-a-git-repository", None, None, None)
+            .workspace_snapshot(
+                &ReviewRepositoryLocator::new(
+                    Some("ws-remote".to_string()),
+                    "not-a-git-repository",
+                ),
+                None,
+                None,
+                None,
+            )
             .await
             .expect_err("remote workspace without remote git wiring must fail loudly");
 
@@ -8316,7 +8445,13 @@ mod tests {
         let service = ReviewPlatformService::new(path, runtime.clone());
 
         let snapshot = service
-            .workspace_context("/srv/projects/openbitfun", None)
+            .workspace_context(
+                &ReviewRepositoryLocator::new(
+                    Some("ws-remote".to_string()),
+                    "/srv/projects/openbitfun",
+                ),
+                None,
+            )
             .await
             .expect("remote workspace context should resolve through remote git");
 
@@ -8340,17 +8475,17 @@ mod tests {
             commands,
             vec![
                 (
-                    "/srv/projects/openbitfun".to_string(),
+                    "ws-remote".to_string(),
                     "/srv/projects/openbitfun".to_string(),
                     vec!["rev-parse".to_string(), "--show-toplevel".to_string()],
                 ),
                 (
-                    "/srv/projects/openbitfun".to_string(),
+                    "ws-remote".to_string(),
                     "/srv/projects".to_string(),
                     vec!["remote".to_string(), "-v".to_string()],
                 ),
             ],
-            "git probes must run through the remote runtime, keyed by the workspace path"
+            "git probes must run through the remote runtime, keyed by the workspace ID"
         );
     }
 
@@ -8363,7 +8498,10 @@ mod tests {
         assert!(
             service
                 .repository_trusts_provider_identity(
-                    "/srv/projects/openbitfun",
+                    &ReviewRepositoryLocator::new(
+                        Some("ws-remote".to_string()),
+                        "/srv/projects/openbitfun",
+                    ),
                     ReviewPlatformKind::Gitlab,
                     "gitlab.com",
                     "example/repo",
@@ -8398,7 +8536,7 @@ mod tests {
         let service = ReviewPlatformService::new_local_only(path.clone());
 
         let snapshot = service
-            .workspace_context(repository_path, None)
+            .workspace_context(&ReviewRepositoryLocator::legacy_path(repository_path), None)
             .await
             .expect("workspace context should not call the provider list API");
 
@@ -10203,7 +10341,7 @@ mod tests {
             .expect("exact GitLab authority should be stored");
 
         let remotes = service
-            .discover_remotes(repository_path)
+            .discover_remotes(&ReviewRepositoryLocator::legacy_path(repository_path))
             .await
             .expect("registered internal remote should be discovered");
 
@@ -10248,12 +10386,12 @@ mod tests {
                 ReviewPlatformKind::Gitlab,
                 "gitlab.example.internal",
                 "group/repo",
-                Some(
+                Some(&ReviewRepositoryLocator::legacy_path(
                     repository
                         .path()
                         .to_str()
                         .expect("repository path should be UTF-8"),
-                ),
+                )),
                 &tokens,
             )
             .await
@@ -10297,12 +10435,12 @@ mod tests {
                 ReviewPlatformKind::Gitlab,
                 "gitlab.example.internal",
                 "group/repo",
-                Some(
+                Some(&ReviewRepositoryLocator::legacy_path(
                     repository
                         .path()
                         .to_str()
                         .expect("repository path should be UTF-8"),
-                ),
+                )),
                 &tokens,
             )
             .await;

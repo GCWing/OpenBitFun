@@ -25,9 +25,9 @@ const log = createLogger('sessionMarkdownExport');
 export interface SessionMarkdownExportTarget {
   sessionId: string;
   title: string;
+  workspaceId: string;
+  /** Display only; never used to locate persistence. */
   workspacePath?: string;
-  remoteConnectionId?: string | null;
-  remoteSshHost?: string | null;
 }
 
 export type SessionMarkdownExportResult =
@@ -90,10 +90,7 @@ export async function exportSessionToMarkdown(
   try {
     const turns = await sessionAPI.loadSessionTurns(
       target.sessionId,
-      target.workspacePath ?? '',
-      undefined,
-      target.remoteConnectionId ?? undefined,
-      target.remoteSshHost ?? undefined
+      target.workspaceId
     );
 
     const exportTurns = (turns ?? [])

@@ -140,10 +140,10 @@ describe("fixed peer download identity", () => {
       .mockResolvedValueOnce({ resp: "file_chunk", offset: 1, chunk_size: 1, total_size: 2, chunk_base64: "Ag==", revision: "r1" });
     const adapter = { requestPeerCommand } as unknown as Parameters<typeof readPeerFileChunks>[0];
     const bytes: number[] = [];
-    for await (const chunk of readPeerFileChunks(adapter, "/workspace/file", vi.fn(), {workspace_path: "/workspace", remote_connection_id: "saved-ssh"})) bytes.push(...chunk);
+    for await (const chunk of readPeerFileChunks(adapter, "/workspace/file", vi.fn(), {workspace_id: "workspace-1", workspace_path: "/workspace", remote_connection_id: "saved-ssh"})) bytes.push(...chunk);
     expect(bytes).toEqual([1, 2]);
     for (const [request] of requestPeerCommand.mock.calls) {
-      expect(request).toMatchObject({path: "/workspace/file", workspace_path: "/workspace", remote_connection_id: "saved-ssh", session_id: null});
+      expect(request).toMatchObject({path: "/workspace/file", workspace_id: "workspace-1", workspace_path: "/workspace", remote_connection_id: "saved-ssh", session_id: null});
     }
   });
 

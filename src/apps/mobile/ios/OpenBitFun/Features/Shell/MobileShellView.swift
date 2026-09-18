@@ -2,11 +2,21 @@ import OpenBitFunMobileCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// The measured height of the conversation's floating bottom layer. Only the
+/// jump-to-bottom button needs it: `safeAreaInset` already pads the transcript.
+private struct BottomOverlayHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct MobileShellView: View {
     @ObservedObject var model: MobileAppModel
     @State private var wideSidebarCollapsed = false
     @State private var sessionActionsOpen = false
     @State private var sidebarActionSession: ChatSession?
+    @State private var bottomOverlayHeight: CGFloat = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -316,32 +326,110 @@ struct MobileShellView: View {
         sidebarAction: (() -> Void)?,
         sidebarActionLabel: String
     ) -> some View {
-        VStack(spacing: 0) {
-            if !showsWelcomeHome {
-            ConversationHeader(
-                model: model,
-                actionsOpen: $sessionActionsOpen,
-                sidebarAction: sidebarAction,
-                sidebarActionLabel: sidebarActionLabel
-            )
-            }
+        Group {
             if showsWelcomeHome {
                 WelcomeHomeView(model: model)
             } else if model.surface == .remote && !model.remoteSessionSelected {
-                RemoteConnectedHomeView(model: model, onBrowse: sidebarAction)
-            } else {
-                PermissionMailboxPanel(model: model)
-                ZStack {
-                    ChatTimelineView(model: model)
-                    if model.surface == .remote && model.remoteConversationLoading {
-                        ConversationLoadingState()
-                    }
+                VStack(spacing: 0) {
+                    ConversationHeader(
+                        model: model,
+                        actionsOpen: $sessionActionsOpen,
+                        sidebarAction: sidebarAction,
+                        sidebarActionLabel: sidebarActionLabel
+                    )
+                    RemoteConnectedHomeView(model: model, onBrowse: sidebarAction)
                 }
-                ComposerBar(model: model)
+            } else {
+                floatingConversation(
+                    sidebarAction: sidebarAction,
+                    sidebarActionLabel: sidebarActionLabel
+                )
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(conversationAccessibilityIdentifier)
+    }
+
+    /**
+     The transcript owns the whole pane; the header and the composer float over
+     it and the transcript scrolls underneath both, fading out as it reaches
+     either edge. `safeAreaInset` is exactly that arrangement: it reserves the
+     room at rest so nothing starts out hidden, and lets the scroll view pass
+     beneath once it moves — which is why this needs no height measurement,
+     unlike the same layout on Android and HarmonyOS.
+     */
+    private func floatingConversation(
+        sidebarAction: (() -> Void)?,
+        sidebarActionLabel: String
+    ) -> some View {
+        ZStack {
+            ChatTimelineView(model: model, bottomOverlayInset: bottomOverlayHeight)
+            if model.surface == .remote && model.remoteConversationLoading {
+                ConversationLoadingState()
+            }
+        }
+        .onPreferenceChange(BottomOverlayHeightKey.self) { bottomOverlayHeight = $0 }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            VStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    ConversationHeader(
+                        model: model,
+                        actionsOpen: $sessionActionsOpen,
+                        sidebarAction: sidebarAction,
+                        sidebarActionLabel: sidebarActionLabel
+                    )
+                    PermissionMailboxPanel(model: model)
+                }
+                .background(MobileDesignColors.pageBgOverlay)
+                .background(.ultraThinMaterial)
+                conversationTopEdgeFade
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                ComposerBar(model: model)
+            }
+            // The fade covers the whole layer, not just a strip above it: the
+            // transcript runs behind the composer, so anything short of that
+            // leaves a line of text sitting crisp and legible beside the pill
+            // after it has already faded out higher up. It stops short of the
+            // page colour so the pill's material still has something to blur.
+            .background(
+                LinearGradient(
+                    stops: [
+                        .init(color: MobileDesignColors.pageBgFade, location: 0),
+                        .init(color: MobileDesignColors.pageBgOverlay, location: 0.45),
+                        .init(color: MobileDesignColors.pageBgOverlay, location: 1),
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .background(
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: BottomOverlayHeightKey.self,
+                        value: proxy.size.height
+                    )
+                }
+            )
+        }
+    }
+
+    /**
+     Carries the header's opaque band down into the transcript, so a line of
+     text is not cut in half at its edge. Never takes a touch: the transcript
+     below it is still the thing being pointed at. The bottom layer needs no
+     strip of its own — its whole background is the gradient.
+     */
+    private var conversationTopEdgeFade: some View {
+        LinearGradient(
+            colors: [OpenBitFunTheme.page, OpenBitFunTheme.page.opacity(0)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(height: MobileDesignGeometry.conversationEdgeFadeHeight)
+        .allowsHitTesting(false)
     }
 
     private var conversationAccessibilityIdentifier: String {

@@ -24,6 +24,10 @@ pub use openbitfun_product_domains::external_sources::ExternalSourceConflictPref
 #[cfg_attr(feature = "rpc", request(method = "externalSource/snapshot", response = ExternalSourceSnapshotResponse))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExternalSourceSnapshotRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub force_refresh: bool,
 }
@@ -43,6 +47,10 @@ pub struct ExternalSourceSnapshotResponse {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExternalSourceEventNotification {
     pub cursor: crate::event::EventCursor,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub snapshot: ExternalSourcePublicSnapshot,
 }
@@ -52,6 +60,10 @@ pub struct ExternalSourceEventNotification {
 #[cfg_attr(feature = "rpc", request(method = "externalSource/control", response = ExternalSourceControlResponse))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExternalSourceControlRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub request: ExternalSourceControlRequestV1,
 }
@@ -69,6 +81,10 @@ pub struct ExternalSourceControlResponse {
 #[cfg_attr(feature = "rpc", request(method = "externalSource/review", response = ExternalSourceReviewResponse))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExternalSourceReviewRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub operation_id: String,
     pub action: ExternalSourceReviewAction,
@@ -136,6 +152,10 @@ pub struct ExternalSourceReviewResponse(pub ExternalSourceSnapshotResponse);
 )]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SetNativeCommandChoiceRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub operation_id: String,
     pub native_commands: Vec<NativePromptCommandDescriptor>,
@@ -156,6 +176,10 @@ pub struct SetNativeCommandChoiceResponse {
 #[cfg_attr(feature = "rpc", request(method = "externalSource/expandCommand", response = ExpandExternalCommandResponse))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExpandExternalCommandRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub operation_id: String,
     pub command_name: String,
@@ -230,6 +254,7 @@ mod tests {
     #[test]
     fn command_debug_redacts_workspace_and_arguments() {
         let request = ExpandExternalCommandRequest {
+            workspace_id: Some("workspace-1".to_string()),
             workspace_path: "C:/secret/project".to_string(),
             operation_id: "operation-1".to_string(),
             command_name: "review".to_string(),

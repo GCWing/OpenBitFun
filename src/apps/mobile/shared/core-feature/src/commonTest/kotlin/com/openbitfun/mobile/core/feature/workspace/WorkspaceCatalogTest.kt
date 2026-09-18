@@ -9,6 +9,19 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class WorkspaceCatalogTest {
+    @Test
+    fun legacyLocalMarkersFollowKindAndRealLocalhostSshIsPreserved() {
+        val response = decode("""{"workspaces":[
+            {"path":"/local","workspace_kind":"normal","remote_ssh_host":"localhost"},
+            {"path":"/remote","workspace_kind":"remote","remote_ssh_host":"localhost","remote_connection_id":"saved"}
+        ]}""")
+        val catalog = response.sidebarCatalog(emptyList())
+        assertNull(catalog.workspaces[0].remoteSshHost)
+        assertNull(catalog.recentWorkspaces[0].remoteSshHost)
+        assertEquals("localhost", catalog.workspaces[1].remoteSshHost)
+        assertEquals("saved", catalog.workspaces[1].remoteConnectionId)
+    }
+
     private val assistants = listOf(WorkspaceAssistant("/assistant", "My assistant", "a"))
 
     @Test
@@ -46,6 +59,18 @@ class WorkspaceCatalogTest {
         assertEquals(listOf("My assistant", "SSH", "SSH B"), catalog.workspaces.map { it.name })
         assertEquals("assistant", catalog.workspaces.first().kind)
         assertEquals(listOf(null, "ssh-a", "ssh-b"), catalog.workspaces.map { it.remoteConnectionId })
+    }
+
+    @Test
+    fun idsSurviveWireRoundTripAndSamePathCatalogRows() {
+        val response = decode("""{"workspaces":[],"opened_workspaces":[
+            {"workspace_id":"local-id","path":"/shared","name":"Local","workspace_kind":"normal","remote_ssh_host":"localhost"},
+            {"workspace_id":"remote-id","path":"/shared","name":"Remote","workspace_kind":"remote","remote_ssh_host":"localhost","remote_connection_id":"ssh"}
+        ]}""")
+        val catalog = response.sidebarCatalog(emptyList())
+        assertEquals(listOf("local-id", "remote-id"), catalog.workspaces.map { it.workspaceId })
+        assertNull(catalog.workspaces[0].remoteSshHost)
+        assertEquals("localhost", catalog.workspaces[1].remoteSshHost)
     }
 
     private fun decode(wire: String): RecentWorkspaceListResponse = RelayJson.decodeFromString(wire)

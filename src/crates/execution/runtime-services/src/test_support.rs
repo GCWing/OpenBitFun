@@ -179,6 +179,7 @@ fn fake_remote_exec_error() -> PortError {
 impl RemoteWorkspaceRuntimeHost for FakeRuntimePort {
     async fn current_workspace(&self) -> Option<RemoteWorkspaceFacts> {
         Some(RemoteWorkspaceFacts {
+            workspace_id: "test-workspace".to_string(),
             path: "/remote/project".to_string(),
             name: "project".to_string(),
             git_branch: Some("main".to_string()),
@@ -200,6 +201,7 @@ impl RemoteWorkspaceRuntimeHost for FakeRuntimePort {
         _remote_ssh_host: Option<&str>,
     ) -> Result<RemoteWorkspaceUpdate, String> {
         Ok(RemoteWorkspaceUpdate {
+            workspace_id: "test-workspace".to_string(),
             path: path.to_string(),
             name: "project".to_string(),
             remote_connection_id: None,
@@ -213,6 +215,7 @@ impl RemoteWorkspaceRuntimeHost for FakeRuntimePort {
 
     async fn open_assistant_workspace(&self, path: &str) -> Result<RemoteWorkspaceUpdate, String> {
         Ok(RemoteWorkspaceUpdate {
+            workspace_id: "test-workspace".to_string(),
             path: path.to_string(),
             name: "assistant".to_string(),
             remote_connection_id: None,

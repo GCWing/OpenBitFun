@@ -19,6 +19,7 @@ export function createVoiceParticleRenderer(canvas: HTMLCanvasElement, foregroun
   const context = canvas.getContext('2d');
   if (!context) return null;
   const ctx = context;
+  const solidLogo = new Path2D(LOGO_PATH);
   let particles: Particle[] = [];
   let anchors: Anchor[] = [];
   let sourceBounds: Bounds | null = null;
@@ -225,7 +226,7 @@ export function createVoiceParticleRenderer(canvas: HTMLCanvasElement, foregroun
     buildSourceBounds();
   }
 
-  function drawParticles(time: number, energy: VoiceEnergy, animate: boolean) {
+  function drawParticles(time: number, energy: VoiceEnergy, animate: boolean, formation: number) {
     if (!particles.length || !anchors.length) return;
     const scope = Math.min(particleLayout().width, height, MAX_SHAPE_HEIGHT);
     const visibleProfile = audioState.mode === 'ai' ? effectProfiles.ai : effectProfiles.human;
@@ -297,9 +298,16 @@ export function createVoiceParticleRenderer(canvas: HTMLCanvasElement, foregroun
       const alpha = clamp((0.18 + (1 - dist / (scope * 0.18)) * 0.45 + aiTint * 0.22 + beamGlow * 0.16) * visibleProfile.brightness, 0.08, 0.9);
 
       ctx.fillStyle = palette[gray]!;
-      ctx.globalAlpha = alpha;
+      ctx.globalAlpha = alpha * formation;
+      // A coherent radial arc opens and closes the exact same particle pool.
+      // It vanishes at either endpoint, preserving the supplied audio dynamics.
+      const bloom = Math.sin(Math.PI * formation) * (0.045 + p.centerDist * 0.075);
+      const radialX = anchor.x - centerCx;
+      const radialY = anchor.y - centerCy;
+      const x = lerp(anchor.x, p.x, formation) + (radialX - radialY * 0.35) * bloom;
+      const y = lerp(anchor.y, p.y, formation) + (radialY + radialX * 0.35) * bloom;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
       ctx.fill();
     }
 
@@ -316,12 +324,22 @@ export function createVoiceParticleRenderer(canvas: HTMLCanvasElement, foregroun
       const scale = Math.min(cssWidth / width, cssHeight / height) * dpr;
       ctx.setTransform(scale, 0, 0, scale, (canvas.width - width * scale) * 0.5, (canvas.height - height * scale) * 0.5);
     },
-    draw(time: number, audio: VoiceParticleAudio, animate = true) {
+    draw(time: number, audio: VoiceParticleAudio, animate = true, formation = 1) {
       ctx.save();
       ctx.resetTransform();
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.restore();
-      drawParticles(time, audioState.update(audio, time), animate);
+      if (formation < 1) {
+        const scale = Math.min(MAX_SHAPE_WIDTH / BASE_SVG_VIEWBOX.width, MAX_SHAPE_HEIGHT / BASE_SVG_VIEWBOX.height);
+        ctx.save();
+        ctx.translate((width - BASE_SVG_VIEWBOX.width * scale) * 0.5, (height - BASE_SVG_VIEWBOX.height * scale) * 0.5);
+        ctx.scale(scale, scale);
+        ctx.fillStyle = foreground;
+        ctx.globalAlpha = Math.pow(1 - formation, 2);
+        ctx.fill(solidLogo);
+        ctx.restore();
+      }
+      if (formation > 0) drawParticles(time, audioState.update(audio, time), animate, formation);
     },
   };
 }

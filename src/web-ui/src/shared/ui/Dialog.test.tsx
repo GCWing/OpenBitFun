@@ -11,6 +11,9 @@ describe('overlay exit content', () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    const media = new EventTarget();
+    Object.defineProperty(media, 'matches', { value: false });
+    vi.stubGlobal('matchMedia', () => media);
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -20,6 +23,7 @@ describe('overlay exit content', () => {
     act(() => root.unmount());
     container.remove();
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('supports an explicit portal host and leaves focus unchanged when restoration is disabled', () => {

@@ -60,7 +60,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
       data-size={size}
     >
       {leading !== undefined && leading !== null && (
-        <span className={styles.leading} data-openbitfun-part="leading">{leading}</span>
+        <span className={styles.leading} data-openbitfun-icon-slot="true" data-openbitfun-part="leading">{leading}</span>
       )}
       <input
         {...props}
@@ -91,7 +91,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input({
         type={type}
       />
       {trailing !== undefined && trailing !== null && (
-        <span className={styles.trailing} data-openbitfun-part="trailing">{trailing}</span>
+        <span className={styles.trailing} data-openbitfun-icon-slot="true" data-openbitfun-part="trailing">{trailing}</span>
       )}
     </span>
   );

@@ -5,7 +5,7 @@ import { getActiveSurfaceScope, isLocalSurface } from '@/infrastructure/peer-dev
 export interface BatchUndoEntry { id: string; name: string; review: ImportUndoReview }
 export interface BatchUndoResult { id: string; name: string; status: 'removed' | 'pending' | 'failed'; error?: string }
 
-export async function applyEcosystemBatchUndo(entries: BatchUndoEntry[], workspacePath: string | undefined,
+export async function applyEcosystemBatchUndo(entries: BatchUndoEntry[], workspaceId: string | undefined,
   onResult: (result: BatchUndoResult) => void) {
   const scope = getActiveSurfaceScope();
   if (!isLocalSurface(scope.surfaceId)) throw new Error('External batch undo requires the local host');
@@ -22,7 +22,7 @@ export async function applyEcosystemBatchUndo(entries: BatchUndoEntry[], workspa
         if (entry.review.kind !== 'mcp' || entry.review.fingerprint !== first.fingerprint) throw new Error('MCP configuration changed; review the batch again');
         delete config.mcpServers[entry.review.target];
       }
-      const result = await applyImportUndo({ ...first, jsonConfig: JSON.stringify(config, null, 2) }, workspacePath);
+      const result = await applyImportUndo({ ...first, jsonConfig: JSON.stringify(config, null, 2) }, workspaceId);
       mcp.forEach(({ id, name }) => onResult({ id, name, status: result.runtimeApplied ? 'removed' : 'pending' }));
     } catch (error) { mcp.forEach(({ id, name }) => onResult({ id, name, status: 'failed', error: importErrorMessage(error) })); }
   }
@@ -33,7 +33,7 @@ export async function applyEcosystemBatchUndo(entries: BatchUndoEntry[], workspa
       scope.assertCurrent('remove reviewed imported copy');
       const original = entry.review;
       const review = original.kind === 'hook' ? { ...original, revision: revisions.get(original.revision) ?? original.revision } : original;
-      const result = await applyImportUndo(review, workspacePath);
+      const result = await applyImportUndo(review, workspaceId);
       // Advance only through revisions returned by our own successful removals.
       // An unrelated edit still fails the next compare-and-swap.
       if (original.kind === 'hook' && result.revision) revisions.set(original.revision, result.revision);

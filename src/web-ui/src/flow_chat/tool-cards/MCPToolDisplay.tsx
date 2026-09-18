@@ -19,6 +19,7 @@ import { APPEARANCE_DOMAIN_TOKENS } from '@/infrastructure/appearance/appearance
 import type { ToolInfo } from '@/shared/types/agent-api';
 import { ToolCardCopyAction } from './ToolCardCopyAction';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
+import { useFlowChatContext } from '../components/modern/FlowChatContext';
 import './MCPToolDisplay.scss';
 
 const log = createLogger('MCPToolDisplay');
@@ -192,6 +193,7 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
   config,
 }) => {
   const { t } = useTranslation('flow-chat');
+  const { sessionId } = useFlowChatContext();
   const {
     status,
     toolCall,
@@ -517,6 +519,7 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
             // Emit event for ChatInput to handle
             const eventPayload: McpAppMessageEvent = {
               requestId,
+              sessionId,
               params: messageParams
             };
             globalEventBus.emit('mcp-app:message', eventPayload);
@@ -566,7 +569,7 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [mcpAppState?.html, serverId, resolvedMcpToolName]);
+  }, [mcpAppState?.html, serverId, resolvedMcpToolName, sessionId]);
 
   const handleIframeLoad = useCallback(() => {
     /* iframe loaded, ref is ready for postMessage bridge */

@@ -5,6 +5,7 @@ import { Simulate } from 'react-dom/test-utils';
 import { JSDOM } from 'jsdom';
 import { UserMessageEditComposer } from './UserMessageEditComposer';
 import type { ComposerPresentation } from '../../utils/composerPresentation';
+import { createMcpPromptReference } from '../../utils/mcpPromptReference';
 
 vi.mock('../ChatContextPicker', () => ({
   ChatContextPicker: () => null,
@@ -198,6 +199,75 @@ describe('UserMessageEditComposer', () => {
     expect(escape.defaultPrevented).toBe(false);
     expect(onSubmit).not.toHaveBeenCalled();
     expect(onCancel).not.toHaveBeenCalled();
+  });
+
+  it('focuses the editor when the compact composer surface is clicked away from text', async () => {
+    await renderComposer();
+    const textarea = container.querySelector('textarea')!;
+    const surface = container.querySelector<HTMLElement>('[data-openbitfun-part="surface"]')!;
+    textarea.blur();
+    expect(document.activeElement).not.toBe(textarea);
+
+    await act(async () => {
+      surface.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true }));
+    });
+
+    expect(document.activeElement).toBe(textarea);
+  });
+
+  it('focuses the rich editor from empty composer space without hijacking actions', async () => {
+    await renderComposer({ rich: true });
+    const editor = container.querySelector<HTMLElement>('.rich-text-input')!;
+    const surface = container.querySelector<HTMLElement>('[data-openbitfun-part="surface"]')!;
+    const cancelButton = container.querySelector<HTMLButtonElement>('button[aria-label="Cancel"]')!;
+    editor.blur();
+
+    await act(async () => {
+      surface.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true }));
+    });
+    expect(document.activeElement).toBe(editor);
+
+    cancelButton.focus();
+    await act(async () => {
+      cancelButton.dispatchEvent(new dom.window.MouseEvent('mousedown', { bubbles: true }));
+    });
+    expect(document.activeElement).toBe(cancelButton);
+  });
+
+  it('restores legacy MCP and Skill references as editable capsules', async () => {
+    const mcpReference = createMcpPromptReference({ serverName: 'node_repl', serverId: 'node_repl' });
+    const value = `${mcpReference} [$pdf] inspect this`;
+    const onSubmit = vi.fn();
+
+    await act(async () => {
+      root.render(
+        <UserMessageEditComposer
+          value={value}
+          submitLabel="Save"
+          cancelLabel="Cancel"
+          onChange={() => {}}
+          onSubmit={onSubmit}
+          onCancel={() => {}}
+        />,
+      );
+    });
+
+    const editor = container.querySelector('.rich-text-input');
+    expect(container.querySelector('textarea')).toBeNull();
+    expect(editor?.querySelector('[data-inline-token-type="mcp-ref"]')?.textContent).toContain('node_repl');
+    expect(editor?.querySelector('[data-inline-token-type="skill-ref"]')?.textContent).toContain('pdf');
+    expect(editor?.textContent).not.toContain('server:');
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="Save"]')?.click();
+    });
+
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      version: 1,
+      segments: expect.arrayContaining([
+        expect.objectContaining({ kind: 'inline-token', tokenType: 'skill', label: 'pdf' }),
+      ]),
+    }));
   });
 
   it('restores and removes reference capsules atomically', async () => {

@@ -1446,6 +1446,7 @@ export function findProductEntrypointCoreFeatureViolations(
     'tools-image-analysis',
     'tools-agent-control',
   ];
+  const CORE_TEST_SUPPORT_FEATURE = 'test-support';
   const reviewedCoreFeatureClosures = new Map([
     ['openbitfun-cli', [
       'tools-pages',
@@ -1696,6 +1697,21 @@ export function findProductEntrypointCoreFeatureViolations(
       }
       const roleOwnedAcpDependency =
         sourcePackage.name === 'openbitfun-acp' && dependency.optional === true;
+      if (dependency.kind === 'dev') {
+        // A `[dev-dependencies]` edge on openbitfun-core only widens the test
+        // build. It may switch on Core test-support constructors (isolated
+        // workspace catalogs for in-process fixtures) and nothing else; the
+        // product capability closure is owned by the normal dependency edge.
+        const devSelectedFeatures = [...new Set(dependency.features ?? [])].sort();
+        if (devSelectedFeatures.length !== 1 || devSelectedFeatures[0] !== CORE_TEST_SUPPORT_FEATURE) {
+          violations.push({
+            path: sourcePackage.manifest_path,
+            line: 1,
+            message: `${sourcePackage.name} openbitfun-core dev-dependency may select only ${CORE_TEST_SUPPORT_FEATURE}, not [${devSelectedFeatures.join(', ')}]`,
+          });
+        }
+        continue;
+      }
       if (
         !roleOwnedAcpDependency
         && (!Array.isArray(dependency.features) || dependency.features.length === 0)

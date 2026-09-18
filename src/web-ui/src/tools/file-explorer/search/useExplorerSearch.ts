@@ -33,8 +33,7 @@ export interface ExplorerSearchPhase {
 }
 
 export interface UseExplorerSearchOptions {
-  workspacePath?: string;
-  remoteConnectionId?: string;
+  workspaceId?: string;
   /** Optional host/workspace-scoped presentation key. Results are always fetched fresh. */
   stateKey?: string;
   initialMode?: ExplorerSearchMode;
@@ -168,8 +167,7 @@ export function useExplorerSearch(
   options: UseExplorerSearchOptions = {}
 ): UseExplorerSearchResult {
   const {
-    workspacePath,
-    remoteConnectionId,
+    workspaceId,
     stateKey,
     initialMode = 'filenames',
     filenameSearchDebounce = 300,
@@ -253,7 +251,7 @@ export function useExplorerSearch(
 
   const executeFilenameSearch = useCallback(
     async (searchQuery: string, runId: number) => {
-      if (!workspacePath) {
+      if (!workspaceId) {
         return;
       }
 
@@ -263,7 +261,7 @@ export function useExplorerSearch(
 
       try {
         const response = await workspaceAPI.searchFilenamesOnlyStreamDetailed(
-          workspacePath,
+          workspaceId,
           searchQuery,
           searchOptions.caseSensitive,
           searchOptions.useRegex,
@@ -281,7 +279,6 @@ export function useExplorerSearch(
             },
           },
           controller.signal,
-          remoteConnectionId,
         );
 
         if (runId !== searchRunIdRef.current) {
@@ -312,19 +309,18 @@ export function useExplorerSearch(
       }
     },
     [
-      workspacePath,
+      workspaceId,
       searchOptions.caseSensitive,
       searchOptions.useRegex,
       searchOptions.wholeWord,
       nextSearchId,
       filenameMaxResults,
-      remoteConnectionId,
     ]
   );
 
   const executeContentSearch = useCallback(
     async (searchQuery: string, runId: number) => {
-      if (!workspacePath) {
+      if (!workspaceId) {
         return;
       }
 
@@ -334,7 +330,7 @@ export function useExplorerSearch(
 
       try {
         const response = await workspaceAPI.searchContentOnlyStreamDetailed(
-          workspacePath,
+          workspaceId,
           searchQuery,
           searchOptions.caseSensitive,
           searchOptions.useRegex,
@@ -382,7 +378,7 @@ export function useExplorerSearch(
       }
     },
     [
-      workspacePath,
+      workspaceId,
       searchOptions.caseSensitive,
       searchOptions.useRegex,
       searchOptions.wholeWord,
@@ -408,7 +404,7 @@ export function useExplorerSearch(
     const shouldRunContent =
       searchMode !== 'filenames' && trimmedQuery.length >= minContentLength;
 
-    if (!workspacePath || (!shouldRunFilename && !shouldRunContent)) {
+    if (!workspaceId || (!shouldRunFilename && !shouldRunContent)) {
       setFilenameGroups([]);
       setContentGroups([]);
       setFilenameLimit(filenameMaxResults);
@@ -459,7 +455,7 @@ export function useExplorerSearch(
     minFilenameLength,
     query,
     searchMode,
-    workspacePath,
+    workspaceId,
   ]);
 
   useEffect(() => {

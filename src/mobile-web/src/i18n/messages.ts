@@ -224,6 +224,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       recentWorkspaces: 'Recent Workspaces',
       noRecentWorkspaces: 'No recent workspaces found. Please open a workspace on the desktop first.',
       failedToSetWorkspace: 'Failed to set workspace',
+      idReferencesUnsupported: 'The connected OpenBitFun does not support workspace ID references. Update it to a newer version to use this workspace.',
       openingWorkspace: 'Opening workspace...',
     },
     chat: {
@@ -546,6 +547,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       recentWorkspaces: '最近工作区',
       noRecentWorkspaces: '没有找到最近工作区，请先在桌面端打开一个工作区。',
       failedToSetWorkspace: '设置工作区失败',
+      idReferencesUnsupported: '当前连接的 OpenBitFun 不支持工作区 ID 引用，请升级到新版本后再使用该工作区。',
       openingWorkspace: '正在打开工作区...',
     },
     chat: {
@@ -868,6 +870,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
       recentWorkspaces: '最近工作區',
       noRecentWorkspaces: '沒有找到最近工作區，請先在桌面端打開一個工作區。',
       failedToSetWorkspace: '設置工作區失敗',
+      idReferencesUnsupported: '目前連接的 OpenBitFun 不支援工作區 ID 引用，請升級到新版本後再使用該工作區。',
       openingWorkspace: '正在打開工作區...',
     },
     chat: {

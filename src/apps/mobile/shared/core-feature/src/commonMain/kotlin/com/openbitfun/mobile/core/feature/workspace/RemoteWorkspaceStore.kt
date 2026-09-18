@@ -8,9 +8,14 @@ import com.openbitfun.mobile.core.domain.FilePreviewTarget
 import com.openbitfun.mobile.core.domain.FilePreviewTargetContext
 import com.openbitfun.mobile.core.domain.FileReferenceKind
 import com.openbitfun.mobile.core.domain.FileTargetResolver
+import com.openbitfun.mobile.core.domain.LegacyWorkspaceCompatibility
 import com.openbitfun.mobile.core.domain.RecentWorkspace
+import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
 import com.openbitfun.mobile.core.domain.SelectedWorkspace
 import com.openbitfun.mobile.core.domain.WorkspaceAssistant
+import com.openbitfun.mobile.core.domain.WorkspaceReferencePolicy
+import com.openbitfun.mobile.core.domain.WorkspaceReferenceResolution
+import com.openbitfun.mobile.core.domain.identity
 import com.openbitfun.mobile.core.feature.relay.HostCatalogNotice
 import com.openbitfun.mobile.core.persistence.TemporaryDownload
 import com.openbitfun.mobile.core.persistence.RelayStreamStore
@@ -84,9 +89,9 @@ public class RemoteWorkspaceStore internal constructor(
                         a.await() to b.await()
                     }
                     updateReady { it.copy(workspaces = recent.workspaces.map { item ->
-                        RecentWorkspace(item.path.orEmpty(), item.name ?: basename(item.path.orEmpty()), item.lastOpened, item.workspaceKind.orEmpty(), item.remoteSshHost, item.remoteConnectionId)
-                    }, assistants = assistants.assistants.map { item -> WorkspaceAssistant(item.path, item.name, item.assistantId) },
-                        catalog = recent.sidebarCatalog(assistants.assistants.map { item -> WorkspaceAssistant(item.path, item.name, item.assistantId) }), loadFailure = false) }
+                        RecentWorkspace(item.path.orEmpty(), item.name ?: basename(item.path.orEmpty()), item.lastOpened, item.workspaceKind.orEmpty(), item.remoteSshHost, item.remoteConnectionId, item.workspaceId)
+                    }, assistants = assistants.assistants.map { item -> WorkspaceAssistant(item.path, item.name, item.assistantId, item.workspaceId) },
+                        catalog = recent.sidebarCatalog(assistants.assistants.map { item -> WorkspaceAssistant(item.path, item.name, item.assistantId, item.workspaceId) }), loadFailure = false) }
                 } catch (cancelled: CancellationException) { throw cancelled }
                 catch (_: Throwable) { updateReady { it.copy(loadFailure = true) } }
             }
@@ -116,14 +121,52 @@ public class RemoteWorkspaceStore internal constructor(
     private var activePreviewRequestId: String? = null
     private var deviceToolAction: Job? = null
     private var deviceToolGeneration = 0L
-    private var fileWorkspace: Pair<String, String?>? = null
+    /**
+     * Location the file browser is bound to. `path` is the browsed directory (an IO operand),
+     * `remoteConnectionId` the provider, and `workspaceId` the owning workspace when the tools
+     * were opened for one; the identity key, not the path, scopes the cache.
+     */
+    private var fileWorkspace: RemoteWorkspaceIdentity? = null
     private val directoryPicker = RuntimeFilesStore(scope, transport)
     private var directoryPickerObserver: Job? = null
     private val files = RuntimeFilesStore(scope, transport)
     private var filesObserver: Job? = null
-    private val workspaceTerminals = mutableMapOf<Pair<String, String?>, RuntimeTerminalStore>()
+    /** Device-tool terminals keyed by [RemoteWorkspaceIdentity.key] (workspace ID first, legacy triple otherwise). */
+    private val workspaceTerminals = mutableMapOf<String, RuntimeTerminalStore>()
     private var terminal = RuntimeTerminalStore(scope, transport, relayStreams)
     private var terminalObserver: Job? = null
+    /** False until a live `get_workspace_info` reported the host capability list for this connection. */
+    private var hostCapabilitiesKnown = false
+
+    /**
+     * Whether the connected host honours ID-only workspace commands, or null when no live
+     * capability list has been received yet (cached catalogs never answer this).
+     */
+    public val supportsWorkspaceIdReferences: Boolean?
+        get() = if (!hostCapabilitiesKnown) null else (_state.value as? RemoteWorkspaceUiState.Ready)?.supportsWorkspaceIdReferences
+
+    private fun recordHostCapabilities(capabilities: List<String>) {
+        hostCapabilitiesKnown = true
+        updateReady { it.copy(hostCapabilities = capabilities) }
+    }
+
+    /**
+     * Resolves whether an ID-bearing command may be sent. Fetches the live capability list
+     * when it is not known yet so a cached catalog never decides the answer.
+     */
+    private suspend fun ensureWorkspaceIdReferences(): Boolean {
+        if (!hostCapabilitiesKnown) {
+            val info = transport.send<WorkspaceInfoResponse>(RemoteCommand(cmd = "get_workspace_info"))
+            recordHostCapabilities(info.capabilities)
+        }
+        return WorkspaceReferencePolicy.supportsWorkspaceIdReferences(
+            (_state.value as? RemoteWorkspaceUiState.Ready)?.hostCapabilities.orEmpty(),
+        )
+    }
+
+    private fun failWorkspaceReference(failure: WorkspaceReferenceFailure) {
+        updateReady { it.copy(busy = false, workspaceReferenceFailure = failure) }
+    }
 
 
     private fun nextPreviewIdentity(target: FilePreviewTarget, requestedId: String = ""): PreviewRequestIdentity {
@@ -165,7 +208,7 @@ public class RemoteWorkspaceStore internal constructor(
             }
             is RemoteWorkspaceIntent.SortFiles -> files.sort(intent.sort)
             RemoteWorkspaceIntent.CloseFileEditor -> files.closeFile()
-            is RemoteWorkspaceIntent.OpenDeviceTools -> openDeviceTools(intent.path, intent.connectionId)
+            is RemoteWorkspaceIntent.OpenDeviceTools -> openDeviceTools(intent.path, intent.connectionId, intent.workspaceId)
             is RemoteWorkspaceIntent.SelectDeviceToolsPanel -> updateReady { it.copy(deviceTools = it.deviceTools.copy(panel = intent.panel)) }
             RemoteWorkspaceIntent.CloseDeviceTools -> {
                 deviceToolGeneration++; deviceToolAction?.cancel()
@@ -175,14 +218,14 @@ public class RemoteWorkspaceStore internal constructor(
                 val tools = (_state.value as? RemoteWorkspaceUiState.Ready)?.deviceTools
                 if (tools != null && tools.visible && !tools.busy && !tools.failed && tools.path.isNotEmpty()) terminal.open(tools.path, tools.connectionId)
             }
-            is RemoteWorkspaceIntent.OpenDeviceFiles -> openDeviceTool(intent.path, intent.remoteConnectionId, false)
-            is RemoteWorkspaceIntent.OpenDeviceTerminal -> openDeviceTool(intent.path, intent.remoteConnectionId, true)
+            is RemoteWorkspaceIntent.OpenDeviceFiles -> openDeviceTool(intent.path, intent.remoteConnectionId, false, workspaceId = intent.workspaceId)
+            is RemoteWorkspaceIntent.OpenDeviceTerminal -> openDeviceTool(intent.path, intent.remoteConnectionId, true, workspaceId = intent.workspaceId)
             is RemoteWorkspaceIntent.BrowseFiles -> {
                 if (filesObserver == null) filesObserver = scope.launch { files.state.collect { value -> updateReady { it.copy(files = value) } } }
                 val selected = (_state.value as? RemoteWorkspaceUiState.Ready)?.selected
-                val binding = fileWorkspace ?: selected?.let { it.path to it.remoteConnectionId }
+                val binding = fileWorkspace ?: selected?.identity()
                 if (binding != null) {
-                    files.browse(intent.path, intent.path, binding.second, intent.append)
+                    files.browse(intent.path, intent.path, binding.remoteConnectionId, intent.append)
                 }
                 else failRetainingCache()
             }
@@ -208,7 +251,7 @@ public class RemoteWorkspaceStore internal constructor(
             RemoteWorkspaceIntent.ReopenTerminal -> terminal.reopen()
             is RemoteWorkspaceIntent.WriteTerminal -> terminal.write(intent.data)
             is RemoteWorkspaceIntent.SelectWorkspace -> selectWorkspace(intent)
-            is RemoteWorkspaceIntent.SelectAssistant -> selectAssistant(intent.path)
+            is RemoteWorkspaceIntent.SelectAssistant -> selectAssistant(intent)
             is RemoteWorkspaceIntent.OpenFile -> resolveAndOpenFile(intent)
             is RemoteWorkspaceIntent.DownloadFile -> resolveAndDownloadFile(intent)
             RemoteWorkspaceIntent.RetryDownload -> retryDownload()
@@ -236,6 +279,7 @@ public class RemoteWorkspaceStore internal constructor(
         terminalObserver?.cancel()
         _stopVersion.value += 1
         loadGeneration += 1
+        hostCapabilitiesKnown = false
         invalidatePreview()
         cancelDownload()
         work?.cancel()
@@ -269,13 +313,14 @@ public class RemoteWorkspaceStore internal constructor(
                 path = item.path.orEmpty(),
                 name = item.name?.takeIf(String::isNotBlank) ?: basename(item.path.orEmpty()),
                 lastOpened = item.lastOpened,
+                workspaceId = item.workspaceId,
                 kind = item.workspaceKind.orEmpty(),
-                remoteSshHost = item.remoteSshHost,
-                remoteConnectionId = item.remoteConnectionId,
+                remoteSshHost = item.remoteSshHost.takeUnless { item.workspaceKind == "normal" || item.workspaceKind == "assistant" },
+                remoteConnectionId = item.remoteConnectionId.takeUnless { item.workspaceKind == "normal" || item.workspaceKind == "assistant" },
             )
         }.filter { it.path.isNotEmpty() }
         val loadedAssistants = assistants.assistants.map { item ->
-            WorkspaceAssistant(item.path, item.name, item.assistantId)
+            WorkspaceAssistant(item.path, item.name, item.assistantId, item.workspaceId)
         }
         if (persistenceEnabled) {
             try {
@@ -328,13 +373,14 @@ public class RemoteWorkspaceStore internal constructor(
                                     path = item.path.orEmpty(),
                                     name = item.name?.takeIf(String::isNotBlank) ?: basename(item.path.orEmpty()),
                                     lastOpened = item.lastOpened,
-                                    kind = item.workspaceKind.orEmpty(),
-                                    remoteSshHost = item.remoteSshHost,
-                remoteConnectionId = item.remoteConnectionId,
+                                    workspaceId = item.workspaceId,
+                kind = item.workspaceKind.orEmpty(),
+                                    remoteSshHost = item.remoteSshHost.takeUnless { item.workspaceKind == "normal" || item.workspaceKind == "assistant" },
+                remoteConnectionId = item.remoteConnectionId.takeUnless { item.workspaceKind == "normal" || item.workspaceKind == "assistant" },
                                 )
                             }.filter { it.path.isNotEmpty() }
                             val loadedAssistants = assistants.assistants.map { item ->
-                                WorkspaceAssistant(item.path, item.name, item.assistantId)
+                                WorkspaceAssistant(item.path, item.name, item.assistantId, item.workspaceId)
                             }
                             if (persistenceEnabled) {
                                 try {
@@ -347,6 +393,7 @@ public class RemoteWorkspaceStore internal constructor(
                                 }
                             }
                             downloadStaging?.delete(); downloadStaging = null
+                            hostCapabilitiesKnown = true
                             _state.value = RemoteWorkspaceUiState.Ready(
                                 workspaces = loadedWorkspaces,
                                 assistants = loadedAssistants,
@@ -393,26 +440,72 @@ public class RemoteWorkspaceStore internal constructor(
         }
     }
 
+    /**
+     * Sends `set_workspace`. A known workspace ID is sent alone so an ID-aware host can
+     * never fall back to the path. A path without an ID is first resolved against the
+     * live catalog through [LegacyWorkspaceCompatibility]: a unique row that carries an
+     * ID upgrades the reference to that ID, a unique pre-ID row lends its saved
+     * connection identity, an ambiguous path is refused, and only a path the catalog
+     * does not know at all (a hand-typed location) is sent as the legacy projection.
+     */
     private fun selectWorkspace(intent: RemoteWorkspaceIntent.SelectWorkspace) {
-        val normalized = intent.path.trim()
-        if (normalized.isEmpty()) return
-        val candidates = if (intent.inferSavedIdentity) {
-            (_state.value as? RemoteWorkspaceUiState.Ready)?.workspaces.orEmpty().filter { it.path == normalized }
-        } else emptyList()
-        if (intent.remoteConnectionId == null && intent.remoteSshHost == null && candidates.size > 1) {
-            failRetainingCache()
+        val ready = _state.value as? RemoteWorkspaceUiState.Ready ?: return
+        val explicitId = intent.workspaceId?.trim()?.takeIf { it.isNotEmpty() }
+        if (explicitId != null) {
+            runSelection(RemoteCommand(cmd = "set_workspace", workspaceId = explicitId), assistant = false)
             return
         }
-        val known = candidates.singleOrNull()
+        val normalized = intent.path.trim()
+        if (normalized.isEmpty()) return
+        val reference = RemoteWorkspaceIdentity(normalized, intent.remoteConnectionId, intent.remoteSshHost)
+        val catalog = ready.workspaces.map { it.identity() }
+        val known: RemoteWorkspaceIdentity? = if (intent.inferSavedIdentity) {
+            when (val resolution = LegacyWorkspaceCompatibility.resolveReference(reference, catalog)) {
+                is WorkspaceReferenceResolution.Resolved -> resolution.identity
+                is WorkspaceReferenceResolution.Ambiguous -> {
+                    failWorkspaceReference(WorkspaceReferenceFailure.AMBIGUOUS_PATH)
+                    return
+                }
+                is WorkspaceReferenceResolution.UnknownId, WorkspaceReferenceResolution.Unresolved -> null
+            }
+        } else {
+            // An explicit picker already named the provider: only an exact legacy triple may lend its ID.
+            catalog.singleOrNull { it.workspaceId != null && it.matches(reference) }
+        }
+        val knownId = known?.workspaceId?.trim()?.takeIf { it.isNotEmpty() }
+        if (knownId != null) {
+            runSelection(RemoteCommand(cmd = "set_workspace", workspaceId = knownId), assistant = false)
+            return
+        }
         runSelection(RemoteCommand(cmd = "set_workspace", path = normalized,
             remoteConnectionId = intent.remoteConnectionId ?: known?.remoteConnectionId,
-            remoteSshHost = intent.remoteSshHost ?: known?.remoteSshHost), false)
+            remoteSshHost = intent.remoteSshHost ?: known?.remoteSshHost), assistant = false)
     }
 
-    private fun selectAssistant(path: String) {
-        val normalized = path.trim()
+    /**
+     * Sends `set_assistant`. With an ID only the ID is sent. Without one the path must
+     * resolve to exactly one pre-ID assistant row; assistants are never matched by path
+     * once the catalog carries IDs, and an unknown path is refused rather than guessed.
+     */
+    private fun selectAssistant(intent: RemoteWorkspaceIntent.SelectAssistant) {
+        val ready = _state.value as? RemoteWorkspaceUiState.Ready ?: return
+        val explicitId = intent.workspaceId?.trim()?.takeIf { it.isNotEmpty() }
+        if (explicitId != null) {
+            runSelection(RemoteCommand(cmd = "set_assistant", workspaceId = explicitId), assistant = true)
+            return
+        }
+        val normalized = intent.path.trim()
         if (normalized.isEmpty()) return
-        runSelection(RemoteCommand(cmd = "set_assistant", path = normalized), true)
+        val catalog = ready.assistants.map { it.identity() }
+        when (val resolution = LegacyWorkspaceCompatibility.resolveReference(RemoteWorkspaceIdentity(normalized, null, null), catalog)) {
+            is WorkspaceReferenceResolution.Resolved -> {
+                val resolvedId = resolution.identity.workspaceId?.trim()?.takeIf { it.isNotEmpty() }
+                if (resolvedId != null) runSelection(RemoteCommand(cmd = "set_assistant", workspaceId = resolvedId), assistant = true)
+                else runSelection(RemoteCommand(cmd = "set_assistant", path = resolution.identity.path), assistant = true)
+            }
+            is WorkspaceReferenceResolution.Ambiguous -> failWorkspaceReference(WorkspaceReferenceFailure.AMBIGUOUS_PATH)
+            is WorkspaceReferenceResolution.UnknownId, WorkspaceReferenceResolution.Unresolved -> failRetainingCache()
+        }
     }
 
     private fun runSelection(command: RemoteCommand, assistant: Boolean) {
@@ -421,24 +514,46 @@ public class RemoteWorkspaceStore internal constructor(
         invalidatePreview()
         cancelDownload()
         work?.cancel()
-        _state.value = ((_state.value as? RemoteWorkspaceUiState.Ready) ?: current).copy(busy = true)
+        _state.value = ((_state.value as? RemoteWorkspaceUiState.Ready) ?: current).copy(busy = true, workspaceReferenceFailure = null)
         work = scope.launch {
             try {
-                if (assistant) {
-                    check(transport.send<SetAssistantResponse>(command).success == true) { "Assistant selection failed" }
+                if (command.workspaceId != null && !ensureWorkspaceIdReferences()) {
+                    // Keep the ID and refuse: downgrading a known ID to its path would let the
+                    // host pick a same-path workspace the user never chose.
+                    if (generation == loadGeneration) failWorkspaceReference(WorkspaceReferenceFailure.ID_REFERENCES_UNSUPPORTED)
+                    return@launch
+                }
+                val accepted = if (assistant) {
+                    transport.send<SetAssistantResponse>(command).success == true
                 } else {
-                    check(transport.send<SetWorkspaceResponse>(command).success == true) { "Workspace selection failed" }
+                    transport.send<SetWorkspaceResponse>(command).success == true
+                }
+                if (!accepted) {
+                    if (generation != loadGeneration) return@launch
+                    // The wire carries no error code. An ID the live catalog does not list is
+                    // reported as unknown; anything else is an ordinary failed request.
+                    val rejectedId = command.workspaceId
+                    if (rejectedId != null && isUnknownId(rejectedId, assistant)) failWorkspaceReference(WorkspaceReferenceFailure.UNKNOWN_ID)
+                    else failRetainingCache()
+                    return@launch
                 }
                 val info = transport.send<WorkspaceInfoResponse>(RemoteCommand(cmd = "get_workspace_info"))
                 if (generation != loadGeneration) return@launch
+                hostCapabilitiesKnown = true
                 if (fileWorkspace == null) files.reset()
-                updateReady { it.copy(selected = info.asSelectedWorkspace(), hostCapabilities = info.capabilities, busy = false, loadFailure = false) }
+                updateReady { it.copy(selected = info.asSelectedWorkspace(), hostCapabilities = info.capabilities, busy = false, loadFailure = false, workspaceReferenceFailure = null) }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Throwable) {
                 if (generation == loadGeneration) failRetainingCache()
             }
         }
+    }
+
+    private fun isUnknownId(workspaceId: String, assistant: Boolean): Boolean {
+        val ready = _state.value as? RemoteWorkspaceUiState.Ready ?: return false
+        val catalog = if (assistant) ready.assistants.map { it.identity() } else ready.workspaces.map { it.identity() }
+        return LegacyWorkspaceCompatibility.resolveById(workspaceId, catalog).isUnknownId
     }
 
     private fun openFile(target: FilePreviewTarget, requestedId: String) {
@@ -530,7 +645,7 @@ public class RemoteWorkspaceStore internal constructor(
             label = intent.label,
             context = FilePreviewTargetContext(
                 sessionId = intent.sessionId,
-                workspacePath = (fileWorkspace?.first.takeIf { intent.sessionId.isEmpty() } ?: ready.selected?.path).orEmpty(),
+                workspacePath = (fileWorkspace?.path.takeIf { intent.sessionId.isEmpty() } ?: ready.selected?.path).orEmpty(),
                 controlTargetEpoch = targetEpoch,
             ),
         )
@@ -541,7 +656,7 @@ public class RemoteWorkspaceStore internal constructor(
                 intent.reference,
                 intent.label,
                 intent.sessionId,
-                (fileWorkspace?.first.takeIf { intent.sessionId.isEmpty() } ?: ready.selected?.path).orEmpty(),
+                (fileWorkspace?.path.takeIf { intent.sessionId.isEmpty() } ?: ready.selected?.path).orEmpty(),
                 targetEpoch,
                 0,
                 0,
@@ -560,23 +675,25 @@ public class RemoteWorkspaceStore internal constructor(
         downloadFile(target)
     }
 
-    private fun bindTerminal(location: String, connectionId: String?) {
+    /** Binds the active terminal to the store cached for [scope]'s identity key (workspace ID first, legacy triple otherwise). */
+    private fun bindTerminal(scope: RemoteWorkspaceIdentity) {
         terminalObserver?.cancel()
-        terminal = workspaceTerminals.getOrPut(location to connectionId) { RuntimeTerminalStore(scope, transport, relayStreams) }
+        terminal = workspaceTerminals.getOrPut(scope.key) { RuntimeTerminalStore(this.scope, transport, relayStreams) }
         updateReady { it.copy(terminal = terminal.state.value) }
-        terminalObserver = scope.launch { terminal.state.collect { value -> updateReady { it.copy(terminal = value) } } }
+        terminalObserver = this.scope.launch { terminal.state.collect { value -> updateReady { it.copy(terminal = value) } } }
     }
 
-    private fun openDeviceTools(path: String, connectionId: String?) {
+    private fun openDeviceTools(path: String, connectionId: String?, workspaceId: String?) {
         val ready = _state.value as? RemoteWorkspaceUiState.Ready ?: return
         // The editor must be closed through its discard/save flow before changing providers.
         if (ready.deviceTools.visible && ready.files.file != null) return
         val panel = if (ready.deviceTools.visible) ready.deviceTools.panel else DeviceToolsPanel.FILES
         updateReady { it.copy(deviceTools = DeviceToolsUiState(true, panel, "", connectionId, true, false)) }
-        openDeviceTool(path, connectionId, false, unifiedTools = true)
+        openDeviceTool(path, connectionId, false, unifiedTools = true, workspaceId = workspaceId)
     }
 
-    private fun openDeviceTool(path: String, connectionId: String?, terminalTool: Boolean, unifiedTools: Boolean = false) {
+    private fun openDeviceTool(path: String, connectionId: String?, terminalTool: Boolean, unifiedTools: Boolean = false, workspaceId: String? = null) {
+        val scopedWorkspaceId = workspaceId?.trim()?.takeIf { it.isNotEmpty() }
         val ready = _state.value as? RemoteWorkspaceUiState.Ready ?: return
         deviceToolAction?.cancel()
         val generation = ++deviceToolGeneration
@@ -601,19 +718,21 @@ public class RemoteWorkspaceStore internal constructor(
                     response.value.jsonObject["homeDir"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() } ?: error("Runtime home directory unavailable")
                 }
                 if (generation != deviceToolGeneration) return@launch
+                val toolScope = RemoteWorkspaceIdentity(location, connectionId, null, scopedWorkspaceId)
                 if (terminalTool) {
-                    bindTerminal(location, connectionId)
+                    bindTerminal(toolScope)
                     terminal.open(location, connectionId)
                 } else {
                     if (unifiedTools) {
-                        bindTerminal(location, connectionId)
+                        bindTerminal(toolScope)
                         updateReady { it.copy(deviceTools = it.deviceTools.copy(path = location, busy = false, failed = false)) }
                     }
                     if (filesObserver == null) filesObserver = scope.launch { files.state.collect { value ->
-                        if (value.directory.isNotEmpty() && !value.failed) fileWorkspace = value.directory to connectionId
+                        // Browsing deeper moves the IO operand only; the owning workspace identity is kept.
+                        if (value.directory.isNotEmpty() && !value.failed) fileWorkspace = (fileWorkspace ?: toolScope).copy(path = value.directory, remoteConnectionId = connectionId)
                         updateReady { it.copy(files = value) }
                     } }
-                    fileWorkspace = location to connectionId
+                    fileWorkspace = toolScope
                     files.browse(location, location, connectionId, false)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
@@ -642,8 +761,8 @@ public class RemoteWorkspaceStore internal constructor(
         }
         val binding = previousBinding ?: DownloadBinding(
             target,
-            (fileWorkspace?.first ?: current.selected?.path).takeIf { target.sessionId.isEmpty() },
-            (fileWorkspace?.let { it.second } ?: current.selected?.remoteConnectionId.takeIf { fileWorkspace == null }).takeIf { target.sessionId.isEmpty() },
+            (fileWorkspace?.path ?: current.selected?.path).takeIf { target.sessionId.isEmpty() },
+            (fileWorkspace?.remoteConnectionId ?: current.selected?.remoteConnectionId.takeIf { fileWorkspace == null }).takeIf { target.sessionId.isEmpty() },
             loadGeneration,
             _stopVersion.value,
         )
@@ -890,10 +1009,11 @@ public class RemoteWorkspaceStore internal constructor(
             path = path,
             name = resolvedName?.takeIf(String::isNotBlank) ?: basename(path),
             gitBranch = gitBranch.orEmpty(),
+            workspaceId = workspaceId,
             kind = workspaceKind.orEmpty(),
             assistantId = assistantId,
-            remoteConnectionId = remoteConnectionId,
-            remoteSshHost = remoteSshHost,
+            remoteConnectionId = remoteConnectionId.takeUnless { workspaceKind == "normal" || workspaceKind == "assistant" },
+            remoteSshHost = remoteSshHost.takeUnless { workspaceKind == "normal" || workspaceKind == "assistant" },
         )
     }
 
@@ -919,10 +1039,10 @@ public class RemoteWorkspaceStore internal constructor(
 
     private fun cachedReady(rows: List<PersistedRemoteWorkspace>): RemoteWorkspaceUiState.Ready {
         val assistants = rows.filter { it.workspaceKind == ASSISTANT_KIND }.map { row ->
-            WorkspaceAssistant(row.path, row.name.ifEmpty { basename(row.path) }, null)
+            WorkspaceAssistant(row.path, row.name.ifEmpty { basename(row.path) }, null, row.workspaceId)
         }
         val workspaces = rows.filterNot { it.workspaceKind == ASSISTANT_KIND }.map { row ->
-            RecentWorkspace(row.path, row.name.ifEmpty { basename(row.path) }, row.lastOpened, row.workspaceKind, row.remoteSshHost, row.remoteConnectionId)
+            RecentWorkspace(row.path, row.name.ifEmpty { basename(row.path) }, row.lastOpened, row.workspaceKind, row.remoteSshHost, row.remoteConnectionId, row.workspaceId)
         }
         return RemoteWorkspaceUiState.Ready(
             workspaces = workspaces,
@@ -940,12 +1060,13 @@ public class RemoteWorkspaceStore internal constructor(
         assistants: List<WorkspaceAssistant>,
     ): List<PersistedRemoteWorkspace> {
         val rows = workspaces.map { workspace ->
-            PersistedRemoteWorkspace(workspace.path, workspace.name, workspace.lastOpened, workspace.kind, workspace.remoteSshHost, workspace.remoteConnectionId)
+            PersistedRemoteWorkspace(workspace.path, workspace.name, workspace.lastOpened, workspace.kind, workspace.remoteSshHost, workspace.remoteConnectionId, workspace.workspaceId)
         }.toMutableList()
+        // Dedupe by workspace identity (ID first, legacy triple otherwise), never by path:
+        // an assistant and a project may share a root and must both survive the cache.
         assistants.forEach { assistant ->
-            if (rows.none { it.path == assistant.path }) {
-                rows += PersistedRemoteWorkspace(assistant.path, assistant.name, "", ASSISTANT_KIND)
-            }
+            val row = PersistedRemoteWorkspace(assistant.path, assistant.name, "", ASSISTANT_KIND, null, null, assistant.workspaceId)
+            if (rows.none { it.key == row.key }) rows += row
         }
         return rows
     }

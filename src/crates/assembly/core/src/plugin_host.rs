@@ -152,6 +152,7 @@ async fn plugin_host_workspace_lock(scope: &str) -> Arc<Mutex<()>> {
 
 #[derive(Debug, Clone)]
 pub(crate) struct PluginHostInstance {
+    pub(crate) workspace_id: String,
     pub(crate) canonical_directory: String,
     pub(crate) directory: PathBuf,
     pub(crate) worktree: PathBuf,
@@ -395,15 +396,26 @@ pub(crate) async fn fault_configured_plugin_host_generation(
 
 pub async fn ensure_configured_plugin_instance(
     launch_policy: PluginHostLaunchPolicy,
-    directory: PathBuf,
-    worktree: PathBuf,
-    project_id: Option<String>,
+    workspace_id: &str,
 ) -> crate::OpenBitFunResult<()> {
     use crate::service::config::{get_global_config_service, GlobalConfig};
 
+    let service = crate::service::workspace::get_global_workspace_service().ok_or_else(|| {
+        crate::OpenBitFunError::Validation("Workspace service is unavailable".into())
+    })?;
+    let workspace = service.require_workspace(workspace_id).await?;
+    if workspace.workspace_kind == crate::service::workspace::WorkspaceKind::Remote {
+        return Err(crate::OpenBitFunError::NotImplemented(
+            "Plugin Host is unavailable for remote workspaces".into(),
+        ));
+    }
+    let directory = workspace.root_path;
+    let worktree = directory.clone();
+    let project_id = workspace.id.clone();
+
     if launch_policy == PluginHostLaunchPolicy::Disabled {
-        withdraw_configured_plugin_workspace(&directory).await;
-        clear_configured_plugin_activation_failure(Some(&directory));
+        withdraw_configured_plugin_workspace(workspace_id).await;
+        clear_configured_plugin_activation_failure(Some(workspace_id));
         return Ok(());
     }
     if directory.as_os_str().is_empty() || !directory.is_dir() {
@@ -419,7 +431,7 @@ pub async fn ensure_configured_plugin_instance(
         )))
     })?;
     let canonical_directory_string = canonical_directory.to_string_lossy().into_owned();
-    let comparable_directory = comparable_instance_directory(&canonical_directory_string);
+    let comparable_directory = workspace_id.to_owned();
     // All ensure/withdraw operations for a workspace use this same lock. The
     // workspace snapshot, generation replacement, and publication therefore
     // form one serialized transition for this directory.
@@ -432,9 +444,8 @@ pub async fn ensure_configured_plugin_instance(
     let config_service = get_global_config_service().await?;
     let global_config: GlobalConfig = config_service.get_config(None).await?;
     if !global_config.has_configured_plugins() {
-        withdraw_configured_plugin_workspace_locked(&canonical_directory, &comparable_directory)
-            .await;
-        clear_configured_plugin_activation_failure(Some(&canonical_directory));
+        withdraw_configured_plugin_workspace_locked(&comparable_directory).await;
+        clear_configured_plugin_activation_failure(Some(workspace_id));
         return Ok(());
     }
     initialize_configured_plugin_host_from_config(launch_policy, None, &global_config).await?;
@@ -529,14 +540,6 @@ pub async fn ensure_configured_plugin_instance(
                 "Failed to fingerprint workspace plugin config: {error}"
             ))
         })?;
-    let project_id = project_id
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| {
-            format!(
-                "openbitfun-project-{}",
-                hex::encode(Sha256::digest(canonical_directory_string.as_bytes()))
-            )
-        });
     let instance_key = format!(
         "{comparable_directory}\n{project_id}\n{config_fingerprint}\n{workspace_config_fingerprint}\n{prepared_fingerprint}"
     );
@@ -552,7 +555,7 @@ pub async fn ensure_configured_plugin_instance(
     };
     if let Some(instance) = reusable_instance {
         if crate::plugin_capability_publication::active_generation_key(
-            &canonical_directory,
+            workspace_id,
             OPENCODE_PLUGIN_ROUTE_OWNER,
         )
         .as_deref()
@@ -570,7 +573,7 @@ pub async fn ensure_configured_plugin_instance(
             )
             .map_err(|error| crate::OpenBitFunError::Validation(error.to_string()))?;
             let publication = crate::plugin_capability_publication::prepare(
-                &canonical_directory,
+                workspace_id,
                 &instance.generation_key,
                 opencode_plugin_publication_identity(),
                 projection,
@@ -600,7 +603,7 @@ pub async fn ensure_configured_plugin_instance(
                 "Configured plugin Host faulted while retiring a superseded generation".to_string(),
             ));
         }
-        clear_configured_plugin_activation_failure(Some(&canonical_directory));
+        clear_configured_plugin_activation_failure(Some(workspace_id));
         return Ok(());
     }
 
@@ -634,7 +637,8 @@ pub async fn ensure_configured_plugin_instance(
     );
     let now_ms = chrono::Utc::now().timestamp_millis();
     let opening_context = PluginHostInstance {
-        canonical_directory: comparable_directory.clone(),
+        workspace_id: workspace_id.to_owned(),
+        canonical_directory: canonical_directory_string.clone(),
         directory: canonical_directory.clone(),
         worktree: worktree.clone(),
         project_id: project_id.clone(),
@@ -742,7 +746,7 @@ pub async fn ensure_configured_plugin_instance(
     .map_err(|error| crate::OpenBitFunError::Validation(error.to_string()));
     let config_publication = match projected_config.and_then(|projection| {
         crate::plugin_capability_publication::prepare(
-            &canonical_directory,
+            workspace_id,
             &generation_key,
             opencode_plugin_publication_identity(),
             projection,
@@ -798,7 +802,7 @@ pub async fn ensure_configured_plugin_instance(
         client.generation(),
         &instance_id,
         &comparable_directory,
-        &canonical_directory,
+        workspace_id,
         &generation_key,
         &revision,
         &config_fingerprint,
@@ -844,7 +848,7 @@ pub async fn ensure_configured_plugin_instance(
             }
             crate::agentic::tools::plugin_host_tool::unregister_workspace_tools(
                 &comparable_directory,
-                &canonical_directory,
+                workspace_id,
                 &tool_names,
                 &generation_key,
             )
@@ -891,7 +895,7 @@ pub async fn ensure_configured_plugin_instance(
             "Configured plugin Host faulted while retiring a superseded generation".to_string(),
         ));
     }
-    clear_configured_plugin_activation_failure(Some(&canonical_directory));
+    clear_configured_plugin_activation_failure(Some(workspace_id));
     Ok(())
 }
 
@@ -928,7 +932,7 @@ async fn retire_workspace_instances_before_open(
         let state = instances.lock().await;
         let keys = state
             .iter()
-            .filter(|(_, instance)| instance.canonical_directory == workspace_scope)
+            .filter(|(_, instance)| instance.workspace_id == workspace_scope)
             .map(|(key, instance)| (key.clone(), instance.instance_id.clone()))
             .collect::<Vec<_>>();
         keys.into_iter()
@@ -962,20 +966,19 @@ async fn retire_workspace_instances_before_open(
     all_closed
 }
 
-async fn withdraw_configured_plugin_workspace(directory: &Path) {
-    let Ok(canonical) = dunce::canonicalize(directory) else {
-        return;
-    };
-    let workspace_scope = comparable_instance_directory(&canonical.to_string_lossy());
+async fn withdraw_configured_plugin_workspace(workspace_scope: &str) {
     let workspace_lock = plugin_host_workspace_lock(&workspace_scope).await;
     let _workspace_guard = workspace_lock.lock().await;
-    withdraw_configured_plugin_workspace_locked(&canonical, &workspace_scope).await;
+    withdraw_configured_plugin_workspace_locked(&workspace_scope).await;
 }
 
-async fn withdraw_configured_plugin_workspace_locked(canonical: &Path, workspace_scope: &str) {
+async fn withdraw_configured_plugin_workspace_locked(workspace_scope: &str) {
     let registry = crate::native_hooks::plugin_hook_registry(&workspace_scope);
     crate::plugin_hook_bridge::withdraw_plugin_workspace(&registry, &workspace_scope);
-    crate::plugin_capability_publication::release_workspace(canonical, OPENCODE_PLUGIN_ROUTE_OWNER);
+    crate::plugin_capability_publication::release_workspace(
+        workspace_scope,
+        OPENCODE_PLUGIN_ROUTE_OWNER,
+    );
     let Some(instances) = PLUGIN_HOST_INSTANCES.get() else {
         crate::native_hooks::clear_plugin_hook_workspace(&workspace_scope);
         return;
@@ -984,7 +987,7 @@ async fn withdraw_configured_plugin_workspace_locked(canonical: &Path, workspace
         .lock()
         .await
         .iter()
-        .filter(|(_, instance)| instance.canonical_directory == workspace_scope)
+        .filter(|(_, instance)| instance.workspace_id == workspace_scope)
         .map(|(key, instance)| (key.clone(), instance.clone()))
         .collect::<Vec<_>>();
     let host_runtime = if let Some(state) = PLUGIN_HOST.get() {
@@ -1002,7 +1005,7 @@ async fn withdraw_configured_plugin_workspace_locked(canonical: &Path, workspace
         }
         crate::agentic::tools::plugin_host_tool::unregister_workspace_tools(
             &workspace_scope,
-            &instance.directory,
+            &instance.workspace_id,
             &instance.tool_names,
             &instance.generation_key,
         )
@@ -1044,11 +1047,7 @@ async fn withdraw_configured_plugin_workspace_locked(canonical: &Path, workspace
     crate::native_hooks::clear_plugin_hook_workspace(&workspace_scope);
 }
 
-async fn withdraw_faulted_plugin_host_generation(directory: &Path, expected_generation: u64) {
-    let Ok(canonical) = dunce::canonicalize(directory) else {
-        return;
-    };
-    let workspace_scope = comparable_instance_directory(&canonical.to_string_lossy());
+async fn withdraw_faulted_plugin_host_generation(workspace_scope: &str, expected_generation: u64) {
     let workspace_lock = plugin_host_workspace_lock(&workspace_scope).await;
     let _workspace_guard = workspace_lock.lock().await;
     let Some(instances) = PLUGIN_HOST_INSTANCES.get() else {
@@ -1059,7 +1058,7 @@ async fn withdraw_faulted_plugin_host_generation(directory: &Path, expected_gene
         .await
         .iter()
         .filter(|(_, instance)| {
-            instance.canonical_directory == workspace_scope
+            instance.workspace_id == workspace_scope
                 && instance.host_generation == expected_generation
         })
         .map(|(key, instance)| (key.clone(), instance.clone()))
@@ -1071,20 +1070,20 @@ async fn withdraw_faulted_plugin_host_generation(directory: &Path, expected_gene
         }
         crate::agentic::tools::plugin_host_tool::unregister_workspace_tools(
             &workspace_scope,
-            &instance.directory,
+            &instance.workspace_id,
             &instance.tool_names,
             &instance.generation_key,
         )
         .await;
         if crate::plugin_capability_publication::active_generation_key(
-            &instance.directory,
+            &instance.workspace_id,
             OPENCODE_PLUGIN_ROUTE_OWNER,
         )
         .as_deref()
             == Some(instance.generation_key.as_str())
         {
             crate::plugin_capability_publication::release_workspace(
-                &instance.directory,
+                &instance.workspace_id,
                 OPENCODE_PLUGIN_ROUTE_OWNER,
             );
         }
@@ -1101,13 +1100,12 @@ async fn withdraw_faulted_plugin_host_generation(directory: &Path, expected_gene
         }
     }
     let has_replacement = instances.lock().await.values().any(|instance| {
-        instance.canonical_directory == workspace_scope
-            && instance.host_generation != expected_generation
+        instance.workspace_id == workspace_scope && instance.host_generation != expected_generation
     });
     if !has_replacement {
         crate::plugin_hook_bridge::withdraw_plugin_workspace(&registry, &workspace_scope);
         crate::plugin_capability_publication::release_workspace(
-            &canonical,
+            workspace_scope,
             OPENCODE_PLUGIN_ROUTE_OWNER,
         );
         crate::native_hooks::clear_plugin_hook_workspace(&workspace_scope);
@@ -1165,7 +1163,7 @@ fn start_plugin_host_health_monitor(client: openbitfun_opencode_plugin_host::Plu
                     .await
                     .values()
                     .filter(|instance| instance.host_generation == client.generation())
-                    .map(|instance| instance.directory.clone())
+                    .map(|instance| instance.workspace_id.clone())
                     .collect::<std::collections::BTreeSet<_>>()
             });
             let Some(workspaces) = workspaces else { return };
@@ -1190,7 +1188,7 @@ async fn retire_superseded_plugin_instances(
         .await
         .iter()
         .filter(|(key, instance)| {
-            key.as_str() != active_key && instance.canonical_directory == workspace_scope
+            key.as_str() != active_key && instance.workspace_id == workspace_scope
         })
         .map(|(key, instance)| (key.clone(), instance.clone()))
         .collect::<Vec<_>>();
@@ -1254,7 +1252,7 @@ fn schedule_plugin_instance_retirement(
                 instance.clone()
             };
             if crate::plugin_capability_publication::active_generation_key(
-                &snapshot.directory,
+                &snapshot.workspace_id,
                 OPENCODE_PLUGIN_ROUTE_OWNER,
             )
             .as_deref()
@@ -1280,7 +1278,7 @@ fn schedule_plugin_instance_retirement(
                 matches.then(|| state.remove(&instance_key)).flatten()
             };
             if let Some(instance) = removed {
-                let workspace_scope = instance.canonical_directory.clone();
+                let workspace_scope = instance.workspace_id.clone();
                 let _ =
                     retire_plugin_instance(&client, runtime.clone(), instance, &workspace_scope)
                         .await;
@@ -1305,7 +1303,7 @@ async fn retire_plugin_instance(
     }
     crate::agentic::tools::plugin_host_tool::unregister_workspace_tools(
         workspace_scope,
-        &instance.directory,
+        &instance.workspace_id,
         &instance.tool_names,
         &instance.generation_key,
     )
@@ -1330,7 +1328,7 @@ async fn retire_plugin_instance(
     close_plugin_host_ptys(&instance.instance_id).await;
     if closed {
         crate::plugin_capability_publication::release_workspace_generation(
-            &instance.directory,
+            &instance.workspace_id,
             OPENCODE_PLUGIN_ROUTE_OWNER,
             &instance.generation_key,
         );
@@ -1397,7 +1395,7 @@ pub(crate) async fn plugin_hook_generation_for_agent(
         .values()
         .find(|instance| {
             instance.ready
-                && instance.canonical_directory == workspace_scope
+                && instance.workspace_id == workspace_scope
                 && instance
                     .agent_runtime_keys
                     .iter()
@@ -1457,7 +1455,7 @@ pub(crate) async fn publish_plugin_host_diagnostic(
 
 fn plugin_activation_diagnostic(
     operation: &str,
-    workspace: Option<&Path>,
+    workspace: Option<&str>,
     error: &str,
 ) -> BackendDiagnosticEvent {
     BackendDiagnosticEvent {
@@ -1468,8 +1466,7 @@ fn plugin_activation_diagnostic(
             message: error.to_string(),
             plugin: None,
             method: Some(operation.to_string()),
-            data: workspace
-                .map(|workspace| serde_json::json!({"workspace": workspace.to_string_lossy()})),
+            data: workspace.map(|workspace| serde_json::json!({"workspaceId": workspace})),
         },
     }
 }
@@ -1478,7 +1475,7 @@ fn plugin_activation_diagnostic(
 /// the outcome of the native session operation that triggered it.
 pub async fn report_configured_plugin_activation_failure(
     operation: &str,
-    workspace: Option<&Path>,
+    workspace: Option<&str>,
     error: impl std::fmt::Display,
 ) {
     let error = error.to_string();
@@ -1487,7 +1484,7 @@ pub async fn report_configured_plugin_activation_failure(
         "Configured plugin activation failed; continuing with native capabilities: operation={}, workspace={}, error={}",
         operation,
         workspace
-            .map(|path| path.to_string_lossy().into_owned())
+            .map(str::to_owned)
             .unwrap_or_else(|| "<none>".to_string()),
         error
     );
@@ -1502,13 +1499,8 @@ pub async fn report_configured_plugin_activation_failure(
     }
 }
 
-fn plugin_activation_workspace_key(workspace: Option<&Path>) -> String {
-    workspace
-        .map(|path| {
-            canonical_plugin_workspace_scope(path)
-                .unwrap_or_else(|| comparable_instance_directory(&path.to_string_lossy()))
-        })
-        .unwrap_or_else(|| "<global>".to_string())
+fn plugin_activation_workspace_key(workspace: Option<&str>) -> String {
+    crate::agentic::workspace::workspace_route_key(workspace)
 }
 
 fn activation_failure_store() -> &'static std::sync::RwLock<HashMap<String, String>> {
@@ -1517,7 +1509,7 @@ fn activation_failure_store() -> &'static std::sync::RwLock<HashMap<String, Stri
 
 fn record_configured_plugin_activation_failure(
     operation: &str,
-    workspace: Option<&Path>,
+    workspace: Option<&str>,
     error: &str,
 ) {
     let mut message = format!("Configured plugin activation failed during {operation}: {error}");
@@ -1537,14 +1529,14 @@ fn record_configured_plugin_activation_failure(
         .insert(plugin_activation_workspace_key(workspace), message);
 }
 
-fn clear_configured_plugin_activation_failure(workspace: Option<&Path>) {
+fn clear_configured_plugin_activation_failure(workspace: Option<&str>) {
     activation_failure_store()
         .write()
         .expect("plugin activation failure lock poisoned")
         .remove(&plugin_activation_workspace_key(workspace));
 }
 
-pub(crate) fn configured_plugin_activation_failures(workspace: Option<&Path>) -> Vec<String> {
+pub(crate) fn configured_plugin_activation_failures(workspace: Option<&str>) -> Vec<String> {
     let failures = activation_failure_store()
         .read()
         .expect("plugin activation failure lock poisoned");
@@ -1742,26 +1734,26 @@ pub async fn shutdown_configured_plugin_host(
         for instance in instances.values() {
             if let Some(token) = instance.hook_commit_token.clone() {
                 crate::plugin_hook_bridge::unregister_plugin_hooks(
-                    &crate::native_hooks::plugin_hook_registry(&instance.canonical_directory),
-                    &instance.canonical_directory,
+                    &crate::native_hooks::plugin_hook_registry(&instance.workspace_id),
+                    &instance.workspace_id,
                     token,
                 );
             }
             crate::agentic::tools::plugin_host_tool::unregister_workspace_tools(
-                &instance.canonical_directory,
-                &instance.directory,
+                &instance.workspace_id,
+                &instance.workspace_id,
                 &instance.tool_names,
                 &instance.generation_key,
             )
             .await;
             crate::plugin_capability_publication::release_workspace(
-                &instance.directory,
+                &instance.workspace_id,
                 OPENCODE_PLUGIN_ROUTE_OWNER,
             );
         }
         let workspaces = instances
             .values()
-            .map(|instance| instance.canonical_directory.clone())
+            .map(|instance| instance.workspace_id.clone())
             .collect::<std::collections::BTreeSet<_>>();
         for workspace in workspaces {
             let registry = crate::native_hooks::plugin_hook_registry(&workspace);
@@ -1795,7 +1787,7 @@ async fn register_plugin_tools(
     host_generation: u64,
     instance_id: &str,
     workspace_scope: &str,
-    workspace_root: &Path,
+    workspace_id: &str,
     generation_key: &str,
     revision: &str,
     config_fingerprint: &str,
@@ -1846,7 +1838,7 @@ async fn register_plugin_tools(
     for (registration_id, id, description, parameters, allowed_runtime_agent_keys) in prepared {
         crate::agentic::tools::plugin_host_tool::register_workspace_tool(
             workspace_scope,
-            workspace_root,
+            workspace_id,
             runtime.clone(),
             host_generation,
             instance_id,
@@ -1977,16 +1969,10 @@ fn plugin_config_fingerprint(
 }
 
 fn comparable_instance_directory(directory: &str) -> String {
-    let mut comparable = directory.replace('\\', "/");
+    let comparable = directory.replace('\\', "/");
     #[cfg(windows)]
-    comparable.make_ascii_lowercase();
+    let comparable = comparable.to_ascii_lowercase();
     comparable
-}
-
-pub(crate) fn canonical_plugin_workspace_scope(path: &Path) -> Option<String> {
-    dunce::canonicalize(path)
-        .ok()
-        .map(|path| comparable_instance_directory(&path.to_string_lossy()))
 }
 
 fn absolutize_existing_entry(
@@ -2121,7 +2107,7 @@ mod tests {
     fn activation_failure_diagnostic_is_stable_and_workspace_scoped() {
         let event = plugin_activation_diagnostic(
             "session creation",
-            Some(Path::new("C:/workspace/project")),
+            Some("workspace-project"),
             "Bun executable was not found",
         );
 
@@ -2129,27 +2115,27 @@ mod tests {
         assert_eq!(event.diagnostic.severity.as_str(), "warning");
         assert_eq!(event.diagnostic.method.as_deref(), Some("session creation"));
         assert_eq!(
-            event.diagnostic.data.as_ref().unwrap()["workspace"],
-            "C:/workspace/project"
+            event.diagnostic.data.as_ref().unwrap()["workspaceId"],
+            "workspace-project"
         );
     }
 
     #[test]
     fn activation_failure_status_is_workspace_scoped_and_clearable() {
-        let first = tempfile::tempdir().expect("first workspace");
-        let second = tempfile::tempdir().expect("second workspace");
+        let first = uuid::Uuid::new_v4().to_string();
+        let second = uuid::Uuid::new_v4().to_string();
         super::record_configured_plugin_activation_failure(
             "session creation",
-            Some(first.path()),
+            Some(first.as_str()),
             "Bun executable was not found",
         );
 
-        let first_status = super::configured_plugin_activation_failures(Some(first.path()));
+        let first_status = super::configured_plugin_activation_failures(Some(first.as_str()));
         assert_eq!(first_status.len(), 1);
         assert!(first_status[0].contains("session creation"));
-        assert!(super::configured_plugin_activation_failures(Some(second.path())).is_empty());
+        assert!(super::configured_plugin_activation_failures(Some(second.as_str())).is_empty());
 
-        super::clear_configured_plugin_activation_failure(Some(first.path()));
-        assert!(super::configured_plugin_activation_failures(Some(first.path())).is_empty());
+        super::clear_configured_plugin_activation_failure(Some(first.as_str()));
+        assert!(super::configured_plugin_activation_failures(Some(first.as_str())).is_empty());
     }
 }

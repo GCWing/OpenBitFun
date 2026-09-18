@@ -994,6 +994,7 @@ async fn create_preserves_fork_head_and_draft_without_extra_mutations() {
         .create_pull_request(
             &ctx,
             &ReviewPlatformCreatePullRequestRequest {
+                workspace_id: None,
                 repository_path: "unused".into(),
                 remote_id: None,
                 title: "A change".into(),
@@ -1016,6 +1017,7 @@ async fn create_preserves_fork_head_and_draft_without_extra_mutations() {
 
 fn approval(body: Option<&str>) -> ReviewPlatformApprovalRequest {
     ReviewPlatformApprovalRequest {
+        workspace_id: None,
         repository_path: "unused".into(),
         remote_id: "origin".into(),
         pull_request_id: "69".into(),
@@ -1084,6 +1086,7 @@ async fn revocation_resets_only_the_current_review_and_unsupported_writes_fail_c
         .submit_review(
             &ctx,
             &ReviewPlatformSubmitReviewRequest {
+                workspace_id: None,
                 repository_path: "unused".into(),
                 remote_id: "origin".into(),
                 pull_request_id: "69".into(),

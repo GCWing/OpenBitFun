@@ -2,8 +2,12 @@ package com.openbitfun.mobile.core.feature.session
 
 import com.openbitfun.mobile.core.transport.RelayTransportException
 import com.openbitfun.mobile.core.transport.RelayFailure
+import com.openbitfun.mobile.core.domain.LegacyWorkspaceCompatibility
 import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
+import com.openbitfun.mobile.core.domain.WorkspaceReferencePolicy
+import com.openbitfun.mobile.core.domain.WorkspaceReferenceResolution
 import com.openbitfun.mobile.core.domain.belongsTo
+import com.openbitfun.mobile.core.domain.identity
 import com.openbitfun.mobile.core.persistence.PersistedWorkspaceIdentity
 
 import com.openbitfun.mobile.core.feature.relay.HostCatalogNotice
@@ -21,7 +25,7 @@ import com.openbitfun.mobile.core.persistence.PersistedRemoteMessage
 import com.openbitfun.mobile.core.persistence.PersistedRemoteSession
 import com.openbitfun.mobile.core.domain.RemoteSession
 import com.openbitfun.mobile.core.domain.SessionNaming
-import com.openbitfun.mobile.core.domain.SessionAgentTypes
+import com.openbitfun.mobile.core.domain.SessionListVisibility
 import com.openbitfun.mobile.core.domain.TranscriptIntegrityPolicy
 import com.openbitfun.mobile.core.feature.connection.ConnectionPhase
 import com.openbitfun.mobile.core.protocol.ActiveTurnSnapshotResponse
@@ -57,6 +61,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -161,10 +166,17 @@ public class RemoteSessionStore internal constructor(
      * missing, so it is resolved before either is sent rather than passed down
      * from the UI — the same shape as `RemoteSessionManager.workspace`.
      */
+    private var workspaceId: String? = null
     private var workspaceConnectionId: String? = null
     private var workspaceSshHost: String? = null
     private var workspacePath: String = ""
     private var hostCapabilities: List<String> = emptyList()
+    /** True once a live `get_workspace_info` answered; capabilities are never assumed from cache. */
+    private var hostCapabilitiesKnown: Boolean = false
+
+    /** Whether the connected host honours ID-only workspace commands; null until asked. */
+    public val supportsWorkspaceIdReferences: Boolean?
+        get() = if (hostCapabilitiesKnown) WorkspaceReferencePolicy.supportsWorkspaceIdReferences(hostCapabilities) else null
 
     public fun dispatch(intent: RemoteSessionIntent) {
         val current = _state.value as? RemoteSessionUiState.Ready
@@ -177,8 +189,8 @@ public class RemoteSessionStore internal constructor(
                 load(current?.query.orEmpty(), current?.agentFilter ?: SessionAgentFilter.ALL)
             RemoteSessionIntent.LoadMore -> loadMore()
             RemoteSessionIntent.LoadOlderMessages -> loadOlderMessages()
-            is RemoteSessionIntent.LoadWorkspaceSessions -> loadWorkspaceSessions(intent.path, false, intent.remoteConnectionId, intent.remoteSshHost)
-            is RemoteSessionIntent.RetryWorkspaceSessions -> loadWorkspaceSessions(intent.path, true, intent.remoteConnectionId, intent.remoteSshHost)
+            is RemoteSessionIntent.LoadWorkspaceSessions -> loadWorkspaceSessions(intent.path, false, intent.remoteConnectionId, intent.remoteSshHost, intent.workspaceId)
+            is RemoteSessionIntent.RetryWorkspaceSessions -> loadWorkspaceSessions(intent.path, true, intent.remoteConnectionId, intent.remoteSshHost, intent.workspaceId)
             is RemoteSessionIntent.Search ->
                 load(intent.query, current?.agentFilter ?: SessionAgentFilter.ALL)
             is RemoteSessionIntent.SetAgentFilter -> load(current?.query.orEmpty(), intent.filter)
@@ -186,7 +198,7 @@ public class RemoteSessionStore internal constructor(
             is RemoteSessionIntent.CreateSession -> createSession(intent, nextRequestId())
             is RemoteSessionIntent.CreateSessionOperation -> createSession(
                 RemoteSessionIntent.CreateSession(
-                    intent.agentType, intent.title, intent.instruction, intent.modelId, intent.workspacePath, intent.remoteConnectionId, intent.remoteSshHost,
+                    intent.agentType, intent.title, intent.instruction, intent.modelId, intent.workspacePath, intent.remoteConnectionId, intent.remoteSshHost, intent.workspaceId,
                 ),
                 intent.requestId.trim().ifEmpty { nextRequestId() },
             )
@@ -267,15 +279,37 @@ public class RemoteSessionStore internal constructor(
         instruction: String,
         modelId: String?,
     ) {
+        createAssistantSession(workspaceStore, requestId, assistantPath, title, instruction, modelId, null)
+    }
+
+    /**
+     * Validates the assistant on this target and creates in its explicit workspace.
+     * Session creation does not change the runtime's current workspace.
+     *
+     * With [assistantWorkspaceId] the assistant is matched by ID alone and the
+     * create carries only that ID. Without one, [assistantPath] is a pre-ID
+     * reference resolved through [LegacyWorkspaceCompatibility]; an ambiguous
+     * path fails rather than picking an assistant.
+     */
+    public fun createAssistantSession(
+        workspaceStore: RemoteWorkspaceStore,
+        requestId: String,
+        assistantPath: String,
+        title: String,
+        instruction: String,
+        modelId: String?,
+        assistantWorkspaceId: String?,
+    ) {
         val normalizedRequestId = requestId.trim().ifEmpty { nextRequestId() }
         val normalizedPath = assistantPath.trim()
+        val normalizedWorkspaceId = assistantWorkspaceId?.trim()?.takeIf { it.isNotEmpty() }
         if (workspaceStore.deviceKey == null || workspaceStore.deviceKey != deviceKey) {
             _createOperation.value = CreateSessionOperationState.Failed(
                 normalizedRequestId, CreateSessionOperationFailure.DEVICE_MISMATCH, false, false,
             )
             return
         }
-        if (normalizedPath.isEmpty()) {
+        if (normalizedPath.isEmpty() && normalizedWorkspaceId == null) {
             _createOperation.value = CreateSessionOperationState.Failed(
                 normalizedRequestId, CreateSessionOperationFailure.WORKSPACE, true, false,
             )
@@ -314,9 +348,18 @@ public class RemoteSessionStore internal constructor(
                     failCreate(normalizedRequestId, generation, CreateSessionOperationFailure.WORKSPACE, true, false)
                     return@launch
                 }
-                if (beforeSelection.assistants.none { it.path == normalizedPath }) {
-                    failCreate(normalizedRequestId, generation, CreateSessionOperationFailure.WORKSPACE, false, false)
-                    return@launch
+                val assistantCatalog = beforeSelection.assistants.map { it.identity() }
+                val reference = RemoteWorkspaceIdentity(normalizedPath, null, null, normalizedWorkspaceId)
+                val assistant = when (val resolution = LegacyWorkspaceCompatibility.resolveReference(reference, assistantCatalog)) {
+                    is WorkspaceReferenceResolution.Resolved -> resolution.identity
+                    is WorkspaceReferenceResolution.UnknownId -> {
+                        failCreate(normalizedRequestId, generation, CreateSessionOperationFailure.WORKSPACE_ID_UNKNOWN, false, false)
+                        return@launch
+                    }
+                    is WorkspaceReferenceResolution.Ambiguous, WorkspaceReferenceResolution.Unresolved -> {
+                        failCreate(normalizedRequestId, generation, CreateSessionOperationFailure.WORKSPACE, false, false)
+                        return@launch
+                    }
                 }
                 work = null
                 createSession(
@@ -325,7 +368,10 @@ public class RemoteSessionStore internal constructor(
                         title = title,
                         instruction = instruction,
                         modelId = modelId,
-                        workspacePath = normalizedPath,
+                        workspacePath = assistant.path,
+                        remoteConnectionId = null,
+                        remoteSshHost = null,
+                        workspaceId = assistant.workspaceId,
                     ),
                     normalizedRequestId,
                 )
@@ -359,25 +405,25 @@ public class RemoteSessionStore internal constructor(
     }
 
     /** Loads one disclosed workspace without changing the desktop's active workspace. */
-    internal suspend fun sessionsForWorkspace(path: String, remoteConnectionId: String? = null, remoteSshHost: String? = null): List<RemoteSession> {
-        val identity = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost)
-        val normalizedPath = path.trim()
+    internal suspend fun sessionsForWorkspace(identity: RemoteWorkspaceIdentity): List<RemoteSession> {
+        val normalizedPath = identity.path.trim()
         if (normalizedPath.isEmpty()) return emptyList()
         val response = transport.send<SessionListResponse>(
             RemoteCommand(
                 cmd = "list_sessions",
-                workspacePath = normalizedPath,
-                remoteConnectionId = remoteConnectionId,
-                remoteSshHost = remoteSshHost,
+                workspaceId = identity.workspaceId,
+                workspacePath = normalizedPath.takeIf { identity.workspaceId == null },
+                remoteConnectionId = identity.remoteConnectionId.takeIf { identity.workspaceId == null },
+                remoteSshHost = identity.remoteSshHost.takeIf { identity.workspaceId == null },
                 limit = DIRECTORY_WORKSPACE_PAGE_SIZE,
                 offset = 0,
             ),
         )
         val server = response.sessions
             .map(RemoteResponseMapper::session)
-            .filter { SessionAgentTypes.isMobileVisible(it.agentType) }
+            .filter { SessionListVisibility.isMobileVisible(it) }
             .map { session ->
-                session.copy(workspacePath = session.workspacePath?.takeIf { it.isNotBlank() } ?: normalizedPath, workspaceIdentity = identity)
+                session.copy(workspacePath = session.workspacePath?.takeIf { it.isNotBlank() } ?: normalizedPath, workspaceIdentity = session.workspaceIdentity ?: identity)
             }
         val serverIds = server.mapTo(mutableSetOf()) { it.id }
         serverIds.forEach(locallyCreatedSessions::remove)
@@ -392,13 +438,16 @@ public class RemoteSessionStore internal constructor(
         savePersistedSessions(sessions, false)
     }
 
-    private fun loadWorkspaceSessions(path: String, force: Boolean, remoteConnectionId: String?, remoteSshHost: String?) {
+    private fun loadWorkspaceSessions(path: String, force: Boolean, remoteConnectionId: String?, remoteSshHost: String?, workspaceId: String?) {
         val normalizedPath = normalizeWorkspacePath(path)
-        if (normalizedPath.isEmpty()) return
-        val identity = RemoteWorkspaceIdentity(normalizedPath, remoteConnectionId, remoteSshHost)
+        val normalizedId = workspaceId?.trim()?.takeIf { it.isNotEmpty() }
+        if (normalizedPath.isEmpty() && normalizedId == null) return
+        // With an ID the legacy fields are display facts only; sessionsForWorkspace
+        // keeps them off the wire.
+        val identity = RemoteWorkspaceIdentity(normalizedPath, remoteConnectionId, remoteSshHost, normalizedId)
         val key = identity.key
         if (workspaceDirectoryJobs[key]?.isActive == true) return
-        val existing = _workspaceDirectory.value.workspace(normalizedPath, remoteConnectionId, remoteSshHost)
+        val existing = _workspaceDirectory.value.workspace(identity)
         if (!force && existing?.status == WorkspaceSessionDirectoryStatus.READY) return
         val generation = (workspaceDirectoryGenerations[key] ?: 0L) + 1L
         workspaceDirectoryGenerations[key] = generation
@@ -407,7 +456,15 @@ public class RemoteSessionStore internal constructor(
         }
         val job = scope.launch {
             try {
-                val loaded = sessionsForWorkspace(normalizedPath, remoteConnectionId, remoteSshHost)
+                if (normalizedId != null && !ensureWorkspaceIdReferences()) {
+                    if (workspaceDirectoryGenerations[key] == generation) {
+                        updateWorkspaceDirectory(identity) {
+                            it.copy(status = WorkspaceSessionDirectoryStatus.UNSUPPORTED)
+                        }
+                    }
+                    return@launch
+                }
+                val loaded = sessionsForWorkspace(identity)
                 if (workspaceDirectoryGenerations[key] != generation) return@launch
                 if (persistenceEnabled) {
                     val cached = cachedSessions()
@@ -451,7 +508,7 @@ public class RemoteSessionStore internal constructor(
         }.toMutableList()
         if (!found) {
             entries += transform(
-                WorkspaceSessionDirectoryEntry(identity.path, WorkspaceSessionDirectoryStatus.IDLE, emptyList(), identity.remoteConnectionId, identity.remoteSshHost),
+                WorkspaceSessionDirectoryEntry(identity.path, WorkspaceSessionDirectoryStatus.IDLE, emptyList(), identity.remoteConnectionId, identity.remoteSshHost, identity.workspaceId),
             )
         }
         _workspaceDirectory.value = WorkspaceSessionDirectoryUiState(entries)
@@ -565,6 +622,9 @@ public class RemoteSessionStore internal constructor(
             },
         )
         sessionUpdates?.cancel()
+        // The next connection may reach a different build; ask it again.
+        hostCapabilitiesKnown = false
+        transcriptWrite?.cancel()
         _connectionPhase.value = ConnectionPhase.DISCONNECTED
     }
 
@@ -597,6 +657,12 @@ public class RemoteSessionStore internal constructor(
                 if (!isCurrentWork(generation)) return@launch
                 if (!workspaceResolved) {
                     failKnown(RemoteSessionFailureReason.NO_WORKSPACE, current)
+                    return@launch
+                }
+                if (workspaceId != null && supportsWorkspaceIdReferences != true) {
+                    // The host named its workspace by ID but will not accept the ID
+                    // back; listing by path could answer for a same-path workspace.
+                    failKnown(RemoteSessionFailureReason.WORKSPACE_ID_UNSUPPORTED, current)
                     return@launch
                 }
                 // Catalog enrichment must not gate navigation or transcript loading.
@@ -686,15 +752,37 @@ public class RemoteSessionStore internal constructor(
         val info = transport.send<WorkspaceInfoResponse>(RemoteCommand(cmd = "get_workspace_info"))
         if (!isCurrentWork(operationToken)) return false
         workspacePath = (info.path ?: info.workspacePath).orEmpty().trim()
+        workspaceId = info.workspaceId
         workspaceConnectionId = info.remoteConnectionId
         workspaceSshHost = info.remoteSshHost
-        hostCapabilities = info.capabilities
+        recordHostCapabilities(info.capabilities)
         return workspacePath.isNotEmpty() && workspacePath != "/"
+    }
+
+    private fun recordHostCapabilities(capabilities: List<String>) {
+        hostCapabilities = capabilities
+        hostCapabilitiesKnown = true
+    }
+
+    /**
+     * Whether an ID-bearing command may be sent to this host.
+     *
+     * The answer comes from the host's live capability list, fetched once per
+     * connection when nothing has read it yet. A host without
+     * `workspace_id_references_v1` gets no command at all for such a reference:
+     * sending the path instead would let it pick a same-path workspace.
+     */
+    private suspend fun ensureWorkspaceIdReferences(): Boolean {
+        if (!hostCapabilitiesKnown) {
+            val info = transport.send<WorkspaceInfoResponse>(RemoteCommand(cmd = "get_workspace_info"))
+            recordHostCapabilities(info.capabilities)
+        }
+        return WorkspaceReferencePolicy.supportsWorkspaceIdReferences(hostCapabilities)
     }
 
     private suspend fun listSessions(offset: Int, query: String, filter: SessionAgentFilter, count: Int = PAGE_SIZE): SessionPage {
         val trimmedQuery = query.trim()
-        val identity = RemoteWorkspaceIdentity(workspacePath, workspaceConnectionId, workspaceSshHost)
+        val identity = RemoteWorkspaceIdentity(workspacePath, workspaceConnectionId, workspaceSshHost, workspaceId)
         // `list_sessions` cannot apply either the mobile ACP visibility rule or
         // the agent tab. Pull from the start until there are enough visible rows
         // so an invisible server row never creates a short page or a dishonest
@@ -706,9 +794,9 @@ public class RemoteSessionStore internal constructor(
         val pageSize = if (filter == SessionAgentFilter.ALL) PAGE_SIZE else FILTER_PAGE_SIZE
         while (hasMore && filtered.size < targetCount) {
             val response = sendListSessions(pageSize, pageOffset, trimmedQuery, identity)
-            val sessions = response.sessions.map(RemoteResponseMapper::session).map { it.copy(workspaceIdentity = identity) }
+            val sessions = response.sessions.map(RemoteResponseMapper::session).map { it.copy(workspaceIdentity = it.workspaceIdentity ?: identity) }
             sessions.filterTo(filtered) {
-                SessionAgentTypes.isMobileVisible(it.agentType) && filter.matches(it.agentType)
+                SessionListVisibility.isMobileVisible(it) && filter.matches(it.agentType)
             }
             hasMore = response.hasMore
             pageOffset += sessions.size
@@ -734,7 +822,7 @@ public class RemoteSessionStore internal constructor(
         val known = sessions.mapTo(mutableSetOf()) { it.id }
         val local = locallyCreatedSessions.values.filter { session ->
             session.id !in known &&
-                SessionAgentTypes.isMobileVisible(session.agentType) &&
+                SessionListVisibility.isMobileVisible(session) &&
                 filter.matches(session.agentType) &&
                 (query.isEmpty() || session.title.contains(query, ignoreCase = true) ||
                     session.workspaceName.orEmpty().contains(query, ignoreCase = true) ||
@@ -782,18 +870,22 @@ public class RemoteSessionStore internal constructor(
         val failure: ModelCatalogFailure?,
     )
 
-    private suspend fun sendListSessions(limit: Int, offset: Int, query: String, identity: RemoteWorkspaceIdentity): SessionListResponse =
-        transport.send(
+    /** With an ID the command carries only the ID; the legacy projection goes only when there is none. */
+    private suspend fun sendListSessions(limit: Int, offset: Int, query: String, identity: RemoteWorkspaceIdentity): SessionListResponse {
+        val legacy = identity.workspaceId == null
+        return transport.send(
             RemoteCommand(
                 cmd = "list_sessions",
-                workspacePath = identity.path,
-                remoteConnectionId = identity.remoteConnectionId,
-                remoteSshHost = identity.remoteSshHost,
+                workspaceId = identity.workspaceId,
+                workspacePath = identity.path.takeIf { legacy },
+                remoteConnectionId = identity.remoteConnectionId.takeIf { legacy },
+                remoteSshHost = identity.remoteSshHost.takeIf { legacy },
                 limit = limit,
                 offset = offset.toLong(),
                 query = query.takeIf(String::isNotEmpty),
             ),
         )
+    }
 
     private fun open(sessionId: String) {
         val normalized = sessionId.trim()
@@ -894,6 +986,29 @@ public class RemoteSessionStore internal constructor(
     }
 
     private var sessionHistoryHasMore = false
+    private var transcriptWrite: Job? = null
+
+    /**
+     * Holds the transcript write to one per [TRANSCRIPT_WRITE_DEBOUNCE_MS] while a turn streams.
+     *
+     * Every chunk of a streaming reply restates the whole session, and writing
+     * it re-encrypts and rewrites all of it — dozens of times a second, on the
+     * thread that draws the screen. Nothing reads the cache until the app is
+     * reopened, so only the last write of a burst ever mattered.
+     */
+    private fun scheduleTranscriptWrite(sessionId: String) {
+        if (transcriptWrite?.isActive == true) return
+        transcriptWrite = scope.launch {
+            delay(TRANSCRIPT_WRITE_DEBOUNCE_MS)
+            persistTranscript(sessionId, preserveOlder = sessionHistoryHasMore)
+        }
+    }
+
+    private fun writeTranscriptNow(sessionId: String) {
+        transcriptWrite?.cancel()
+        transcriptWrite = null
+        persistTranscript(sessionId, preserveOlder = sessionHistoryHasMore)
+    }
 
     private fun publishDurableTimeline() {
         val current = _state.value as? RemoteSessionUiState.Ready ?: return
@@ -907,6 +1022,7 @@ public class RemoteSessionStore internal constructor(
         val initialHistory = CompletableDeferred<Unit>()
         permissionMailbox.select(sessionId)
         sessionUpdates?.cancel()
+        transcriptWrite?.cancel()
         sessionHistoryHasMore = false
         sessionUpdates = scope.launch {
             try {
@@ -914,10 +1030,35 @@ public class RemoteSessionStore internal constructor(
                 val store = relayStreamStore ?: error("Durable session storage unavailable")
                 val records = SessionRecordReplica(sessionId)
                 var caughtUp = false
+                /**
+                 * Renders everything received so far and reports the turn's phase.
+                 *
+                 * The cost is the whole session's length, so it runs only where
+                 * something can read the result. The initial replay of a long
+                 * session arrives one record at a time and used to render on each
+                 * of them, for a screen fenced behind [caughtUp] that nobody could
+                 * see yet — which is what made the first seconds after an open
+                 * impossible to scroll.
+                 */
+                fun render(): ChatSyncPhase {
+                    timelineStore.clearActiveTurn()
+                    val messages = records.messages()
+                    val active = messages.lastOrNull()?.takeIf { it.role == "assistant" && it.status == "streaming" }
+                    timelineStore.setPersistedMessages(if (active == null) messages else messages.dropLast(1))
+                    timelineStore.setActiveTurn(active)
+                    val phase = when (messages.lastOrNull()?.status) {
+                        "streaming" -> ChatSyncPhase.STREAMING
+                        "failed" -> ChatSyncPhase.ERROR
+                        else -> ChatSyncPhase.IDLE
+                    }
+                    timelineStore.setSyncPhase(phase)
+                    return phase
+                }
                 source.subscribe(sessionId, PersistentSessionReplica(store, source.streamIdentity + ":session:" + sessionId),
                     { handleFailure(it, _state.value as? RemoteSessionUiState.Ready) },
                     {
                         caughtUp = true
+                        if (!records.isEmpty) render()
                         publishDurableTimeline()
                         persistTranscript(sessionId, preserveOlder = sessionHistoryHasMore)
                         initialHistory.complete(Unit)
@@ -932,17 +1073,15 @@ public class RemoteSessionStore internal constructor(
                                 val kind = (payload["toolEvent"] as? JsonObject)?.get("event_type")?.jsonPrimitive?.content
                                 if (kind in setOf("ConfirmationNeeded", "Confirmed", "Rejected", "Cancelled")) permissionMailbox.invalidate()
                             }
-                            timelineStore.clearActiveTurn()
-                            val messages = records.messages()
-                            val active = messages.lastOrNull()?.takeIf { it.role == "assistant" && it.status == "streaming" }
-                            timelineStore.setPersistedMessages(if (active == null) messages else messages.dropLast(1))
-                            timelineStore.setActiveTurn(active)
-                            timelineStore.setSyncPhase(when (messages.lastOrNull()?.status) {
-                                "streaming" -> ChatSyncPhase.STREAMING
-                                "failed" -> ChatSyncPhase.ERROR
-                                else -> ChatSyncPhase.IDLE
-                            })
-                            if (caughtUp) { publishDurableTimeline(); persistTranscript(sessionId, preserveOlder = sessionHistoryHasMore) }
+                            if (caughtUp) {
+                                val phase = render()
+                                publishDurableTimeline()
+                                // A streaming turn rewrites the same rows on every
+                                // chunk; anything else is a settled transcript worth
+                                // keeping now.
+                                if (phase == ChatSyncPhase.STREAMING) scheduleTranscriptWrite(sessionId)
+                                else writeTranscriptNow(sessionId)
+                            }
                         }
                         "relay://session-resumed", "session-interaction-changed" -> permissionMailbox.invalidate()
                         "relay://session-ready" -> {
@@ -1080,18 +1219,34 @@ public class RemoteSessionStore internal constructor(
         work = scope.launch {
             try {
                 val requestedWorkspacePath = intent.workspacePath?.trim().orEmpty()
-                // An explicit path is the cross-workspace sidebar flow: creating
-                // there must not change the desktop's active workspace. The
-                // ordinary create flow still re-reads the active path so a
-                // recent workspace selection cannot race a cached value.
+                val requestedWorkspaceId = intent.workspaceId?.trim()?.takeIf { it.isNotEmpty() }
+                // An explicit workspace (by ID, or by path for pre-ID rows) is the
+                // cross-workspace sidebar flow: creating there must not change the
+                // desktop's active workspace. The ordinary create flow still
+                // re-reads the active workspace so a recent selection cannot race
+                // a cached value.
                 val assistantCreate = intent.agentType.equals("Claw", ignoreCase = true)
-                val workspaceResolved = assistantCreate || requestedWorkspacePath.isNotEmpty() || resolveWorkspacePath(operationToken)
+                val explicitWorkspace = requestedWorkspaceId != null || requestedWorkspacePath.isNotEmpty()
+                val workspaceResolved = assistantCreate || explicitWorkspace || resolveWorkspacePath(operationToken)
                 if (!isCurrentWork(operationToken)) return@launch
                 if (!workspaceResolved) {
                     failCreate(requestId, generation, CreateSessionOperationFailure.WORKSPACE, retryable = true, unsupported = false)
                     failKnown(RemoteSessionFailureReason.NO_WORKSPACE, current)
                     return@launch
                 }
+                // The ID that will be sent: the caller's, or the active workspace's
+                // when the host named it by ID. A known ID is never downgraded to
+                // its path, so a host that cannot take IDs ends the create here.
+                val targetWorkspaceId = requestedWorkspaceId
+                    ?: workspaceId.takeIf { !assistantCreate && !explicitWorkspace }
+                if (targetWorkspaceId != null && !ensureWorkspaceIdReferences()) {
+                    if (!isCurrentWork(operationToken)) return@launch
+                    failCreate(requestId, generation, CreateSessionOperationFailure.WORKSPACE_ID_UNSUPPORTED, retryable = false, unsupported = true)
+                    failKnown(RemoteSessionFailureReason.WORKSPACE_ID_UNSUPPORTED, current)
+                    return@launch
+                }
+                if (!isCurrentWork(operationToken)) return@launch
+                val legacyWorkspace = targetWorkspaceId == null
                 val targetWorkspacePath = requestedWorkspacePath.ifEmpty { if (assistantCreate) "" else workspacePath }.takeIf { it.isNotEmpty() }
                 val targetConnectionId = if (assistantCreate && requestedWorkspacePath.isEmpty()) null else
                     (if (requestedWorkspacePath.isNotEmpty()) intent.remoteConnectionId else workspaceConnectionId).orEmpty()
@@ -1102,9 +1257,10 @@ public class RemoteSessionStore internal constructor(
                         cmd = "create_session",
                         agentType = intent.agentType,
                         sessionName = SessionNaming.wireSessionName(intent.agentType, intent.title),
-                        workspacePath = targetWorkspacePath,
-                        remoteConnectionId = targetConnectionId,
-                        remoteSshHost = targetSshHost,
+                        workspaceId = targetWorkspaceId,
+                        workspacePath = targetWorkspacePath.takeIf { legacyWorkspace },
+                        remoteConnectionId = targetConnectionId.takeIf { legacyWorkspace },
+                        remoteSshHost = targetSshHost.takeIf { legacyWorkspace },
                     ),
                 )
                 val sessionId = created.resolvedSessionId?.trim().orEmpty()
@@ -1118,11 +1274,16 @@ public class RemoteSessionStore internal constructor(
                 // cannot turn an already-created remote session into a failed create.
                 val now = Clock.System.now().toString()
                 val confirmedPath = created.workspacePath ?: targetWorkspacePath
-                val confirmedIdentity = confirmedPath?.takeIf(String::isNotBlank)?.let { path ->
-                    RemoteWorkspaceIdentity(path,
+                // The host's answer is authoritative for the created session's
+                // workspace: its ID when it gives one, else the ID that was asked
+                // for, else the legacy projection that was sent.
+                val confirmedWorkspaceId = created.workspaceId?.trim()?.takeIf { it.isNotEmpty() } ?: targetWorkspaceId
+                val confirmedIdentity = if (confirmedPath?.isNotBlank() == true || confirmedWorkspaceId != null) {
+                    RemoteWorkspaceIdentity(confirmedPath.orEmpty(),
                         if (created.workspacePath != null) created.remoteConnectionId else targetConnectionId,
-                        if (created.workspacePath != null) created.remoteSshHost else targetSshHost)
-                }
+                        if (created.workspacePath != null) created.remoteSshHost else targetSshHost,
+                        confirmedWorkspaceId)
+                } else null
                 val confirmedSession = RemoteSession(
                     id = sessionId,
                     title = created.title?.takeIf(String::isNotBlank)
@@ -1240,6 +1401,8 @@ public class RemoteSessionStore internal constructor(
         val reason = when (remoteSessionFailure(error).reason) {
             RemoteSessionFailureReason.PROTOCOL_MISMATCH -> CreateSessionOperationFailure.UNSUPPORTED
             RemoteSessionFailureReason.NO_WORKSPACE -> CreateSessionOperationFailure.WORKSPACE
+            RemoteSessionFailureReason.WORKSPACE_ID_UNSUPPORTED -> CreateSessionOperationFailure.WORKSPACE_ID_UNSUPPORTED
+            RemoteSessionFailureReason.WORKSPACE_ID_UNKNOWN -> CreateSessionOperationFailure.WORKSPACE_ID_UNKNOWN
             RemoteSessionFailureReason.NETWORK, RemoteSessionFailureReason.TIMEOUT,
             RemoteSessionFailureReason.TRANSPORT, RemoteSessionFailureReason.RATE_LIMITED,
             RemoteSessionFailureReason.REMOTE_REJECTED, RemoteSessionFailureReason.SESSION_NOT_FOUND ->
@@ -1281,6 +1444,7 @@ public class RemoteSessionStore internal constructor(
                 val closingOpenSession = current.selectedSessionId == normalized
                 if (closingOpenSession) {
                     sessionUpdates?.cancel()
+                    transcriptWrite?.cancel()
                     timelineStore.reset("")
                 }
                 if (!isCurrentWork(operationToken)) return@launch
@@ -1769,7 +1933,7 @@ public class RemoteSessionStore internal constructor(
         id = s.sessionId, title = s.title, agentType = s.agentType, status = s.status,
         updatedAt = s.updatedAt, createdAt = s.createdAt, messageCount = s.messageCount,
         workspacePath = s.workspacePath, workspaceName = s.workspaceName,
-        workspaceIdentity = s.workspaceIdentity?.let { RemoteWorkspaceIdentity(it.path, it.remoteConnectionId, it.remoteSshHost) },
+        workspaceIdentity = s.workspaceIdentity?.let { RemoteWorkspaceIdentity(it.path, it.remoteConnectionId, it.remoteSshHost, it.workspaceId) },
     )
 
     private fun toPersistedSession(s: RemoteSession): PersistedRemoteSession = PersistedRemoteSession(
@@ -1777,7 +1941,7 @@ public class RemoteSessionStore internal constructor(
         updatedAt = s.updatedAt, createdAt = s.createdAt, messageCount = s.messageCount,
         lastMessageId = "", workspacePath = s.workspacePath, workspaceName = s.workspaceName,
         pendingConfirmed = s.id in locallyCreatedSessions,
-        workspaceIdentity = s.workspaceIdentity?.let { PersistedWorkspaceIdentity(it.path, it.remoteConnectionId, it.remoteSshHost) },
+        workspaceIdentity = s.workspaceIdentity?.let { PersistedWorkspaceIdentity(it.path, it.remoteConnectionId, it.remoteSshHost, it.workspaceId) },
     )
 
 
@@ -1852,6 +2016,9 @@ public class RemoteSessionStore internal constructor(
     public companion object {
         /** One screenful of sessions. Matches the desktop's own `list_sessions` default. */
         private const val PAGE_SIZE: Int = 30
+
+        /** Long enough to swallow a burst of stream chunks, short enough to lose nothing on a kill. */
+        private const val TRANSCRIPT_WRITE_DEBOUNCE_MS = 400L
 
         /**
          * Window used while narrowing by agent type. The desktop clamps `limit`
@@ -1928,6 +2095,11 @@ internal object RemoteResponseMapper {
             messageCount = item.messageCount ?: 0,
             workspacePath = item.workspacePath,
             workspaceName = item.workspaceName,
+            // A host that names the owning record binds the session by ID; older
+            // hosts leave it unset and callers attach the identity they listed under.
+            workspaceIdentity = item.workspaceId?.let { RemoteWorkspaceIdentity(item.workspacePath.orEmpty(), null, null, it) },
+            parentSessionId = item.parentSessionId,
+            relationshipKind = item.relationshipKind,
         )
     }
 

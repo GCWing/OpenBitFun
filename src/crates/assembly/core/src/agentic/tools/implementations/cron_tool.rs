@@ -164,12 +164,10 @@ impl CronTool {
     ) -> OpenBitFunResult<()> {
         let sessions = runtime
             .list_sessions(AgentSessionListRequest {
-                workspace_path: workspace_ref
-                    .project_workspace_path
-                    .clone()
-                    .unwrap_or_else(|| workspace_ref.workspace_path.clone()),
-                remote_connection_id: workspace_ref.remote_connection_id.clone(),
-                remote_ssh_host: workspace_ref.remote_ssh_host.clone(),
+                workspace_id: workspace_ref.workspace_id.clone(),
+                workspace_path: String::new(),
+                remote_connection_id: None,
+                remote_ssh_host: None,
             })
             .await
             .map_err(|error| {
@@ -1089,9 +1087,7 @@ Patch schema for "update":
                 let workspace = workspace_ref.workspace_path.clone();
                 let mut jobs = cron_service
                     .list_jobs_filtered(
-                        Some(&workspace_ref.workspace_path),
                         workspace_ref.workspace_id.as_deref(),
-                        workspace_ref.remote_connection_id.as_deref(),
                         Some(&session_id),
                         Some(CronJobTargetKind::Session),
                     )
@@ -1418,6 +1414,8 @@ mod tests {
     fn workspace_ref_from_agent_binding_preserves_full_workspace_identity() {
         let workspace_ref =
             CronTool::workspace_ref_from_agent_binding(AgentSessionWorkspaceBinding {
+                workspace_kind: None,
+                project_workspace_id: None,
                 workspace_id: Some("workspace-1".to_string()),
                 workspace_path: "/home/wsp/projects/test".to_string(),
                 project_workspace_path: None,

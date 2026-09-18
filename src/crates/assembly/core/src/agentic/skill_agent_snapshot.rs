@@ -41,12 +41,15 @@ pub async fn resolve_skill_agent_snapshot(
         .load_custom_agents(
             workspace
                 .filter(|binding| !binding.is_remote())
-                .map(|binding| binding.root_path()),
+                .and_then(|binding| binding.workspace_id.as_deref()),
         )
         .await;
 
     let tool_policy = agent_registry
-        .get_agent_tool_policy(agent_type, workspace.map(|binding| binding.root_path()))
+        .get_agent_tool_policy(
+            agent_type,
+            workspace.and_then(|binding| binding.workspace_id.as_deref()),
+        )
         .await;
 
     let tool_description_context = tool_context_runtime::build_tool_description_context(
@@ -167,10 +170,7 @@ async fn load_skill_entries(
         }
         Some(workspace) => {
             registry
-                .get_implicitly_invocable_skills_for_workspace(
-                    Some(workspace.root_path()),
-                    agent_type,
-                )
+                .get_implicitly_invocable_skills_for_workspace(Some(workspace), agent_type)
                 .await
         }
         None => {
@@ -200,13 +200,13 @@ async fn load_subagent_entries(
     runtime_tool_restrictions: &ToolRuntimeRestrictions,
 ) -> Vec<AgentSnapshotEntry> {
     let registry = get_agent_registry();
-    let workspace_root = workspace
+    let workspace_id = workspace
         .filter(|workspace| !workspace.is_remote())
-        .map(|workspace| workspace.root_path());
+        .and_then(|workspace| workspace.workspace_id.as_deref());
     let agents = registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: agent_type,
-            workspace_root,
+            workspace_id,
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported: false,

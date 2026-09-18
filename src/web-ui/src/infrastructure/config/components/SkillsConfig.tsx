@@ -67,7 +67,7 @@ const SkillsConfig: React.FC = () => {
       setError(null);
       const skillsList = await configAPI.getSkillConfigs({
         forceRefresh,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
       if (requestId !== loadRequestIdRef.current) {
         return;
@@ -84,7 +84,7 @@ const SkillsConfig: React.FC = () => {
         setLoading(false);
       }
     }
-  }, [workspacePath]);
+  }, [workspace?.id]);
 
   const loadMarketSkills = useCallback(async (query?: string) => {
     try {
@@ -138,7 +138,7 @@ const SkillsConfig: React.FC = () => {
       await configAPI.addSkill({
         sourcePath: formPath,
         level: formLevel,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
       notification.success(t('messages.addSuccess', { name: validationResult.name }));
       resetForm();
@@ -159,7 +159,7 @@ const SkillsConfig: React.FC = () => {
     try {
       await configAPI.deleteSkill({
         skillKey: skill.key,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
       notification.success(t('messages.deleteSuccess', { name: skill.name }));
       await loadSkills(true);
@@ -182,7 +182,7 @@ const SkillsConfig: React.FC = () => {
       const result = await configAPI.downloadSkillMarket({
         packageId: skill.installId,
         level: resolvedLevel,
-        workspacePath: resolvedLevel === 'project' ? workspacePath || undefined : undefined,
+        workspaceId: resolvedLevel === 'project' ? workspace?.id : undefined,
       });
       const installedName = result.installedSkills[0] ?? skill.name;
       notification.success(t('messages.marketDownloadSuccess', { name: installedName }));

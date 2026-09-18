@@ -59,6 +59,14 @@ describe('SessionRollbackService', () => {
     });
   });
 
+  it('refuses path-only mutations until legacy identity has been hydrated', async () => {
+    const session = sessions.get('session-1');
+    delete session.workspaceId;
+    await expect(rollbackSessionToTurn({ sessionId: 'session-1', targetTurnId: 'turn-7', kind: 'rollback' }))
+      .rejects.toThrow('workspace ID is unavailable');
+    expect(agentApiMock.rollbackSessionToTurn).not.toHaveBeenCalled();
+  });
+
   it('submits stable persisted identity and reloads only after completion', async () => {
     agentApiMock.rollbackSessionToTurn.mockResolvedValue({
       status: 'completed',
@@ -76,7 +84,6 @@ describe('SessionRollbackService', () => {
     expect(agentApiMock.rollbackSessionToTurn).toHaveBeenCalledWith(expect.objectContaining({
       sessionId: 'session-1',
       workspaceId: 'local_workspace-1',
-      workspaceHostname: 'localhost',
       targetTurnId: 'turn-7',
       expectedStorageTurnIndex: 7,
       expectedCatalogRevision: 'catalog-3',

@@ -14,6 +14,14 @@ import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import { activateSurface, getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 
+/** The chat session's workspace record; content opened from chat links is routed by its ID. */
+const SESSION_WORKSPACE = vi.hoisted(() => ({
+  id: 'workspace-1',
+  rootPath: '/srv/project',
+  workspaceKind: 'remote' as const,
+  connectionId: 'remote-connection-1',
+}));
+
 const mocks = vi.hoisted(() => ({
   getCurrentWorkspacePath: vi.fn(),
   revealInExplorer: vi.fn(),
@@ -96,7 +104,11 @@ vi.mock('@/shared/utils/startupTrace', () => ({
 
 vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
   workspaceManager: {
-    getState: vi.fn(() => ({ currentWorkspace: null, openedWorkspaces: new Map() })),
+    getState: vi.fn(() => ({
+      currentWorkspace: SESSION_WORKSPACE,
+      openedWorkspaces: new Map([[SESSION_WORKSPACE.id, SESSION_WORKSPACE]]),
+      recentWorkspaces: [],
+    })),
   },
 }));
 
@@ -116,6 +128,7 @@ describe('Markdown file links', () => {
       status: 'idle',
       config: {},
       sessionKind: 'normal',
+      workspaceId: SESSION_WORKSPACE.id,
       createdAt: 1,
       lastActiveAt: 1,
       error: null,
@@ -128,7 +141,7 @@ describe('Markdown file links', () => {
     }));
     useSceneStore.getState().openSessionScene({
       surfaceId: getActiveSurfaceId(),
-      workspaceKey: session.workspacePath ?? 'workspace-less',
+      workspaceKey: session.workspaceId ?? 'workspace-less',
       sessionId: session.sessionId,
     });
   }
@@ -221,6 +234,7 @@ describe('Markdown file links', () => {
     'openbitfun-canvas://session/session_1/canvas/canvas_1',
   ])('opens Canvas artifact links in the Canvas panel: %s', async (content) => {
     openSessionHost({
+      workspaceId: SESSION_WORKSPACE.id,
       workspacePath: '/srv/project',
       remoteConnectionId: 'remote-connection-1',
       remoteSshHost: 'workspace.example',
@@ -231,6 +245,7 @@ describe('Markdown file links', () => {
         root.render(
           <MarkdownRenderer
             content={content}
+            workspaceId={SESSION_WORKSPACE.id}
             basePath="/srv/project"
             remoteConnectionId="remote-connection-1"
             remoteSshHost="workspace.example"
@@ -250,6 +265,7 @@ describe('Markdown file links', () => {
         title: 'OpenBitFun Canvas',
         data: {
           artifactReference: 'openbitfun-canvas://session/session_1/canvas/canvas_1',
+          workspaceId: SESSION_WORKSPACE.id,
           workspacePath: '/srv/project',
           remoteConnectionId: 'remote-connection-1',
           remoteSshHost: 'workspace.example',

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   deleteManualTerminalProfile,
+  terminalProfileWorkspaceKey,
+  type TerminalProfileWorkspace,
   getManualTerminalProfileById,
   getManualTerminalProfileBySessionId,
   listManualTerminalProfiles,
@@ -21,67 +23,76 @@ interface UseManualTerminalProfilesReturn {
 }
 
 export function useManualTerminalProfiles(
-  workspacePath?: string,
+  workspaceInput?: TerminalProfileWorkspace,
 ): UseManualTerminalProfilesReturn {
+  // Callers may build the scope inline on every render; profile reads and the
+  // refresh effect must key on its identifying facts, not on object identity.
+  const surfaceId = workspaceInput?.surfaceId;
+  const workspaceId = workspaceInput?.workspaceId;
+  const workspace = useMemo<TerminalProfileWorkspace | undefined>(
+    () => (surfaceId && workspaceId ? { surfaceId, workspaceId } : undefined),
+    [surfaceId, workspaceId],
+  );
+  const workspaceKey = workspace ? terminalProfileWorkspaceKey(workspace) : undefined;
   const [snapshot, setSnapshot] = useState<{
     key: string | undefined; profiles: ManualTerminalProfile[]; error: string | null;
-  }>({ key: workspacePath, profiles: [], error: null });
-  const profiles = useMemo(() => snapshot.key === workspacePath ? snapshot.profiles : [], [snapshot, workspacePath]);
+  }>({ key: workspaceKey, profiles: [], error: null });
+  const profiles = useMemo(() => snapshot.key === workspaceKey ? snapshot.profiles : [], [snapshot, workspaceKey]);
 
   const refreshProfiles = useCallback(() => {
-    if (!workspacePath) {
-      setSnapshot({ key: workspacePath, profiles: [], error: null });
+    if (!workspaceKey) {
+      setSnapshot({ key: workspaceKey, profiles: [], error: null });
       return;
     }
 
     try {
-      setSnapshot({ key: workspacePath, profiles: listManualTerminalProfiles(workspacePath), error: null });
+      setSnapshot({ key: workspaceKey, profiles: listManualTerminalProfiles(workspace!), error: null });
     } catch (error) {
       setSnapshot(previous => ({
-        key: workspacePath, profiles: previous.key === workspacePath ? previous.profiles : [],
+        key: workspaceKey, profiles: previous.key === workspaceKey ? previous.profiles : [],
         error: error instanceof Error ? error.message : String(error),
       }));
     }
-  }, [workspacePath]);
+  }, [workspaceKey, workspace]);
 
   useEffect(() => {
     refreshProfiles();
   }, [refreshProfiles]);
 
   const saveProfile = useCallback((input: ManualTerminalProfileInput) => {
-    if (!workspacePath) {
+    if (!workspaceKey) {
       return null;
     }
 
-    const profile = upsertManualTerminalProfile(workspacePath, input);
+    const profile = upsertManualTerminalProfile(workspace!, input);
     refreshProfiles();
     return profile;
-  }, [refreshProfiles, workspacePath]);
+  }, [refreshProfiles, workspaceKey, workspace]);
 
   const removeProfile = useCallback((profileId: string) => {
-    if (!workspacePath) {
+    if (!workspaceKey) {
       return;
     }
 
-    deleteManualTerminalProfile(workspacePath, profileId);
+    deleteManualTerminalProfile(workspace!, profileId);
     refreshProfiles();
-  }, [refreshProfiles, workspacePath]);
+  }, [refreshProfiles, workspaceKey, workspace]);
 
   const getProfileById = useCallback((profileId: string) => {
-    if (!workspacePath) {
+    if (!workspaceKey) {
       return undefined;
     }
 
-    return getManualTerminalProfileById(workspacePath, profileId);
-  }, [workspacePath]);
+    return getManualTerminalProfileById(workspace!, profileId);
+  }, [workspaceKey, workspace]);
 
   const getProfileBySessionId = useCallback((sessionId: string) => {
-    if (!workspacePath) {
+    if (!workspaceKey) {
       return undefined;
     }
 
-    return getManualTerminalProfileBySessionId(workspacePath, sessionId);
-  }, [workspacePath]);
+    return getManualTerminalProfileBySessionId(workspace!, sessionId);
+  }, [workspaceKey, workspace]);
 
   const profilesBySessionId = useMemo(
     () => new Map(profiles.map((profile) => [profile.sessionId, profile])),
@@ -90,7 +101,7 @@ export function useManualTerminalProfiles(
 
   return {
     profiles,
-    error: snapshot.key === workspacePath ? snapshot.error : null,
+    error: snapshot.key === workspaceKey ? snapshot.error : null,
     profilesBySessionId,
     refreshProfiles,
     saveProfile,

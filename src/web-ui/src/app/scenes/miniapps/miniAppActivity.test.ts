@@ -97,7 +97,7 @@ describe('MiniApp activity projection', () => {
 
     await expect(stopMiniAppActivity({
       app: app('both'),
-      runnerMounted: true,
+      runnerMounted: false,
       workerRunning: true,
     }, { stopWorker, markWorkerStopped, closeScene })).rejects.toBe(failure);
 
@@ -105,7 +105,7 @@ describe('MiniApp activity projection', () => {
     expect(closeScene).not.toHaveBeenCalled();
   });
 
-  it('stops and clears a worker before closing its Runner scene', async () => {
+  it('delegates mounted apps to the scene shutdown gate and awaits its completion', async () => {
     const calls: string[] = [];
 
     await stopMiniAppActivity({
@@ -115,9 +115,9 @@ describe('MiniApp activity projection', () => {
     }, {
       stopWorker: async () => { calls.push('stop-worker'); },
       markWorkerStopped: () => { calls.push('mark-worker-stopped'); },
-      closeScene: () => { calls.push('close-scene'); },
+      closeScene: async () => { await Promise.resolve(); calls.push('close-scene'); },
     });
 
-    expect(calls).toEqual(['stop-worker', 'mark-worker-stopped', 'close-scene']);
+    expect(calls).toEqual(['close-scene']);
   });
 });

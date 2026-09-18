@@ -52,6 +52,13 @@ export interface SessionReferenceContext extends BaseContext {
   type: 'session-reference';
   sessionId: string;
   sessionName: string;
+  /**
+   * Owning workspace ID of the referenced session; the identity the host uses
+   * to locate its storage. Optional only for references persisted before IDs
+   * existed, which are upgraded from the legacy fields below.
+   */
+  workspaceId?: string;
+  /** Legacy pre-ID storage selector; display/IO projection for new references. */
   workspacePath: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;

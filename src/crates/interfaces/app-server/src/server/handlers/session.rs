@@ -10,7 +10,6 @@ use openbitfun_app_server_protocol::session::{
     SessionUsageRequest, SessionUsageResponse, SyncSessionRequest, SyncSessionResponse,
     UndoSessionRequest, WaitForSettlementRequest, WaitForSettlementResponse,
 };
-use openbitfun_runtime_ports::{AgentSessionWorkspaceBinding, SessionExecutionTarget};
 
 use crate::agent::{runtime_call, OpenBitFunAppRuntime};
 use crate::role::{AppClient, AppServer};
@@ -168,10 +167,10 @@ pub(in crate::server) fn builder(
                 let runtime = runtime.clone();
                 async move |request: SyncSessionRequest, responder, _cx| {
                     let session_id = request.session_id.clone();
-                    let workspace_path = request.workspace_path.clone();
                     let restored = runtime
                         .runtime()
                         .restore_session(AgentSessionRestoreRequest {
+                            workspace_id: request.workspace_id,
                             workspace_path: request.workspace_path,
                             session_id: request.session_id,
                             include_internal: request.include_internal,
@@ -203,7 +202,9 @@ pub(in crate::server) fn builder(
                             )
                             .await,
                     )?
-                    .unwrap_or_else(|| fallback_workspace_binding(workspace_path));
+                    .ok_or_else(|| {
+                        Error::internal_error().data("Session workspace binding is unavailable")
+                    })?;
                     let pending_permissions = runtime
                         .runtime()
                         .pending_permission_requests()
@@ -405,15 +406,4 @@ pub(in crate::server) fn builder(
             },
             agent_client_protocol::on_receive_request!(),
         )
-}
-
-fn fallback_workspace_binding(workspace_path: String) -> AgentSessionWorkspaceBinding {
-    AgentSessionWorkspaceBinding {
-        workspace_id: None,
-        workspace_path: workspace_path.clone(),
-        project_workspace_path: Some(workspace_path.clone()),
-        execution_target: Some(SessionExecutionTarget::local(workspace_path)),
-        remote_connection_id: None,
-        remote_ssh_host: None,
-    }
 }

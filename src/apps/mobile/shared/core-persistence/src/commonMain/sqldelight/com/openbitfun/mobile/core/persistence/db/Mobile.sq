@@ -79,6 +79,8 @@ INSERT OR REPLACE INTO chat_draft(draft_id, text, updated_at) VALUES (?, ?, ?);
 deleteDraft:
 DELETE FROM chat_draft WHERE draft_id = ?;
 
+-- Owning workspace columns: NULL in all four means a pre-identity row; a non-NULL
+-- workspace_identity_path with NULL id/connection/host is an explicit local workspace.
 CREATE TABLE remote_session_list (
     device_key TEXT NOT NULL,
     session_id TEXT NOT NULL,
@@ -93,6 +95,10 @@ CREATE TABLE remote_session_list (
     workspace_name TEXT,
     has_more INTEGER NOT NULL DEFAULT 0,
     pending_confirmed INTEGER NOT NULL DEFAULT 0,
+    workspace_identity_path TEXT,
+    workspace_id TEXT,
+    remote_connection_id TEXT,
+    remote_ssh_host TEXT,
     PRIMARY KEY (device_key, session_id)
 );
 
@@ -125,6 +131,10 @@ CREATE TABLE remote_session_cursor (
     PRIMARY KEY (device_key, session_id)
 );
 
+-- One row per workspace the device serves. Rows are identified by workspace_id
+-- when the host provided one and by (remote_connection_id, remote_ssh_host, path)
+-- otherwise, so the same path may appear more than once per device. The writer
+-- rewrites a device's rows as a whole in seq order.
 CREATE TABLE remote_workspace_list (
     device_key TEXT NOT NULL,
     path TEXT NOT NULL,
@@ -132,15 +142,19 @@ CREATE TABLE remote_workspace_list (
     last_opened TEXT NOT NULL,
     workspace_kind TEXT NOT NULL,
     seq INTEGER NOT NULL,
-    PRIMARY KEY (device_key, path)
+    workspace_id TEXT,
+    remote_connection_id TEXT,
+    remote_ssh_host TEXT
 );
+
+CREATE INDEX remote_workspace_list_device_seq_index ON remote_workspace_list(device_key, seq);
 
 selectRemoteSessions:
 SELECT * FROM remote_session_list WHERE device_key = ? ORDER BY updated_at DESC, session_id ASC;
 
 upsertRemoteSession:
-INSERT OR REPLACE INTO remote_session_list(device_key, session_id, title, agent_type, status, updated_at, created_at, message_count, last_message_id, workspace_path, workspace_name, has_more, pending_confirmed)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR REPLACE INTO remote_session_list(device_key, session_id, title, agent_type, status, updated_at, created_at, message_count, last_message_id, workspace_path, workspace_name, has_more, pending_confirmed, workspace_identity_path, workspace_id, remote_connection_id, remote_ssh_host)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRemoteSessionsForDevice:
 DELETE FROM remote_session_list WHERE device_key = ?;
@@ -171,9 +185,9 @@ DELETE FROM remote_session_cursor WHERE device_key = ? AND session_id = ?;
 selectRemoteWorkspaces:
 SELECT * FROM remote_workspace_list WHERE device_key = ? ORDER BY seq ASC;
 
-upsertRemoteWorkspace:
-INSERT OR REPLACE INTO remote_workspace_list(device_key, path, name, last_opened, workspace_kind, seq)
-VALUES (?, ?, ?, ?, ?, ?);
+insertRemoteWorkspace:
+INSERT INTO remote_workspace_list(device_key, path, name, last_opened, workspace_kind, seq, workspace_id, remote_connection_id, remote_ssh_host)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRemoteWorkspacesForDevice:
 DELETE FROM remote_workspace_list WHERE device_key = ?;

@@ -23,6 +23,7 @@ import { RealtimePcmPlayer } from './realtimeVoiceAudio';
 import { applyRealtimeAsrSnapshot } from './realtimeVoiceTranscript';
 import {
   runOpenBitFunVoiceTask,
+  runBoundVoiceTask,
   runMiniAppVoiceTask,
   summarizeVoiceTaskConclusion,
   VoiceTaskCancelledError,
@@ -35,12 +36,17 @@ import {
   resolveOpenedVoiceWorkspace,
   serializeVoiceClientContext,
   shouldRouteVoiceTaskToMiniApp,
-  type VoiceMiniAppCallTarget,
+  type VoiceCallTarget,
   switchOpenedVoiceWorkspace,
   type VoiceOwnedTaskContext,
 } from './voiceClientContext';
 import { useMiniAppStore } from '@/app/scenes/miniapps/miniAppStore';
 import { requestMiniAppComposerMessage } from '@/app/scenes/miniapps/miniAppComposerMessages';
+
+import { getActiveSurfaceId, getActiveSurfaceScope, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
+import { ensureControlConversation, assertVoiceConversationSupported } from '../../services/controlConversation';
+import { VoiceConversationLedger, type VoiceConversationTranscript } from './voiceConversationLedger';
+import { flowChatStore } from '../../store/FlowChatStore';
 
 const log = createLogger('RealtimeVoiceCall');
 const AUDIO_CHUNK_DURATION_MS = 20;
@@ -61,12 +67,14 @@ export interface RealtimeVoiceCallController {
   readAudio: VoiceParticleAudioReader;
   userTranscript: string;
   assistantTranscript: string;
+  conversationTranscript: VoiceConversationTranscript | null;
   status: string;
   notice: string;
   taskSessionId: string | null;
   taskPhase: VoiceTaskProgressPhase | null;
   taskProgressText: string;
-  start: (target?: VoiceMiniAppCallTarget) => void;
+  target: VoiceCallTarget | null;
+  start: (target?: VoiceCallTarget) => void;
   end: () => void;
   toggleMute: () => void;
   openSettings: () => void;
@@ -218,6 +226,7 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
   const [muted, setMuted] = useState(false);
   const [userTranscript, setUserTranscript] = useState('');
   const [assistantTranscript, setAssistantTranscript] = useState('');
+  const [conversationTranscript, setConversationTranscript] = useState<VoiceConversationTranscript | null>(null);
   const [status, setStatus] = useState('');
   const [notice, setNotice] = useState('');
   const [taskSessionId, setTaskSessionId] = useState<string | null>(null);
@@ -238,7 +247,9 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
   const assistantSpeechFallbackTimerRef = useRef<number | null>(null);
   const providerErrorRef = useRef(false);
   const activeTaskRef = useRef<ActiveVoiceTask | null>(null);
-  const callTargetRef = useRef<VoiceMiniAppCallTarget | null>(null);
+  const callTargetRef = useRef<VoiceCallTarget | null>(null);
+  const [callTarget, setCallTarget] = useState<VoiceCallTarget | null>(null);
+  const ledgerRef = useRef<VoiceConversationLedger | null>(null);
   const bufferStartupEventsRef = useRef(false);
   const startupEventsRef = useRef<SpeechRealtimeEvent[]>([]);
   const spokenProgressQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -416,6 +427,9 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
     callSessionId: string,
     call: SpeechRealtimeFunctionCall,
   ) => {
+    const callEpoch = activeCallIdRef.current;
+    const isCurrentCall = () => activeCallIdRef.current === callEpoch && sessionRef.current?.sessionId === callSessionId;
+    if (!isCurrentCall()) return;
     if (handledFunctionCallsRef.current.has(call.callId)) return;
     handledFunctionCallsRef.current.add(call.callId);
     let command: VoiceFunctionCommand | null = null;
@@ -441,17 +455,13 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
       if (command.kind === 'switch_workspace') {
         setStatus(t('voiceCall.call.status.switchingWorkspace'));
         const workspace = await switchOpenedVoiceWorkspace(command.workspaceReference);
+        if (!isCurrentCall()) return;
         await speechAPI.sendRealtimeToolResult(
           callSessionId,
           call.callId,
           JSON.stringify({
             ok: true,
-            workspace: {
-              id: workspace.id,
-              name: workspace.name,
-              path: workspace.rootPath,
-              kind: workspace.workspaceKind,
-            },
+            workspace_id: workspace.id,
             context: buildVoiceClientContext(
               activeTaskContext(activeTaskRef.current),
               callTargetRef.current,
@@ -550,11 +560,13 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
       }
 
       const taskCommand = command;
+      if (callTargetRef.current?.surfaceId && callTargetRef.current.surfaceId !== getActiveSurfaceId()) throw new Error('The voice target device is no longer active');
       const callTarget = callTargetRef.current;
       const miniAppTarget = shouldRouteVoiceTaskToMiniApp(
         callTarget,
         taskCommand.workspaceReference,
-      ) ? callTarget : null;
+      ) && callTarget?.kind === 'miniapp' ? callTarget : null;
+      const boundTarget = callTarget && callTarget.kind !== 'miniapp' ? callTarget : null;
       if (miniAppTarget) {
         const liveClaim = useMiniAppStore.getState().composerClaims[miniAppTarget.appId];
         if (
@@ -564,12 +576,13 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
           throw new Error('The MiniApp conversation changed after this voice call started');
         }
       }
-      const workspace = miniAppTarget
+      const workspace = miniAppTarget || boundTarget
         ? null
         : resolveOpenedVoiceWorkspace(taskCommand.workspaceReference);
       if (workspace && taskCommand.activateWorkspace) {
         await switchOpenedVoiceWorkspace(workspace.id);
       }
+      if (!isCurrentCall()) return;
 
       let resolveOutcome: (outcome: VoiceTaskOutcome) => void = () => undefined;
       const outcome = new Promise<VoiceTaskOutcome>(resolve => {
@@ -577,10 +590,10 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
       });
       const activeTask: ActiveVoiceTask = {
         callId: call.callId,
-        sessionId: miniAppTarget?.sessionId ?? null,
+        sessionId: miniAppTarget?.sessionId ?? boundTarget?.sessionId ?? null,
         target: miniAppTarget
           ? { kind: 'miniapp', id: miniAppTarget.appId, name: miniAppTarget.appName }
-          : { kind: 'workspace', id: workspace!.id, name: workspace!.name },
+          : { kind: 'workspace', id: workspace?.id ?? boundTarget!.sessionId, name: workspace?.name ?? 'OpenBitFun' },
         state: 'starting',
         controller: new AbortController(),
         outcome,
@@ -597,26 +610,34 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
         onSessionCreated: (sessionId: string) => {
           activeTask.sessionId = sessionId;
           activeTask.state = 'running';
-          setTaskSessionId(sessionId);
+          if (isCurrentCall()) setTaskSessionId(sessionId);
         },
         onProgress: (progress: VoiceTaskProgress) => {
+          if (!isCurrentCall()) return;
           const activeSpeechSessionId = sessionRef.current?.sessionId;
           if (activeSpeechSessionId) speakProgress(activeSpeechSessionId, progress);
         },
         onTextProgress: (text: string) => {
+          if (!isCurrentCall()) return;
           const activeSpeechSessionId = sessionRef.current?.sessionId;
           if (activeSpeechSessionId) speakTextProgress(activeSpeechSessionId, text);
         },
       };
-      const result = miniAppTarget
-        ? await runMiniAppVoiceTask(taskCommand.task, {
+      const ledger = ledgerRef.current;
+      const exchangeId = ledger?.exchangeId;
+      const transcript = await ledger?.delegate() || taskCommand.task;
+      if (!isCurrentCall()) return;
+      const result = boundTarget
+        ? await runBoundVoiceTask(transcript, { ...observerOptions, sessionId: boundTarget.sessionId, exchangeId })
+        : miniAppTarget
+        ? await runMiniAppVoiceTask(transcript, {
             ...observerOptions,
             sessionId: miniAppTarget.sessionId,
             submit: signal => requestMiniAppComposerMessage({
               token: miniAppTarget.claimToken,
               source: 'realtime_voice',
-              text: taskCommand.task,
-              displayText: taskCommand.task,
+              text: transcript,
+              displayText: transcript,
               sessionId: miniAppTarget.sessionId,
               workspacePath: miniAppTarget.workspacePath,
             }, signal),
@@ -627,6 +648,7 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
             showSession: taskCommand.activateWorkspace,
           });
       settleActiveTask(activeTask, { status: 'completed', result });
+      if (!isCurrentCall()) return;
       setTaskSessionId(result.sessionId);
       const outcomeText = result.conclusion
         ? t('voiceCall.call.taskOutcome.completed', { conclusion: result.conclusion })
@@ -647,6 +669,10 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
       const activeTask = activeTaskRef.current?.callId === call.callId
         ? activeTaskRef.current
         : null;
+      if (!isCurrentCall()) {
+        if (activeTask) settleActiveTask(activeTask, { status: 'failed', error: message });
+        return;
+      }
       if (activeTask && error instanceof VoiceTaskCancelledError) {
         settleActiveTask(activeTask, { status: 'cancelled', sessionId: error.sessionId });
         setTaskSessionId(error.sessionId);
@@ -730,6 +756,7 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
         setStatus(t('voiceCall.call.status.listening'));
         break;
       case 'user_speech_started':
+        ledgerRef.current?.next();
         clearAssistantSpeechFallbackTimer();
         playerRef.current?.stop();
         assistantTurnStartedRef.current = false;
@@ -748,10 +775,12 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
         // such as “current current project current project”. Display only the
         // newest partial snapshot; the completed event remains authoritative.
         if (event.text) {
+          ledgerRef.current?.preview('user', event.text);
           setUserTranscript(previous => applyRealtimeAsrSnapshot(previous, event.text!));
         }
         break;
       case 'user_transcript_completed':
+        if (event.text) ledgerRef.current?.user(event.text);
         if (event.text) setUserTranscript(event.text);
         setStatus(t('voiceCall.call.status.thinking'));
         break;
@@ -767,7 +796,8 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
           setAssistantTranscript('');
         }
         if (event.text) {
-          assistantTextRef.current = appendTranscript(assistantTextRef.current, event.text);
+          assistantTextRef.current += event.text;
+          ledgerRef.current?.preview('assistant', assistantTextRef.current);
           setAssistantTranscript(previous => appendTranscript(previous, event.text!));
         }
         break;
@@ -776,7 +806,12 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
           assistantTextRef.current = event.text;
           setAssistantTranscript(event.text);
         }
+        ledgerRef.current?.assistant(assistantTextRef.current);
         scheduleAssistantSpeechFallback(session.sessionId);
+        break;
+      case 'assistant_response_completed':
+        // output_text.done may precede a function call in the same response.
+        ledgerRef.current?.flush();
         break;
       case 'assistant_audio_started':
         clearAssistantSpeechFallbackTimer();
@@ -822,6 +857,7 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
         setStatus(event.message || t('voiceCall.call.status.error'));
         break;
       case 'closed':
+        ledgerRef.current?.flush();
         sessionRef.current = null;
         callTargetRef.current = null;
         void cleanupMedia();
@@ -850,9 +886,12 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
   useEffect(() => speechAPI.onRealtimeEvent(handleRealtimeEvent), [handleRealtimeEvent]);
 
   const end = useCallback(() => {
+    ledgerRef.current?.flush();
     const session = sessionRef.current;
     if (!session && phase === 'idle') return;
     activeCallIdRef.current += 1;
+    // The runtime task may continue after hang-up; it no longer belongs to media UI.
+    activeTaskRef.current = null;
     spokenProgressEpochRef.current += 1;
     bufferStartupEventsRef.current = false;
     startupEventsRef.current = [];
@@ -866,6 +905,7 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
         });
       }
       setPhase('idle');
+      setCallTarget(null);
       setMuted(false);
       setUserTranscript('');
       setAssistantTranscript('');
@@ -878,7 +918,7 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
     });
   }, [cleanupMedia, phase, t]);
 
-  const start = useCallback((target?: VoiceMiniAppCallTarget) => {
+  const start = useCallback((target?: VoiceCallTarget) => {
     if (phase !== 'idle' || disabled) return;
     if (voiceCallConfig && !voiceCallConfig.enabled) {
       notificationService.info(t('voiceCall.call.configureFirst'));
@@ -890,6 +930,7 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
       return;
     }
     callTargetRef.current = target ?? null;
+    setCallTarget(target ?? null);
     const callId = activeCallIdRef.current + 1;
     activeCallIdRef.current = callId;
     spokenProgressEpochRef.current += 1;
@@ -943,7 +984,10 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
 
     void (async () => {
       try {
+        const surface = getActiveSurfaceScope();
         const controllerConfig = await speechAPI.getRealtimeConfig();
+        if (activeCallIdRef.current !== callId) return;
+        surface.assertCurrent('start voice call');
         setVoiceCallConfig(controllerConfig);
         if (!controllerConfig.enabled || !controllerConfig.apiKey.trim()) {
           bufferStartupEventsRef.current = false;
@@ -956,6 +1000,29 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
           openSettings();
           return;
         }
+        if (!callTargetRef.current) {
+          const control = await ensureControlConversation();
+          if (activeCallIdRef.current !== callId) return;
+          callTargetRef.current = { ...control, kind: 'control', surfaceId: getActiveSurfaceId() };
+          setCallTarget(callTargetRef.current);
+        }
+        assertVoiceConversationSupported(callTargetRef.current.sessionId);
+        ledgerRef.current = new VoiceConversationLedger(callTargetRef.current, error => {
+          log.error('Failed to persist voice history', { error });
+          notificationService.error(t('voiceCall.call.historySaveFailed'));
+        }, transcript => {
+          if (activeCallIdRef.current !== callId || !surface.isCurrent() || surface.surfaceId !== transcript.target.surfaceId) return;
+          setConversationTranscript(previous => {
+            if (activeCallIdRef.current !== callId || !surface.isCurrent()) return previous;
+            const sameTarget = previous && previous.target.surfaceId === transcript.target.surfaceId
+              && previous.target.sessionId === transcript.target.sessionId;
+            const canonical = flowChatStore.getState().sessions.get(transcript.target.sessionId)?.dialogTurns ?? [];
+            const persisted = new Set(canonical.flatMap(turn => [turn.id, turn.userMessage.metadata?.voiceTaskId]));
+            const pending = new Map((sameTarget && previous ? previous.exchanges : []).map(entry => [entry.id, entry]));
+            transcript.exchanges.forEach(entry => pending.set(entry.id, entry));
+            return { target: transcript.target, exchanges: [...pending.values()].filter(entry => !persisted.has(entry.id)) };
+          });
+        });
         const session = await speechAPI.startRealtimeSession(
           serializeVoiceClientContext(
             activeTaskContext(activeTaskRef.current),
@@ -1051,6 +1118,7 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
   ]);
 
   useEffect(() => () => {
+    ledgerRef.current?.flush();
     activeCallIdRef.current += 1;
     spokenProgressEpochRef.current += 1;
     bufferStartupEventsRef.current = false;
@@ -1062,7 +1130,10 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
     if (session) void speechAPI.closeRealtimeSession(session.sessionId).catch(() => undefined);
   }, [cleanupMedia]);
 
+  useEffect(() => onSurfaceActivated(() => { if (callTargetRef.current) end(); }), [end]);
+
   return {
+    target: callTarget,
     enabled: voiceCallConfig?.enabled === true,
     disabled,
     phase,
@@ -1070,6 +1141,7 @@ export function useRealtimeVoiceCallController(disabled = false): RealtimeVoiceC
     readAudio,
     userTranscript,
     assistantTranscript,
+    conversationTranscript,
     status,
     notice,
     taskSessionId,

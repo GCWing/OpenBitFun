@@ -31,10 +31,16 @@ async fn ensure_global_config_service(
 
 pub(crate) async fn print_agents(workspace: Option<&Path>) -> Result<()> {
     let registry = get_agent_registry();
+    let workspace_id = match workspace {
+        Some(root) => Some(crate::create_cli_local_workspace(root).await?.id),
+        None => None,
+    };
     if workspace.is_some() {
         if let Err(error) =
-            openbitfun_core::external_sources::ensure_external_source_workspace_snapshot(workspace)
-                .await
+            openbitfun_core::external_sources::ensure_external_source_workspace_snapshot(
+                workspace_id.as_deref(),
+            )
+            .await
         {
             eprintln!(
                 "Warning: external agent sources could not be refreshed: {}",
@@ -43,9 +49,9 @@ pub(crate) async fn print_agents(workspace: Option<&Path>) -> Result<()> {
         }
     }
     let modes = registry
-        .get_modes_info_for_workspace(workspace, workspace.is_some())
+        .get_modes_info_for_workspace(workspace_id.as_deref(), workspace_id.is_some())
         .await;
-    let subagents = registry.get_subagents_info(workspace).await;
+    let subagents = registry.get_subagents_info(workspace_id.as_deref()).await;
 
     println!("Agent modes");
     println!();
@@ -542,7 +548,8 @@ pub(crate) async fn print_usage_report(session_id: Option<&str>) -> Result<()> {
         _ => runtime
             .agent_runtime()
             .list_sessions(openbitfun_runtime_ports::AgentSessionListRequest {
-                workspace_path: workspace_path.to_string_lossy().to_string(),
+                workspace_id: Some(runtime.workspace().id.clone()),
+                workspace_path: String::new(),
                 remote_connection_id: None,
                 remote_ssh_host: None,
             })
@@ -555,6 +562,7 @@ pub(crate) async fn print_usage_report(session_id: Option<&str>) -> Result<()> {
     let report = runtime
         .agent_runtime()
         .generate_session_usage(AgentSessionUsageRequest {
+            workspace_id: Some(runtime.workspace().id.clone()),
             session_id: resolved_session_id,
             workspace_path: Some(workspace_path.to_string_lossy().to_string()),
             remote_connection_id: None,
@@ -932,18 +940,17 @@ pub(crate) async fn print_doctor(product_runtime: &ProductRuntimeParts) -> Resul
     let config_service = ensure_global_config_service().await?;
     let models = config_service.get_ai_models().await?;
     let agent_registry = get_agent_registry();
+    let workspace_id = crate::create_cli_local_workspace(&workspace).await?.id;
     let external_source_error =
         openbitfun_core::external_sources::ensure_external_source_workspace_snapshot(Some(
-            &workspace,
+            &workspace_id,
         ))
         .await
         .err();
     let modes = agent_registry
-        .get_modes_info_for_workspace(Some(&workspace), true)
+        .get_modes_info_for_workspace(Some(&workspace_id), true)
         .await;
-    let subagents = agent_registry
-        .get_subagents_info(Some(workspace.as_path()))
-        .await;
+    let subagents = agent_registry.get_subagents_info(Some(&workspace_id)).await;
     let mcp_service = openbitfun_core::service::mcp::MCPService::new(config_service.clone())
         .map_err(|error| anyhow!(error.to_string()))?;
     let mcp_configs = mcp_service.config_service().load_all_configs().await?;

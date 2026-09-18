@@ -8,9 +8,7 @@ import { clearHistorySessionOpenTransition, clearRecentHistorySessionOpenIntent 
 
 export interface SessionTreeBranchLocation {
   sessionId: string;
-  workspacePath: string;
-  remoteConnectionId?: string;
-  remoteSshHost?: string;
+  workspaceId: string;
 }
 
 /** Read the complete lineage: the visible tree may hide inactive or unloaded descendants. */
@@ -46,9 +44,7 @@ export async function deleteSessionTreeBranch(
     clearHistorySessionOpenTransition(node.sessionId);
     await agentAPI.deleteSession(
       node.sessionId,
-      location.workspacePath,
-      location.remoteConnectionId,
-      location.remoteSshHost,
+      location.workspaceId,
     );
     scope.assertCurrent('apply session branch deletion');
     FlowChatManager.getInstance().discardLocalSession(node.sessionId);

@@ -4,10 +4,44 @@
     z-index: var(--openbitfun-layer-popover);
     inline-size: max-content;
     max-inline-size: calc(100vw - var(--openbitfun-space-4));
-    padding: var(--openbitfun-space-1);
+    padding: 0;
+    border-radius: var(--openbitfun-radius-pill);
+    border: 0.5px solid var(--openbitfun-color-border-subtle);
+    background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 80%, transparent);
+    box-shadow: var(--openbitfun-shadow-sm);
+    backdrop-filter: var(--openbitfun-effect-blur-base);
   }
 
-  &__toolbar { flex: 0 1 auto; }
+  &__toolbar {
+    flex: 0 1 auto;
+    gap: 0;
+
+    > [data-openbitfun-part='separator'] { block-size: var(--openbitfun-space-4); }
+  }
+
+  &__action {
+    block-size: 30px;
+    padding: 7px var(--openbitfun-space-3);
+    border: 0;
+    border-radius: var(--openbitfun-radius-pill);
+    color: var(--openbitfun-color-content-primary);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+
+    [data-openbitfun-part='leading-icon'] { inline-size: 14px; block-size: 14px; }
+
+    &:hover:not(:disabled), &:active:not(:disabled) {
+      color: var(--openbitfun-component-conversation-excerpt-accent);
+      text-decoration: none;
+    }
+
+    &:hover:not(:disabled)::before {
+      background: color-mix(in srgb, var(--openbitfun-component-conversation-excerpt-accent) 10%, transparent);
+    }
+
+    &:active:not(:disabled)::before {
+      background: color-mix(in srgb, var(--openbitfun-component-conversation-excerpt-accent) 20%, transparent);
+    }
+  }
 
   &__dialog {
     > [data-openbitfun-part='header'] {
@@ -82,12 +116,74 @@
   }
 
   &__attachment {
-    inline-size: 100%;
-    block-size: 100%;
+    block-size: 28px;
     min-inline-size: 0;
-    padding: var(--openbitfun-space-1);
+    max-inline-size: 200px;
+    padding: 0 var(--openbitfun-space-2);
     border-radius: inherit;
     font-variant-numeric: tabular-nums;
+    color: var(--openbitfun-color-content-secondary);
+
+    &:hover:not(:disabled), &:active:not(:disabled) {
+      color: var(--openbitfun-component-conversation-excerpt-accent);
+      text-decoration: none;
+    }
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    max-inline-size: 100%;
+    padding: var(--openbitfun-space-1);
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-radius-pill);
+    background: var(--openbitfun-color-surface-raised);
+    gap: var(--openbitfun-space-1);
+  }
+
+  &__details {
+    position: fixed;
+    z-index: var(--openbitfun-layer-popover);
+    inline-size: 560px;
+    max-inline-size: calc(100vw - var(--openbitfun-space-4));
+    max-block-size: min(400px, calc(100vh - var(--openbitfun-space-6)));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--openbitfun-space-4);
+    border-radius: var(--openbitfun-radius-lg);
+    box-shadow: var(--openbitfun-shadow-sm);
+  }
+
+  &__detail {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--openbitfun-space-2);
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-body-sm-font-family);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+    letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
+
+    & + & {
+      margin-block-start: var(--openbitfun-space-3);
+      padding-block-start: var(--openbitfun-space-3);
+      border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    }
+  }
+
+  &__detail-number { color: var(--openbitfun-color-content-muted); font-variant-numeric: tabular-nums; }
+  &__detail-text { flex: 1; min-inline-size: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+  &__detail-label { display: block; color: var(--openbitfun-color-content-muted); }
+
+  &__superscript {
+    color: var(--openbitfun-color-content-inverse);
+
+    &::before,
+    &:hover:not(:disabled)::before,
+    &:active:not(:disabled)::before {
+      background: var(--openbitfun-component-conversation-excerpt-accent);
+    }
   }
 
   &__preview { display: inline-flex; max-inline-size: 100%; vertical-align: baseline; }
@@ -97,7 +193,6 @@
     z-index: 1;
     display: flex;
     gap: var(--openbitfun-space-1);
-    transform: translate(-100%, -75%);
     max-inline-size: 100%;
     font-size: inherit;
     line-height: inherit;
@@ -126,19 +221,41 @@
       inline-size: var(--openbitfun-space-1);
       block-size: var(--openbitfun-space-1);
       clip-path: polygon(0 0, 100% 0, 0 100%);
-      background: var(--openbitfun-component-button-primary-background);
+      background: var(--openbitfun-component-conversation-excerpt-accent);
     }
 
-    &:hover::after { background: var(--openbitfun-component-button-primary-background-hover); }
-    &:active::after { background: var(--openbitfun-component-button-primary-background-pressed); }
+    &:hover::after,
+    &:active::after { background: var(--openbitfun-component-conversation-excerpt-accent); }
   }
 }
 
+[data-flowchat-selection-root]::selection,
+[data-flowchat-selection-root] ::selection,
+[data-openbitfun-product-component='conversation-excerpt']::selection,
+[data-openbitfun-product-component='conversation-excerpt'] ::selection {
+  background-color: color-mix(in srgb, var(--openbitfun-component-conversation-excerpt-accent) 30%, transparent);
+  color: var(--openbitfun-component-conversation-excerpt-accent);
+}
+
 ::highlight(openbitfun-flowchat-excerpt) {
-  background-color: var(--openbitfun-color-selection-surface);
-  color: var(--openbitfun-color-content-primary);
+  background-color: color-mix(in srgb, var(--openbitfun-component-conversation-excerpt-accent) 30%, transparent);
+  color: var(--openbitfun-component-conversation-excerpt-accent);
+}
+
+::highlight(openbitfun-flowchat-annotations) {
+  background-color: color-mix(in srgb, var(--openbitfun-component-conversation-excerpt-accent) 30%, transparent);
+  color: var(--openbitfun-component-conversation-excerpt-accent);
 }
 
 @media (forced-colors: active) {
+  [data-flowchat-selection-root]::selection,
+  [data-flowchat-selection-root] ::selection,
+  [data-openbitfun-product-component='conversation-excerpt']::selection,
+  [data-openbitfun-product-component='conversation-excerpt'] ::selection {
+    background-color: Highlight;
+    color: HighlightText;
+  }
+
   ::highlight(openbitfun-flowchat-excerpt) { background-color: Highlight; color: HighlightText; }
+  ::highlight(openbitfun-flowchat-annotations) { background-color: Highlight; color: HighlightText; }
 }

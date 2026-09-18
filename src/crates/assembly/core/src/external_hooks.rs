@@ -11,7 +11,7 @@ pub use openbitfun_product_domains::external_hook_catalog::{
 };
 pub use openbitfun_product_domains::external_sources::{ExecutionDomainId, ExternalSourceContext};
 
-use crate::external_sources::{host_execution_domain_id, normalize_workspace_root};
+use crate::external_sources::host_execution_domain_id;
 #[cfg(feature = "git")]
 use crate::service::workspace::{global_worktree_topology_service, WorktreeTopologyFreshness};
 use openbitfun_claude_code_adapter::{ClaudeCodeHookProvider, ClaudeCodeHookProviderOptions};
@@ -193,11 +193,10 @@ struct CachedHookCatalogService {
     last_used: u64,
 }
 
-fn service_cache(
-) -> &'static tokio::sync::Mutex<BTreeMap<Option<PathBuf>, CachedHookCatalogService>> {
-    static CACHE: OnceLock<
-        tokio::sync::Mutex<BTreeMap<Option<PathBuf>, CachedHookCatalogService>>,
-    > = OnceLock::new();
+fn service_cache() -> &'static tokio::sync::Mutex<BTreeMap<Option<String>, CachedHookCatalogService>>
+{
+    static CACHE: OnceLock<tokio::sync::Mutex<BTreeMap<Option<String>, CachedHookCatalogService>>> =
+        OnceLock::new();
     CACHE.get_or_init(|| tokio::sync::Mutex::new(BTreeMap::new()))
 }
 
@@ -207,18 +206,13 @@ fn next_access_tick() -> u64 {
 }
 
 pub(crate) async fn service_for(
-    workspace_root: Option<&std::path::Path>,
+    workspace_id: Option<&str>,
 ) -> ExternalSourceOperationResult<Arc<WorkspaceExternalHookCatalogService>> {
-    let workspace_root = normalize_workspace_root(workspace_root).map_err(|error| {
-        ExternalSourceOperationError::new(
-            ExternalSourceOperationErrorCode::InvalidRequest,
-            error,
-            false,
-        )
-    })?;
+    let workspace_root = local_workspace_root(workspace_id).await?;
+    let cache_key = workspace_id.map(str::to_owned);
     {
         let mut cache = service_cache().lock().await;
-        if let Some(cached) = cache.get_mut(&workspace_root) {
+        if let Some(cached) = cache.get_mut(&cache_key) {
             cached.last_used = next_access_tick();
             return Ok(Arc::clone(&cached.service));
         }
@@ -269,7 +263,7 @@ pub(crate) async fn service_for(
         })?,
     );
     let mut cache = service_cache().lock().await;
-    if let Some(cached) = cache.get_mut(&workspace_root) {
+    if let Some(cached) = cache.get_mut(&cache_key) {
         // Service construction runs without the cache lock. Another caller
         // may have inserted a newer access meanwhile, so allocate a fresh LRU
         // tick instead of moving that shared entry backwards in time.
@@ -286,7 +280,7 @@ pub(crate) async fn service_for(
         }
     }
     cache.insert(
-        workspace_root,
+        cache_key,
         CachedHookCatalogService {
             service: Arc::clone(&service),
             last_used: next_access_tick(),
@@ -350,6 +344,7 @@ pub(crate) fn resolve_hook_project_topology(
 /// before consulting the local filesystem so remote surfaces cannot
 /// accidentally display Hooks from the controller machine.
 pub async fn external_hook_catalog_snapshot(
+    workspace_id: Option<&str>,
     context: ExternalSourceContext,
     force_refresh: bool,
 ) -> ExternalSourceOperationResult<ExternalHookCatalogSnapshotV1> {
@@ -363,7 +358,7 @@ pub async fn external_hook_catalog_snapshot(
             false,
         ));
     }
-    let service = service_for(context.workspace_root.as_deref()).await?;
+    let service = service_for(workspace_id).await?;
     service.snapshot_or_refresh(force_refresh).await
 }
 
@@ -371,18 +366,33 @@ pub async fn external_hook_catalog_snapshot(
 /// construction here prevents transport adapters from depending on the
 /// internal local-domain identifier.
 pub async fn local_external_hook_catalog_snapshot(
-    workspace_root: Option<&std::path::Path>,
+    workspace_id: Option<&str>,
     force_refresh: bool,
 ) -> ExternalSourceOperationResult<ExternalHookCatalogSnapshotV1> {
-    let execution_domain_id = host_execution_domain_id().map_err(|error| {
-        ExternalSourceOperationError::new(ExternalSourceOperationErrorCode::Internal, error, false)
+    service_for(workspace_id)
+        .await?
+        .snapshot_or_refresh(force_refresh)
+        .await
+}
+
+/// Resolve identity before deriving any local discovery or storage path.
+pub(crate) async fn local_workspace_root(
+    workspace_id: Option<&str>,
+) -> ExternalSourceOperationResult<Option<PathBuf>> {
+    let Some(id) = workspace_id else {
+        return Ok(None);
+    };
+    let service = crate::service::workspace::get_global_workspace_service().ok_or_else(|| {
+        ExternalSourceOperationError::invalid_request("Workspace service is unavailable")
     })?;
-    external_hook_catalog_snapshot(
-        ExternalSourceContext {
-            workspace_root: workspace_root.map(std::path::Path::to_path_buf),
-            execution_domain_id,
-        },
-        force_refresh,
-    )
-    .await
+    let record = service
+        .require_workspace(id)
+        .await
+        .map_err(|error| ExternalSourceOperationError::invalid_request(error.to_string()))?;
+    if record.workspace_kind == crate::service::workspace::WorkspaceKind::Remote {
+        return Err(ExternalSourceOperationError::host_capability_unavailable(
+            "Static Hook inspection does not support remote workspaces",
+        ));
+    }
+    Ok(Some(record.root_path))
 }

@@ -125,7 +125,7 @@ describe('DeepReviewService slash command', () => {
   it('strips the canonical command before building the focus block', async () => {
     const prompt = await buildDeepReviewPromptFromSlashCommand(
       '/review strict commit abc123 for security',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(prompt).toContain('The slash-command target is already resolved.');
@@ -136,7 +136,7 @@ describe('DeepReviewService slash command', () => {
   it('classifies explicit slash-command file paths before building the review team manifest', async () => {
     await buildDeepReviewPromptFromSlashCommand(
       '/DeepReview src/web-ui/src/App.tsx src/crates/assembly/core/src/service/config/types.rs for regressions',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(buildEffectiveReviewTeamManifest).toHaveBeenCalledWith(
@@ -165,10 +165,10 @@ describe('DeepReviewService slash command', () => {
 
     await buildDeepReviewPromptFromSlashCommand(
       '/DeepReview',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
-    expect(mockGitGetStatus).toHaveBeenCalledWith('D:\\workspace\\repo', 'deep_review_target_resolver');
+    expect(mockGitGetStatus).toHaveBeenCalledWith({ workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' }, 'deep_review_target_resolver');
     expect(buildEffectiveReviewTeamManifest).toHaveBeenLastCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -206,10 +206,10 @@ describe('DeepReviewService slash command', () => {
 
     await buildDeepReviewPromptFromSlashCommand(
       '/DeepReview',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
-    expect(mockGitGetDiff).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetDiff).toHaveBeenCalledWith({ workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' }, {
       source: 'HEAD',
       files: [
         'src/web-ui/src/App.tsx',
@@ -234,7 +234,7 @@ describe('DeepReviewService slash command', () => {
 
     await buildDeepReviewLaunchFromSlashCommand(
       '/DeepReview',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(mockLoadReviewTeamRateLimitStatus).toHaveBeenCalled();
@@ -252,7 +252,7 @@ describe('DeepReviewService slash command', () => {
 
     await buildDeepReviewLaunchFromSlashCommand(
       '/DeepReview',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     const lastCall = vi.mocked(buildEffectiveReviewTeamManifest).mock.calls.at(-1);
@@ -270,10 +270,10 @@ describe('DeepReviewService slash command', () => {
 
     await buildDeepReviewPromptFromSlashCommand(
       '/DeepReview review commit abc123',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
-    expect(mockGitGetChangedFiles).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetChangedFiles).toHaveBeenCalledWith({ workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' }, {
       source: '1'.repeat(40),
       target: '2'.repeat(40),
       reviewSafe: true,
@@ -310,10 +310,10 @@ describe('DeepReviewService slash command', () => {
 
     await buildDeepReviewPromptFromSlashCommand(
       '/DeepReview review commit abc123',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
-    expect(mockGitGetDiff).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetDiff).toHaveBeenCalledWith({ workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' }, {
       source: '1'.repeat(40),
       target: '2'.repeat(40),
       reviewSafe: true,
@@ -342,7 +342,7 @@ describe('DeepReviewService slash command', () => {
 
     await buildDeepReviewPromptFromSlashCommand(
       '/DeepReview review commit abc123',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(buildEffectiveReviewTeamManifest).toHaveBeenLastCalledWith(
@@ -367,10 +367,10 @@ describe('DeepReviewService slash command', () => {
 
     await buildDeepReviewPromptFromSlashCommand(
       '/DeepReview review main..feature/deep-review',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
-    expect(mockGitGetChangedFiles).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetChangedFiles).toHaveBeenCalledWith({ workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' }, {
       source: '1'.repeat(40),
       target: '2'.repeat(40),
       reviewSafe: true,
@@ -411,7 +411,7 @@ describe('DeepReviewService slash command', () => {
 
     const result = await buildDeepReviewLaunchFromSlashCommand(
       '/DeepReview review commit abc123',
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(result.prompt).toContain('User-provided focus:\nreview commit abc123');
@@ -423,7 +423,7 @@ describe('DeepReviewService slash command', () => {
     await buildDeepReviewPromptFromSessionFiles(
       ['src/web-ui/src/App.tsx'],
       undefined,
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(buildEffectiveReviewTeamManifest).toHaveBeenCalledWith(
@@ -447,11 +447,11 @@ describe('DeepReviewService slash command', () => {
 
     const result = await buildDeepReviewPreviewFromSessionFiles(
       ['src/crates/assembly/core/src/service/config/types.rs'],
-      'D:\\workspace\\repo',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(result).toBe(runManifest);
-    expect(mockLoadDefaultReviewTeam).toHaveBeenCalledWith('D:\\workspace\\repo');
+    expect(mockLoadDefaultReviewTeam).toHaveBeenCalledWith('workspace-1');
     expect(mockPrepareDefaultReviewTeamForLaunch).not.toHaveBeenCalled();
     expect(buildEffectiveReviewTeamManifest).toHaveBeenCalledWith(
       expect.anything(),
@@ -471,6 +471,17 @@ describe('launchDeepReviewSession', () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mockSessionsMap.clear();
+    mockSessionsMap.set('parent-123', { workspaceId: 'workspace-1' });
+  });
+
+  it('does not choose a workspace from the path when the parent has no workspace ID', async () => {
+    mockSessionsMap.set('parent-123', { workspacePath: '/same/path' });
+    await expect(launchDeepReviewSession({
+      parentSessionId: 'parent-123', workspacePath: '/same/path',
+      prompt: 'Review files', displayMessage: 'Review started',
+    })).rejects.toMatchObject({ originalMessage: 'Parent session workspace ID is unavailable' });
+    expect(mockCreateBtwChildSession).not.toHaveBeenCalled();
+    expect(mockPrepareDefaultReviewTeamForLaunch).not.toHaveBeenCalled();
   });
 
   it('returns child session ID on successful launch', async () => {

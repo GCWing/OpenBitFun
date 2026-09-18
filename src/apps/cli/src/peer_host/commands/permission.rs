@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 
 use openbitfun_agent_runtime::sdk::{PermissionGrantKey, PermissionReply};
-use openbitfun_core::service::remote_ssh::workspace_state::resolve_workspace_session_identity;
+use openbitfun_core::agentic::workspace::WorkspaceBinding;
 use openbitfun_core::service::workspace::WorkspaceKind;
 
 use crate::peer_host::args::{get_string, request_value};
@@ -50,20 +50,14 @@ async fn permission_project_id_for_workspace(
         .await
         .ok_or_else(|| format!("Workspace not found: {workspace_id}"))?;
     let is_remote = workspace.workspace_kind == WorkspaceKind::Remote;
-    let connection_id = workspace
-        .metadata
-        .get("connectionId")
-        .and_then(Value::as_str);
-    let ssh_host = workspace.metadata.get("sshHost").and_then(Value::as_str);
-    let identity = resolve_workspace_session_identity(
-        &workspace.root_path.to_string_lossy(),
-        connection_id,
-        ssh_host,
-    )
-    .await
-    .ok_or_else(|| format!("Workspace identity is unavailable: {workspace_id}"))?;
+    // The record already names the workspace; its persistence identity is a
+    // projection of that record, never a path lookup.
+    let binding = WorkspaceBinding::resolve(&workspace.id)
+        .await
+        .map_err(|error| format!("Workspace identity is unavailable: {workspace_id}: {error}"))?;
     openbitfun_core::agentic::tools::pipeline::permission_project_id_for_workspace_identity(
-        &identity, is_remote,
+        &binding.session_identity,
+        is_remote,
     )
     .map_err(|error| error.to_string())
 }
@@ -259,7 +253,9 @@ pub(crate) async fn session_permission_mode(
     if active_turn_only && turn_id.is_none() {
         return Err("turn_id is required".into());
     }
-    if optional_string(request, "workspacePath").is_some() {
+    if optional_string(request, "workspaceId").is_some()
+        || optional_string(request, "workspacePath").is_some()
+    {
         super::session::ensure_coordinator_session(state, args).await?;
     }
     let manager = &state.compatibility;

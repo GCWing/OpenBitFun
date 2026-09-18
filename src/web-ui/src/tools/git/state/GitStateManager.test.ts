@@ -51,7 +51,7 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
-const repositoryPath = 'D:/workspace/OpenBitFun';
+const repositoryPath = { workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/OpenBitFun' };
 
 describe('GitStateManager refresh performance guards', () => {
   let manager: GitStateManager;
@@ -64,7 +64,7 @@ describe('GitStateManager refresh performance guards', () => {
 
     gitApiMocks.isGitRepository.mockResolvedValue(true);
     gitApiMocks.getRepositoryBasic.mockResolvedValue({
-      path: repositoryPath,
+      path: repositoryPath.repositoryPath,
       name: 'OpenBitFun',
       current_branch: 'main',
       is_bare: false,
@@ -72,7 +72,7 @@ describe('GitStateManager refresh performance guards', () => {
       remotes: [],
     });
     gitApiMocks.getRepository.mockResolvedValue({
-      path: repositoryPath,
+      path: repositoryPath.repositoryPath,
       name: 'OpenBitFun',
       current_branch: 'main',
       is_bare: false,
@@ -239,7 +239,7 @@ describe('GitStateManager ownership trust', () => {
   let manager: GitStateManager;
 
   const untrustedError = () =>
-    new Error(`git_repository_untrusted: ${repositoryPath}`);
+    new Error(`git_repository_untrusted: ${repositoryPath.repositoryPath}`);
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -366,7 +366,7 @@ describe('GitStateManager ownership trust', () => {
       state: 'trust_required',
       repositoryPath,
       detail: 'detected dubious ownership',
-      manualCommand: `git config --global --add safe.directory '${repositoryPath}'`,
+      manualCommand: `git config --global --add safe.directory '${repositoryPath.repositoryPath}'`,
     });
 
     await expect(refreshBasicAndStatus()).rejects.toThrow('unsupported command');
@@ -409,7 +409,7 @@ describe('GitStateManager ownership trust', () => {
       state: 'trust_required',
       repositoryPath,
       detail: 'detected dubious ownership',
-      manualCommand: `git config --global --add safe.directory ${repositoryPath}`,
+      manualCommand: `git config --global --add safe.directory ${repositoryPath.repositoryPath}`,
     });
     await expect(refreshBasicAndStatus()).rejects.toThrow('unsupported command');
     expect(manager.getState(repositoryPath)).toMatchObject({ repositoryTrustRequired: true });
@@ -440,7 +440,7 @@ describe('GitStateManager ownership trust', () => {
       state: 'trust_required',
       repositoryPath,
       detail: 'detected dubious ownership',
-      manualCommand: `git config --global --add safe.directory ${repositoryPath}`,
+      manualCommand: `git config --global --add safe.directory ${repositoryPath.repositoryPath}`,
     });
     await expect(refreshBasicAndStatus()).rejects.toThrow('unsupported command');
 

@@ -124,16 +124,16 @@ describe('ConfigAPI batch config reads', () => {
   it('bounds Skill catalog requests at sixty seconds', async () => {
     invokeMock.mockResolvedValue([]);
 
-    await configAPI.getSkillConfigs({ workspacePath: '/remote/project' });
+    await configAPI.getSkillConfigs({ workspaceId: 'remote-workspace-id' });
     await configAPI.getModeSkillConfigs({
       modeId: 'Standard',
-      workspacePath: '/remote/project',
+      workspaceId: 'remote-workspace-id',
     });
 
     expect(invokeMock).toHaveBeenNthCalledWith(
       1,
       'get_skill_configs',
-      { forceRefresh: undefined, workspacePath: '/remote/project' },
+      { forceRefresh: undefined, workspaceId: 'remote-workspace-id' },
       { timeout: 60_000 },
     );
     expect(invokeMock).toHaveBeenNthCalledWith(
@@ -142,7 +142,7 @@ describe('ConfigAPI batch config reads', () => {
       {
         modeId: 'Standard',
         forceRefresh: undefined,
-        workspacePath: '/remote/project',
+        workspaceId: 'remote-workspace-id',
       },
       { timeout: 60_000 },
     );
@@ -178,12 +178,12 @@ describe('direct Skill availability wire compatibility', () => {
     const legacy = await config.getGlobalSkillSettings();
     expect(invokeMock).toHaveBeenLastCalledWith('get_global_skill_settings', undefined);
     expect(legacy.directSkillManagementVersion).toBeUndefined();
-    await config.getGlobalSkillSettings('/workspace/a');
-    expect(invokeMock).toHaveBeenLastCalledWith('get_global_skill_settings', { request: { workspacePath: '/workspace/a' } });
+    await config.getGlobalSkillSettings('workspace-a');
+    expect(invokeMock).toHaveBeenLastCalledWith('get_global_skill_settings', { request: { workspaceId: 'workspace-a' } });
     await config.setGlobalSkillDisabled({ skillKey: 'user::home.agents::review', disabled: true });
     expect(invokeMock).toHaveBeenLastCalledWith('set_global_skill_disabled', { request: { skillKey: 'user::home.agents::review', disabled: true } });
-    await config.setGlobalSkillDisabled({ skillKey: 'project::agents::review', disabled: false, workspacePath: '/workspace/a' });
-    expect(invokeMock).toHaveBeenLastCalledWith('set_global_skill_disabled', { request: { skillKey: 'project::agents::review', disabled: false, workspacePath: '/workspace/a' } });
+    await config.setGlobalSkillDisabled({ skillKey: 'project::agents::review', disabled: false, workspaceId: 'workspace-a' });
+    expect(invokeMock).toHaveBeenLastCalledWith('set_global_skill_disabled', { request: { skillKey: 'project::agents::review', disabled: false, workspaceId: 'workspace-a' } });
   });
 });
 
@@ -199,7 +199,7 @@ describe('skill scan response compatibility', () => {
   it('preserves partial inventories and diagnostics from new hosts', async () => {
     const value = { skills: [{ key: 'project::codex::pdf' }], diagnostics: [{ path: '/remote/denied', sourceId: 'codex', message: 'permission denied' }] };
     invokeMock.mockResolvedValueOnce(value);
-    expect(await new ConfigAPI().getModeSkillScanReport({ modeId: 'agent', workspacePath: '/remote' }))
+    expect(await new ConfigAPI().getModeSkillScanReport({ modeId: 'agent', workspaceId: 'remote-workspace-id' }))
       .toEqual({ ...value, diagnosticsAvailable: true });
   });
 
@@ -216,12 +216,12 @@ describe('reviewed Skill import wire compatibility', () => {
     const config = new ConfigAPI();
     await config.validateSkillPath('/source');
     expect(invokeMock).toHaveBeenLastCalledWith('validate_skill_path', { path: '/source' });
-    await config.validateSkillPath('/source', { sourceKey: 'external-key', workspacePath: '/workspace' });
-    expect(invokeMock).toHaveBeenLastCalledWith('validate_skill_path', { path: '/source', sourceKey: 'external-key', workspacePath: '/workspace' });
+    await config.validateSkillPath('/source', { sourceKey: 'external-key', workspaceId: 'workspace-id' });
+    expect(invokeMock).toHaveBeenLastCalledWith('validate_skill_path', { path: '/source', sourceKey: 'external-key', workspaceId: 'workspace-id' });
     await config.addSkill({ sourcePath: '/source', level: 'user', sourceKey: 'external-key', expectedSourceFingerprint: 'reviewed', targetName: 'alias' });
-    expect(invokeMock).toHaveBeenLastCalledWith('add_skill', { sourcePath: '/source', level: 'user', workspacePath: undefined, sourceKey: 'external-key', expectedSourceFingerprint: 'reviewed', targetName: 'alias' });
+    expect(invokeMock).toHaveBeenLastCalledWith('add_skill', { sourcePath: '/source', level: 'user', workspaceId: undefined, sourceKey: 'external-key', expectedSourceFingerprint: 'reviewed', targetName: 'alias' });
     await config.addSkill({ sourcePath: '/source', level: 'user' });
-    expect(invokeMock).toHaveBeenLastCalledWith('add_skill', { sourcePath: '/source', level: 'user', workspacePath: undefined });
+    expect(invokeMock).toHaveBeenLastCalledWith('add_skill', { sourcePath: '/source', level: 'user', workspaceId: undefined });
   });
 
   it('retains the advertised reviewed-import version', async () => {

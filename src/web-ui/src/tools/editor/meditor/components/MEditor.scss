@@ -61,19 +61,10 @@
   }
   
   &-edit-panel,
-  &-preview-panel,
   &-ir-panel {
     flex: 1;
     overflow: hidden;
     border-radius: 0;
-  }
-  
-  &-mode-split {
-    .m-editor-content {
-      > .m-editor-edit-panel {
-        border-right: 1px solid var(--openbitfun-color-border-default);
-      }
-    }
   }
   
   &-dark {

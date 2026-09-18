@@ -73,6 +73,10 @@ impl AgentSessionCreateResult {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionListRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only pre-ID wire input. New producers send workspace_id.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub workspace_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
@@ -105,6 +109,10 @@ pub struct AgentSessionSummary {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionDeleteRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only protocol field. Current callers provide workspace_id.
+    #[serde(default)]
     pub workspace_path: String,
     pub session_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -117,6 +125,10 @@ pub struct AgentSessionDeleteRequest {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionRenameRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only protocol field. Current callers provide workspace_id.
+    #[serde(default)]
     pub workspace_path: String,
     pub session_id: String,
     pub session_name: String,
@@ -129,6 +141,10 @@ pub struct AgentSessionRenameRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionArchiveRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only protocol field. Current callers provide workspace_id.
+    #[serde(default)]
     pub workspace_path: String,
     pub session_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -145,6 +161,10 @@ pub struct AgentSessionArchiveRequest {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionArchiveStateRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only protocol field. Current callers provide workspace_id.
+    #[serde(default)]
     pub workspace_path: String,
     pub session_id: String,
     pub archived: bool,
@@ -242,6 +262,10 @@ pub struct AgentSessionModeUpdateRequest {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentModeCatalogQuery {
+    /// Authoritative workspace identity. Current callers must supply this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input from pre-ID clients; removed after the compatibility sunset.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_root: Option<String>,
     #[serde(default)]
@@ -337,6 +361,11 @@ pub trait AgentInteractionResponsePort: Send + Sync {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionForkRequest {
+    /// Owning-host workspace ID. Normal callers must supply this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Temporary pre-ID wire input; interpreted only by the upgrade adapter.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub workspace_path: String,
     pub source_session_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -353,6 +382,11 @@ pub struct AgentSessionForkRequest {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionForkAtTurnRequest {
+    /// Owning-host workspace ID. Normal callers must supply this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Temporary pre-ID wire input; interpreted only by the upgrade adapter.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub workspace_path: String,
     pub source_session_id: String,
     pub source_turn_id: String,
@@ -371,6 +405,11 @@ pub struct AgentSessionForkAtTurnRequest {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionForkBeforeTurnRequest {
+    /// Owning-host workspace ID. Normal callers must supply this field.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Temporary pre-ID wire input; interpreted only by the upgrade adapter.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub workspace_path: String,
     pub source_session_id: String,
     pub source_turn_id: String,
@@ -393,6 +432,10 @@ pub struct AgentSessionForkResult {
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionUsageRequest {
     pub session_id: String,
+    /// Owning workspace ID; authoritative when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only pre-ID storage selector. New producers send workspace_id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -438,6 +481,10 @@ pub struct AgentSessionWorkspaceRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionWorkspaceBinding {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_kind: Option<openbitfun_core_types::WorkspaceKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
     pub workspace_path: String,
@@ -622,8 +669,13 @@ pub struct AgentDialogTurnRequest {
     #[serde(default, skip_serializing_if = "AgentDialogTurnExecution::is_standard")]
     pub execution: AgentDialogTurnExecution,
     pub agent_type: String,
+    /// Execution root projection retained for pre-ID clients; never a workspace key.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
+    /// Owning workspace ID used to locate the session when it is not loaded.
+    /// Paths and SSH fields below are upgrade-only projections.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -650,6 +702,9 @@ pub struct AgentDialogTurnRecoveryRequest {
     pub execution_generation: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
+    /// Owning workspace ID; when present it is the only identity compared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1364,6 +1419,7 @@ pub trait AgentSessionManagementPort: Send + Sync {
         if request.archived {
             return self
                 .archive_session(AgentSessionArchiveRequest {
+                    workspace_id: request.workspace_id,
                     workspace_path: request.workspace_path,
                     session_id: request.session_id,
                     remote_connection_id: request.remote_connection_id,
@@ -1416,6 +1472,10 @@ pub struct AgentSessionLineageEntry {
     /// Parent-scoped semantic handle assigned when this subagent was launched.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
+    /// Owning workspace ID; authoritative when present. Paths below are
+    /// location projections only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1439,6 +1499,10 @@ pub struct AgentSessionLineageSnapshot {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionLineageRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only pre-ID protocol field. New callers must provide workspace_id.
+    #[serde(default)]
     pub workspace_path: String,
     pub anchor_session_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1450,6 +1514,10 @@ pub struct AgentSessionLineageRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionLineageTranscriptRequest {
+    /// Owning workspace ID; authoritative when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only pre-ID storage selector. New producers send workspace_id.
     pub workspace_path: String,
     pub root_session_id: String,
     pub session_id: String,
@@ -1475,6 +1543,10 @@ pub struct AgentSessionLineageInspection {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionLineageCancellationRequest {
+    /// Owning workspace ID; authoritative when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only pre-ID storage selector. New producers send workspace_id.
     pub workspace_path: String,
     pub root_session_id: String,
     pub session_id: String,
@@ -1538,6 +1610,9 @@ pub trait AgentWorkspaceReferencePort: Send + Sync {
 /// The lifecycle method decides whether persisted storage is preserved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentSessionReleaseRequest {
+    /// Owning workspace ID; authoritative when present.
+    pub workspace_id: Option<String>,
+    /// Upgrade-only pre-ID storage selector. New producers send workspace_id.
     pub workspace_path: String,
     pub session_id: String,
     pub remote_connection_id: Option<String>,
@@ -1639,6 +1714,10 @@ pub trait AgentSessionCompactionPort: Send + Sync {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionRevertRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only path projection for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub session_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1650,13 +1729,15 @@ pub struct AgentSessionRevertRequest {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSessionRollbackToTurnRequest {
+    /// Upgrade-only path projection for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     /// Stable workspace identity supplied by newer product surfaces. This is
     /// optional so older clients keep using the path-based compatibility path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
-    /// Persisted workspace host identity. `localhost` is the local sentinel;
-    /// any other non-empty value identifies a remote workspace.
+    /// Legacy host projection. Never infer workspace kind from this or an ID prefix;
+    /// the host must resolve workspace_id to its authoritative workspace object.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_hostname: Option<String>,
     pub session_id: String,
@@ -1675,46 +1756,6 @@ pub struct AgentSessionRollbackToTurnRequest {
 pub enum AgentSessionWorkspaceLocation {
     Local,
     Remote,
-}
-
-impl AgentSessionRollbackToTurnRequest {
-    /// Returns the structured workspace location when the request declares one.
-    /// Explicit remote facts win over conflicting local facts so malformed
-    /// requests cannot bypass remote snapshot restrictions.
-    pub fn explicit_workspace_location(&self) -> Option<AgentSessionWorkspaceLocation> {
-        let workspace_id = self
-            .workspace_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-        let workspace_hostname = self
-            .workspace_hostname
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty());
-
-        if self
-            .remote_connection_id
-            .as_deref()
-            .is_some_and(|value| !value.trim().is_empty())
-            || self
-                .remote_ssh_host
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
-            || workspace_id.is_some_and(|value| value.starts_with("remote_"))
-            || workspace_hostname.is_some_and(|value| !value.eq_ignore_ascii_case("localhost"))
-        {
-            return Some(AgentSessionWorkspaceLocation::Remote);
-        }
-
-        if workspace_id.is_some_and(|value| value.starts_with("local_"))
-            || workspace_hostname.is_some_and(|value| value.eq_ignore_ascii_case("localhost"))
-        {
-            return Some(AgentSessionWorkspaceLocation::Local);
-        }
-
-        None
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -2090,6 +2131,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn workspace_binding_reads_legacy_shape_without_guessing_kind() {
+        let legacy =
+            serde_json::json!({"workspacePath":"/same/path", "remoteConnectionId":"ssh-1"});
+        let binding: AgentSessionWorkspaceBinding = serde_json::from_value(legacy.clone()).unwrap();
+        assert_eq!(binding.workspace_kind, None);
+        assert_eq!(binding.workspace_id, None);
+        assert_eq!(binding.project_workspace_id, None);
+        assert_eq!(serde_json::to_value(binding).unwrap(), legacy);
+        let current = serde_json::json!({"workspacePath":"/same/path", "workspaceId":"Workspace-A", "projectWorkspaceId":"Project-A", "workspaceKind":"normal", "remoteConnectionId":"stale-ssh"});
+        let binding: AgentSessionWorkspaceBinding =
+            serde_json::from_value(current.clone()).unwrap();
+        assert_eq!(
+            binding.workspace_kind,
+            Some(openbitfun_core_types::WorkspaceKind::Normal)
+        );
+        assert_eq!(serde_json::to_value(binding).unwrap(), current);
+    }
+
+    #[test]
     fn turn_settlement_result_serializes_authoritative_terminal_facts() {
         let result = AgentTurnSettlementResult {
             status: AgentTurnSettlementStatus::Completed,
@@ -2188,25 +2248,18 @@ mod tests {
             .expect("deserialize pre-workspace-identity rollback request");
         assert_eq!(legacy_request.workspace_id, None);
         assert_eq!(legacy_request.workspace_hostname, None);
-        assert_eq!(legacy_request.explicit_workspace_location(), None);
-
-        let local_request = AgentSessionRollbackToTurnRequest {
-            workspace_id: Some("local_workspace-1".to_string()),
-            workspace_hostname: None,
-            ..legacy_request.clone()
-        };
+        // IDs are opaque. SSH metadata is an old projection, not type authority.
+        let request_with_id: AgentSessionRollbackToTurnRequest =
+            serde_json::from_value(serde_json::json!({
+                "workspaceId": "opaque-workspace-id", "remoteConnectionId": "stale-projection",
+                "sessionId": "session-1", "targetTurnId": "turn-7"
+            }))
+            .unwrap();
         assert_eq!(
-            local_request.explicit_workspace_location(),
-            Some(AgentSessionWorkspaceLocation::Local)
+            request_with_id.workspace_id.as_deref(),
+            Some("opaque-workspace-id")
         );
-        let conflicting_request = AgentSessionRollbackToTurnRequest {
-            remote_connection_id: Some("connection-1".to_string()),
-            ..local_request
-        };
-        assert_eq!(
-            conflicting_request.explicit_workspace_location(),
-            Some(AgentSessionWorkspaceLocation::Remote)
-        );
+        assert_eq!(request_with_id.workspace_path, "");
 
         let completed = AgentSessionRollbackToTurnOutcome::Completed {
             result: AgentSessionRevertResult {
@@ -2414,6 +2467,7 @@ mod tests {
 
     fn archive_state_request(archived: bool) -> AgentSessionArchiveStateRequest {
         AgentSessionArchiveStateRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             session_id: "session_1".to_string(),
             archived,
@@ -2449,12 +2503,39 @@ mod tests {
         assert_eq!(provider.archived_requests.lock().unwrap().len(), 1);
     }
 
+    #[test]
+    fn fork_workspace_id_wire_contract_preserves_100_payloads() {
+        let id_only = serde_json::json!({"workspaceId":"workspace-1","sourceSessionId":"session-1","sourceTurnId":"turn-1"});
+        let latest: AgentSessionForkRequest = serde_json::from_value(id_only.clone()).unwrap();
+        let at: AgentSessionForkAtTurnRequest = serde_json::from_value(id_only.clone()).unwrap();
+        let before: AgentSessionForkBeforeTurnRequest = serde_json::from_value(id_only).unwrap();
+        assert_eq!(latest.workspace_id.as_deref(), Some("workspace-1"));
+        assert!(latest.workspace_path.is_empty());
+        assert!(at.workspace_path.is_empty());
+        assert!(before.workspace_path.is_empty());
+        let legacy = serde_json::json!({"workspacePath":"/srv/project","sourceSessionId":"session-1","sourceTurnId":"turn-1","remoteConnectionId":"ssh-1"});
+        let latest: AgentSessionForkRequest = serde_json::from_value(legacy.clone()).unwrap();
+        let at: AgentSessionForkAtTurnRequest = serde_json::from_value(legacy.clone()).unwrap();
+        let before: AgentSessionForkBeforeTurnRequest = serde_json::from_value(legacy).unwrap();
+        assert!(latest.workspace_id.is_none());
+        for value in [
+            serde_json::to_value(latest).unwrap(),
+            serde_json::to_value(at).unwrap(),
+            serde_json::to_value(before).unwrap(),
+        ] {
+            assert_eq!(value["workspacePath"], "/srv/project");
+            assert_eq!(value["remoteConnectionId"], "ssh-1");
+            assert!(value.get("workspaceId").is_none());
+        }
+    }
+
     #[tokio::test]
     async fn exact_turn_fork_default_preserves_latest_turn_only_provider_compatibility() {
         let provider = LatestTurnForkOnlyProvider;
         let error = AgentSessionForkPort::fork_session_at_turn(
             &provider,
             AgentSessionForkAtTurnRequest {
+                workspace_id: None,
                 workspace_path: "/workspace/project".to_string(),
                 source_session_id: "session_1".to_string(),
                 source_turn_id: "turn_1".to_string(),
@@ -2474,6 +2555,7 @@ mod tests {
         let error = AgentSessionForkPort::fork_session_before_turn(
             &provider,
             AgentSessionForkBeforeTurnRequest {
+                workspace_id: None,
                 workspace_path: "/workspace/project".to_string(),
                 source_session_id: "session_1".to_string(),
                 source_turn_id: "turn_1".to_string(),
@@ -2488,8 +2570,29 @@ mod tests {
     }
 
     #[test]
+    fn session_mutations_accept_ids_without_paths_and_preserve_old_payloads() {
+        let id_only = serde_json::json!({"workspaceId":"workspace-1","sessionId":"session-1"});
+        let delete: AgentSessionDeleteRequest = serde_json::from_value(id_only.clone()).unwrap();
+        assert_eq!(delete.workspace_id.as_deref(), Some("workspace-1"));
+        assert!(delete.workspace_path.is_empty());
+        let archive: AgentSessionArchiveRequest = serde_json::from_value(id_only).unwrap();
+        assert_eq!(archive.workspace_id.as_deref(), Some("workspace-1"));
+        let old = serde_json::json!({"workspacePath":"/project","sessionId":"session-1"});
+        let legacy: AgentSessionDeleteRequest = serde_json::from_value(old.clone()).unwrap();
+        assert!(legacy.workspace_id.is_none());
+        assert_eq!(serde_json::to_value(legacy).unwrap(), old);
+        let lineage: AgentSessionLineageRequest = serde_json::from_value(serde_json::json!({
+            "workspaceId":"workspace-1", "anchorSessionId":"session-1"
+        }))
+        .unwrap();
+        assert_eq!(lineage.workspace_id.as_deref(), Some("workspace-1"));
+        assert!(lineage.workspace_path.is_empty());
+    }
+
+    #[test]
     fn agent_session_create_request_keeps_rust_literal_compatible() {
         let request = AgentSessionCreateRequest {
+            agent_route_key: None,
             session_name: "Generated session".to_string(),
             agent_type: "Standard".to_string(),
             workspace_path: Some("/workspace/project".to_string()),
@@ -3027,6 +3130,7 @@ mod tests {
             execution: Default::default(),
             agent_type: "Standard".to_string(),
             workspace_path: Some("/workspace/project".to_string()),
+            workspace_id: None,
             remote_connection_id: Some("conn-1".to_string()),
             remote_ssh_host: Some("host-1".to_string()),
             policy: DialogSubmissionPolicy::new(
@@ -3268,6 +3372,7 @@ mod tests {
             turn_id: "turn_1".to_string(),
             execution_generation: 1,
             workspace_path: Some("/workspace/project".to_string()),
+            workspace_id: None,
             remote_connection_id: None,
             remote_ssh_host: None,
         };
@@ -3284,6 +3389,7 @@ mod tests {
     #[test]
     fn session_lineage_contracts_serialize_provider_neutral_facts() {
         let request = AgentSessionLineageRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             anchor_session_id: "child_1".to_string(),
             remote_connection_id: Some("conn-1".to_string()),
@@ -3310,6 +3416,7 @@ mod tests {
             }],
         };
         let transcript_request = AgentSessionLineageTranscriptRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             root_session_id: "root_1".to_string(),
             session_id: "child_1".to_string(),
@@ -3318,6 +3425,7 @@ mod tests {
             remote_ssh_host: None,
         };
         let cancellation_request = AgentSessionLineageCancellationRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             root_session_id: "root_1".to_string(),
             session_id: "child_1".to_string(),
@@ -3395,8 +3503,35 @@ mod tests {
     }
 
     #[test]
+    fn session_list_accepts_legacy_payload_and_emits_id_only_requests() {
+        let legacy: AgentSessionListRequest = serde_json::from_value(serde_json::json!({
+            "workspacePath": "/project", "remoteConnectionId": "connection-1"
+        }))
+        .unwrap();
+        assert!(legacy.workspace_id.is_none());
+        assert_eq!(legacy.workspace_path, "/project");
+        assert_eq!(
+            serde_json::from_value::<AgentSessionListRequest>(
+                serde_json::to_value(&legacy).unwrap()
+            )
+            .unwrap(),
+            legacy
+        );
+        let current: AgentSessionListRequest = serde_json::from_value(serde_json::json!({
+            "workspaceId": "workspace-1"
+        }))
+        .unwrap();
+        assert!(current.workspace_path.is_empty());
+        assert_eq!(
+            serde_json::to_value(current).unwrap(),
+            serde_json::json!({"workspaceId": "workspace-1"})
+        );
+    }
+
+    #[test]
     fn agent_session_management_contracts_serialize_stable_shape() {
         let list_request = AgentSessionListRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             remote_connection_id: Some("conn-1".to_string()),
             remote_ssh_host: Some("host-1".to_string()),
@@ -3414,12 +3549,14 @@ mod tests {
             last_active_at_ms: 2000,
         };
         let delete_request = AgentSessionDeleteRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             session_id: "session_1".to_string(),
             remote_connection_id: Some("conn-1".to_string()),
             remote_ssh_host: Some("host-1".to_string()),
         };
         let rename_request = AgentSessionRenameRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             session_id: "session_1".to_string(),
             session_name: "Renamed".to_string(),
@@ -3427,12 +3564,14 @@ mod tests {
             remote_ssh_host: Some("host-1".to_string()),
         };
         let archive_request = AgentSessionArchiveRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             session_id: "session_1".to_string(),
             remote_connection_id: Some("conn-1".to_string()),
             remote_ssh_host: Some("host-1".to_string()),
         };
         let archive_state_request = AgentSessionArchiveStateRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             session_id: "session_1".to_string(),
             archived: false,
@@ -3440,12 +3579,14 @@ mod tests {
             remote_ssh_host: Some("host-1".to_string()),
         };
         let fork_request = AgentSessionForkRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             source_session_id: "session_1".to_string(),
             remote_connection_id: None,
             remote_ssh_host: None,
         };
         let fork_at_turn_request = AgentSessionForkAtTurnRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             source_session_id: "session_1".to_string(),
             source_turn_id: "turn_2".to_string(),
@@ -3453,6 +3594,7 @@ mod tests {
             remote_ssh_host: Some("host-1".to_string()),
         };
         let fork_before_turn_request = AgentSessionForkBeforeTurnRequest {
+            workspace_id: None,
             workspace_path: "/workspace/project".to_string(),
             source_session_id: "session_1".to_string(),
             source_turn_id: "turn_2".to_string(),
@@ -3464,6 +3606,7 @@ mod tests {
             model_id: "provider/model".to_string(),
         };
         let mode_request = AgentSessionModeUpdateRequest {
+            agent_route_key: None,
             session_id: "session_1".to_string(),
             mode_id: "Standard".to_string(),
         };
@@ -3471,6 +3614,8 @@ mod tests {
             session_id: "session_1".to_string(),
         };
         let workspace_binding = AgentSessionWorkspaceBinding {
+            workspace_kind: None,
+            project_workspace_id: None,
             workspace_id: Some("workspace_1".to_string()),
             workspace_path: "/workspace/project".to_string(),
             project_workspace_path: None,

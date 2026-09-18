@@ -13,6 +13,7 @@ import { confirmDanger } from '@/infrastructure/confirm-dialog';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { flowChatManager } from '@/flow_chat/services/FlowChatManager';
+import { flowChatSessionConfigForWorkspace } from '@/app/utils/projectSessionWorkspace';
 import type { WorkspaceInfo } from '@/shared/types';
 import { configAPI } from '@/infrastructure/api/service-api/ConfigAPI';
 import { useNotification } from '@/shared/notification-system';
@@ -156,7 +157,7 @@ const NurseryGallery: React.FC = () => {
       if (startingSessionWorkspaceId) return;
       setStartingSessionWorkspaceId(workspace.id);
       try {
-        const sessionId = await flowChatManager.createChatSession({ workspacePath: workspace.rootPath }, 'Claw');
+        const sessionId = await flowChatManager.createChatSession(flowChatSessionConfigForWorkspace(workspace), 'Claw');
         await openMainSession(sessionId, {
           workspaceId: workspace.id,
           activateWorkspace: setActiveWorkspace,

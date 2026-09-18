@@ -4,6 +4,6 @@ export const mEditorAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'm-editor',
   parts: [
     { id: 'root' }, { id: 'toolbar' }, { id: 'content' },
-    { id: 'notice' }, { id: 'editPanel' }, { id: 'previewPanel' }, { id: 'irPanel' },
+    { id: 'notice' }, { id: 'editPanel' }, { id: 'irPanel' },
   ],
 };

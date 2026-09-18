@@ -55,17 +55,16 @@ const AssistantQuickInput: React.FC<AssistantQuickInputProps> = ({
 
   const handleSend = useCallback(async () => {
     const text = value.trim();
-    if (!text || sending || !workspacePath) return;
+    if (!text || sending || !workspaceId) return;
 
     setSending(true);
     try {
       // Switch to the assistant workspace first
-      if (workspaceId) {
-        await setActiveWorkspace(workspaceId);
-      }
+      await setActiveWorkspace(workspaceId);
 
-      // Create a new session
-      const sessionId = await flowChatManager.createChatSession({ workspacePath });
+      // Create a new session owned by the assistant workspace ID; the path is
+      // only the IO projection recorded on the session.
+      const sessionId = await flowChatManager.createChatSession({ workspaceId, workspacePath });
 
       // Send the message
       await flowChatManager.sendMessage(text, sessionId);

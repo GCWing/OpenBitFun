@@ -170,7 +170,7 @@ impl TaskTool {
     ) -> OpenBitFunResult<PermissionRuntimeCeiling> {
         crate::agentic::permission_policy::load_parent_permission_runtime_ceiling(
             context.agent_type.as_deref(),
-            context.workspace_root(),
+            context.workspace_id(),
         )
         .await
     }
@@ -361,7 +361,7 @@ impl TaskTool {
                     let binding = get_agent_registry()
                         .resolve_subagent_for_fresh_invocation(
                             &subagent_type,
-                            context.workspace_root(),
+                            context.workspace_id(),
                             !parent_is_swarm_planner && !context.is_remote(),
                         )
                         .ok_or_else(|| {

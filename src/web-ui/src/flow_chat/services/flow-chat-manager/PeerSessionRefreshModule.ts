@@ -56,19 +56,19 @@ export const PEER_SESSION_STREAM_STALE_MS = 6000;
  */
 type AttachableSession = Pick<
   Session,
-  'workspacePath' | 'isTransient' | 'isHistorical' | 'historyState'
-> & { workspacePath: string };
+  'workspaceId' | 'isTransient' | 'isHistorical' | 'historyState'
+> & { workspaceId: string };
 
 export function isSessionProjectionAttachable(
   session: Pick<
     Session,
-    'workspacePath' | 'isTransient' | 'isHistorical' | 'historyState'
+    'workspaceId' | 'isTransient' | 'isHistorical' | 'historyState'
   > | null | undefined,
 ): session is AttachableSession {
-  const workspacePath = session?.workspacePath?.trim();
+  const workspaceId = session?.workspaceId?.trim();
   return Boolean(
     session &&
-    workspacePath &&
+    workspaceId &&
     !session.isTransient &&
     !session.isHistorical &&
     (session.historyState === 'ready' || session.historyState === 'new'),
@@ -485,7 +485,6 @@ export function installPeerSessionRefresh(context: FlowChatContext): () => void 
     if (!isSessionProjectionAttachable(session)) {
       return;
     }
-    const workspacePath = session.workspacePath.trim();
     ensureSubscription();
     pendingQueueManager.reconcileAgainstLiveTurns(
       sessionId,
@@ -549,7 +548,6 @@ export function installPeerSessionRefresh(context: FlowChatContext): () => void 
     try {
       const result = await context.flowChatStore.refreshPeerSessionSnapshot(
         sessionId,
-        workspacePath,
         {
           // A background session on this surface still owns its projection.
           // Requiring the focused tab aborted the dropped-event repair for
@@ -779,7 +777,7 @@ export function installPeerSessionRefresh(context: FlowChatContext): () => void 
       return JSON.stringify([
         sessionId ?? '',
         session?.historyState ?? '',
-        session?.workspacePath ?? '',
+        session?.workspaceId ?? '',
         session?.isTransient === true,
         session?.isHistorical === true,
       ]);

@@ -1,7 +1,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 
 export interface UploadProgress { transferId: string; nextOffset: number; totalBytes: number; completed: boolean }
-export interface UploadTarget { path: string; workspacePath: string; remoteConnectionId?: string | null }
+export interface UploadTarget { path: string; workspaceId?: string; workspacePath: string; remoteConnectionId?: string | null }
 export type UploadInvoke = (request: Record<string, unknown>) => Promise<UploadProgress>;
 const CHUNK_BYTES = 3 * 1024 * 1024;
 function base64(bytes: Uint8Array): string {

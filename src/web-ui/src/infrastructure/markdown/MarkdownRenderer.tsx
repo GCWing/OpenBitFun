@@ -480,17 +480,24 @@ function getMimeType(filePath: string): string {
   return mimeTypes[ext || ''] || 'image/jpeg';
 }
 
-function getLocalImageCacheKey(localPath: string, remoteConnectionId: string | undefined, scope: SurfaceScope, access?: ResourceFileAccess | null): string {
-  return scope.key('markdown-image', scope.epoch, access?.scope.surfaceId, remoteConnectionId, localPath);
+/** Where an inline image is read from: an ID-owned workspace or, for ID-less callers, a legacy connection. */
+interface LocalImageOwner {
+  workspaceId?: string;
+  remoteConnectionId?: string;
+}
+
+function getLocalImageCacheKey(localPath: string, owner: LocalImageOwner, scope: SurfaceScope, access?: ResourceFileAccess | null): string {
+  const ownerKey = owner.workspaceId ? `workspace:${owner.workspaceId}` : `legacy:${owner.remoteConnectionId ?? ''}`;
+  return scope.key('markdown-image', scope.epoch, access?.scope.surfaceId, ownerKey, localPath);
 }
 
 async function getLocalImageDataUrl(
   localPath: string,
-  remoteConnectionId: string | undefined,
+  owner: LocalImageOwner,
   scope: SurfaceScope,
   access?: ResourceFileAccess | null,
 ): Promise<string> {
-  const cacheKey = getLocalImageCacheKey(localPath, remoteConnectionId, scope, access);
+  const cacheKey = getLocalImageCacheKey(localPath, owner, scope, access);
   const requestKey = cacheKey;
   const cachedDataUrl = localImageDataUrlCache.get(cacheKey);
   if (cachedDataUrl) {
@@ -504,7 +511,8 @@ async function getLocalImageDataUrl(
 
   const request = (async () => {
     const base64Content = access ? await access.files.readFileContent(localPath, 'base64')
-      : await workspaceAPI.readFileContent(localPath, 'base64', remoteConnectionId);
+      : owner.workspaceId ? await workspaceAPI.readWorkspaceFile(owner.workspaceId, localPath, 'base64')
+      : await workspaceAPI.readFileContent(localPath, 'base64', owner.remoteConnectionId);
     scope.assertCurrent('read markdown image');
     const dataUrl = `data:${getMimeType(localPath)};base64,${base64Content}`;
     localImageDataUrlCache.set(cacheKey, dataUrl);
@@ -521,6 +529,9 @@ async function getLocalImageDataUrl(
 
 interface MarkdownImageProps extends React.ImgHTMLAttributes<HTMLImageElement> {
   basePath?: string;
+  /** Owning workspace ID; authoritative for the read when present. */
+  workspaceId?: string;
+  /** Legacy owner selector for renderers without a workspace ID. */
   remoteConnectionId?: string;
 }
 
@@ -530,13 +541,19 @@ const ScopedMarkdownImage: React.FC<MarkdownImageProps & { scope: SurfaceScope }
   alt,
   className,
   basePath,
+  workspaceId,
   remoteConnectionId,
   onLoad,
   onError,
   ...imgProps
 }) => {
   const fileAccess = useResourceFileAccess();
+  const ownerWorkspaceId = fileAccess ? fileAccess.scope.workspaceId : workspaceId;
   const connectionId = fileAccess ? fileAccess.scope.remoteConnectionId : remoteConnectionId;
+  const owner = useMemo<LocalImageOwner>(
+    () => ({ workspaceId: ownerWorkspaceId, remoteConnectionId: connectionId }),
+    [ownerWorkspaceId, connectionId],
+  );
   const rawSrc = typeof src === 'string' ? normalizeExternalImageSrc(src) : '';
   const localPath = useMemo(() => {
     if (!rawSrc || !isLocalAssetPath(rawSrc)) {
@@ -546,7 +563,7 @@ const ScopedMarkdownImage: React.FC<MarkdownImageProps & { scope: SurfaceScope }
     return resolveBaseRelativePath(normalizeFileLikeHref(rawSrc), basePath);
   }, [basePath, rawSrc]);
   const cacheKey = localPath
-    ? getLocalImageCacheKey(localPath, connectionId, scope, fileAccess)
+    ? getLocalImageCacheKey(localPath, owner, scope, fileAccess)
     : null;
   const [resolvedSrc, setResolvedSrc] = useState(() => {
     if (!rawSrc) {
@@ -587,7 +604,7 @@ const ScopedMarkdownImage: React.FC<MarkdownImageProps & { scope: SurfaceScope }
     setResolvedSrc(LOCAL_IMAGE_PLACEHOLDER);
     setLoadState('loading');
 
-    void getLocalImageDataUrl(localPath, connectionId, scope, fileAccess)
+    void getLocalImageDataUrl(localPath, owner, scope, fileAccess)
       .then((dataUrl) => {
         if (cancelled) {
           return;
@@ -606,7 +623,8 @@ const ScopedMarkdownImage: React.FC<MarkdownImageProps & { scope: SurfaceScope }
 
         log.error('Failed to load local markdown image', {
           path: localPath,
-          remoteConnectionId,
+          workspaceId: owner.workspaceId,
+          remoteConnectionId: owner.remoteConnectionId,
           error,
         });
         // Never hand a failed local path back to the browser. That produces a
@@ -619,7 +637,7 @@ const ScopedMarkdownImage: React.FC<MarkdownImageProps & { scope: SurfaceScope }
     return () => {
       cancelled = true;
     };
-  }, [cacheKey, localPath, rawSrc, connectionId, fileAccess, remoteConnectionId, scope]);
+  }, [cacheKey, localPath, rawSrc, owner, fileAccess, scope]);
 
   if (loadState === 'error') {
     return (
@@ -663,7 +681,7 @@ const MarkdownImage: React.FC<MarkdownImageProps> = (props) => {
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   // Reset before paint when the source or host changes; old pixels must not
   // survive for one render while an effect starts the new read.
-  return <ScopedMarkdownImage key={JSON.stringify([scope.epoch, props.src, props.basePath, props.remoteConnectionId, fileAccess?.scope.surfaceId, fileAccess?.scope.remoteConnectionId, fileAccess?.scope.workspacePath])} {...props} scope={scope} />;
+  return <ScopedMarkdownImage key={JSON.stringify([scope.epoch, props.src, props.basePath, props.workspaceId, props.remoteConnectionId, fileAccess?.scope.surfaceId, fileAccess?.scope.workspaceId, fileAccess?.scope.remoteConnectionId, fileAccess?.scope.workspacePath])} {...props} scope={scope} />;
 };
 
 function isEditorOpenableFilePath(filePath: string): boolean {
@@ -843,6 +861,8 @@ export interface MarkdownRendererProps {
   content: string;
   /** Display a region while resolving Markdown references against all content. */
   sourceRange?: MarkdownSourceRange;
+  /** Owning workspace ID; content opened from links is routed by it. `basePath` is only the IO root. */
+  workspaceId?: string;
   basePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -869,6 +889,7 @@ function useLiveValueRef<T>(value: T): React.MutableRefObject<T> {
 export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
   content, 
   sourceRange,
+  workspaceId,
   basePath,
   remoteConnectionId,
   remoteSshHost,
@@ -899,6 +920,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
   const basePathRef = useLiveValueRef(basePath);
   const remoteConnectionIdRef = useLiveValueRef(fileAccess ? fileAccess.scope.remoteConnectionId : remoteConnectionId);
   const remoteSshHostRef = useLiveValueRef(remoteSshHost);
+  const workspaceIdRef = useLiveValueRef(fileAccess ? fileAccess.scope.workspaceId : workspaceId);
   const currentWorkspacePathRef = useLiveValueRef(fileAccess?.scope.workspacePath ?? currentWorkspacePath);
   const expandDetailsByDefaultRef = useLiveValueRef(expandDetailsByDefault);
   const onOpenVisualizationRef = useLiveValueRef(onOpenVisualization);
@@ -1130,6 +1152,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
       const openFileOptions = {
         filePath,
         fileName,
+        workspaceId: workspaceIdRef.current,
         workspacePath,
         remoteConnectionId,
       };
@@ -1197,6 +1220,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
     onFileDownloadRef,
     handleCopyLink,
     remoteConnectionIdRef,
+    workspaceIdRef,
     showLinkContextMenu,
   ]);
 
@@ -1442,6 +1466,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
               event.stopPropagation();
               const opened = openCanvasArtifactTab({
                 artifactReference: hrefValue,
+                workspaceId: workspaceIdRef.current,
                 workspacePath: basePathRef.current || currentWorkspacePathRef.current || undefined,
                 remoteConnectionId: remoteConnectionIdRef.current,
                 remoteSshHost: remoteSshHostRef.current,
@@ -1621,6 +1646,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
         <MarkdownImage
           {...props}
           basePath={basePathRef.current || currentWorkspacePathRef.current}
+          workspaceId={workspaceIdRef.current}
           remoteConnectionId={remoteConnectionIdRef.current}
         />
       );
@@ -1673,6 +1699,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
     onHttpLinkClickRef,
     remoteConnectionIdRef,
     remoteSshHostRef,
+    workspaceIdRef,
     syntaxThemeRef,
     traceContextRef,
     sourceRangeRef,

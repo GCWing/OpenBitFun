@@ -1,5 +1,15 @@
 # FlowChat History Paging
 
+The anchor renews its settle budget only when a correction reduces its measured
+residual (or reaches tolerance), or while a missing Turn is still awaited.
+An ineffective correction is remembered for that exact anchor/viewport geometry;
+it is retried after geometry changes or a new anchor is captured, not on every
+frame. Identical resize notifications do not renew the budget. The comparison
+includes the anchor's content coordinate, so displacement at unchanged total
+height still opens a settle. Item changes, snapshot restores and host resumes
+remain explicit settle triggers. No sign-change count or overall time limit
+terminates valid corrections.
+
 Older Turns are fetched when the reader approaches the head of the loaded
 window, prepended above them, and paid for by moving the viewport down by
 exactly what arrived. This document covers the whole of that: when the ask goes
@@ -684,3 +694,14 @@ re-measured".
 - `flowChatLiveTailWindow.ts`
 - `VirtualMessageList.tsx`
 - `ModernFlowChatContainer.tsx`
+
+## Moving Between Main and Floating Hosts
+
+An explicit host move stages `SessionViewportState` through
+`flowChatViewHandoff.ts`: semantic viewport snapshot, history presentation and
+viewport intent. The source captures through `VirtualMessageList`; the receiving
+host restores through the existing viewport owner. No separate scroll writer is
+introduced. A render may inspect the pending handoff, but only a committed host
+consumes it, so interrupted renders cannot discard the reading position.
+Handoffs are fenced by device activation and session identity. Each host keeps
+its own display projection and composer geometry; Runtime history stays shared.

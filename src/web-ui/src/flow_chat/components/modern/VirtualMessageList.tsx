@@ -30,6 +30,7 @@ import {
 import {
   useActiveSession,
   useModernFlowChatStore,
+  useModernFlowChatStoreApi,
   useVirtualItems,
   type VirtualItem,
 } from '../../store/modernFlowChatStore';
@@ -378,6 +379,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   useEffect(() => {
     noteFlowListCommit();
   });
+  const modernStore = useModernFlowChatStoreApi();
   const canonicalVirtualItems = useVirtualItems();
   const virtualItems = items ?? canonicalVirtualItems;
   const { exploreGroupStates } = useFlowChatVolatileContext();
@@ -924,7 +926,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   ]);
 
   useLayoutEffect(() => {
-    viewportAnchor.openSettleWindow();
+    viewportAnchor.openSettleWindow('items');
   }, [viewportAnchor, virtualItems]);
 
   const updateVisibleTurnInfoFromViewport = useCallback(() => {
@@ -958,7 +960,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     const currentTurn = currentTurnId
       ? userMessageItems.find(({ item }) => item.turnId === currentTurnId)
       : undefined;
-    const store = useModernFlowChatStore.getState();
+    const store = modernStore.getState();
 
     if (!currentTurn || currentTurn.item.type !== 'user-message') {
       if (store.visibleTurnInfo !== null) store.setVisibleTurnInfo(null);
@@ -980,7 +982,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       && previous.visibleTurnIds.length === visibleTurnIds.length
       && previous.visibleTurnIds.every((turnId, index) => turnId === visibleTurnIds[index]);
     if (!unchanged) store.setVisibleTurnInfo(nextVisibleTurnInfo);
-  }, [isFollowingOutputNow, userMessageItems]);
+  }, [isFollowingOutputNow, modernStore, userMessageItems]);
 
   const scheduleVisibleTurnInfoUpdate = useCallback(() => {
     if (visibleTurnUpdateFrameRef.current !== null) return;
@@ -1141,7 +1143,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     // Seed the ordinary settle loop from the restored relationship so later
     // virtual-item measurements keep the same Turn at the same viewport offset.
     viewportAnchor.captureAnchor();
-    viewportAnchor.openSettleWindow();
+    viewportAnchor.openSettleWindow('snapshot');
     traceViewport({
       location: 'viewport.sessionSnapshotRestored',
       message: 'FlowChat restored a session anchor from its semantic snapshot',
@@ -1477,7 +1479,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         });
         restoredScrollTopFallback = true;
       }
-      viewportAnchor.openSettleWindow();
+      viewportAnchor.openSettleWindow('resume');
     }
 
     traceViewport({
@@ -1716,7 +1718,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       if (viewportBoxChanged) {
         viewportAnchor.captureAnchor();
       } else {
-        viewportAnchor.openSettleWindow();
+        viewportAnchor.openSettleWindow('resize');
       }
 
       if (tailRealignCallbacksRef.current > 0) {
@@ -2460,9 +2462,9 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
 
   useEffect(() => {
     if (userMessageItems.length === 0) {
-      useModernFlowChatStore.getState().setVisibleTurnInfo(null);
+      modernStore.getState().setVisibleTurnInfo(null);
     }
-  }, [userMessageItems.length]);
+  }, [modernStore, userMessageItems.length]);
 
   const handleScrollerRef = useCallback((element: HTMLElement | null) => {
     const scroller = element;

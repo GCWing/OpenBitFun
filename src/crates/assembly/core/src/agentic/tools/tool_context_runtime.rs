@@ -94,6 +94,12 @@ impl ToolUseContext {
         delegation_policy_from_custom_data(&self.custom_data)
     }
 
+    pub fn workspace_id(&self) -> Option<&str> {
+        self.workspace
+            .as_ref()
+            .and_then(|workspace| workspace.workspace_id.as_deref())
+    }
+
     pub fn workspace_root(&self) -> Option<&Path> {
         self.workspace.as_ref().map(|binding| binding.root_path())
     }

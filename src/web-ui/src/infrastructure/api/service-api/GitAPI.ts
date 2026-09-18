@@ -3,11 +3,28 @@
 import { api } from './ApiClient';
 import { createTauriCommandError } from '../errors/TauriCommandError';
 import { createLogger } from '@/shared/utils/logger';
-import { repositoryPathKey } from '@/shared/utils/pathUtils';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { workspaceIdRequest } from './legacyWorkspaceCompatibility';
 import { startupTrace } from '@/shared/utils/startupTrace';
 
 const log = createLogger('GitAPI');
 const REPOSITORY_PROBE_CACHE_TTL_MS = 1000;
+
+/** Workspace identity is mandatory; repositoryPath is a display/evidence projection only. */
+export interface GitWorkspaceScope {
+  workspaceId: string;
+  repositoryPath?: string;
+}
+
+export function gitWorkspaceKey(scope: GitWorkspaceScope): string {
+  if (!scope.workspaceId) throw new Error('Git requires a workspace ID');
+  return JSON.stringify([getActiveSurfaceScope().surfaceId, scope.workspaceId]);
+}
+
+async function gitWorkspaceRequest(scope: GitWorkspaceScope) {
+  const wire = await workspaceIdRequest(scope.workspaceId, 'repositoryPath');
+  return wire;
+}
 
 export interface GitRepository {
   path: string;
@@ -220,11 +237,9 @@ export class GitAPI {
   private repositoryProbeInFlight = new Map<string, Promise<boolean>>();
 
 
-  async isGitRepository(repositoryPath: string): Promise<boolean> {
-    // Keyed on the canonical spelling, not the caller's: `C:/repo`, `c:\repo`
-    // and `C:/repo/` are one repository to the backend, so a shared probe and a
-    // granted decision must reach all three here too.
-    const key = repositoryPathKey(repositoryPath);
+  async isGitRepository(workspace: GitWorkspaceScope): Promise<boolean> {
+    // Host and workspace identity isolate probes even when repository paths match.
+    const key = gitWorkspaceKey(workspace);
     const now = Date.now();
     const cached = this.repositoryProbeCache.get(key);
     if (cached && cached.expiresAt > now) {
@@ -236,8 +251,8 @@ export class GitAPI {
       return inFlight;
     }
 
-    const request = { repositoryPath };
-    const probe = api.invoke<boolean>('git_is_repository', { request })
+    const probe = gitWorkspaceRequest(workspace)
+      .then(request => api.invoke<boolean>('git_is_repository', { request }))
       .then((value) => {
         this.repositoryProbeCache.set(key, {
           value,
@@ -246,7 +261,7 @@ export class GitAPI {
         return value;
       })
       .catch((error) => {
-        throw createTauriCommandError('git_is_repository', error, { repositoryPath });
+        throw createTauriCommandError('git_is_repository', error, { workspace });
       })
       .finally(() => {
         this.repositoryProbeInFlight.delete(key);
@@ -257,30 +272,26 @@ export class GitAPI {
   }
 
   /** Reads whether Git trusts the repository's ownership. Never writes. */
-  async getRepositoryTrust(repositoryPath: string): Promise<GitTrustReport> {
+  async getRepositoryTrust(workspace: GitWorkspaceScope): Promise<GitTrustReport> {
     try {
       const report: GitTrustReport = await api.invoke('git_get_repository_trust', {
-        request: { repositoryPath },
+        request: { ...await gitWorkspaceRequest(workspace) },
       });
       // Trust can be granted outside this product — the user runs the manual
       // command in a terminal, or the repository's owner fixes it. Whoever
       // learns that first has to drop the `false` the probe cached while the
       // repository was still refused, or the caller replays against it.
       if (report.state === 'trusted') {
-        this.dropRepositoryProbe(repositoryPath, report.repositoryPath);
+        this.dropRepositoryProbe(workspace);
       }
       return report;
     } catch (error) {
-      throw createTauriCommandError('git_get_repository_trust', error, { repositoryPath });
+      throw createTauriCommandError('git_get_repository_trust', error, { workspace });
     }
   }
 
-  /** Forgets a cached repository probe under every spelling of its path. */
-  private dropRepositoryProbe(repositoryPath: string, reportedPath?: string | null): void {
-    this.repositoryProbeCache.delete(repositoryPathKey(repositoryPath));
-    if (reportedPath) {
-      this.repositoryProbeCache.delete(repositoryPathKey(reportedPath));
-    }
+  private dropRepositoryProbe(workspace: GitWorkspaceScope): void {
+    this.repositoryProbeCache.delete(gitWorkspaceKey(workspace));
   }
 
   /**
@@ -294,128 +305,128 @@ export class GitAPI {
    * existing convention for write-gated operations, so no backend mechanism
    * is introduced here.
    */
-  async trustRepository(repositoryPath: string): Promise<GitTrustOutcome> {
+  async trustRepository(workspace: GitWorkspaceScope): Promise<GitTrustOutcome> {
     try {
       const outcome = await api.invoke<GitTrustOutcome>('git_trust_repository', {
-        request: { repositoryPath },
+        request: { ...await gitWorkspaceRequest(workspace) },
       });
       // The probe cache may hold the `false` this repository returned while it
       // was still refused; a granted decision must not wait it out.
       if (outcome.state === 'trusted') {
-        this.dropRepositoryProbe(repositoryPath, outcome.repositoryPath);
+        this.dropRepositoryProbe(workspace);
       }
       return outcome;
     } catch (error) {
-      throw createTauriCommandError('git_trust_repository', error, { repositoryPath });
+      throw createTauriCommandError('git_trust_repository', error, { workspace });
     }
   }
 
 
-  async getRepository(repositoryPath: string): Promise<GitRepository> {
+  async getRepository(workspace: GitWorkspaceScope): Promise<GitRepository> {
     try {
       return await api.invoke('git_get_repository', { 
-        request: { repositoryPath } 
+        request: { ...await gitWorkspaceRequest(workspace) }
       });
     } catch (error) {
-      throw createTauriCommandError('git_get_repository', error, { repositoryPath });
+      throw createTauriCommandError('git_get_repository', error, { workspace });
     }
   }
 
 
-  async getRepositoryBasic(repositoryPath: string): Promise<GitRepository> {
+  async getRepositoryBasic(workspace: GitWorkspaceScope): Promise<GitRepository> {
     try {
       return await api.invoke('git_get_repository_basic', {
-        request: { repositoryPath }
+        request: { ...await gitWorkspaceRequest(workspace) }
       });
     } catch (error) {
-      throw createTauriCommandError('git_get_repository_basic', error, { repositoryPath });
+      throw createTauriCommandError('git_get_repository_basic', error, { workspace });
     }
   }
 
-  async resolveRevision(repositoryPath: string, revision: string): Promise<string> {
+  async resolveRevision(workspace: GitWorkspaceScope, revision: string): Promise<string> {
     try {
       return await api.invoke('git_resolve_revision', {
-        request: { repositoryPath, revision },
+        request: { ...await gitWorkspaceRequest(workspace), revision },
       });
     } catch (error) {
       throw createTauriCommandError('git_resolve_revision', error, {
-        repositoryPath,
+        workspace,
         revision,
       });
     }
   }
 
    
-  async getStatus(repositoryPath: string, traceSource = 'unknown'): Promise<GitStatus> {
+  async getStatus(workspace: GitWorkspaceScope, traceSource = 'unknown'): Promise<GitStatus> {
     try {
       if (globalThis.__OPENBITFUN_PERF_TRACE_ENABLED__ === true) {
         startupTrace.markPhase('git_status_request', { source: traceSource });
       }
       return await api.invoke('git_get_status', { 
-        request: { repositoryPath } 
+        request: { ...await gitWorkspaceRequest(workspace) }
       });
     } catch (error) {
-      throw createTauriCommandError('git_get_status', error, { repositoryPath });
+      throw createTauriCommandError('git_get_status', error, { workspace });
     }
   }
 
    
-  async getBranches(repositoryPath: string, includeRemote: boolean = false): Promise<GitBranch[]> {
+  async getBranches(workspace: GitWorkspaceScope, includeRemote: boolean = false): Promise<GitBranch[]> {
     try {
       return await api.invoke('git_get_branches', { 
-        request: { repositoryPath, includeRemote } 
+        request: { ...await gitWorkspaceRequest(workspace), includeRemote }
       });
     } catch (error) {
-      throw createTauriCommandError('git_get_branches', error, { repositoryPath, includeRemote });
+      throw createTauriCommandError('git_get_branches', error, { workspace, includeRemote });
     }
   }
 
    
-  async getEnhancedBranches(repositoryPath: string, includeRemote: boolean = false): Promise<GitBranch[]> {
+  async getEnhancedBranches(workspace: GitWorkspaceScope, includeRemote: boolean = false): Promise<GitBranch[]> {
     try {
       return await api.invoke('git_get_enhanced_branches', { 
-        request: { repositoryPath, includeRemote } 
+        request: { ...await gitWorkspaceRequest(workspace), includeRemote }
       });
     } catch (error) {
-      throw createTauriCommandError('git_get_enhanced_branches', error, { repositoryPath, includeRemote });
+      throw createTauriCommandError('git_get_enhanced_branches', error, { workspace, includeRemote });
     }
   }
 
    
-  async getCommits(repositoryPath: string, params: GitLogParams = {}): Promise<GitCommit[]> {
+  async getCommits(workspace: GitWorkspaceScope, params: GitLogParams = {}): Promise<GitCommit[]> {
     try {
       return await api.invoke('git_get_commits', { 
-        request: { repositoryPath, params } 
+        request: { ...await gitWorkspaceRequest(workspace), params }
       });
     } catch (error) {
-      throw createTauriCommandError('git_get_commits', error, { repositoryPath, params });
+      throw createTauriCommandError('git_get_commits', error, { workspace, params });
     }
   }
 
    
-  async addFiles(repositoryPath: string, params: GitAddParams): Promise<GitOperationResult> {
+  async addFiles(workspace: GitWorkspaceScope, params: GitAddParams): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_add_files', { 
-        request: { repositoryPath, params } 
+        request: { ...await gitWorkspaceRequest(workspace), params }
       });
     } catch (error) {
-      throw createTauriCommandError('git_add_files', error, { repositoryPath, params });
+      throw createTauriCommandError('git_add_files', error, { workspace, params });
     }
   }
 
    
-  async commit(repositoryPath: string, params: GitCommitParams): Promise<GitOperationResult> {
+  async commit(workspace: GitWorkspaceScope, params: GitCommitParams): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_commit', { 
-        request: { repositoryPath, params } 
+        request: { ...await gitWorkspaceRequest(workspace), params }
       });
     } catch (error) {
-      throw createTauriCommandError('git_commit', error, { repositoryPath, params });
+      throw createTauriCommandError('git_commit', error, { workspace, params });
     }
   }
 
    
-  async push(repositoryPath: string, params: GitPushParams = {}): Promise<GitOperationResult> {
+  async push(workspace: GitWorkspaceScope, params: GitPushParams = {}): Promise<GitOperationResult> {
     try {
       
       const backendParams = {
@@ -426,193 +437,193 @@ export class GitAPI {
       };
       
       return await api.invoke('git_push', { 
-        request: { repositoryPath, params: backendParams } 
+        request: { ...await gitWorkspaceRequest(workspace), params: backendParams }
       });
     } catch (error) {
-      throw createTauriCommandError('git_push', error, { repositoryPath, params });
+      throw createTauriCommandError('git_push', error, { workspace, params });
     }
   }
 
    
-  async pull(repositoryPath: string, params: GitPullParams = {}): Promise<GitOperationResult> {
+  async pull(workspace: GitWorkspaceScope, params: GitPullParams = {}): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_pull', { 
-        request: { repositoryPath, params } 
+        request: { ...await gitWorkspaceRequest(workspace), params }
       });
     } catch (error) {
-      throw createTauriCommandError('git_pull', error, { repositoryPath, params });
+      throw createTauriCommandError('git_pull', error, { workspace, params });
     }
   }
 
    
-  async checkoutBranch(repositoryPath: string, branchName: string): Promise<GitOperationResult> {
+  async checkoutBranch(workspace: GitWorkspaceScope, branchName: string): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_checkout_branch', { 
-        request: { repositoryPath, branchName } 
+        request: { ...await gitWorkspaceRequest(workspace), branchName }
       });
     } catch (error) {
-      throw createTauriCommandError('git_checkout_branch', error, { repositoryPath, branchName });
+      throw createTauriCommandError('git_checkout_branch', error, { workspace, branchName });
     }
   }
 
    
-  async createBranch(repositoryPath: string, branchName: string, startPoint?: string): Promise<GitOperationResult> {
+  async createBranch(workspace: GitWorkspaceScope, branchName: string, startPoint?: string): Promise<GitOperationResult> {
     try {
       
       const effectiveStartPoint = startPoint && startPoint.trim() ? startPoint : undefined;
       return await api.invoke('git_create_branch', { 
-        request: { repositoryPath, branchName, startPoint: effectiveStartPoint } 
+        request: { ...await gitWorkspaceRequest(workspace), branchName, startPoint: effectiveStartPoint }
       });
     } catch (error) {
-      throw createTauriCommandError('git_create_branch', error, { repositoryPath, branchName, startPoint });
+      throw createTauriCommandError('git_create_branch', error, { workspace, branchName, startPoint });
     }
   }
 
    
-  async deleteBranch(repositoryPath: string, branchName: string, force: boolean = false): Promise<GitOperationResult> {
+  async deleteBranch(workspace: GitWorkspaceScope, branchName: string, force: boolean = false): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_delete_branch', { 
-        request: { repositoryPath, branchName, force } 
+        request: { ...await gitWorkspaceRequest(workspace), branchName, force }
       });
     } catch (error) {
-      throw createTauriCommandError('git_delete_branch', error, { repositoryPath, branchName, force });
+      throw createTauriCommandError('git_delete_branch', error, { workspace, branchName, force });
     }
   }
 
    
-  async resetToCommit(repositoryPath: string, commitHash: string, mode: 'soft' | 'mixed' | 'hard' = 'mixed'): Promise<GitOperationResult> {
+  async resetToCommit(workspace: GitWorkspaceScope, commitHash: string, mode: 'soft' | 'mixed' | 'hard' = 'mixed'): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_reset_to_commit', { 
-        request: { repositoryPath, commitHash, mode } 
+        request: { ...await gitWorkspaceRequest(workspace), commitHash, mode }
       });
     } catch (error) {
-      throw createTauriCommandError('git_reset_to_commit', error, { repositoryPath, commitHash, mode });
+      throw createTauriCommandError('git_reset_to_commit', error, { workspace, commitHash, mode });
     }
   }
 
    
-  async getDiff(repositoryPath: string, params: GitDiffParams): Promise<string> {
+  async getDiff(workspace: GitWorkspaceScope, params: GitDiffParams): Promise<string> {
     try {
       return await api.invoke('git_get_diff', { 
-        request: { repositoryPath, params } 
+        request: { ...await gitWorkspaceRequest(workspace), params }
       });
     } catch (error) {
-      throw createTauriCommandError('git_get_diff', error, { repositoryPath, params });
+      throw createTauriCommandError('git_get_diff', error, { workspace, params });
     }
   }
 
    
-  async getChangedFiles(repositoryPath: string, params: GitChangedFilesParams): Promise<GitChangedFile[]> {
+  async getChangedFiles(workspace: GitWorkspaceScope, params: GitChangedFilesParams): Promise<GitChangedFile[]> {
     try {
       return await api.invoke('git_get_changed_files', {
-        request: { repositoryPath, params }
+        request: { ...await gitWorkspaceRequest(workspace), params }
       });
     } catch (error) {
-      throw createTauriCommandError('git_get_changed_files', error, { repositoryPath, params });
+      throw createTauriCommandError('git_get_changed_files', error, { workspace, params });
     }
   }
 
 
-  async resetFiles(repositoryPath: string, files: string[], staged: boolean = false): Promise<GitOperationResult> {
+  async resetFiles(workspace: GitWorkspaceScope, files: string[], staged: boolean = false): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_reset_files', { 
-        request: { repositoryPath, files, staged } 
+        request: { ...await gitWorkspaceRequest(workspace), files, staged }
       });
     } catch (error) {
-      throw createTauriCommandError('git_reset_files', error, { repositoryPath, files, staged });
+      throw createTauriCommandError('git_reset_files', error, { workspace, files, staged });
     }
   }
 
    
-  async getFileContent(repositoryPath: string, filePath: string, commit?: string): Promise<string> {
+  async getFileContent(workspace: GitWorkspaceScope, filePath: string, commit?: string): Promise<string> {
     try {
       return await api.invoke('git_get_file_content', { 
-        request: { repositoryPath, filePath, commit } 
+        request: { ...await gitWorkspaceRequest(workspace), filePath, commit }
       });
     } catch (error) {
-      throw createTauriCommandError('git_get_file_content', error, { repositoryPath, filePath, commit });
+      throw createTauriCommandError('git_get_file_content', error, { workspace, filePath, commit });
     }
   }
    
-  async getGraph(repositoryPath: string, maxCount?: number, branchName?: string): Promise<GitGraph> {
+  async getGraph(workspace: GitWorkspaceScope, maxCount?: number, branchName?: string): Promise<GitGraph> {
     try {
       const result = await api.invoke<GitGraph>('git_get_graph', { 
-        repositoryPath,
+        ...await gitWorkspaceRequest(workspace),
         maxCount: maxCount || null,
         branchName: branchName || null
       });
       return result;
     } catch (error) {
-      log.error('Failed to get git graph', { repositoryPath, maxCount, branchName, error });
-      throw createTauriCommandError('git_get_graph', error, { repositoryPath, maxCount, branchName });
+      log.error('Failed to get git graph', { workspace, maxCount, branchName, error });
+      throw createTauriCommandError('git_get_graph', error, { workspace, maxCount, branchName });
     }
   }
 
    
-  async cherryPick(repositoryPath: string, commitHash: string, noCommit: boolean = false): Promise<GitOperationResult> {
+  async cherryPick(workspace: GitWorkspaceScope, commitHash: string, noCommit: boolean = false): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_cherry_pick', { 
-        request: { repositoryPath, commitHash, noCommit } 
+        request: { ...await gitWorkspaceRequest(workspace), commitHash, noCommit }
       });
     } catch (error) {
-      throw createTauriCommandError('git_cherry_pick', error, { repositoryPath, commitHash, noCommit });
+      throw createTauriCommandError('git_cherry_pick', error, { workspace, commitHash, noCommit });
     }
   }
 
    
-  async cherryPickAbort(repositoryPath: string): Promise<GitOperationResult> {
+  async cherryPickAbort(workspace: GitWorkspaceScope): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_cherry_pick_abort', { 
-        request: { repositoryPath } 
+        request: { ...await gitWorkspaceRequest(workspace) }
       });
     } catch (error) {
-      throw createTauriCommandError('git_cherry_pick_abort', error, { repositoryPath });
+      throw createTauriCommandError('git_cherry_pick_abort', error, { workspace });
     }
   }
 
    
-  async cherryPickContinue(repositoryPath: string): Promise<GitOperationResult> {
+  async cherryPickContinue(workspace: GitWorkspaceScope): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_cherry_pick_continue', { 
-        request: { repositoryPath } 
+        request: { ...await gitWorkspaceRequest(workspace) }
       });
     } catch (error) {
-      throw createTauriCommandError('git_cherry_pick_continue', error, { repositoryPath });
+      throw createTauriCommandError('git_cherry_pick_continue', error, { workspace });
     }
   }
 
   
 
    
-  async listWorktrees(repositoryPath: string): Promise<GitWorktreeInfo[]> {
+  async listWorktrees(workspace: GitWorkspaceScope): Promise<GitWorktreeInfo[]> {
     try {
       return await api.invoke('git_list_worktrees', { 
-        request: { repositoryPath } 
+        request: { ...await gitWorkspaceRequest(workspace) }
       });
     } catch (error) {
-      throw createTauriCommandError('git_list_worktrees', error, { repositoryPath });
+      throw createTauriCommandError('git_list_worktrees', error, { workspace });
     }
   }
 
    
-  async addWorktree(repositoryPath: string, branch: string, createBranch: boolean = false): Promise<GitWorktreeInfo> {
+  async addWorktree(workspace: GitWorkspaceScope, branch: string, createBranch: boolean = false): Promise<GitWorktreeInfo> {
     try {
       return await api.invoke('git_add_worktree', { 
-        request: { repositoryPath, branch, createBranch } 
+        request: { ...await gitWorkspaceRequest(workspace), branch, createBranch }
       });
     } catch (error) {
-      throw createTauriCommandError('git_add_worktree', error, { repositoryPath, branch, createBranch });
+      throw createTauriCommandError('git_add_worktree', error, { workspace, branch, createBranch });
     }
   }
 
    
-  async removeWorktree(repositoryPath: string, worktreePath: string, force: boolean = false): Promise<GitOperationResult> {
+  async removeWorktree(workspace: GitWorkspaceScope, worktreePath: string, force: boolean = false): Promise<GitOperationResult> {
     try {
       return await api.invoke('git_remove_worktree', { 
-        request: { repositoryPath, worktreePath, force } 
+        request: { ...await gitWorkspaceRequest(workspace), worktreePath, force }
       });
     } catch (error) {
-      throw createTauriCommandError('git_remove_worktree', error, { repositoryPath, worktreePath, force });
+      throw createTauriCommandError('git_remove_worktree', error, { workspace, worktreePath, force });
     }
   }
 }

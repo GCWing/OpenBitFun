@@ -39,6 +39,10 @@ export struct RemoteSessionList {
   @Param selectedSessionId: string = '';
   @Param workspaceName: string = '';
   @Param workspacePath: string = '';
+  /** Stable record ID of the active workspace; empty for pre-ID hosts. */
+  @Param workspaceId: string = '';
+  @Param workspaceConnectionId: string = '';
+  @Param workspaceSshHost: string = '';
   @Param workspaceKind: string = 'normal';
   @Param recentWorkspaces: RecentWorkspaceEntry[] = [];
   @Param actionPresentation: SessionActionPresentation = SessionActionPresentation.BottomSheet;
@@ -56,9 +60,14 @@ export struct RemoteSessionList {
   @Event onDeleteSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
   @Event onLoadMore: () => void = () => {};
   @Event onCreateAssistantSession: () => void = () => {};
-  @Event onCreateInWorkspace: (path: string, agentType: string) => void = (_path: string, _agentType: string) => {};
-  @Event onSelectWorkspace: (path: string) => void = (_path: string) => {};
-  @Local collapsedWorkspacePaths: string[] = [];
+  /** Project rows report their catalog identity; the ID is what the host resolves by. */
+  @Event onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void =
+    (_path: string, _agentType: string) => {};
+  @Event onSelectWorkspace: (path: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void =
+    (_path: string) => {};
+  // Disclosure state is keyed by the project's section key: its workspace ID
+  // when the catalog supplies one, the legacy triple otherwise.
+  @Local collapsedWorkspaceKeys: string[] = [];
   @Local projectVisibleSteps: string[] = [];
   @Local visibleProjectCount: number = 3;
   @Local chatsCollapsed: boolean = false;
@@ -66,7 +75,7 @@ export struct RemoteSessionList {
   @Local todayCollapsed: boolean = false;
   @Local yesterdayCollapsed: boolean = false;
   @Local earlierCollapsed: boolean = false;
-  @Local createMenuPath: string = '';
+  @Local createMenuKey: string = '';
   @Local activeActionSessionId: string = '';
   @Local showSessionActionSheet: boolean = false;
   @Local detailsSessionId: string = '';
@@ -80,7 +89,7 @@ export struct RemoteSessionList {
 
   @Monitor('isBusy', 'workspacePath')
   onWorkspaceContextChanged(): void {
-    this.createMenuPath = '';
+    this.createMenuKey = '';
   }
 
   @Monitor('selectedSessionId')
@@ -263,7 +272,7 @@ export struct RemoteSessionList {
             // the left edge of any box forced wider than its natural,
             // half-width advance box.
             Stack({ alignContent: Alignment.Center }) {
-              SymbolGlyph(this.isWorkspaceCollapsed(project.path) ?
+              SymbolGlyph(this.isWorkspaceCollapsed(this.sectionKey(project)) ?
                 $r('sys.symbol.chevron_right') : $r('sys.symbol.chevron_down'))
                 .fontSize(14)
                 .fontColor([MUTED])
@@ -277,9 +286,9 @@ export struct RemoteSessionList {
                 .width(22)
                 .height(22)
                 .opacity(0.52)
-                .bindPopup(this.createMenuPath.length > 0 && this.createMenuPath === project.path, {
+                .bindPopup(this.createMenuKey.length > 0 && this.createMenuKey === this.sectionKey(project), {
                   builder: () => {
-                    this.ProjectCreateMenu(project.path)
+                    this.ProjectCreateMenu(project)
                   },
                   placement: Placement.Top,
                   popupColor: TRANSPARENT,
@@ -289,27 +298,28 @@ export struct RemoteSessionList {
                   targetSpace: 6,
                   onStateChange: (event) => {
                     if (!event.isVisible) {
-                      this.createMenuPath = '';
+                      this.createMenuKey = '';
                     }
                   }
                 })
                 .onClick(() => {
-                  this.createMenuPath = this.createMenuPath === project.path ? '' : project.path;
+                  const key = this.sectionKey(project);
+                  this.createMenuKey = this.createMenuKey === key ? '' : key;
                 })
             }
           }
           .width('100%')
           .height(44)
           .onClick(() => {
-            this.toggleWorkspace(project.path);
+            this.toggleWorkspace(this.sectionKey(project));
           })
-          if (!this.isWorkspaceCollapsed(project.path)) {
-            this.projectPreview(project.path)
+          if (!this.isWorkspaceCollapsed(this.sectionKey(project))) {
+            this.projectPreview(project)
           }
         }
         .width('100%')
         .margin({ bottom: 8 })
-      }, (project: RecentWorkspaceEntry): string => project.path)
+      }, (project: RecentWorkspaceEntry): string => this.sectionKey(project))
       if (this.visibleProjectCount < this.projectEntries().length) {
         Text(RemoteI18n.f('remote.projects.showMore', String(this.nextProjectEntryBatchSize())))
           .fontSize(MobileDesignTypography.bodySmall.size)
@@ -327,19 +337,19 @@ export struct RemoteSessionList {
   }
 
   @Builder
-  private ProjectCreateMenu(path: string) {
+  private ProjectCreateMenu(project: RecentWorkspaceEntry) {
     if (this.supportsHarnessProfiles) {
       HarnessProfileMenu({
         includeCowork: true,
         onSelect: (agentType: string) => {
-          this.createMenuPath = '';
-          this.onCreateInWorkspace(path, agentType);
+          this.createMenuKey = '';
+          this.onCreateInWorkspace(project.path, agentType, project.remoteConnectionId, project.remoteSshHost, project.workspaceId);
         }
       })
     } else {
       Column({ space: 2 }) {
-        this.ProjectCreateMenuItem('Code', 'code', path)
-        this.ProjectCreateMenuItem('Cowork', 'Cowork', path)
+        this.ProjectCreateMenuItem('Code', 'code', project)
+        this.ProjectCreateMenuItem('Cowork', 'Cowork', project)
       }
       .width(150)
       .padding({ top: 8, bottom: 8 })
@@ -351,7 +361,7 @@ export struct RemoteSessionList {
   }
 
   @Builder
-  private ProjectCreateMenuItem(label: string, agentType: string, path: string) {
+  private ProjectCreateMenuItem(label: string, agentType: string, project: RecentWorkspaceEntry) {
     Row() {
       Text(label)
         .fontSize(MobileDesignTypography.titleSmall.size)
@@ -362,8 +372,8 @@ export struct RemoteSessionList {
     .height(42)
     .padding({ left: 18, right: 18 })
     .onClick(() => {
-      this.createMenuPath = '';
-      this.onCreateInWorkspace(path, agentType);
+      this.createMenuKey = '';
+      this.onCreateInWorkspace(project.path, agentType, project.remoteConnectionId, project.remoteSshHost, project.workspaceId);
     })
   }
 
@@ -429,19 +439,19 @@ export struct RemoteSessionList {
   }
 
   @Builder
-  private projectPreview(path: string) {
-    ForEach(this.visibleProjectSessions(path), (item: RemoteSession) => {
+  private projectPreview(project: RecentWorkspaceEntry) {
+    ForEach(this.visibleProjectSessions(project), (item: RemoteSession) => {
       this.SessionRow(item, true)
     })
-    if (this.projectVisibleCount(path) < this.projectSessions(path).length) {
-      Text(RemoteI18n.f('remote.sessions.showMore', String(this.nextProjectBatchSize(path))))
+    if (this.projectVisibleCount(project) < this.projectSessions(project).length) {
+      Text(RemoteI18n.f('remote.sessions.showMore', String(this.nextProjectBatchSize(project))))
         .fontSize(MobileDesignTypography.titleSmall.size)
         .fontColor(MUTED)
         .height(44)
         .width('100%')
         .textAlign(TextAlign.Center)
         .onClick(() => {
-          this.projectVisibleSteps = this.projectVisibleSteps.concat([path]);
+          this.projectVisibleSteps = this.projectVisibleSteps.concat([this.sectionKey(project)]);
         })
     }
   }
@@ -460,6 +470,9 @@ export struct RemoteSessionList {
       sortMode: this.sortMode,
       workspaceName: this.workspaceName,
       workspacePath: this.workspacePath,
+      workspaceId: this.workspaceId,
+      workspaceConnectionId: this.workspaceConnectionId,
+      workspaceSshHost: this.workspaceSshHost,
       workspaceKind: this.workspaceKind,
       recentWorkspaces: this.recentWorkspaces,
       workspaceFilter: this.workspaceFilter,
@@ -505,8 +518,12 @@ export struct RemoteSessionList {
     return bucket === 'yesterday' ? projection.yesterday : projection.earlier;
   }
 
-  private projectSessions(path: string): RemoteSession[] {
-    return SessionListProjector.sessionsForProject(this.view(), path);
+  private sectionKey(project: RecentWorkspaceEntry): string {
+    return SessionListProjector.sectionKeyFor(project);
+  }
+
+  private projectSessions(project: RecentWorkspaceEntry): RemoteSession[] {
+    return SessionListProjector.sessionsForProject(this.view(), project);
   }
 
   private filteredSessions(): RemoteSession[] {
@@ -517,32 +534,33 @@ export struct RemoteSessionList {
     return this.view().hasActiveFilter;
   }
 
-  private visibleProjectSessions(path: string): RemoteSession[] {
-    return this.projectSessions(path).slice(0, this.projectVisibleCount(path));
+  private visibleProjectSessions(project: RecentWorkspaceEntry): RemoteSession[] {
+    return this.projectSessions(project).slice(0, this.projectVisibleCount(project));
   }
 
-  private projectVisibleCount(path: string): number {
-    const additionalSteps = this.projectVisibleSteps.filter((item: string) => item === path).length;
+  private projectVisibleCount(project: RecentWorkspaceEntry): number {
+    const key = this.sectionKey(project);
+    const additionalSteps = this.projectVisibleSteps.filter((item: string) => item === key).length;
     return 3 + additionalSteps * 3;
   }
 
-  private nextProjectBatchSize(path: string): number {
-    return Math.min(3, this.projectSessions(path).length - this.projectVisibleCount(path));
+  private nextProjectBatchSize(project: RecentWorkspaceEntry): number {
+    return Math.min(3, this.projectSessions(project).length - this.projectVisibleCount(project));
   }
 
   private nextChatBatchSize(): number {
     return Math.min(3, this.visibleChatSessions().length - this.chatVisibleCount);
   }
 
-  private isWorkspaceCollapsed(path: string): boolean {
-    return this.collapsedWorkspacePaths.indexOf(path) >= 0;
+  private isWorkspaceCollapsed(key: string): boolean {
+    return this.collapsedWorkspaceKeys.indexOf(key) >= 0;
   }
 
-  private toggleWorkspace(path: string): void {
-    if (this.isWorkspaceCollapsed(path)) {
-      this.collapsedWorkspacePaths = this.collapsedWorkspacePaths.filter((item: string) => item !== path);
+  private toggleWorkspace(key: string): void {
+    if (this.isWorkspaceCollapsed(key)) {
+      this.collapsedWorkspaceKeys = this.collapsedWorkspaceKeys.filter((item: string) => item !== key);
     } else {
-      this.collapsedWorkspacePaths = this.collapsedWorkspacePaths.concat([path]);
+      this.collapsedWorkspaceKeys = this.collapsedWorkspaceKeys.concat([key]);
     }
   }
 

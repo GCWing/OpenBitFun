@@ -10,6 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MiniApp } from '@/infrastructure/api/service-api/MiniAppAPI';
 import {
   MINIAPP_COMPOSER_DRAFT_EVENT,
+  MINIAPP_COMPOSER_FOCUS_EVENT,
+  type MiniAppFocusEventDetail,
   type MiniAppDraftEventDetail,
   useMiniAppStore,
 } from '../miniAppStore';
@@ -243,6 +245,24 @@ describe('useMiniAppBridge floating Agent routing', () => {
       { name: 'stocks.ndjson', content: '{"code":"688256"}\n' },
     ]);
     expect(mocks.openMainSession).not.toHaveBeenCalled();
+  });
+
+  it('requests navigation again when the already bound session is focused', async () => {
+    await act(async () => { root.render(<BridgeHarness />); });
+    const iframe = container.querySelector('iframe') as HTMLIFrameElement;
+    await dispatchRpc(iframe, 1, 'chat.claimComposer');
+    await dispatchRpc(iframe, 2, 'agent.ensureSession', { appDataWorkspace: 'chat' });
+    const requests: MiniAppFocusEventDetail[] = [];
+    const record = (event: Event) => { requests.push((event as CustomEvent<MiniAppFocusEventDetail>).detail); };
+    window.addEventListener(MINIAPP_COMPOSER_FOCUS_EVENT, record);
+    try {
+      await dispatchRpc(iframe, 3, 'chat.focusSession', { sessionId: 'session-1' });
+      await dispatchRpc(iframe, 4, 'chat.focusSession', { sessionId: 'session-1' });
+      expect(requests).toHaveLength(2);
+      expect(requests[0]).toEqual(requests[1]);
+      expect(requests[0]).toMatchObject({ appId: app.id, sessionId: 'session-1', surfaceId: 'local' });
+      expect(mocks.agentEnsureSession).toHaveBeenCalledTimes(1);
+    } finally { window.removeEventListener(MINIAPP_COMPOSER_FOCUS_EVENT, record); }
   });
 
   it('rejects malformed Agent context files instead of dropping them', async () => {

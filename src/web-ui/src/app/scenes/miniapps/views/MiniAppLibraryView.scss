@@ -97,6 +97,14 @@
     outline-offset: var(--openbitfun-focus-offset);
   }
 
+  // The row owns the rounded outline; adjoining content stays flush.
+  &__details,
+  &__showcase,
+  &__showcase img,
+  &__summary {
+    border-radius: 0;
+  }
+
   &__details {
     display: grid;
     grid-template-columns: minmax(0, 1fr);

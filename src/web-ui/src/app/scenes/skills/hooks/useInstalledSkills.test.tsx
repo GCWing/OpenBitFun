@@ -41,6 +41,7 @@ vi.mock('@/infrastructure/api', () => ({
 }));
 vi.mock('@/infrastructure/hooks/useWorkspaceManagerSync', () => ({
   useWorkspaceManagerSync: () => ({
+    workspace: { id: 'workspace-id' },
     workspacePath: 'D:/workspace/project',
     hasWorkspace: true,
     isRemoteWorkspace: false,
@@ -223,14 +224,14 @@ describe('useInstalledSkills', () => {
     getSkillConfigsMock.mockResolvedValue([skill]);
     getGlobalSkillSettingsMock.mockResolvedValue(disabled);
     await act(async () => root.render(<Harness enabled />));
-    expect(getGlobalSkillSettingsMock).toHaveBeenCalledWith('D:/workspace/project');
+    expect(getGlobalSkillSettingsMock).toHaveBeenCalledWith('workspace-id');
     expect(currentInstalled?.globallyDisabledSkillKeys.has(skill.key)).toBe(true);
     expect(currentInstalled?.canToggleSkill(skill)).toBe(true);
     const enabled = { ...disabled, globallyDisabledProjectSkillKeys: [] };
     setGlobalSkillDisabledMock.mockResolvedValue(enabled);
     getGlobalSkillSettingsMock.mockResolvedValue(enabled);
     await act(async () => { expect(await currentInstalled?.handleGlobalSkillToggle(skill, true)).toBe(true); });
-    expect(setGlobalSkillDisabledMock).toHaveBeenCalledWith({ skillKey: skill.key, disabled: false, workspacePath: 'D:/workspace/project' });
+    expect(setGlobalSkillDisabledMock).toHaveBeenCalledWith({ skillKey: skill.key, disabled: false, workspaceId: 'workspace-id' });
     expect(currentInstalled?.globallyDisabledSkillKeys.has(skill.key)).toBe(false);
     getGlobalSkillSettingsMock.mockResolvedValue(disabled);
     await act(async () => globalEventBus.emit('mode:config:updated'));

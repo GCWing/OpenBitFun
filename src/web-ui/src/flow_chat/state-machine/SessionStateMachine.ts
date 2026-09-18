@@ -301,6 +301,7 @@ export class SessionStateMachineImpl {
           await ACPClientAPI.cancelDialogTurn({
             sessionId,
             clientId: acpClientId,
+            workspaceId: session?.workspaceId || session?.config?.workspaceId,
             workspacePath: session?.workspacePath || session?.config?.workspacePath,
             remoteConnectionId: session?.remoteConnectionId,
             remoteSshHost: session?.remoteSshHost,

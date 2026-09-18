@@ -125,3 +125,9 @@ For bounded workspace upload ownership, offset recovery, conflict detection, and
 ```bash
 cargo test -p openbitfun-services-core --no-default-features --features workspace-transfer,workspace-runtime --lib workspace_transfer::tests
 ```
+
+Workspace catalog identity and upgrade deserialization (without live filesystem/SSH activation):
+
+```bash
+cargo test -p openbitfun-services-core --no-default-features --features workspace-persistence --lib workspace_persistence::tests
+```

@@ -1,85 +1,11 @@
 import type { Session } from '../types/flow-chat';
 import type { SessionMetadata } from '@/shared/types/session-history';
-import { isSamePath, normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
-
-/** Extract `host` from SSH connection IDs, with or without the legacy port suffix. */
-function hostFromSshConnectionId(connectionId: string): string | null {
-  const t = connectionId.trim();
-  const m = t.match(/^ssh-[^@]+@(.+?)(?::\d+)?$/);
-  return m ? m[1].trim().toLowerCase() : null;
-}
-
-/** Row-level SSH host: prefer workspace metadata, else parse from `connectionId` (sidebar may lack `sshHost`). */
-function effectiveWorkspaceSshHost(
-  remoteSshHost?: string | null,
-  remoteConnectionId?: string | null
-): string {
-  const h = remoteSshHost?.trim().toLowerCase() ?? '';
-  if (h) return h;
-  return hostFromSshConnectionId(remoteConnectionId?.trim() ?? '') ?? '';
-}
-
-/**
- * Whether a persisted session belongs to a nav row for this workspace.
- * Remote workspaces are scoped by **SSH host + normalized remote root** (and connection id when present).
- * We must never treat "same host" as sufficient: two tabs to the same server at `/a` vs `/b` are distinct.
- */
+/** Session list membership is the owning host's workspace ID, never a path. */
 export function sessionBelongsToWorkspaceNavRow(
-  session: Pick<
-    Session,
-    'workspacePath' | 'projectWorkspacePath' | 'remoteConnectionId' | 'remoteSshHost' | 'workspaceHostname'
-  >,
-  workspacePath: string,
-  remoteConnectionId?: string | null,
-  remoteSshHost?: string | null
+  session: Pick<Session, 'workspaceId' | 'projectWorkspaceId'>,
+  workspaceId?: string,
 ): boolean {
-  const sessionRoot = session.workspacePath?.trim();
-  const projectRoot = session.projectWorkspacePath?.trim();
-  const pathsMatch =
-    Boolean(
-      sessionRoot &&
-      (
-        isSamePath(sessionRoot, workspacePath) ||
-        normalizeRemoteWorkspacePath(sessionRoot) === normalizeRemoteWorkspacePath(workspacePath)
-      )
-    ) ||
-    Boolean(
-      projectRoot &&
-      (
-        isSamePath(projectRoot, workspacePath) ||
-        normalizeRemoteWorkspacePath(projectRoot) === normalizeRemoteWorkspacePath(workspacePath)
-      )
-    );
-
-  const wsConn = remoteConnectionId?.trim() ?? '';
-  const sessConn = session.remoteConnectionId?.trim() ?? '';
-  const wsHostEff = effectiveWorkspaceSshHost(remoteSshHost, remoteConnectionId);
-  const sessHost =
-    session.remoteSshHost?.trim().toLowerCase() ||
-    session.workspaceHostname?.trim().toLowerCase() ||
-    '';
-  const sessConnHost = hostFromSshConnectionId(sessConn);
-  const wsConnHost = hostFromSshConnectionId(wsConn);
-
-  if (wsHostEff.length > 0) {
-    // Host match alone is insufficient (same server, different remote folders).
-    if (sessHost === wsHostEff && pathsMatch) {
-      return true;
-    }
-    if (sessConnHost === wsHostEff && pathsMatch) {
-      return true;
-    }
-    if (sessConnHost && wsConnHost && sessConnHost === wsConnHost) {
-      return pathsMatch;
-    }
-  }
-
-  if (!pathsMatch) return false;
-
-  if (wsConn.length > 0 || sessConn.length > 0) {
-    return sessConn === wsConn;
-  }
-  return true;
+  return Boolean(workspaceId && (session.workspaceId === workspaceId || session.projectWorkspaceId === workspaceId));
 }
 
 export function getSessionSortTimestamp(session: Pick<Session, 'createdAt' | 'lastFinishedAt'>): number {

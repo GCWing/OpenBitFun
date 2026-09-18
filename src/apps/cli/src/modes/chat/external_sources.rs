@@ -420,14 +420,14 @@ impl ChatMode {
             ));
             return;
         }
-        let workspace = std::path::PathBuf::from(self.agent.workspace_path_string());
+        let workspace = self.agent.workspace_id();
         let (sender, receiver) = mpsc::channel();
         rt_handle.spawn(async move {
             let result = async {
                 if matches!(&task_action, ExternalControlUiAction::Show) {
                     let surface =
                         openbitfun_core::external_sources::get_external_source_control_snapshot(
-                            Some(&workspace),
+                            workspace.as_deref(),
                             false,
                             openbitfun_product_domains::external_sources::ExternalSourceHostCapabilities::read_write(),
                         )
@@ -463,7 +463,7 @@ impl ChatMode {
                     ExternalControlUiAction::Show => unreachable!(),
                 };
                 let surface = openbitfun_core::external_sources::apply_external_source_control_action(
-                    Some(&workspace),
+                    workspace.as_deref(),
                     ExternalSourceControlRequestV1 {
                         schema_version: EXTERNAL_SOURCE_CONTROL_SCHEMA_V1,
                         operation_id: format!("tui-{}", uuid::Uuid::new_v4()),
@@ -474,7 +474,7 @@ impl ChatMode {
                 .await?;
                 let snapshot =
                     openbitfun_core::external_sources::get_external_source_control_snapshot(
-                        Some(&workspace),
+                        workspace.as_deref(),
                         false,
                         openbitfun_product_domains::external_sources::ExternalSourceHostCapabilities::read_write(),
                     )
@@ -625,13 +625,13 @@ impl ChatMode {
             ));
             return;
         }
-        let workspace = std::path::PathBuf::from(self.agent.workspace_path_string());
+        let workspace = self.agent.workspace_id();
         let (sender, receiver) = mpsc::channel();
         rt_handle.spawn(async move {
             let result = match &task_action {
                 ExternalToolReviewAction::Refresh => {
                     openbitfun_core::external_sources::external_source_snapshot(
-                        Some(&workspace),
+                        workspace.as_deref(),
                         true,
                     )
                     .await
@@ -642,7 +642,7 @@ impl ChatMode {
                     approved,
                 } => {
                     openbitfun_core::external_sources::set_external_tool_target_decision(
-                        Some(&workspace),
+                        workspace.as_deref(),
                         approval_key,
                         decision_key,
                         *approved,
@@ -655,7 +655,7 @@ impl ChatMode {
                     candidate_id,
                 } => {
                     openbitfun_core::external_sources::set_external_tool_conflict_choice(
-                        Some(&workspace),
+                        workspace.as_deref(),
                         conflict_key,
                         candidate_id,
                         expected_preference_revision,
@@ -831,13 +831,13 @@ impl ChatMode {
             ));
             return;
         }
-        let workspace = std::path::PathBuf::from(self.agent.workspace_path_string());
+        let workspace = self.agent.workspace_id();
         let (sender, receiver) = mpsc::channel();
         rt_handle.spawn(async move {
             let result = match &task_action {
                 ExternalAgentReviewAction::Refresh => {
                     openbitfun_core::external_sources::external_source_snapshot(
-                        Some(&workspace),
+                        workspace.as_deref(),
                         true,
                     )
                     .await
@@ -850,7 +850,7 @@ impl ChatMode {
                     expected_preference_revision,
                 } => {
                     openbitfun_core::external_sources::set_external_subagent_activation(
-                        Some(&workspace),
+                        workspace.as_deref(),
                         candidate_id,
                         *approved,
                         *expected_subagent_generation,
@@ -867,7 +867,7 @@ impl ChatMode {
                     expected_preference_revision,
                 } => {
                     openbitfun_core::external_sources::choose_external_subagent_conflict(
-                        Some(&workspace),
+                        workspace.as_deref(),
                         conflict_key,
                         candidate_id,
                         *approve_external,
@@ -883,7 +883,7 @@ impl ChatMode {
                     expected_preference_revision,
                 } => {
                     openbitfun_core::external_sources::set_external_subagent_model_binding(
-                        Some(&workspace),
+                        workspace.as_deref(),
                         binding_key,
                         target.clone(),
                         *expected_subagent_generation,

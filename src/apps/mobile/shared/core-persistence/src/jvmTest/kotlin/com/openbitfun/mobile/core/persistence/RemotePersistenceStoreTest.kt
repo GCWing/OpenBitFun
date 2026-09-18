@@ -90,7 +90,9 @@ class RemotePersistenceStoreTest {
             parameters = 0,
         ).await()
 
-        MobileDatabase.Schema.migrate(driver, 3, 4).await()
+        // The current store reads the v7 identity columns, so the v3 row has to be
+        // carried through every migration up to the current version.
+        MobileDatabase.Schema.migrate(driver, 3, MobileDatabase.Schema.version).await()
         val migratedPendingValue = driver.executeQuery(
             identifier = null,
             sql = "SELECT pending_confirmed FROM remote_session_list WHERE session_id = 'session-v3'",
@@ -214,11 +216,98 @@ class RemotePersistenceStoreTest {
     @Test
     fun migratesV4DatabaseWithAnEmptyWorkspaceCache() = runTest {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        MobileDatabase.Schema.migrate(driver, 4, 5).await()
+        // Build the v4 schema the way a device did (v2 created the remote session
+        // tables), then carry it through every later migration: the v5 workspace
+        // cache is created empty and the v7 identity columns the current store
+        // reads are added on top.
+        MobileDatabase.Schema.migrate(driver, 2, 4).await()
+        MobileDatabase.Schema.migrate(driver, 4, MobileDatabase.Schema.version).await()
         val workspaces = SqlDelightRemoteWorkspaceListStore(driver)
         assertTrue(workspaces.load("device-a").isEmpty())
         workspaces.save("device-a", listOf(PersistedRemoteWorkspace("/repo", "Repo")))
         assertEquals("/repo", workspaces.load("device-a").single().path)
+    }
+
+    @Test
+    fun workspaceIdentityColumnsRoundTripAndSamePathRowsCoexist() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        MobileDatabase.Schema.create(driver).await()
+        val workspaces = SqlDelightRemoteWorkspaceListStore(driver)
+        val local = PersistedRemoteWorkspace("/repo", "Repo", "today", "normal", workspaceId = "local-id")
+        val ssh = PersistedRemoteWorkspace("/repo", "Repo", "today", "remote", "host", "saved", "ssh-id")
+        val legacyLocal = PersistedRemoteWorkspace("/repo", "Old", "", "normal")
+        val legacySsh = PersistedRemoteWorkspace("/repo", "Old SSH", "", "remote", "host", "saved")
+        workspaces.save("device-a", listOf(local, ssh, legacyLocal, legacySsh, local.copy(name = "Duplicate")))
+        val loaded = workspaces.load("device-a")
+        assertEquals(listOf(local, ssh, legacyLocal, legacySsh), loaded, "IDs dedupe, the same path with a different identity does not")
+        assertEquals(listOf("local-id", "ssh-id", null, null), loaded.map { it.workspaceId })
+        assertEquals(listOf(null, "saved", null, "saved"), loaded.map { it.remoteConnectionId })
+        assertEquals(listOf(null, "host", null, "host"), loaded.map { it.remoteSshHost })
+        assertTrue(local.key != ssh.key && legacyLocal.key != legacySsh.key && local.key != legacyLocal.key)
+        assertEquals(local.key, local.copy(path = "/elsewhere", name = "Renamed").key, "an ID row keeps its identity when its projection changes")
+    }
+
+    @Test
+    fun sessionWorkspaceIdentityRoundTripsIncludingExplicitLocalOwnership() = runTest {
+        val (sessions, _) = stores()
+        val rows = listOf(
+            session("legacy", "2026-01-04"),
+            session("local", "2026-01-03").copy(workspacePath = "/repo", workspaceIdentity = PersistedWorkspaceIdentity("/repo")),
+            session("ssh", "2026-01-02").copy(workspacePath = "/repo", workspaceIdentity = PersistedWorkspaceIdentity("/repo", "saved", "host")),
+            session("id", "2026-01-01").copy(workspacePath = "/moved", workspaceIdentity = PersistedWorkspaceIdentity("/repo", null, null, "ws-1")),
+        )
+        sessions.save("device-a", rows)
+        assertEquals(rows, sessions.load("device-a"))
+        // Identity-only edits must not be swallowed by the rewrite signature.
+        sessions.save("device-a", rows.map { if (it.sessionId == "legacy") it.copy(workspaceIdentity = PersistedWorkspaceIdentity("/repo", null, null, "ws-2")) else it })
+        assertEquals("ws-2", sessions.load("device-a").first { it.sessionId == "legacy" }.workspaceIdentity?.workspaceId)
+    }
+
+    @Test
+    fun migratesV6RowsWithoutIdentityAsLegacyAndKeepsSamePathWorkspaces() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        // The remote tables are entirely created by migrations 2..5, so replaying
+        // them yields the exact v6 shape an upgrading install carries.
+        MobileDatabase.Schema.migrate(driver, 2, 6).await()
+        driver.execute(
+            identifier = null,
+            sql = """
+                INSERT INTO remote_session_list(device_key, session_id, title, agent_type, status, updated_at, created_at,
+                    message_count, last_message_id, workspace_path, workspace_name, has_more, pending_confirmed)
+                VALUES ('device-v6', 'session-v6', 'Old', 'code', 'idle', '2026-02-03', '2026-01-02', 1, 'm1', '/repo', 'Repo', 0, 0)
+            """.trimIndent(),
+            parameters = 0,
+        ).await()
+        driver.execute(
+            identifier = null,
+            sql = """
+                INSERT INTO remote_workspace_list(device_key, path, name, last_opened, workspace_kind, seq)
+                VALUES ('device-v6', '/repo', 'Repo', 'yesterday', 'normal', 1), ('device-v6', '/assistant', 'Assistant', '', 'assistant', 0)
+            """.trimIndent(),
+            parameters = 0,
+        ).await()
+
+        MobileDatabase.Schema.migrate(driver, 6, 7).await()
+
+        val sessions = SqlDelightRemoteSessionListStore(driver)
+        val legacySession = sessions.load("device-v6").single()
+        assertEquals("session-v6", legacySession.sessionId)
+        assertEquals("/repo", legacySession.workspacePath)
+        assertEquals(null, legacySession.workspaceIdentity, "pre-identity rows stay legacy; ownership is resolved by the reader")
+
+        val workspaces = SqlDelightRemoteWorkspaceListStore(driver)
+        val legacyRows = workspaces.load("device-v6")
+        assertEquals(listOf("/assistant", "/repo"), legacyRows.map { it.path }, "original order survives the table rebuild")
+        assertTrue(legacyRows.all { it.workspaceId == null && it.remoteConnectionId == null && it.remoteSshHost == null })
+
+        // The rebuilt table accepts what the old primary key forbade.
+        workspaces.save("device-v6", legacyRows + listOf(
+            PersistedRemoteWorkspace("/repo", "Repo", "today", "remote", "host", "saved", "ssh-id"),
+            PersistedRemoteWorkspace("/repo", "Repo", "today", "normal", workspaceId = "local-id"),
+        ))
+        assertEquals(listOf(null, null, "ssh-id", "local-id"), workspaces.load("device-v6").map { it.workspaceId })
+        sessions.save("device-v6", listOf(legacySession.copy(workspaceIdentity = PersistedWorkspaceIdentity("/repo", null, null, "local-id"))))
+        assertEquals("local-id", sessions.load("device-v6").single().workspaceIdentity?.workspaceId)
     }
 
     private fun session(id: String, updated: String) = PersistedRemoteSession(

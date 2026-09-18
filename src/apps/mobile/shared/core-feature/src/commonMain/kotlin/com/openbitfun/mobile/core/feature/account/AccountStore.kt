@@ -604,6 +604,75 @@ public class AccountStore internal constructor(
     }
 }
 
+/**
+ * The sign-in poll loop, kept apart from its transport so it can be tested.
+ *
+ * The loop is the whole of the fix it carries: a poll that fails has to be
+ * tried again rather than end the sign-in, and only this shape lets a test say
+ * so without a relay to fail against.
+ */
+internal object AuthorizationPoll {
+    /**
+     * Whether a failed poll should be tried again inside the sign-in window.
+     *
+     * Retry what the next tick could plausibly get past: a dropped connection,
+     * a timeout, a relay that is briefly unavailable, and a rate limit that
+     * asks for exactly the wait the loop already does between polls. Stop for
+     * anything the relay meant — a rejected or unparseable transaction stays
+     * rejected however long the phone keeps asking.
+     */
+    fun retryable(failure: CloudAccountFailure): Boolean = when (failure) {
+        CloudAccountFailure.NETWORK,
+        CloudAccountFailure.TIMEOUT,
+        CloudAccountFailure.RATE_LIMITED,
+        CloudAccountFailure.RELAY_UNAVAILABLE -> true
+        CloudAccountFailure.INVALID_CREDENTIALS,
+        CloudAccountFailure.AUTHENTICATION,
+        CloudAccountFailure.MALFORMED_RESPONSE -> false
+    }
+
+    /**
+     * Polls [poll] until the transaction is authorized, refused, or its window
+     * closes, and returns the access token it was granted.
+     *
+     * The window spans the minutes the user spends in a browser and a mail app,
+     * which is exactly when a phone drops a connection, hops networks, or
+     * sleeps its radio. Ending the sign-in on the first hiccup would send them
+     * back to the start for something the next tick fixes by itself, so a
+     * [retryable] failure only costs one interval. A window that ran out while
+     * every poll was failing surfaces that failure rather than
+     * [CloudAccountFailure.AUTHENTICATION]: the network is what the user can
+     * act on, and the transaction was never actually refused.
+     */
+    suspend fun awaitAccessToken(
+        start: com.openbitfun.mobile.core.transport.GitHubAuthorization,
+        log: TransportLog,
+        nowSeconds: () -> Long = { kotlin.time.Clock.System.now().epochSeconds },
+        poll: suspend () -> com.openbitfun.mobile.core.transport.GitHubAuthorizationPoll,
+    ): String {
+        var lastTransient: CloudAccountException? = null
+        while (nowSeconds() < start.expiresAt) {
+            kotlinx.coroutines.delay(start.pollIntervalSeconds.coerceIn(1, 30) * 1000L)
+            val result = try {
+                poll()
+            } catch (cause: CloudAccountException) {
+                if (!retryable(cause.failure)) throw cause
+                lastTransient = cause
+                log.warn("account authorization poll retrying reason=${cause.failure}")
+                continue
+            }
+            lastTransient = null
+            if (result.status == "authorized") {
+                val token = result.tokens?.accessToken
+                if (!token.isNullOrEmpty()) return token
+                break
+            }
+            if (result.status == "expired" || result.status == "denied") break
+        }
+        throw lastTransient ?: CloudAccountException(CloudAccountFailure.AUTHENTICATION)
+    }
+}
+
 private class CloudBackend(
     private val client: CloudAccountClient,
     private val log: TransportLog,
@@ -617,17 +686,8 @@ private class CloudBackend(
     ): AccountSessionData {
         val start = client.startAuthorization(relayUrl)
         onAuthorization(start.authorizationUrl)
-        var accessToken: String? = null
-        while (kotlin.time.Clock.System.now().epochSeconds < start.expiresAt) {
-            kotlinx.coroutines.delay(start.pollIntervalSeconds.coerceIn(1, 30) * 1000L)
-            val poll = client.pollAuthorization(relayUrl, start)
-            if (poll.status == "authorized") {
-                accessToken = poll.tokens?.accessToken
-                break
-            }
-            if (poll.status == "expired" || poll.status == "denied") break
-        }
-        val session = client.login(relayUrl, accessToken ?: throw CloudAccountException(CloudAccountFailure.AUTHENTICATION), deviceId, deviceName, deviceSecret)
+        val token = AuthorizationPoll.awaitAccessToken(start, log) { client.pollAuthorization(relayUrl, start) }
+        val session = client.login(relayUrl, token, deviceId, deviceName, deviceSecret)
         return AccountSessionData(
             relayUrl = relayUrl,
             username = session.userId,

@@ -8,6 +8,9 @@ import { WorkspaceKind, isRemoteWorkspace, type WorkspaceInfo } from '@/shared/t
 
 const MAX_CONTEXT_WORKSPACES = 24;
 const MAX_CONTEXT_SESSIONS = 12;
+// The speech adapter accepts 16 KiB tool results. Reserve space for the envelope.
+export const MAX_VOICE_CONTEXT_BYTES = 12 * 1024;
+const jsonBytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
 
 interface VoiceOwnedTaskBaseContext {
   sessionId: string | null;
@@ -30,6 +33,7 @@ export type VoiceOwnedTaskContext = VoiceOwnedTaskBaseContext & (
 /** Immutable routing target captured when Voice starts inside a MiniApp bubble. */
 export interface VoiceMiniAppCallTarget {
   kind: 'miniapp';
+  surfaceId?: string;
   appId: string;
   appName: string;
   claimToken: string;
@@ -37,33 +41,49 @@ export interface VoiceMiniAppCallTarget {
   workspacePath?: string;
 }
 
+export interface VoiceSessionCallTarget {
+  kind: 'control' | 'session';
+  surfaceId: string;
+  sessionId: string;
+  /** Owning workspace of the bound conversation; required to persist voice history. */
+  workspaceId?: string;
+  /** IO root shown to the realtime model as context; never used as identity. */
+  workspacePath: string;
+}
+export type VoiceCallTarget = VoiceMiniAppCallTarget | VoiceSessionCallTarget;
+
+export function voiceConversationHistory(session: Session | undefined) {
+  // Only the explicitly bound conversation's public text goes to the speech provider.
+  return (session?.dialogTurns ?? []).slice(-20).map(turn => ({
+    user: turn.userMessage.content.slice(-4000),
+    assistant: turn.modelRounds.flatMap(round => round.items)
+      .filter(item => item.type === 'text').map(item => item.content).join('\n').slice(-4000),
+  }));
+}
+
 function latestTurnStatus(session: Session): string {
   return session.dialogTurns[session.dialogTurns.length - 1]?.status ?? 'empty';
 }
 
-function workspaceForSession(
+export function workspaceForSession(
   session: Session,
   workspaces: WorkspaceInfo[],
 ): WorkspaceInfo | undefined {
-  const workspacePath = session.config.projectWorkspacePath ?? session.config.workspacePath;
-  if (!workspacePath) return undefined;
-  return workspaces.find(workspace =>
-    workspace.rootPath === workspacePath
-    && (!session.config.remoteConnectionId
-      || workspace.connectionId === session.config.remoteConnectionId),
-  );
+  const id = session.workspaceId ?? session.config.workspaceId;
+  return id ? workspaces.find(workspace => workspace.id === id) : undefined;
 }
 
 /**
  * Build a compact, public snapshot for the realtime model. This contains only
  * navigation/session facts already visible in the controller UI; it excludes
- * message contents, tool payloads, credentials, and private Agent reasoning.
+ * unrelated message contents, tool payloads, credentials, and private Agent reasoning.
+ * The bound conversation also contributes its recent public text history.
  * This is context data for the Voice control plane, not a workspace Agent tool
  * registry. Do not add Agent tool schemas or execution capabilities here.
  */
 export function buildVoiceClientContext(
   voiceTask: VoiceOwnedTaskContext | null = null,
-  callTarget: VoiceMiniAppCallTarget | null = null,
+  callTarget: VoiceCallTarget | null = null,
 ) {
   const workspaceState = workspaceManager.getState();
   const allWorkspaces = Array.from(workspaceState.openedWorkspaces.values());
@@ -89,18 +109,20 @@ export function buildVoiceClientContext(
 
   const sceneState = useSceneStore.getState();
   const activeWorkspace = workspaceState.currentWorkspace;
-  return {
+  const context = {
     scope: 'openbitfun_client',
     captured_at: new Date().toISOString(),
     // Keep immutable call routing near the front of the bounded snapshot so it
     // remains prominent even when the client has many open workspaces/sessions.
     voice_call_target: callTarget ? {
-      kind: 'miniapp',
-      app_id: callTarget.appId,
-      app_name: callTarget.appName,
+      kind: callTarget.kind,
+      app_id: callTarget.kind === 'miniapp' ? callTarget.appId : null,
+      app_name: callTarget.kind === 'miniapp' ? callTarget.appName : null,
       session_id: callTarget.sessionId,
       workspace_path: callTarget.workspacePath ?? null,
-      task_routing: 'miniapp_conversation',
+      task_routing: callTarget.kind === 'miniapp' ? 'miniapp_conversation' : 'bound_conversation',
+      history: voiceConversationHistory(flowState.sessions.get(callTarget.sessionId)),
+      history_truncated: (flowState.sessions.get(callTarget.sessionId)?.dialogTurns.length ?? 0) > 20,
     } : null,
     active_scene: selectActiveSceneId(sceneState),
     open_scenes: [...new Set(sceneState.openTabs.map(tab => getSceneViewId(tab.id)))],
@@ -139,21 +161,47 @@ export function buildVoiceClientContext(
       miniapp_name: voiceTask.kind === 'miniapp' ? voiceTask.appName : null,
     } : null,
   };
+  // Budget the complete JSON in UTF-8, retaining valid structure and exact resource
+  // identities. Large inventories give way to the conversation currently in use.
+  while (jsonBytes(context) > MAX_VOICE_CONTEXT_BYTES && context.visible_sessions.length) {
+    context.visible_sessions.pop();
+    context.visible_sessions_truncated = true;
+  }
+  while (jsonBytes(context) > MAX_VOICE_CONTEXT_BYTES && context.opened_workspaces.length) {
+    context.opened_workspaces.pop();
+    context.opened_workspaces_truncated = true;
+  }
+  const target = context.voice_call_target;
+  while (jsonBytes(context) > MAX_VOICE_CONTEXT_BYTES && target?.history.length) {
+    target.history_truncated = true;
+    if (target.history.length > 1) target.history.shift();
+    else {
+      const turn = target.history[0];
+      const field = turn.assistant.length >= turn.user.length ? 'assistant' : 'user';
+      const points = Array.from(turn[field]);
+      if (points.length <= 1) target.history.pop();
+      else turn[field] = points.slice(-Math.floor(points.length / 2)).join('');
+    }
+  }
+  if (jsonBytes(context) > MAX_VOICE_CONTEXT_BYTES) {
+    throw new Error('The voice context identity exceeds the speech provider limit');
+  }
+  return context;
 }
 
 export function serializeVoiceClientContext(
   voiceTask: VoiceOwnedTaskContext | null = null,
-  callTarget: VoiceMiniAppCallTarget | null = null,
+  callTarget: VoiceCallTarget | null = null,
 ): string {
   return JSON.stringify(buildVoiceClientContext(voiceTask, callTarget));
 }
 
 /** An explicit workspace in the provider tool call always overrides MiniApp routing. */
 export function shouldRouteVoiceTaskToMiniApp(
-  callTarget: VoiceMiniAppCallTarget | null,
+  callTarget: VoiceCallTarget | null,
   workspaceReference?: string,
 ): callTarget is VoiceMiniAppCallTarget {
-  return Boolean(callTarget && !workspaceReference?.trim());
+  return Boolean(callTarget?.kind === 'miniapp' && !workspaceReference?.trim());
 }
 
 function matchingOpenedWorkspaces(reference: string): WorkspaceInfo[] {

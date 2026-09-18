@@ -13,6 +13,7 @@ import { snapshotAPI } from '../../../infrastructure/api';
 import { useCurrentWorkspace } from '../../../infrastructure/contexts/WorkspaceContext';
 import { createLogger } from '@/shared/utils/logger';
 import { runWithConcurrencyLimit } from '@/shared/utils/runWithConcurrencyLimit';
+import { sessionWorkspaceId } from '../../session-drivers/sessionFileNavigation';
 import './SessionFileModificationsBar.scss';
 
 const log = createLogger('SessionFileModificationsBar');
@@ -194,7 +195,6 @@ export const SessionFileModificationsBar: React.FC<SessionFileModificationsBarPr
             const statsResp = await snapshotAPI.getSessionFileDiffStats(
               file.sourceSessionId,
               file.filePath,
-              currentWorkspace?.rootPath,
             );
             const fileName = file.filePath.split(/[/\\]/).pop() || file.filePath;
 
@@ -263,7 +263,7 @@ export const SessionFileModificationsBar: React.FC<SessionFileModificationsBarPr
     } finally {
       setLoadingStats(false);
     }
-  }, [sessionId, t, currentWorkspace?.rootPath]);
+  }, [sessionId, t]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -316,14 +316,15 @@ export const SessionFileModificationsBar: React.FC<SessionFileModificationsBarPr
           false,
           {
             titleKind: 'diff',
-            duplicateKeyPrefix: 'diff'
+            duplicateKeyPrefix: 'diff',
+            workspaceId: sessionWorkspaceId(sessionId) ?? currentWorkspace?.id,
           }
         );
       }, 250);
     } catch (error) {
       log.error('Failed to open diff', error);
     }
-  }, [sessionId, currentWorkspace?.rootPath]);
+  }, [sessionId, currentWorkspace?.rootPath, currentWorkspace?.id]);
 
   const getOperationIcon = (operationType: 'write' | 'edit' | 'delete') => {
     switch (operationType) {

@@ -12,6 +12,14 @@ import androidx.compose.ui.unit.dp
 import com.openbitfun.mobile.app.R
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceIntent
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceUiState
+import com.openbitfun.mobile.core.feature.workspace.WorkspaceReferenceFailure
+
+/** Typed reference failures from the shared store, mapped to copy. */
+internal fun workspaceReferenceFailureText(failure: WorkspaceReferenceFailure): Int = when (failure) {
+    WorkspaceReferenceFailure.ID_REFERENCES_UNSUPPORTED -> R.string.workspace_reference_unsupported
+    WorkspaceReferenceFailure.UNKNOWN_ID -> R.string.workspace_reference_unknown
+    WorkspaceReferenceFailure.AMBIGUOUS_PATH -> R.string.workspace_reference_ambiguous
+}
 
 /** Native presentation only; directory access and workspace mutation stay in KMP. */
 @Composable
@@ -27,17 +35,21 @@ internal fun RuntimeWorkspacePickerDialog(
     var browsing by rememberSaveable { mutableStateOf(false) }
     var submittedPath by rememberSaveable { mutableStateOf<String?>(null) }
     var submittedConnectionId by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(state.busy, state.selected, state.loadFailure, submittedPath, submittedConnectionId) {
+    var submittedWorkspaceId by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.busy, state.selected, state.loadFailure, state.workspaceReferenceFailure, submittedPath, submittedConnectionId, submittedWorkspaceId) {
         val targetPath = submittedPath ?: return@LaunchedEffect
-        if (!state.busy) {
-            if (!state.loadFailure && state.selected?.path == targetPath &&
-                state.selected?.remoteConnectionId == submittedConnectionId) onDismiss()
-        }
+        if (state.busy || state.loadFailure || state.workspaceReferenceFailure != null) return@LaunchedEffect
+        val selected = state.selected ?: return@LaunchedEffect
+        // ID first: a submitted ID is confirmed only by the same ID. Hand-typed paths have none.
+        val confirmed = submittedWorkspaceId?.let { it == selected.workspaceId }
+            ?: (selected.path == targetPath && selected.remoteConnectionId == submittedConnectionId)
+        if (confirmed) onDismiss()
     }
-    fun open(targetPath: String, targetConnection: String?, sshHost: String? = null) {
+    fun open(targetPath: String, targetConnection: String?, sshHost: String?, workspaceId: String?) {
         submittedPath = targetPath
         submittedConnectionId = targetConnection
-        onIntent(RemoteWorkspaceIntent.SelectWorkspace(targetPath, targetConnection, sshHost, false))
+        submittedWorkspaceId = workspaceId
+        onIntent(RemoteWorkspaceIntent.SelectWorkspace(targetPath, targetConnection, sshHost, false, workspaceId))
     }
     if (browsing) RuntimeDirectoryPickerDialog(
         state.directoryPicker, connectionId, onIntent,
@@ -74,9 +86,12 @@ internal fun RuntimeWorkspacePickerDialog(
                         Text(stringResource(R.string.sessions_refresh))
                     }
                 }
+                state.workspaceReferenceFailure?.let { failure ->
+                    Text(stringResource(workspaceReferenceFailureText(failure)), color = MaterialTheme.colorScheme.error)
+                }
                 state.workspaces.forEach { workspace ->
-                    TextButton(colors = actionColors, enabled = !state.busy, onClick = {
-                        open(workspace.path, workspace.remoteConnectionId, workspace.remoteSshHost)
+                    TextButton(colors = actionColors, enabled = !state.busy && !state.isSelected(workspace), onClick = {
+                        open(workspace.path, workspace.remoteConnectionId, workspace.remoteSshHost, workspace.workspaceId)
                     }, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth()) {
                             Text(workspace.displayName, style = MaterialTheme.typography.bodyMedium)
@@ -88,7 +103,8 @@ internal fun RuntimeWorkspacePickerDialog(
             }
         },
         confirmButton = {
-            TextButton(colors = actionColors, enabled = !state.busy && path.isNotBlank(), onClick = { open(path.trim(), connectionId) }) {
+            // A hand-typed path never carries an ID; it is sent as the legacy projection only.
+            TextButton(colors = actionColors, enabled = !state.busy && path.isNotBlank(), onClick = { open(path.trim(), connectionId, null, null) }) {
                 Text(stringResource(R.string.workspace_open_path))
             }
         },

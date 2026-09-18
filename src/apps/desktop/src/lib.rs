@@ -1191,7 +1191,7 @@ pub async fn run() {
                 let app_handle_for_menu = app.handle().clone();
                 let app_state: tauri::State<'_, api::app_state::AppState> = app.state();
                 let config_service = app_state.config_service.clone();
-                let workspace_path = app_state.workspace_path.clone();
+                let workspace_id = app_state.workspace_id.clone();
                 let macos_edit_menu_mode = app_state.macos_edit_menu_mode.clone();
 
                 tokio::spawn(async move {
@@ -1200,7 +1200,7 @@ pub async fn run() {
                         .await
                         .unwrap_or_else(|_| "zh-CN".to_string());
 
-                    let has_workspace = workspace_path.read().await.is_some();
+                    let has_workspace = workspace_id.read().await.is_some();
                     let mode = if has_workspace {
                         crate::macos_menubar::MenubarMode::Workspace
                     } else {
@@ -1393,6 +1393,9 @@ pub async fn run() {
             api::agentic_api::reload_session_context,
             api::agentic_api::update_session_title,
             api::agentic_api::ensure_coordinator_session,
+            api::agentic_api::ensure_control_conversation,
+            api::agentic_api::create_control_conversation,
+            api::agentic_api::record_voice_exchange,
             api::agentic_api::start_dialog_turn,
             api::agentic_api::compact_session,
             api::agentic_api::activate_session_goal,
@@ -2847,7 +2850,8 @@ fn spawn_workspace_search_feature_listener(app_handle: tauri::AppHandle) {
 
     let app_state: tauri::State<'_, api::AppState> = app_handle.state();
     let workspace_search_service = app_state.workspace_search_service.clone();
-    let workspace_path = app_state.workspace_path.clone();
+    let workspace_id = app_state.workspace_id.clone();
+    let workspace_service = app_state.workspace_service.clone();
 
     tokio::spawn(async move {
         let mut feature_enabled =
@@ -2888,14 +2892,17 @@ fn spawn_workspace_search_feature_listener(app_handle: tauri::AppHandle) {
                         continue;
                     }
 
-                    let current_workspace = workspace_path.read().await.clone();
+                    let selected_id = workspace_id.read().await.clone();
+                    let current_workspace = if let Some(id) = selected_id {
+                        workspace_service.get_workspace(&id).await
+                    } else {
+                        None
+                    };
                     if let Some(current_workspace) = current_workspace {
-                        let workspace_str = current_workspace.to_string_lossy().to_string();
-                        if !openbitfun_core::service::remote_ssh::workspace_state::is_remote_path(
-                            workspace_str.trim(),
-                        )
-                        .await
+                        if current_workspace.workspace_kind
+                            != openbitfun_core::service::workspace::WorkspaceKind::Remote
                         {
+                            let current_workspace = current_workspace.root_path;
                             match workspace_search_service.open_repo(&current_workspace).await {
                                 Ok(_) => {
                                     workspace_search_service.schedule_auto_index(

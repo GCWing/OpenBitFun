@@ -706,7 +706,7 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
             ) : (
               <span className={styles.singleValue}>
                 {singleOption?.leading && (
-                  <span aria-hidden="true" className={styles.valueLeading}>{singleOption.leading}</span>
+                  <span aria-hidden="true" className={styles.valueLeading} data-openbitfun-icon-slot="true">{singleOption.leading}</span>
                 )}
                 <OverflowText className={styles.valueLabel}>{singleOption?.label}</OverflowText>
               </span>
@@ -728,7 +728,7 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
             variant="quiet"
           />
         )}
-        <span aria-hidden="true" className={styles.indicator} data-openbitfun-part="indicator">
+        <span aria-hidden="true" className={styles.indicator} data-openbitfun-icon-slot="true" data-openbitfun-part="indicator">
           <Icon name="chevron-down" />
         </span>
       </div>

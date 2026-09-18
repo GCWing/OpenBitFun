@@ -3,7 +3,11 @@
 //! Top-level component that integrates all subsystems
 
 mod background_outcomes;
+mod control_conversation;
 mod coordination_store;
+pub use control_conversation::{
+    ControlConversation, CreateControlConversationRequest, VoiceExchangeRequest,
+};
 pub mod coordinator;
 pub mod scheduler;
 pub mod state_manager;

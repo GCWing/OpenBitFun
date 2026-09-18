@@ -103,6 +103,7 @@ mod tests {
 
     fn state_with_allowed_origins(origins: &[&str]) -> AppState {
         AppState {
+            external_workspace_id: None,
             external_workspace_root: None,
             allowed_browser_origins: std::sync::Arc::new(
                 origins.iter().map(|origin| (*origin).to_string()).collect(),

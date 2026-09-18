@@ -51,17 +51,13 @@ export const fileSearchProvider: GlobalSearchProvider = {
   search: async (request, signal) => {
     if (request.scope === 'actions' || request.query.length < 2) return { items: [] };
 
-    // The legacy file-search commands do not yet carry a remote connection
-    // identity. Never hand an SSH path to that local-capable boundary: session
-    // content search has its own audited remote route, while remote file search
-    // remains explicitly unavailable until the workspace-search contract can
-    // address one concrete remote owner.
+    // Remote content search remains an explicit unsupported capability.
     const remoteWorkspaces = request.workspaces.filter(isRemoteWorkspace);
     const searchableWorkspaces = request.workspaces.filter(workspace => !isRemoteWorkspace(workspace));
     const results = await Promise.allSettled(searchableWorkspaces.map(async (workspace) => {
       const [names, contents] = await Promise.all([
         workspaceAPI.searchFilenamesOnlyDetailed(
-          workspace.rootPath,
+          workspace.id,
           request.query,
           false,
           false,
@@ -71,7 +67,7 @@ export const fileSearchProvider: GlobalSearchProvider = {
           false,
         ),
         workspaceAPI.searchContentOnlyDetailed(
-          workspace.rootPath,
+          workspace.id,
           request.query,
           false,
           false,

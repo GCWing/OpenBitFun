@@ -1,3 +1,4 @@
+import { GitWorkspaceScope, gitWorkspaceKey } from '@/infrastructure/api/service-api/GitAPI';
 /**
  * Git event service - manages Git event pub/sub
  */
@@ -36,7 +37,7 @@ export class GitEventService {
       }
 
       if (options?.repositoryPath && 'repositoryPath' in data) {
-        if (data.repositoryPath !== options.repositoryPath) {
+        if (!data.repositoryPath || gitWorkspaceKey(data.repositoryPath) !== gitWorkspaceKey(options.repositoryPath)) {
           return;
         }
       }
@@ -117,7 +118,7 @@ export class GitEventService {
    * Convenience wrapper for repository-scoped events.
    */
   onRepositoryEvent(
-    repositoryPath: string,
+    repositoryPath: GitWorkspaceScope,
     callback: (event: GitEvent) => void
   ): () => void {
     return this.on('repository:changed', callback, { repositoryPath });
@@ -127,7 +128,7 @@ export class GitEventService {
    * Convenience wrapper for status-changed events.
    */
   onStatusChanged(
-    repositoryPath: string,
+    repositoryPath: GitWorkspaceScope,
     callback: (event: Extract<GitEvent, { type: 'status:changed' }>) => void
   ): () => void {
     return this.on('status:changed', callback, { repositoryPath });

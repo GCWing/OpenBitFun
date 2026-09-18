@@ -105,6 +105,8 @@ impl Default for WorktreeSettings {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeSessionSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub session_id: String,
     pub session_name: String,
     pub status: String,
@@ -116,6 +118,8 @@ pub struct WorktreeSessionSummary {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeSummary {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub worktree_id: String,
     pub project_workspace_path: String,
     pub path: String,

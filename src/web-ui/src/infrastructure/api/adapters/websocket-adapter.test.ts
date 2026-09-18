@@ -278,6 +278,26 @@ describe('encodeRequestBody', () => {
     });
   });
 
+  it('forwards the workspace ID for fork and archive without inventing a path', () => {
+    expect(encodeRequestBody('fork_session', {
+      workspace_id: 'workspace-1',
+      source_session_id: 's1',
+      source_turn_id: 't2',
+    })).toEqual({
+      workspaceId: 'workspace-1',
+      sourceSessionId: 's1',
+      sourceTurnId: 't2',
+    });
+    expect(encodeRequestBody('archive_session', {
+      workspace_id: 'workspace-1',
+      session_id: 's1',
+    })).toEqual({
+      workspaceId: 'workspace-1',
+      sessionId: 's1',
+      archived: true,
+    });
+  });
+
   it('passes unknown actions through unchanged', () => {
     const body = { foo: 'bar' };
     expect(encodeRequestBody('some_unknown_action', body)).toBe(body);

@@ -301,9 +301,9 @@ impl ChatMode {
                     crate::ensure_cli_mcp_service(config)
                         .ok_or_else(|| anyhow!("The current CLI Host has no MCP service"))?
                 };
-                let workspace = self.agent.workspace_path_string();
+                let workspace = self.agent.workspace_id();
                 let external = openbitfun_core::external_sources::external_source_snapshot(
-                    Some(std::path::Path::new(&workspace)),
+                    workspace.as_deref(),
                     false,
                 )
                 .await
@@ -513,7 +513,7 @@ impl ChatMode {
         chat_state: &mut ChatState,
         rt_handle: &tokio::runtime::Handle,
     ) {
-        let workspace_path = self.agent.workspace_path_string();
+        let workspace_id = self.agent.workspace_id();
         let action = item.action.clone();
         let item_id = item.id.clone();
         let item_name = item.name.clone();
@@ -526,7 +526,7 @@ impl ChatMode {
                     expected_mcp_generation,
                     expected_preference_revision,
                 } => openbitfun_core::external_sources::set_external_mcp_server_decision(
-                    Some(std::path::Path::new(&workspace_path)),
+                    workspace_id.as_deref(),
                     &candidate_id,
                     &decision_key,
                     approved,
@@ -542,7 +542,7 @@ impl ChatMode {
                     expected_mcp_generation,
                     expected_preference_revision,
                 } => openbitfun_core::external_sources::choose_external_mcp_conflict(
-                    Some(std::path::Path::new(&workspace_path)),
+                    workspace_id.as_deref(),
                     &conflict_key,
                     &candidate_id,
                     approve_external,

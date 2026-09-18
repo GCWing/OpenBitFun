@@ -94,6 +94,7 @@ impl ChatMode {
         } else {
             "Releasing worktree after prompt submission...".to_string()
         }));
+        let project_workspace_id = chat_state.project_workspace_id().map(str::to_string);
         let project_workspace_path = chat_state.project_workspace_path().map(str::to_string);
         if self.agent.is_remote_workspace() {
             return Err(
@@ -107,6 +108,7 @@ impl ChatMode {
                     openbitfun_core::service::worktree::WorktreeSessionBindingRequest {
                         request_id: format!("tui-worktree-{}", uuid::Uuid::new_v4()),
                         session_id: chat_state.core_session_id.clone(),
+                        project_workspace_id,
                         project_workspace_path,
                         enabled,
                     },
@@ -128,6 +130,8 @@ impl ChatMode {
 
         let execution_target = result.execution_target.clone();
         let binding = openbitfun_runtime_ports::AgentSessionWorkspaceBinding {
+            workspace_kind: Some(openbitfun_core::service::workspace::WorkspaceKind::Normal),
+            project_workspace_id: result.project_workspace_id,
             workspace_id: result.workspace_id,
             workspace_path: result.workspace_path,
             project_workspace_path: Some(result.project_workspace_path),

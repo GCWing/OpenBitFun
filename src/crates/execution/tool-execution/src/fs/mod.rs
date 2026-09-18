@@ -12,9 +12,8 @@ pub use delete_path::{
     inspect_local_delete_target, DeleteLocalPathOutcome, DeleteLocalPathRequest, LocalDeleteTarget,
 };
 pub use edit_file::{
-    edit_local_file, edit_local_file_with_content, edit_success_message,
-    is_edit_content_guardrail_error, EditLocalFileOutcome, EditLocalFileRequest,
-    EditLocalFileWithContentRequest,
+    edit_local_file, edit_local_file_with_content, edit_success_message, EditLocalFileOutcome,
+    EditLocalFileRequest, EditLocalFileWithContentRequest,
 };
 pub use write_file::{
     write_file_success_outcome, write_local_file, write_same_content_outcome,

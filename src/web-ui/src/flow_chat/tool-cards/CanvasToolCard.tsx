@@ -136,6 +136,7 @@ export const CanvasToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId })
       inlineSourceRevision: resultData?.canvas?.source?.revision,
       inlineCompiledRevision: resultData?.compiledPayload?.sourceRevision,
       inlineCompiledHash: resultData?.compiledPayload?.contentHash,
+      workspaceId: session?.workspaceId ?? session?.config.workspaceId,
       workspacePath: session?.workspacePath,
       remoteConnectionId: session?.remoteConnectionId,
       remoteSshHost: session?.remoteSshHost,
@@ -147,6 +148,7 @@ export const CanvasToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId })
       source,
       status: canvasStatus,
       diagnostics,
+      workspaceId: session?.workspaceId ?? session?.config.workspaceId,
       workspacePath: session?.workspacePath,
       remoteConnectionId: session?.remoteConnectionId,
       remoteSshHost: session?.remoteSshHost,
@@ -181,6 +183,8 @@ export const CanvasToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId })
     toolCall?.id,
     toolItem.id,
     toolItem.toolName,
+    session?.config.workspaceId,
+    session?.workspaceId,
   ]);
 
   const summary = (
@@ -254,6 +258,7 @@ export const CanvasToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId })
         <CanvasPreflight
           artifactReference={artifactReference}
           title={title}
+          workspaceId={session?.workspaceId ?? session?.config.workspaceId}
           workspacePath={session?.workspacePath}
           remoteConnectionId={session?.remoteConnectionId}
           remoteSshHost={session?.remoteSshHost}

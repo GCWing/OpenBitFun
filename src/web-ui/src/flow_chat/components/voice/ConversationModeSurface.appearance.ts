@@ -5,8 +5,13 @@ export const conversationModeSurfaceAppearanceDescriptor: AppearanceSurfaceDescr
   parts: [
     { id: 'root' },
     { id: 'body' },
+    { id: 'voiceHeader' },
     { id: 'modeSwitch' },
     { id: 'modeSwitchButton' },
+    { id: 'composer' },
+    { id: 'history' },
+    { id: 'images' },
+    { id: 'imagePreview' },
   ],
   states: [
     { id: 'chat', selector: { kind: 'self', suffix: '[data-openbitfun-state~="chat"]' } },

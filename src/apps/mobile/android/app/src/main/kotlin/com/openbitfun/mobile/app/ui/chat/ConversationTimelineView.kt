@@ -34,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.openbitfun.mobile.app.R
 import com.openbitfun.mobile.core.feature.session.ConversationRow
@@ -85,6 +86,13 @@ internal fun ConversationTimelineView(
     downloadEnabled: Boolean,
     modifier: Modifier,
     historyLoadState: HistoryLoadState = HistoryLoadState.IDLE,
+    /**
+     * How much of the pane the floating header and composer cover. The list
+     * runs the full height behind them, so without these the first and last
+     * messages would sit under a capsule and never come out from under it.
+     */
+    topInset: Dp = 0.dp,
+    bottomInset: Dp = 0.dp,
 ) {
     val listState = rememberLazyListState()
     var stickToBottom by rememberSaveable { mutableStateOf(true) }
@@ -124,7 +132,12 @@ internal fun ConversationTimelineView(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().testTag(CONVERSATION_LIST_TEST_TAG),
-            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, bottom = 12.dp),
+            contentPadding = PaddingValues(
+                start = 20.dp,
+                end = 20.dp,
+                top = topInset,
+                bottom = if (bottomInset > 0.dp) bottomInset else 12.dp,
+            ),
             verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.Bottom),
         ) {
             if (hasMoreMessages) {
@@ -172,7 +185,10 @@ internal fun ConversationTimelineView(
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 5.dp,
                 tonalElevation = 1.dp,
-                modifier = Modifier.align(Alignment.BottomCenter).offset(y = (-4).dp).size(42.dp),
+                // Sits above the floating composer rather than behind it.
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .offset(y = -(bottomInset + 4.dp))
+                    .size(42.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(

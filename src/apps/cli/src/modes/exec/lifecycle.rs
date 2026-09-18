@@ -451,10 +451,7 @@ impl ExecMode {
             | crate::runtime::approval::CliApprovalPolicy::DisableAuto
             | crate::runtime::approval::CliApprovalPolicy::Reject => ExecApprovalMode::Reject,
         };
-        let agent = Arc::new(CliAgentRuntimeClient::new(
-            runtime.as_ref(),
-            workspace_path.clone(),
-        ));
+        let agent = Arc::new(CliAgentRuntimeClient::new(runtime.as_ref()));
         let (initial_diff_base, initial_untracked_files) =
             if super::verification::needs_change_baseline(
                 output_patch.as_deref(),

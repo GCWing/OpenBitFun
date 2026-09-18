@@ -204,6 +204,9 @@
     "runtimeLifecycle": [
       "ensure_assistant_bootstrap",
       "ensure_coordinator_session",
+      "ensure_control_conversation",
+      "create_control_conversation",
+      "record_voice_exchange",
       "initialize_ai",
       "initialize_mcp_servers",
       "initialize_mcp_servers_non_destructive",

@@ -51,7 +51,7 @@ describe('related directory dialog', () => {
   it('reveals loaded diagnostics without refetching or modifying related paths', async () => {
     mocks.references.mockResolvedValue({ references: [], diagnostics: [{ code: 'source.unavailable' }] });
     await act(async () => root.render(<WorkspaceRelatedPathsDialog workspace={workspace} isOpen onClose={() => undefined} />));
-    expect(mocks.references).toHaveBeenCalledExactlyOnceWith('/project', 'workspace-1');
+    expect(mocks.references).toHaveBeenCalledExactlyOnceWith('workspace-1');
     const details = container.querySelector<HTMLDetailsElement>('details[data-openbitfun-component="disclosure"]')!;
     expect(details).not.toBeNull();
     expect(details.open).toBe(false);

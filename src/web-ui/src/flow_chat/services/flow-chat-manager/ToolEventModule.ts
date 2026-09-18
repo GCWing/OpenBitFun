@@ -677,7 +677,9 @@ function handleFailed(
 ): void {
   const updates = {
     toolResult: {
-      result: null,
+      result: toolEvent.error_detail
+        ? { error: toolEvent.error, error_detail: toolEvent.error_detail }
+        : null,
       success: false,
       error: toolEvent.error,
       duration_ms: toolEvent.duration_ms

@@ -5,16 +5,16 @@ import type { SessionResponse } from '@/tools/terminal/types/session';
 import { createManualTerminalSession } from '@/shared/services/createManualTerminalSession';
 import type { SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import {
-  terminalBelongsToWorkspace, terminalMatchesEnvironment, type TerminalWorkspaceScope,
+  terminalBelongsToWorkspace, type TerminalWorkspaceScope,
 } from '@/tools/terminal/services/terminalWorkspaceScope';
 import { isSessionRunning, type ShellEntry } from './shellEntryTypes';
 
 interface UseTerminalSessionsOptions {
+  workspaceId?: string;
   workspacePath?: string;
   isRemote: boolean;
   currentConnectionId: string | null;
   scope: SurfaceScope;
-  workspaces: TerminalWorkspaceScope[];
   savedSessionIds: Set<string>;
 }
 interface SessionSnapshot {
@@ -27,8 +27,8 @@ interface SessionSnapshot {
 const snapshots = new Map<string, SessionResponse[]>();
 
 export function useTerminalSessions(options: UseTerminalSessionsOptions) {
-  const { workspacePath, isRemote, currentConnectionId, scope, workspaces, savedSessionIds } = options;
-  const key = scope.key('workspace-terminals', currentConnectionId, workspacePath);
+  const { workspaceId, workspacePath, isRemote, currentConnectionId, scope, savedSessionIds } = options;
+  const key = scope.key('workspace-terminals', workspaceId);
   const activation = useMemo(() => ({ key, scope }), [key, scope]);
   const currentActivation = useRef<typeof activation | null>(activation);
   currentActivation.current = activation;
@@ -46,16 +46,18 @@ export function useTerminalSessions(options: UseTerminalSessionsOptions) {
   );
   const sessionMap = useMemo(() => new Map(sessions.map(session => [session.id, session])), [sessions]);
   const target = useMemo<TerminalWorkspaceScope>(() => ({
+    workspaceId: workspaceId ?? '',
     rootPath: workspacePath ?? '', isRemote, connectionId: currentConnectionId,
-  }), [workspacePath, isRemote, currentConnectionId]);
+  }), [workspaceId, workspacePath, isRemote, currentConnectionId]);
   const assertCurrent = useCallback(() => {
     scope.assertCurrent('workspace terminal action');
+    if (!workspaceId) throw new Error('Workspace ID is unavailable');
     if (currentActivation.current !== activation) throw new Error('Workspace changed during terminal action');
     if (isRemote && !currentConnectionId) throw new Error('Remote workspace connection is unavailable');
-  }, [scope, activation, isRemote, currentConnectionId]);
+  }, [scope, activation, isRemote, currentConnectionId, workspaceId]);
 
   const refreshSessions = useCallback(async () => {
-    if (!workspacePath || !scope.isCurrent() || currentActivation.current !== activation) return;
+    if (!workspaceId || !scope.isCurrent() || currentActivation.current !== activation) return;
     const version = ++requestVersion.current;
     setSnapshot(previous => ({
       key, sessions: previous.key === key ? previous.sessions : snapshots.get(key) ?? [],
@@ -68,9 +70,12 @@ export function useTerminalSessions(options: UseTerminalSessionsOptions) {
       assertCurrent();
       const allSessions = await service.listSessions();
       if (!scope.isCurrent() || currentActivation.current !== activation || version !== requestVersion.current) return;
+      // A PTY is claimed by workspace ID. Legacy PTYs without an ID are only
+      // claimed through this workspace's own saved profiles, never by matching
+      // the connection or cwd.
       const filtered = allSessions.filter(session =>
-        (savedSessionIds.has(session.id) && terminalMatchesEnvironment(session, target))
-        || terminalBelongsToWorkspace(session, target, workspaces),
+        (!session.workspaceId && savedSessionIds.has(session.id))
+        || terminalBelongsToWorkspace(session, target),
       );
       snapshots.set(key, filtered);
       setSnapshot({ key, sessions: filtered, loading: false, error: null });
@@ -81,7 +86,7 @@ export function useTerminalSessions(options: UseTerminalSessionsOptions) {
         loading: false, error: error instanceof Error ? error.message : String(error),
       }));
     }
-  }, [activation, assertCurrent, key, savedSessionIds, scope, target, workspacePath, workspaces]);
+  }, [activation, assertCurrent, key, savedSessionIds, scope, target, workspaceId]);
 
   useEffect(() => {
     const service = getTerminalService();
@@ -127,26 +132,28 @@ export function useTerminalSessions(options: UseTerminalSessionsOptions) {
       assertCurrent();
     }
     const session = await createManualTerminalSession({
+      workspaceId: workspaceId!,
       workspacePath: entry.workingDirectory ?? entry.cwd ?? workspacePath,
-      connectionId: currentConnectionId, shellType: entry.shellType,
+      shellType: entry.shellType,
       sessionId: entry.sessionId, name: entry.name,
     });
     assertCurrent();
     await refreshSessions();
     assertCurrent();
     return { session, created: true };
-  }, [assertCurrent, currentConnectionId, refreshSessions, sessionMap, workspacePath]);
+  }, [assertCurrent, refreshSessions, sessionMap, workspacePath, workspaceId]);
 
   const createManualSession = useCallback(async (shellType?: string, directory?: string, shellId?: string) => {
     assertCurrent();
     const session = await createManualTerminalSession({
-      workspacePath: directory ?? workspacePath, connectionId: currentConnectionId, shellType, shellId,
+      workspaceId: workspaceId!,
+      workspacePath: directory ?? workspacePath, shellType, shellId,
     });
     assertCurrent();
     await refreshSessions();
     assertCurrent();
     return session;
-  }, [assertCurrent, currentConnectionId, refreshSessions, workspacePath]);
+  }, [assertCurrent, refreshSessions, workspacePath, workspaceId]);
   const stopEntrySession = useCallback(async (entry: ShellEntry) => {
     if (entry.isRunning) await closeSessionIfPresent(entry.sessionId);
   }, [closeSessionIfPresent]);

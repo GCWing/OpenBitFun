@@ -35,9 +35,11 @@ describe('ecosystem compatibility scene presentation contract', () => {
     const scene = source('./EcosystemCompatibilityScene.tsx');
     const model = source('./ecosystemCompatibilityModel.ts');
 
-    expect(scene).toContain('externalSourcesAPI.getDiscoverySnapshot(workspacePath, forceRefresh)');
+    expect(scene).toContain('externalSourcesAPI.getDiscoverySnapshot(workspace?.id, forceRefresh)');
+    expect(scene).not.toContain('getDiscoverySnapshot(workspacePath');
     const content = source('./ExternalAgentContent.tsx');
-    expect(content).toContain('externalSourcesAPI.planMcpImport(workspacePath || undefined)');
+    expect(content).toContain('externalSourcesAPI.planMcpImport(workspace?.id)');
+    expect(content).not.toContain('planMcpImport(workspacePath');
     expect(content).toContain('externalSourcesAPI.applyMcpImport(');
     expect(scene).toContain('ACPClientAPI.getClients()');
     expect(scene).toContain('ACPClientAPI.updateClientSubagentConfig({');

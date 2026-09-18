@@ -99,95 +99,14 @@ describe('sessionOrdering', () => {
     })).toBe(3000);
   });
 
-  it('remote SSH: same host but different remote root does not share nav row', () => {
-    const conn = 'ssh-user@myserver.example.com:22';
-    const host = 'myserver.example.com';
-    const rowPath = '/home/u/project-a';
-    const otherPath = '/home/u/project-b';
-
-    const sessionA = {
-      workspacePath: rowPath,
-      remoteConnectionId: conn,
-      remoteSshHost: host,
-    };
-    const sessionB = {
-      workspacePath: otherPath,
-      remoteConnectionId: conn,
-      remoteSshHost: host,
-    };
-
-    expect(
-      sessionBelongsToWorkspaceNavRow(sessionA, rowPath, conn, host)
-    ).toBe(true);
-    expect(
-      sessionBelongsToWorkspaceNavRow(sessionB, rowPath, conn, host)
-    ).toBe(false);
+  it('keeps same-path workspaces on different hosts separate by ID', () => {
+    expect(sessionBelongsToWorkspaceNavRow({ workspaceId: 'host-a-project' }, 'host-a-project')).toBe(true);
+    expect(sessionBelongsToWorkspaceNavRow({ workspaceId: 'host-b-project' }, 'host-a-project')).toBe(false);
   });
 
-  it('remote SSH: parses stable connection ids without ports when host metadata is absent', () => {
-    const session = {
-      workspacePath: '/home/u/project-a',
-      remoteConnectionId: 'ssh-user@myserver.example.com:22',
-      remoteSshHost: undefined,
-    };
-
-    expect(
-      sessionBelongsToWorkspaceNavRow(
-        session,
-        '/home/u/project-a',
-        'ssh-user@myserver.example.com',
-        undefined
-      )
-    ).toBe(true);
-  });
-
-  it('remote SSH: matches persisted metadata that only has workspaceHostname', () => {
-    const session = {
-      workspacePath: '/home/u/project-a',
-      remoteConnectionId: undefined,
-      remoteSshHost: undefined,
-      workspaceHostname: 'myserver.example.com',
-    };
-
-    expect(
-      sessionBelongsToWorkspaceNavRow(
-        session,
-        '/home/u/project-a',
-        'ssh-user@myserver.example.com:22',
-        undefined
-      )
-    ).toBe(true);
-  });
-
-  it('groups a worktree execution session under its main project', () => {
-    const session = {
-      workspacePath: '/worktrees/project/wt-1',
-      projectWorkspacePath: '/projects/project',
-      remoteConnectionId: undefined,
-      remoteSshHost: undefined,
-    };
-
-    expect(
-      sessionBelongsToWorkspaceNavRow(session, '/projects/project')
-    ).toBe(true);
-    expect(
-      sessionBelongsToWorkspaceNavRow(session, '/projects/other')
-    ).toBe(false);
-  });
-
-  it('does not assign a workspace-less session to every navigation row', () => {
-    const session = {
-      workspacePath: undefined,
-      projectWorkspacePath: undefined,
-      remoteConnectionId: undefined,
-      remoteSshHost: undefined,
-    };
-
-    expect(
-      sessionBelongsToWorkspaceNavRow(session, '/assistants/default')
-    ).toBe(false);
-    expect(
-      sessionBelongsToWorkspaceNavRow(session, '/projects/OpenBitFun')
-    ).toBe(false);
+  it('does not guess membership from a missing or stale ID', () => {
+    expect(sessionBelongsToWorkspaceNavRow({}, 'known')).toBe(false);
+    expect(sessionBelongsToWorkspaceNavRow({ workspaceId: 'stale' }, 'known')).toBe(false);
+    expect(sessionBelongsToWorkspaceNavRow({ workspaceId: 'known' }, undefined)).toBe(false);
   });
 });

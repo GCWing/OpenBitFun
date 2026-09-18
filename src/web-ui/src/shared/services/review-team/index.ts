@@ -1051,12 +1051,12 @@ export function resolveDefaultReviewTeam(
 }
 
 export async function loadDefaultReviewTeam(
-  workspacePath?: string,
+  workspaceId?: string,
 ): Promise<ReviewTeam> {
   const [definition, storedConfig, subagents, rawModels] = await Promise.all([
     loadDefaultReviewTeamDefinition(),
     loadDefaultReviewTeamConfig(),
-    SubagentAPI.listVisibleSubagents({ workspacePath, parentAgentType: 'DeepReview' }),
+    SubagentAPI.listVisibleSubagents({ workspaceId, parentAgentType: 'DeepReview' }),
     configAPI.getConfig('ai.models').catch(() => undefined),
   ]);
 
@@ -1132,10 +1132,10 @@ function resolveReviewTargetForOptions(
 }
 
 export async function prepareDefaultReviewTeamForLaunch(
-  workspacePath?: string,
+  workspaceId?: string,
   _options: ReviewTeamLaunchOptions = {},
 ): Promise<ReviewTeam> {
-  const team = await loadDefaultReviewTeam(workspacePath);
+  const team = await loadDefaultReviewTeam(workspaceId);
   const missingCoreMembers = team.coreMembers.filter((member) => !member.available);
 
   if (missingCoreMembers.length > 0) {
@@ -1157,7 +1157,7 @@ export async function prepareDefaultReviewTeamForLaunch(
           subagentId: member.subagentId,
           parentAgentType: 'DeepReview',
           enabled: true,
-          workspacePath,
+          workspaceId,
         }),
       ),
     );

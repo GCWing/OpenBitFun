@@ -1,4 +1,5 @@
-use super::support::merge_dynamic_mcp_tools;
+use super::query::merge_dynamic_mode_tools;
+use super::support::{merge_dynamic_acp_tools, merge_dynamic_mcp_tools};
 use super::{AgentRegistry, ExternalSubagentRegistration, ExternalSubagentRoute};
 use crate::agentic::agents::definitions::custom::{CustomMode, CustomSubagent, CustomSubagentKind};
 use crate::agentic::agents::registry::builtin::default_model_id_for_builtin_agent;
@@ -12,7 +13,6 @@ use crate::agentic::agents::registry::visibility::{
 use crate::agentic::agents::{
     builtin_agent_specs, resolve_mode_config_profile_id, Agent, UserContextPolicy,
 };
-use crate::agentic::workspace::session_execution_workspace_root;
 use crate::service::config::types::AgentSubagentOverrideState;
 use async_trait::async_trait;
 use openbitfun_agent_runtime::custom_agent::{
@@ -130,18 +130,18 @@ fn test_source_custom_entry(id: &str, prompt: &str, kind: CustomSubagentKind) ->
     }
 }
 
-fn insert_project_subagent(registry: &AgentRegistry, workspace: &Path, id: &str, model: &str) {
+fn insert_project_subagent(registry: &AgentRegistry, workspace: &str, id: &str, model: &str) {
     let mut entries = HashMap::new();
     entries.insert(id.to_string(), test_project_entry(id, model));
     registry
         .write_project_subagents()
-        .insert(workspace.to_path_buf(), entries);
+        .insert(workspace.to_owned(), entries);
 }
 
 #[test]
 fn source_qualified_key_resolves_the_matching_custom_subagent() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("source-qualified-review-workspace");
+    let workspace = String::from("source-qualified-review-workspace");
     let id = "SameNamedReviewer";
     registry.write_agents().insert(
         id.to_string(),
@@ -175,8 +175,8 @@ fn source_qualified_key_resolves_the_matching_custom_subagent() {
 #[tokio::test]
 async fn review_lookup_is_scoped_to_the_requested_workspace() {
     let registry = AgentRegistry::new();
-    let review_workspace = PathBuf::from("review-workspace");
-    let ordinary_workspace = PathBuf::from("ordinary-workspace");
+    let review_workspace = String::from("review-workspace");
+    let ordinary_workspace = String::from("ordinary-workspace");
     let agent_id = "SharedProjectAgent";
 
     registry.write_project_subagents().insert(
@@ -218,6 +218,9 @@ async fn review_lookup_is_scoped_to_the_requested_workspace() {
 #[tokio::test]
 async fn review_lookup_cold_loads_the_requested_project_registry() {
     let env = CustomAgentTestEnv::new("openbitfun-project-review-lookup");
+    let record =
+        crate::service::workspace::legacy_compat::register_local_fixture(&env.workspace_root, None)
+            .await;
     let registry = AgentRegistry::new();
     let agent_id = "ProjectReviewer";
     write_project_custom_review_subagent(
@@ -227,9 +230,45 @@ async fn review_lookup_cold_loads_the_requested_project_registry() {
 
     assert_eq!(
         registry
-            .get_subagent_is_review_for_workspace(agent_id, Some(&env.workspace_root))
+            .get_subagent_is_review_for_workspace(agent_id, Some(&record.id))
             .await,
         Some(true)
+    );
+}
+
+#[tokio::test]
+async fn remote_workspace_load_publishes_an_empty_project_set_and_keeps_user_agents() {
+    let remote = crate::service::workspace::legacy_compat::register_remote_fixture(
+        "/srv/agents/remote-project",
+        "agents-ssh",
+        "agents-host",
+    )
+    .await;
+    let registry = AgentRegistry::new();
+
+    registry.load_custom_agents(Some(&remote.id)).await;
+
+    assert!(
+        registry.user_custom_agents_loaded(),
+        "a remote workspace must not leave user-level custom agents unloaded"
+    );
+    let project_subagents = registry.read_project_subagents();
+    let published = project_subagents
+        .get(remote.id.as_str())
+        .expect("remote workspace publishes a project set so queries stop rescanning");
+    assert!(
+        published.is_empty(),
+        "remote hosts have no locally discoverable project agents"
+    );
+    drop(project_subagents);
+
+    let unknown = String::from("workspace-does-not-exist");
+    registry.load_custom_agents(Some(&unknown)).await;
+    assert!(
+        !registry
+            .read_project_subagents()
+            .contains_key(unknown.as_str()),
+        "an unknown workspace ID must not be published as a project set"
     );
 }
 
@@ -262,8 +301,8 @@ fn custom_subagent_kind_maps_to_registry_source() {
 #[test]
 fn registry_exposes_sdk_agent_ids_without_leaking_core_agent_details() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("D:/workspace/project");
-    let other_workspace = PathBuf::from("D:/workspace/other");
+    let workspace = String::from("id-project");
+    let other_workspace = String::from("id-other");
     insert_project_subagent(&registry, &workspace, "ProjectReviewer", "fast");
     insert_project_subagent(&registry, &other_workspace, "OtherProjectReviewer", "fast");
 
@@ -278,7 +317,7 @@ fn registry_exposes_sdk_agent_ids_without_leaking_core_agent_details() {
     let agent_ids = RuntimeAgentRegistry::agent_ids(
         &registry,
         RuntimeAgentRegistryQuery {
-            workspace_root: Some(&workspace),
+            workspace_id: Some(&workspace),
         },
     );
 
@@ -621,7 +660,7 @@ async fn task_visible_subagents_are_filtered_by_parent_agent() {
     let agentic_visible = registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some("Standard"),
-            workspace_root: None,
+            workspace_id: None,
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported: false,
@@ -647,7 +686,7 @@ async fn task_visible_subagents_are_filtered_by_parent_agent() {
     let deep_review_visible = registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some("DeepReview"),
-            workspace_root: None,
+            workspace_id: None,
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported: false,
@@ -666,7 +705,7 @@ async fn task_visible_subagents_are_filtered_by_parent_agent() {
     let deep_research_visible = registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some("DeepResearch"),
-            workspace_root: None,
+            workspace_id: None,
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported: false,
@@ -682,7 +721,7 @@ async fn task_visible_subagents_are_filtered_by_parent_agent() {
     let ultra_visible = registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some("Ultimate"),
-            workspace_root: None,
+            workspace_id: None,
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported: false,
@@ -699,7 +738,7 @@ async fn task_visible_subagents_are_filtered_by_parent_agent() {
     let planner_visible = registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some("SwarmPlanner"),
-            workspace_root: None,
+            workspace_id: None,
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported: false,
@@ -735,10 +774,85 @@ fn merge_dynamic_mcp_tools_appends_registered_mcp_tools_once() {
 }
 
 #[test]
+fn merge_dynamic_acp_tools_appends_registered_acp_subagents_once() {
+    let configured_tools = vec!["Read".to_string(), "Task".to_string()];
+    let registered_tool_names = vec![
+        "Read".to_string(),
+        "Task".to_string(),
+        "acp__codex__prompt".to_string(),
+        "acp__claude-code__prompt".to_string(),
+        "acp__codex__prompt".to_string(),
+    ];
+
+    let merged = merge_dynamic_acp_tools(configured_tools, &registered_tool_names);
+
+    assert_eq!(
+        merged,
+        vec![
+            "Read".to_string(),
+            "Task".to_string(),
+            "acp__codex__prompt".to_string(),
+            "acp__claude-code__prompt".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn merge_dynamic_acp_tools_ignores_other_tool_families() {
+    let configured_tools = vec!["Read".to_string()];
+    let registered_tool_names = vec![
+        "mcp__notion__notion-search".to_string(),
+        "PluginTool".to_string(),
+        "acptool__not__prefixed".to_string(),
+    ];
+
+    let merged = merge_dynamic_acp_tools(configured_tools.clone(), &registered_tool_names);
+
+    assert_eq!(merged, configured_tools);
+}
+
+#[test]
+fn merge_dynamic_mode_tools_appends_mcp_then_acp_tools() {
+    let resolved_tools = vec!["Read".to_string(), "Task".to_string()];
+    let registered_tool_names = vec![
+        "Read".to_string(),
+        "mcp__notion__notion-search".to_string(),
+        "acp__codex__prompt".to_string(),
+        "Task".to_string(),
+    ];
+
+    let merged = merge_dynamic_mode_tools(resolved_tools, &registered_tool_names, true);
+
+    assert_eq!(
+        merged,
+        vec![
+            "Read".to_string(),
+            "Task".to_string(),
+            "mcp__notion__notion-search".to_string(),
+            "acp__codex__prompt".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn merge_dynamic_mode_tools_keeps_agents_without_dynamic_tools_unchanged() {
+    let resolved_tools = vec!["Read".to_string()];
+    let registered_tool_names = vec![
+        "Read".to_string(),
+        "mcp__notion__notion-search".to_string(),
+        "acp__codex__prompt".to_string(),
+    ];
+
+    let merged = merge_dynamic_mode_tools(resolved_tools.clone(), &registered_tool_names, false);
+
+    assert_eq!(merged, resolved_tools);
+}
+
+#[test]
 fn project_subagent_config_lookup_is_workspace_scoped() {
     let registry = AgentRegistry::new();
-    let workspace_a = PathBuf::from("D:/workspace/project-a");
-    let workspace_b = PathBuf::from("D:/workspace/project-b");
+    let workspace_a = String::from("id-project-a");
+    let workspace_b = String::from("id-project-b");
     insert_project_subagent(&registry, &workspace_a, "SharedReviewer", "fast");
     insert_project_subagent(&registry, &workspace_b, "SharedReviewer", "primary");
 
@@ -768,7 +882,7 @@ fn project_subagent_config_lookup_is_workspace_scoped() {
 #[tokio::test]
 async fn prompt_stability_task_visible_subagents_are_sorted_deterministically() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("D:/workspace/project-c");
+    let workspace = String::from("id-project-c");
 
     registry.register_agent(
         Arc::new(TestAgent {
@@ -831,7 +945,7 @@ async fn prompt_stability_task_visible_subagents_are_sorted_deterministically() 
     let visible = registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: None,
-            workspace_root: Some(&workspace),
+            workspace_id: Some(&workspace),
             list_scope: SubagentListScope::RegistryManagement,
             include_disabled: false,
             external_sources_supported: false,
@@ -856,7 +970,7 @@ async fn prompt_stability_task_visible_subagents_are_sorted_deterministically() 
 #[tokio::test]
 async fn parent_subagent_overrides_follow_source_scopes() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("__test_workspace__/project-d");
+    let workspace = String::from("id-project-d");
 
     registry.register_agent(
         Arc::new(CustomSubagent::new(
@@ -907,7 +1021,7 @@ async fn parent_subagent_overrides_follow_source_scopes() {
 
     let builtin_query = SubagentQueryContext {
         parent_agent_type: Some("Standard"),
-        workspace_root: Some(&workspace),
+        workspace_id: Some(&workspace),
         list_scope: SubagentListScope::RegistryManagement,
         include_disabled: true,
         external_sources_supported: false,
@@ -1073,13 +1187,15 @@ async fn project_scoped_custom_mode_is_skipped_while_project_subagent_loads() {
 
     registry
         .load_custom_agents_from_test_roots(
-            Some(&workspace_root),
+            Some("project-fixture-id"),
             &env.discovery_roots(Some(workspace_root.clone())),
         )
         .await;
 
     let modes = registry.get_modes_info().await;
-    let subagents = registry.get_subagents_info(Some(&workspace_root)).await;
+    let subagents = registry
+        .get_subagents_info(Some("project-fixture-id"))
+        .await;
 
     assert!(!modes.iter().any(|agent| agent.id == "ProjectPlanner"));
     assert!(subagents.iter().any(|agent| agent.id == "ProjectHelper"));
@@ -1434,7 +1550,7 @@ fn unique_suffix() -> String {
 #[tokio::test]
 async fn external_routes_are_workspace_scoped_fail_closed_and_generation_leased() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("C:/workspace/external-agent-registry");
+    let workspace = String::from("id-external-agent-registry");
     let runtime_v1 = "external::candidate::behavior-v1";
     let agent_v1: Arc<dyn Agent> = Arc::new(TestAgent {
         id: runtime_v1.to_string(),
@@ -1466,7 +1582,7 @@ async fn external_routes_are_workspace_scoped_fail_closed_and_generation_leased(
     let local_only = registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some("Standard"),
-            workspace_root: Some(&workspace),
+            workspace_id: Some(&workspace),
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported: false,
@@ -1479,7 +1595,7 @@ async fn external_routes_are_workspace_scoped_fail_closed_and_generation_leased(
     let external = registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some("Standard"),
-            workspace_root: Some(&workspace),
+            workspace_id: Some(&workspace),
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported: true,
@@ -1518,7 +1634,7 @@ async fn external_routes_are_workspace_scoped_fail_closed_and_generation_leased(
     assert!(registry.is_external_subagent_route("Explore", Some(&workspace)));
     assert!(registry.is_external_subagent_route("EXPLORE", Some(&workspace)));
     assert!(!registry.is_external_subagent_route("Explore", None));
-    assert!(!registry.is_external_subagent_route("Explore", Some(Path::new("C:/workspace/other"))));
+    assert!(!registry.is_external_subagent_route("Explore", Some("id-other")));
     assert!(registry
         .resolve_external_subagent_for_fresh_invocation(
             "Explore",
@@ -1620,15 +1736,13 @@ async fn external_routes_are_workspace_scoped_fail_closed_and_generation_leased(
 }
 
 #[tokio::test]
-async fn external_routes_use_one_canonical_workspace_identity_for_all_operations() {
+async fn external_routes_use_the_same_workspace_id_for_all_operations() {
     let registry = AgentRegistry::new();
-    let workspace = tempfile::tempdir().expect("workspace");
-    let alias_component = workspace.path().join("alias-component");
-    std::fs::create_dir(&alias_component).expect("alias component");
-    let workspace_alias = alias_component.join("..");
+    let workspace = "workspace-id-exact";
+    let workspace_alias = workspace;
     let runtime_key = "external::canonical-workspace";
     registry.install_external_subagent_routes(
-        workspace.path(),
+        workspace,
         vec![ExternalSubagentRegistration {
             runtime_key: runtime_key.to_string(),
             logical_id: "canonical-profile".to_string(),
@@ -1653,7 +1767,7 @@ async fn external_routes_use_one_canonical_workspace_identity_for_all_operations
     assert!(registry.is_external_subagent_route("canonical-profile", Some(&workspace_alias)));
     let binding = registry
         .resolve_primary_agent_for_turn("canonical-profile", Some(&workspace_alias), true, None)
-        .expect("alias path should resolve the installed external generation");
+        .expect("workspace ID should resolve the installed external generation");
     assert_eq!(binding.runtime_agent_key, runtime_key);
     drop(binding);
     let routed_entry = registry
@@ -1674,7 +1788,7 @@ async fn external_routes_use_one_canonical_workspace_identity_for_all_operations
         .any(|agent| agent.id == "canonical-profile"));
 
     registry.release_external_subagent_workspace(&workspace_alias);
-    assert!(!registry.is_external_subagent_route("canonical-profile", Some(workspace.path())));
+    assert!(!registry.is_external_subagent_route("canonical-profile", Some(workspace)));
 }
 
 #[test]
@@ -1684,7 +1798,7 @@ fn persisted_external_owner_never_falls_back_to_a_same_name_local_mode() {
     assert!(registry
         .resolve_primary_agent_for_turn(
             "Standard",
-            Some(Path::new("C:/workspace/restarted-external-owner")),
+            Some("id-restarted-external-owner"),
             true,
             Some(openbitfun_core_types::SessionAgentRouteOwner::External),
         )
@@ -1692,7 +1806,7 @@ fn persisted_external_owner_never_falls_back_to_a_same_name_local_mode() {
     let local = registry
         .resolve_primary_agent_for_turn(
             "Standard",
-            Some(Path::new("C:/workspace/legacy-local-owner")),
+            Some("id-legacy-local-owner"),
             true,
             Some(openbitfun_core_types::SessionAgentRouteOwner::Local),
         )
@@ -1706,7 +1820,7 @@ fn persisted_external_owner_never_falls_back_to_a_same_name_local_mode() {
 #[tokio::test]
 async fn external_agent_role_controls_main_and_task_projection() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("C:/workspace/external-agent-roles");
+    let workspace = String::from("id-external-agent-roles");
     let logical_id = "external-role-profile";
     let registration = |runtime_key: &str, mode| ExternalSubagentRegistration {
         runtime_key: runtime_key.to_string(),
@@ -1747,7 +1861,7 @@ async fn external_agent_role_controls_main_and_task_projection() {
     assert!(!registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some("Standard"),
-            workspace_root: Some(&workspace),
+            workspace_id: Some(&workspace),
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported: true,
@@ -1772,7 +1886,7 @@ async fn external_agent_role_controls_main_and_task_projection() {
     let subagent = registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some("Standard"),
-            workspace_root: Some(&workspace),
+            workspace_id: Some(&workspace),
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported: true,
@@ -1789,7 +1903,7 @@ async fn external_agent_role_controls_main_and_task_projection() {
 #[test]
 fn persisted_primary_route_owner_rejects_same_name_route_takeover() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("D:/workspace/owner-takeover");
+    let workspace = String::from("id-owner-takeover");
     let logical_id = "Standard";
     let runtime_key = "external::agentic";
     registry.install_external_subagent_routes(
@@ -1844,7 +1958,7 @@ fn persisted_primary_route_owner_rejects_same_name_route_takeover() {
 #[test]
 fn validated_generation_replacement_restores_same_name_local_agent() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("D:/workspace/plugin-agent-removed");
+    let workspace = String::from("id-plugin-agent-removed");
     let logical_id = "Standard";
     let runtime_key = "external::agentic::generation-1";
     registry.install_external_subagent_routes(
@@ -1890,7 +2004,7 @@ fn validated_generation_replacement_restores_same_name_local_agent() {
 #[test]
 fn route_overlay_overrides_without_replacing_base_external_routes() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("D:/workspace/plugin-agent-overlay");
+    let workspace = String::from("id-plugin-agent-overlay");
     let registration = |runtime_key: &str,
                         logical_id: &str,
                         provider: &str,
@@ -2017,7 +2131,7 @@ fn route_overlay_overrides_without_replacing_base_external_routes() {
 #[test]
 fn persisted_route_key_rejects_same_name_external_provider_takeover() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("D:/workspace/plugin-agent-takeover");
+    let workspace = String::from("id-plugin-agent-takeover");
     let logical_id = "Standard";
     let registration = |runtime_key: &str, route_key: &str| ExternalSubagentRegistration {
         runtime_key: runtime_key.to_string(),
@@ -2078,8 +2192,8 @@ fn persisted_route_key_rejects_same_name_external_provider_takeover() {
 #[test]
 fn external_primary_route_follows_the_session_execution_worktree() {
     let registry = AgentRegistry::new();
-    let project = PathBuf::from("D:/workspace/project");
-    let worktree = PathBuf::from("D:/workspace/worktrees/feature");
+    let project = String::from("id-project");
+    let worktree = String::from("id-worktrees-feature");
     let logical_id = "workspace-profile";
     let registration = |runtime_key: &str| ExternalSubagentRegistration {
         runtime_key: runtime_key.to_string(),
@@ -2114,16 +2228,42 @@ fn external_primary_route_follows_the_session_execution_worktree() {
     );
 
     let config = SessionConfig {
-        workspace_path: Some(worktree.to_string_lossy().into_owned()),
-        project_workspace_path: Some(project.to_string_lossy().into_owned()),
+        workspace_id: Some(worktree.clone()),
+        project_workspace_id: Some(project.clone()),
+        workspace_path: Some("/same/execution-path".into()),
+        project_workspace_path: Some("/same/execution-path".into()),
         ..SessionConfig::default()
     };
-    let route_root = session_execution_workspace_root(&config).expect("execution root");
+    let workspace_id = config
+        .workspace_id
+        .as_deref()
+        .expect("execution workspace ID");
     let binding = registry
-        .resolve_primary_agent_for_turn(logical_id, Some(route_root), true, None)
+        .resolve_primary_agent_for_turn(logical_id, Some(workspace_id), true, None)
         .expect("worktree route should resolve");
 
     assert_eq!(binding.runtime_agent_key, "external::worktree");
+}
+
+#[test]
+fn hidden_control_agent_resolves_as_a_session_primary() {
+    let registry = AgentRegistry::new();
+    let binding = registry
+        .resolve_primary_agent_for_turn("OpenBitFun", None, false, None)
+        .expect("the persistent control conversation must be admitted");
+    assert_eq!(binding.runtime_agent_key, "OpenBitFun");
+    assert_eq!(
+        binding.route_owner,
+        openbitfun_core_types::SessionAgentRouteOwner::Local
+    );
+    assert!(registry
+        .resolve_primary_agent_for_turn(
+            "OpenBitFun",
+            None,
+            false,
+            Some(openbitfun_core_types::SessionAgentRouteOwner::External)
+        )
+        .is_none());
 }
 
 #[test]
@@ -2201,7 +2341,7 @@ fn non_builtin_same_name_review_agent_does_not_resolve_as_session_primary() {
 #[test]
 fn local_route_resolves_review_agents_as_session_primaries() {
     let registry = AgentRegistry::new();
-    let workspace = PathBuf::from("D:/workspace/review-local-route");
+    let workspace = String::from("id-review-local-route");
     registry.install_external_subagent_routes(
         &workspace,
         Vec::new(),

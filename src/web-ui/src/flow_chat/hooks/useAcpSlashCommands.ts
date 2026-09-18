@@ -27,6 +27,7 @@ export function useAcpSlashCommands(
 
   const sessionId = acpSession?.sessionId ?? null;
   const clientId = acpSession?.clientId ?? null;
+  const workspaceId = acpSession?.workspaceId;
   const workspacePath = acpSession?.workspacePath;
   const remoteConnectionId = acpSession?.remoteConnectionId;
   const remoteSshHost = acpSession?.remoteSshHost;
@@ -42,6 +43,7 @@ export function useAcpSlashCommands(
     ACPClientAPI.getSessionCommands({
       sessionId,
       clientId,
+      workspaceId,
       workspacePath,
       remoteConnectionId,
       remoteSshHost,
@@ -56,7 +58,7 @@ export function useAcpSlashCommands(
     return () => {
       cancelled = true;
     };
-  }, [sessionId, clientId, workspacePath, remoteConnectionId, remoteSshHost]);
+  }, [sessionId, clientId, workspaceId, workspacePath, remoteConnectionId, remoteSshHost]);
 
   useEffect(() => {
     if (!sessionId || !clientId) return;

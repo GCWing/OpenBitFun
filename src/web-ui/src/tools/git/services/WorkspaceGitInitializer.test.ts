@@ -4,7 +4,7 @@ const workspaceManagerMock = vi.hoisted(() => ({
   addEventListener: vi.fn(() => vi.fn()),
   getState: vi.fn(() => ({
     currentWorkspace: {
-      rootPath: 'D:/workspace/OpenBitFun',
+      id: 'workspace-1', rootPath: 'D:/workspace/OpenBitFun',
     },
   })),
 }));
@@ -29,7 +29,7 @@ describe('WorkspaceGitInitializer startup refresh', () => {
     workspaceGitInitializer.start();
     await Promise.resolve();
 
-    expect(gitStateManagerMock.refresh).toHaveBeenCalledWith('D:/workspace/OpenBitFun', {
+    expect(gitStateManagerMock.refresh).toHaveBeenCalledWith({ workspaceId: 'workspace-1' }, {
       layers: ['basic'],
       reason: 'mount',
       force: true,

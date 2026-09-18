@@ -239,7 +239,7 @@ export const ListboxOption = forwardRef<HTMLButtonElement, ListboxOptionProps>(
         type="button"
       >
         {leading !== undefined && leading !== null && (
-          <span aria-hidden="true" className={styles.leading} data-openbitfun-part="leading">
+          <span aria-hidden="true" className={styles.leading} data-openbitfun-icon-slot="true" data-openbitfun-part="leading">
             {leading}
           </span>
         )}
@@ -254,7 +254,7 @@ export const ListboxOption = forwardRef<HTMLButtonElement, ListboxOptionProps>(
         {metadata !== undefined && metadata !== null && (
           <OverflowText title={title === "" ? "" : undefined} className={styles.metadata} data-openbitfun-part="metadata" marqueeActive={active}>{metadata}</OverflowText>
         )}
-        <span aria-hidden="true" className={styles.indicator} data-openbitfun-part="indicator">
+        <span aria-hidden="true" className={styles.indicator} data-openbitfun-icon-slot="true" data-openbitfun-part="indicator">
           {indicator ?? (selected ? <Icon name="check-line" /> : null)}
         </span>
       </button>

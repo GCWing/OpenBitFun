@@ -21,7 +21,11 @@ pub(crate) struct McpImportCommand {
 }
 
 pub(crate) async fn execute(command: McpImportCommand) -> Result<()> {
-    let workspace = std::env::current_dir().ok();
+    let workspace = Some(
+        crate::create_cli_local_workspace(&std::env::current_dir()?)
+            .await?
+            .id,
+    );
     let plan = openbitfun_core::external_mcp_import::plan_external_mcp_import(workspace.clone())
         .await
         .map_err(operation_error)?;

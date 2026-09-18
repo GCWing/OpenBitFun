@@ -1,3 +1,4 @@
+import { captureContentScope } from '@/shared/services/workbenchContentService';
 import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Icon, IconButton } from '@openbitfun/ui';
 import { AlertTriangle, Code2, Loader2, MousePointer2 } from 'lucide-react';
@@ -45,6 +46,7 @@ export interface OpenBitFunCanvasPanelProps {
   source?: string;
   status?: string;
   diagnostics?: OpenBitFunCanvasDiagnostic[];
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -73,10 +75,6 @@ interface CanvasElementReference {
     width?: number;
     height?: number;
   };
-}
-
-function activeWorkspacePath(): string | undefined {
-  return flowChatStore.getActiveSession()?.workspacePath;
 }
 
 function normalizeFileTarget(filePath: string, workspacePath?: string): string {
@@ -202,6 +200,7 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
   source,
   status,
   diagnostics = [],
+  workspaceId,
   workspacePath,
   remoteConnectionId,
   remoteSshHost,
@@ -317,32 +316,24 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
   const loadArtifactSnapshot = useCallback(async (reason: string) => {
     if (!artifactReference) return null;
     const response = await canvasAPI.loadArtifact({
+
+      workspaceId: workspaceId ?? '',
       artifactReference,
-      workspacePath,
-      remoteConnectionId,
-      remoteSshHost,
     });
     const canvas = response.canvas ?? null;
     applyLoadedCanvas(canvas, reason);
     return canvas;
-  }, [
-    applyLoadedCanvas,
-    artifactReference,
-    remoteConnectionId,
-    remoteSshHost,
-    workspacePath,
-  ]);
+  }, [applyLoadedCanvas, artifactReference, workspaceId]);
 
   const loadState = useCallback(async () => {
     if (!artifactReference) return null;
     const response = await canvasAPI.loadState({
+
+      workspaceId: workspaceId ?? '',
       artifactReference,
-      workspacePath,
-      remoteConnectionId,
-      remoteSshHost,
     });
     return response.state ?? null;
-  }, [artifactReference, remoteConnectionId, remoteSshHost, workspacePath]);
+  }, [artifactReference, workspaceId]);
 
   const requestCanvasAutoRepair = useCallback(async (data: {
     message: string;
@@ -444,6 +435,8 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
     reportedRuntimeErrorsRef.current.add(dedupeKey);
     try {
       const response = await canvasAPI.reportRuntimeError({
+
+      workspaceId: workspaceId ?? '',
         artifactReference,
         sourceRevisionSeen,
         message,
@@ -453,9 +446,6 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
         line: typeof data.lineno === 'number' ? data.lineno : undefined,
         column: typeof data.colno === 'number' ? data.colno : undefined,
         componentStack: data.componentStack ? String(data.componentStack) : undefined,
-        workspacePath,
-        remoteConnectionId,
-        remoteSshHost,
       });
       applyLoadedCanvas(response.canvas ?? null, 'runtime-error');
       void requestCanvasAutoRepair({
@@ -474,11 +464,9 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
   }, [
     applyLoadedCanvas,
     artifactReference,
-    remoteConnectionId,
-    remoteSshHost,
     requestCanvasAutoRepair,
     renderedCanvas.revision,
-    workspacePath,
+    workspaceId,
   ]);
 
   const reportRuntimeReady = useCallback(async (data: {
@@ -520,13 +508,12 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
     reportedReadyRevisionsRef.current.add(key);
     try {
       const response = await canvasAPI.reportRuntimeReady({
+
+      workspaceId: workspaceId ?? '',
         artifactReference,
         sourceRevisionSeen,
         runtimeVersion,
         sdkVersion,
-        workspacePath,
-        remoteConnectionId,
-        remoteSshHost,
       });
       applyLoadedCanvas(response.canvas ?? null, 'runtime-ready');
     } catch (error) {
@@ -543,11 +530,9 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
     artifactReference,
     loadedCanvas?.compiledPayload?.runtimeVersion,
     loadedCanvas?.compiledPayload?.sdkVersion,
-    remoteConnectionId,
-    remoteSshHost,
     renderedCanvas.revision,
     renderedCanvas.runtime,
-    workspacePath,
+    workspaceId,
   ]);
 
   const initializeIframe = useCallback(async (reason: string) => {
@@ -655,7 +640,7 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
         if (!requestedPath) {
           throw new Error('Canvas openWorkspaceFile action requires filePath');
         }
-        const workspacePath = activeWorkspacePath();
+        if (!workspaceId) throw new Error('Canvas workspace ID is unavailable');
         const filePath = normalizeFileTarget(requestedPath, workspacePath);
         const line = positiveInteger(record.line);
         const column = positiveInteger(record.column);
@@ -664,18 +649,21 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
           fileTabManager.openFile({
             filePath,
             workspacePath,
+            scope: captureContentScope({ workspaceId }),
             jumpToRange: { start: line, end: lineEnd },
             mode: 'agent',
           });
         } else if (line) {
           fileTabManager.openFileAndJump(filePath, line, column, {
             workspacePath,
+            scope: captureContentScope({ workspaceId }),
             mode: 'agent',
           });
         } else {
           fileTabManager.openFile({
             filePath,
             workspacePath,
+            scope: captureContentScope({ workspaceId }),
             mode: 'agent',
           });
         }
@@ -697,7 +685,7 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
         log.warn('Unsupported Canvas action requested', { type: record.type });
         throw new Error(`Unsupported Canvas action: ${String(record.type)}`);
     }
-  }, []);
+  }, [workspaceId, workspacePath]);
 
   const handleExportHtml = useCallback(async () => {
     if (!renderedHtml || exportingHtml) return;
@@ -860,14 +848,13 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
           }
           case 'openbitfun-canvas-save-state': {
             const response = await canvasAPI.saveState({
+
+      workspaceId: workspaceId ?? '',
               artifactReference,
               sourceRevisionSeen: message.sourceRevisionSeen,
               values: message.values ?? {},
               valueVersions: message.valueVersions ?? {},
               updatedAt: Date.now(),
-              workspacePath,
-              remoteConnectionId,
-              remoteSshHost,
             });
             postToIframe({
               type: 'openbitfun-canvas-save-state-result',
@@ -968,6 +955,7 @@ export const OpenBitFunCanvasPanel: React.FC<OpenBitFunCanvasPanelProps> = ({
     resolvedTitle,
     remoteSshHost,
     workspacePath,
+    workspaceId,
   ]);
 
   useEffect(() => {

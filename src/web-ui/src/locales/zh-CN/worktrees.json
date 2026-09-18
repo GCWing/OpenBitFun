@@ -4,7 +4,7 @@
   },
   "strip": {
     "toggleLabel": "worktree",
-    "newWorktree": "New Worktree",
+    "newWorktree": "新建工作树",
     "toggleOffDescription": "让这个会话在独立的 Git worktree 中执行，多个智能体并行跑任务时互不打扰。",
     "toggleOnDescription": "正在隔离的 worktree 中执行：{{path}}。关闭后会回到项目目录。",
     "togglePendingOnDescription": "已开启 worktree 隔离；发送第一条消息后才会创建 worktree。",

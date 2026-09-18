@@ -3,7 +3,7 @@ import { CSSProperties, ReactNode } from 'react'
 /**
  * Editor mode
  */
-export type EditorMode = 'ir' | 'split' | 'edit' | 'preview'
+export type EditorMode = 'ir' | 'edit'
 
 /**
  * Toolbar button configuration

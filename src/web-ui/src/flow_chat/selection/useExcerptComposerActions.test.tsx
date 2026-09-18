@@ -22,6 +22,7 @@ vi.mock('../store/FlowChatStore', () => ({ flowChatStore: {
 vi.mock('../services/BtwThreadService', () => ({ createBtwSessionPlaceholder: mocks.create }));
 vi.mock('../services/flow-chat-manager/PendingQueueModule', () => ({ pendingQueueManager: { listForSurface: mocks.queue } }));
 vi.mock('../services/btwSessionPane', () => ({ openBtwSessionInAuxPane: mocks.openPane }));
+vi.mock('../services/sessionActivation', () => ({ openMainSession: vi.fn() }));
 vi.mock('@/app/scenes/session/sessionPanelLayout', () => ({ expandSessionAuxPane: mocks.expand }));
 vi.mock('@/infrastructure/runtime', () => ({ isTauriRuntime: () => true }));
 vi.mock('../session-drivers/resolve', () => ({ resolveSessionDriverId: () => 'local' }));

@@ -83,7 +83,8 @@ import { sessionActivityStore } from '../store/sessionActivityStore';
 let sequence = 0;
 const disposers: Array<() => void> = [];
 const row = (sessionId: string, config = {}): Session => ({
-  sessionId, title: sessionId, workspacePath: '/workspace', dialogTurns: [], historyState: 'metadata-only',
+  sessionId, title: sessionId, workspaceId: 'workspace-1', workspacePath: '/workspace', dialogTurns: [],
+  historyState: 'metadata-only',
   config: { agentType: 'Standard', ...config }, status: 'idle', createdAt: 1, lastActiveAt: 1,
   error: null, isHistorical: true,
 } as Session);

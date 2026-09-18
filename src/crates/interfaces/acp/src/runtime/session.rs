@@ -13,6 +13,7 @@ use openbitfun_agent_runtime::sdk::{
     AgentSessionModeUpdateRequest, SessionStoragePathRequest,
 };
 use openbitfun_core::agentic::agents::get_agent_registry;
+use openbitfun_core::service::workspace::{get_global_workspace_service, WorkspaceInfo};
 
 use super::model::{
     build_session_config_options, build_session_model_state, normalize_session_model_id,
@@ -30,6 +31,33 @@ impl OpenBitFunAcpRuntime {
         Ok(())
     }
 
+    /// ACP names a workspace by its `cwd` directory operand. This is the one
+    /// place that external reference is translated into the owning workspace
+    /// record; every later runtime call carries the record ID.
+    ///
+    /// The record is registered hidden: an ACP client's `cwd` must not become
+    /// an opened, recent, or current workspace of the desktop that shares the
+    /// same catalog.
+    async fn open_cwd_workspace(cwd: &str) -> Result<WorkspaceInfo> {
+        let service = get_global_workspace_service()
+            .ok_or_else(|| Error::internal_error().data("Workspace service is unavailable"))?;
+        service
+            .register_local_workspace_record(Path::new(cwd).to_path_buf())
+            .await
+            .map_err(|error| Error::invalid_params().data(error.to_string()))
+    }
+
+    /// Read-only translation for listing: a directory no record owns has no
+    /// sessions, so it answers `None` instead of opening a workspace.
+    async fn resolve_cwd_workspace(cwd: &str) -> Result<Option<WorkspaceInfo>> {
+        let service = get_global_workspace_service()
+            .ok_or_else(|| Error::internal_error().data("Workspace service is unavailable"))?;
+        service
+            .resolve_legacy_workspace_reference(None, cwd, None, None)
+            .await
+            .map_err(|error| Error::invalid_params().data(error.to_string()))
+    }
+
     pub(super) async fn create_session(
         &self,
         request: NewSessionRequest,
@@ -43,6 +71,7 @@ impl OpenBitFunAcpRuntime {
         let config_options = build_session_config_options(None, Some("Standard")).await?;
         let session_id = uuid::Uuid::new_v4().to_string();
         Self::validate_session_target(&session_id, Path::new(&cwd))?;
+        let workspace = Self::open_cwd_workspace(&cwd).await?;
         let _session_transition = self.claim_session_transition(&session_id)?;
         let mcp_server_ids = self
             .provision_mcp_servers(
@@ -61,7 +90,7 @@ impl OpenBitFunAcpRuntime {
             workspace_path: Some(cwd.clone()),
             project_workspace_path: None,
             execution_target: None,
-            workspace_id: None,
+            workspace_id: Some(workspace.id.clone()),
             remote_connection_id: None,
             remote_ssh_host: None,
             model_id: None,
@@ -83,6 +112,7 @@ impl OpenBitFunAcpRuntime {
                 let core_cleaned = if core_cleanup_required {
                     self.delete_failed_new_core_session(
                         &session_id,
+                        &workspace.id,
                         &cwd,
                         "Core session creation rollback",
                     )
@@ -112,6 +142,7 @@ impl OpenBitFunAcpRuntime {
         let acp_session = AcpSessionState {
             acp_session_id: session.session_id.clone(),
             openbitfun_session_id: session.session_id.clone(),
+            workspace_id: workspace.id,
             cwd,
             mode_id: session.agent_type.clone(),
             model_id: normalize_session_model_id(None),
@@ -158,6 +189,7 @@ impl OpenBitFunAcpRuntime {
         let mcp_servers = request.mcp_servers;
         self.validate_mcp_servers(&mcp_servers)?;
         Self::validate_session_target(&session_id, Path::new(&cwd))?;
+        let workspace = Self::open_cwd_workspace(&cwd).await?;
         let _session_transition = self.claim_session_transition(&session_id)?;
         if self.sessions.contains_key(&session_id) {
             return Err(Error::invalid_params().data("session is already active"));
@@ -176,7 +208,7 @@ impl OpenBitFunAcpRuntime {
             .compatibility
             .restore_session_with_turns_for_workspace(
                 SessionStoragePathRequest {
-                    workspace_path: Path::new(&cwd).to_path_buf(),
+                    workspace_path: workspace.root_path.clone(),
                     remote_connection_id: None,
                     remote_ssh_host: None,
                 },
@@ -202,6 +234,7 @@ impl OpenBitFunAcpRuntime {
         let acp_session = AcpSessionState {
             acp_session_id: session.session_id.clone(),
             openbitfun_session_id: session.session_id.clone(),
+            workspace_id: workspace.id,
             cwd,
             mode_id: session.agent_type.clone(),
             model_id: normalize_session_model_id(session.config.model_id.as_deref()),
@@ -339,7 +372,12 @@ impl OpenBitFunAcpRuntime {
     ) -> (bool, bool) {
         let mcp_cleaned = self.cleanup_failed_session_setup(session, stage).await;
         let core_cleaned = self
-            .delete_failed_new_core_session(&session.openbitfun_session_id, &session.cwd, stage)
+            .delete_failed_new_core_session(
+                &session.openbitfun_session_id,
+                &session.workspace_id,
+                &session.cwd,
+                stage,
+            )
             .await;
         (mcp_cleaned, core_cleaned)
     }
@@ -347,12 +385,14 @@ impl OpenBitFunAcpRuntime {
     async fn delete_failed_new_core_session(
         &self,
         session_id: &str,
+        workspace_id: &str,
         cwd: &str,
         stage: &str,
     ) -> bool {
         if let Err(error) = self
             .agent_runtime
             .delete_session(AgentSessionDeleteRequest {
+                workspace_id: Some(workspace_id.to_string()),
                 workspace_path: cwd.to_string(),
                 session_id: session_id.to_string(),
                 remote_connection_id: None,
@@ -443,10 +483,18 @@ impl OpenBitFunAcpRuntime {
             .as_deref()
             .and_then(|value| value.parse::<u128>().ok());
 
+        // A directory that no workspace record owns has no sessions yet;
+        // `session/new` is what opens it. Answer with an empty page instead of
+        // an error so clients can list before their first session.
+        let Some(workspace) = Self::resolve_cwd_workspace(&cwd.to_string_lossy()).await? else {
+            return Ok(ListSessionsResponse::new(Vec::new()));
+        };
+
         let mut summaries = self
             .agent_runtime
             .list_sessions(AgentSessionListRequest {
-                workspace_path: cwd.to_string_lossy().to_string(),
+                workspace_id: Some(workspace.id),
+                workspace_path: String::new(),
                 remote_connection_id: None,
                 remote_ssh_host: None,
             })

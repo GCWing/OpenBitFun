@@ -1,7 +1,6 @@
 use crate::service::config::{get_global_config_service, types::WorkspaceConfig, ConfigService};
 use crate::service::remote_ssh::workspace_state::{
-    get_remote_workspace_manager, lookup_remote_connection, lookup_remote_connection_with_hint,
-    RemoteWorkspaceEntry,
+    get_remote_workspace_manager, RemoteWorkspaceEntry,
 };
 use crate::service::remote_ssh::{RemoteFileService, SSHConnectionManager};
 use crate::service::search::{
@@ -26,12 +25,14 @@ pub struct RemoteWorkspaceSearchService {
 }
 
 impl RemoteWorkspaceSearchService {
-    pub fn new(
+    fn new(
+        workspace: RemoteWorkspaceEntry,
         ssh_manager: SSHConnectionManager,
         remote_file_service: RemoteFileService,
         config_service: Arc<ConfigService>,
     ) -> Self {
         let provider = Arc::new(CoreRemoteWorkspaceSearchProvider {
+            workspace,
             ssh_manager,
             remote_file_service,
             config_service,
@@ -81,9 +82,52 @@ impl RemoteWorkspaceSearchService {
 
 #[derive(Clone)]
 struct CoreRemoteWorkspaceSearchProvider {
+    workspace: RemoteWorkspaceEntry,
     ssh_manager: SSHConnectionManager,
     remote_file_service: RemoteFileService,
     config_service: Arc<ConfigService>,
+}
+
+async fn resolve_search_workspace(workspace_id: &str) -> Result<RemoteWorkspaceEntry, String> {
+    let service = crate::service::workspace::get_global_workspace_service()
+        .ok_or("Workspace service is unavailable")?;
+    let record = service
+        .require_workspace(workspace_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    let connection_id = record
+        .filesystem_connection_id()?
+        .ok_or("Remote search requires a remote workspace")?
+        .to_owned();
+    let ssh_host = record
+        .metadata
+        .get("sshHost")
+        .and_then(|value| value.as_str())
+        .filter(|host| !host.is_empty())
+        .ok_or("Remote workspace is missing SSH host metadata")?
+        .to_owned();
+    Ok(RemoteWorkspaceEntry {
+        connection_id,
+        ssh_host,
+        connection_name: record.name,
+        remote_root: crate::service::remote_ssh::normalize_remote_workspace_path(
+            &record.root_path.to_string_lossy(),
+        ),
+    })
+}
+
+fn validate_search_io_scope(
+    workspace: &RemoteWorkspaceEntry,
+    root_path: &str,
+    requested_connection: Option<&str>,
+) -> Result<RemoteWorkspaceEntry, String> {
+    if requested_connection.is_some_and(|connection| connection != workspace.connection_id)
+        || crate::service::remote_ssh::normalize_remote_workspace_path(root_path)
+            != workspace.remote_root
+    {
+        return Err("Remote search IO scope differs from the workspace selected by ID".into());
+    }
+    Ok(workspace.clone())
 }
 
 #[async_trait]
@@ -93,14 +137,7 @@ impl RemoteWorkspaceSearchProvider for CoreRemoteWorkspaceSearchProvider {
         root_path: &str,
         preferred_connection_id: Option<&str>,
     ) -> Result<RemoteWorkspaceEntry, String> {
-        if let Some(entry) =
-            lookup_remote_connection_with_hint(root_path, preferred_connection_id).await
-        {
-            return Ok(entry);
-        }
-        lookup_remote_connection(root_path)
-            .await
-            .ok_or_else(|| format!("Remote workspace is not registered for path: {root_path}"))
+        validate_search_io_scope(&self.workspace, root_path, preferred_connection_id)
     }
 
     async fn cached_server_os_type(&self, connection_id: &str) -> Option<String> {
@@ -180,20 +217,16 @@ impl RemoteWorkspaceSearchProvider for CoreRemoteWorkspaceSearchProvider {
     }
 }
 
-pub async fn remote_workspace_search_service_for_path(
-    root_path: &str,
-    preferred_connection_id: Option<String>,
+pub async fn remote_workspace_search_service_for_workspace(
+    workspace_id: &str,
 ) -> Result<RemoteWorkspaceSearchService, String> {
+    let workspace = resolve_search_workspace(workspace_id).await?;
+    let connection_id = workspace.connection_id.clone();
     let manager = get_remote_workspace_manager()
         .ok_or_else(|| "Remote workspace manager is unavailable".to_string())?;
-    let preferred_connection_id = match preferred_connection_id {
-        Some(connection_id) => Some(connection_id),
-        None => lookup_remote_connection(root_path)
-            .await
-            .map(|entry| entry.connection_id),
-    };
 
     Ok(RemoteWorkspaceSearchService::new(
+        workspace,
         manager
             .get_ssh_manager()
             .await
@@ -206,7 +239,7 @@ pub async fn remote_workspace_search_service_for_path(
             .await
             .map_err(|error| format!("Config service unavailable: {error}"))?,
     )
-    .with_preferred_connection_id(preferred_connection_id))
+    .with_preferred_connection_id(Some(connection_id)))
 }
 
 fn spawn_remote_stdio_owner(
@@ -308,4 +341,43 @@ fn spawn_remote_stdio_owner(
             .close_with_message("remote flashgrep stdio daemon closed before sending a response")
             .await;
     });
+}
+
+#[cfg(test)]
+mod identity_tests {
+    #[tokio::test]
+    async fn search_selects_id_without_a_path_registry_or_active_connection() {
+        let root = format!("/search-id-test/{}", uuid::Uuid::new_v4());
+        let first = crate::service::workspace::legacy_compat::register_remote_fixture(
+            &root,
+            "search-a",
+            "search.example",
+        )
+        .await;
+        let second = crate::service::workspace::legacy_compat::register_remote_fixture_with_id(
+            &root,
+            "search-b",
+            "search.example",
+            Some(&uuid::Uuid::new_v4().to_string()),
+        )
+        .await;
+        let entry = super::resolve_search_workspace(&first.id).await.unwrap();
+        let other = super::resolve_search_workspace(&second.id).await.unwrap();
+        assert_eq!(entry.connection_id, "search-a");
+        assert_eq!(other.connection_id, "search-b");
+        assert!(super::resolve_search_workspace(&root).await.is_err());
+        assert!(super::validate_search_io_scope(&entry, &root, Some("search-b")).is_err());
+        assert!(super::validate_search_io_scope(&entry, "/different/project", None).is_err());
+        assert_eq!(
+            super::validate_search_io_scope(&entry, &root, None)
+                .unwrap()
+                .connection_id,
+            "search-a"
+        );
+        let local = tempfile::tempdir().unwrap();
+        let local =
+            crate::service::workspace::legacy_compat::register_local_fixture(local.path(), None)
+                .await;
+        assert!(super::resolve_search_workspace(&local.id).await.is_err());
+    }
 }

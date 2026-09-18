@@ -212,6 +212,7 @@ impl ToolStateManager {
                 execution_ms: *execution_ms,
             },
             ToolExecutionState::Failed {
+                error_detail,
                 error,
                 is_retryable: _,
                 duration_ms,
@@ -221,6 +222,7 @@ impl ToolStateManager {
                 execution_ms,
             } => ToolStateEventKind::Failed {
                 params: Some(task.invocation.wire_arguments.clone()),
+                error_detail: error_detail.clone(),
                 error: error.clone(),
                 duration_ms: *duration_ms,
                 queue_wait_ms: *queue_wait_ms,

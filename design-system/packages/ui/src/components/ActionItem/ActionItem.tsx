@@ -75,7 +75,7 @@ export const ActionItem = forwardRef<HTMLButtonElement, ActionItemProps>(functio
         type={type}
       >
         {hasLeadingArea && (
-          <span aria-hidden="true" className={styles.leading} data-openbitfun-part="leading">
+          <span aria-hidden="true" className={styles.leading} data-openbitfun-icon-slot="true" data-openbitfun-part="leading">
             {leading}
           </span>
         )}

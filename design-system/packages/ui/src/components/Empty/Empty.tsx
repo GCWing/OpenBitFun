@@ -45,6 +45,7 @@ export const Empty = forwardRef<HTMLDivElement, EmptyProps>(function Empty({
     >
       <div
         className={styles.media}
+        data-openbitfun-icon-slot="true"
         data-openbitfun-part="media"
         data-size={imageSize}
       >

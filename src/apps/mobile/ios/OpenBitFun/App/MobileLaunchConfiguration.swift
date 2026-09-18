@@ -308,7 +308,7 @@ private extension MobileAppModel {
             MobileDeviceDirectoryEntry(id: "preview-mac", name: "Studio Mac", online: true, status: "FAILED", error: "REMOTE_UNAVAILABLE", workspaces: [failedWorkspace], sessions: [failedSession]),
             MobileDeviceDirectoryEntry(id: "preview-offline", name: "Office PC", online: false, status: "READY", error: nil, workspaces: [offlineWorkspace], sessions: [cachedSession])
         ]
-        workspaceCatalog = [(path: "/workspace/OpenBitFun", name: "OpenBitFun", selected: true, remoteConnectionId: nil, remoteSshHost: nil)]
+        workspaceCatalog = [(path: "/workspace/OpenBitFun", name: "OpenBitFun", selected: true, remoteConnectionId: nil, remoteSshHost: nil, workspaceId: nil)]
         remoteAssistants = [
             MobileAssistantOption(path: "/workspace/OpenBitFun/.openbitfun/assistants/review", name: "代码审查助手")
         ]

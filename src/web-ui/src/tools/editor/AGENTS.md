@@ -33,7 +33,7 @@ This directory follows `src/web-ui/AGENTS.md`.
 Run from the repository root after Markdown editor changes:
 
 ```bash
-pnpm --dir src/web-ui run test:run src/tools/editor/components/MarkdownEditor.test.tsx src/tools/editor/meditor/components/MEditor.test.tsx src/tools/editor/meditor/utils/tiptapMarkdown.test.ts src/tools/editor/meditor/utils/tiptapMarkdown.roundtrip.test.ts src/tools/editor/meditor/utils/embeddedSource.test.ts src/tools/editor/meditor/utils/markdownFrontmatter.test.ts src/tools/editor/meditor/components/Preview.test.tsx src/tools/editor/meditor/utils/loadLocalImages.test.ts src/infrastructure/markdown/rehypeSourceRange.test.ts src/infrastructure/markdown/MarkdownRenderer.test.tsx
+pnpm --dir src/web-ui run test:run src/tools/editor/components/MarkdownEditor.test.tsx src/tools/editor/meditor/components/MEditor.test.tsx src/tools/editor/meditor/extensions/SoftBreakExtension.test.ts src/tools/editor/meditor/utils/tiptapMarkdown.test.ts src/tools/editor/meditor/utils/tiptapMarkdown.roundtrip.test.ts src/tools/editor/meditor/utils/embeddedSource.test.ts src/tools/editor/meditor/utils/markdownFrontmatter.test.ts src/tools/editor/meditor/utils/loadLocalImages.test.ts src/infrastructure/markdown/rehypeSourceRange.test.ts src/infrastructure/markdown/MarkdownRenderer.test.tsx
 ```
 
 For UI, types, and theme contracts, also follow the parent guide's `check:web`

@@ -36,6 +36,24 @@ describe('content resource ownership', () => {
     expect(new Set([a.key, b.key, c.key, d.key]).size).toBe(4);
     expect(a.target).toEqual({ kind: 'file', path: '/project/A%20B.md' });
   });
+  it('owns files by workspace ID so a reconnected remote workspace keeps its buffers', () => {
+    const owned = { ...scope, workspaceId: 'remote_1', remoteConnectionId: 'ssh-a' };
+    const reconnected = { ...owned, remoteConnectionId: 'ssh-b' };
+    const other = { ...scope, workspaceId: 'remote_2', remoteConnectionId: 'ssh-a' };
+    const a = contentResourceIdentity(file(), owned);
+    expect(contentResourceIdentity(file(), reconnected).key).toBe(a.key);
+    expect(contentResourceIdentity(file(), other).key).not.toBe(a.key);
+    expect(contentResourceIdentity(file(), { ...scope, remoteConnectionId: 'ssh-a' }).key).not.toBe(a.key);
+
+    const store = useContentResourceStore.getState();
+    const id = store.open(file(), owned);
+    store.update(id, { isDirty: true });
+    store.renameFile({ surfaceId: 'local', workspaceId: 'remote_2' }, '/project', '/elsewhere');
+    expect(useContentResourceStore.getState().resources[id].target).toEqual({ kind: 'file', path: '/project/readme.md' });
+    store.renameFile({ surfaceId: 'local', workspaceId: 'remote_1' }, '/project', '/renamed');
+    expect(useContentResourceStore.getState().resources[id]).toMatchObject({ isDirty: true,
+      target: { kind: 'file', path: '/renamed/readme.md' } });
+  });
   it('keeps one document when changing the representation of an edited file', () => {
     const store = useContentResourceStore.getState();
     const id = store.open(file(), scope);

@@ -3,7 +3,7 @@ import type { ComponentMeta } from "../../registry.types";
 export const voiceCallPanelMeta = {
   category: "feedback",
   name: "VoiceCallPanel",
-  description: "A controlled live-call surface with a reactive particle logo, transcripts, and accessible call controls.",
+  description: "A controlled live-call surface. VoiceCallIdentity, VoiceCallTranscript and VoiceCallControls also expose its shared anatomy for persistent text/voice hosts.",
   maturity: "stable",
   props: [
     { name: "title", type: "string" },
@@ -14,12 +14,16 @@ export const voiceCallPanelMeta = {
     { name: "assistantTranscript", type: "string" },
     { name: "status", type: "ReactNode" },
     { name: "readAudio", type: "VoiceParticleAudioReader" },
+    { name: "presentation", type: "card | embedded", defaultValue: "card" },
     { name: "onBack / onClose / onToggleMute / onOpenSettings / onEnd", type: "() => void" },
   ],
   states: ["connecting", "live", "muted", "ending", "error"],
   tokens: [
     "color.content.onDark", "color.content.onLight",
     "type.heading.panel", "type.body.lg", "type.modifier.leading.tight",
+    "type.flow.body", "type.flow.control", "type.flow.support",
+    "color.content.primary", "color.content.secondary", "color.action.quiet.hover",
+    "control.flowChat.cardRadius",
     "space.3", "space.6", "space.8", "radius.lg",
   ],
 } as const satisfies ComponentMeta;

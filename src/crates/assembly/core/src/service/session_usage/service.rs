@@ -77,7 +77,13 @@ pub async fn generate_session_usage_report_from_storage_path(
         Vec::new()
     };
 
-    let snapshot_facts = load_snapshot_facts(&request, revert_boundary).await;
+    let workspace_id = persistence_manager
+        .load_session_header(session_storage_path, &request.session_id)
+        .await
+        .ok()
+        .and_then(|session| session.config.workspace_id);
+    let snapshot_facts =
+        load_snapshot_facts(&request, workspace_id.as_deref(), revert_boundary).await;
 
     Ok(build_session_usage_report_from_sources_with_scope(
         request,
@@ -329,13 +335,13 @@ fn build_session_usage_report_from_sources_with_scope(
 
 async fn load_snapshot_facts(
     request: &SessionUsageReportRequest,
+    workspace_id: Option<&str>,
     revert_boundary: Option<usize>,
 ) -> UsageSnapshotFacts {
-    let Some(workspace_path) = request.workspace_path.as_deref() else {
+    let Some(workspace_id) = workspace_id else {
         return UsageSnapshotFacts::default();
     };
-
-    let Some(manager) = get_snapshot_manager_for_workspace(Path::new(workspace_path)) else {
+    let Some(manager) = get_snapshot_manager_for_workspace(workspace_id) else {
         return UsageSnapshotFacts::default();
     };
 
@@ -394,7 +400,7 @@ fn build_workspace(request: &SessionUsageReportRequest) -> UsageWorkspace {
             .workspace_path
             .as_deref()
             .map(|path| redact_usage_label(path, 120).value),
-        workspace_id: None,
+        workspace_id: request.workspace_id.clone(),
         remote_connection_id: request.remote_connection_id.clone(),
         remote_ssh_host: request.remote_ssh_host.clone(),
     }
@@ -2713,6 +2719,7 @@ mod tests {
     fn test_request(remote_connection_id: Option<&str>) -> SessionUsageReportRequest {
         SessionUsageReportRequest {
             session_id: "session-1".to_string(),
+            workspace_id: None,
             workspace_path: Some("D:/workspace/openbitfun".to_string()),
             remote_connection_id: remote_connection_id.map(ToOwned::to_owned),
             remote_ssh_host: remote_connection_id.map(|_| "host.example".to_string()),

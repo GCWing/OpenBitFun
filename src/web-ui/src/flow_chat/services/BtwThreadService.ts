@@ -11,6 +11,7 @@ import type {
 } from '@/shared/services/reviewTeamService';
 import type { ImagePayload } from '../utils/imagePayload';
 import { absoluteSessionTurnIndexForId } from '../utils/flowChatTurnOrdinal';
+import { requireSessionWorkspaceId, sessionWorkspaceId } from '../utils/sessionWorkspace';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 
 export function createBtwRequestId(prefix = 'btw'): string {
@@ -67,6 +68,9 @@ function requireSession(sessionId: string): Session {
 
 export async function createBtwChildSession(params: {
   parentSessionId: string;
+  /** Owning workspace ID; defaults to the parent session's workspace. */
+  workspaceId?: string;
+  /** Execution root (IO operand); defaults to the parent session's root. */
   workspacePath?: string;
   childSessionName: string;
   agentType?: string;
@@ -97,6 +101,12 @@ export async function createBtwChildSession(params: {
   const { parentDialogTurnId, parentTurnIndex } = getParentInterruptionContext(parentSessionId);
 
   const parentSession = flowChatStore.getState().sessions.get(parentSessionId);
+  // The child inherits the parent's workspace identity; the path is only the
+  // execution root the backend runs the child in.
+  const workspaceId = params.workspaceId || sessionWorkspaceId(parentSession);
+  if (!workspaceId) {
+    throw new Error(`Workspace ID is required for BTW child session: ${parentSessionId}`);
+  }
   const workspacePath = params.workspacePath || parentSession?.workspacePath;
   if (!workspacePath) {
     throw new Error(`Workspace path is required for BTW child session: ${parentSessionId}`);
@@ -135,7 +145,7 @@ export async function createBtwChildSession(params: {
                 worktreeId: inheritedExecutionTarget.worktreeId,
               }
             : { kind: 'local' },
-          workspaceId: parentSession?.workspaceId,
+          workspaceId,
           remoteConnectionId,
           remoteSshHost,
           relationship,
@@ -175,7 +185,7 @@ export async function createBtwChildSession(params: {
         createdSession?.projectWorkspacePath || projectWorkspacePath,
       executionTarget:
         createdSession?.executionTarget || inheritedExecutionTarget,
-      workspaceId: createdSession?.workspaceId || parentSession?.workspaceId,
+      workspaceId: createdSession?.workspaceId || workspaceId,
       isTransient: params.isTransient ?? false,
       agentBackedTransient: params.isTransient ?? false,
     },
@@ -220,6 +230,7 @@ export function createBtwSessionPlaceholder(params: {
   parentDialogTurnId?: string;
 }): { childSessionId: string; parentDialogTurnId?: string; parentTurnIndex?: number } {
   const parentSession = requireSession(params.parentSessionId);
+  const workspaceId = requireSessionWorkspaceId(parentSession);
   const workspacePath = params.workspacePath || parentSession.workspacePath;
   if (!workspacePath) {
     throw new Error(`Workspace path is required for BTW child session: ${params.parentSessionId}`);
@@ -252,7 +263,7 @@ export function createBtwSessionPlaceholder(params: {
         || parentSession.config.projectWorkspacePath
         || workspacePath,
       executionTarget: parentSession.config.executionTarget,
-      workspaceId: parentSession.workspaceId,
+      workspaceId,
     },
     parentSession.remoteConnectionId,
     parentSession.remoteSshHost

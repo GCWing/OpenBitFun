@@ -41,6 +41,8 @@ interface BuildEntry {
   todoIds: Set<string>;
   /** Original file path (preserves platform separators for API calls). */
   planFilePath: string;
+  /** Workspace that owns the plan file; routes file IO when present. */
+  workspaceId?: string;
   workspacePath: string;
   remoteConnectionId?: string;
   startedAt: number;
@@ -48,6 +50,12 @@ interface BuildEntry {
 
 export interface PlanFileRef {
   planFilePath: string;
+  /**
+   * Workspace identity. When present it keys build state and routes file IO;
+   * the path and connection fields below are then IO projections only and
+   * serve pre-ID callers that cannot supply a workspace ID.
+   */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
 }
@@ -102,6 +110,7 @@ class PlanBuildStateService {
       turnId,
       todoIds: new Set(todoIds),
       planFilePath: request.planFilePath,
+      workspaceId: request.workspaceId?.trim() || undefined,
       workspacePath: request.workspacePath ?? '',
       remoteConnectionId: request.remoteConnectionId,
       startedAt: Date.now(),
@@ -168,11 +177,34 @@ class PlanBuildStateService {
     if (typeof target === 'string') {
       return `local::${this.normalizePath(target)}`;
     }
+    const workspaceId = target.workspaceId?.trim();
+    if (workspaceId) {
+      return `workspace::${workspaceId}::${this.normalizePath(target.planFilePath)}`;
+    }
     return [
       target.remoteConnectionId ?? 'local',
       this.normalizePath(target.workspacePath ?? ''),
       this.normalizePath(target.planFilePath),
     ].join('::');
+  }
+
+  private readPlanFile(entry: BuildEntry): Promise<string> {
+    if (entry.workspaceId) {
+      return workspaceAPI.readWorkspaceFile(entry.workspaceId, entry.planFilePath);
+    }
+    return workspaceAPI.readFileContent(entry.planFilePath, undefined, entry.remoteConnectionId);
+  }
+
+  private writePlanFile(entry: BuildEntry, content: string): Promise<void> {
+    if (entry.workspaceId) {
+      return workspaceAPI.writeWorkspaceFile(entry.workspaceId, entry.planFilePath, content);
+    }
+    return workspaceAPI.writeFileContent(
+      entry.workspacePath,
+      entry.planFilePath,
+      content,
+      entry.remoteConnectionId,
+    );
   }
 
   private notify(key: string, event: PlanBuildStateEvent): void {
@@ -212,11 +244,7 @@ class PlanBuildStateService {
       if (matchedTodos.length === 0) continue;
 
       try {
-        const content = await workspaceAPI.readFileContent(
-          entry.planFilePath,
-          undefined,
-          entry.remoteConnectionId,
-        );
+        const content = await this.readPlanFile(entry);
         const parsed = parsePlanMarkdown(content);
 
         const updatedTodos: PlanTodo[] = parsed.todos.map((todo) => {
@@ -229,15 +257,11 @@ class PlanBuildStateService {
 
         this.markFileWriting({
           planFilePath: entry.planFilePath,
+          workspaceId: entry.workspaceId,
           workspacePath: entry.workspacePath,
           remoteConnectionId: entry.remoteConnectionId,
         });
-        await workspaceAPI.writeFileContent(
-          entry.workspacePath,
-          entry.planFilePath,
-          updatedContent,
-          entry.remoteConnectionId,
-        );
+        await this.writePlanFile(entry, updatedContent);
 
         const allCompleted = updatedTodos.every(t => t.status === 'completed');
 

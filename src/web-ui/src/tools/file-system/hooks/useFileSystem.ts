@@ -4,6 +4,7 @@ import { workspaceAPI } from '@/infrastructure/api';
 import type { FileSystemNode, FileSystemOptions } from '../types';
 
 export interface UseFileSystemOptions extends FileSystemOptions {
+  workspaceId?: string;
   rootPath?: string;
   remoteConnectionId?: string;
   autoLoad?: boolean;
@@ -33,9 +34,10 @@ export function useFileSystem(options: UseFileSystemOptions = {}): UseFileSystem
 
   useEffect(() => {
     setOptionOverrides({});
-  }, [options.rootPath]);
+  }, [options.workspaceId]);
 
   const controllerConfig = useMemo(() => ({
+    workspaceId: options.workspaceId,
     rootPath: options.rootPath,
     remoteConnectionId: options.remoteConnectionId,
     autoLoad: options.autoLoad ?? true,
@@ -47,6 +49,7 @@ export function useFileSystem(options: UseFileSystemOptions = {}): UseFileSystem
     maxDepth: optionOverrides.maxDepth ?? options.maxDepth,
     excludePatterns: optionOverrides.excludePatterns ?? options.excludePatterns ?? [],
   }), [
+    options.workspaceId,
     options.rootPath,
     options.remoteConnectionId,
     options.autoLoad,
@@ -91,21 +94,20 @@ export function useFileSystem(options: UseFileSystemOptions = {}): UseFileSystem
   }, [controller]);
 
   const searchFiles = useCallback(async (query: string) => {
-    const rootPath = controllerConfig.rootPath;
-    if (!rootPath || !query.trim()) {
+    const workspaceId = controllerConfig.workspaceId;
+    if (!workspaceId || !query.trim()) {
       return [];
     }
 
     const results = await workspaceAPI.searchFilenamesOnly(
-      rootPath, query.trim(), false, false, false, undefined, undefined, true,
-      undefined, controllerConfig.remoteConnectionId,
+      workspaceId, query.trim(), false, false, false, undefined, undefined, true,
     );
     return results.map((result) => ({
       path: result.path,
       name: result.name,
       isDirectory: result.isDirectory,
     }));
-  }, [controllerConfig.rootPath, controllerConfig.remoteConnectionId]);
+  }, [controllerConfig.workspaceId]);
 
   const updateOptions = useCallback((nextOptions: Partial<FileSystemOptions>) => {
     setOptionOverrides(prev => ({

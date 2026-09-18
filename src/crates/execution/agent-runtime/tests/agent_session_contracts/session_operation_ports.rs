@@ -120,6 +120,7 @@ async fn runtime_delegates_narrow_session_operations_to_registered_ports() {
 
     let fork = runtime
         .fork_session_at_turn(AgentSessionForkAtTurnRequest {
+            workspace_id: None,
             workspace_path: "D:/workspace/project".to_string(),
             source_session_id: "session-1".to_string(),
             source_turn_id: "turn-1".to_string(),
@@ -132,6 +133,7 @@ async fn runtime_delegates_narrow_session_operations_to_registered_ports() {
 
     let latest_turn_fork = runtime
         .fork_session(AgentSessionForkRequest {
+            workspace_id: None,
             workspace_path: "D:/workspace/project".to_string(),
             source_session_id: "session-1".to_string(),
             remote_connection_id: None,
@@ -143,6 +145,7 @@ async fn runtime_delegates_narrow_session_operations_to_registered_ports() {
 
     let report = runtime
         .generate_session_usage(AgentSessionUsageRequest {
+            workspace_id: None,
             session_id: "session-1".to_string(),
             workspace_path: Some("D:/workspace/project".to_string()),
             remote_connection_id: None,

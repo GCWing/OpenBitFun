@@ -43,6 +43,8 @@ export struct SidebarWorkspaceSection {
   @Param workspacePath: string = '';
   @Param workspaceConnectionId: string = '';
   @Param workspaceSshHost: string = '';
+  /** Stable record ID of the active workspace; empty for pre-ID hosts. */
+  @Param workspaceId: string = '';
   @Param workspaceKind: string = 'normal';
   @Param connectionState: string = 'idle';
   @Param controlTargetType: string = 'none';
@@ -56,12 +58,12 @@ export struct SidebarWorkspaceSection {
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SessionDetails);
   @Event onOpenSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
   @Event onSessionActions: (session: RemoteSession) => void = (_session: RemoteSession) => {};
-  @Event onCreateInWorkspace: (deviceId: string, path: string, agentType: string, connectionId?: string, sshHost?: string) => void =
-    (_deviceId: string, _path: string, _agentType: string) => {};
-  @Event onOpenWorkspace: (deviceId: string, path: string, connectionId?: string, sshHost?: string) => void =
+  @Event onCreateInWorkspace: (deviceId: string, path: string, agentType: string, connectionId?: string, sshHost?: string,
+    workspaceId?: string) => void = (_deviceId: string, _path: string, _agentType: string) => {};
+  @Event onOpenWorkspace: (deviceId: string, path: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void =
     (_deviceId: string, _path: string) => {};
-  @Event onExpandWorkspace: (deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string) => Promise<void> =
-    async (_deviceId: string, _path: string) => {};
+  @Event onExpandWorkspace: (deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string,
+    workspaceId?: string) => Promise<void> = async (_deviceId: string, _path: string) => {};
   @Event onSelectDevice: (deviceId: string) => void = (_deviceId: string) => {};
   @Event onReconnect: () => void = () => {};
   @Event onRetryDevice: (deviceId: string) => void = (_deviceId: string) => {};
@@ -106,7 +108,7 @@ export struct SidebarWorkspaceSection {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .margin({ top: 18 })
+    .margin({ top: 10 })
     .bindSheet($$this.showWorkspacePicker, this.WorkspacePicker(), this.workspacePickerSheetOptions())
   }
 
@@ -259,6 +261,7 @@ export struct SidebarWorkspaceSection {
         workspacePath: this.liveWorkspacePath(entry),
         workspaceConnectionId: this.isActiveDevice(entry.deviceId) ? this.workspaceConnectionId : '',
         workspaceSshHost: this.isActiveDevice(entry.deviceId) ? this.workspaceSshHost : '',
+        workspaceId: this.isActiveDevice(entry.deviceId) ? this.workspaceId : '',
         workspaceKind: this.liveWorkspaceKind(entry),
         selectedSessionId: this.selectedSessionIdFor(entry),
         runningSessionId: this.isActiveDevice(entry.deviceId) ? this.runningSessionId : '',
@@ -272,17 +275,18 @@ export struct SidebarWorkspaceSection {
         },
         onOpenSession: this.onOpenSession,
         onSessionActions: this.onSessionActions,
-        onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string) => {
-          this.onCreateInWorkspace(entry.deviceId, path, agentType, connectionId, sshHost);
+        onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string, workspaceId?: string) => {
+          this.onCreateInWorkspace(entry.deviceId, path, agentType, connectionId, sshHost, workspaceId);
         },
-        onOpenWorkspace: (path: string, connectionId?: string, sshHost?: string) => {
-          this.onOpenWorkspace(entry.deviceId, path, connectionId, sshHost);
+        onOpenWorkspace: (path: string, connectionId?: string, sshHost?: string, workspaceId?: string) => {
+          this.onOpenWorkspace(entry.deviceId, path, connectionId, sshHost, workspaceId);
         },
-        onExpandWorkspace: async (path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<void> => {
-          await this.onExpandWorkspace(entry.deviceId, path, remoteConnectionId, remoteSshHost);
+        onExpandWorkspace: async (path: string, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string): Promise<void> => {
+          await this.onExpandWorkspace(entry.deviceId, path, remoteConnectionId, remoteSshHost, workspaceId);
         },
-        onWorkspaceExpandedChange: (path: string, expanded: boolean, remoteConnectionId?: string, remoteSshHost?: string): void => {
-          this.directoryState.setWorkspaceExpanded(entry.deviceId, path, expanded, remoteConnectionId, remoteSshHost);
+        onWorkspaceExpandedChange: (path: string, expanded: boolean, remoteConnectionId?: string, remoteSshHost?: string,
+          workspaceId?: string): void => {
+          this.directoryState.setWorkspaceExpanded(entry.deviceId, path, expanded, remoteConnectionId, remoteSshHost, workspaceId);
         }
       })
     }
@@ -337,14 +341,18 @@ export struct SidebarWorkspaceSection {
         this.workspacePickerDevice().recentWorkspaces : this.workspacesForDevice(this.workspacePickerDevice()),
       selectedWorkspacePath: this.isActiveDevice(this.workspacePickerDevice().deviceId) ?
         this.workspacePath : '',
+      selectedWorkspaceId: this.isActiveDevice(this.workspacePickerDevice().deviceId) ? this.workspaceId : '',
+      selectedWorkspaceConnectionId: this.isActiveDevice(this.workspacePickerDevice().deviceId) ?
+        this.workspaceConnectionId : '',
+      selectedWorkspaceSshHost: this.isActiveDevice(this.workspacePickerDevice().deviceId) ? this.workspaceSshHost : '',
       loading: this.workspacePickerDevice().status === 'loading',
       onClose: () => {
         this.showWorkspacePicker = false;
       },
-      onSelectWorkspace: (path: string, connectionId?: string, sshHost?: string) => {
+      onSelectWorkspace: (path: string, connectionId?: string, sshHost?: string, workspaceId?: string) => {
         const deviceId = this.workspacePickerDeviceId;
         this.showWorkspacePicker = false;
-        this.onOpenWorkspace(deviceId, path, connectionId, sshHost);
+        this.onOpenWorkspace(deviceId, path, connectionId, sshHost, workspaceId);
       }
     })
   }

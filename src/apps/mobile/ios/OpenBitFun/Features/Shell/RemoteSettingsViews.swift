@@ -40,10 +40,13 @@ struct RemoteViewSettingsView: View {
                         action: { model.remoteWorkspaceFilter = "" }
                     )
                     ForEach(workspaces) { workspace in
+                        // The filter is the option key (`workspaceId ?: legacy triple`); a filter
+                        // persisted as a bare path before IDs existed still matches by path.
                         filterRow(
                             workspace.name,
-                            selected: normalizedPath(model.remoteWorkspaceFilter) == normalizedPath(workspace.path),
-                            action: { model.remoteWorkspaceFilter = workspace.path }
+                            selected: model.remoteWorkspaceFilter == workspace.key ||
+                                normalizedPath(model.remoteWorkspaceFilter) == normalizedPath(workspace.path),
+                            action: { model.remoteWorkspaceFilter = workspace.key }
                         )
                     }
 

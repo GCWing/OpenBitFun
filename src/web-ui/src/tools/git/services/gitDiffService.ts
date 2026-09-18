@@ -1,3 +1,4 @@
+import type { GitWorkspaceScope } from '@/infrastructure/api/service-api/GitAPI';
 /**
  * Git diff service
  * Uses unified DiffService for diff computation
@@ -67,7 +68,7 @@ export function calculateDiffStatsFallback(originalContent: string, modifiedCont
   };
 }
 
-export async function stageFile(repositoryPath: string, filePath: string): Promise<void> {
+export async function stageFile(repositoryPath: GitWorkspaceScope, filePath: string): Promise<void> {
   try {
     await gitAPI.addFiles(repositoryPath, {
       files: [filePath],
@@ -79,7 +80,7 @@ export async function stageFile(repositoryPath: string, filePath: string): Promi
   }
 }
 
-export async function discardFileChanges(repositoryPath: string, filePath: string): Promise<void> {
+export async function discardFileChanges(repositoryPath: GitWorkspaceScope, filePath: string): Promise<void> {
   try {
     await gitAPI.resetFiles(repositoryPath, [filePath], false);
   } catch (error) {
@@ -89,7 +90,7 @@ export async function discardFileChanges(repositoryPath: string, filePath: strin
 }
 
 export async function getFileDiffStats(
-  repositoryPath: string, 
+  repositoryPath: GitWorkspaceScope,
   filePath: string
 ): Promise<DiffStats | null> {
   try {
@@ -118,7 +119,7 @@ export async function getFileDiffStats(
 }
 
 export class GitDiffService {
-  static async getHeadContent(repositoryPath: string, filePath: string): Promise<string> {
+  static async getHeadContent(repositoryPath: GitWorkspaceScope, filePath: string): Promise<string> {
     try {
       return await gitAPI.getFileContent(repositoryPath, filePath, 'HEAD');
     } catch (error) {
@@ -130,14 +131,14 @@ export class GitDiffService {
   /**
    * Accept all changes and stage the file.
    */
-  static async acceptAllChanges(repositoryPath: string, filePath: string): Promise<void> {
+  static async acceptAllChanges(repositoryPath: GitWorkspaceScope, filePath: string): Promise<void> {
     await stageFile(repositoryPath, filePath);
   }
 
   /**
    * Reject all changes and discard the file.
    */
-  static async rejectAllChanges(repositoryPath: string, filePath: string): Promise<void> {
+  static async rejectAllChanges(repositoryPath: GitWorkspaceScope, filePath: string): Promise<void> {
     await discardFileChanges(repositoryPath, filePath);
   }
 
@@ -158,7 +159,7 @@ export class GitDiffService {
   /**
    * Get real-time stats from Git.
    */
-  static async getRealTimeStats(repositoryPath: string, filePath: string): Promise<DiffStats | null> {
+  static async getRealTimeStats(repositoryPath: GitWorkspaceScope, filePath: string): Promise<DiffStats | null> {
     return getFileDiffStats(repositoryPath, filePath);
   }
 }

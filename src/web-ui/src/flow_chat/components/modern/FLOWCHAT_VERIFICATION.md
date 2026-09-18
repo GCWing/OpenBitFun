@@ -18,7 +18,7 @@ each missing what the other had.
 |---|---|
 | `../../hooks/useSessionReadOnOpen.test.tsx` | opening and foreground results mark read; inactive scenes, background windows, unmounts, and device switches cannot acknowledge from stale views |
 | `../../selection/conversationExcerptInventory.test.ts` | source session/device isolation, draft/queue removal, sent-number retention, stable snapshots during streaming |
-| `../../selection/conversationExcerptMarkerPosition.test.ts` | text endpoint coordinates, wrapping and nested clipping; geometry contracts only, not visual acceptance |
+| `../../selection/conversationExcerptMarkerPosition.test.ts` | full selection bounds, measured badge groups, persistent upper-right placement over occupied text, and clipping; geometry contracts only, not visual acceptance |
 | `../ChatInputAttachments.test.tsx` | shared image/annotation strip, pending editing/removal, read-only sent snapshots with no write controls/shortcuts, one-line source quote, locate, keyboard containment and stale-device rejection |
 | `../../selection/conversationExcerptEditing.test.ts` | draft/visible/queue ownership, preserved prompt context and attachments, legacy payload handling, sending guards and sent snapshots with no edit capability |
 | `../../services/flow-chat-manager/PendingQueueModule.test.ts` | persisted payload edits preserve queue order/identity, images and device isolation; sending entries reject edits |

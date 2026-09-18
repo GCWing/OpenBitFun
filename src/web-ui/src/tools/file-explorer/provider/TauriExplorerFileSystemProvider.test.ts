@@ -47,10 +47,10 @@ describe('TauriExplorerFileSystemProvider watches', () => {
 
   it('passes explicit non-recursive watcher requests to the backend', async () => {
     const provider = await createProvider();
-    const unwatch = provider.watch('C:\\large\\repo', vi.fn(), { recursive: false });
+    const unwatch = provider.watch('C:\\large\\repo', vi.fn(), { recursive: false, workspaceId: 'workspace-id' });
 
     await vi.waitFor(() => {
-      expect(workspaceApiMocks.startFileWatch).toHaveBeenCalledWith('C:\\large\\repo', false);
+      expect(workspaceApiMocks.startFileWatch).toHaveBeenCalledWith('workspace-id', 'C:\\large\\repo', false);
     });
 
     unwatch();
@@ -67,7 +67,7 @@ describe('TauriExplorerFileSystemProvider watches', () => {
     const callback = vi.fn();
     const provider = await createProvider();
 
-    const unwatch = provider.watch('C:\\large\\repo', callback, { recursive: false });
+    const unwatch = provider.watch('C:\\large\\repo', callback, { recursive: false, workspaceId: 'workspace-id' });
     await vi.waitFor(() => {
       expect(fileListener).toBeDefined();
     });
@@ -89,14 +89,14 @@ describe('TauriExplorerFileSystemProvider watches', () => {
   it('keeps the backend watch alive until all same-path watch modes are released', async () => {
     const provider = await createProvider();
 
-    const unwatchNonRecursive = provider.watch('C:\\large\\repo', vi.fn(), { recursive: false });
+    const unwatchNonRecursive = provider.watch('C:\\large\\repo', vi.fn(), { recursive: false, workspaceId: 'workspace-id' });
     await vi.waitFor(() => {
-      expect(workspaceApiMocks.startFileWatch).toHaveBeenCalledWith('C:\\large\\repo', false);
+      expect(workspaceApiMocks.startFileWatch).toHaveBeenCalledWith('workspace-id', 'C:\\large\\repo', false);
     });
 
-    const unwatchRecursive = provider.watch('C:\\large\\repo', vi.fn(), { recursive: true });
+    const unwatchRecursive = provider.watch('C:\\large\\repo', vi.fn(), { recursive: true, workspaceId: 'workspace-id' });
     await vi.waitFor(() => {
-      expect(workspaceApiMocks.startFileWatch).toHaveBeenCalledWith('C:\\large\\repo', true);
+      expect(workspaceApiMocks.startFileWatch).toHaveBeenCalledWith('workspace-id', 'C:\\large\\repo', true);
     });
 
     unwatchNonRecursive();
@@ -116,13 +116,13 @@ describe('TauriExplorerFileSystemProvider watches', () => {
     }));
     const provider = await createProvider();
 
-    const unwatch = provider.watch('C:\\large\\repo', vi.fn(), { recursive: false });
+    const unwatch = provider.watch('C:\\large\\repo', vi.fn(), { recursive: false, workspaceId: 'workspace-id' });
     unwatch();
     expect(workspaceApiMocks.stopFileWatch).not.toHaveBeenCalled();
 
     resolveStart?.();
     await vi.waitFor(() => {
-      expect(workspaceApiMocks.stopFileWatch).toHaveBeenCalledWith('C:\\large\\repo');
+      expect(workspaceApiMocks.stopFileWatch).toHaveBeenCalledWith('workspace-id', 'C:\\large\\repo');
     });
   });
 
@@ -133,7 +133,7 @@ describe('TauriExplorerFileSystemProvider watches', () => {
     }));
     const provider = await createProvider();
 
-    const firstUnwatch = provider.watch('C:\\large\\repo', vi.fn(), { recursive: false });
+    const firstUnwatch = provider.watch('C:\\large\\repo', vi.fn(), { recursive: false, workspaceId: 'workspace-id' });
     await vi.waitFor(() => {
       expect(workspaceApiMocks.startFileWatch).toHaveBeenCalledTimes(1);
     });
@@ -144,7 +144,7 @@ describe('TauriExplorerFileSystemProvider watches', () => {
       expect(workspaceApiMocks.stopFileWatch).toHaveBeenCalledTimes(1);
     });
 
-    const secondUnwatch = provider.watch('C:\\large\\repo', vi.fn(), { recursive: false });
+    const secondUnwatch = provider.watch('C:\\large\\repo', vi.fn(), { recursive: false, workspaceId: 'workspace-id' });
     resolveStop?.();
 
     await vi.waitFor(() => {
@@ -158,7 +158,7 @@ describe('TauriExplorerFileSystemProvider watches', () => {
     workspaceApiMocks.startFileWatch.mockRejectedValueOnce(new Error('watch failed'));
     const provider = await createProvider();
 
-    const unwatch = provider.watch('C:\\secret\\repo', vi.fn(), { recursive: false });
+    const unwatch = provider.watch('C:\\secret\\repo', vi.fn(), { recursive: false, workspaceId: 'workspace-id' });
 
     await vi.waitFor(() => {
       expect(loggerMocks.warn).toHaveBeenCalledWith(

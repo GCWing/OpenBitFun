@@ -32,6 +32,7 @@ interface CreateTerminalTabOptions {
 }
 
 export interface CreateReviewPlatformPullRequestDetailTabOptions {
+  workspaceId: string;
   workspacePath?: string;
   remoteId?: string;
   pullRequestId?: string;
@@ -40,6 +41,7 @@ export interface CreateReviewPlatformPullRequestDetailTabOptions {
 }
 
 export interface OpenCanvasArtifactTabOptions {
+  workspaceId?: string;
   artifactReference: string;
   title?: string;
   source?: string;
@@ -75,11 +77,11 @@ export function createTab(options: TabCreationOptions): void {
 /** Open a persisted Canvas artifact through the same panel path as Canvas tool cards. */
 export function openCanvasArtifactTab(options: OpenCanvasArtifactTabOptions): boolean {
   const artifactReference = options.artifactReference.trim();
-  if (!parseCanvasArtifactReference(artifactReference)) {
+  if (!options.workspaceId || !parseCanvasArtifactReference(artifactReference)) {
     return false;
   }
 
-  const duplicateCheckKey = `openbitfun-canvas-${artifactReference}`;
+  const duplicateCheckKey = JSON.stringify(['openbitfun-canvas', options.workspaceId, artifactReference]);
   createTab({
     type: 'openbitfun-canvas',
     title: options.title?.trim() || 'OpenBitFun Canvas',
@@ -88,6 +90,7 @@ export function openCanvasArtifactTab(options: OpenCanvasArtifactTabOptions): bo
       source: options.source,
       status: options.status,
       diagnostics: options.diagnostics,
+      workspaceId: options.workspaceId,
       workspacePath: options.workspacePath,
       remoteConnectionId: options.remoteConnectionId,
       remoteSshHost: options.remoteSshHost,
@@ -173,6 +176,8 @@ export function createDiffEditorTab(
   options?: {
     titleKind?: 'git-diff' | 'diff' | 'fix-preview';
     duplicateKeyPrefix?: 'git-diff' | 'diff' | 'fix-diff';
+    /** Owning workspace ID; saves from the diff are routed by it. `repositoryPath` is only the IO root. */
+    workspaceId?: string;
   }
 ): void {
   const titleKind = options?.titleKind ?? (repositoryPath ? 'git-diff' : 'fix-preview');
@@ -198,6 +203,7 @@ export function createDiffEditorTab(
       modifiedCode,
       readOnly,
       repositoryPath,
+      workspaceId: options?.workspaceId,
       revealLine,
     },
     metadata: { filePath, repositoryPath, duplicateCheckKey: duplicateKey },
@@ -219,7 +225,8 @@ export function createGitDiffEditorTab(
   modifiedCode: string,
   repositoryPath: string,
   readOnly: boolean = false,
-  replaceExisting?: boolean
+  replaceExisting?: boolean,
+  workspaceId?: string
 ): void {
   createDiffEditorTab(
     filePath,
@@ -230,7 +237,8 @@ export function createGitDiffEditorTab(
     'git',
     repositoryPath,
     undefined,
-    replaceExisting
+    replaceExisting,
+    workspaceId ? { workspaceId } : undefined
   );
 }
 
@@ -304,17 +312,17 @@ export function createConfigCenterTab(
   window.dispatchEvent(new CustomEvent('scene:open', { detail: { sceneId: 'settings' } }));
 }
 
-export function createReviewPlatformTab(workspacePath?: string): void {
+export function createReviewPlatformTab(workspaceId: string, workspacePath?: string): void {
   const detail = {
     type: 'review-platform',
     title: i18nService.getT()('common:tabs.pullRequests'),
-    data: { workspacePath },
+    data: { workspaceId, workspacePath },
     metadata: {
       workspacePath,
-      duplicateCheckKey: `review-platform:${workspacePath || 'current'}`,
+      duplicateCheckKey: `review-platform:${workspaceId}`,
     },
     checkDuplicate: true,
-    duplicateCheckKey: `review-platform:${workspacePath || 'current'}`,
+    duplicateCheckKey: `review-platform:${workspaceId}`,
     replaceExisting: true,
   };
 
@@ -361,7 +369,7 @@ export function createReviewPlatformPullRequestDetailTab(options: CreateReviewPl
   const title = options.title || pullRequestLabel;
   const duplicateKey = [
     'review-platform-pr-detail',
-    options.workspacePath || 'current',
+    options.workspaceId,
     options.remoteId || 'auto',
     options.pullRequestId || options.pullRequestUrl || 'unknown',
   ].join(':');
@@ -369,12 +377,14 @@ export function createReviewPlatformPullRequestDetailTab(options: CreateReviewPl
     type: 'review-platform-pr-detail',
     title,
     data: {
+      workspaceId: options.workspaceId,
       workspacePath: options.workspacePath,
       remoteId: options.remoteId,
       pullRequestId: options.pullRequestId,
       pullRequestUrl: options.pullRequestUrl,
     },
     metadata: {
+      workspaceId: options.workspaceId,
       workspacePath: options.workspacePath,
       remoteId: options.remoteId,
       pullRequestId: options.pullRequestId,

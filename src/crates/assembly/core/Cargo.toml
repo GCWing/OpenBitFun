@@ -195,6 +195,11 @@ product-full = [
     "runtime-services",
     "tool-packs",
 ]
+# Test-only constructors for downstream in-process tests, such as
+# `WorkspaceService::new_isolated_for_tests`, which keep fixture workspace
+# records out of the developer's real user data directory. Enable only from
+# `[dev-dependencies]`; it is not part of any product assembly.
+test-support = []
 # Core compatibility facade and concrete product Agent Runtime assembly. This
 # owns the existing agent/session/tool lifecycle, not app presentation or
 # external ecosystem discovery.

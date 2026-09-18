@@ -400,6 +400,10 @@ async fn query_in_store(
                 Some(&token_usage),
                 openbitfun_core::service::session_usage::SessionUsageReportRequest {
                     session_id: job.request.session_id.clone(),
+                    // Dispatch jobs are keyed by the canonical target path the
+                    // controller submitted; the target workspace record only
+                    // exists while the worker runtime is up.
+                    workspace_id: None,
                     workspace_path: Some(job.request.workspace_path.clone()),
                     remote_connection_id: None,
                     remote_ssh_host: None,

@@ -1,3 +1,4 @@
+import { normalizeWorkspaceRouting } from './workspaceIdentity';
 import type { SessionStreamHandle, SessionHistoryState } from '../../../shared/relay-transport/SessionStream';
 import { translateAgentIdentityFields } from '../../../shared/agent-harness/wire';
 /**
@@ -27,6 +28,27 @@ export function isRemoteControlTargetChangedError(
   return value instanceof RemoteControlTargetChangedError;
 }
 
+/**
+ * The client holds a workspace ID but the connected host predates
+ * `workspace_id_references_v1`. The command is not sent: downgrading an ID to
+ * its path projection could silently select another workspace on that host.
+ */
+export class WorkspaceIdReferencesUnsupportedError extends Error {
+  /** Mobile-web i18n message key for the user-facing unsupported state. */
+  readonly messageKey = 'workspace.idReferencesUnsupported' as const;
+
+  constructor(readonly workspaceId: string) {
+    super('Connected host does not support workspace ID references; update OpenBitFun on that device');
+    this.name = 'WorkspaceIdReferencesUnsupportedError';
+  }
+}
+
+export function isWorkspaceIdReferencesUnsupportedError(
+  value: unknown,
+): value is WorkspaceIdReferencesUnsupportedError {
+  return value instanceof WorkspaceIdReferencesUnsupportedError;
+}
+
 const RETRYABLE_REMOTE_READ_COMMANDS = new Set([
   'get_workspace_info',
   'list_recent_workspaces',
@@ -49,7 +71,17 @@ interface RemoteRequestOptions {
   timeoutMs?: number;
 }
 
+/** A runtime workspace or device location that scopes a file command. */
+export interface RuntimeFileWorkspace {
+  /** Runtime workspace ID; authoritative when present. */
+  workspaceId?: string;
+  /** Root or browsed directory used as the legacy projection / IO operand. */
+  path: string;
+  remoteConnectionId?: string;
+}
+
 export interface WorkspaceInfo {
+  workspace_id?: string;
   has_workspace: boolean;
   path?: string;
   project_name?: string;
@@ -64,11 +96,13 @@ export interface WorkspaceInfo {
 }
 
 export interface RemoteWorkspaceIdentity {
+  workspaceId?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
 }
 
 export interface RecentWorkspaceEntry {
+  workspace_id?: string;
   path: string;
   name: string;
   last_opened: string;
@@ -78,12 +112,14 @@ export interface RecentWorkspaceEntry {
 }
 
 export interface AssistantEntry {
+  workspace_id?: string;
   path: string;
   name: string;
   assistant_id?: string;
 }
 
 export interface SessionInfo {
+  workspace_id?: string;
   session_id: string;
   name: string;
   agent_type: string;
@@ -92,8 +128,26 @@ export interface SessionInfo {
   message_count: number;
   workspace_path?: string;
   workspace_name?: string;
-  /** Client-side provenance of a scoped listing; older cache records omit it. */
-  workspace_identity?: Pick<RecentWorkspaceEntry, 'path' | 'remote_connection_id' | 'remote_ssh_host'>;
+  /**
+   * Client-side provenance of a scoped listing. Older cache records omit it
+   * entirely or omit `workspace_id`; both shapes stay readable and are
+   * attributed through the legacy compatibility helper.
+   */
+  workspace_identity?: {
+    workspace_id?: string;
+    path?: string;
+    remote_connection_id?: string;
+    remote_ssh_host?: string;
+  };
+}
+
+/** `session_created` facts. Pre-ID hosts only return `session_id`. */
+export interface CreatedSession {
+  session_id: string;
+  workspace_id?: string;
+  workspace_path?: string;
+  remote_connection_id?: string;
+  remote_ssh_host?: string;
 }
 
 export interface RemoteModelConfig {
@@ -207,6 +261,7 @@ export interface PollResponse {
 }
 
 export interface InitialSyncData {
+  workspace_id?: string;
   has_workspace: boolean;
   path?: string;
   project_name?: string;
@@ -222,14 +277,64 @@ export interface InitialSyncData {
 }
 
 export const REMOTE_CAPABILITY_HARNESS_PROFILES_V1 = 'harness_profiles_v1';
+/** The host resolves `workspace_id` on workspace-scoped commands and events. */
+export const REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1 = 'workspace_id_references_v1';
+
+/**
+ * A workspace reference as the UI knows it. `workspaceId` is authoritative;
+ * the path and SSH selectors are only the legacy projection for pre-ID hosts.
+ */
+export interface WorkspaceCommandReference {
+  workspaceId?: string;
+  path?: string;
+  remoteConnectionId?: string;
+  remoteSshHost?: string;
+}
+
+/**
+ * Pure projection used by every workspace-scoped RemoteCommand. ID and legacy
+ * fields never mix: with an ID the
+ * payload carries only `workspace_id`, so an ID-aware host can never silently
+ * fall back to the path. Without an ID the legacy triple is sent under the
+ * command-specific path field name.
+ */
+export function projectWorkspaceWireReference(
+  reference: WorkspaceCommandReference | undefined,
+  pathField: 'path' | 'workspace_path',
+  options: { nullablePath?: boolean } = {},
+): Record<string, unknown> {
+  const workspaceId = reference?.workspaceId?.trim();
+  if (workspaceId) return { workspace_id: workspaceId };
+  const legacy: Record<string, unknown> = {
+    [pathField]: reference?.path ?? (options.nullablePath ? null : undefined),
+  };
+  if (reference?.remoteConnectionId !== undefined) {
+    legacy.remote_connection_id = reference.remoteConnectionId;
+  }
+  if (reference?.remoteSshHost !== undefined) legacy.remote_ssh_host = reference.remoteSshHost;
+  return legacy;
+}
+
+interface HostCapabilitySnapshot {
+  /** Control target epoch the capabilities were read under. */
+  epoch: number;
+  /** False until a response from this target has advertised its capabilities. */
+  known: boolean;
+  capabilities: Set<string>;
+}
 
 export class RemoteSessionManager {
   private client: RelayHttpClient;
-  private hostCapabilities = new Set<string>();
+  private hostCapabilities: HostCapabilitySnapshot;
+  private hostCapabilityProbe: Promise<void> | null = null;
 
-  constructor(client: RelayHttpClient, capabilities: string[] = []) {
+  constructor(client: RelayHttpClient, capabilities?: string[]) {
     this.client = client;
-    this.replaceHostCapabilities(capabilities);
+    this.hostCapabilities = {
+      epoch: client.controlTargetEpoch,
+      known: capabilities !== undefined,
+      capabilities: RemoteSessionManager.capabilitySet(capabilities),
+    };
   }
 
   get controlTargetEpoch(): number {
@@ -240,14 +345,99 @@ export class RemoteSessionManager {
     return this.client.targetDeviceId;
   }
 
-  supportsHostCapability(capability: string): boolean {
-    return this.hostCapabilities.has(capability);
-  }
-
-  private replaceHostCapabilities(capabilities: string[] | undefined): void {
-    this.hostCapabilities = new Set(
+  private static capabilitySet(capabilities: string[] | undefined): Set<string> {
+    return new Set(
       (capabilities ?? []).filter((capability) => typeof capability === 'string'),
     );
+  }
+
+  /** Capabilities belong to one control target; a switched target is unknown again. */
+  private currentHostCapabilities(): HostCapabilitySnapshot | null {
+    return this.hostCapabilities.epoch === this.client.controlTargetEpoch
+      ? this.hostCapabilities
+      : null;
+  }
+
+  supportsHostCapability(capability: string): boolean {
+    return this.currentHostCapabilities()?.capabilities.has(capability) ?? false;
+  }
+
+  /** True when the connected host resolves workspace IDs on scoped commands. */
+  supportsWorkspaceIdReferences(): boolean {
+    return this.supportsHostCapability(REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1);
+  }
+
+  /** True once this control target has answered with its capability list. */
+  get hostCapabilitiesKnown(): boolean {
+    return this.currentHostCapabilities()?.known ?? false;
+  }
+
+  private replaceHostCapabilities(capabilities: string[] | undefined, epoch: number): void {
+    if (epoch !== this.client.controlTargetEpoch) return;
+    this.hostCapabilities = {
+      epoch,
+      known: true,
+      capabilities: RemoteSessionManager.capabilitySet(capabilities),
+    };
+  }
+
+  /**
+   * Learn the target's capabilities before the first ID-bearing command. The
+   * host advertises them on `get_workspace_info`; hosts that predate the
+   * capability list answer without one, which records an empty set.
+   */
+  private async ensureHostCapabilitiesKnown(target: ControlTargetSnapshot): Promise<void> {
+    this.ensureControlTargetCurrent(target);
+    if (this.hostCapabilitiesKnown) return;
+    if (!this.hostCapabilityProbe) {
+      this.hostCapabilityProbe = this.request<{ capabilities?: string[] }>(
+        { cmd: 'get_workspace_info' },
+        target,
+      ).then((resp) => {
+        this.replaceHostCapabilities(resp.capabilities, target.epoch);
+      }).finally(() => {
+        this.hostCapabilityProbe = null;
+      });
+    }
+    await this.hostCapabilityProbe;
+    this.ensureControlTargetCurrent(target);
+  }
+
+  /**
+   * Project a workspace reference for a RemoteCommand. An ID is only sent to
+   * a host that advertises `workspace_id_references_v1`; otherwise the caller
+   * receives an explicit unsupported error instead of a path downgrade.
+   */
+  private async workspaceWireReference(
+    reference: WorkspaceCommandReference | undefined,
+    pathField: 'path' | 'workspace_path',
+    target: ControlTargetSnapshot,
+    options: { nullablePath?: boolean } = {},
+  ): Promise<Record<string, unknown>> {
+    const workspaceId = reference?.workspaceId?.trim();
+    if (workspaceId) {
+      await this.ensureHostCapabilitiesKnown(target);
+      if (!this.supportsWorkspaceIdReferences()) {
+        throw new WorkspaceIdReferencesUnsupportedError(workspaceId);
+      }
+    }
+    return projectWorkspaceWireReference(reference, pathField, options);
+  }
+
+  /**
+   * File commands address a runtime workspace by ID, or a bare device location
+   * by its browsed directory and captured connection. The file `path` itself
+   * stays a separate IO operand on the command.
+   */
+  private async runtimeFileWorkspaceReference(
+    workspace: RuntimeFileWorkspace | undefined,
+    target: ControlTargetSnapshot,
+  ): Promise<Record<string, unknown>> {
+    return this.workspaceWireReference({
+      workspaceId: workspace?.workspaceId,
+      path: workspace?.path,
+      remoteConnectionId: workspace?.remoteConnectionId,
+    }, 'workspace_path', target);
   }
 
   onControlTargetChange(listener: () => void): () => void {
@@ -301,19 +491,21 @@ export class RemoteSessionManager {
   }
 
   async getWorkspaceInfo(): Promise<WorkspaceInfo> {
+    const target = this.client.getControlTargetSnapshot();
     const resp = await this.request<{ resp: string } & WorkspaceInfo>({
       cmd: 'get_workspace_info',
-    });
-    this.replaceHostCapabilities(resp.capabilities);
+    }, target);
+    this.replaceHostCapabilities(resp.capabilities, target.epoch);
     return {
+      workspace_id: resp.workspace_id,
       has_workspace: resp.has_workspace,
       path: resp.path,
       project_name: resp.project_name,
       git_branch: resp.git_branch,
       workspace_kind: resp.workspace_kind,
       assistant_id: resp.assistant_id,
-      remote_connection_id: resp.remote_connection_id,
-      remote_ssh_host: resp.remote_ssh_host,
+      remote_connection_id: normalizeWorkspaceRouting(resp).remote_connection_id,
+      remote_ssh_host: normalizeWorkspaceRouting(resp).remote_ssh_host,
       capabilities: resp.capabilities,
     };
   }
@@ -323,7 +515,7 @@ export class RemoteSessionManager {
       resp: string;
       workspaces: RecentWorkspaceEntry[];
     }>({ cmd: 'list_recent_workspaces' });
-    return resp.workspaces || [];
+    return (resp.workspaces || []).map(normalizeWorkspaceRouting);
   }
 
   async listWorkspaceCatalog(): Promise<WorkspaceCatalog> {
@@ -339,26 +531,19 @@ export class RemoteSessionManager {
     return projectWorkspaceCatalog(resp, assistants);
   }
 
-  async setWorkspace(
-    path: string,
-    options?: {
-      remoteConnectionId?: string;
-      remoteSshHost?: string;
-    },
-  ): Promise<{
-    success: boolean;
-    path?: string;
-    project_name?: string;
-    remote_connection_id?: string;
-    remote_ssh_host?: string;
-    error?: string;
+  async setWorkspace(workspace: RecentWorkspaceEntry): Promise<{
+    success: boolean; workspace_id?: string; path?: string; project_name?: string;
+    remote_connection_id?: string; remote_ssh_host?: string; error?: string;
   }> {
-    return this.request({
-      cmd: 'set_workspace',
-      path,
-      remote_connection_id: options?.remoteConnectionId,
-      remote_ssh_host: options?.remoteSshHost,
-    });
+    const target = this.client.getControlTargetSnapshot();
+    // Without an ID this is the upgrade-only protocol adapter for 1.0.0 hosts.
+    const reference = await this.workspaceWireReference({
+      workspaceId: workspace.workspace_id,
+      path: workspace.path,
+      remoteConnectionId: workspace.remote_connection_id,
+      remoteSshHost: workspace.remote_ssh_host,
+    }, 'path', target);
+    return this.request({ cmd: 'set_workspace', ...reference }, target);
   }
 
   async subscribeSessionStream(sessionId: string,
@@ -389,14 +574,21 @@ export class RemoteSessionManager {
   }
 
   async setAssistant(
-    path: string,
+    assistant: AssistantEntry,
   ): Promise<{
     success: boolean;
+    workspace_id?: string;
     path?: string;
     name?: string;
     error?: string;
   }> {
-    return this.request({ cmd: 'set_assistant', path });
+    const target = this.client.getControlTargetSnapshot();
+    // Assistant roots are local to the host; the legacy projection is path-only.
+    const reference = await this.workspaceWireReference({
+      workspaceId: assistant.workspace_id,
+      path: assistant.path,
+    }, 'path', target);
+    return this.request({ cmd: 'set_assistant', ...reference }, target);
   }
 
   async listSessions(
@@ -406,25 +598,35 @@ export class RemoteSessionManager {
     query?: string,
     identity?: RemoteWorkspaceIdentity,
   ): Promise<{ sessions: SessionInfo[]; has_more: boolean }> {
+    const target = this.client.getControlTargetSnapshot();
+    const scoped = Boolean(identity?.workspaceId || workspacePath);
+    // An unscoped listing keeps `workspace_path: null` so old hosts list the
+    // current workspace; a scoped one sends the ID alone or the legacy triple.
+    const reference = await this.workspaceWireReference({
+      workspaceId: identity?.workspaceId,
+      path: workspacePath,
+      remoteConnectionId: identity?.remoteConnectionId,
+      remoteSshHost: identity?.remoteSshHost,
+    }, 'workspace_path', target, { nullablePath: true });
     const resp = await this.request<{
       resp: string;
       sessions: SessionInfo[];
       has_more: boolean;
     }>({
       cmd: 'list_sessions',
-      workspace_path: workspacePath ?? null,
-      remote_connection_id: identity?.remoteConnectionId,
-      remote_ssh_host: identity?.remoteSshHost,
+      ...reference,
       limit,
       offset,
       query: query?.trim() || null,
-    });
+    }, target);
     return {
-      sessions: (resp.sessions || []).map((session) => workspacePath ? {
+      sessions: (resp.sessions || []).map((session) => scoped ? {
         ...session,
+        workspace_id: session.workspace_id ?? identity?.workspaceId,
         workspace_path: session.workspace_path || workspacePath,
         workspace_identity: {
-          path: workspacePath,
+          workspace_id: session.workspace_id ?? identity?.workspaceId,
+          path: session.workspace_path || workspacePath || '',
           remote_connection_id: identity?.remoteConnectionId,
           remote_ssh_host: identity?.remoteSshHost,
         },
@@ -438,17 +640,30 @@ export class RemoteSessionManager {
     sessionName?: string,
     workspacePath?: string,
     identity?: RemoteWorkspaceIdentity,
-  ): Promise<string> {
-    if (!workspacePath?.trim()) throw new Error('Workspace path is required to create a session');
-    const resp = await this.request<{ resp: string; session_id: string }>({
+  ): Promise<CreatedSession> {
+    if (!identity?.workspaceId && !workspacePath?.trim()) throw new Error('Workspace path is required to create a session');
+    const target = this.client.getControlTargetSnapshot();
+    const reference = await this.workspaceWireReference({
+      workspaceId: identity?.workspaceId,
+      path: workspacePath,
+      remoteConnectionId: identity?.remoteConnectionId,
+      remoteSshHost: identity?.remoteSshHost,
+    }, 'workspace_path', target, { nullablePath: true });
+    const resp = await this.request<{ resp: string } & CreatedSession>({
       cmd: 'create_session',
+      ...reference,
       agent_type: agentType || undefined,
       session_name: sessionName || undefined,
-      workspace_path: workspacePath ?? null,
-      remote_connection_id: identity?.remoteConnectionId,
-      remote_ssh_host: identity?.remoteSshHost,
-    });
-    return resp.session_id;
+    }, target);
+    return {
+      session_id: resp.session_id,
+      // Pre-ID hosts answer with the session ID only; the caller keeps its own
+      // reference. New hosts pin the session to its workspace record.
+      workspace_id: resp.workspace_id ?? identity?.workspaceId,
+      workspace_path: resp.workspace_path ?? workspacePath,
+      remote_connection_id: resp.remote_connection_id ?? identity?.remoteConnectionId,
+      remote_ssh_host: resp.remote_ssh_host ?? identity?.remoteSshHost,
+    };
   }
 
   async getSessionMessages(
@@ -617,18 +832,21 @@ export class RemoteSessionManager {
    * transferring its content.  Used to render file cards before the user
    * confirms a download.
    */
-  async getFileInfo(path: string, sessionId?: string, workspace?: { path: string; remoteConnectionId?: string }): Promise<{
+  async getFileInfo(path: string, sessionId?: string, workspace?: RuntimeFileWorkspace): Promise<{
     name: string;
     size: number;
     mimeType: string;
   }> {
+    const target = this.client.getControlTargetSnapshot();
+    const workspaceIdentity = sessionId
+      ? {}
+      : await this.runtimeFileWorkspaceReference(workspace, target);
     const resp = await this.request<{
       resp: string;
       name: string;
       size: number;
       mime_type: string;
-    }>({ cmd: 'get_file_info', path, session_id: sessionId ?? undefined,
-      ...(sessionId ? {} : { workspace_path: workspace?.path, remote_connection_id: workspace?.remoteConnectionId }) });
+    }>({ cmd: 'get_file_info', path, session_id: sessionId ?? undefined, ...workspaceIdentity }, target);
     return {
       name: resp.name,
       size: resp.size,
@@ -649,14 +867,19 @@ export class RemoteSessionManager {
     sessionId?: string,
     onProgress?: (downloaded: number, total: number) => void,
     maxBytes?: number,
-    workspace?: { path: string; remoteConnectionId?: string },
+    workspace?: RuntimeFileWorkspace,
   ): Promise<{
     name: string;
     mimeType: string;
     size: number;
   }> {
-    if (!sessionId && !workspace?.path) throw new Error('A fixed runtime workspace is required for download');
-    const workspaceIdentity = sessionId ? {} : {workspace_path: workspace!.path, remote_connection_id: workspace!.remoteConnectionId};
+    if (!sessionId && !workspace?.path && !workspace?.workspaceId) {
+      throw new Error('A fixed runtime workspace is required for download');
+    }
+    const target = this.client.getControlTargetSnapshot();
+    const workspaceIdentity = sessionId
+      ? {}
+      : await this.runtimeFileWorkspaceReference(workspace, target);
     const CHUNK_SIZE = 3 * 1024 * 1024; // 3 MB per request
     let offset = 0;
     let receivedFirstChunk = false;
@@ -664,7 +887,6 @@ export class RemoteSessionManager {
     let mimeType = '';
     let totalSize = 0;
     let revision: string | undefined;
-    const target = this.client.getControlTargetSnapshot();
 
     // eslint-disable-next-line no-constant-condition
     while (true) {

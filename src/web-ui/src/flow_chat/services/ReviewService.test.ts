@@ -181,11 +181,11 @@ describe('ReviewService', () => {
     if (entry === 'session files') {
       mocks.resolveCurrentFileReviewSnapshot.mockRejectedValueOnce(error);
       preparation = prepareReviewLaunchFromSessionFiles(['src/file.ts'], {
-        workspacePath: '/workspace',
+        workspaceId: 'workspace-1', workspacePath: '/workspace',
       });
     } else {
       mocks.resolveSlashCommandReviewTarget.mockRejectedValueOnce(error);
-      preparation = prepareReviewLaunchFromSlashCommand('/review', '/workspace');
+      preparation = prepareReviewLaunchFromSlashCommand('/review', '/workspace', undefined, 'workspace-1');
     }
 
     await expect(preparation).rejects.toMatchObject({
@@ -200,7 +200,7 @@ describe('ReviewService', () => {
     const prepared = await prepareReviewLaunchFromSessionFiles(
       ['src/small.ts'],
       {
-        workspacePath: 'D:/workspace/project',
+        workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
         changeStats: {
           fileCount: 1,
           totalLinesChanged: 4,
@@ -239,13 +239,13 @@ describe('ReviewService', () => {
     await prepareReviewLaunchFromSessionFiles(
       ['src/auth.ts', 'src/helper.ts'],
       {
-        workspacePath: 'D:/workspace/project',
+        workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
         remoteConnectionId: 'remote-connection-1',
       },
     );
 
     expect(mocks.resolveCurrentFileReviewSnapshot).toHaveBeenCalledWith(
-      'D:/workspace/project',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/project' },
       expect.objectContaining({
         files: expect.arrayContaining([
           expect.objectContaining({ normalizedPath: 'src/auth.ts' }),
@@ -260,7 +260,7 @@ describe('ReviewService', () => {
   it('keeps a medium target on the single-agent standard path', async () => {
     const files = Array.from({ length: 6 }, (_, index) => `src/file-${index}.ts`);
     const prepared = await prepareReviewLaunchFromSessionFiles(files, {
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       changeStats: {
         fileCount: files.length,
         totalLinesChanged: 20,
@@ -304,7 +304,7 @@ describe('ReviewService', () => {
     });
 
     const prepared = await prepareReviewLaunchFromSessionFiles(files, {
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
     });
 
     expect(prepared).toMatchObject({
@@ -317,7 +317,7 @@ describe('ReviewService', () => {
     expect(mocks.buildDeepReviewLaunchFromSessionFiles).toHaveBeenCalledWith(
       files,
       undefined,
-      'D:/workspace/project',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/project' },
       expect.objectContaining({
         strategyOverride: 'deep',
         managedBatching: true,
@@ -344,7 +344,7 @@ describe('ReviewService', () => {
 
     const prepared = await prepareReviewLaunchFromSlashCommand(
       '/DeepReview focus on auth',
-      'D:/workspace/project',
+      'D:/workspace/project', undefined, 'workspace-1',
     );
 
     expect(prepared).toMatchObject({
@@ -356,7 +356,7 @@ describe('ReviewService', () => {
     });
     expect(mocks.buildDeepReviewLaunchFromSlashCommand).toHaveBeenCalledWith(
       '/DeepReview focus on auth',
-      'D:/workspace/project',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/project' },
       expect.objectContaining({
         strategyOverride: 'deep',
         qualityDecision: { level: 'l3' },
@@ -372,7 +372,7 @@ describe('ReviewService', () => {
     });
 
     const prepared = await prepareReviewLaunchFromSessionFiles(['src/auth.ts'], {
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       intent: 'strict',
     });
 
@@ -385,7 +385,7 @@ describe('ReviewService', () => {
     expect(mocks.buildDeepReviewLaunchFromSessionFiles).toHaveBeenCalledWith(
       ['src/auth.ts'],
       undefined,
-      'D:/workspace/project',
+      { workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/project' },
       expect.objectContaining({
         strategyOverride: 'deep',
         qualityDecision: { level: 'l3' },
@@ -414,7 +414,7 @@ describe('ReviewService', () => {
 
     await expect(prepareReviewLaunchFromSessionFiles(
       ['src/file.ts'],
-      { workspacePath: 'D:/workspace/project' },
+      { workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project' },
     )).resolves.toMatchObject({
       mode: 'managed',
       requiresConsent: false,
@@ -439,11 +439,11 @@ describe('ReviewService', () => {
     });
 
     const prepared = await prepareReviewLaunchFromSessionFiles(['src/small.ts'], {
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
     });
 
     expect(prepared.mode).toBe('standard');
-    expect(mocks.trustRepository).toHaveBeenCalledWith('D:/workspace/project');
+    expect(mocks.trustRepository).toHaveBeenCalledWith({ workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/project' });
     expect(mocks.resolveCurrentFileReviewSnapshot).toHaveBeenCalledTimes(2);
   });
 
@@ -457,7 +457,7 @@ describe('ReviewService', () => {
     mocks.confirmWarning.mockResolvedValue(false);
 
     await expect(prepareReviewLaunchFromSessionFiles(['src/small.ts'], {
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
     })).rejects.toMatchObject({
       launchErrorMessageKey: 'deepReviewActionBar.launchError.repositoryUntrusted',
     });
@@ -489,14 +489,14 @@ describe('ReviewService', () => {
     await expect(prepareReviewLaunchFromSlashCommand(
       '/review main..feature',
       '/remote/workspace',
-      'remote-1',
+      'remote-1', 'workspace-1',
     )).rejects.toThrow('Remote Git range Review is not supported yet');
     expect(mocks.buildDeepReviewLaunchFromSlashCommand).not.toHaveBeenCalled();
   });
 
   it('prepares a provider-bound pull request review without embedding the diff', async () => {
     const prepared = await prepareReviewLaunchFromPullRequest({
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       remote: {
         id: 'origin|https://github.com/example/repo.git',
         name: 'origin',
@@ -519,7 +519,7 @@ describe('ReviewService', () => {
         name: 'repo',
         projectPath: 'example/repo',
         defaultBranch: 'main',
-        workspacePath: 'D:/workspace/project',
+        workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
         webUrl: 'https://github.com/example/repo',
       },
       reviewTarget: {
@@ -579,7 +579,7 @@ describe('ReviewService', () => {
     await expect(prepareReviewLaunchFromSlashCommand(
       '/review',
       '/remote/workspace',
-      'remote-1',
+      'remote-1', 'workspace-1',
     )).rejects.toThrow('Remote workspace Review is not supported');
   });
 
@@ -609,7 +609,7 @@ describe('ReviewService', () => {
 
     await expect(prepareReviewLaunchFromSlashCommand(
       '/review tests/missing.ts',
-      '/workspace/project',
+      '/workspace/project', undefined, 'workspace-1',
     )).rejects.toMatchObject({
       message: 'The requested file or directory does not exist in the current workspace.',
       launchErrorMessageKey: 'deepReviewActionBar.launchError.missingExplicitScope',
@@ -637,7 +637,7 @@ describe('ReviewService', () => {
 
     await expect(prepareReviewLaunchFromSlashCommand(
       '/review',
-      'D:/workspace/project',
+      'D:/workspace/project', undefined, 'workspace-1',
     )).rejects.toThrow('There are no workspace changes to review.');
   });
 
@@ -660,13 +660,13 @@ describe('ReviewService', () => {
       },
     });
 
-    await expect(prepareReviewLaunchFromSlashCommand('/review focus on auth'))
+    await expect(prepareReviewLaunchFromSlashCommand('/review focus on auth', 'workspace-1'))
       .rejects.toThrow('files or code diff could not be read for Review');
   });
 
   it('launches standard review as a read-only CodeReview child in the shared pane', async () => {
     const prepared = await prepareReviewLaunchFromSessionFiles(['src/small.ts'], {
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       changeStats: {
         fileCount: 1,
         totalLinesChanged: 4,
@@ -676,7 +676,7 @@ describe('ReviewService', () => {
 
     await launchPreparedReviewSession({
       parentSessionId: 'parent',
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       displayMessage: 'Review current changes',
       requestId: 'review-follow-up-1',
       prepared,
@@ -726,7 +726,7 @@ describe('ReviewService', () => {
 
     await launchPreparedReviewSession({
       parentSessionId: 'parent',
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       displayMessage: '/review',
       requestId: 'review-follow-up-2',
       prepared,
@@ -770,7 +770,7 @@ describe('ReviewService', () => {
 
     await launchPreparedReviewSession({
       parentSessionId: 'parent',
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       displayMessage: '/review',
       prepared,
     });
@@ -784,19 +784,19 @@ describe('ReviewService', () => {
 
   it('preserves a standard review child when first-message acceptance is uncertain', async () => {
     const prepared = await prepareReviewLaunchFromSessionFiles(['src/small.ts'], {
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       changeStats: {
         fileCount: 1,
         totalLinesChanged: 4,
         lineCountSource: 'diff_stat',
       },
     });
-    mocks.sessions.set('review-child', { workspacePath: 'D:/workspace/project' });
+    mocks.sessions.set('review-child', { workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project' });
     mocks.sendMessage.mockRejectedValueOnce(new Error('send failed'));
 
     await expect(launchPreparedReviewSession({
       parentSessionId: 'parent',
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       displayMessage: '/review',
       prepared,
     })).resolves.toEqual({ childSessionId: 'review-child', launchStatus: 'uncertain' });
@@ -813,7 +813,7 @@ describe('ReviewService', () => {
 
   it('retries uncertain standard child creation with the same request id', async () => {
     const prepared = await prepareReviewLaunchFromSessionFiles(['src/small.ts'], {
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       changeStats: {
         fileCount: 1,
         totalLinesChanged: 4,
@@ -829,7 +829,7 @@ describe('ReviewService', () => {
 
     await expect(launchPreparedReviewSession({
       parentSessionId: 'parent',
-      workspacePath: 'D:/workspace/project',
+      workspaceId: 'workspace-1', workspacePath: 'D:/workspace/project',
       displayMessage: '/review',
       prepared,
     })).resolves.toEqual({ childSessionId: 'review-child', launchStatus: 'started' });

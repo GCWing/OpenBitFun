@@ -57,6 +57,10 @@ vi.mock('@/infrastructure/event-bus', () => ({
   globalEventBus: { emit: vi.fn() },
 }));
 
+vi.mock('@/shared/services/workbenchContentService', () => ({
+  captureContentScope: (input: { workspaceId: string }) => ({ surfaceId: 'local', ...input }),
+}));
+
 vi.mock('@/shared/services/FileTabManager', () => ({
   fileTabManager: {
     openFile: vi.fn(),
@@ -112,6 +116,7 @@ describe('OpenBitFunCanvasPanel message boundary', () => {
     await act(async () => {
       root.render(
         <OpenBitFunCanvasPanel
+          workspaceId="canvas-workspace-id"
           artifactReference="openbitfun-canvas://session/session_1/canvas/canvas_1"
           html="<!doctype html><html><body>Canvas</body></html>"
         />,
@@ -133,6 +138,7 @@ describe('OpenBitFunCanvasPanel message boundary', () => {
     await act(async () => {
       root.render(
         <OpenBitFunCanvasPanel
+          workspaceId="canvas-workspace-id"
           artifactReference="openbitfun-canvas://session/session_1/canvas/canvas_1"
           html="<!doctype html><html><body>Canvas</body></html>"
         />,
@@ -169,6 +175,7 @@ describe('OpenBitFunCanvasPanel message boundary', () => {
     await act(async () => {
       root.render(
         <OpenBitFunCanvasPanel
+          workspaceId="canvas-workspace-id"
           artifactReference="openbitfun-canvas://session/session_1/canvas/canvas_1"
           html={`<!doctype html><html><body><script data-revision="rev_1">window.OpenBitFunCanvasRuntime.mount(Canvas);</script></body></html>`}
           workspacePath="/repo"

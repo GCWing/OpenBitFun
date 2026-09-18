@@ -77,6 +77,8 @@ pub enum CronJobTargetKind {
 pub struct CronWorkspaceRef {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
+    /// IO projection retained for old readers; never a workspace key.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub workspace_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_workspace_path: Option<String>,

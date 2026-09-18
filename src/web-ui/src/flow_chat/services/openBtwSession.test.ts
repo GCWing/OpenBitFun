@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   switchToTab: vi.fn(),
   closeTab: vi.fn(),
   addExternalSession: vi.fn(),
+  ensurePersistedSessionMetadata: vi.fn(),
   hydrateSessionHistoryForDetail: vi.fn(() => Promise.resolve()),
   updateSessionRelationship: vi.fn(),
   switchChatSession: vi.fn(),
@@ -88,6 +89,7 @@ vi.mock('../store/FlowChatStore', () => ({
       sessions,
       activeSessionId,
     }),
+    ensurePersistedSessionMetadata: (...args: unknown[]) => mocks.ensurePersistedSessionMetadata(...args),
     addExternalSession: (...args: unknown[]) =>
       mocks.addExternalSession(...args),
     updateSessionRelationship: (...args: unknown[]) =>
@@ -121,6 +123,11 @@ describe('openBtwSessionInAuxPane', () => {
     mocks.switchToTab.mockClear();
     mocks.closeTab.mockClear();
     mocks.addExternalSession.mockClear();
+    mocks.ensurePersistedSessionMetadata.mockReset();
+    mocks.ensurePersistedSessionMetadata.mockImplementation(async (sessionId: string) => {
+      sessions.set(sessionId, { ...sessions.get(sessionId), sessionId, workspaceId: 'child-worktree-id', config: {} });
+      return true;
+    });
     mocks.hydrateSessionHistoryForDetail.mockClear();
     mocks.updateSessionRelationship.mockClear();
     mocks.switchChatSession.mockReset();
@@ -164,6 +171,8 @@ describe('openBtwSessionInAuxPane', () => {
   it('carries Review-check presentation without changing the child session kind', () => {
     sessions.set('parent-session', {
       sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      projectWorkspaceId: 'project-id',
       workspacePath: 'D:\\workspace\\repo',
       mode: 'DeepReview',
     });
@@ -255,11 +264,14 @@ describe('openBtwSessionInAuxPane', () => {
   it('hydrates incomplete live subagent history when explicitly opening the aux pane', () => {
     sessions.set('parent-session', {
       sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      projectWorkspaceId: 'project-id',
       workspacePath: 'D:\\workspace\\repo',
       mode: 'Standard',
     });
     sessions.set('subagent-child', {
       sessionId: 'subagent-child',
+      workspaceId: 'child-worktree-id',
       sessionKind: 'subagent',
       isHistorical: false,
       historyState: 'ready',
@@ -290,11 +302,14 @@ describe('openBtwSessionInAuxPane', () => {
   it('does not rehydrate a subagent whose complete history is proven by counts', () => {
     sessions.set('parent-session', {
       sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      projectWorkspaceId: 'project-id',
       workspacePath: 'D:\\workspace\\repo',
       mode: 'Standard',
     });
     sessions.set('subagent-child', {
       sessionId: 'subagent-child',
+      workspaceId: 'child-worktree-id',
       sessionKind: 'subagent',
       isHistorical: false,
       historyState: 'ready',
@@ -316,9 +331,11 @@ describe('openBtwSessionInAuxPane', () => {
     expect(mocks.hydrateSessionHistoryForDetail).not.toHaveBeenCalled();
   });
 
-  it('creates an on-demand subagent shell and hydrates it when the child session is missing', () => {
+  it('creates an on-demand subagent shell and reads its own binding before hydration', async () => {
     sessions.set('parent-session', {
       sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      projectWorkspaceId: 'project-id',
       workspacePath: 'D:\\workspace\\repo',
       mode: 'Standard',
       remoteConnectionId: 'remote-1',
@@ -346,19 +363,16 @@ describe('openBtwSessionInAuxPane', () => {
       'remote-1',
       'host-1',
     );
-    expect(mocks.hydrateSessionHistoryForDetail).toHaveBeenCalledWith(
-      'subagent-child',
-      {
-        workspacePath: 'D:\\workspace\\repo',
-        remoteConnectionId: 'remote-1',
-        remoteSshHost: 'host-1',
-      },
-    );
+    await vi.waitFor(() => expect(mocks.hydrateSessionHistoryForDetail).toHaveBeenCalledWith('subagent-child'));
+    expect(mocks.ensurePersistedSessionMetadata).toHaveBeenCalledWith('subagent-child', 'project-id');
+    expect(sessions.get('subagent-child').workspaceId).toBe('child-worktree-id');
   });
 
   it('hydrates an existing metadata-only hidden child session without creating a duplicate shell', () => {
     sessions.set('parent-session', {
       sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      projectWorkspaceId: 'project-id',
       workspacePath: 'D:\\workspace\\repo',
       mode: 'Standard',
       remoteConnectionId: 'remote-1',
@@ -366,6 +380,7 @@ describe('openBtwSessionInAuxPane', () => {
     });
     sessions.set('subagent-child', {
       sessionId: 'subagent-child',
+      workspaceId: 'child-worktree-id',
       sessionKind: 'subagent',
       isHistorical: true,
       historyState: 'metadata-only',
@@ -394,9 +409,11 @@ describe('openBtwSessionInAuxPane', () => {
     expect(mocks.hydrateSessionHistoryForDetail).toHaveBeenCalledWith('subagent-child');
   });
 
-  it('passes the parent location when a legacy child has no saved workspace scope', () => {
+  it('reads a legacy child binding through the parent project ID without inheriting its execution ID', async () => {
     sessions.set('parent-session', {
       sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      projectWorkspaceId: 'project-id',
       workspacePath: 'D:\\workspace\\repo',
       mode: 'Standard',
       remoteConnectionId: 'remote-current',
@@ -404,6 +421,7 @@ describe('openBtwSessionInAuxPane', () => {
     });
     sessions.set('subagent-child', {
       sessionId: 'subagent-child',
+      workspaceId: undefined,
       sessionKind: 'subagent',
       isHistorical: true,
       historyState: 'metadata-only',
@@ -415,19 +433,16 @@ describe('openBtwSessionInAuxPane', () => {
       sessionKind: 'subagent',
     });
 
-    expect(mocks.hydrateSessionHistoryForDetail).toHaveBeenCalledWith(
-      'subagent-child',
-      {
-        workspacePath: 'D:\\workspace\\repo',
-        remoteConnectionId: 'remote-current',
-        remoteSshHost: 'host-current',
-      },
-    );
+    await vi.waitFor(() => expect(mocks.hydrateSessionHistoryForDetail).toHaveBeenCalledWith('subagent-child'));
+    expect(mocks.ensurePersistedSessionMetadata).toHaveBeenCalledWith('subagent-child', 'project-id');
+    expect(sessions.get('subagent-child').workspaceId).toBe('child-worktree-id');
   });
 
   it('hydrates an existing subagent shell when its model selection is missing', () => {
     sessions.set('parent-session', {
       sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      projectWorkspaceId: 'project-id',
       workspacePath: 'D:\\workspace\\repo',
       mode: 'Standard',
       remoteConnectionId: 'remote-1',
@@ -435,6 +450,7 @@ describe('openBtwSessionInAuxPane', () => {
     });
     sessions.set('subagent-child', {
       sessionId: 'subagent-child',
+      workspaceId: 'child-worktree-id',
       sessionKind: 'subagent',
       isHistorical: false,
       historyState: 'new',
@@ -459,6 +475,8 @@ describe('openBtwSessionInAuxPane', () => {
   it('does not hydrate an existing live subagent with in-memory turns just to fill missing model selection', () => {
     sessions.set('parent-session', {
       sessionId: 'parent-session',
+      workspaceId: 'parent-workspace-id',
+      projectWorkspaceId: 'project-id',
       workspacePath: 'D:\\workspace\\repo',
       mode: 'Standard',
       remoteConnectionId: 'remote-1',
@@ -466,6 +484,7 @@ describe('openBtwSessionInAuxPane', () => {
     });
     sessions.set('subagent-child', {
       sessionId: 'subagent-child',
+      workspaceId: 'child-worktree-id',
       sessionKind: 'subagent',
       isHistorical: false,
       historyState: 'new',

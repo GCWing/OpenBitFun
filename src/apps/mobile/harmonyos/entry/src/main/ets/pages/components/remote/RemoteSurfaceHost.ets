@@ -108,6 +108,9 @@ export struct RemoteSurfaceHost {
           statusFilter: this.presentationState.statusFilter,
           workspaceName: this.remotePageState.workspaceName,
           workspacePath: this.remotePageState.workspacePath,
+          workspaceId: this.remotePageState.workspaceId,
+          workspaceConnectionId: this.remotePageState.workspaceConnectionId,
+          workspaceSshHost: this.remotePageState.workspaceSshHost,
           workspaceKind: this.remotePageState.workspaceKind,
           recentWorkspaces: this.remotePageState.recentWorkspaces,
           actionPresentation: SessionActionPresentation.Popover,
@@ -126,8 +129,10 @@ export struct RemoteSurfaceHost {
             (this.showSelectedSession ? this.remotePageState.conversation.activeSession.sessionId : ''),
           onCreate: () => this.createSession('code'),
           onCreateAssistantSession: () => this.createAssistantSession(),
-          onCreateInWorkspace: (path: string, agentType: string) => this.createSessionInWorkspace(path, agentType),
-          onSelectWorkspace: (path: string) => this.actions.onRemoteHome.selectWorkspace(path),
+          onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string, workspaceId?: string) =>
+            this.createSessionInWorkspace(path, agentType, connectionId, sshHost, workspaceId),
+          onSelectWorkspace: (path: string, connectionId?: string, sshHost?: string, workspaceId?: string) =>
+            this.actions.onRemoteHome.selectWorkspace(path, undefined, connectionId, sshHost, workspaceId),
           onOpenSession: (session: RemoteSession) => this.openSession(session),
           onDeleteSession: (session: RemoteSession) => this.actions.onRemoteHome.deleteSession(session),
           onLoadMore: () => this.actions.onRemoteHome.loadMore()
@@ -313,12 +318,14 @@ export struct RemoteSurfaceHost {
     }
   }
 
-  private createSessionInWorkspace(path: string, agentType: string): void {
+  private createSessionInWorkspace(
+    path: string, agentType: string, connectionId?: string, sshHost?: string, workspaceId?: string
+  ): void {
     if (this.compact) {
       this.actions.onSidebar.close();
-      this.actions.onRemoteHome.createInWorkspace(path, agentType);
+      this.actions.onRemoteHome.createInWorkspace(path, agentType, undefined, connectionId, sshHost, workspaceId);
     } else {
-      this.actions.onRemoteHome.createInWorkspaceInPlace(path, agentType);
+      this.actions.onRemoteHome.createInWorkspaceInPlace(path, agentType, undefined, connectionId, sshHost, workspaceId);
     }
   }
 

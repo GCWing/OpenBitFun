@@ -19,8 +19,8 @@ use openbitfun_runtime_ports::{
 use serde_json::{json, Map};
 
 #[test]
-fn shared_runtime_protocol_stays_at_version_18() {
-    assert_eq!(PROTOCOL_VERSION, 18);
+fn shared_runtime_protocol_supports_workspace_ids_at_version_19() {
+    assert_eq!(PROTOCOL_VERSION, 19);
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn protocol_round_trips_reviewed_permission_and_user_input_operations() {
 
 #[test]
 fn protocol_round_trips_read_only_main_agent_catalog() {
-    assert_eq!(PROTOCOL_VERSION, 18);
+    assert_eq!(PROTOCOL_VERSION, 19);
     let operation = RuntimeIpcOperation::ListAgentModes {
         session_id: Some("session-1".to_string()),
     };
@@ -136,7 +136,7 @@ fn protocol_round_trips_read_only_main_agent_catalog() {
 
 #[test]
 fn protocol_round_trips_exact_turn_steering_without_replacing_turn_admission() {
-    assert_eq!(PROTOCOL_VERSION, 18);
+    assert_eq!(PROTOCOL_VERSION, 19);
     let operation = RuntimeIpcOperation::SteerTurn {
         request: AgentDialogSteerRequest {
             session_id: "session-1".to_string(),
@@ -212,6 +212,7 @@ fn protocol_round_trips_root_scoped_lineage_operations() {
     let operations = vec![
         RuntimeIpcOperation::GetSessionLineage {
             request: AgentSessionLineageRequest {
+                workspace_id: None,
                 workspace_path: "D:/workspace/project".to_string(),
                 anchor_session_id: "root-1".to_string(),
                 remote_connection_id: None,
@@ -220,6 +221,7 @@ fn protocol_round_trips_root_scoped_lineage_operations() {
         },
         RuntimeIpcOperation::InspectLineageSession {
             request: AgentSessionLineageTranscriptRequest {
+                workspace_id: None,
                 workspace_path: "D:/workspace/project".to_string(),
                 root_session_id: "root-1".to_string(),
                 session_id: "child-1".to_string(),
@@ -230,6 +232,7 @@ fn protocol_round_trips_root_scoped_lineage_operations() {
         },
         RuntimeIpcOperation::CancelLineageSession {
             request: AgentSessionLineageCancellationRequest {
+                workspace_id: None,
                 workspace_path: "D:/workspace/project".to_string(),
                 root_session_id: "root-1".to_string(),
                 session_id: "child-1".to_string(),
@@ -254,7 +257,7 @@ fn protocol_round_trips_root_scoped_lineage_operations() {
 
 #[test]
 fn protocol_round_trips_workspace_diff_as_a_read_only_workspace_operation() {
-    assert_eq!(PROTOCOL_VERSION, 18);
+    assert_eq!(PROTOCOL_VERSION, 19);
 
     let operation = RuntimeIpcOperation::WorkspaceDiff;
     let encoded = serde_json::to_value(&operation).expect("serialize workspace diff operation");
@@ -376,7 +379,7 @@ fn protocol_round_trips_the_reviewed_session_model_operation() {
 
 #[test]
 fn protocol_round_trips_the_current_session_rename_operation() {
-    assert_eq!(PROTOCOL_VERSION, 18);
+    assert_eq!(PROTOCOL_VERSION, 19);
 
     let operation = RuntimeIpcOperation::RenameSession {
         request: RuntimeSessionRenameRequest {
@@ -481,6 +484,7 @@ fn protocol_round_trips_manual_compaction_as_an_idle_controller_turn() {
 fn protocol_round_trips_undo_as_an_active_controller_operation() {
     let operation = RuntimeIpcOperation::UndoSession {
         request: AgentSessionRevertRequest {
+            workspace_id: None,
             workspace_path: "D:/workspace/project".to_string(),
             session_id: "session-1".to_string(),
             remote_connection_id: None,
@@ -594,6 +598,7 @@ fn submit_turn_accepts_the_existing_64_kib_tui_paste_contract() {
                 execution: Default::default(),
                 agent_type: "Standard".to_string(),
                 workspace_path: Some("D:/workspace/project".to_string()),
+                workspace_id: None,
                 remote_connection_id: None,
                 remote_ssh_host: None,
                 policy: DialogSubmissionPolicy::for_source(AgentSubmissionSource::Cli),
@@ -624,5 +629,32 @@ fn question_interaction_requires_current_session_controller() {
     assert_eq!(
         operation.rules().session_requirement,
         RuntimeIpcSessionRequirement::CurrentController
+    );
+}
+
+#[test]
+fn workspace_identity_capability_and_legacy_serializer_are_explicit() {
+    let legacy: crate::RuntimeIpcCapabilities = serde_json::from_value(json!({
+        "health": true, "interactive_tui": true
+    }))
+    .unwrap();
+    assert!(!legacy.workspace_id_references);
+    let current = RuntimeIpcOperation::RestoreSession {
+        request: crate::RuntimeSessionRestoreRequest {
+            workspace_id: Some("workspace-1".into()),
+            workspace_path: String::new(),
+            session_id: "session-1".into(),
+        },
+    };
+    let json = serde_json::to_value(&current).unwrap();
+    assert_eq!(json["request"]["workspaceId"], "workspace-1");
+    assert!(json["request"].get("workspacePath").is_none());
+    let projected = crate::legacy_workspace_operation(current, "/legacy-project");
+    let json = serde_json::to_value(&projected).unwrap();
+    assert!(json["request"].get("workspaceId").is_none());
+    assert_eq!(json["request"]["workspacePath"], "/legacy-project");
+    assert_eq!(
+        serde_json::from_value::<RuntimeIpcOperation>(json).unwrap(),
+        projected
     );
 }

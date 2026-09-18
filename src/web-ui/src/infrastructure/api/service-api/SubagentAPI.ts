@@ -3,6 +3,7 @@
  */
 
 import { api } from './ApiClient';
+import { workspaceScopedRequest } from './legacyWorkspaceCompatibility';
 
 
 
@@ -53,21 +54,21 @@ export interface SubagentInfo {
 
 export interface ListSubagentsOptions {
   source?: SubagentSource;
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 export interface ListVisibleSubagentsOptions {
-  workspacePath?: string;
+  workspaceId?: string;
   parentAgentType: string;
 }
 
 export interface ListManageableSubagentsOptions {
-  workspacePath?: string;
+  workspaceId?: string;
   parentAgentType: string;
 }
 
 export interface ReloadSubagentsOptions {
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 export type SubagentLevel = 'user' | 'project';
@@ -81,7 +82,7 @@ export interface CreateSubagentPayload {
    
   readonly?: boolean;
   review?: boolean;
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 export interface UpdateSubagentConfigPayload {
@@ -90,7 +91,7 @@ export interface UpdateSubagentConfigPayload {
   enabled?: boolean;
   model?: string;
   clearModelOverride?: boolean;
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 export interface UpdateSubagentConfigResponse {
@@ -115,7 +116,7 @@ export interface SubagentDetail {
 
 export interface GetSubagentDetailPayload {
   subagentId: string;
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 export interface UpdateSubagentPayload {
@@ -125,7 +126,7 @@ export interface UpdateSubagentPayload {
   tools?: string[];
   readonly?: boolean;
   review?: boolean;
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 // ==================== API ====================
@@ -134,33 +135,33 @@ export const SubagentAPI = {
    
   async listSubagents(options?: ListSubagentsOptions): Promise<SubagentInfo[]> {
     return api.invoke<SubagentInfo[]>('list_subagents', {
-      request: options ?? {},
+      request: await workspaceScopedRequest(options ?? {}),
     });
   },
 
   async listVisibleSubagents(options: ListVisibleSubagentsOptions): Promise<SubagentInfo[]> {
     return api.invoke<SubagentInfo[]>('list_visible_subagents', {
-      request: options,
+      request: await workspaceScopedRequest(options),
     });
   },
 
   async listManageableSubagents(options: ListManageableSubagentsOptions): Promise<SubagentInfo[]> {
     return api.invoke<SubagentInfo[]>('list_manageable_subagents', {
-      request: options,
+      request: await workspaceScopedRequest(options),
     });
   },
 
    
   async reloadSubagents(options: ReloadSubagentsOptions = {}): Promise<void> {
     return api.invoke('reload_subagents', {
-      request: options,
+      request: await workspaceScopedRequest(options),
     });
   },
 
    
   async createSubagent(payload: CreateSubagentPayload): Promise<void> {
     return api.invoke('create_subagent', {
-      request: payload,
+      request: await workspaceScopedRequest(payload),
     });
   },
 
@@ -174,16 +175,16 @@ export const SubagentAPI = {
     payload: UpdateSubagentConfigPayload,
   ): Promise<UpdateSubagentConfigResponse> {
     return api.invoke<UpdateSubagentConfigResponse>('update_subagent_config', {
-      request: payload,
+      request: await workspaceScopedRequest(payload),
     });
   },
 
   async getSubagentDetail(payload: GetSubagentDetailPayload): Promise<SubagentDetail> {
     const raw = await api.invoke<SubagentDetail & { level: string }>('get_subagent_detail', {
-      request: {
+      request: await workspaceScopedRequest({
         subagentId: payload.subagentId,
-        workspacePath: payload.workspacePath,
-      },
+        workspaceId: payload.workspaceId,
+      }),
     });
     return {
       ...raw,
@@ -193,21 +194,21 @@ export const SubagentAPI = {
 
   async updateSubagent(payload: UpdateSubagentPayload): Promise<void> {
     return api.invoke('update_subagent', {
-      request: {
+      request: await workspaceScopedRequest({
         subagentId: payload.subagentId,
         description: payload.description,
         prompt: payload.prompt,
         tools: payload.tools,
         readonly: payload.readonly,
         review: payload.review,
-        workspacePath: payload.workspacePath,
-      },
+        workspaceId: payload.workspaceId,
+      }),
     });
   },
 
-  async deleteSubagent(subagentId: string, workspacePath?: string): Promise<void> {
+  async deleteSubagent(subagentId: string, workspaceId?: string): Promise<void> {
     return api.invoke('delete_subagent', {
-      request: { subagentId, workspacePath },
+      request: await workspaceScopedRequest({ subagentId, workspaceId }),
     });
   },
 };

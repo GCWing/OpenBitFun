@@ -22,6 +22,10 @@ pub use openbitfun_product_domains::native_hooks::{
 #[cfg_attr(feature = "rpc", request(method = "nativeHook/overview", response = NativeHookOverviewResponse))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NativeHookOverviewRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
 }
 
@@ -57,6 +61,10 @@ impl std::fmt::Debug for NativeHookOverviewResponse {
 #[cfg_attr(feature = "rpc", request(method = "externalHook/snapshot", response = ExternalHookSnapshotResponse))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExternalHookSnapshotRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub refresh_updates: bool,
 }
@@ -80,6 +88,10 @@ pub struct ExternalHookSnapshotResponse(pub ExternalHookImportSnapshotV1);
 #[cfg_attr(feature = "rpc", request(method = "externalHook/plan", response = ExternalHookPlanResponse))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExternalHookPlanRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub source: SourceKey,
 }
@@ -103,6 +115,10 @@ pub struct ExternalHookPlanResponse(pub ExternalHookImportPlanV1);
 #[cfg_attr(feature = "rpc", request(method = "externalHook/apply", response = ExternalHookApplyResponse))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExternalHookApplyRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub operation_id: String,
     pub import_request: ExternalHookImportApplyRequestV1,
@@ -129,6 +145,10 @@ pub struct ExternalHookApplyResponse(pub ExternalHookImportApplyResultV1);
 #[cfg_attr(feature = "rpc", request(method = "externalHook/mutate", response = ExternalHookMutationResponse))]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ExternalHookMutationRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only field for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub operation_id: String,
     pub mutation: ExternalHookImportMutationRequestV1,
@@ -160,6 +180,7 @@ mod tests {
     #[test]
     fn hook_request_debug_redacts_workspace_paths() {
         let request = ExternalHookMutationRequest {
+            workspace_id: Some("workspace-1".to_string()),
             workspace_path: "C:/secret/workspace".to_string(),
             operation_id: "hook-operation-1".to_string(),
             mutation: ExternalHookImportMutationRequestV1 {

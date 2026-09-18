@@ -5,6 +5,8 @@ use anyhow::Result;
 use openbitfun_services_core::session::DialogTurnData;
 use serde_json::{json, Value};
 
+use super::chat_projection::inline_host_path_pixels;
+
 /// Transcript facts and interaction controls have different persistence roles.
 /// Provider chunks are not durable messages; completed runtime blocks are read
 /// from the canonical turn store. Approval controls retain their full payload.
@@ -46,14 +48,24 @@ pub fn session_event_publication(name: &str, payload: &Value) -> SessionEventPub
     }
 }
 
-pub fn records_from_turns(turns: &[DialogTurnData]) -> Result<Vec<Value>> {
+/// `read_image_pixels` resolves an attachment path against the host filesystem;
+/// it is passed in because records are otherwise a pure transform over turns.
+pub fn records_from_turns(
+    turns: &[DialogTurnData],
+    read_image_pixels: &dyn Fn(&str) -> Option<Vec<u8>>,
+) -> Result<Vec<Value>> {
     let mut records = Vec::new();
     for source in turns {
         let mut turn = serde_json::to_value(source)?;
         turn.as_object_mut()
             .expect("turn serializes as object")
             .remove("modelRounds");
-        records.push(json!({"sessionId":source.session_id,"id":format!("turn/{}",source.turn_id),"turn":turn}));
+        // The turn record is the one clients build the user message from, so the
+        // pixels are inlined there alone; the parent headers below stay as they
+        // were recorded rather than repeating an image once per item.
+        let mut turn_record = turn.clone();
+        inline_turn_attachment_pixels(&mut turn_record, read_image_pixels);
+        records.push(json!({"sessionId":source.session_id,"id":format!("turn/{}",source.turn_id),"turn":turn_record}));
         for source_round in &source.model_rounds {
             let mut round = serde_json::to_value(source_round)?;
             let object = round.as_object_mut().expect("round serializes as object");
@@ -77,6 +89,36 @@ pub fn records_from_turns(turns: &[DialogTurnData]) -> Result<Vec<Value>> {
         }
     }
     Ok(records)
+}
+
+/// An attachment recorded before pixels travelled inline holds a host path and
+/// nothing else, and only this host can still resolve it. Clients read images
+/// straight out of the recorded metadata, so the pixels join it there.
+fn inline_turn_attachment_pixels(
+    turn: &mut Value,
+    read_image_pixels: &dyn Fn(&str) -> Option<Vec<u8>>,
+) {
+    let Some(images) = turn
+        .pointer_mut("/userMessage/metadata/images")
+        .and_then(|images| images.as_array_mut())
+    else {
+        return;
+    };
+    for image in images {
+        let recorded_pixels = image
+            .get("data_url")
+            .and_then(|value| value.as_str())
+            .is_some_and(|data_url| !data_url.is_empty());
+        if recorded_pixels {
+            continue;
+        }
+        let Some(data_url) = inline_host_path_pixels(image, read_image_pixels) else {
+            continue;
+        };
+        if let Some(image) = image.as_object_mut() {
+            image.insert("data_url".to_string(), Value::String(data_url));
+        }
+    }
 }
 
 #[cfg(test)]

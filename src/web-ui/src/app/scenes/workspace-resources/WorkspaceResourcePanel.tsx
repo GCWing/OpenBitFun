@@ -28,7 +28,16 @@ export default function WorkspaceResourcePanel() {
   const target = useNavSceneStore(state => state.resourceWorkspace);
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const workspace = resolveResourceWorkspace(target, scope.surfaceId, openedWorkspaces, activeWorkspace);
-  const resourceKey = scope.key('workspace-resources', workspace?.connectionId, workspace?.id, workspace?.rootPath);
+  // Persisted layout and search state are keyed by (surface, workspace ID) only.
+  const resourceKey = scope.key('workspace-resources', workspace?.id);
+  const migrateLayout = useWorkspaceResourceState(state => state.migrateLayout);
+  useEffect(() => {
+    if (!workspace) return;
+    migrateLayout(
+      scope.key('workspace-resources', workspace.connectionId, workspace.id, workspace.rootPath),
+      resourceKey,
+    );
+  }, [migrateLayout, resourceKey, scope, workspace]);
   return <WorkspaceResourceContent key={resourceKey} resourceKey={resourceKey} workspace={workspace} />;
 }
 

@@ -157,7 +157,9 @@
 
   /**
    * A dialog may itself be the full-screen overlay. Move only dialog surfaces;
-   * overlay/backdrop roots receive a fade below.
+   * overlay/backdrop roots receive a fade below. Presence owners must also opt
+   * out: a filled entrance animation would override their resting opacity and
+   * multiply their own exit transform via the individual scale property.
    */
   :where(
     [role='dialog'],
@@ -168,6 +170,7 @@
       [class*='overlay'],
       [class*='backdrop'],
       [data-motion='overlay'],
+      [data-motion='presence'],
       [data-motion='none']
     )
   ) {

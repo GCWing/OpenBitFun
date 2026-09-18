@@ -177,6 +177,7 @@ impl SessionControlTool {
         session_name: &str,
     ) -> AgentSessionRenameRequest {
         AgentSessionRenameRequest {
+            workspace_id: workspace.workspace_id.clone(),
             workspace_path: workspace.project_workspace.clone(),
             session_id: session_id.to_string(),
             session_name: session_name.to_string(),
@@ -209,9 +210,10 @@ impl SessionControlTool {
     ) -> OpenBitFunResult<()> {
         let existing_sessions = runtime
             .list_sessions(AgentSessionListRequest {
-                workspace_path: workspace.project_workspace.clone(),
-                remote_connection_id: workspace.remote_connection_id.clone(),
-                remote_ssh_host: workspace.remote_ssh_host.clone(),
+                workspace_id: workspace.workspace_id.clone(),
+                workspace_path: String::new(),
+                remote_connection_id: None,
+                remote_ssh_host: None,
             })
             .await
             .map_err(|error| {
@@ -567,6 +569,7 @@ Arguments:
 
                 deletion_runtime
                     .delete_session(AgentSessionDeleteRequest {
+                        workspace_id: workspace.workspace_id.clone(),
                         workspace_path: workspace.project_workspace.clone(),
                         session_id: session_id.to_string(),
                         remote_connection_id: workspace.remote_connection_id.clone(),
@@ -663,9 +666,10 @@ Arguments:
                     .await?;
                 let sessions = runtime
                     .list_sessions(AgentSessionListRequest {
-                        workspace_path: workspace.project_workspace.clone(),
-                        remote_connection_id: workspace.remote_connection_id.clone(),
-                        remote_ssh_host: workspace.remote_ssh_host.clone(),
+                        workspace_id: workspace.workspace_id.clone(),
+                        workspace_path: String::new(),
+                        remote_connection_id: None,
+                        remote_ssh_host: None,
                     })
                     .await
                     .map_err(|error| {

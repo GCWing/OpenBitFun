@@ -7,7 +7,7 @@ use crate::service::git::git_types::GitDiffParams;
 use crate::service::git::git_utils::get_repository_root;
 use crate::service::review_platform::{
     ReviewPlatformError, ReviewPlatformKind, ReviewPlatformPullRequestFileDiff,
-    ReviewPlatformService,
+    ReviewPlatformService, ReviewRepositoryLocator,
 };
 use crate::service::snapshot::manager::get_snapshot_manager_for_workspace;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
@@ -57,10 +57,10 @@ enum ProviderFileDiffRoute {
         head_revision: String,
         file_path: String,
         file_page_hint: Option<u32>,
-        repository_path: Option<String>,
+        repository: Option<ReviewRepositoryLocator>,
     },
     WorkspaceRemote {
-        repository_path: String,
+        repository: ReviewRepositoryLocator,
         remote_id: String,
         pull_request_id: String,
         base_revision: String,
@@ -97,7 +97,7 @@ impl ProviderFileDiffService for CoreProviderFileDiffService {
                 head_revision,
                 file_path,
                 file_page_hint,
-                repository_path,
+                repository,
             } => {
                 ReviewPlatformService::pull_request_file_diff_by_identity(
                     *platform,
@@ -108,12 +108,12 @@ impl ProviderFileDiffService for CoreProviderFileDiffService {
                     head_revision,
                     file_path,
                     *file_page_hint,
-                    repository_path.as_deref(),
+                    repository.as_ref(),
                 )
                 .await
             }
             ProviderFileDiffRoute::WorkspaceRemote {
-                repository_path,
+                repository,
                 remote_id,
                 pull_request_id,
                 base_revision,
@@ -122,7 +122,7 @@ impl ProviderFileDiffService for CoreProviderFileDiffService {
                 file_page_hint,
             } => {
                 ReviewPlatformService::pull_request_file_diff(
-                    repository_path,
+                    repository,
                     remote_id,
                     pull_request_id,
                     base_revision,
@@ -226,9 +226,12 @@ impl GetFileDiffTool {
                 head_revision: head_revision.to_string(),
                 file_path: logical_path.to_string(),
                 file_page_hint,
-                repository_path: context
-                    .workspace_root()
-                    .map(|path| path.to_string_lossy().into_owned()),
+                repository: context.workspace_root().map(|path| {
+                    ReviewRepositoryLocator::new(
+                        context.workspace_id().map(str::to_string),
+                        path.to_string_lossy().into_owned(),
+                    )
+                }),
             });
         }
         let Some(repository_path) = context.workspace_root() else {
@@ -238,7 +241,10 @@ impl GetFileDiffTool {
             return Ok(ProviderFileDiffRoute::Unavailable);
         }
         Ok(ProviderFileDiffRoute::WorkspaceRemote {
-            repository_path: repository_path.to_string_lossy().into_owned(),
+            repository: ReviewRepositoryLocator::new(
+                context.workspace_id().map(str::to_string),
+                repository_path.to_string_lossy().into_owned(),
+            ),
             remote_id: pull_request.remote_id().to_string(),
             pull_request_id: pull_request.pull_request_id().to_string(),
             base_revision: base_revision.to_string(),
@@ -852,9 +858,9 @@ impl GetFileDiffTool {
     async fn try_baseline_diff(
         &self,
         file_path: &Path,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> Option<OpenBitFunResult<Value>> {
-        let snapshot_manager = workspace_root.and_then(get_snapshot_manager_for_workspace)?;
+        let snapshot_manager = workspace_id.and_then(get_snapshot_manager_for_workspace)?;
 
         // Get snapshot service
         let snapshot_service = snapshot_manager.get_snapshot_service();
@@ -1736,7 +1742,16 @@ Usage:
         }
 
         if !prepared_review {
-            if let Some(result) = self.try_baseline_diff(path, context.workspace_root()).await {
+            if let Some(result) = self
+                .try_baseline_diff(
+                    path,
+                    context
+                        .workspace
+                        .as_ref()
+                        .and_then(|workspace| workspace.workspace_id.as_deref()),
+                )
+                .await
+            {
                 match result {
                     Ok(data) => {
                         debug!("GetFileDiff tool using baseline diff");
@@ -2090,7 +2105,7 @@ mod tests {
                     head_revision: "2222222222222222222222222222222222222222".to_string(),
                     file_path: "src/lib.rs".to_string(),
                     file_page_hint: Some(1),
-                    repository_path: None,
+                    repository: None,
                 }
             );
         }
@@ -2102,7 +2117,7 @@ mod tests {
         let mut context = prepared_context();
         attach_review_budget_identity(&mut context, "gitcode-workspace-route");
         context.workspace = Some(crate::agentic::WorkspaceBinding::new(
-            None,
+            Some("ws-gitcode-route".to_string()),
             directory.path().to_path_buf(),
         ));
         context.custom_data.insert(
@@ -2157,7 +2172,10 @@ mod tests {
                 .expect("recording service lock should be available")
                 .as_slice(),
             &[ProviderFileDiffRoute::WorkspaceRemote {
-                repository_path: directory.path().to_string_lossy().into_owned(),
+                repository: ReviewRepositoryLocator::new(
+                    Some("ws-gitcode-route".to_string()),
+                    directory.path().to_string_lossy().into_owned(),
+                ),
                 remote_id: "origin:gitcode:example__repo".to_string(),
                 pull_request_id: "42".to_string(),
                 base_revision: "1111111111111111111111111111111111111111".to_string(),
@@ -2679,6 +2697,7 @@ mod tests {
             "connection-id".to_string(),
             "Remote".to_string(),
             crate::service::remote_ssh::workspace_state::WorkspaceSessionIdentity {
+                workspace_kind: openbitfun_core_types::WorkspaceKind::Remote,
                 hostname: "example.test".to_string(),
                 logical_workspace_path: "/workspace".to_string(),
                 remote_connection_id: Some("connection-id".to_string()),

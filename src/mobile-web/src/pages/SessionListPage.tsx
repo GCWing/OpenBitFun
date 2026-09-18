@@ -48,14 +48,23 @@ import { useControlTargetEpoch } from '../hooks/useControlTargetEpoch';
 import { useI18n } from '../i18n';
 import {
   isRemoteControlTargetChangedError,
+  isWorkspaceIdReferencesUnsupportedError,
   REMOTE_CAPABILITY_HARNESS_PROFILES_V1,
   RemoteSessionManager,
+  type AssistantEntry,
   type RecentWorkspaceEntry,
+  type RemoteWorkspaceIdentity,
   type SessionInfo,
 } from '../services/RemoteSessionManager';
 import { useMobileStore } from '../services/store';
 import { createRemoteCacheScope, remoteCache } from '../services/RemoteCache';
-import { sessionMatchesWorkspace, workspaceIdentityKey } from '../services/workspaceIdentity';
+import { describeRemoteError } from '../services/remoteErrorPresentation';
+import {
+  sameWorkspace,
+  sessionMatchesWorkspace,
+  workspaceIdentityKey,
+  type WorkspaceReference,
+} from '../services/workspaceIdentity';
 import { useTheme } from '../theme';
 import logoMarkDark from '../assets/openbitfun-mark-dark.png';
 import logoMarkLight from '../assets/openbitfun-mark-light.png';
@@ -103,6 +112,33 @@ type CompactWorkspaceLoadStatus = 'idle' | 'loading' | 'ready' | 'failed';
 
 function compactWorkspaceKey(workspace: RecentWorkspaceEntry): string {
   return workspaceIdentityKey(workspace);
+}
+
+/**
+ * Key of one initial session load: the owning control target plus the
+ * workspace identity (ID when known, legacy triple only for ID-less rows).
+ */
+export function initialLoadKey(
+  deviceId: string | null | undefined,
+  workspace: WorkspaceReference | null | undefined,
+): string | undefined {
+  if (!workspace || (!workspace.workspace_id && !workspace.path)) return undefined;
+  return JSON.stringify([deviceId ?? null, workspaceIdentityKey(workspace)]);
+}
+
+/** Command identity for a workspace row; paths remain the legacy projection. */
+function commandIdentity(
+  workspace: Pick<RecentWorkspaceEntry, 'workspace_id' | 'remote_connection_id' | 'remote_ssh_host'> | null | undefined,
+): RemoteWorkspaceIdentity {
+  return {
+    workspaceId: workspace?.workspace_id,
+    remoteConnectionId: workspace?.remote_connection_id,
+    remoteSshHost: workspace?.remote_ssh_host,
+  };
+}
+
+function assistantIdentity(assistant: AssistantEntry | null | undefined): RemoteWorkspaceIdentity {
+  return { workspaceId: assistant?.workspace_id };
 }
 
 type SessionListTargetOwner = {
@@ -295,16 +331,9 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     return 'pro';
   });
 
-  const [assistantList, setAssistantList] = useState<Array<{ path: string; name: string; assistant_id?: string }>>([]);
+  const [assistantList, setAssistantList] = useState<AssistantEntry[]>([]);
   const [showAssistantPicker, setShowAssistantPicker] = useState(false);
-  const [workspaceList, setWorkspaceList] = useState<Array<{
-    path: string;
-    name: string;
-    last_opened: string;
-    workspace_kind?: 'normal' | 'assistant' | 'remote';
-    remote_connection_id?: string;
-    remote_ssh_host?: string;
-  }>>([]);
+  const [workspaceList, setWorkspaceList] = useState<RecentWorkspaceEntry[]>([]);
   const [showWorkspacePicker, setShowWorkspacePicker] = useState(false);
   const [workspaceCatalogSource, setWorkspaceCatalogSource] = useState<'opened' | 'recent' | null>(null);
 
@@ -513,7 +542,8 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
   const listRef = useRef<HTMLDivElement>(null);
   const listRequestSeqRef = useRef(0);
   const workspaceCatalogRequestSeqRef = useRef(0);
-  const initLoadedPathRef = useRef<string | undefined>(undefined);
+  // Keyed by (control target, workspace identity); see initialLoadKey.
+  const initLoadedWorkspaceRef = useRef<string | undefined>(undefined);
   const touchStartY = useRef(0);
   const isPulling = useRef(false);
 
@@ -576,7 +606,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
       setPairedDisplayMode(null);
       setError(null);
       offsetRef.current = 0;
-      initLoadedPathRef.current = undefined;
+      initLoadedWorkspaceRef.current = undefined;
     }
     committedSessionListTargetRef.current = { sessionMgr, epoch: controlTargetEpoch };
     return () => {
@@ -644,21 +674,21 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
       if (!currentAssistant && assistants.length > 0) {
         const defaultAssistant = assistants.find(a => !a.assistant_id) || assistants[0];
         setCurrentAssistant(defaultAssistant);
-        return defaultAssistant.path;
+        return defaultAssistant;
       }
-      return currentAssistant?.path;
+      return currentAssistant ?? undefined;
     } catch (e: any) {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(e)) {
-        setError(e.message);
+        setError(describeRemoteError(e, t));
       }
       return undefined;
     }
-  }, [captureSessionListEpoch, currentAssistant, isSessionListCurrent, sessionMgr, setCurrentAssistant, setError]);
+  }, [captureSessionListEpoch, currentAssistant, isSessionListCurrent, sessionMgr, setCurrentAssistant, setError, t]);
 
   const loadFirstPage = useCallback(async (
     workspacePath: string | undefined,
     query = '',
-    identity?: { remoteConnectionId?: string; remoteSshHost?: string },
+    identity?: { workspaceId?: string; remoteConnectionId?: string; remoteSshHost?: string },
   ) => {
     const targetEpoch = captureSessionListEpoch();
     if (targetEpoch === null) return;
@@ -693,7 +723,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         requestSeq !== listRequestSeqRef.current
         || !isSessionListCurrent(targetEpoch)
       ) return;
-      if (!isRemoteControlTargetChangedError(e)) setError(e.message);
+      if (!isRemoteControlTargetChangedError(e)) setError(describeRemoteError(e, t));
     } finally {
       if (
         requestSeq === listRequestSeqRef.current
@@ -702,7 +732,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         setLoading(false);
       }
     }
-  }, [cacheScope, captureSessionListEpoch, isSessionListCurrent, sessionMgr, setError, setSessions]);
+  }, [cacheScope, captureSessionListEpoch, isSessionListCurrent, sessionMgr, setError, setSessions, t]);
 
   // Load workspace list for Pro mode picker
   const loadWorkspaceList = useCallback(async () => {
@@ -721,10 +751,10 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     } catch (e: any) {
       if (requestSeq === workspaceCatalogRequestSeqRef.current
         && isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(e)) {
-        setError(e.message);
+        setError(describeRemoteError(e, t));
       }
     }
-  }, [cacheScope, captureSessionListEpoch, compact, isSessionListCurrent, sessionMgr, setError]);
+  }, [cacheScope, captureSessionListEpoch, compact, isSessionListCurrent, sessionMgr, setError, t]);
 
   const loadCompactDirectory = useCallback(async () => {
     if (!compact) return;
@@ -855,10 +885,8 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     if (targetEpoch === null) return;
     setCompactWorkspaceStatuses((current) => ({ ...current, [key]: 'loading' }));
     try {
-      const response = await sessionMgr.listSessions(workspace.path, PAGE_SIZE, 0, '', {
-        remoteConnectionId: workspace.remote_connection_id,
-        remoteSshHost: workspace.remote_ssh_host,
-      });
+      const identity = commandIdentity(workspace);
+      const response = await sessionMgr.listSessions(workspace.path, PAGE_SIZE, 0, '', identity);
       if (!isSessionListCurrent(targetEpoch)) return;
       liveDataSeqRef.current += 1;
       setCompactWorkspaceSessions((current) => ({ ...current, [key]: response.sessions }));
@@ -867,15 +895,13 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
       setCompactVisibleSessionCounts((current) => ({ ...current, [key]: 3 }));
       remoteCache.saveSessionPage(cacheScope, response.sessions, {
         workspacePath: workspace.path,
-        workspaceIdentity: {
-          remoteConnectionId: workspace.remote_connection_id,
-          remoteSshHost: workspace.remote_ssh_host,
-        },
+        workspaceIdentity: identity,
         replaceWorkspace: true,
       });
     } catch (error: unknown) {
       if (!isSessionListCurrent(targetEpoch) || isRemoteControlTargetChangedError(error)) return;
       setCompactWorkspaceStatuses((current) => ({ ...current, [key]: 'failed' }));
+      if (isWorkspaceIdReferencesUnsupportedError(error)) setError(describeRemoteError(error, t));
     }
   }, [
     captureSessionListEpoch,
@@ -884,6 +910,8 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     cacheScope,
     isSessionListCurrent,
     sessionMgr,
+    setError,
+    t,
   ]);
 
   const handleRetryCompactWorkspace = useCallback(async (workspace: RecentWorkspaceEntry) => {
@@ -892,10 +920,8 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     const key = compactWorkspaceKey(workspace);
     setCompactWorkspaceStatuses((current) => ({ ...current, [key]: 'loading' }));
     try {
-      const response = await sessionMgr.listSessions(workspace.path, PAGE_SIZE, 0, '', {
-        remoteConnectionId: workspace.remote_connection_id,
-        remoteSshHost: workspace.remote_ssh_host,
-      });
+      const identity = commandIdentity(workspace);
+      const response = await sessionMgr.listSessions(workspace.path, PAGE_SIZE, 0, '', identity);
       if (!isSessionListCurrent(targetEpoch)) return;
       liveDataSeqRef.current += 1;
       setCompactWorkspaceSessions((current) => ({ ...current, [key]: response.sessions }));
@@ -904,17 +930,15 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
       setCompactVisibleSessionCounts((current) => ({ ...current, [key]: 3 }));
       remoteCache.saveSessionPage(cacheScope, response.sessions, {
         workspacePath: workspace.path,
-        workspaceIdentity: {
-          remoteConnectionId: workspace.remote_connection_id,
-          remoteSshHost: workspace.remote_ssh_host,
-        },
+        workspaceIdentity: identity,
         replaceWorkspace: true,
       });
     } catch (error: unknown) {
       if (!isSessionListCurrent(targetEpoch) || isRemoteControlTargetChangedError(error)) return;
       setCompactWorkspaceStatuses((current) => ({ ...current, [key]: 'failed' }));
+      if (isWorkspaceIdReferencesUnsupportedError(error)) setError(describeRemoteError(error, t));
     }
-  }, [cacheScope, captureSessionListEpoch, isSessionListCurrent, sessionMgr]);
+  }, [cacheScope, captureSessionListEpoch, isSessionListCurrent, sessionMgr, setError, t]);
 
   const handleLoadMoreCompactWorkspace = useCallback(async (workspace: RecentWorkspaceEntry) => {
     const key = compactWorkspaceKey(workspace);
@@ -933,15 +957,13 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     if (targetEpoch === null) return;
     setCompactWorkspaceLoadingMore((current) => new Set(current).add(key));
     try {
+      const identity = commandIdentity(workspace);
       const response = await sessionMgr.listSessions(
         workspace.path,
         PAGE_SIZE,
         loadedSessions.length,
         '',
-        {
-          remoteConnectionId: workspace.remote_connection_id,
-          remoteSshHost: workspace.remote_ssh_host,
-        },
+        identity,
       );
       if (!isSessionListCurrent(targetEpoch)) return;
       liveDataSeqRef.current += 1;
@@ -958,14 +980,11 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
       }));
       remoteCache.saveSessionPage(cacheScope, response.sessions, {
         workspacePath: workspace.path,
-        workspaceIdentity: {
-          remoteConnectionId: workspace.remote_connection_id,
-          remoteSshHost: workspace.remote_ssh_host,
-        },
+        workspaceIdentity: identity,
       });
     } catch (error: unknown) {
       if (!isSessionListCurrent(targetEpoch) || isRemoteControlTargetChangedError(error)) return;
-      setError(String((error as { message?: string })?.message || error));
+      setError(describeRemoteError(error, t));
     } finally {
       if (isSessionListCurrent(targetEpoch)) {
         setCompactWorkspaceLoadingMore((current) => {
@@ -985,6 +1004,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     isSessionListCurrent,
     sessionMgr,
     setError,
+    t,
   ]);
 
   const handleCreateInCompactWorkspace = useCallback(async (
@@ -996,13 +1016,18 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     if (targetEpoch === null) return;
     setCreating(true);
     try {
-      const identity = {
-        remoteConnectionId: workspace.remote_connection_id,
-        remoteSshHost: workspace.remote_ssh_host,
-      };
-      const sessionId = await sessionMgr.createSession(agentType, undefined, workspace.path, identity);
+      const identity = commandIdentity(workspace);
+      const created = await sessionMgr.createSession(agentType, undefined, workspace.path, identity);
       if (!isSessionListCurrent(targetEpoch)) return;
-      const response = await sessionMgr.listSessions(workspace.path, PAGE_SIZE, 0, '', identity);
+      // The host pins the new session to a workspace record; that identity
+      // owns the follow-up listing and cache page.
+      const createdIdentity: RemoteWorkspaceIdentity = {
+        workspaceId: created.workspace_id ?? identity.workspaceId,
+        remoteConnectionId: created.remote_connection_id ?? identity.remoteConnectionId,
+        remoteSshHost: created.remote_ssh_host ?? identity.remoteSshHost,
+      };
+      const createdPath = created.workspace_path ?? workspace.path;
+      const response = await sessionMgr.listSessions(createdPath, PAGE_SIZE, 0, '', createdIdentity);
       if (!isSessionListCurrent(targetEpoch)) return;
       const key = compactWorkspaceKey(workspace);
       liveDataSeqRef.current += 1;
@@ -1012,14 +1037,14 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
       setCompactWorkspaceHasMore((current) => ({ ...current, [key]: response.has_more }));
       setCompactVisibleSessionCounts((current) => ({ ...current, [key]: 3 }));
       remoteCache.saveSessionPage(cacheScope, response.sessions, {
-        workspacePath: workspace.path,
-        workspaceIdentity: identity,
+        workspacePath: createdPath,
+        workspaceIdentity: createdIdentity,
         replaceWorkspace: true,
       });
-      onSelectSession(sessionId, t(isClawAgent(agentType) ? 'sessions.remoteClawSession' : isCoworkAgent(agentType) ? 'sessions.remoteCoworkSession' : 'sessions.remoteCodeSession'), true, agentType);
+      onSelectSession(created.session_id, t(isClawAgent(agentType) ? 'sessions.remoteClawSession' : isCoworkAgent(agentType) ? 'sessions.remoteCoworkSession' : 'sessions.remoteCodeSession'), true, agentType);
     } catch (error: unknown) {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(error)) {
-        setError(String((error as { message?: string })?.message || error));
+        setError(describeRemoteError(error, t));
       }
     } finally {
       if (isSessionListCurrent(targetEpoch)) setCreating(false);
@@ -1035,48 +1060,40 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     t,
   ]);
 
-  const handleSelectWorkspace = useCallback(async (workspace: {
-    path: string;
-    name: string;
-    remote_connection_id?: string;
-    remote_ssh_host?: string;
-  }) => {
+  const handleSelectWorkspace = useCallback(async (workspace: RecentWorkspaceEntry) => {
     if (targetInitializingRef.current) return;
     const targetEpoch = captureSessionListEpoch();
     if (targetEpoch === null) return;
     try {
-      const result = await sessionMgr.setWorkspace(workspace.path, {
-        remoteConnectionId: workspace.remote_connection_id,
-        remoteSshHost: workspace.remote_ssh_host,
-      });
+      const result = await sessionMgr.setWorkspace(workspace);
       if (!isSessionListCurrent(targetEpoch)) return;
       if (result.success) {
         const path = result.path || workspace.path;
         const remoteConnectionId =
           result.remote_connection_id ?? workspace.remote_connection_id;
         const remoteSshHost = result.remote_ssh_host ?? workspace.remote_ssh_host;
-        const identity = { remoteConnectionId, remoteSshHost };
+        const workspaceId = result.workspace_id ?? workspace.workspace_id;
+        const identity = { workspaceId, remoteConnectionId, remoteSshHost };
         setCurrentWorkspace({
+          workspace_id: workspaceId,
           has_workspace: true,
           path,
           project_name: result.project_name || workspace.name,
-          workspace_kind: remoteConnectionId || remoteSshHost
-            ? 'remote'
-            : undefined,
+          workspace_kind: workspace.workspace_kind,
           remote_connection_id: remoteConnectionId,
           remote_ssh_host: remoteSshHost,
         });
         setShowWorkspacePicker(false);
         loadFirstPage(path, searchQuery, identity);
       } else {
-        setError(result.error || 'Failed to set workspace');
+        setError(result.error || t('workspace.failedToSetWorkspace'));
       }
     } catch (e: any) {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(e)) {
-        setError(e.message);
+        setError(describeRemoteError(e, t));
       }
     }
-  }, [captureSessionListEpoch, isSessionListCurrent, loadFirstPage, searchQuery, sessionMgr, setCurrentWorkspace, setError]);
+  }, [captureSessionListEpoch, isSessionListCurrent, loadFirstPage, searchQuery, sessionMgr, setCurrentWorkspace, setError, t]);
 
   const trySelectFirstProWorkspace = useCallback(async (): Promise<boolean> => {
     const targetEpoch = captureSessionListEpoch();
@@ -1086,24 +1103,21 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
       if (!isSessionListCurrent(targetEpoch)) return false;
       const candidate = pickFirstProWorkspace(list);
       if (!candidate) return false;
-      const result = await sessionMgr.setWorkspace(candidate.path, {
-        remoteConnectionId: candidate.remote_connection_id,
-        remoteSshHost: candidate.remote_ssh_host,
-      });
+      const result = await sessionMgr.setWorkspace(candidate);
       if (!isSessionListCurrent(targetEpoch)) return false;
       if (result.success) {
         const path = result.path || candidate.path;
         const remoteConnectionId =
           result.remote_connection_id ?? candidate.remote_connection_id;
         const remoteSshHost = result.remote_ssh_host ?? candidate.remote_ssh_host;
-        const identity = { remoteConnectionId, remoteSshHost };
+        const workspaceId = result.workspace_id ?? candidate.workspace_id;
+        const identity = { workspaceId, remoteConnectionId, remoteSshHost };
         setCurrentWorkspace({
+          workspace_id: workspaceId,
           has_workspace: true,
           path,
           project_name: result.project_name || candidate.name,
-          workspace_kind: remoteConnectionId || remoteSshHost
-            ? 'remote'
-            : candidate.workspace_kind,
+          workspace_kind: candidate.workspace_kind,
           remote_connection_id: remoteConnectionId,
           remote_ssh_host: remoteSshHost,
         });
@@ -1114,7 +1128,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
       return false;
     } catch (e: any) {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(e)) {
-        setError(e.message);
+        setError(describeRemoteError(e, t));
       }
       return false;
     }
@@ -1123,7 +1137,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
   const loadNextPage = useCallback(async (
     workspacePath: string | undefined,
     query = '',
-    identity?: { remoteConnectionId?: string; remoteSshHost?: string },
+    identity?: { workspaceId?: string; remoteConnectionId?: string; remoteSshHost?: string },
   ) => {
     if (loading || loadingMore || !hasMore) return;
     const targetEpoch = captureSessionListEpoch();
@@ -1152,14 +1166,14 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         requestSeq !== listRequestSeqRef.current
         || !isSessionListCurrent(targetEpoch)
       ) return;
-      if (!isRemoteControlTargetChangedError(e)) setError(e.message);
+      if (!isRemoteControlTargetChangedError(e)) setError(describeRemoteError(e, t));
     } finally {
       if (
         requestSeq === listRequestSeqRef.current
         && isSessionListCurrent(targetEpoch)
       ) setLoadingMore(false);
     }
-  }, [appendSessions, cacheScope, captureSessionListEpoch, hasMore, isSessionListCurrent, loading, loadingMore, sessionMgr, setError]);
+  }, [appendSessions, cacheScope, captureSessionListEpoch, hasMore, isSessionListCurrent, loading, loadingMore, sessionMgr, setError, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1173,32 +1187,32 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
       try {
         const info = await sessionMgr.getWorkspaceInfo();
         if (!isInitCurrent()) return;
+        const deviceId = sessionMgr.controlTargetDeviceId;
         if (info.workspace_kind === 'assistant' && info.path) {
-          setCurrentAssistant({
+          const assistant: AssistantEntry = {
+            workspace_id: info.workspace_id,
             path: info.path,
             name: info.project_name ?? 'Claw',
             assistant_id: info.assistant_id,
-          });
+          };
+          setCurrentAssistant(assistant);
           setCurrentWorkspace(null);
           setDisplayMode('assistant');
-          initLoadedPathRef.current = info.path;
-          await loadFirstPage(info.path);
+          initLoadedWorkspaceRef.current = initialLoadKey(deviceId, assistant);
+          await loadFirstPage(info.path, '', assistantIdentity(assistant));
         } else {
           setDisplayMode('pro');
           const ws = info.has_workspace ? info : null;
           setCurrentWorkspace(ws);
           if (ws?.path) {
-            initLoadedPathRef.current = ws.path;
-            await loadFirstPage(ws.path, '', {
-              remoteConnectionId: ws.remote_connection_id,
-              remoteSshHost: ws.remote_ssh_host,
-            });
+            initLoadedWorkspaceRef.current = initialLoadKey(deviceId, ws);
+            await loadFirstPage(ws.path, '', commandIdentity(ws));
           } else {
             await trySelectFirstProWorkspace();
           }
         }
       } catch (e: any) {
-        if (isInitCurrent() && !isRemoteControlTargetChangedError(e)) setError(e.message);
+        if (isInitCurrent() && !isRemoteControlTargetChangedError(e)) setError(describeRemoteError(e, t));
       } finally {
         if (isInitCurrent()) {
           setPairedDisplayMode(null);
@@ -1237,10 +1251,8 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         }
         const ws = info.has_workspace ? info : null;
         setCurrentWorkspace(ws);
-        const resp = await sessionMgr.listSessions(ws?.path, PAGE_SIZE, 0, searchQuery, {
-          remoteConnectionId: ws?.remote_connection_id,
-          remoteSshHost: ws?.remote_ssh_host,
-        });
+        const identity = commandIdentity(ws);
+        const resp = await sessionMgr.listSessions(ws?.path, PAGE_SIZE, 0, searchQuery, identity);
         if (
           requestSeq !== listRequestSeqRef.current
           || !isSessionListCurrent(targetEpoch)
@@ -1251,15 +1263,14 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         offsetRef.current = resp.sessions.length;
         remoteCache.saveSessionPage(cacheScope, resp.sessions, {
           workspacePath: ws?.path,
-          workspaceIdentity: {
-            remoteConnectionId: ws?.remote_connection_id,
-            remoteSshHost: ws?.remote_ssh_host,
-          },
+          workspaceIdentity: identity,
           replaceWorkspace: searchQuery.trim().length === 0,
         });
       } else {
-        // Assistant mode: use currentAssistant path
-        const resp = await sessionMgr.listSessions(currentAssistant?.path, PAGE_SIZE, 0, searchQuery);
+        // Assistant mode: the assistant workspace ID scopes the listing; its
+        // path is the legacy projection for pre-ID hosts.
+        const identity = assistantIdentity(currentAssistant);
+        const resp = await sessionMgr.listSessions(currentAssistant?.path, PAGE_SIZE, 0, searchQuery, identity);
         if (
           requestSeq !== listRequestSeqRef.current
           || !isSessionListCurrent(targetEpoch)
@@ -1270,13 +1281,14 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         offsetRef.current = resp.sessions.length;
         remoteCache.saveSessionPage(cacheScope, resp.sessions, {
           workspacePath: currentAssistant?.path,
+          workspaceIdentity: identity,
           replaceWorkspace: searchQuery.trim().length === 0,
         });
       }
     } catch (error) {
       if (requestSeq === listRequestSeqRef.current && isSessionListCurrent(targetEpoch)
         && !isRemoteControlTargetChangedError(error)) {
-        setError(error instanceof Error ? error.message : String(error));
+        setError(describeRemoteError(error, t));
       }
     }
     finally {
@@ -1288,7 +1300,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
         setLoadingMore(false);
       }
     }
-  }, [cacheScope, captureSessionListEpoch, currentAssistant?.path, displayMode, isSessionListCurrent, searchQuery, sessionMgr, setCurrentWorkspace, setError, setSessions]);
+  }, [cacheScope, captureSessionListEpoch, currentAssistant, displayMode, isSessionListCurrent, searchQuery, sessionMgr, setCurrentWorkspace, setError, setSessions, t]);
 
   const catalogReadRef = useRef<() => Promise<void>>(async () => {});
   catalogReadRef.current = async () => {
@@ -1321,31 +1333,36 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
   useEffect(() => {
     const workspacePath = displayMode === 'assistant' ? currentAssistant?.path : currentWorkspace?.path;
     if (!workspacePath) return;
-    // Skip the redundant first load when init() already loaded this path —
-    // otherwise the state change from init() triggers a second loadFirstPage
-    // 250 ms later, causing an extra network round-trip and a loading flicker.
-    if (initLoadedPathRef.current === workspacePath) {
-      initLoadedPathRef.current = undefined;
+    // Skip the redundant first load when init() already loaded this workspace
+    // on this control target. Otherwise the state change from init() triggers
+    // a second loadFirstPage 250 ms later, causing an extra network round-trip
+    // and a loading flicker. The key is the workspace identity, not its path.
+    const loadKey = initialLoadKey(
+      sessionMgr.controlTargetDeviceId,
+      displayMode === 'assistant' ? currentAssistant : currentWorkspace,
+    );
+    if (loadKey !== undefined && initLoadedWorkspaceRef.current === loadKey) {
+      initLoadedWorkspaceRef.current = undefined;
       return;
     }
     const identity = displayMode === 'assistant'
-      ? undefined
-      : {
-          remoteConnectionId: currentWorkspace?.remote_connection_id,
-          remoteSshHost: currentWorkspace?.remote_ssh_host,
-        };
+      ? assistantIdentity(currentAssistant)
+      : commandIdentity(currentWorkspace);
     const timer = setTimeout(() => {
       loadFirstPage(workspacePath, searchQuery, identity);
     }, 250);
     return () => clearTimeout(timer);
   }, [
+    currentAssistant?.workspace_id,
     currentAssistant?.path,
+    currentWorkspace?.workspace_id,
     currentWorkspace?.path,
     currentWorkspace?.remote_connection_id,
     currentWorkspace?.remote_ssh_host,
     displayMode,
     loadFirstPage,
     searchQuery,
+    sessionMgr,
   ]);
 
   const PULL_THRESHOLD = 60;
@@ -1387,19 +1404,14 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 150) {
       const workspacePath = displayMode === 'assistant' ? currentAssistant?.path : currentWorkspace?.path;
       const identity = displayMode === 'assistant'
-        ? undefined
-        : {
-            remoteConnectionId: currentWorkspace?.remote_connection_id,
-            remoteSshHost: currentWorkspace?.remote_ssh_host,
-          };
+        ? assistantIdentity(currentAssistant)
+        : commandIdentity(currentWorkspace);
       loadNextPage(workspacePath, searchQuery, identity);
     }
   }, [
     displayMode,
-    currentAssistant?.path,
-    currentWorkspace?.path,
-    currentWorkspace?.remote_connection_id,
-    currentWorkspace?.remote_ssh_host,
+    currentAssistant,
+    currentWorkspace,
     loadNextPage,
     searchQuery,
   ]);
@@ -1410,32 +1422,35 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     if (targetEpoch === null) return;
     setCreating(true);
     try {
-      // For assistant mode (Claw), use currentAssistant.path
-      // For pro mode (Code/Cowork), use currentWorkspace.path
+      // Assistant mode (Claw) is scoped by the assistant workspace; Pro mode
+      // (Code/Cowork) by the current workspace. IDs scope the command; paths
+      // are the legacy projection for pre-ID hosts.
       const workspacePath = displayMode === 'assistant' ? currentAssistant?.path : currentWorkspace?.path;
       const identity = displayMode === 'assistant'
-        ? undefined
-        : {
-            remoteConnectionId: currentWorkspace?.remote_connection_id,
-            remoteSshHost: currentWorkspace?.remote_ssh_host,
-      };
+        ? assistantIdentity(currentAssistant)
+        : commandIdentity(currentWorkspace);
       if (!workspacePath?.trim()) {
         onOpenWorkspace();
         return;
       }
-      const id = await sessionMgr.createSession(agentType, undefined, workspacePath, identity);
+      const created = await sessionMgr.createSession(agentType, undefined, workspacePath, identity);
       if (!isSessionListCurrent(targetEpoch)) return;
-      await loadFirstPage(workspacePath, searchQuery, identity);
+      const createdIdentity: RemoteWorkspaceIdentity = {
+        workspaceId: created.workspace_id ?? identity.workspaceId,
+        remoteConnectionId: created.remote_connection_id ?? identity.remoteConnectionId,
+        remoteSshHost: created.remote_ssh_host ?? identity.remoteSshHost,
+      };
+      await loadFirstPage(created.workspace_path ?? workspacePath, searchQuery, createdIdentity);
       if (!isSessionListCurrent(targetEpoch)) return;
       const label = isClawAgent(agentType)
         ? t('sessions.remoteClawSession')
         : isCoworkAgent(agentType)
           ? t('sessions.remoteCoworkSession')
           : t('sessions.remoteCodeSession');
-      onSelectSession(id, label, true, agentType);
+      onSelectSession(created.session_id, label, true, agentType);
     } catch (e: any) {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(e)) {
-        setError(e.message);
+        setError(describeRemoteError(e, t));
       }
     } finally {
       if (isSessionListCurrent(targetEpoch)) setCreating(false);
@@ -1443,10 +1458,8 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
   }, [
     creating,
     captureSessionListEpoch,
-    currentWorkspace?.path,
-    currentWorkspace?.remote_connection_id,
-    currentWorkspace?.remote_ssh_host,
-    currentAssistant?.path,
+    currentWorkspace,
+    currentAssistant,
     displayMode,
     isSessionListCurrent,
     loadFirstPage,
@@ -1489,37 +1502,44 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
     setDisplayMode(mode);
     setShowAssistantPicker(false);
     if (mode === 'assistant') {
-      const assistantPath = await loadAssistantList();
+      const assistant = await loadAssistantList();
       if (!isSessionListCurrent(targetEpoch)) return;
-      loadFirstPage(assistantPath, searchQuery);
+      loadFirstPage(assistant?.path, searchQuery, assistantIdentity(assistant));
     } else {
       if (currentWorkspace?.path) {
-        await loadFirstPage(currentWorkspace.path, searchQuery, {
-          remoteConnectionId: currentWorkspace.remote_connection_id,
-          remoteSshHost: currentWorkspace.remote_ssh_host,
-        });
+        await loadFirstPage(currentWorkspace.path, searchQuery, commandIdentity(currentWorkspace));
       } else {
         await trySelectFirstProWorkspace();
       }
     }
-  }, [captureSessionListEpoch, currentWorkspace?.path, isSessionListCurrent, loadAssistantList, loadFirstPage, searchQuery, trySelectFirstProWorkspace]);
+  }, [captureSessionListEpoch, currentWorkspace, isSessionListCurrent, loadAssistantList, loadFirstPage, searchQuery, trySelectFirstProWorkspace]);
 
-  const handleSelectAssistant = useCallback(async (assistant: { path: string; name: string; assistant_id?: string }) => {
+  const handleSelectAssistant = useCallback(async (assistant: AssistantEntry) => {
     if (targetInitializingRef.current) return;
     const targetEpoch = captureSessionListEpoch();
     if (targetEpoch === null) return;
     try {
-      await sessionMgr.setAssistant(assistant.path);
+      const result = await sessionMgr.setAssistant(assistant);
       if (!isSessionListCurrent(targetEpoch)) return;
-      setCurrentAssistant(assistant);
+      if (!result.success) {
+        setError(result.error || t('workspace.failedToSetWorkspace'));
+        return;
+      }
+      const selected: AssistantEntry = {
+        ...assistant,
+        workspace_id: result.workspace_id ?? assistant.workspace_id,
+        path: result.path || assistant.path,
+        name: result.name || assistant.name,
+      };
+      setCurrentAssistant(selected);
       setShowAssistantPicker(false);
-      loadFirstPage(assistant.path, searchQuery);
+      loadFirstPage(selected.path, searchQuery, assistantIdentity(selected));
     } catch (e: any) {
       if (isSessionListCurrent(targetEpoch) && !isRemoteControlTargetChangedError(e)) {
-        setError(e.message);
+        setError(describeRemoteError(e, t));
       }
     }
-  }, [captureSessionListEpoch, isSessionListCurrent, loadFirstPage, searchQuery, sessionMgr, setCurrentAssistant, setError]);
+  }, [captureSessionListEpoch, isSessionListCurrent, loadFirstPage, searchQuery, sessionMgr, setCurrentAssistant, setError, t]);
 
   const workspaceDisplayName = currentWorkspace?.project_name || t('sessions.noWorkspaceSelected');
   const assistantDisplayName = currentAssistant?.name || t('shared.agents.default');
@@ -1637,8 +1657,7 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
                   const status = compactWorkspaceStatuses[key]
                     ?? (projectedSessions.length > 0 ? 'ready' : 'idle');
                   const visibleCount = compactVisibleSessionCounts[key] ?? 3;
-                  const current = currentWorkspace?.path === workspace.path
-                    && currentWorkspace?.remote_connection_id === workspace.remote_connection_id;
+                  const current = sameWorkspace(currentWorkspace, workspace);
                   return (
                     <div className="harmony-sidebar__workspace-group" key={key}>
                       <div className={`harmony-sidebar__workspace-row${current ? ' is-current' : ''}`}>
@@ -1915,19 +1934,15 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
               headerAction={<MobileIconButton appearance="plain" className="session-list__picker-close" onClick={() => setShowWorkspacePicker(false)} aria-label={t('common.close')} icon={<LucideX width="20" height="20" stroke="currentColor" aria-hidden="true" />} />}
               onOpenChange={() => setShowWorkspacePicker(false)}
               onSelect={(value) => {
-                const workspace = workspaceList.find((candidate, index) => [
-                  candidate.remote_connection_id ?? 'local',
-                  candidate.remote_ssh_host ?? '',
-                  candidate.path || String(index),
-                ].join(':') === value);
+                const workspace = workspaceList[Number(value)];
                 if (workspace) void handleSelectWorkspace(workspace);
               }}
               open={showWorkspacePicker}
               optionAppearance="plain"
               options={workspaceList.map((workspace, index) => {
-                const selected = currentWorkspace?.path === workspace.path
-                  && (currentWorkspace?.remote_connection_id ?? undefined) === (workspace.remote_connection_id ?? undefined)
-                  && (currentWorkspace?.remote_ssh_host ?? undefined) === (workspace.remote_ssh_host ?? undefined);
+                // Option values are row positions; the selected row is found by
+                // workspace identity (ID first, legacy triple for ID-less rows).
+                const selected = sameWorkspace(currentWorkspace, workspace);
                 return {
                   className: `session-list__picker-item session-list__picker-item--workspace ${selected ? 'is-selected' : ''}`,
                   label: workspace.remote_ssh_host
@@ -1935,10 +1950,13 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
                     : workspace.name,
                   leading: <span className="session-list__picker-item-icon"><WorkspaceIcon /></span>,
                   trailing: selected ? <LucideCheck width="16" height="16" stroke="currentColor" aria-hidden="true" /> : undefined,
-                  value: [workspace.remote_connection_id ?? 'local', workspace.remote_ssh_host ?? '', workspace.path || String(index)].join(':'),
+                  value: String(index),
                 };
               })}
-              selectedValue={currentWorkspace?.path ? [currentWorkspace.remote_connection_id ?? 'local', currentWorkspace.remote_ssh_host ?? '', currentWorkspace.path].join(':') : undefined}
+              selectedValue={(() => {
+                const index = workspaceList.findIndex((workspace) => sameWorkspace(currentWorkspace, workspace));
+                return index >= 0 ? String(index) : undefined;
+              })()}
               showHandle={false}
               title={t('sessions.selectWorkspace')}
             />
@@ -1974,20 +1992,26 @@ const SessionListPage: React.FC<SessionListPageProps> = ({
               className="session-list__picker-modal"
               headerAction={<MobileIconButton appearance="plain" className="session-list__picker-close" onClick={() => setShowAssistantPicker(false)} aria-label={t('common.close')} icon={<LucideX width="20" height="20" stroke="currentColor" aria-hidden="true" />} />}
               onOpenChange={() => setShowAssistantPicker(false)}
-              onSelect={(path) => {
-                const assistant = assistantList.find((candidate, index) => (candidate.path || String(index)) === path);
+              onSelect={(value) => {
+                const assistant = assistantList[Number(value)];
                 if (assistant) void handleSelectAssistant(assistant);
               }}
               open={showAssistantPicker}
               optionAppearance="plain"
-              options={assistantList.map((assistant, index) => ({
-                className: `session-list__picker-item ${currentAssistant?.path === assistant.path ? 'is-selected' : ''}`,
-                label: assistant.name,
-                leading: <span className="session-list__picker-item-icon"><AssistantModeIcon /></span>,
-                trailing: currentAssistant?.path === assistant.path ? <LucideCheck width="16" height="16" stroke="currentColor" aria-hidden="true" /> : undefined,
-                value: assistant.path || String(index),
-              }))}
-              selectedValue={currentAssistant?.path}
+              options={assistantList.map((assistant, index) => {
+                const selected = sameWorkspace(currentAssistant, assistant);
+                return {
+                  className: `session-list__picker-item ${selected ? 'is-selected' : ''}`,
+                  label: assistant.name,
+                  leading: <span className="session-list__picker-item-icon"><AssistantModeIcon /></span>,
+                  trailing: selected ? <LucideCheck width="16" height="16" stroke="currentColor" aria-hidden="true" /> : undefined,
+                  value: String(index),
+                };
+              })}
+              selectedValue={(() => {
+                const index = assistantList.findIndex((assistant) => sameWorkspace(currentAssistant, assistant));
+                return index >= 0 ? String(index) : undefined;
+              })()}
               showHandle={false}
               title={t('sessions.selectAssistant')}
             />

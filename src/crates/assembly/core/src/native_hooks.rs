@@ -317,6 +317,7 @@ pub(crate) fn clear_plugin_hook_workspace(workspace_scope: &str) {
 /// Everything a dispatch site knows about the running session.
 #[derive(Debug, Clone, Copy)]
 pub struct NativeHookSessionFacts<'a> {
+    pub workspace_id: Option<&'a str>,
     pub session_id: &'a str,
     /// Present for turn-scoped events.
     pub turn_id: Option<&'a str>,
@@ -677,18 +678,6 @@ fn deep_review_builtin_registration() -> RuntimeHookRegistration {
     )
 }
 
-fn canonical_hook_workspace_scope(path: &Path) -> Option<String> {
-    if !path.is_absolute() {
-        return None;
-    }
-    let mut scope = crate::agentic::workspace::canonical_local_workspace_path(path)
-        .to_string_lossy()
-        .replace('\\', "/");
-    #[cfg(windows)]
-    scope.make_ascii_lowercase();
-    Some(scope)
-}
-
 fn command_registration_id(
     source: RuntimeHookSource,
     workspace_scope: Option<&str>,
@@ -797,6 +786,7 @@ fn publish_command_registrations(
 /// shared-context measurement) for one successful tool call. Command hooks
 /// are not dispatched here because the tool pipeline owns post-call context.
 pub async fn dispatch_successful_tool_post_call(
+    workspace_id: Option<&str>,
     workspace_root: Option<&Path>,
     is_remote: bool,
     tool_name: &str,
@@ -805,7 +795,8 @@ pub async fn dispatch_successful_tool_post_call(
     agent_type: Option<&str>,
 ) {
     let config = hooks_config().await;
-    let Some(engine) = engine_for(workspace_root, config.project_hooks_enabled).await else {
+    let Some(engine) = engine_for(workspace_id, workspace_root, config.project_hooks_enabled).await
+    else {
         return;
     };
     let call = HookCall {
@@ -824,14 +815,7 @@ pub async fn dispatch_successful_tool_post_call(
             agent_type: agent_type.map(str::to_string),
         },
     };
-    let _ = engine
-        .dispatch_call(
-            workspace_root
-                .and_then(canonical_hook_workspace_scope)
-                .as_deref(),
-            &call,
-        )
-        .await;
+    let _ = engine.dispatch_call(workspace_id, &call).await;
 }
 
 struct PreparedDispatch<'a> {
@@ -887,10 +871,13 @@ async fn prepare<'a>(
         report_remote_workspace_skip(&facts, event).await;
         return None;
     }
-    let engine = engine_for(facts.workspace_root, config.project_hooks_enabled).await?;
-    let workspace_scope = facts
-        .workspace_root
-        .and_then(canonical_hook_workspace_scope);
+    let engine = engine_for(
+        facts.workspace_id,
+        facts.workspace_root,
+        config.project_hooks_enabled,
+    )
+    .await?;
+    let workspace_scope = facts.workspace_id.map(str::to_owned);
     if !engine.has_rules_for_workspace(event, workspace_scope.as_deref()) {
         return None;
     }
@@ -922,7 +909,7 @@ pub(crate) const HOOKS_CONFIG_PATH: &str = "app.hooks";
 /// the remote root to look for it would be exactly the local read this skip
 /// exists to prevent.
 async fn report_remote_workspace_skip(facts: &NativeHookSessionFacts<'_>, event: AgentHookEvent) {
-    let configured = match engine_for(None, false).await {
+    let configured = match engine_for(None, None, false).await {
         Some(engine) => engine.has_rules_for_workspace(event, None),
         None => false,
     };
@@ -1007,12 +994,13 @@ fn fingerprint(path: PathBuf) -> HookFileFingerprint {
 }
 
 struct CachedHookSourceState {
+    workspace_scope: Option<String>,
     fingerprints: Vec<HookFileFingerprint>,
     project_hooks_enabled: bool,
     imported_generation: u64,
 }
 
-type HookSourceCache = tokio::sync::Mutex<BTreeMap<Option<PathBuf>, CachedHookSourceState>>;
+type HookSourceCache = tokio::sync::Mutex<BTreeMap<Option<String>, CachedHookSourceState>>;
 
 fn hook_source_cache() -> &'static HookSourceCache {
     static CACHE: OnceLock<HookSourceCache> = OnceLock::new();
@@ -1097,10 +1085,11 @@ pub(crate) fn build_engine(paths: &[(AgentHookScope, PathBuf)]) -> AgentHookEngi
 }
 
 async fn engine_for(
+    workspace_id: Option<&str>,
     workspace_root: Option<&Path>,
     project_hooks_enabled: bool,
 ) -> Option<AgentHookEngine> {
-    let key = workspace_root.map(Path::to_path_buf);
+    let key = workspace_id.map(str::to_owned);
     let paths = hook_settings_paths(workspace_root, project_hooks_enabled);
     let fingerprints = paths
         .iter()
@@ -1109,7 +1098,7 @@ async fn engine_for(
     let imported_generation = {
         #[cfg(feature = "external-sources")]
         {
-            match crate::external_hook_import::imported_hook_generation(workspace_root).await {
+            match crate::external_hook_import::imported_hook_generation(workspace_id).await {
                 Ok(generation) => generation,
                 Err(error) => {
                     warn!("Imported Hook state is unavailable: {error}");
@@ -1139,7 +1128,7 @@ async fn engine_for(
     let imported_layers = {
         #[cfg(feature = "external-sources")]
         {
-            match crate::external_hook_import::enabled_imported_hook_layers(workspace_root).await {
+            match crate::external_hook_import::enabled_imported_hook_layers(workspace_id).await {
                 Ok(layers) => layers,
                 Err(error) => {
                     warn!("Imported Hook layers are unavailable: {error}");
@@ -1161,7 +1150,7 @@ async fn engine_for(
     for issue in manual_issues.iter().chain(imported_issues.iter()) {
         warn!("Agent hook configuration issue: {issue}");
     }
-    let workspace_scope = workspace_root.and_then(canonical_hook_workspace_scope);
+    let workspace_scope = workspace_id.map(str::to_owned);
     if let Err(error) = publish_command_registrations(
         &runtime_hook_registry(),
         workspace_scope.as_deref(),
@@ -1175,8 +1164,10 @@ async fn engine_for(
     if cache.len() >= MAX_CACHED_WORKSPACE_HOOK_SOURCES && !cache.contains_key(&key) {
         let oldest = cache.keys().next().cloned();
         if let Some(oldest) = oldest {
-            cache.remove(&oldest);
-            if let Some(scope) = oldest.as_deref().and_then(canonical_hook_workspace_scope) {
+            if let Some(scope) = cache
+                .remove(&oldest)
+                .and_then(|entry| entry.workspace_scope)
+            {
                 let registry = runtime_hook_registry();
                 registry.clear_source_workspace(RuntimeHookSource::ProjectCommand, &scope);
                 registry.clear_source_workspace(RuntimeHookSource::ImportedCommand, &scope);
@@ -1186,6 +1177,7 @@ async fn engine_for(
     cache.insert(
         key,
         CachedHookSourceState {
+            workspace_scope,
             fingerprints,
             project_hooks_enabled,
             imported_generation,
@@ -1232,6 +1224,7 @@ mod cache_tests {
     #[test]
     fn imported_generation_invalidates_the_cached_hook_source_state() {
         let cached = CachedHookSourceState {
+            workspace_scope: None,
             fingerprints: Vec::new(),
             project_hooks_enabled: false,
             imported_generation: 7,
@@ -1298,15 +1291,33 @@ pub struct NativeHookOverview {
 /// This is the read-only view behind the CLI `/hooks` command and any other
 /// surface that needs to show what is configured. It re-reads the files rather
 /// than consulting the dispatch cache, so it always reflects what is on disk.
-pub async fn overview(workspace_root: Option<&Path>) -> NativeHookOverview {
-    overview_with_facts(workspace_root, false).await
+pub async fn overview(workspace_id: Option<&str>) -> Result<NativeHookOverview, String> {
+    let record = match workspace_id {
+        Some(id) => Some(
+            crate::service::workspace::get_global_workspace_service()
+                .ok_or("Workspace service is unavailable")?
+                .require_workspace(id)
+                .await
+                .map_err(|error| error.to_string())?,
+        ),
+        None => None,
+    };
+    Ok(overview_with_facts(
+        workspace_id,
+        record.as_ref().map(|record| record.root_path.as_path()),
+        record.as_ref().is_some_and(|record| {
+            record.workspace_kind == crate::service::workspace::WorkspaceKind::Remote
+        }),
+    )
+    .await)
 }
 
 /// [`overview`] with the session's remote fact. For a remote workspace only
 /// the host-owned user layer is inspected (the project layer lives on the
 /// remote host and no controller-local path is derived from the remote root),
 /// and the result is flagged so surfaces can say the hooks will not run.
-pub async fn overview_with_facts(
+pub(crate) async fn overview_with_facts(
+    workspace_id: Option<&str>,
     workspace_root: Option<&Path>,
     is_remote_workspace: bool,
 ) -> NativeHookOverview {
@@ -1321,12 +1332,17 @@ pub async fn overview_with_facts(
     let imported_layers = if config.enabled {
         #[cfg(feature = "external-sources")]
         {
-            crate::external_hook_import::enabled_imported_hook_layers(local_root)
-                .await
-                .unwrap_or_default()
+            crate::external_hook_import::enabled_imported_hook_layers(if is_remote_workspace {
+                None
+            } else {
+                workspace_id
+            })
+            .await
+            .unwrap_or_default()
         }
         #[cfg(not(feature = "external-sources"))]
         {
+            let _ = workspace_id;
             Vec::new()
         }
     } else {

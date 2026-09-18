@@ -52,6 +52,9 @@ export function pickPrimaryAssistantWorkspace(
  */
 export function flowChatSessionConfigForWorkspace(workspace: WorkspaceInfo) {
   return {
+    // The workspace ID is the authoritative session owner; the path and SSH
+    // fields below are IO projections for hosts that still record them.
+    workspaceId: workspace.id,
     workspacePath: workspace.rootPath,
     ...(isRemoteWorkspace(workspace) && workspace.connectionId
       ? { remoteConnectionId: workspace.connectionId }

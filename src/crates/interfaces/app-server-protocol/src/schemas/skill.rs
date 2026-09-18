@@ -11,6 +11,10 @@ pub use openbitfun_product_domains::agent_catalog::SkillSummary;
 #[cfg_attr(feature = "rpc", request(method = "skill/list", response = ListSkillsResponse))]
 #[serde(rename_all = "camelCase")]
 pub struct ListSkillsRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub mode_id: String,
     #[serde(default)]
@@ -28,6 +32,10 @@ pub struct ListSkillsResponse {
 #[cfg_attr(feature = "rpc", request(method = "skill/setEnabled", response = SetSkillEnabledResponse))]
 #[serde(rename_all = "camelCase")]
 pub struct SetSkillEnabledRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
+    #[serde(default)]
     pub workspace_path: String,
     pub mode_id: String,
     pub skill_key: String,

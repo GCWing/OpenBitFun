@@ -2,6 +2,7 @@
  * Mini App store — app catalog + worker and customization state.
  */
 import { create } from 'zustand';
+import { getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 import type { MiniAppMeta } from '@/infrastructure/api/service-api/MiniAppAPI';
 import type { InstalledMarketOrigin } from '@/infrastructure/api/service-api/MiniAppMarketAPI';
 
@@ -32,6 +33,15 @@ export interface MiniAppComposerMessageDetail {
  * sending (`app.chat.setComposerDraft`). Detail: `{ token, text }`.
  */
 export const MINIAPP_COMPOSER_DRAFT_EVENT = 'miniapp-composer-draft';
+/** Explicit reveal request; rebinding the same session is still a navigation action. */
+export const MINIAPP_COMPOSER_FOCUS_EVENT = 'miniapp-composer-focus';
+
+export interface MiniAppFocusEventDetail {
+  appId: string;
+  token: string;
+  sessionId: string;
+  surfaceId: string;
+}
 
 export interface MiniAppDraftEventDetail {
   token: string;
@@ -132,6 +142,8 @@ export function normalizeMiniAppBubbleCustomization(
  * supplies content/routing and never owns a separate composer component.
  */
 export interface MiniAppComposerClaim {
+  /** Device that owns this runner; never inferred from the currently selected device on reopen. */
+  surfaceId?: string;
   /**
    * Identifies the exact iframe holding the claim. One app ID can have several
    * live runners at once — the installed app and its draft preview are mounted
@@ -247,7 +259,7 @@ export const useMiniAppStore = create<MiniAppState>((set) => ({
           ? { ...claim, sessionId: current.sessionId }
           : claim;
       return {
-        composerClaims: { ...state.composerClaims, [id]: nextClaim },
+        composerClaims: { ...state.composerClaims, [id]: { ...nextClaim, surfaceId: claim.surfaceId ?? getActiveSurfaceId() } },
       };
     }),
   setComposerSession: (id, token, sessionId) =>

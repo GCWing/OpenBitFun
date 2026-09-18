@@ -13,15 +13,13 @@ const log = createLogger('SessionTitleMetadata');
 export async function initializeSessionTitleMetadata(
   sessionId: string,
   descriptor: SessionTitleDescriptor,
-  workspacePath: string,
+  workspaceId: string,
   scope: ReturnType<typeof getActiveSurfaceScope>,
-  remoteConnectionId?: string,
-  remoteSshHost?: string,
 ): Promise<SessionTitleDescriptor> {
   let title = createTextSessionTitleDescriptor(descriptor.text);
   try {
     scope.assertCurrent('initialize created session title');
-    const metadata = await sessionAPI.loadSessionMetadata(sessionId, workspacePath, remoteConnectionId, remoteSshHost);
+    const metadata = await sessionAPI.loadSessionMetadata(sessionId, workspaceId);
     scope.assertCurrent('read created session title identity');
     if (metadata) {
       await sessionAPI.saveSessionMetadata({
@@ -32,11 +30,11 @@ export async function initializeSessionTitleMetadata(
           titleKey: descriptor.key,
           titleParams: descriptor.params,
         },
-      }, workspacePath, ['titleMetadata'], remoteConnectionId, remoteSshHost);
+      }, workspaceId, ['titleMetadata']);
       scope.assertCurrent('persist created session title identity');
       // The host claims a reusable slot when the default descriptor is saved.
       // Read back that allocation instead of predicting it from the UI catalog.
-      const saved = await sessionAPI.loadSessionMetadata(sessionId, workspacePath, remoteConnectionId, remoteSshHost);
+      const saved = await sessionAPI.loadSessionMetadata(sessionId, workspaceId);
       scope.assertCurrent('read created session title allocation');
       const number = normalizeWorkspaceSessionNumber(saved?.customMetadata?.workspaceSessionNumber);
       if (number !== undefined) title = { ...descriptor, workspaceSessionNumber: number };

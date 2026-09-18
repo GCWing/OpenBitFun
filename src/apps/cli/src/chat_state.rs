@@ -461,6 +461,8 @@ impl ChatState {
             workspace
                 .as_ref()
                 .map(|workspace_path| AgentSessionWorkspaceBinding {
+                    workspace_kind: None,
+                    project_workspace_id: None,
                     workspace_id: None,
                     workspace_path: workspace_path.clone(),
                     project_workspace_path: Some(workspace_path.clone()),
@@ -508,6 +510,18 @@ impl ChatState {
             .and_then(|binding| binding.project_workspace_path.as_deref())
             .filter(|path| !path.trim().is_empty())
             .or(self.workspace.as_deref())
+    }
+
+    /// Owning project workspace ID from the bound session, falling back to the
+    /// execution workspace ID when the binding predates linked worktrees.
+    pub(crate) fn project_workspace_id(&self) -> Option<&str> {
+        self.workspace_binding.as_ref().and_then(|binding| {
+            binding
+                .project_workspace_id
+                .as_deref()
+                .or(binding.workspace_id.as_deref())
+                .filter(|id| !id.trim().is_empty())
+        })
     }
 
     pub(crate) fn set_git_repository_status(
@@ -1671,6 +1685,8 @@ mod tests {
         base_commit: Option<&str>,
     ) -> AgentSessionWorkspaceBinding {
         AgentSessionWorkspaceBinding {
+            workspace_kind: None,
+            project_workspace_id: None,
             workspace_id: Some("workspace-1".to_string()),
             workspace_path: "/tmp/managed-worktree".to_string(),
             project_workspace_path: Some("/tmp/project".to_string()),

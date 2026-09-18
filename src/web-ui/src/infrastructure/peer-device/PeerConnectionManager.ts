@@ -43,6 +43,8 @@ export interface PeerHostCapabilities {
   /** Only true after explicit negotiation; older hosts need the upload API. */
   readonly inlineImageAttachmentsV1?: boolean;
   readonly btwInitialModelSelectionV1?: boolean;
+  readonly controlConversationV1?: boolean;
+  readonly controlConversationResetV1?: boolean;
   readonly targetedSessionRollback: boolean;
   readonly tokenUsageStatistics: boolean;
   /** MiniApp Agent runs accept immutable virtual context-file snapshots. */
@@ -77,6 +79,7 @@ export interface PeerHostCapabilities {
   readonly toolCatalog: boolean | null;
   /** Scoped MCP choices must be explicitly advertised by the host. */
   readonly chatMcpCatalogV1?: boolean;
+  readonly workspaceIdReferencesV1?: boolean;
   /**
    * Host implements `submit_user_answers` for Runtime-owned
    * AskUserQuestion interactions. Older Desktop hosts already implemented the
@@ -164,6 +167,8 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   idempotentDialogSubmit: false,
   inlineImageAttachmentsV1: false,
   btwInitialModelSelectionV1: false,
+  controlConversationV1: false,
+  controlConversationResetV1: false,
   targetedSessionRollback: false,
   tokenUsageStatistics: false,
   miniAppAgentContextFilesV1: false,
@@ -176,6 +181,7 @@ const NO_CAPABILITIES: PeerHostCapabilities = {
   cancelTool: null,
   toolCatalog: null,
   chatMcpCatalogV1: false,
+  workspaceIdReferencesV1: false,
   userQuestionResponse: null,
   // Host kind is unknown until the first `peer_mode_ping` resolves. Consumers
   // treat `null` optimistically. See PR #2428 round 5 #1.
@@ -499,6 +505,8 @@ export class PeerConnectionManager {
       idempotentDialogSubmit: caps?.idempotent_dialog_submit === true,
       inlineImageAttachmentsV1: caps?.inline_image_attachments_v1 === true,
       btwInitialModelSelectionV1: caps?.btw_initial_model_selection_v1 === true,
+      controlConversationV1: caps?.control_conversation_v1 === true,
+      controlConversationResetV1: caps?.control_conversation_reset_v1 === true,
       targetedSessionRollback: caps?.targeted_session_rollback === true,
       tokenUsageStatistics: caps?.token_usage_statistics === true,
       miniAppAgentContextFilesV1: caps?.miniapp_agent_context_files_v1 === true,
@@ -510,6 +518,7 @@ export class PeerConnectionManager {
       cancelTool,
       toolCatalog,
       chatMcpCatalogV1: caps?.chat_mcp_catalog_v1 === true,
+      workspaceIdReferencesV1: caps?.workspace_id_references_v1 === true,
       userQuestionResponse,
       userQuestionInteraction: caps?.user_question_interaction_v1 === true,
       hostKind,
@@ -733,6 +742,8 @@ function capabilitiesEqual(
   return a.idempotentDialogSubmit === b.idempotentDialogSubmit &&
     a.inlineImageAttachmentsV1 === b.inlineImageAttachmentsV1 &&
     a.btwInitialModelSelectionV1 === b.btwInitialModelSelectionV1 &&
+    a.controlConversationV1 === b.controlConversationV1 &&
+    a.controlConversationResetV1 === b.controlConversationResetV1 &&
     a.targetedSessionRollback === b.targetedSessionRollback &&
     a.tokenUsageStatistics === b.tokenUsageStatistics &&
     a.miniAppAgentContextFilesV1 === b.miniAppAgentContextFilesV1 &&
@@ -740,6 +751,7 @@ function capabilitiesEqual(
     a.cancelTool === b.cancelTool &&
     a.toolCatalog === b.toolCatalog &&
     a.chatMcpCatalogV1 === b.chatMcpCatalogV1 &&
+    a.workspaceIdReferencesV1 === b.workspaceIdReferencesV1 &&
     a.userQuestionResponse === b.userQuestionResponse &&
     a.userQuestionInteraction === b.userQuestionInteraction &&
     a.hostKind === b.hostKind;

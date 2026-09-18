@@ -16,11 +16,8 @@ import './ScheduledJobsModal.scss';
 interface ScheduledJobsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  workspacePath?: string;
   workspaceId?: string;
   workspaceKind?: WorkspaceKind;
-  remoteConnectionId?: string | null;
-  remoteSshHost?: string | null;
   sessionId?: string;
   targetKind: CronJobTargetKind;
   lockSessionId?: boolean;
@@ -32,11 +29,8 @@ interface ScheduledJobsModalProps {
 const ScheduledJobsModal: React.FC<ScheduledJobsModalProps> = ({
   isOpen,
   onClose,
-  workspacePath,
   workspaceId,
   workspaceKind,
-  remoteConnectionId,
-  remoteSshHost,
   sessionId,
   targetKind,
   lockSessionId = false,
@@ -61,11 +55,8 @@ const ScheduledJobsModal: React.FC<ScheduledJobsModalProps> = ({
       <DialogBody inset="none">
       <div data-openbitfun-component="scheduled-jobs-modal" data-openbitfun-part="body" className="scheduled-jobs-modal__body">
         <ScheduledJobsView
-          workspacePath={workspacePath}
           workspaceId={workspaceId}
           workspaceKind={workspaceKind}
-          remoteConnectionId={remoteConnectionId}
-          remoteSshHost={remoteSshHost}
           sessionId={sessionId}
           targetKind={targetKind}
           lockSessionId={lockSessionId}

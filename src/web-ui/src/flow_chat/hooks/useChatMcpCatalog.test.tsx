@@ -24,13 +24,13 @@ describe('useChatMcpCatalog', () => {
   beforeEach(() => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     root = createRoot(document.createElement('div'));
-    props = { enabled: true, surfaceEpoch: 1, modeId: 'Standard', workspacePath: '/project' };
+    props = { enabled: true, surfaceEpoch: 1, modeId: 'Standard', workspaceId: 'project-id' };
     requests = [];
     vi.mocked(getChatMcpCatalog).mockReset().mockImplementation(() => new Promise((resolve, reject) => requests.push({ resolve, reject })));
   });
   afterEach(async () => { await act(async () => root.unmount()); });
 
-  it.each([{ modeId: 'Minimal' }, { workspacePath: '/another' }, { surfaceEpoch: 2 }, { remoteConnectionId: 'ssh-1' }])('discards stale catalogs on scope change %j', async update => {
+  it.each([{ modeId: 'Minimal' }, { workspaceId: 'another-id' }, { surfaceEpoch: 2 }, { workspaceKind: 'remote' }])('discards stale catalogs on scope change %j', async update => {
     await render();
     await act(async () => requests[0].resolve(catalog));
     expect(latest.catalog).toEqual(catalog);

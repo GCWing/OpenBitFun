@@ -73,7 +73,7 @@ Important:
             Some(ctx) => {
                 registry
                     .get_resolved_skills_xml_for_workspace(
-                        ctx.workspace_root(),
+                        ctx.workspace.as_ref(),
                         ctx.agent_type.as_deref(),
                     )
                     .await
@@ -284,7 +284,7 @@ impl Tool for SkillTool {
                 registry
                     .find_and_load_skill_by_key_for_workspace(
                         skill_name,
-                        context.workspace_root(),
+                        context.workspace.as_ref(),
                         context.agent_type.as_deref(),
                     )
                     .await?
@@ -292,7 +292,7 @@ impl Tool for SkillTool {
                 registry
                     .find_and_load_skill_for_workspace(
                         skill_name,
-                        context.workspace_root(),
+                        context.workspace.as_ref(),
                         context.agent_type.as_deref(),
                     )
                     .await?
@@ -337,8 +337,18 @@ impl Default for SkillTool {
 }
 
 #[cfg(test)]
+async fn test_workspace_binding(
+    path: &std::path::Path,
+) -> crate::agentic::workspace::WorkspaceBinding {
+    let record = crate::service::workspace::legacy_compat::register_local_fixture(path, None).await;
+    crate::agentic::workspace::WorkspaceBinding::resolve(&record.id)
+        .await
+        .unwrap()
+}
+
+#[cfg(test)]
 mod tests {
-    use super::SkillTool;
+    use super::{test_workspace_binding, SkillTool};
     use crate::agentic::tools::framework::{Tool, ToolResult};
     use crate::agentic::tools::implementations::skills::{registry::SkillRegistry, SkillLocation};
     use crate::agentic::workspace::{
@@ -620,7 +630,7 @@ Use the remote project skill.
         assert!(SkillRegistry::global()
             .find_and_load_skill_by_key_for_workspace(
                 &imported.key,
-                Some(temp.path()),
+                Some(&test_workspace_binding(temp.path()).await),
                 Some("agent")
             )
             .await
@@ -652,10 +662,16 @@ Use the remote project skill.
             let mut context = local_context(temp.path().to_path_buf());
             context.agent_type = mode.map(str::to_string);
             let visible = registry
-                .get_resolved_skills_for_workspace(Some(temp.path()), mode)
+                .get_resolved_skills_for_workspace(
+                    Some(&test_workspace_binding(temp.path()).await),
+                    mode,
+                )
                 .await;
             let xml = registry
-                .get_resolved_skills_xml_for_workspace(Some(temp.path()), mode)
+                .get_resolved_skills_xml_for_workspace(
+                    Some(&test_workspace_binding(temp.path()).await),
+                    mode,
+                )
                 .await;
             for skill in &external {
                 assert!(visible.iter().any(|entry| entry.key == skill.key));
@@ -674,7 +690,15 @@ Use the remote project skill.
             }
         }
         let modes = registry
-            .get_mode_skill_infos_for_workspace(Some(temp.path()), "agent")
+            .get_mode_skill_infos_for_workspace(
+                Some(
+                    crate::agentic::tools::implementations::skills::mode_overrides::SkillPolicyWorkspace {
+                        workspace_id: "workspace-skill-tool-test",
+                        root: temp.path(),
+                    },
+                ),
+                "agent",
+            )
             .await;
         assert_eq!(
             modes
@@ -773,7 +797,10 @@ Use the remote project skill.
         import_test_skill(temp.path(), "project::codex::deep-research", None).await;
         let registry = SkillRegistry::global();
         let resolved = registry
-            .get_resolved_skills_for_workspace(Some(temp.path()), Some("DeepResearch"))
+            .get_resolved_skills_for_workspace(
+                Some(&test_workspace_binding(temp.path()).await),
+                Some("DeepResearch"),
+            )
             .await;
         let skill = resolved
             .iter()
@@ -781,14 +808,17 @@ Use the remote project skill.
             .expect("same-named skill should remain enabled and discoverable");
         assert!(skill.allow_implicit_invocation);
         let implicit = registry
-            .get_implicitly_invocable_skills_for_workspace(Some(temp.path()), Some("DeepResearch"))
+            .get_implicitly_invocable_skills_for_workspace(
+                Some(&test_workspace_binding(temp.path()).await),
+                Some("DeepResearch"),
+            )
             .await;
         assert!(!implicit.iter().any(|skill| skill.name == "deep-research"));
 
         let loaded = registry
             .find_and_load_skill_by_key_for_workspace(
                 &skill.key,
-                Some(temp.path()),
+                Some(&test_workspace_binding(temp.path()).await),
                 Some("DeepResearch"),
             )
             .await
@@ -811,7 +841,10 @@ Use the remote project skill.
         let context = local_context(temp.path().to_path_buf());
 
         let visible = SkillRegistry::global()
-            .get_resolved_skills_for_workspace(Some(temp.path()), None)
+            .get_resolved_skills_for_workspace(
+                Some(&test_workspace_binding(temp.path()).await),
+                None,
+            )
             .await;
         assert!(visible
             .iter()
@@ -1302,13 +1335,22 @@ Use the remote project skill.
         import_test_skill(temp.path(), "project::codex::local-explicit-only", None).await;
         let registry = SkillRegistry::global();
         let resolved = registry
-            .get_resolved_skills_for_workspace(Some(temp.path()), None)
+            .get_resolved_skills_for_workspace(
+                Some(&test_workspace_binding(temp.path()).await),
+                None,
+            )
             .await;
         let implicit = registry
-            .get_implicitly_invocable_skills_for_workspace(Some(temp.path()), None)
+            .get_implicitly_invocable_skills_for_workspace(
+                Some(&test_workspace_binding(temp.path()).await),
+                None,
+            )
             .await;
         let user_invocable = registry
-            .get_user_invocable_skills_for_workspace(Some(temp.path()), None)
+            .get_user_invocable_skills_for_workspace(
+                Some(&test_workspace_binding(temp.path()).await),
+                None,
+            )
             .await;
 
         assert!(resolved
@@ -1321,7 +1363,11 @@ Use the remote project skill.
             .iter()
             .any(|skill| skill.name == "local-explicit-only"));
         let loaded = registry
-            .find_and_load_skill_for_workspace("local-explicit-only", Some(temp.path()), None)
+            .find_and_load_skill_for_workspace(
+                "local-explicit-only",
+                Some(&test_workspace_binding(temp.path()).await),
+                None,
+            )
             .await
             .expect("explicit invocation should remain available");
         assert_eq!(loaded.name, "local-explicit-only");
@@ -1341,13 +1387,22 @@ Use the remote project skill.
         import_test_skill(temp.path(), "project::claude::model-only", None).await;
         let registry = SkillRegistry::global();
         let resolved = registry
-            .get_resolved_skills_for_workspace(Some(temp.path()), None)
+            .get_resolved_skills_for_workspace(
+                Some(&test_workspace_binding(temp.path()).await),
+                None,
+            )
             .await;
         let implicit = registry
-            .get_implicitly_invocable_skills_for_workspace(Some(temp.path()), None)
+            .get_implicitly_invocable_skills_for_workspace(
+                Some(&test_workspace_binding(temp.path()).await),
+                None,
+            )
             .await;
         let user_invocable = registry
-            .get_user_invocable_skills_for_workspace(Some(temp.path()), None)
+            .get_user_invocable_skills_for_workspace(
+                Some(&test_workspace_binding(temp.path()).await),
+                None,
+            )
             .await;
 
         assert!(resolved.iter().any(|skill| skill.name == "model-only"));

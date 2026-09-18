@@ -380,12 +380,13 @@ export const useDispatchJobStore = create<DispatchJobStoreState>()(
               record.sourceWorkspacePath?.trim()
               || record.baselineProjectWorkspacePath?.trim()
               || undefined;
-            if (!sourceWorkspacePath) {
+            if (!record.sourceWorkspaceId && !sourceWorkspacePath) {
               // A legacy/adopted record without controller-side ownership
               // cannot safely be projected into any workspace. In particular,
               // never assign it to whichever workspace happened to initialize
               // first after restart. Remove any previously inferred cache
-              // entry so the old behavior migrates itself away.
+              // entry so the old behavior migrates itself away. A record that
+              // names its source workspace by ID is owned even without a path.
               delete jobs[record.jobId];
               prunedJobIds.add(record.jobId);
               continue;

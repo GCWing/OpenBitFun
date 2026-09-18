@@ -54,7 +54,7 @@ pub(crate) async fn apply_language_runtime_effects(
 
     #[cfg(target_os = "macos")]
     {
-        let has_workspace = _state.workspace_path.read().await.is_some();
+        let has_workspace = _state.workspace_id.read().await.is_some();
         let mode = if has_workspace {
             crate::macos_menubar::MenubarMode::Workspace
         } else {

@@ -49,10 +49,25 @@ impl AgentRegistry {
     }
 
     /// Load user custom agents globally and project subagents for the given workspace.
-    pub async fn load_custom_agents(&self, workspace_root: Option<&Path>) {
+    ///
+    /// A remote workspace has no locally discoverable project agents; the
+    /// registry still reloads user-level custom agents and publishes an empty
+    /// project set under that workspace ID so callers do not retry the scan on
+    /// every query. Only an unknown workspace ID aborts the load.
+    pub async fn load_custom_agents(&self, workspace_id: Option<&str>) {
+        let root = match workspace_id {
+            Some(id) => match super::support::project_agent_discovery_root(id).await {
+                Ok(root) => root,
+                Err(error) => {
+                    log::warn!("Cannot load workspace agents: {error}");
+                    return;
+                }
+            },
+            None => None,
+        };
         self.load_custom_agents_from_discovery_roots(
-            workspace_root,
-            &custom_agent_discovery_roots(workspace_root),
+            workspace_id,
+            &custom_agent_discovery_roots(root.as_deref()),
         )
         .await;
     }
@@ -60,28 +75,28 @@ impl AgentRegistry {
     #[cfg(test)]
     pub(crate) async fn load_custom_agents_from_test_roots(
         &self,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
         roots: &CustomAgentDiscoveryRoots,
     ) {
-        self.load_custom_agents_from_discovery_roots(workspace_root, roots)
+        self.load_custom_agents_from_discovery_roots(workspace_id, roots)
             .await;
     }
 
     async fn load_custom_agents_from_discovery_roots(
         &self,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
         roots: &CustomAgentDiscoveryRoots,
     ) {
         let mut state = self.custom_load_state.lock().await;
         state.prepare(roots).await;
         state.published = false;
-        self.scan_custom_agents(workspace_root, roots).await;
+        self.scan_custom_agents(workspace_id, roots).await;
         state.published = true;
     }
 
     async fn scan_custom_agents(
         &self,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
         roots: &CustomAgentDiscoveryRoots,
     ) {
         let valid_tools = get_all_registered_tool_names().await;
@@ -168,7 +183,7 @@ impl AgentRegistry {
             }
         }
 
-        if let Some(root) = workspace_root {
+        if let Some(root) = workspace_id {
             let map = self.read_agents();
             let filtered_project_entries = project_entries
                 .into_iter()
@@ -185,15 +200,15 @@ impl AgentRegistry {
                 .collect();
             drop(map);
             self.write_project_subagents()
-                .insert(root.to_path_buf(), filtered_project_entries);
+                .insert(root.to_owned(), filtered_project_entries);
         }
 
         self.set_user_custom_agents_loaded(true);
     }
 
     /// Compatibility wrapper for existing project-subagent callers.
-    pub async fn load_custom_subagents(&self, workspace_root: &Path) {
-        self.load_custom_agents(Some(workspace_root)).await;
+    pub async fn load_custom_subagents(&self, workspace_id: &str) {
+        self.load_custom_agents(Some(workspace_id)).await;
     }
 
     async fn get_valid_model_ids() -> Vec<String> {
@@ -299,13 +314,13 @@ impl AgentRegistry {
     pub fn get_custom_agent_config(
         &self,
         agent_id: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> Option<CustomAgentConfig> {
         if let Some(entry) = self.read_agents().get(agent_id) {
             return entry.custom_config.clone();
         }
 
-        workspace_root
+        workspace_id
             .and_then(|root| self.read_project_subagents().get(root).cloned())
             .and_then(|entries| entries.get(agent_id).cloned())
             .and_then(|entry| entry.custom_config)
@@ -314,9 +329,9 @@ impl AgentRegistry {
     pub fn get_custom_subagent_config(
         &self,
         agent_id: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> Option<CustomAgentConfig> {
-        self.find_agent_entry(agent_id, workspace_root)
+        self.find_agent_entry(agent_id, workspace_id)
             .filter(|entry| entry.category == AgentCategory::SubAgent)
             .and_then(|entry| entry.custom_config)
     }
@@ -336,7 +351,7 @@ impl AgentRegistry {
         agent_id: &str,
         model: Option<String>,
         clear_model_override: bool,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> OpenBitFunResult<()> {
         let mut map = self.write_agents();
         if let Some(entry) = map.get_mut(agent_id) {
@@ -344,17 +359,17 @@ impl AgentRegistry {
         }
         drop(map);
 
-        let workspace_root = workspace_root.ok_or_else(|| {
+        let workspace_id = workspace_id.ok_or_else(|| {
             OpenBitFunError::agent(format!(
-                "workspace_path is required to update project custom agent '{}'",
+                "workspace_id is required to update project custom agent '{}'",
                 agent_id
             ))
         })?;
         let mut project_maps = self.write_project_subagents();
-        let entries = project_maps.get_mut(workspace_root).ok_or_else(|| {
+        let entries = project_maps.get_mut(workspace_id).ok_or_else(|| {
             OpenBitFunError::agent(format!(
                 "Project custom agents are not loaded for workspace: {}",
-                workspace_root.display()
+                workspace_id
             ))
         })?;
         let entry = entries
@@ -369,13 +384,13 @@ impl AgentRegistry {
         agent_id: &str,
         model: Option<String>,
         clear_model_override: bool,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> OpenBitFunResult<()> {
         self.update_and_save_custom_agent_config(
             agent_id,
             model,
             clear_model_override,
-            workspace_root,
+            workspace_id,
         )
     }
 
@@ -434,23 +449,21 @@ impl AgentRegistry {
     pub async fn get_custom_agent_detail(
         &self,
         agent_id: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> OpenBitFunResult<CustomAgentDetail> {
         self.ensure_user_custom_agents_loaded().await;
-        if let Some(root) = workspace_root {
+        if let Some(root) = workspace_id {
             self.load_custom_agents(Some(root)).await;
         }
-        self.get_custom_agent_detail_inner(agent_id, workspace_root)
+        self.get_custom_agent_detail_inner(agent_id, workspace_id)
     }
 
     pub async fn get_custom_subagent_detail(
         &self,
         agent_id: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> OpenBitFunResult<CustomAgentDetail> {
-        let detail = self
-            .get_custom_agent_detail(agent_id, workspace_root)
-            .await?;
+        let detail = self.get_custom_agent_detail(agent_id, workspace_id).await?;
         if detail.kind != "subagent" {
             return Err(OpenBitFunError::agent(format!(
                 "Agent '{}' is not a subagent",
@@ -463,13 +476,13 @@ impl AgentRegistry {
     pub async fn get_custom_subagent_detail_by_key(
         &self,
         agent_key: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> OpenBitFunResult<CustomAgentDetail> {
         self.ensure_user_custom_agents_loaded().await;
-        if let Some(root) = workspace_root {
+        if let Some(root) = workspace_id {
             self.load_custom_agents(Some(root)).await;
         }
-        let detail = self.get_custom_agent_detail_by_key_inner(agent_key, workspace_root)?;
+        let detail = self.get_custom_agent_detail_by_key_inner(agent_key, workspace_id)?;
         if detail.kind != "subagent" {
             return Err(OpenBitFunError::agent(format!(
                 "Agent '{}' is not a subagent",
@@ -482,10 +495,10 @@ impl AgentRegistry {
     fn get_custom_agent_detail_inner(
         &self,
         agent_id: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> OpenBitFunResult<CustomAgentDetail> {
         let entry = self
-            .find_agent_entry(agent_id, workspace_root)
+            .find_agent_entry(agent_id, workspace_id)
             .ok_or_else(|| OpenBitFunError::agent(format!("Agent not found: {}", agent_id)))?;
         Self::custom_agent_detail_from_entry(agent_id, entry)
     }
@@ -493,7 +506,7 @@ impl AgentRegistry {
     pub(super) fn get_custom_agent_detail_by_key_inner(
         &self,
         agent_key: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> OpenBitFunResult<CustomAgentDetail> {
         let entry = {
             let agents = self.read_agents();
@@ -506,7 +519,7 @@ impl AgentRegistry {
                 .cloned()
         }
         .or_else(|| {
-            let root = workspace_root?;
+            let root = workspace_id?;
             self.read_project_subagents()
                 .get(root)
                 .and_then(|entries| {
@@ -606,7 +619,7 @@ impl AgentRegistry {
     pub async fn update_custom_agent_definition(
         &self,
         agent_id: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
         name: String,
         description: String,
         prompt: String,
@@ -617,11 +630,11 @@ impl AgentRegistry {
         model: Option<String>,
     ) -> OpenBitFunResult<()> {
         self.ensure_user_custom_agents_loaded().await;
-        if let Some(root) = workspace_root {
+        if let Some(root) = workspace_id {
             self.load_custom_agents(Some(root)).await;
         }
         let entry = self
-            .find_agent_entry(agent_id, workspace_root)
+            .find_agent_entry(agent_id, workspace_id)
             .ok_or_else(|| OpenBitFunError::agent(format!("Agent not found: {}", agent_id)))?;
         if entry.source == AgentSource::Builtin {
             return Err(OpenBitFunError::agent(
@@ -716,13 +729,13 @@ impl AgentRegistry {
         };
 
         save_runtime_custom_agent(&replacement)?;
-        self.replace_custom_agent_entry(agent_id, workspace_root, replacement)
+        self.replace_custom_agent_entry(agent_id, workspace_id, replacement)
     }
 
     pub async fn update_custom_subagent_definition(
         &self,
         agent_id: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
         description: String,
         prompt: String,
         tools: Option<Vec<String>>,
@@ -730,11 +743,11 @@ impl AgentRegistry {
         review: Option<bool>,
     ) -> OpenBitFunResult<()> {
         let detail = self
-            .get_custom_subagent_detail(agent_id, workspace_root)
+            .get_custom_subagent_detail(agent_id, workspace_id)
             .await?;
         self.update_custom_agent_definition(
             agent_id,
-            workspace_root,
+            workspace_id,
             detail.name,
             description,
             prompt,
@@ -750,7 +763,7 @@ impl AgentRegistry {
     fn replace_custom_agent_entry(
         &self,
         agent_id: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
         new_agent: Arc<dyn Agent>,
     ) -> OpenBitFunResult<()> {
         let mut map = self.write_agents();
@@ -782,7 +795,7 @@ impl AgentRegistry {
         }
         drop(map);
 
-        let root = workspace_root.ok_or_else(|| {
+        let root = workspace_id.ok_or_else(|| {
             OpenBitFunError::agent(
                 "Workspace path is required to update project subagent".to_string(),
             )
@@ -872,7 +885,7 @@ impl AgentRegistry {
         parent_agent_type: &str,
         agent_id: &str,
         enabled: bool,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> OpenBitFunResult<()> {
         let parent_agent_type = parent_agent_type.trim();
         if parent_agent_type.is_empty() {
@@ -882,7 +895,7 @@ impl AgentRegistry {
         }
 
         let entry = self
-            .find_agent_entry(agent_id, workspace_root)
+            .find_agent_entry(agent_id, workspace_id)
             .ok_or_else(|| OpenBitFunError::agent(format!("Subagent not found: {}", agent_id)))?;
         if entry.category != AgentCategory::SubAgent {
             return Err(OpenBitFunError::agent(format!(
@@ -904,14 +917,14 @@ impl AgentRegistry {
 
         match entry.subagent_source {
             Some(SubAgentSource::Project) => {
-                let workspace_root = workspace_root.ok_or_else(|| {
+                let workspace_id = workspace_id.ok_or_else(|| {
                     OpenBitFunError::agent(format!(
-                        "workspace_path is required to update project subagent availability for '{}'",
+                        "workspace_id is required to update project subagent availability for '{}'",
                         agent_id
                     ))
                 })?;
                 let mut project_overrides =
-                    load_project_subagent_overrides_local(workspace_root).await?;
+                    load_project_subagent_overrides_local(workspace_id).await?;
                 if enabled == default_enabled {
                     prune_override_config(&mut project_overrides, parent_agent_type, &subagent_key);
                 } else {
@@ -922,7 +935,7 @@ impl AgentRegistry {
                         state,
                     );
                 }
-                save_project_subagent_overrides_local(workspace_root, &project_overrides).await?;
+                save_project_subagent_overrides_local(workspace_id, &project_overrides).await?;
                 Ok(())
             }
             Some(SubAgentSource::Builtin) | Some(SubAgentSource::User) => {

@@ -39,6 +39,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,6 +50,9 @@ import com.openbitfun.mobile.core.feature.connection.ConnectionPhase
 import com.openbitfun.mobile.core.feature.connection.ConnectionStatusPresenter
 import com.openbitfun.mobile.core.feature.connection.RemoteControlSource
 import com.openbitfun.mobile.core.feature.shell.RemoteSidebarSessionRow
+import com.openbitfun.mobile.core.feature.shell.RemoteSidebarWorkspaceLoad
+import com.openbitfun.mobile.core.feature.shell.RemoteSidebarWorkspaceRow
+import com.openbitfun.mobile.core.feature.session.WorkspaceSessionDirectoryUiState
 import com.openbitfun.mobile.core.feature.session.RemoteSessionUiState
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceUiState
 import com.openbitfun.mobile.app.ui.theme.openBitFunColors
@@ -69,6 +73,7 @@ internal fun SidebarRemoteWorkspaceSection(
     deviceName: String,
     remoteState: RemoteSessionUiState,
     workspaceState: RemoteWorkspaceUiState,
+    workspaceDirectory: WorkspaceSessionDirectoryUiState,
     selectedSessionId: String?,
     onConnect: () -> Unit,
     onRetryActive: () -> Unit,
@@ -78,8 +83,11 @@ internal fun SidebarRemoteWorkspaceSection(
     onSelectDevice: (String) -> Unit,
     onOpenSession: (String) -> Unit,
     onOpenActions: (RemoteSidebarSessionRow, IntRect) -> Unit,
-    onCreateInWorkspace: (String, String?, String?, String) -> Unit,
-    onOpenWorkspace: (String) -> Unit,
+    /** The row carries the workspace identity (ID first); the agent type follows. */
+    onCreateInWorkspace: (RemoteSidebarWorkspaceRow, String) -> Unit,
+    onOpenWorkspace: (RemoteSidebarWorkspaceRow) -> Unit,
+    onExpandWorkspace: (RemoteSidebarWorkspaceRow) -> Unit,
+    onRetryWorkspaceSessions: (RemoteSidebarWorkspaceRow) -> Unit,
     onAddWorkspace: (() -> Unit)? = null,
     onWorkspaceTool: (String, String?, Boolean) -> Unit,
 ) {
@@ -90,7 +98,7 @@ internal fun SidebarRemoteWorkspaceSection(
     var visibleDeviceCount by rememberSaveable { mutableStateOf(DEVICES_PER_BATCH) }
     val workspacePanels = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
 
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 18.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().height(38.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -147,6 +155,7 @@ internal fun SidebarRemoteWorkspaceSection(
                 deviceKey = deviceName,
                 remoteState = remoteState as? RemoteSessionUiState.Ready,
                 workspaceState = workspaceState as? RemoteWorkspaceUiState.Ready,
+                workspaceDirectory = workspaceDirectory,
                 selectedSessionId = selectedSessionId,
                 onConnect = onConnect,
                 onRetry = onRetryActive,
@@ -155,6 +164,8 @@ internal fun SidebarRemoteWorkspaceSection(
                 canActOnSessions = true,
                 onCreateInWorkspace = onCreateInWorkspace,
                 onOpenWorkspace = onOpenWorkspace,
+                onExpandWorkspace = onExpandWorkspace,
+                onRetryWorkspaceSessions = onRetryWorkspaceSessions,
                 onAddWorkspace = onAddWorkspace,
                 onWorkspaceTool = onWorkspaceTool,
             )
@@ -195,6 +206,7 @@ internal fun SidebarRemoteWorkspaceSection(
                         deviceKey = id,
                         remoteState = remoteState as? RemoteSessionUiState.Ready,
                         workspaceState = workspaceState as? RemoteWorkspaceUiState.Ready,
+                        workspaceDirectory = workspaceDirectory,
                         selectedSessionId = selectedSessionId,
                         onConnect = onConnect,
                         onRetry = onRetryActive,
@@ -203,6 +215,8 @@ internal fun SidebarRemoteWorkspaceSection(
                         canActOnSessions = true,
                         onCreateInWorkspace = onCreateInWorkspace,
                         onOpenWorkspace = onOpenWorkspace,
+                        onExpandWorkspace = onExpandWorkspace,
+                        onRetryWorkspaceSessions = onRetryWorkspaceSessions,
                         onAddWorkspace = onAddWorkspace,
                         onWorkspaceTool = onWorkspaceTool,
                     )
@@ -221,23 +235,34 @@ private fun SidebarActiveDeviceBody(
     deviceKey: String,
     remoteState: RemoteSessionUiState.Ready?,
     workspaceState: RemoteWorkspaceUiState.Ready?,
+    workspaceDirectory: WorkspaceSessionDirectoryUiState,
     selectedSessionId: String?,
     onConnect: () -> Unit,
     onRetry: () -> Unit,
     onOpenSession: (String) -> Unit,
     onOpenActions: (RemoteSidebarSessionRow, IntRect) -> Unit,
     canActOnSessions: Boolean,
-    onCreateInWorkspace: (String, String?, String?, String) -> Unit,
-    onOpenWorkspace: (String) -> Unit,
+    /** The row carries the workspace identity (ID first); the agent type follows. */
+    onCreateInWorkspace: (RemoteSidebarWorkspaceRow, String) -> Unit,
+    onOpenWorkspace: (RemoteSidebarWorkspaceRow) -> Unit,
+    onExpandWorkspace: (RemoteSidebarWorkspaceRow) -> Unit,
+    onRetryWorkspaceSessions: (RemoteSidebarWorkspaceRow) -> Unit,
     onAddWorkspace: (() -> Unit)? = null,
     onWorkspaceTool: (String, String?, Boolean) -> Unit,
 ) {
     val readyWorkspace = workspaceState
     val readySessions = remoteState
     val busy = remoteState?.busy == true
-    val entries = remember(readyWorkspace, readySessions) {
-        com.openbitfun.mobile.core.feature.shell.RemoteSidebarPresentation.workspaces(readyWorkspace, readySessions)
+    val entries = remember(readyWorkspace, readySessions, workspaceDirectory) {
+        com.openbitfun.mobile.core.feature.shell.RemoteSidebarPresentation.workspacesWithDirectory(
+            readyWorkspace, readySessions, workspaceDirectory,
+        )
     }
+    // A branch is open when the reader opened it, or when it is the selected
+    // workspace and they have not closed it. Everything else starts closed:
+    // each branch costs its own `list_sessions`, so they are fetched on
+    // disclosure rather than all at once, the way HarmonyOS already does it.
+    var expandedPaths by rememberSaveable(deviceKey) { mutableStateOf(emptyList<String>()) }
     var collapsedPaths by rememberSaveable(deviceKey) { mutableStateOf(emptyList<String>()) }
     var expandedSessionPaths by rememberSaveable(deviceKey) { mutableStateOf(emptyList<String>()) }
     var visibleWorkspaceCount by rememberSaveable(deviceKey) {
@@ -289,7 +314,12 @@ private fun SidebarActiveDeviceBody(
             val path = entry.path
             val identityKey = entry.key
             val workspaceSessions = entry.sessions
-            val collapsed = identityKey in collapsedPaths
+            val expanded = if (entry.selected) {
+                identityKey !in collapsedPaths
+            } else {
+                identityKey in expandedPaths
+            }
+            val collapsed = !expanded
             Column(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
                 Row(
                     modifier = Modifier
@@ -299,13 +329,25 @@ private fun SidebarActiveDeviceBody(
                         .combinedClickable(
                             role = Role.Button,
                             onClick = {
-                                collapsedPaths = if (collapsed) {
-                                    collapsedPaths - identityKey
+                                if (expanded) {
+                                    if (entry.selected) {
+                                        collapsedPaths = collapsedPaths + identityKey
+                                    } else {
+                                        expandedPaths = expandedPaths - identityKey
+                                    }
                                 } else {
-                                    collapsedPaths + identityKey
+                                    if (entry.selected) {
+                                        collapsedPaths = collapsedPaths - identityKey
+                                    } else {
+                                        expandedPaths = expandedPaths + identityKey
+                                    }
+                                    // `list_sessions` answers per workspace, so
+                                    // this branch's rows only exist once asked
+                                    // for. The store ignores a repeat.
+                                    onExpandWorkspace(entry)
                                 }
                             },
-                            onLongClick = { onOpenWorkspace(path) },
+                            onLongClick = { onOpenWorkspace(entry) },
                         )
                         .semantics(mergeDescendants = true) {
                             contentDescription = entry.name.ifBlank { path.substringAfterLast('/') }
@@ -346,7 +388,7 @@ private fun SidebarActiveDeviceBody(
                         expanded = createMenuOpen,
                         onToggle = { createMenuOpen = !createMenuOpen },
                         onDismiss = { createMenuOpen = false },
-                        onCreateAgent = { agent -> createMenuOpen = false; onCreateInWorkspace(path, entry.remoteConnectionId, entry.remoteSshHost, agent) },
+                        onCreateAgent = { agent -> createMenuOpen = false; onCreateInWorkspace(entry, agent) },
                     )
                     Icon(
                         painterResource(
@@ -359,7 +401,24 @@ private fun SidebarActiveDeviceBody(
                     )
                 }
 
-                if (!collapsed) {
+                if (expanded) {
+                    when (entry.load) {
+                        RemoteSidebarWorkspaceLoad.IDLE,
+                        RemoteSidebarWorkspaceLoad.LOADING,
+                        -> if (workspaceSessions.isEmpty()) DeviceLoadingRow(startPadding = 26.dp)
+                        RemoteSidebarWorkspaceLoad.FAILED -> WorkspaceFailedRow {
+                            onRetryWorkspaceSessions(entry)
+                        }
+                        RemoteSidebarWorkspaceLoad.READY -> if (workspaceSessions.isEmpty()) {
+                            Text(
+                                stringResource(R.string.sidebar_workspace_empty_sessions),
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth()
+                                    .padding(start = 26.dp, top = 6.dp, bottom = 6.dp),
+                            )
+                        }
+                    }
                     val limit = if (identityKey in expandedSessionPaths) {
                         workspaceSessions.size
                     } else {
@@ -398,9 +457,9 @@ private fun SidebarActiveDeviceBody(
 }
 
 @Composable
-private fun DeviceLoadingRow() {
+private fun DeviceLoadingRow(startPadding: Dp = 10.dp) {
     Row(
-        modifier = Modifier.fillMaxWidth().height(40.dp).padding(start = 10.dp, end = 10.dp),
+        modifier = Modifier.fillMaxWidth().height(40.dp).padding(start = startPadding, end = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -413,6 +472,32 @@ private fun DeviceLoadingRow() {
             stringResource(R.string.sidebar_device_loading),
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/** One workspace whose own session list could not be read, indented under it. */
+@Composable
+private fun WorkspaceFailedRow(onRetry: () -> Unit) {
+    val retryLabel = stringResource(R.string.sidebar_device_retry)
+    Row(
+        modifier = Modifier.fillMaxWidth().height(40.dp).padding(start = 26.dp, end = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.sidebar_workspace_load_failed),
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            retryLabel,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier
+                .clickable(role = Role.Button, onClick = onRetry)
+                .semantics { contentDescription = retryLabel },
         )
     }
 }

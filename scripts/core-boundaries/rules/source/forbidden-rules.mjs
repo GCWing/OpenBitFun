@@ -8,6 +8,20 @@ const agentRuntimeRootUnexpectedLine = new RegExp(
 );
 
 export const forbiddenContentRules = [
+  {
+    path: 'src/apps/desktop/src/api/path_target.rs',
+    patterns: [{
+      regex: /\b(?:lookup_remote_entry_for_path|lookup_remote_connection(?:_scoped|_with_hint)?|should_force_local_assistant_path)\b/,
+      message: 'desktop file routing must resolve workspace IDs; legacy path interpretation belongs only to the upgrade adapter',
+    }],
+  },
+  {
+    path: 'src/crates/assembly/core/src/service/filesystem/service.rs',
+    patterns: [{
+      regex: /\blookup_remote_connection(?:_scoped|_with_hint)?\b/,
+      message: 'filesystem IO must use an explicit provider scope, never infer a workspace from a path',
+    }],
+  },
   ...[
     'file_read_tool', 'file_write_tool', 'file_edit_tool', 'delete_file_tool', 'ls_tool',
   ].map((tool) => ({
@@ -1464,6 +1478,10 @@ export const forbiddenContentRules = [
   {
     path: 'src/crates/assembly/core/src/service/search/remote.rs',
     patterns: [
+      {
+        regex: /\blookup_remote_connection(?:_scoped|_with_hint)?\b/,
+        message: 'remote search must use the ID-bound workspace object, never reselect a workspace by a path',
+      },
       {
         regex: /\bconst\s+REMOTE_FLASHGREP_INSTALL_DIR\b/,
         message:

@@ -207,10 +207,13 @@ pub struct SessionConfig {
     /// Stable workspace id for resolving workspace-scoped metadata such as related directories.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_id: Option<String>,
-    /// SSH workspace: required for remote tool I/O (file/shell). When set, `workspace_path` is
-    /// interpreted as the path on that host; when unset, the workspace is always local regardless
-    /// of string shape (avoids inferring remote from path alone). Also disambiguates the same
-    /// `workspace_path` on different hosts (e.g. two `/` roots).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
+    /// Projection of the owning workspace record; legacy sessions resolve this on load.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_kind: Option<openbitfun_core_types::WorkspaceKind>,
+    /// Saved connection projected from the workspace record. `workspace_kind`
+    /// determines locality; absence of credentials must never select local I/O.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
     /// SSH config `host` for locating `~/.openbitfun/remote_ssh/{host}/.../sessions` when disconnected.
@@ -298,6 +301,8 @@ impl Default for SessionConfig {
             project_workspace_path: None,
             execution_target: None,
             workspace_id: None,
+            project_workspace_id: None,
+            workspace_kind: None,
             remote_connection_id: None,
             remote_ssh_host: None,
             model_id: None,
@@ -706,5 +711,11 @@ mod tests {
 
         let rewritten = serde_json::to_value(restored).expect("serialize migrated config");
         assert!(rewritten.get("execution_profile").is_none());
+    }
+}
+
+impl SessionConfig {
+    pub fn is_remote_workspace(&self) -> bool {
+        self.workspace_kind == Some(openbitfun_core_types::WorkspaceKind::Remote)
     }
 }

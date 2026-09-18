@@ -209,7 +209,7 @@ const AgentsHomeView: React.FC = () => {
   } = useUserSkillGroups();
 
   const {
-    workspacePath,
+    workspaceId,
     allAgents,
     filteredAgents,
     loading,
@@ -603,7 +603,7 @@ const AgentsHomeView: React.FC = () => {
     if (!ok) return;
     setDeletingAgent(true);
     try {
-      await CustomAgentAPI.deleteCustomAgent(id, workspacePath || undefined);
+      await CustomAgentAPI.deleteCustomAgent(id, workspaceId);
       notification.success(t('agentsOverview.deleteSuccess', { name }));
       closeAgentDetails();
       // CustomAgentAPI emits `custom-agent:updated` after the delete; the
@@ -616,7 +616,7 @@ const AgentsHomeView: React.FC = () => {
     } finally {
       setDeletingAgent(false);
     }
-  }, [selectedAgent, closeAgentDetails, notification, t, workspacePath]);
+  }, [selectedAgent, closeAgentDetails, notification, t, workspaceId]);
 
   const startCurrentCapabilityEdit = () => {
     if (!selectedAgent || savingCapability) return;

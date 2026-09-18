@@ -82,10 +82,10 @@ describe('ExternalHooksAPI', () => {
   it('uses the structured Hook request and returns the runtime-free catalog', async () => {
     invokeMock.mockResolvedValue(validSnapshot);
 
-    await expect(externalHooksAPI.getCatalog(' D:/workspace/project ', true))
+    await expect(externalHooksAPI.getCatalog(' workspace-1 ', true))
       .resolves.toEqual(validSnapshot);
     expect(invokeMock).toHaveBeenCalledWith('get_external_hook_catalog', {
-      request: { workspacePath: 'D:/workspace/project', forceRefresh: true },
+      request: { workspaceId: 'workspace-1', forceRefresh: true },
     });
   });
 
@@ -219,21 +219,21 @@ describe('ExternalHooksAPI', () => {
     });
 
     const plan = await externalHooksAPI.planImport(
-      ' D:/workspace/project ',
+      ' workspace-1 ',
       validSnapshot.sources[0].key,
     );
-    await expect(externalHooksAPI.applyImport('D:/workspace/project', plan)).resolves.toMatchObject({
+    await expect(externalHooksAPI.applyImport('workspace-1', plan)).resolves.toMatchObject({
       outcome: { kind: 'applied' },
     });
     expect(invokeMock).toHaveBeenNthCalledWith(1, 'plan_external_hook_import_command', {
       request: {
-        workspacePath: 'D:/workspace/project',
+        workspaceId: 'workspace-1',
         source: validSnapshot.sources[0].key,
       },
     });
     expect(invokeMock).toHaveBeenNthCalledWith(2, 'apply_external_hook_import_command', {
       request: {
-        workspacePath: 'D:/workspace/project',
+        workspaceId: 'workspace-1',
         importRequest: {
           schemaVersion: 1,
           source: validSnapshot.sources[0].key,

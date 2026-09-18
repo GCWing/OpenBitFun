@@ -118,6 +118,7 @@ describe('miniAppStore floating bubble composer claims', () => {
 
     expect(useMiniAppStore.getState().composerClaims.ppt).toEqual({
       token: 'ppt#2',
+      surfaceId: 'local',
       placeholder: 'b',
     });
   });
@@ -141,6 +142,7 @@ describe('miniAppStore floating bubble composer claims', () => {
 
     expect(useMiniAppStore.getState().composerClaims.ppt).toEqual({
       token: 'ppt#1',
+      surfaceId: 'local',
       placeholder: '中文',
       customization: {
         welcome: { title: '制作演示稿' },
@@ -153,11 +155,12 @@ describe('miniAppStore floating bubble composer claims', () => {
     useMiniAppStore.getState().claimComposer('ppt', { token: 'ppt#2' });
 
     useMiniAppStore.getState().setComposerSession('ppt', 'ppt#1', 'stale-session');
-    expect(useMiniAppStore.getState().composerClaims.ppt).toEqual({ token: 'ppt#2' });
+    expect(useMiniAppStore.getState().composerClaims.ppt).toEqual({ token: 'ppt#2', surfaceId: 'local' });
 
     useMiniAppStore.getState().setComposerSession('ppt', 'ppt#2', 'session-2');
     expect(useMiniAppStore.getState().composerClaims.ppt).toEqual({
       token: 'ppt#2',
+      surfaceId: 'local',
       sessionId: 'session-2',
     });
 
@@ -165,7 +168,7 @@ describe('miniAppStore floating bubble composer claims', () => {
     expect(useMiniAppStore.getState().composerClaims.ppt?.sessionId).toBe('session-2');
 
     useMiniAppStore.getState().clearComposerSession('ppt', 'ppt#2');
-    expect(useMiniAppStore.getState().composerClaims.ppt).toEqual({ token: 'ppt#2' });
+    expect(useMiniAppStore.getState().composerClaims.ppt).toEqual({ token: 'ppt#2', surfaceId: 'local' });
   });
 
   // The installed app and its draft preview run side by side during AI
@@ -176,7 +179,7 @@ describe('miniAppStore floating bubble composer claims', () => {
     useMiniAppStore.getState().claimComposer('ppt', { token: 'ppt#2' });
 
     useMiniAppStore.getState().releaseComposer('ppt', 'ppt#1');
-    expect(useMiniAppStore.getState().composerClaims.ppt).toEqual({ token: 'ppt#2' });
+    expect(useMiniAppStore.getState().composerClaims.ppt).toEqual({ token: 'ppt#2', surfaceId: 'local' });
 
     useMiniAppStore.getState().releaseComposer('ppt', 'ppt#2');
     expect(useMiniAppStore.getState().composerClaims.ppt).toBeUndefined();

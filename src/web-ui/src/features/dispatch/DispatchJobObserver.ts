@@ -347,7 +347,9 @@ async function ensureProjection(
   // Never create a workspace-less projection. SessionsSection renders once
   // per workspace, and an unowned projection must not be allowed to appear in
   // every navigation group while startup workspace state is still loading.
-  if (!sourceWorkspacePath) {
+  // Ownership is the source workspace ID; the path is only its checkout label
+  // and is enough on its own solely for pre-ID records.
+  if (!job.sourceWorkspaceId && !sourceWorkspacePath) {
     return false;
   }
 

@@ -26,7 +26,7 @@ export interface RemoteConversationHooks {
   readonly isFilePreviewVisible: () => boolean;
   readonly stopVoiceInput: () => Promise<void>;
   readonly showToast: (message: string) => boolean;
-  readonly selectAssistantWorkspace: (path: string) => Promise<void>;
+  readonly selectAssistantWorkspace: (path: string, workspaceId?: string) => Promise<void>;
 }
 
 export interface RemoteConversationDependencies {

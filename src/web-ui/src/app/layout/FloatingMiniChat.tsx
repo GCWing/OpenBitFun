@@ -1,721 +1,284 @@
-/**
- * Hello — the bottom-right entry that expands to the shared session surface.
- * Text chat is always the default; realtime voice is an explicit mode switch
- * inside the expanded panel.
- *
- * The panel renders ChatPane verbatim — same conversation view, same full
- * composer as the session scene — so it never lags behind the main chat UI and
- * carries no second conversation/composer implementation of its own. Only the
- * bubble chrome (trigger, open/close animation, session header) lives here.
- */
-
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { useTranslation } from 'react-i18next';
-
-import { flowChatStore } from '../../flow_chat/store/FlowChatStore';
-import { syncSessionToModernStore } from '../../flow_chat/services/storeSync';
+/** Modeless host of references to Runtime-owned conversations. */
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { ArrowUpRight, Minus, Phone, PhoneOff, X } from 'lucide-react';
+import { IconButton, LauncherButton, OverflowText, TabGroup, Button } from '@openbitfun/ui';
+import { useI18n } from '@/infrastructure/i18n';
+import { getActiveSurfaceId, getActiveSurfaceScope, onSurfaceActivated, isSurfaceChangedError } from '@/infrastructure/peer-device/deviceSurface';
+import { globalEventBus } from '@/infrastructure/event-bus';
+import { FLOWCHAT_FOCUS_ITEM_EVENT, type FlowChatFocusItemRequest } from '@/flow_chat/events/flowchatNavigation';
+import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { createControlConversation, ensureControlConversation, replayVoiceExchanges } from '@/flow_chat/services/controlConversation';
 import ChatPane from '@/app/scenes/session/ChatPane';
-import type {
-  ChatInputRegistration,
-  ChatInputSubmission,
-} from '@/flow_chat/components/chatInputRegistration';
-import { OverflowText, Icon, IconButton, LauncherButton, Tooltip } from '@openbitfun/ui';
-
-import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
-import { SessionMenu, useFlowChatSessions } from '../../flow_chat/components/session-menu';
-import { useSceneStore } from '@/app/stores/sceneStore';
-import {
-  useMiniAppStore,
-  MINIAPP_COMPOSER_DRAFT_EVENT,
-  type MiniAppComposerClaim,
-  type MiniAppDraftEventDetail,
-  type MiniAppComposerMessageDetail,
-} from '@/app/scenes/miniapps/miniAppStore';
-import { postMiniAppComposerMessage } from '@/app/scenes/miniapps/miniAppComposerMessages';
-import { pickLocalizedString } from '@/app/scenes/miniapps/utils/pickLocalizedString';
-import { renderMiniAppIcon } from '@/app/scenes/miniapps/utils/miniAppIcons';
-import MiniAppBubbleWelcome from './MiniAppBubbleWelcome';
-import { isFloatingMiniChatSessionExecuting } from './floatingMiniChatActivity';
-import {
-  canRenderFloatingMiniChatSession,
-  isFloatingMiniChatIsolated,
-} from './floatingMiniChatIsolation';
-import {
-  ConversationModeSurface,
-} from '@/flow_chat/components/voice/ConversationModeSurface';
+import type { ChatInputRegistration } from '@/flow_chat/components/chatInputRegistration';
+import { ConversationModeSurface } from '@/flow_chat/components/voice/ConversationModeSurface';
+import { ControlConversation } from '@/flow_chat/components/voice/ControlConversation';
+import { ConversationViewProvider } from '@/flow_chat/contexts/ConversationViewProvider';
 import { useRealtimeVoiceCall } from '@/flow_chat/components/voice/RealtimeVoiceCallContext';
-import type { VoiceMiniAppCallTarget } from '@/flow_chat/components/voice/voiceClientContext';
+import type { VoiceCallTarget } from '@/flow_chat/components/voice/voiceClientContext';
+import { useConversationDockStore, dockConversationKey, type DockConversation } from '../stores/conversationDockStore';
+import { beginConversationTransfer, endConversationTransfer, isConversationTransfer, dropConversationInDock, returnConversationToWorkbench } from '../services/conversationDockTransfer';
+import { sessionSceneWorkspaceKey } from '../services/sessionSceneTarget';
+import { useMiniAppStore, MINIAPP_COMPOSER_DRAFT_EVENT, MINIAPP_COMPOSER_FOCUS_EVENT, type MiniAppDraftEventDetail, type MiniAppFocusEventDetail } from '../scenes/miniapps/miniAppStore';
+import { useSceneStore } from '../stores/sceneStore';
+import { getMiniAppIdFromSceneId, getMiniAppSceneId } from '../scenes/miniapps/miniAppActivity';
+import { followMiniAppConversation, openMiniAppConversation, openMiniAppFromConversation, resolveMiniAppConversation, syncMiniAppConversations } from '../scenes/miniapps/miniAppConversation';
+import { postMiniAppComposerMessage } from '../scenes/miniapps/miniAppComposerMessages';
+import { pickLocalizedString } from '../scenes/miniapps/utils/pickLocalizedString';
+import { resolveDisplayTitle } from '@/flow_chat/components/session-menu/useFlowChatSessions';
+import MiniAppBubbleWelcome from './MiniAppBubbleWelcome';
+import { createLogger } from '@/shared/utils/logger';
 import './FloatingMiniChat.scss';
+const log = createLogger('ConversationDock');
 
-/**
- * Panel lifecycle. `opening` covers the scale-up transition, during which the
- * panel's hit area is still smaller than its final rect — see the backdrop
- * below for why that distinction matters.
- */
-type PanelPhase = 'closed' | 'opening' | 'open';
+const subscribeSurface = (listener: () => void) => onSurfaceActivated(listener);
+const subscribeSessions = (listener: () => void) => flowChatStore.subscribe(listener);
+const sessionSnapshot = () => flowChatStore.getState();
 
-/** Fallback for a transitionend that never arrives (reduced motion, interrupted
- *  transition). Must stay >= $fmc-open-duration in FloatingMiniChat.scss. */
-const PANEL_OPEN_SETTLE_MS = 280;
-
-export const FloatingMiniChat: React.FC = () => {
-  const { t, i18n } = useTranslation('flow-chat');
-  const { t: tVoice } = useTranslation('settings/voice-input');
-  const {
-    phase: voicePhase,
-    end: endVoiceCall,
-  } = useRealtimeVoiceCall();
-  const activeTabId = useSceneStore((state) => state.activeTabId);
-  const customizingAppIds = useMiniAppStore((state) => state.customizingAppIds);
-  const composerClaims = useMiniAppStore((state) => state.composerClaims);
-  const apps = useMiniAppStore((state) => state.apps);
-  const { workspacePath } = useCurrentWorkspace();
-
-  const [phase, setPhase] = useState<PanelPhase>('closed');
-  const [surfaceMounted, setSurfaceMounted] = useState(false);
-  const [composerPrefill, setComposerPrefill] = useState<{
-    id: number;
-    text: string;
-    claimToken: string;
-    sessionId?: string;
-  } | null>(null);
-  const composerPrefillIdRef = useRef(0);
-  /** True while a press that may legitimately close the panel is in flight. */
-  const backdropArmedRef = useRef(false);
-  const isOpen = phase !== 'closed';
-  const isVoiceMode = voicePhase !== 'idle';
-  const panelRef = useRef<HTMLDivElement>(null);
-  const previousHostSessionRef = useRef<{
-    claimToken: string;
-    sessionId: string | null;
-  } | null>(null);
-
-  const activeMiniAppId = useMemo(
-    () => (typeof activeTabId === 'string' && activeTabId.startsWith('miniapp:')
-      ? activeTabId.slice('miniapp:'.length)
-      : null),
-    [activeTabId]
-  );
-  const shouldAvoidMiniAppCustomizer = Boolean(
-    activeMiniAppId && customizingAppIds.includes(activeMiniAppId)
-  );
-
-  // A claim registers bounded content and submission routing into the same
-  // shared bubble surface. MiniApps never replace ChatPane or ChatInput.
-  const activeComposerClaim = activeMiniAppId ? composerClaims[activeMiniAppId] : undefined;
-  const activeMiniApp = useMemo(
-    () => apps.find((app) => app.id === activeMiniAppId),
-    [activeMiniAppId, apps]
-  );
-  const activeMiniAppName = useMemo(() => {
-    if (!activeMiniAppId) return '';
-    if (!activeMiniApp) return activeMiniAppId;
-    return pickLocalizedString(activeMiniApp, i18n.language, 'name') || activeMiniAppId;
-  }, [activeMiniApp, activeMiniAppId, i18n.language]);
-  const activeMiniAppDescription = useMemo(() => {
-    if (!activeMiniApp) return '';
-    return pickLocalizedString(activeMiniApp, i18n.language, 'description')
-      || activeMiniApp.description;
-  }, [activeMiniApp, i18n.language]);
-  const activeMiniAppIcon = activeMiniApp?.icon || 'Box';
-  const bubbleCustomization = activeComposerClaim?.customization;
-  const activeComposerToken = activeComposerClaim?.token;
-  const activeComposerSessionId = activeComposerClaim?.sessionId;
-  const isMiniAppBubbleIsolated = isFloatingMiniChatIsolated({
-    activeMiniAppId,
-    permissions: activeMiniApp?.permissions,
-    hasComposerClaim: Boolean(activeComposerClaim),
-  });
-  const {
-    activeSession,
-    trackedSession: activeMiniAppSession,
-    sessionTitle,
-  } = useFlowChatSessions(activeComposerSessionId);
-  const isMiniAppSessionReady = canRenderFloatingMiniChatSession({
-    isolated: isMiniAppBubbleIsolated,
-    claimedSessionId: activeComposerSessionId,
-    activeSessionId: activeSession?.sessionId,
-  });
-  const displayedSession = isMiniAppBubbleIsolated
-    ? activeMiniAppSession
-    : activeSession;
-  const miniAppVoiceTarget = useMemo<VoiceMiniAppCallTarget | undefined>(() => {
-    if (
-      !isMiniAppBubbleIsolated
-      || !activeMiniAppId
-      || !activeComposerToken
-      || !activeComposerSessionId
-      || !isMiniAppSessionReady
-    ) return undefined;
-    return {
-      kind: 'miniapp',
-      appId: activeMiniAppId,
-      appName: activeMiniAppName,
-      claimToken: activeComposerToken,
-      sessionId: activeComposerSessionId,
-      workspacePath: displayedSession?.workspacePath,
-    };
-  }, [
-    activeComposerSessionId,
-    activeComposerToken,
-    activeMiniAppId,
-    activeMiniAppName,
-    displayedSession?.workspacePath,
-    isMiniAppBubbleIsolated,
-    isMiniAppSessionReady,
-  ]);
-  const displayedTitle = isMiniAppBubbleIsolated
-    ? (bubbleCustomization?.title || activeMiniAppName)
-    : sessionTitle;
-  const popupTitle = isVoiceMode ? tVoice('voiceCall.call.title') : displayedTitle;
-
-  const isStreaming = useMemo(() => {
-    const lastTurn = displayedSession?.dialogTurns.at(-1);
-    return (
-      lastTurn?.status === 'processing'
-      || lastTurn?.status === 'finishing'
-      || lastTurn?.status === 'image_analyzing'
-    );
-  }, [displayedSession]);
-  const isMiniAppSessionExecuting = Boolean(
-    activeComposerClaim
-    && isFloatingMiniChatSessionExecuting(activeMiniAppSession),
-  );
-
-  // Idempotent so it is safe to fire from several input paths at once, and so a
-  // repeat press during the open animation can never toggle the panel back.
-  //
-  // Keeping this commit cheap matters too: flipping the panel open is all it
-  // does, so the open transition is committed on the very next frame. Store
-  // sync and the session surface mount are deferred below — doing them here
-  // blocks the main thread before the browser ever starts the transition.
-  const handleOpen = useCallback(() => {
-    setPhase((prev) => (prev === 'closed' ? 'opening' : prev));
-  }, []);
-
-  const handleClose = useCallback(() => {
-    if (isVoiceMode) endVoiceCall();
-    setPhase('closed');
-  }, [endVoiceCall, isVoiceMode]);
-
-  const setMiniAppComposerDraft = useCallback((
-    text: string,
-    claimToken: string,
-    sessionId?: string,
-  ) => {
-    composerPrefillIdRef.current += 1;
-    setComposerPrefill({
-      id: composerPrefillIdRef.current,
-      text,
-      claimToken,
-      sessionId,
-    });
-  }, []);
-
-  const handleMiniAppSuggestion = useCallback((prompt: string) => {
-    if (!activeComposerToken) return;
-    setMiniAppComposerDraft(prompt, activeComposerToken, activeComposerSessionId);
-  }, [activeComposerSessionId, activeComposerToken, setMiniAppComposerDraft]);
-
-  const handleMiniAppDraftConsumed = useCallback((id: number) => {
-    setComposerPrefill((current) => (current?.id === id ? null : current));
-  }, []);
-
-  const handleMiniAppSubmit = useCallback((submission: ChatInputSubmission) => {
-    if (!activeComposerToken) {
-      throw new Error('The active MiniApp no longer owns the floating chat registration.');
-    }
-    const detail: MiniAppComposerMessageDetail = {
-      token: activeComposerToken,
-      text: submission.text,
-      displayText: submission.displayText,
-      contexts: submission.contexts,
-      composerPresentation: submission.composerPresentation,
-      sessionId: submission.sessionId,
-      workspacePath: submission.workspacePath,
-    };
-    postMiniAppComposerMessage(detail);
-  }, [activeComposerToken]);
-
-  const chatInputRegistration = useMemo<ChatInputRegistration | undefined>(() => {
-    if (!activeComposerClaim) {
-      return undefined;
-    }
-    return {
-      registrationId: activeComposerClaim.token,
-      placeholder:
-        bubbleCustomization?.composer?.placeholder
-        || activeComposerClaim.placeholder
-        || t('miniAppComposer.placeholder', { app: activeMiniAppName }),
-      // Registration presence makes this an isolated workspace even when the
-      // hidden session has no path, so the normal project never leaks in.
-      workspacePath: displayedSession?.workspacePath || '',
-      remoteConnectionId:
-        displayedSession?.remoteConnectionId
-        || displayedSession?.config?.remoteConnectionId,
-      draft: composerPrefill
-        ? { id: composerPrefill.id, text: composerPrefill.text }
-        : undefined,
-      onDraftConsumed: handleMiniAppDraftConsumed,
-      onSubmit: handleMiniAppSubmit,
-    };
-  }, [
-    activeComposerClaim,
-    activeMiniAppName,
-    bubbleCustomization?.composer?.placeholder,
-    composerPrefill,
-    displayedSession?.config?.remoteConnectionId,
-    displayedSession?.remoteConnectionId,
-    displayedSession?.workspacePath,
-    handleMiniAppDraftConsumed,
-    handleMiniAppSubmit,
-    t,
-  ]);
-
-  useEffect(() => {
-    setComposerPrefill((current) => {
-      if (!current) return current;
-      if (current.claimToken !== activeComposerToken) return null;
-      // focusSession and setComposerDraft are two consecutive bridge calls.
-      // React may observe their host-store updates in either order, so keep a
-      // draft that already identifies the newly focused session instead of
-      // clearing it during that transition.
-      if (current.sessionId && current.sessionId !== activeComposerSessionId) {
-        return null;
-      }
-      return current;
-    });
-  }, [activeComposerSessionId, activeComposerToken]);
-
-  const activateMiniAppSession = useCallback((claim: MiniAppComposerClaim | undefined) => {
-    const sessionId = claim?.sessionId;
-    if (!sessionId) return false;
-    const state = flowChatStore.getState();
-    if (!state.sessions.has(sessionId)) return false;
-    if (state.activeSessionId !== sessionId) {
-      flowChatStore.switchSession(sessionId);
-    }
-    syncSessionToModernStore(sessionId);
-    return true;
-  }, []);
-
-  const rememberPreviousHostSession = useCallback((claimToken: string) => {
-    if (previousHostSessionRef.current?.claimToken === claimToken) return;
-    const state = flowChatStore.getState();
-    const currentSession = state.activeSessionId
-      ? state.sessions.get(state.activeSessionId)
-      : undefined;
-    previousHostSessionRef.current = {
-      claimToken,
-      sessionId:
-        currentSession && currentSession.sessionKind !== 'miniapp'
-          ? currentSession.sessionId
-          : null,
-    };
-  }, []);
-
-  const restorePreviousHostSession = useCallback((claimToken?: string) => {
-    const previous = previousHostSessionRef.current;
-    if (
-      !previous
-      || (claimToken !== undefined && previous.claimToken !== claimToken)
-    ) return;
-    previousHostSessionRef.current = null;
-    if (!previous.sessionId) return;
-
-    const latest = flowChatStore.getState();
-    if (!latest.sessions.has(previous.sessionId)) return;
-    const currentSession = latest.activeSessionId
-      ? latest.sessions.get(latest.activeSessionId)
-      : undefined;
-    // Do not overwrite an explicit navigation that already selected another
-    // ordinary session while the bubble was closing/unmounting.
-    if (
-      currentSession
-      && currentSession.sessionKind !== 'miniapp'
-      && currentSession.sessionId !== previous.sessionId
-    ) {
-      return;
-    }
-    if (latest.activeSessionId !== previous.sessionId) {
-      flowChatStore.switchSession(previous.sessionId);
-    }
-    syncSessionToModernStore(previous.sessionId);
-  }, []);
-
-  // ChatPane is intentionally the shared session surface, so displaying a
-  // MiniApp session temporarily switches the shared store. Capture the user's
-  // normal session for the lifetime of the open claimed bubble and restore it
-  // when the panel closes or the active MiniApp changes.
-  useEffect(() => {
-    if (!isOpen || !activeComposerToken) return;
-
-    rememberPreviousHostSession(activeComposerToken);
-
-    return () => {
-      restorePreviousHostSession(activeComposerToken);
-    };
-  }, [
-    activeComposerToken,
-    isOpen,
-    rememberPreviousHostSession,
-    restorePreviousHostSession,
-  ]);
-
-  // setComposerDraft activates the MiniApp session synchronously before the
-  // open-state effect commits. Keep an unconditional unmount fallback so a
-  // simultaneous scene change cannot strand that hidden session globally.
-  useEffect(() => () => {
-    restorePreviousHostSession();
-  }, [restorePreviousHostSession]);
-
-  // The claim carries the topic's dedicated session. Activate it only while
-  // the bubble is open; if the Agent session has not reached FlowChat yet,
-  // wait for that exact id instead of falling back to the latest normal chat.
-  useEffect(() => {
-    if (isVoiceMode || !isOpen || !activeComposerToken || !activeComposerSessionId) return;
-
-    if (activateMiniAppSession(activeComposerClaim)) return;
-    const unsubscribe = flowChatStore.subscribe((state) => {
-      if (!state.sessions.has(activeComposerSessionId)) return;
-      unsubscribe();
-      activateMiniAppSession(activeComposerClaim);
-    });
-    return unsubscribe;
-  }, [
-    activateMiniAppSession,
-    activeComposerClaim,
-    activeComposerSessionId,
-    activeComposerToken,
-    isOpen,
-    isVoiceMode,
-  ]);
-
-  // A MiniApp holding the composer can hand it a prepared prompt (PPT Live's
-  // welcome examples). Open the bubble so the user sees what landed there and
-  // can edit before sending — this never submits on its own.
-  useEffect(() => {
-    const claimToken = activeComposerClaim?.token;
-    if (!claimToken || !activeMiniAppId) return;
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<MiniAppDraftEventDetail>).detail;
-      if (!detail || detail.token !== claimToken || typeof detail.text !== 'string') return;
-      // focusSession and setComposerDraft can arrive before React commits the
-      // updated claim. Read the live claim, switch synchronously, then open the
-      // panel so its first rendered frame already owns the correct session.
-      const liveClaim = useMiniAppStore.getState().composerClaims[activeMiniAppId];
-      if (liveClaim?.token !== detail.token) return;
-      // The live claim is authoritative if a newer focusSession overtook an
-      // older queued draft event. The event snapshot is only a fallback for
-      // the same host transition.
-      const sessionId = liveClaim.sessionId || detail.sessionId;
-      const draftClaim = sessionId && liveClaim.sessionId !== sessionId
-        ? { ...liveClaim, sessionId }
-        : liveClaim;
-      // The draft path activates the topic before React opens the panel, so
-      // capture the ordinary chat first; closing the bubble must restore it.
-      rememberPreviousHostSession(detail.token);
-      activateMiniAppSession(draftClaim);
-      setMiniAppComposerDraft(detail.text, detail.token, sessionId);
-      handleOpen();
-    };
-    window.addEventListener(MINIAPP_COMPOSER_DRAFT_EVENT, handler);
-    return () => {
-      window.removeEventListener(MINIAPP_COMPOSER_DRAFT_EVENT, handler);
-    };
-  }, [
-    activateMiniAppSession,
-    activeComposerClaim?.token,
-    activeMiniAppId,
-    handleOpen,
-    rememberPreviousHostSession,
-    setMiniAppComposerDraft,
-  ]);
-
-  // Open on pointer press, not on click. A click only fires when pointerdown
-  // and pointerup land on the same element, so anything that moves or replaces
-  // the trigger between the two (a re-render from a streaming session, the
-  // panel animation, a stray pointer move on a trackpad) silently swallows the
-  // press — which is what made the button need several tries. onClick is kept
-  // for keyboard and assistive activation, where no pointer events fire.
-  const handleTriggerPointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    handleOpen();
-  }, [handleOpen]);
-
-  // Mount the session surface only once the open transition has been handed to
-  // the compositor, so ChatPane's mount cost can no longer stall the animation.
-  useEffect(() => {
-    if (!isOpen || isVoiceMode) {
-      setSurfaceMounted(false);
-      return;
-    }
-
-    let innerFrame = 0;
-    const outerFrame = requestAnimationFrame(() => {
-      innerFrame = requestAnimationFrame(() => {
-        // Sync the active session into modernFlowChatStore so the panel shows
-        // up-to-date content (it may have streamed while the panel was closed).
-        const { activeSessionId } = flowChatStore.getState();
-        if (activeSessionId) {
-          syncSessionToModernStore(activeSessionId);
-        }
-        setSurfaceMounted(true);
-      });
-    });
-
-    return () => {
-      cancelAnimationFrame(outerFrame);
-      cancelAnimationFrame(innerFrame);
-    };
-  }, [isOpen, isVoiceMode]);
-
-  // Settle `opening` → `open` once the panel reaches full size.
-  useEffect(() => {
-    if (phase !== 'opening') return;
-    const timer = window.setTimeout(() => setPhase('open'), PANEL_OPEN_SETTLE_MS);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
-
-  const handlePanelTransitionEnd = useCallback((e: React.TransitionEvent) => {
-    if (e.target !== panelRef.current || e.propertyName !== 'transform') return;
-    setPhase((prev) => (prev === 'opening' ? 'open' : prev));
-  }, []);
-
-  const handlePanelKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      // Inside the reused session surface Escape belongs to the chat scope
-      // (dismiss slash/mention popups, stop generation) exactly as it does in
-      // the main window, so only bubble chrome handles it here. SessionMenu
-      // stops propagation while its dropdown is open.
-      const target = e.target as HTMLElement | null;
-      if (target?.closest?.('[data-shortcut-scope="chat"]')) return;
-      e.preventDefault();
-      handleClose();
+function DockConversationView({ entry, active, onCollapse, renderHeader, onVoiceViewChange }: { entry: DockConversation; active: boolean; onCollapse: () => void; renderHeader: (modeSwitch: ReactNode) => ReactNode; onVoiceViewChange: (key: string, visible: boolean) => void }) {
+  const { t, i18n } = useI18n('flow-chat');
+  const state = useSyncExternalStore(subscribeSessions, sessionSnapshot);
+  const session = state.sessions.get(entry.sessionId);
+  const claim = useMiniAppStore(s => entry.appId ? s.composerClaims[entry.appId] : undefined);
+  const app = useMiniAppStore(s => s.apps.find(candidate => candidate.id === entry.appId));
+  const claimValid = entry.kind !== 'miniapp' || claim?.surfaceId === entry.surfaceId && claim?.token === entry.claimToken && claim?.sessionId === entry.sessionId;
+  const key = dockConversationKey(entry);
+  const reportVoiceView = useCallback((visible: boolean) => onVoiceViewChange(key, visible), [key, onVoiceViewChange]);
+  const newControlConversation = useCallback(async () => {
+    const scope = getActiveSurfaceScope();
+    if (scope.surfaceId !== entry.surfaceId) return;
+    const result = await createControlConversation(entry.sessionId);
+    scope.assertCurrent('open new control conversation');
+    useConversationDockStore.getState().add({ ...result, surfaceId: entry.surfaceId, workspaceKey: sessionSceneWorkspaceKey(result.workspaceId), kind: 'control' });
+  }, [entry.surfaceId, entry.sessionId]);
+  const draft = useConversationDockStore(state => state.drafts[key]);
+  const setDraft = (text: string) => useConversationDockStore.getState().setDraft(key, text);
+  const appName = app ? pickLocalizedString(app, i18n.language, 'name') || app.name : entry.appId ?? '';
+  const registration = useMemo<ChatInputRegistration | undefined>(() => entry.kind !== 'miniapp' ? undefined : ({
+    registrationId: entry.claimToken!,
+    workspacePath: session?.workspacePath || '',
+    remoteConnectionId: session?.remoteConnectionId || session?.config.remoteConnectionId,
+    placeholder: claim?.customization?.composer?.placeholder || claim?.placeholder || t('miniAppComposer.placeholder', { app: appName }),
+    draft,
+    onDraftConsumed: id => useConversationDockStore.getState().consumeDraft(key, id),
+    onSubmit: submission => {
+      const live = useMiniAppStore.getState().composerClaims[entry.appId!];
+      if (getActiveSurfaceId() !== entry.surfaceId || live?.surfaceId !== entry.surfaceId
+        || live?.token !== entry.claimToken || live.sessionId !== entry.sessionId) throw new Error('The MiniApp no longer owns this conversation');
+      postMiniAppComposerMessage({ ...submission, token: entry.claimToken!, sessionId: entry.sessionId });
     },
-    [handleClose]
-  );
+  }), [appName, claim, draft, entry, session, t, key]);
+  const voiceTarget = useMemo<VoiceCallTarget | undefined>(() => !session ? undefined : entry.kind === 'miniapp' ? {
+    kind: 'miniapp', appId: entry.appId!, appName, claimToken: entry.claimToken!, surfaceId: entry.surfaceId,
+    sessionId: entry.sessionId, workspacePath: session.workspacePath,
+  } : { kind: entry.kind, surfaceId: entry.surfaceId, sessionId: entry.sessionId,
+    workspaceId: session.workspaceId ?? session.config.workspaceId, workspacePath: session.workspacePath || '' }, [entry, session, appName]);
+  const unavailable = <div className="openbitfun-fmc__miniapp-session-pending" role="status"
+    data-openbitfun-component="floating-mini-chat" data-openbitfun-part="pending">{t('dock.unavailable')}</div>;
+  if (entry.kind === 'control' && session && voiceTarget) return <ConversationViewProvider
+    scope={{ ...entry, viewId: key, presentation: 'compact' }}>
+    <ControlConversation session={session} sessionRef={entry} voiceTarget={voiceTarget} active={active}
+      renderHeader={renderHeader} onClose={onCollapse} onVoiceViewChange={reportVoiceView} onNewConversation={newControlConversation} />
+  </ConversationViewProvider>;
+  return <ConversationModeSurface voiceTarget={voiceTarget} voiceStartDisabled={!voiceTarget || !claimValid} onCloseVoice={onCollapse}
+    renderHeader={renderHeader} onVoiceViewChange={reportVoiceView} switchTestId="hello-realtime-voice-mode-switch">
+    {!session || !claimValid ? unavailable : <ChatPane sessionRef={entry} viewId={dockConversationKey(entry)} presentation="compact" width={0} isFullscreen={false}
+      isSceneActive={active} workspacePath={session.workspacePath} showChatInput chatInputRegistration={registration}
+      emptyState={<MiniAppBubbleWelcome
+        appName={entry.kind === 'control' ? 'OpenBitFun' : entry.kind === 'miniapp' ? appName : resolveDisplayTitle(session)}
+        appDescription={entry.kind === 'control' ? t('dock.welcome') : app ? pickLocalizedString(app, i18n.language, 'description') : undefined}
+        appIcon={app?.icon} showIcon={entry.kind === 'miniapp'} customization={claim?.customization}
+        onSuggestion={setDraft}
+      />}
+    />}
+  </ConversationModeSurface>;
+}
 
-  const panelClassName = [
-    'openbitfun-fmc__panel',
-    isOpen && 'openbitfun-fmc__panel--open',
-    isStreaming && 'openbitfun-fmc__panel--processing',
-  ]
-    .filter(Boolean)
-    .join(' ');
+export function FloatingMiniChat() {
+  const { t, i18n } = useI18n('flow-chat');
+  const { t: tv } = useI18n('settings/voice-input');
+  const surfaceId = useSyncExternalStore(subscribeSurface, getActiveSurfaceId);
+  const dock = useConversationDockStore();
+  const claims = useMiniAppStore(s => s.composerClaims);
+  const apps = useMiniAppStore(s => s.apps);
+  const activeSceneId = useSceneStore(s => s.activeTabId);
+  const openScenes = useSceneStore(s => s.openTabs);
+  const activeMiniAppId = activeSceneId ? getMiniAppIdFromSceneId(activeSceneId) : null;
+  const activeMiniAppClaim = activeMiniAppId ? claims[activeMiniAppId] : undefined;
+  const flow = useSyncExternalStore(subscribeSessions, sessionSnapshot);
+  const voice = useRealtimeVoiceCall();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [voiceViews, setVoiceViews] = useState<Record<string, boolean>>({});
+  const onVoiceViewChange = useCallback((key: string, visible: boolean) => {
+    setVoiceViews(previous => previous[key] === visible ? previous : { ...previous, [key]: visible });
+  }, []);
+  const [error, setError] = useState('');
+  const [retry, setRetry] = useState(0);
+  const [drop, setDrop] = useState(false);
+  const [visited, setVisited] = useState<Set<string>>(new Set());
+  const dragging = useRef<string>();
+  const entries = dock.entries.filter(entry => entry.surfaceId === surfaceId)
+    .sort((a, b) => Number(b.kind === 'control') - Number(a.kind === 'control'));
+  const active = entries.find(entry => dockConversationKey(entry) === dock.activeBySurface[surfaceId]) ?? entries[0];
+  const activeKey = active ? dockConversationKey(active) : undefined;
+  const recoveryRevision = [...flow.sessions.values()].map(session => `${session.sessionId}:${session.dialogTurns.at(-1)?.status}`).join('|');
+  useEffect(() => { void replayVoiceExchanges().catch(reason => { if (!isSurfaceChangedError(reason)) log.warn('Voice history recovery is pending', { reason }); }); }, [surfaceId, recoveryRevision]);
+  const live = voice.phase !== 'idle';
+  const liveRef = useRef(live);
+  liveRef.current = live;
+  const immersiveVoice = Boolean(activeKey && live && voiceViews[activeKey]);
+  const callKey = voice.target ? dockConversationKey({ surfaceId: voice.target.surfaceId ?? surfaceId, sessionId: voice.target.sessionId }) : undefined;
 
-  return (
-    <div
-      data-openbitfun-component="floating-mini-chat"
-      data-openbitfun-part="root"
-      data-openbitfun-mode={activeComposerClaim ? 'miniapp' : 'chat'}
-      data-openbitfun-communication-mode={isVoiceMode ? 'voice' : 'chat'}
-      data-openbitfun-state={[
-        isOpen && 'open',
-        isStreaming && 'processing',
-        isVoiceMode && 'voice',
-        shouldAvoidMiniAppCustomizer && 'customizing',
-      ].filter(Boolean).join(' ') || undefined}
-      className={[
-        'openbitfun-fmc',
-        isOpen && 'openbitfun-fmc--open',
-        shouldAvoidMiniAppCustomizer && 'openbitfun-fmc--miniapp-customizing',
-      ].filter(Boolean).join(' ')}
-    >
-      {/* Fullscreen backdrop to catch outside clicks. It stays inert until the
-          panel has finished scaling up: until then the panel's hit area is
-          still smaller than its final rect, so a click aimed at the panel would
-          land here and close what the user just opened. Rendering it (without
-          the close handler) throughout keeps those clicks from reaching the
-          scene underneath.
+  useEffect(() => globalEventBus.on<FlowChatFocusItemRequest>(FLOWCHAT_FOCUS_ITEM_EVENT, request => {
+    if (request.embedded || request.surfaceEpoch !== undefined && request.surfaceEpoch !== getActiveSurfaceScope().epoch) return;
+    const state = useConversationDockStore.getState();
+    const target = state.entries.find(entry => entry.surfaceId === surfaceId && entry.sessionId === request.sessionId);
+    if (!target) return;
+    const key = dockConversationKey(target);
+    state.select(key);
+    state.setOpen(true);
+    state.requestFocus(key, request);
+  }), [surfaceId]);
 
-          Closing happens on click, NOT on mousedown: closing on mousedown
-          unmounts the backdrop in the middle of the press gesture, and pulling
-          the hit target of an in-flight gesture out from over a cross-document
-          iframe (a MiniApp) leaves the webview routing subsequent mousemoves
-          against the stale layer — the iframe loses hover and eats an extra
-          click until the next mousedown re-hit-tests. Arming on mousedown
-          preserves the opening-phase protection above: a press that began
-          while the panel was still scaling up never closes it. */}
-      {isOpen && (
-        <div
-          data-openbitfun-component="floating-mini-chat"
-          data-openbitfun-part="backdrop"
-          className="openbitfun-fmc__backdrop"
-          onMouseDown={() => { backdropArmedRef.current = phase === 'open'; }}
-          onClick={() => {
-            if (backdropArmedRef.current) handleClose();
-            backdropArmedRef.current = false;
-          }}
-        />
-      )}
+  useEffect(() => {
+    if (!dock.open) return;
+    let disposed = false;
+    setError('');
+    if (!useConversationDockStore.getState().entries.some(entry => entry.surfaceId === surfaceId && entry.kind === 'control')) {
+      useConversationDockStore.getState().add({ surfaceId, sessionId: 'openbitfun-control', workspaceKey: '', kind: 'control' }, false);
+    }
+    void ensureControlConversation().then(result => {
+      if (!disposed) useConversationDockStore.getState().add({ ...result, surfaceId, workspaceKey: sessionSceneWorkspaceKey(result.workspaceId), kind: 'control' }, false);
+    }).catch(reason => { if (!disposed && !isSurfaceChangedError(reason)) setError(String(reason instanceof Error ? reason.message : reason)); });
+    return () => { disposed = true; };
+  }, [dock.open, surfaceId, retry]);
 
-      {/* Hello trigger — sits above the backdrop and the collapsed panel via
-          an explicit z-index, and is taken out of hit testing with
-          `visibility` (not just pointer-events) while the panel is open. */}
-      {isMiniAppBubbleIsolated ? (
-        <button
-          data-openbitfun-component="floating-mini-chat"
-          data-openbitfun-part="trigger"
-          type="button"
-          className={[
-            'openbitfun-fmc__button',
-            'openbitfun-fmc__button--miniapp',
-            isMiniAppSessionExecuting && 'openbitfun-fmc__button--processing',
-          ].filter(Boolean).join(' ')}
-          onPointerDown={handleTriggerPointerDown}
-          onClick={handleOpen}
-          aria-expanded={isOpen}
-          aria-busy={isMiniAppSessionExecuting || undefined}
-          aria-label={displayedTitle}
-        >
-          {isMiniAppSessionExecuting && (
-            <span
-              className="openbitfun-fmc__button-activity"
-              data-openbitfun-component="floating-mini-chat"
-              data-openbitfun-part="triggerActivity"
-              aria-hidden="true"
-            />
-          )}
-          <span
-            className="openbitfun-fmc__miniapp-trigger-icon"
-            data-openbitfun-component="floating-mini-chat"
-            data-openbitfun-part="triggerIcon"
-            aria-hidden="true"
-          >
-            {renderMiniAppIcon(activeMiniAppIcon, 20)}
-          </span>
+  useEffect(() => {
+    syncMiniAppConversations(surfaceId);
+  }, [claims, surfaceId]);
+
+  useEffect(() => {
+    if (activeMiniAppId) followMiniAppConversation(activeMiniAppId,
+      liveRef.current || Boolean(panelRef.current?.querySelector('[contenteditable="true"]:focus, textarea:focus, input:focus')), surfaceId);
+    // Selection inside the dock does not retrigger following the main scene.
+  }, [activeMiniAppId, activeMiniAppClaim?.sessionId, activeMiniAppClaim?.token, surfaceId]);
+
+  useEffect(() => {
+    const target = voice.target;
+    if (target?.kind === 'miniapp' && live && voice.phase !== 'ending'
+      && !openScenes.some(tab => tab.id === getMiniAppSceneId(target.appId))) voice.end();
+  }, [openScenes, voice, live]);
+
+  useEffect(() => {
+    if (dock.open && activeKey) setVisited(previous => previous.has(activeKey) ? previous : new Set([...previous, activeKey]));
+  }, [dock.open, activeKey]);
+
+  // Prepared MiniApp drafts also work before the first visit to that tab.
+  useEffect(() => {
+    const mayReveal = (appId: string) => {
+      const state = useConversationDockStore.getState();
+      const selected = state.entries.find(entry => dockConversationKey(entry) === state.activeBySurface[surfaceId]);
+      const isSelected = selected?.kind === 'miniapp' && selected.appId === appId;
+      if (live && !isSelected) return false;
+      if (!isSelected && panelRef.current?.querySelector('[contenteditable="true"]:focus, textarea:focus, input:focus')) return false;
+      return state.open && isSelected || useSceneStore.getState().activeTabId === getMiniAppSceneId(appId);
+    };
+    const focus = (event: Event) => {
+      const detail = (event as CustomEvent<MiniAppFocusEventDetail>).detail;
+      if (!detail) return;
+      const entry = resolveMiniAppConversation(detail.appId, detail.surfaceId);
+      if (entry?.claimToken === detail.token && entry.sessionId === detail.sessionId && mayReveal(detail.appId)) {
+        openMiniAppConversation(detail.appId, detail.surfaceId);
+      }
+    };
+    const listener = (event: Event) => {
+      const detail = (event as CustomEvent<MiniAppDraftEventDetail>).detail;
+      const claim = Object.entries(useMiniAppStore.getState().composerClaims).find(([, value]) => value.token === detail?.token);
+      if (!claim?.[1].sessionId || detail.sessionId && detail.sessionId !== claim[1].sessionId) return;
+      const [appId, value] = claim;
+      const entry = resolveMiniAppConversation(appId, surfaceId);
+      if (!entry || entry.claimToken !== value.token) return;
+      const state = useConversationDockStore.getState();
+      state.setDraft(dockConversationKey(entry), detail.text);
+      if (mayReveal(appId)) openMiniAppConversation(appId, surfaceId);
+    };
+    window.addEventListener(MINIAPP_COMPOSER_DRAFT_EVENT, listener);
+    window.addEventListener(MINIAPP_COMPOSER_FOCUS_EVENT, focus);
+    return () => {
+      window.removeEventListener(MINIAPP_COMPOSER_DRAFT_EVENT, listener);
+      window.removeEventListener(MINIAPP_COMPOSER_FOCUS_EVENT, focus);
+    };
+  }, [surfaceId, live]);
+  const collapse = () => dock.setOpen(false);
+  const label = (entry: DockConversation) => entry.kind === 'control' ? 'OpenBitFun' : entry.kind === 'miniapp'
+    ? claims[entry.appId!]?.customization?.title || (() => { const app = apps.find(a => a.id === entry.appId); return app ? pickLocalizedString(app, i18n.language, 'name') : entry.appId; })() || entry.appId!
+    : resolveDisplayTitle(flow.sessions.get(entry.sessionId));
+  const acceptDrop = (event: React.DragEvent) => {
+    if (!isConversationTransfer(event.dataTransfer)) return;
+    event.preventDefault(); event.stopPropagation(); setDrop(false);
+    void dropConversationInDock(event.dataTransfer);
+  };
+  const renderHeader = (modeSwitch: ReactNode) => <>
+      <div className={['openbitfun-fmc__header', active?.kind === 'control' && entries.length === 1 && 'openbitfun-fmc__header--identity'].filter(Boolean).join(' ')} data-openbitfun-component="floating-mini-chat" data-openbitfun-part="header">
+        <div className="openbitfun-fmc__mode-switch">{modeSwitch}</div>
+        {entries.length > 1 ? <TabGroup className="openbitfun-fmc__tabs" size="sm" value={activeKey} onValueChange={dock.select}
+          aria-label={t('dock.tabs')} items={entries.map(entry => ({ value: dockConversationKey(entry), label: label(entry),
+            endAction: entry.kind !== 'control' && !(live && dockConversationKey(entry) === callKey) ? <button type="button" aria-label={t(entry.kind === 'miniapp' ? 'dock.hideConversation' : 'session.close')} title={t(entry.kind === 'miniapp' ? 'dock.hideConversation' : 'session.close')} tabIndex={-1}
+              onClick={event => { event.stopPropagation(); dock.hide(dockConversationKey(entry)); }}><X size={12} /></button> : undefined,
+          }))} renderItem={(item, node) => {
+            const entry = entries.find(value => dockConversationKey(value) === item.value)!;
+            return <div draggable={entry.kind !== 'control'} onDragStart={event => {
+              dragging.current = item.value;
+              if (entry.kind === 'session') beginConversationTransfer(event.dataTransfer, entry);
+              else event.dataTransfer.setData('application/x-openbitfun-dock-tab', item.value);
+            }} onDragEnd={() => { dragging.current = undefined; endConversationTransfer(); }}
+              onDragOver={event => { if (dragging.current) event.preventDefault(); }}
+              onDrop={event => { if (!dragging.current) return; event.preventDefault(); event.stopPropagation(); dock.reorder(dragging.current, item.value); }}
+            >{node}</div>;
+          }} /> : <OverflowText className="openbitfun-fmc__title-wrapper">{active ? label(active) : 'OpenBitFun'}</OverflowText>}
+        {active?.kind === 'session' && <IconButton size="sm" icon={<ArrowUpRight size={15} />} aria-label={t('dock.moveToMain')}
+          onClick={() => returnConversationToWorkbench(active)} />}
+        {active?.kind === 'miniapp' && <IconButton size="sm" icon={<ArrowUpRight size={15} />} aria-label={t('dock.openApp')} title={t('dock.openApp')}
+          onClick={() => openMiniAppFromConversation(active)} />}
+        <IconButton size="sm" icon={<Minus size={15} />} aria-label={t('dock.collapse')} onClick={collapse} />
+      </div>
+      {live && !(active?.kind === 'control' && activeKey === callKey) && <div className="openbitfun-fmc__call-status" data-openbitfun-component="floating-mini-chat" data-openbitfun-part="callStatus">
+        <button type="button" onClick={() => {
+          const target = voice.target;
+          if (!target) return;
+          dock.add({ ...target, surfaceId: target.surfaceId ?? surfaceId,
+            workspaceKey: target.kind !== 'miniapp' && target.workspaceId ? sessionSceneWorkspaceKey(target.workspaceId) : '' });
+        }}>
+          <Phone size={13} /><OverflowText>{tv('voiceCall.call.title')}</OverflowText>
         </button>
-      ) : (
-        <LauncherButton
-          aria-expanded={isOpen}
-          aria-label={t('toolCards.toolbar.startNewChat')}
-          className="openbitfun-fmc__button openbitfun-fmc__button--hello"
-          onClick={handleOpen}
-          onPointerDown={handleTriggerPointerDown}
-        >
-          <span
-            aria-hidden="true"
-            className="openbitfun-fmc__button-label openbitfun-fmc__button-label--compact"
-          >
-            {tVoice('voiceCall.call.launcherCompactLabel')}
-          </span>
-          <span
-            aria-hidden="true"
-            className="openbitfun-fmc__button-label openbitfun-fmc__button-label--expanded"
-          >
-            {tVoice('voiceCall.call.launcherLabel')}
-          </span>
-        </LauncherButton>
-      )}
-
-      {/* Expanded panel */}
-      <div
-        ref={panelRef}
-        className={panelClassName}
-        onKeyDown={handlePanelKeyDown}
-        onTransitionEnd={handlePanelTransitionEnd}
-        data-openbitfun-component="floating-mini-chat"
-        data-openbitfun-part="panel"
-      >
-        {/* Header — normal chat keeps the shared SessionMenu. An isolated
-            Agentic MiniApp replaces that switcher with app identity, including
-            during claim/session bootstrap, so normal chats are never exposed. */}
-        {!isVoiceMode && <div className="openbitfun-fmc__header" data-openbitfun-component="floating-mini-chat" data-openbitfun-part="header">
-          {isMiniAppBubbleIsolated ? (
-            <div
-              className="openbitfun-fmc__miniapp-session-icon"
-              data-openbitfun-component="floating-mini-chat"
-              data-openbitfun-part="sessionIcon"
-              aria-hidden="true"
-            >
-              {renderMiniAppIcon(activeMiniAppIcon, 14)}
-            </div>
-          ) : (
-            <SessionMenu />
-          )}
-
-          <div className="openbitfun-fmc__title-wrapper" data-openbitfun-component="floating-mini-chat" data-openbitfun-part="title">
-            <div className="openbitfun-fmc__title-display" title={popupTitle}>
-              <OverflowText className="openbitfun-fmc__title-text">{popupTitle}</OverflowText>
-            </div>
-          </div>
-
-          {/* Tool confirmation and stop controls come from the reused session
-              surface (permission panel above ChatInput, ChatInput stop button),
-              so the header only owns bubble chrome. */}
-          <Tooltip content={t('session.close')}>
-            <IconButton
-              data-openbitfun-component="floating-mini-chat"
-              data-openbitfun-part="headerAction"
-              className="openbitfun-fmc__close"
-              icon={<Icon name="xmark" size="lg" />}
-              onClick={handleClose}
-              size="sm"
-              aria-label={t('session.close')}
-            />
-          </Tooltip>
+        <IconButton size="sm" icon={<PhoneOff size={14} />} aria-label={tv('voiceCall.call.hangUp')} onClick={voice.end} />
+      </div>}
+  </>;
+  return <div className={['openbitfun-fmc', dock.open && 'openbitfun-fmc--open'].filter(Boolean).join(' ')}
+    data-openbitfun-component="floating-mini-chat" data-openbitfun-part="root" data-openbitfun-mode="chat"
+    data-openbitfun-state={dock.open ? 'open' : undefined}
+    data-openbitfun-communication-mode={immersiveVoice ? 'voice' : 'chat'}
+    onDragOver={event => { if (isConversationTransfer(event.dataTransfer)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDrop(true); dock.setOpen(true); } }}
+    onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDrop(false); }} onDrop={acceptDrop}>
+    <LauncherButton className="openbitfun-fmc__button" aria-expanded={dock.open} aria-label={t('dock.open')}
+      onClick={() => dock.setOpen(true)} onPointerDown={event => { if (event.button === 0) dock.setOpen(true); }}>
+      {live ? <Phone size={16} /> : tv('voiceCall.call.launcherCompactLabel')}
+    </LauncherButton>
+    <div ref={panelRef} role="dialog" aria-modal="false" aria-label={t('dock.open')} aria-hidden={!dock.open} data-motion="presence"
+      {...(!dock.open ? { inert: '' } : {})}
+      className={['openbitfun-fmc__panel', dock.open && 'openbitfun-fmc__panel--open', drop && 'openbitfun-fmc__panel--drop'].filter(Boolean).join(' ')}
+      data-openbitfun-component="floating-mini-chat" data-openbitfun-part="panel">
+      <div className="openbitfun-fmc__body" data-openbitfun-component="floating-mini-chat" data-openbitfun-part="body">
+        {(!active || active.kind === 'control' && !flow.sessions.has(active.sessionId)) && renderHeader(null)}
+        {entries.filter(entry => (visited.has(dockConversationKey(entry)) || dockConversationKey(entry) === activeKey) && (entry.kind !== 'control' || flow.sessions.has(entry.sessionId))).map(entry => <div
+          key={dockConversationKey(entry)} hidden={dockConversationKey(entry) !== activeKey}
+          className="openbitfun-fmc__view">
+          <DockConversationView entry={entry} active={dock.open && dockConversationKey(entry) === activeKey} onCollapse={collapse} renderHeader={renderHeader} onVoiceViewChange={onVoiceViewChange} />
+        </div>)}
+        {(!active || active.kind === 'control' && !flow.sessions.has(active.sessionId)) && <div className="openbitfun-fmc__miniapp-session-pending" role="status" data-openbitfun-component="floating-mini-chat" data-openbitfun-part="pending">
+          {error ? <><span>{t('dock.loadFailed')}</span><span>{error}</span><Button onClick={() => setRetry(value => value + 1)}>{t('dock.retry')}</Button></> : t('dock.loading')}
         </div>}
-
-        {/* Main window session surface, reused as-is. Only mounted while the
-            panel is open to avoid running a second VirtualMessageList and store
-            sync in the background while the agent streams in another scene. */}
-        <div
-          className="openbitfun-fmc__body"
-          data-openbitfun-component="floating-mini-chat"
-          data-openbitfun-part="body"
-        >
-          <ConversationModeSurface
-            onCloseVoice={handleClose}
-            voiceTarget={miniAppVoiceTarget}
-            voiceStartDisabled={isMiniAppBubbleIsolated && !miniAppVoiceTarget}
-            switchTestId="hello-realtime-voice-mode-switch"
-          >
-            {surfaceMounted && isMiniAppSessionReady && (
-              <ChatPane
-                width={0}
-                isFullscreen={false}
-                isSceneActive
-                workspacePath={
-                  isMiniAppBubbleIsolated
-                    ? displayedSession?.workspacePath
-                    : workspacePath
-                }
-                showChatInput
-                chatInputRegistration={chatInputRegistration}
-                emptyState={activeComposerClaim ? (
-                  <MiniAppBubbleWelcome
-                    appName={activeMiniAppName}
-                    appDescription={activeMiniAppDescription}
-                    appIcon={activeMiniAppIcon}
-                    customization={bubbleCustomization}
-                    workspacePath={displayedSession?.workspacePath}
-                    onSuggestion={handleMiniAppSuggestion}
-                  />
-                ) : undefined}
-              />
-            )}
-            {surfaceMounted && isMiniAppBubbleIsolated && !isMiniAppSessionReady && (
-              <div className="openbitfun-fmc__miniapp-session-pending" data-openbitfun-component="floating-mini-chat" data-openbitfun-part="pending">
-                <div
-                  className="openbitfun-fmc__miniapp-session-pending-icon"
-                  data-openbitfun-component="floating-mini-chat"
-                  data-openbitfun-part="pendingIcon"
-                  aria-hidden="true"
-                >
-                  {renderMiniAppIcon(activeMiniAppIcon, 22)}
-                </div>
-                <span>
-                  {t('miniAppComposer.hint', { app: activeMiniAppName })}
-                </span>
-              </div>
-            )}
-          </ConversationModeSurface>
-        </div>
       </div>
     </div>
-  );
-};
-
+  </div>;
+}
 export default FloatingMiniChat;

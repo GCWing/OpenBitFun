@@ -28,6 +28,13 @@ export struct ConversationHeader {
   @Param showActions: boolean = false;
   @Param showSidebarButton: boolean = true;
   @Param showBackButton: boolean = false;
+  /**
+   * Set when something behind the header is meant to show through — a
+   * conversation whose transcript scrolls underneath it. The caller owns the
+   * fill and the blur in that case; painting an opaque page colour here would
+   * cover both.
+   */
+  @Param translucent: boolean = false;
   @Param showSidebarRestoreButton: boolean = false;
   @Param showActionsMenu: boolean = false;
   @BuilderParam actionsMenu: () => void = this.EmptyBuilder;
@@ -48,7 +55,7 @@ export struct ConversationHeader {
       }
     }
     .width('100%')
-    .backgroundColor(PAGE_BG)
+    .backgroundColor(this.translucent ? TRANSPARENT : PAGE_BG)
   }
 
   @Builder
@@ -67,7 +74,7 @@ export struct ConversationHeader {
       top: 8,
       bottom: 8
     })
-    .backgroundColor(PAGE_BG)
+    .backgroundColor(this.translucent ? TRANSPARENT : PAGE_BG)
   }
 
   @Builder

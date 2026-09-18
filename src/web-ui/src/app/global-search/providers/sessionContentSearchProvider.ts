@@ -47,6 +47,7 @@ export const sessionContentSearchProvider: GlobalSearchProvider = {
     const results = await Promise.allSettled(request.workspaces.map(async (workspace) => ({
       workspace,
       response: await sessionAPI.searchSessionContent({
+        workspaceId: workspace.id,
         workspacePath: workspace.rootPath,
         remoteConnectionId: workspace.connectionId,
         remoteSshHost: workspace.sshHost,

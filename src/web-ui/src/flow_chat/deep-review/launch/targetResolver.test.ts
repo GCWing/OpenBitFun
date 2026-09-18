@@ -24,6 +24,9 @@ vi.mock('@/infrastructure/api', () => ({
     resolveRevision: (...args: any[]) => mockGitResolveRevision(...args),
   },
   workspaceAPI: {
+    // Untracked file IO is routed by the owning workspace ID.
+    readWorkspaceFile: (...args: any[]) => mockWorkspaceReadFile(...args),
+    getWorkspaceFileMetadata: (...args: any[]) => mockWorkspaceGetFileMetadata(...args),
     readFileContent: (...args: any[]) => mockWorkspaceReadFile(...args),
     getFileMetadata: (...args: any[]) => mockWorkspaceGetFileMetadata(...args),
   },
@@ -90,14 +93,14 @@ describe('Deep Review target resolver', () => {
 
     const result = await resolveSlashCommandReviewTarget(
       'src/web-ui/src/App.tsx src/crates/assembly/core/src/lib.rs for regressions',
-      'D:\\workspace\\repo',
+      { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(mockGitGetStatus).toHaveBeenCalledWith(
-      'D:\\workspace\\repo',
+      { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' },
       'review_explicit_scope_snapshot',
     );
-    expect(mockGitGetChangedFiles).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetChangedFiles).toHaveBeenCalledWith({ workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' }, {
       source: 'HEAD',
       reviewSafe: true,
     });
@@ -131,7 +134,7 @@ describe('Deep Review target resolver', () => {
 
     const result = await resolveSlashCommandReviewTarget(
       '/storage/Users/currentUser/files/git_code/OpenBitFun/tests/existing.ts',
-      '/storage/Users/currentUser/files/git_code/OpenBitFun',
+      { workspaceId: 'review-workspace', repositoryPath: '/storage/Users/currentUser/files/git_code/OpenBitFun' },
     );
 
     expect(result.target.files.map((file) => file.normalizedPath)).toEqual([
@@ -152,7 +155,7 @@ describe('Deep Review target resolver', () => {
     mockSystemCheckPathExists.mockResolvedValue(false);
     mockGitGetChangedFiles.mockResolvedValue([change]);
     mockGitGetDiff.mockResolvedValue('-old line\n');
-    const result = await resolveSlashCommandReviewTarget('src/old.ts', '/workspace');
+    const result = await resolveSlashCommandReviewTarget('src/old.ts', { workspaceId: 'review-workspace', repositoryPath: '/workspace' });
     expect(mockSystemCheckPathExists).not.toHaveBeenCalled();
     expect(result.targetEvidence.limitations).not.toContain('explicit_target_path_not_found');
     expect(result.targetEvidence.files).toEqual([
@@ -165,7 +168,7 @@ describe('Deep Review target resolver', () => {
 
     const result = await resolveSlashCommandReviewTarget(
       '/storage/Users/currentUser/files/git_code/OpenBitFun/tests/missing.ts',
-      '/storage/Users/currentUser/files/git_code/OpenBitFun',
+      { workspaceId: 'review-workspace', repositoryPath: '/storage/Users/currentUser/files/git_code/OpenBitFun' },
     );
 
     expect(mockSystemCheckPathExists).toHaveBeenCalledWith(
@@ -183,7 +186,7 @@ describe('Deep Review target resolver', () => {
   it('keeps the existing unchanged-path limitation distinct from a missing path', async () => {
     const result = await resolveSlashCommandReviewTarget(
       '/storage/Users/currentUser/files/git_code/OpenBitFun/tests/unchanged.ts',
-      '/storage/Users/currentUser/files/git_code/OpenBitFun',
+      { workspaceId: 'review-workspace', repositoryPath: '/storage/Users/currentUser/files/git_code/OpenBitFun' },
     );
 
     expect(mockSystemCheckPathExists).toHaveBeenCalledWith(
@@ -216,13 +219,13 @@ describe('Deep Review target resolver', () => {
 
     const result = await resolveSlashCommandReviewTarget(
       './src/',
-      'D:\\workspace\\repo',
+      { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(result.target.files.map((file) => file.normalizedPath)).toEqual([
       'src/inside.ts',
     ]);
-    expect(mockGitGetDiff).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetDiff).toHaveBeenCalledWith({ workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' }, {
       source: 'HEAD',
       files: ['src/inside.ts'],
       reviewSafe: true,
@@ -246,7 +249,7 @@ describe('Deep Review target resolver', () => {
 
     const result = await resolveSlashCommandReviewTarget(
       'src/web-ui',
-      'D:\\workspace\\repo',
+      { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(result.target.files.map((file) => file.normalizedPath)).toEqual([
@@ -257,7 +260,7 @@ describe('Deep Review target resolver', () => {
   it('rejects explicit parent traversal before Git inspection', async () => {
     const result = await resolveSlashCommandReviewTarget(
       '../outside.ts',
-      'D:\\workspace\\repo',
+      { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' },
     );
 
     expect(mockGitGetStatus).not.toHaveBeenCalled();
@@ -273,7 +276,7 @@ describe('Deep Review target resolver', () => {
     for (const focus of ['UNKNOWN_BUILD_FILE', 'config.custom', '"custombuild"']) {
       const result = await resolveSlashCommandReviewTarget(
         focus,
-        'D:\\workspace\\repo',
+        { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' },
       );
 
       expect(result.targetEvidence).toMatchObject({
@@ -300,15 +303,15 @@ describe('Deep Review target resolver', () => {
 
     const result = await resolveSlashCommandReviewTarget(
       'review commit abc123',
-      'D:\\workspace\\repo',
+      { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' },
     );
 
-    expect(mockGitGetChangedFiles).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetChangedFiles).toHaveBeenCalledWith({ workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' }, {
       source: '1111111111111111111111111111111111111111',
       target: '2222222222222222222222222222222222222222',
       reviewSafe: true,
     });
-    expect(mockGitGetDiff).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetDiff).toHaveBeenCalledWith({ workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' }, {
       source: '1111111111111111111111111111111111111111',
       target: '2222222222222222222222222222222222222222',
       reviewSafe: true,
@@ -334,7 +337,7 @@ describe('Deep Review target resolver', () => {
   it('rejects unsupported remote Git ranges before running an expensive remote diff', async () => {
     const result = await resolveSlashCommandReviewTarget(
       'main..feature',
-      '/remote/workspace',
+      { workspaceId: 'review-workspace', repositoryPath: '/remote/workspace' },
       'remote-1',
     );
 
@@ -360,9 +363,9 @@ describe('Deep Review target resolver', () => {
       behind: 0,
     });
 
-    const result = await resolveSlashCommandReviewTarget('', 'D:\\workspace\\repo');
+    const result = await resolveSlashCommandReviewTarget('', { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' });
 
-    expect(mockGitGetStatus).toHaveBeenCalledWith('D:\\workspace\\repo', 'deep_review_target_resolver');
+    expect(mockGitGetStatus).toHaveBeenCalledWith({ workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' }, 'deep_review_target_resolver');
     expect(result.target.source).toBe('workspace_diff');
     expect(result.changeStats).toEqual({
       fileCount: 2,
@@ -377,7 +380,7 @@ describe('Deep Review target resolver', () => {
   it('rejects remote workspace Review before unbounded remote Git inspection', async () => {
     const result = await resolveSlashCommandReviewTarget(
       '',
-      '/remote/workspace',
+      { workspaceId: 'review-workspace', repositoryPath: '/remote/workspace' },
       'remote-1',
     );
 
@@ -398,7 +401,7 @@ describe('Deep Review target resolver', () => {
     });
     const result = await resolveSlashCommandReviewTarget(
       '/remote/workspace/src/existing.ts',
-      '/remote/workspace',
+      { workspaceId: 'review-workspace', repositoryPath: '/remote/workspace' },
       'remote-1',
     );
 
@@ -440,13 +443,13 @@ describe('Deep Review target resolver', () => {
       '+new',
     ].join('\n'));
 
-    const result = await resolveSlashCommandReviewTarget('', 'D:\\workspace\\repo');
+    const result = await resolveSlashCommandReviewTarget('', { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' });
 
-    expect(mockGitGetChangedFiles).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetChangedFiles).toHaveBeenCalledWith({ workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' }, {
       source: 'HEAD',
       reviewSafe: true,
     });
-    expect(mockGitGetDiff).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetDiff).toHaveBeenCalledWith({ workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' }, {
       source: 'HEAD',
       files: ['src/old-name.ts', 'src/new-name.ts'],
       reviewSafe: true,
@@ -493,11 +496,12 @@ describe('Deep Review target resolver', () => {
     };
 
     const stats = await resolveCurrentFileReviewChangeStats(
-      'D:/workspace/project',
+      { workspaceId: 'review-workspace', repositoryPath: 'D:/workspace/project' },
       target,
     );
 
     expect(mockWorkspaceReadFile).toHaveBeenCalledWith(
+      'review-workspace',
       'D:/workspace/project/src/new.ts',
     );
     expect(stats).toEqual({
@@ -527,13 +531,13 @@ describe('Deep Review target resolver', () => {
     );
 
     const snapshot = await resolveCurrentFileReviewSnapshot(
-      'D:\\workspace\\repo',
+      { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' },
       target,
     );
 
     expect(snapshot.target.files[0].normalizedPath).toBe('src/session.ts');
     expect(snapshot.targetEvidence.files[0].path).toBe('src/session.ts');
-    expect(mockGitGetDiff).toHaveBeenCalledWith('D:\\workspace\\repo', {
+    expect(mockGitGetDiff).toHaveBeenCalledWith({ workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' }, {
       source: 'HEAD',
       files: ['src/session.ts'],
       reviewSafe: true,
@@ -547,7 +551,7 @@ describe('Deep Review target resolver', () => {
     );
 
     const snapshot = await resolveCurrentFileReviewSnapshot(
-      'D:\\workspace\\repo',
+      { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' },
       target,
     );
 
@@ -574,7 +578,7 @@ describe('Deep Review target resolver', () => {
     });
     const target = classifyReviewTargetFromFiles(['leak.txt'], 'workspace_diff');
 
-    const snapshot = await resolveCurrentFileReviewSnapshot('/workspace', target);
+    const snapshot = await resolveCurrentFileReviewSnapshot({ workspaceId: 'review-workspace', repositoryPath: '/workspace' }, target);
 
     expect(mockWorkspaceReadFile).not.toHaveBeenCalled();
     expect(snapshot.targetEvidence.completeness).toBe('partial');
@@ -599,7 +603,7 @@ describe('Deep Review target resolver', () => {
     mockWorkspaceReadFile.mockResolvedValue('content\n');
     const target = classifyReviewTargetFromFiles(paths, 'workspace_diff');
 
-    const snapshot = await resolveCurrentFileReviewSnapshot('/workspace', target);
+    const snapshot = await resolveCurrentFileReviewSnapshot({ workspaceId: 'review-workspace', repositoryPath: '/workspace' }, target);
 
     expect(mockWorkspaceGetFileMetadata).toHaveBeenCalledTimes(32);
     expect(mockWorkspaceReadFile).toHaveBeenCalledTimes(32);
@@ -622,7 +626,7 @@ describe('Deep Review target resolver', () => {
       'session_files',
     );
 
-    const snapshot = await resolveCurrentFileReviewSnapshot('/workspace', target);
+    const snapshot = await resolveCurrentFileReviewSnapshot({ workspaceId: 'review-workspace', repositoryPath: '/workspace' }, target);
 
     expect(mockWorkspaceGetFileMetadata).not.toHaveBeenCalled();
     expect(mockWorkspaceReadFile).not.toHaveBeenCalled();
@@ -652,17 +656,18 @@ describe('Deep Review target resolver', () => {
     mockWorkspaceReadFile.mockResolvedValueOnce('content\n');
     const target = classifyReviewTargetFromFiles([literalPath], 'workspace_diff');
 
-    const snapshot = await resolveCurrentFileReviewSnapshot('/workspace', target);
+    const snapshot = await resolveCurrentFileReviewSnapshot({ workspaceId: 'review-workspace', repositoryPath: '/workspace' }, target);
 
-    expect(mockGitGetDiff).toHaveBeenCalledWith('/workspace', {
+    expect(mockGitGetDiff).toHaveBeenCalledWith({ workspaceId: 'review-workspace', repositoryPath: '/workspace' }, {
       source: 'HEAD',
       files: [literalPath],
       reviewSafe: true,
     });
     expect(mockWorkspaceGetFileMetadata).toHaveBeenCalledWith(
+      'review-workspace',
       `/workspace/${literalPath}`,
     );
-    expect(mockWorkspaceReadFile).toHaveBeenCalledWith(`/workspace/${literalPath}`);
+    expect(mockWorkspaceReadFile).toHaveBeenCalledWith('review-workspace', `/workspace/${literalPath}`);
     expect(snapshot.targetEvidence.files[0].path).toBe(literalPath);
   });
 
@@ -679,10 +684,10 @@ describe('Deep Review target resolver', () => {
 
     const result = await resolveSlashCommandReviewTarget(
       'focus on authentication and authorization risks',
-      'D:\\workspace\\repo',
+      { workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' },
     );
 
-    expect(mockGitGetStatus).toHaveBeenCalledWith('D:\\workspace\\repo', 'deep_review_target_resolver');
+    expect(mockGitGetStatus).toHaveBeenCalledWith({ workspaceId: 'review-workspace', repositoryPath: 'D:\\workspace\\repo' }, 'deep_review_target_resolver');
     expect(result.target.source).toBe('workspace_diff');
     expect(result.target.resolution).toBe('resolved');
     expect(result.target.files.map((file) => file.normalizedPath)).toContain(
@@ -698,12 +703,12 @@ describe('Deep Review target resolver', () => {
     mockGitGetStatus.mockRejectedValue(untrusted);
 
     await expect(
-      resolveSlashCommandReviewTarget('review the workspace', '/workspace'),
+      resolveSlashCommandReviewTarget('review the workspace', { workspaceId: 'review-workspace', repositoryPath: '/workspace' }),
     ).rejects.toBe(untrusted);
 
     const target = classifyReviewTargetFromFiles(['src/lib.rs'], 'session_files');
     await expect(
-      resolveCurrentFileReviewSnapshot('/workspace', target),
+      resolveCurrentFileReviewSnapshot({ workspaceId: 'review-workspace', repositoryPath: '/workspace' }, target),
     ).rejects.toBe(untrusted);
   });
 
@@ -711,7 +716,7 @@ describe('Deep Review target resolver', () => {
     mockGitGetStatus.mockRejectedValue(new Error('Failed to get Git status: Permission denied'));
 
     const target = classifyReviewTargetFromFiles(['src/lib.rs'], 'session_files');
-    const snapshot = await resolveCurrentFileReviewSnapshot('/workspace', target);
+    const snapshot = await resolveCurrentFileReviewSnapshot({ workspaceId: 'review-workspace', repositoryPath: '/workspace' }, target);
 
     expect(snapshot.targetEvidence.limitations).toContain('file_scope_target_evidence_failed');
   });
@@ -724,11 +729,11 @@ describe('Deep Review target resolver', () => {
     mockGitGetStatus.mockRejectedValue(missingRepository);
 
     const target = classifyReviewTargetFromFiles(['src/lib.rs'], 'session_files');
-    await expect(resolveCurrentFileReviewSnapshot('/workspace', target))
+    await expect(resolveCurrentFileReviewSnapshot({ workspaceId: 'review-workspace', repositoryPath: '/workspace' }, target))
       .rejects.toBe(missingRepository);
-    await expect(resolveSlashCommandReviewTarget('', '/workspace'))
+    await expect(resolveSlashCommandReviewTarget('', { workspaceId: 'review-workspace', repositoryPath: '/workspace' }))
       .rejects.toBe(missingRepository);
-    await expect(resolveSlashCommandReviewTarget('src/lib.rs', '/workspace'))
+    await expect(resolveSlashCommandReviewTarget('src/lib.rs', { workspaceId: 'review-workspace', repositoryPath: '/workspace' }))
       .rejects.toBe(missingRepository);
   });
 });

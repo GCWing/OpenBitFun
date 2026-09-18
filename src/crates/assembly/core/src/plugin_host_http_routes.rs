@@ -474,14 +474,14 @@ fn app_log(context: &PluginHostInstance, body: &[u8]) -> RouteResult {
 async fn agent_list(context: &PluginHostInstance) -> RouteResult {
     let registry = crate::agentic::agents::get_agent_registry();
     let mut entries = registry
-        .get_modes_info_for_workspace(Some(&context.directory), true)
+        .get_modes_info_for_workspace(Some(&context.workspace_id), true)
         .await
         .into_iter()
         .map(|agent| (agent, "primary"))
         .collect::<Vec<_>>();
     entries.extend(
         registry
-            .get_subagents_info(Some(&context.directory))
+            .get_subagents_info(Some(&context.workspace_id))
             .await
             .into_iter()
             .filter(|agent| agent.effective_enabled)
@@ -511,7 +511,7 @@ async fn agent_list(context: &PluginHostInstance) -> RouteResult {
 
 async fn command_list(context: &PluginHostInstance) -> RouteResult {
     let snapshot =
-        crate::external_sources::external_source_snapshot(Some(&context.directory), false)
+        crate::external_sources::external_source_snapshot(Some(&context.workspace_id), false)
             .await
             .map_err(Failure::backend)?;
     Ok(Value::Array(
@@ -558,6 +558,7 @@ mod tests {
     fn instance(directory: PathBuf, instance_id: &str, project_id: &str) -> PluginHostInstance {
         let directory = dunce::canonicalize(directory).expect("canonical temporary workspace");
         PluginHostInstance {
+            workspace_id: project_id.to_owned(),
             canonical_directory: directory.to_string_lossy().into_owned(),
             directory: directory.clone(),
             worktree: directory,
@@ -826,6 +827,7 @@ mod tests {
     fn pty_running_states_are_projected_as_running() {
         for status in ["Starting", "Active", "Orphaned", "Restoring", "Terminating"] {
             let value = pty_value(&SessionResponse {
+                workspace_id: Some("workspace-pty".into()),
                 id: "pty-a".to_string(),
                 name: "PTY A".to_string(),
                 shell_type: ShellType::Bash,

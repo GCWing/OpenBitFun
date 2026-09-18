@@ -10,7 +10,7 @@ use crate::PortResult;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalWorkspaceSnapshotSessionRequest {
-    pub workspace_path: PathBuf,
+    pub workspace_id: String,
     pub session_id: String,
     /// Exclusive visible turn end supplied by the session lifecycle owner.
     /// `None` exposes the complete snapshot history.
@@ -19,7 +19,7 @@ pub struct LocalWorkspaceSnapshotSessionRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalWorkspaceSnapshotTurnRequest {
-    pub workspace_path: PathBuf,
+    pub workspace_id: String,
     pub session_id: String,
     pub turn_index: usize,
 }
@@ -35,7 +35,7 @@ pub struct LocalWorkspaceSnapshotStats {
 #[async_trait::async_trait]
 pub trait LocalWorkspaceSnapshotPort: Send + Sync {
     /// Prepares the existing local snapshot owner for a workspace.
-    async fn prepare_local_workspace(&self, workspace_path: PathBuf) -> PortResult<()>;
+    async fn prepare_local_workspace(&self, workspace_id: String) -> PortResult<()>;
 
     async fn get_session_files(
         &self,
@@ -61,17 +61,16 @@ mod tests {
         LocalWorkspaceSnapshotSessionRequest, LocalWorkspaceSnapshotStats,
         LocalWorkspaceSnapshotTurnRequest,
     };
-    use std::path::PathBuf;
 
     #[test]
     fn local_snapshot_contracts_keep_workspace_and_session_identity_explicit() {
         let session = LocalWorkspaceSnapshotSessionRequest {
-            workspace_path: PathBuf::from("workspace"),
+            workspace_id: String::from("workspace"),
             session_id: "session-1".to_string(),
             max_turn_exclusive: Some(5),
         };
         let turn = LocalWorkspaceSnapshotTurnRequest {
-            workspace_path: session.workspace_path.clone(),
+            workspace_id: session.workspace_id.clone(),
             session_id: session.session_id.clone(),
             turn_index: 4,
         };
@@ -82,7 +81,7 @@ mod tests {
             total_changes: 7,
         };
 
-        assert_eq!(turn.workspace_path, session.workspace_path);
+        assert_eq!(turn.workspace_id, session.workspace_id);
         assert_eq!(turn.session_id, session.session_id);
         assert_eq!(turn.turn_index, 4);
         assert_eq!(stats.total_changes, 7);

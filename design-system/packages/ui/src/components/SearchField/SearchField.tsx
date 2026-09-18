@@ -88,7 +88,7 @@ export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(functi
         className={classNames(styles.field, hasTrailingAction && styles.fieldWithAction)}
         disabled={disabled}
         leading={leadingIcon === undefined ? undefined : (
-          <span aria-hidden="true" className={styles.icon} data-openbitfun-part="icon">{leadingIcon}</span>
+          <span aria-hidden="true" className={styles.icon} data-openbitfun-icon-slot="true" data-openbitfun-part="icon">{leadingIcon}</span>
         )}
         onKeyDown={handleKeyDown}
         ref={ref}

@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   getDirectoryChildren: vi.fn(),
   t: (key: string) => key,
 }));
+/** The peer host browses its own filesystem: an explicit empty connection means host-local IO. */
+const HOST_LOCAL_CONNECTION = '';
 vi.mock('@/infrastructure/api/service-api/SystemAPI', () => ({ systemAPI: mocks }));
 vi.mock('@/infrastructure/api', () => ({ workspaceAPI: mocks }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: mocks.t }) }));
@@ -64,7 +66,7 @@ describe('PeerDirectoryBrowser', () => {
   ])('starts at the %s peer home without guessing a root', async (platform, homeDir) => {
     mocks.getSystemInfo.mockResolvedValue({ platform, homeDir });
     await render();
-    expect(mocks.getDirectoryChildren).toHaveBeenCalledExactlyOnceWith(homeDir);
+    expect(mocks.getDirectoryChildren).toHaveBeenCalledExactlyOnceWith(homeDir, HOST_LOCAL_CONNECTION);
     expect(input().value).toBe(homeDir);
     await act(async () => select().click());
     expect(onSelect).toHaveBeenCalledWith(homeDir);
@@ -90,7 +92,10 @@ describe('PeerDirectoryBrowser', () => {
     await act(async () => original.blur());
     expect(input()).toBe(original);
     expect(input().parentElement).toBe(field);
-    expect(mocks.getDirectoryChildren.mock.calls).toEqual([['/home/peer'], ['/projects/new']]);
+    expect(mocks.getDirectoryChildren.mock.calls).toEqual([
+      ['/home/peer', HOST_LOCAL_CONNECTION],
+      ['/projects/new', HOST_LOCAL_CONNECTION],
+    ]);
     expect(select().disabled).toBe(false);
   });
 
@@ -144,6 +149,6 @@ describe('PeerDirectoryBrowser', () => {
     await key('Enter');
     await act(async () => resolveHome({ homeDir: '/home/late' }));
     expect(input().value).toBe('/manual');
-    expect(mocks.getDirectoryChildren).toHaveBeenCalledExactlyOnceWith('/manual');
+    expect(mocks.getDirectoryChildren).toHaveBeenCalledExactlyOnceWith('/manual', HOST_LOCAL_CONNECTION);
   });
 });

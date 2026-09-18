@@ -304,8 +304,8 @@ export const useFlowChat = () => {
     modifiedFiles: string[]
   ) => {
     try {
-      const workspacePath = state.sessions.get(sessionId)?.workspacePath;
-      await snapshotAPI.recordTurnSnapshot(sessionId, turnIndex, modifiedFiles, workspacePath);
+      const workspaceId = state.sessions.get(sessionId)?.workspaceId;
+      await snapshotAPI.recordTurnSnapshot(sessionId, turnIndex, modifiedFiles, workspaceId);
       log.debug('Turn snapshot recorded', { sessionId, turnIndex, fileCount: modifiedFiles.length });
     } catch (error) {
       log.error('Failed to record turn snapshot', { sessionId, turnIndex, error });

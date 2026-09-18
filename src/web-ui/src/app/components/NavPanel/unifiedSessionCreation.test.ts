@@ -7,7 +7,7 @@ function source(relativePath: string): string {
 }
 
 describe('unified project session creation', () => {
-  it('moves New Session from search to each workspace action strip and keeps Hello opening shared chat before voice', () => {
+  it('keeps New Session in workspace actions and opens the conversation dock before voice', () => {
     const mainNav = source('./MainNav.tsx');
     const workspaceBody = source('../../layout/WorkspaceBody.tsx');
     const appLayout = source('../../layout/AppLayout.tsx');
@@ -52,13 +52,13 @@ describe('unified project session creation', () => {
     expect(workspaceBody).not.toContain('<RealtimeVoiceCallButton />');
     expect(appLayout).toContain('<FloatingMiniChat />');
     expect(appLayout).not.toContain('isWelcomeScene');
-    expect(helloLauncher).toContain("tVoice('voiceCall.call.launcherLabel')");
+    expect(helloLauncher).toContain("aria-label={t('dock.open')}");
     expect(helloLauncher).not.toContain('<Icon name="side-chat" size="md" />');
-    expect(helloLauncher).toContain('onClick={handleOpen}');
+    expect(helloLauncher).toContain('onClick={() => dock.setOpen(true)}');
     expect(helloLauncher).toContain('<ChatPane');
     expect(helloLauncher).toContain('switchTestId="hello-realtime-voice-mode-switch"');
     expect(helloLauncher).toContain('<ConversationModeSurface');
-    expect(helloLauncher).toContain('voiceTarget={miniAppVoiceTarget}');
+    expect(helloLauncher).toContain('voiceTarget={voiceTarget}');
     expect(communicationSurface).toContain('onClick={handleModeSwitch}');
     expect(communicationSurface).toContain('<Phone size={15} aria-hidden="true" />');
     expect(communicationSurface).toMatch(/<RealtimeVoiceCallPanel\b/);
@@ -66,7 +66,7 @@ describe('unified project session creation', () => {
     expect(toolbarMode).toContain('switchTestId="toolbar-realtime-voice-mode-switch"');
     expect(helloLauncher).toContain('<LauncherButton');
     expect(helloLauncher).not.toContain('leadingIcon=');
-    expect(helloLauncher).toContain("tVoice('voiceCall.call.launcherCompactLabel')");
+    expect(helloLauncher).toContain("tv('voiceCall.call.launcherCompactLabel')");
     expect(voicePanel).not.toContain('createPortal');
     expect(helloLauncherStyles).toContain('right: 0;');
     expect(helloLauncherStyles).toContain('bottom: 0;');

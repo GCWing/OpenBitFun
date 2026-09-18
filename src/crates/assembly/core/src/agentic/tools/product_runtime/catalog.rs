@@ -241,10 +241,10 @@ impl ProductToolCatalogProvider {
         let agent_type = context.agent_type.as_deref().ok_or_else(|| {
             OpenBitFunError::Validation("GetToolSpec requires agent type context".to_string())
         })?;
-        let workspace_root = context.workspace_root();
+        let workspace_id = context.workspace_id();
         let agent_registry = get_agent_registry();
         let policy = agent_registry
-            .get_agent_tool_policy(agent_type, workspace_root)
+            .get_agent_tool_policy(agent_type, workspace_id)
             .await;
         let (allowed_tools, exposure_overrides) = Self::resolve_manifest_inputs(
             &policy.allowed_tools,
@@ -263,10 +263,10 @@ impl ProductToolCatalogProvider {
         let agent_type = context.agent_type.as_deref().ok_or_else(|| {
             OpenBitFunError::Validation("GetToolSpec requires agent type context".to_string())
         })?;
-        let workspace_root = context.workspace_root();
+        let workspace_id = context.workspace_id();
         let agent_registry = get_agent_registry();
         let policy = agent_registry
-            .get_agent_tool_policy(agent_type, workspace_root)
+            .get_agent_tool_policy(agent_type, workspace_id)
             .await;
         let (allowed_tools, exposure_overrides) = Self::resolve_manifest_inputs(
             &policy.allowed_tools,
@@ -367,7 +367,7 @@ async fn contextual_tool_snapshot(context: &ToolUseContext) -> Vec<ToolRef> {
     {
         if !context.is_remote() {
             crate::external_sources::ensure_external_source_workspace_runtime(
-                context.workspace_root(),
+                context.workspace_id(),
             )
             .await;
         }
@@ -601,7 +601,10 @@ mod tests {
     fn remote_workspace_route_root_isolated_from_same_local_path() {
         let root = std::env::current_dir().expect("absolute test workspace root");
         let mut local = tool_context(None);
-        local.workspace = Some(WorkspaceBinding::new(None, root.clone()));
+        local.workspace = Some(WorkspaceBinding::new(
+            Some("local-workspace".into()),
+            root.clone(),
+        ));
 
         let session_identity =
             crate::service::remote_ssh::workspace_state::workspace_session_identity(
@@ -621,17 +624,17 @@ mod tests {
 
         assert_eq!(
             crate::external_tools::external_tool_route_root(
-                local.workspace_root(),
+                local.workspace_id(),
                 local.is_remote(),
             ),
-            Some(root.as_path())
+            Some("local-workspace")
         );
         let remote_route_root = crate::external_tools::external_tool_route_root(
-            remote.workspace_root(),
+            remote.workspace_id(),
             remote.is_remote(),
         );
-        assert_eq!(remote_route_root, Some(std::path::Path::new("\0")));
-        assert!(dunce::canonicalize(remote_route_root.expect("remote sentinel")).is_err());
+        assert_eq!(remote_route_root, Some("<unsupported-remote>"));
+        assert_ne!(remote_route_root, local.workspace_id());
     }
 
     #[tokio::test]

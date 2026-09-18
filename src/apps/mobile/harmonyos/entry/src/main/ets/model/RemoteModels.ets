@@ -34,7 +34,14 @@ export interface RecentWorkspaceEntry extends RemoteWorkspaceIdentity {
   workspaceKind: string;
 }
 
+/**
+ * A workspace reference. When `workspaceId` is present it is the whole
+ * identity; `path`, `remoteConnectionId` and `remoteSshHost` are then display
+ * strings and IO operands only. Only references from pre-ID hosts or old caches
+ * are identified by the legacy (connection, ssh host, path) triple.
+ */
 export interface RemoteWorkspaceIdentity {
+  workspaceId?: string;
   path: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -54,6 +61,9 @@ export interface RemoteSession {
   workspaceIdentity?: RemoteWorkspaceIdentity;
   pinned?: boolean;
   titleGenerated?: boolean;
+  /** Set when the session hangs off another one (btw/review/miniapp/subagent). */
+  parentSessionId?: string;
+  relationshipKind?: string;
   /** Stamped by the phone after mapping; the wire payload has no device id. */
   deviceId?: string;
 }
@@ -75,6 +85,8 @@ export interface ChatMessage {
 }
 
 export interface SessionSummary {
+  /** Owning workspace record ID; absent only for sessions from pre-ID hosts. */
+  workspaceId?: string;
   remoteSshHost?: string;
   remoteConnectionId?: string;
   sessionId: string;
@@ -85,6 +97,7 @@ export interface SessionSummary {
 }
 
 export interface CreateSessionOptions {
+  workspaceId?: string;
   remoteSshHost?: string;
   remoteConnectionId?: string;
   agentType: string;
@@ -115,6 +128,7 @@ export interface SavedRuntimeConnection { id: string; name: string; host: string
 export interface SavedRuntimeConnectionsResponse extends CommandStatusResponse { ok: boolean; value?: SavedRuntimeConnection[]; error?: string; }
 
 export interface RemoteCommand {
+  workspace_id?: string;
   remote_ssh_host?: string;
   command?: string;
   args?: Object;
@@ -169,6 +183,7 @@ export interface PermissionModeResponse extends CommandStatusResponse {
 }
 
 export interface WorkspaceInfoResponse extends CommandStatusResponse {
+  workspace_id?: string;
   remote_connection_id?: string;
   remote_ssh_host?: string;
   has_workspace?: boolean;
@@ -183,6 +198,7 @@ export interface WorkspaceInfoResponse extends CommandStatusResponse {
 }
 
 export interface RecentWorkspaceEntryResponse {
+  workspace_id?: string;
   remote_connection_id?: string;
   remote_ssh_host?: string;
   path?: string;
@@ -200,13 +216,17 @@ export interface RecentWorkspaceListResponse extends CommandStatusResponse {
 }
 
 export interface SetWorkspaceResponse extends CommandStatusResponse {
+  workspace_id?: string;
   success?: boolean;
   path?: string;
   project_name?: string;
+  remote_connection_id?: string;
+  remote_ssh_host?: string;
   error?: string;
 }
 
 export interface AssistantEntry {
+  workspace_id?: string;
   path: string;
   name: string;
   assistant_id?: string;
@@ -217,6 +237,7 @@ export interface AssistantListResponse extends CommandStatusResponse {
 }
 
 export interface SetAssistantResponse extends CommandStatusResponse {
+  workspace_id?: string;
   success?: boolean;
   path?: string;
   name?: string;
@@ -224,6 +245,8 @@ export interface SetAssistantResponse extends CommandStatusResponse {
 }
 
 export interface SessionItemResponse {
+  /** Owning workspace record ID; always set by ID-aware hosts. */
+  workspace_id?: string;
   id?: string;
   session_id?: string;
   title?: string;
@@ -255,6 +278,8 @@ export interface SessionItemResponse {
   message_count?: number;
   workspace_path?: string;
   workspace_name?: string;
+  parent_session_id?: string;
+  relationship_kind?: string;
 }
 
 export interface SessionListResponse extends CommandStatusResponse {
@@ -263,12 +288,15 @@ export interface SessionListResponse extends CommandStatusResponse {
 }
 
 export interface InitialSyncResponse extends CommandStatusResponse {
+  workspace_id?: string;
   has_workspace?: boolean;
   path?: string;
   project_name?: string;
   git_branch?: string;
   workspace_kind?: string;
   assistant_id?: string;
+  remote_connection_id?: string;
+  remote_ssh_host?: string;
   sessions?: SessionItemResponse[];
   has_more_sessions?: boolean;
   authenticated_user_id?: string;
@@ -300,6 +328,8 @@ export interface SessionListResult {
 }
 
 export interface CreateSessionResponse extends CommandStatusResponse {
+  /** Owning workspace record ID; absent only from pre-ID hosts. */
+  workspace_id?: string;
   remote_ssh_host?: string;
   workspace_path?: string;
   remote_connection_id?: string;
@@ -327,6 +357,8 @@ export interface SteerTurnResult {
 export const REMOTE_CAPABILITY_DIALOG_STEER_V1: string = 'dialog_steer_v1';
 export const REMOTE_CAPABILITY_PLAN_BUILD_V1: string = 'plan_build_v1';
 export const REMOTE_CAPABILITY_HARNESS_PROFILES_V1: string = 'harness_profiles_v1';
+/** The host resolves `workspace_id` in commands and stamps it on its projections. */
+export const REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1: string = 'workspace_id_references_v1';
 
 export interface RemoteModelConfig {
   id: string;

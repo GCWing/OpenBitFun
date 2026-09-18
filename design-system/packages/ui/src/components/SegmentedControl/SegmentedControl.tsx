@@ -165,7 +165,7 @@ export const SegmentedControl = forwardRef<HTMLDivElement, SegmentedControlProps
               type="button"
             >
               {option.icon && (
-                <span aria-hidden="true" className={styles.icon} data-openbitfun-part="icon">
+                <span aria-hidden="true" className={styles.icon} data-openbitfun-icon-slot="true" data-openbitfun-part="icon">
                   {option.icon}
                 </span>
               )}

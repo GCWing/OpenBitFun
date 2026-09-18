@@ -1,3 +1,4 @@
+import type { GitWorkspaceScope } from '@/infrastructure/api/service-api/GitAPI';
 import { agentAPI } from '@/infrastructure/api';
 import { createLogger } from '@/shared/utils/logger';
 import { createBtwChildSession, createBtwRequestId } from '../../services/BtwThreadService';
@@ -37,7 +38,6 @@ import {
   type DeepReviewLaunchStep,
   type FailedDeepReviewCleanupResult,
 } from './launchErrors';
-import { sessionProjectWorkspacePath } from '../../utils/sessionWorkspace';
 
 export {
   DEEP_REVIEW_SLASH_COMMAND,
@@ -87,11 +87,7 @@ async function cleanupFailedDeepReviewLaunch(
 ): Promise<FailedDeepReviewCleanupResult> {
   const cleanupIssues: string[] = [];
   const childSession = flowChatStore.getState().sessions.get(childSessionId);
-  const workspacePath = childSession
-    ? sessionProjectWorkspacePath(childSession)
-    : undefined;
-  const remoteConnectionId = childSession?.remoteConnectionId;
-  const remoteSshHost = childSession?.remoteSshHost;
+  const workspaceId = childSession?.workspaceId || childSession?.config.workspaceId;
 
   try {
     closeBtwSessionInAuxPane(childSessionId);
@@ -102,17 +98,15 @@ async function cleanupFailedDeepReviewLaunch(
   }
 
   let backendSessionRemoved = false;
-  if (!workspacePath) {
-    const message = 'Workspace path is missing, so backend Review session cleanup could not run.';
+  if (!workspaceId) {
+    const message = 'Workspace ID is missing, so backend Review session cleanup could not run.';
     cleanupIssues.push(message);
     log.warn(message, { childSessionId, launchStep });
   } else {
     try {
       await agentAPI.deleteSession(
         childSessionId,
-        workspacePath,
-        remoteConnectionId,
-        remoteSshHost,
+        workspaceId,
       );
       backendSessionRemoved = true;
     } catch (error) {
@@ -165,19 +159,20 @@ async function buildReviewTeamManifestWithRuntimeSignals(
 export async function buildDeepReviewLaunchFromSessionFiles(
   filePaths: string[],
   extraContext?: string,
-  workspacePath?: string,
+  workspace?: GitWorkspaceScope,
   options: DeepReviewLaunchBuildOptions = {},
 ): Promise<DeepReviewLaunchPrompt> {
+  const workspacePath = workspace?.repositoryPath;
   const initialTarget = classifyReviewTargetFromFiles(filePaths, 'session_files');
   const resolved = options.resolvedTarget ?? (
     options.targetEvidence
       ? undefined
-      : await resolveCurrentFileReviewSnapshot(workspacePath, initialTarget)
+      : await resolveCurrentFileReviewSnapshot(workspace, initialTarget)
   );
   const target = resolved?.target ?? initialTarget;
   const changeStats = options.changeStats ?? resolved?.changeStats ?? buildUnknownChangeStats(target);
   const targetEvidence = options.targetEvidence ?? resolved?.targetEvidence;
-  const team = await loadDefaultReviewTeam(workspacePath);
+  const team = await loadDefaultReviewTeam(workspace?.workspaceId);
   const manifest = await buildReviewTeamManifestWithRuntimeSignals(team, {
     workspacePath,
     target,
@@ -215,12 +210,13 @@ export async function buildDeepReviewLaunchFromSessionFiles(
 
 export async function buildDeepReviewPreviewFromSessionFiles(
   filePaths: string[],
-  workspacePath?: string,
+  workspace?: GitWorkspaceScope,
 ): Promise<ReviewTeamRunManifest> {
-  const team = await loadDefaultReviewTeam(workspacePath);
+  const workspacePath = workspace?.repositoryPath;
+  const team = await loadDefaultReviewTeam(workspace?.workspaceId);
   const initialTarget = classifyReviewTargetFromFiles(filePaths, 'session_files');
   const snapshot = await resolveCurrentFileReviewSnapshot(
-    workspacePath,
+    workspace,
     initialTarget,
   );
   return buildReviewTeamManifestWithRuntimeSignals(team, {
@@ -234,25 +230,26 @@ export async function buildDeepReviewPreviewFromSessionFiles(
 export async function buildDeepReviewPromptFromSessionFiles(
   filePaths: string[],
   extraContext?: string,
-  workspacePath?: string,
+  workspace?: GitWorkspaceScope,
 ): Promise<string> {
   return (await buildDeepReviewLaunchFromSessionFiles(
     filePaths,
     extraContext,
-    workspacePath,
+    workspace,
   )).prompt;
 }
 
 export async function buildDeepReviewLaunchFromSlashCommand(
   commandText: string,
-  workspacePath?: string,
+  workspace?: GitWorkspaceScope,
   options: DeepReviewLaunchBuildOptions = {},
 ): Promise<DeepReviewLaunchPrompt> {
-  const team = await loadDefaultReviewTeam(workspacePath);
+  const workspacePath = workspace?.repositoryPath;
+  const team = await loadDefaultReviewTeam(workspace?.workspaceId);
   const trimmed = commandText.trim();
   const extraContext = getDeepReviewCommandFocus(trimmed);
   const { target, changeStats, targetEvidence } = options.resolvedTarget ??
-    await resolveSlashCommandReviewTarget(extraContext, workspacePath);
+    await resolveSlashCommandReviewTarget(extraContext, workspace);
   const manifest = await buildReviewTeamManifestWithRuntimeSignals(team, {
     workspacePath,
     target,
@@ -290,12 +287,13 @@ export async function buildDeepReviewLaunchFromSlashCommand(
 
 export async function buildDeepReviewPreviewFromSlashCommand(
   commandText: string,
-  workspacePath?: string,
+  workspace?: GitWorkspaceScope,
 ): Promise<ReviewTeamRunManifest> {
-  const team = await loadDefaultReviewTeam(workspacePath);
+  const workspacePath = workspace?.repositoryPath;
+  const team = await loadDefaultReviewTeam(workspace?.workspaceId);
   const trimmed = commandText.trim();
   const extraContext = getDeepReviewCommandFocus(trimmed);
-  const { target, changeStats, targetEvidence } = await resolveSlashCommandReviewTarget(extraContext, workspacePath);
+  const { target, changeStats, targetEvidence } = await resolveSlashCommandReviewTarget(extraContext, workspace);
   return buildReviewTeamManifestWithRuntimeSignals(team, {
     workspacePath,
     target,
@@ -306,9 +304,9 @@ export async function buildDeepReviewPreviewFromSlashCommand(
 
 export async function buildDeepReviewPromptFromSlashCommand(
   commandText: string,
-  workspacePath?: string,
+  workspace?: GitWorkspaceScope,
 ): Promise<string> {
-  return (await buildDeepReviewLaunchFromSlashCommand(commandText, workspacePath)).prompt;
+  return (await buildDeepReviewLaunchFromSlashCommand(commandText, workspace)).prompt;
 }
 
 export async function launchDeepReviewSession({
@@ -332,7 +330,9 @@ export async function launchDeepReviewSession({
 
   try {
     if (!runManifest?.managedReviewPlan) {
-      await prepareDefaultReviewTeamForLaunch(workspacePath, {
+      const parentSession = flowChatStore.getState().sessions.get(parentSessionId);
+      if (!parentSession?.workspaceId) throw new Error('Parent session workspace ID is unavailable');
+      await prepareDefaultReviewTeamForLaunch(parentSession.workspaceId, {
         reviewTargetFilePaths: requestedFiles,
         target: runManifest?.target,
       });

@@ -2,6 +2,8 @@ import "./styles/layers.css";
 import "./styles/scrollbars.css";
 
 export { VoiceCallPanel, type VoiceCallPanelProps, type VoiceCallLabels, type VoiceCallPhase } from "./components/VoiceCallPanel";
+export { VoiceCallTranscript, VoiceCallControls, VoiceCallIdentity, type VoiceTranscriptEntry, type VoiceCallTranscriptProps, type VoiceCallControlsProps, type VoiceCallIdentityProps } from "./components/VoiceCallPanel";
+export { VoiceCallHeader, type VoiceCallHeaderProps } from "./components/VoiceCallPanel";
 export { VoiceParticleLogo, type VoiceParticleLogoProps, type VoiceParticleAudio, type VoiceParticleAudioReader } from "./components/VoiceParticleLogo";
 
 export {
@@ -13,10 +15,13 @@ export {
   useDismissibleLayer,
   useHasOverlayLayers,
   useOverlayLayerActions,
+  usePresence,
   type OverlayDismissReason,
   type OverlayLayerScope,
   type OverlayPortalContainer,
   type OverlayPortalTarget,
+  type PresenceSnapshot,
+  type PresenceState,
   type UseDismissibleLayerOptions,
 } from "./overlay";
 

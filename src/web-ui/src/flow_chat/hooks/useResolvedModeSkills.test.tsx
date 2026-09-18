@@ -38,7 +38,7 @@ describe('useResolvedModeSkills', () => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     container = document.createElement('div');
     root = createRoot(container);
-    props = { enabled: true, surfaceEpoch: 1, modeId: 'agent', workspacePath: '/project' };
+    props = { enabled: true, surfaceEpoch: 1, modeId: 'agent', workspaceId: 'workspace-id' };
     requests.length = 0;
     vi.mocked(configAPI.getModeSkillScanReport).mockReset().mockImplementation(() => {
       const request = deferred();
@@ -68,7 +68,7 @@ describe('useResolvedModeSkills', () => {
   });
 
   it.each([
-    { workspacePath: '/different' },
+    { workspaceId: 'other-workspace-id' },
     { modeId: 'plan' },
     { connectionId: 'other-ssh-host' },
     { surfaceEpoch: 2 },

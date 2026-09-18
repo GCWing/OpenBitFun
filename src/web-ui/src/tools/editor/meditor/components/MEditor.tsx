@@ -15,7 +15,6 @@ import { activeEditTargetService } from '@/tools/editor/services/ActiveEditTarge
 import { useEditor } from '../hooks/useEditor'
 import { EditArea } from './EditArea'
 import { TiptapEditor, TiptapEditorHandle } from './TiptapEditor'
-import { Preview } from './Preview'
 import type { EditorOptions, EditorInstance } from '../types'
 import { useI18n } from '@/infrastructure/i18n'
 import './MEditor.scss'
@@ -268,7 +267,7 @@ const MEditorInner = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
   }, [value])
 
   useEffect(() => {
-    if (effectiveMode === 'ir' || effectiveMode === 'preview') {
+    if (effectiveMode === 'ir') {
       return
     }
 
@@ -329,7 +328,7 @@ const MEditorInner = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
       if (effectiveMode === 'ir' && tiptapEditorRef.current) {
         return tiptapEditorRef.current.undo()
       }
-      if (effectiveMode === 'edit' || effectiveMode === 'split') {
+      if (effectiveMode === 'edit') {
         return executeTextareaAction(textareaRef.current, 'undo')
       }
       return false
@@ -338,7 +337,7 @@ const MEditorInner = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
       if (effectiveMode === 'ir' && tiptapEditorRef.current) {
         return tiptapEditorRef.current.redo()
       }
-      if (effectiveMode === 'edit' || effectiveMode === 'split') {
+      if (effectiveMode === 'edit') {
         return executeTextareaAction(textareaRef.current, 'redo')
       }
       return false
@@ -385,7 +384,7 @@ const MEditorInner = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
   }, [onSave])
 
   const handleFocusCapture = useCallback(() => {
-    if (effectiveMode === 'ir' || effectiveMode === 'preview') {
+    if (effectiveMode === 'ir') {
       return
     }
 
@@ -393,7 +392,7 @@ const MEditorInner = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
   }, [effectiveMode])
 
   const handleBlurCapture = useCallback(() => {
-    if (effectiveMode === 'ir' || effectiveMode === 'preview') {
+    if (effectiveMode === 'ir') {
       return
     }
 
@@ -431,10 +430,6 @@ const MEditorInner = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
       {toolbar && <div data-openbitfun-component="m-editor" data-openbitfun-part="toolbar" className="m-editor-toolbar">{t('editor.meditor.toolbarPlaceholder')}</div>}
       
       <div data-openbitfun-component="m-editor" data-openbitfun-part="content" className="m-editor-content">
-        {effectiveMode === 'preview' && (
-          <Preview value={value} basePath={basePath} />
-        )}
-
         {effectiveMode === 'edit' && (
           <div data-openbitfun-component="m-editor" data-openbitfun-part="editPanel" className="m-editor-edit-panel">
             <EditArea
@@ -448,26 +443,6 @@ const MEditorInner = forwardRef<EditorInstance, MEditorProps>((props, ref) => {
               autofocus={autofocus}
             />
           </div>
-        )}
-
-        {effectiveMode === 'split' && (
-          <>
-            <div data-openbitfun-component="m-editor" data-openbitfun-part="editPanel" className="m-editor-edit-panel">
-              <EditArea
-                ref={textareaRef}
-                value={value}
-                onChange={handleEditorChange}
-                onFocus={onFocus}
-                onBlur={onBlur}
-                placeholder={placeholder}
-                readonly={readonly}
-                autofocus={autofocus}
-              />
-            </div>
-            <div data-openbitfun-component="m-editor" data-openbitfun-part="previewPanel" className="m-editor-preview-panel">
-              <Preview value={value} basePath={basePath} />
-            </div>
-          </>
         )}
 
         {effectiveMode === 'ir' && (

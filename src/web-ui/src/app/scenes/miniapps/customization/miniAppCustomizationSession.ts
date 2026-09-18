@@ -8,6 +8,9 @@ const log = createLogger('MiniAppCustomizationSession');
 export interface BuildMiniAppCustomizationSessionRequestInput {
   sessionId: string;
   sessionName: string;
+  /** Owning workspace ID; authoritative for session placement. */
+  workspaceId?: string;
+  /** Workspace root as an IO operand for the customization draft. */
   workspacePath: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -20,6 +23,7 @@ export function buildMiniAppCustomizationSessionRequest(
     sessionId: input.sessionId,
     sessionName: input.sessionName,
     agentType: 'Standard',
+    workspaceId: input.workspaceId,
     workspacePath: input.workspacePath,
     remoteConnectionId: input.remoteConnectionId,
     remoteSshHost: input.remoteSshHost,
@@ -49,6 +53,7 @@ export function isMiniAppCustomizationSessionRunning(
 export async function launchMiniAppCustomizationSession(params: {
   appId: string;
   appName: string;
+  workspaceId?: string;
   workspacePath: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -68,6 +73,7 @@ export async function launchMiniAppCustomizationSession(params: {
   const request = buildMiniAppCustomizationSessionRequest({
     sessionId: createMiniAppCustomizationSessionId(params.appId),
     sessionName: params.sessionName,
+    workspaceId: params.workspaceId,
     workspacePath: params.workspacePath,
     remoteConnectionId: params.remoteConnectionId,
     remoteSshHost: params.remoteSshHost,
@@ -83,6 +89,7 @@ export async function launchMiniAppCustomizationSession(params: {
       sessionKind: 'miniapp',
       isTransient: true,
       agentBackedTransient: true,
+      workspaceId: created.workspaceId ?? params.workspaceId,
     },
     params.remoteConnectionId,
     params.remoteSshHost,

@@ -56,9 +56,51 @@ pub struct EditLocalFileOutcome {
     pub edit_result: EditResult,
 }
 
-pub fn is_edit_content_guardrail_error(error: &str) -> bool {
-    error.contains("old_string not found in file") || error.contains("`old_string` appears")
+/// Classified at the source, independently of diagnostic wording.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EditContentErrorKind {
+    EmptyTarget,
+    NoChange,
+    TargetNotFound,
+    TargetAmbiguous,
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EditContentError {
+    pub kind: EditContentErrorKind,
+    pub message: String,
+}
+impl EditContentError {
+    fn new(kind: EditContentErrorKind, message: impl Into<String>) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+        }
+    }
+    pub fn no_change() -> Self {
+        Self::new(
+            EditContentErrorKind::NoChange,
+            "new_string must be different from old_string",
+        )
+    }
+    pub fn detail(&self) -> Option<openbitfun_core_types::errors::ToolErrorDetail> {
+        let code = match self.kind {
+            EditContentErrorKind::EmptyTarget => return None,
+            EditContentErrorKind::NoChange => "edit_no_change",
+            EditContentErrorKind::TargetNotFound => "edit_target_not_found",
+            EditContentErrorKind::TargetAmbiguous => "edit_target_ambiguous",
+        };
+        Some(openbitfun_core_types::errors::ToolErrorDetail {
+            code: code.into(),
+            kind: "guidance".into(),
+        })
+    }
+}
+impl std::fmt::Display for EditContentError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+impl std::error::Error for EditContentError {}
 
 pub fn edit_success_message(logical_path: &str) -> String {
     format!("Successfully edited {}", logical_path)
@@ -361,26 +403,32 @@ fn apply_match_and_replace(
     old_string: &str,
     new_string: &str,
     replace_all: bool,
-) -> Result<ApplyEditResult, String> {
+) -> Result<ApplyEditResult, EditContentError> {
     let normalized_old = normalize_string(old_string);
     let normalized_new = normalize_string(new_string);
 
     if normalized_old.is_empty() {
-        return Err("old_string cannot be empty.".to_string());
+        return Err(EditContentError::new(
+            EditContentErrorKind::EmptyTarget,
+            "old_string cannot be empty.",
+        ));
     }
 
     let matches: Vec<_> = normalized_content.match_indices(&normalized_old).collect();
 
     if matches.is_empty() {
-        return Err("old_string not found in file.".to_string());
+        return Err(EditContentError::new(
+            EditContentErrorKind::TargetNotFound,
+            "old_string not found in file.",
+        ));
     }
 
     if matches.len() > 1 && !replace_all {
-        return Err(format!(
+        return Err(EditContentError::new(EditContentErrorKind::TargetAmbiguous, format!(
             "`old_string` appears {} times in file, either provide a larger string with more surrounding context to make it unique or use `replace_all` to change every instance of `old_string`.\n{}",
             matches.len(),
             match_contexts(normalized_content, &normalized_old, &matches)
-        ));
+        )));
     }
 
     let first_match_pos = matches[0].0;
@@ -416,7 +464,10 @@ pub fn apply_edit_to_content(
     old_string: &str,
     new_string: &str,
     replace_all: bool,
-) -> Result<ApplyEditResult, String> {
+) -> Result<ApplyEditResult, EditContentError> {
+    if !old_string.is_empty() && old_string == new_string {
+        return Err(EditContentError::no_change());
+    }
     let mut last_error = String::from("old_string not found in file.");
 
     // Pre-compute so every candidate iteration reuses the same normalized form.
@@ -432,18 +483,18 @@ pub fn apply_edit_to_content(
             replace_all,
         ) {
             Ok(result) => return Ok(result),
-            Err(error) if error == "old_string not found in file." => {
-                last_error = error;
+            Err(error) if error.kind == EditContentErrorKind::TargetNotFound => {
+                last_error = error.message;
             }
             Err(error) => return Err(error),
         }
     }
 
-    Err(format!(
+    Err(EditContentError::new(EditContentErrorKind::TargetNotFound, format!(
         "{}\nPossible causes: the file might be changed externally after you inspected it, or old_string was generated incorrectly (for example, with line-number prefixes, different whitespace or indentation, or truncated output).\nInspect the current target region, correct old_string to match the current file content exactly, then retry.\n{}",
         last_error,
         build_not_found_diagnostics(content, old_string)
-    ))
+    )))
 }
 
 pub fn edit_file(
@@ -454,7 +505,8 @@ pub fn edit_file(
 ) -> Result<EditResult, String> {
     let content = fs::read_to_string(file_path)
         .map_err(|e| format!("Failed to read file {}: {}", file_path, e))?;
-    let result = apply_edit_to_content(&content, old_string, new_string, replace_all)?;
+    let result = apply_edit_to_content(&content, old_string, new_string, replace_all)
+        .map_err(|error| error.to_string())?;
 
     fs::write(file_path, &result.new_content)
         .map_err(|e| format!("Failed to write file {}: {}", file_path, e))?;
@@ -483,7 +535,8 @@ pub fn edit_local_file_with_content(
         &request.old_string,
         &request.new_string,
         request.replace_all,
-    )?;
+    )
+    .map_err(|error| error.to_string())?;
 
     fs::write(&request.resolved_path, result.new_content.as_bytes())
         .map_err(|error| format!("Failed to write file {}: {}", request.logical_path, error))?;
@@ -498,8 +551,8 @@ pub fn edit_local_file_with_content(
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_edit_to_content, edit_file, edit_success_message, is_edit_content_guardrail_error,
-        sanitize_read_tool_copied_text, EditResult,
+        apply_edit_to_content, edit_file, edit_success_message, sanitize_read_tool_copied_text,
+        EditContentErrorKind, EditResult,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -583,18 +636,28 @@ mod tests {
         let error = apply_edit_to_content("alpha\n", "", "beta", false)
             .expect_err("empty old_string should fail");
 
-        assert_eq!(error, "old_string cannot be empty.");
+        assert_eq!(error.to_string(), "old_string cannot be empty.");
     }
 
     #[test]
-    fn edit_content_guardrail_detection_matches_apply_edit_errors() {
-        assert!(is_edit_content_guardrail_error(
-            "old_string not found in file."
-        ));
-        assert!(is_edit_content_guardrail_error(
-            "`old_string` appears 2 times in file, either provide a larger string with more surrounding context to make it unique or use `replace_all` to change every instance of `old_string`.\n"
-        ));
-        assert!(!is_edit_content_guardrail_error("Permission denied"));
+    fn content_errors_have_stable_classifications() {
+        for (content, old, new, code) in [
+            ("a", "a", "a", "edit_no_change"),
+            ("a", "b", "c", "edit_target_not_found"),
+            ("aa", "a", "b", "edit_target_ambiguous"),
+        ] {
+            assert_eq!(
+                apply_edit_to_content(content, old, new, false)
+                    .unwrap_err()
+                    .detail()
+                    .unwrap()
+                    .code,
+                code
+            );
+        }
+        let error = apply_edit_to_content("a", "", "b", false).unwrap_err();
+        assert_eq!(error.kind, EditContentErrorKind::EmptyTarget);
+        assert!(error.detail().is_none());
     }
 
     #[test]
@@ -615,11 +678,13 @@ mod tests {
         )
         .expect_err("ambiguous edit should fail");
 
-        assert!(error.contains("`old_string` appears 2 times in file"));
-        assert!(error.contains("[match 1 starts at line 2]"));
-        assert!(error.contains("first block"));
-        assert!(error.contains("[match 2 starts at line 6]"));
-        assert!(error.contains("second block"));
+        assert!(error
+            .to_string()
+            .contains("`old_string` appears 2 times in file"));
+        assert!(error.to_string().contains("[match 1 starts at line 2]"));
+        assert!(error.to_string().contains("first block"));
+        assert!(error.to_string().contains("[match 2 starts at line 6]"));
+        assert!(error.to_string().contains("second block"));
     }
 
     #[test]
@@ -632,7 +697,7 @@ mod tests {
         )
         .expect_err("missing text should fail");
 
-        assert!(error.contains("Read-tool line-number prefixes"));
+        assert!(error.to_string().contains("Read-tool line-number prefixes"));
     }
 
     #[test]
@@ -734,7 +799,7 @@ mod tests {
             false,
         )
         .expect_err("different content should fail");
-        assert!(error.contains("old_string not found in file."));
+        assert!(error.to_string().contains("old_string not found in file."));
     }
 
     #[test]
@@ -807,7 +872,7 @@ mod tests {
         let error = apply_edit_to_content(&content, &old_string, "replacement", false)
             .expect_err("old_string is not present in the file");
 
-        assert!(error.contains("old_string not found in file"));
+        assert!(error.to_string().contains("old_string not found in file"));
         assert!(
             started.elapsed() < Duration::from_secs(5),
             "scan took {:?}, expected the linear search path",

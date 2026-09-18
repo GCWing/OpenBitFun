@@ -1,3 +1,4 @@
+import { requireSessionWorkspaceId } from '../../utils/sessionWorkspace';
 /**
  * Session management module
  * Handles session creation, switching, deletion, and other operations
@@ -13,18 +14,15 @@ import { isRemoteTraceContext, startupTrace } from '@/shared/utils/startupTrace'
 import { elapsedMs, nowMs } from '@/shared/utils/timing';
 import { i18nService } from '@/infrastructure/i18n';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
-import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
 import {
   getActiveSurfaceScope,
   isSurfaceChangedError,
   type SurfaceScope,
 } from '@/infrastructure/peer-device/deviceSurface';
-import { normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
-import { isRemoteWorkspace, WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
+import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 import type {
   FlowChatContext,
   SessionConfig,
-  SessionHistoryHydrationLocation,
 } from './types';
 import type { Session } from '../../types/flow-chat';
 import { touchSessionActivity } from './PersistenceModule';
@@ -54,7 +52,6 @@ import {
 import type { AppFlowChatConfig } from '@/infrastructure/config/types';
 import {
   requireSessionProjectWorkspacePath,
-  sessionProjectWorkspacePath,
 } from '../../utils/sessionWorkspace';
 import { driverForCreation, driverForSession } from '../../session-drivers/registry';
 import {
@@ -65,15 +62,6 @@ import {
 const log = createLogger('SessionModule');
 const pendingSessionCreations = new Map<string, Promise<string>>();
 
-const getHydrationLocationKey = (
-  location: SessionHistoryHydrationLocation | undefined,
-): string => location?.workspacePath
-  ? JSON.stringify([
-      location.workspacePath,
-      location.remoteConnectionId ?? '',
-      location.remoteSshHost ?? '',
-    ])
-  : '';
 export const SESSION_ACTIVITY_TOUCH_DELAY_MS = 350;
 let latestSwitchRequestId = 0;
 let pendingActivityTouchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -90,11 +78,6 @@ function scheduleSessionActivityTouch(scope: SurfaceScope, task: () => void): vo
     task();
   }, SESSION_ACTIVITY_TOUCH_DELAY_MS);
 }
-
-const normalizeOptional = (value: string | undefined): string | undefined => {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-};
 
 export function pendingHistoryLoadKey(
   sessionId: string,
@@ -135,75 +118,6 @@ function hasCompetingHistoryLoad(
   });
 }
 
-const hostFromSshConnectionId = (connectionId: string | undefined): string | undefined => {
-  const trimmed = connectionId?.trim();
-  if (!trimmed) return undefined;
-  const match = trimmed.match(/^ssh-[^@]+@(.+?)(?::\d+)?$/);
-  return match?.[1]?.trim().toLowerCase() || undefined;
-};
-
-const remotePathsMatch = (left: string | undefined, right: string | undefined): boolean => {
-  const leftNorm = normalizeOptional(left);
-  const rightNorm = normalizeOptional(right);
-  if (!leftNorm || !rightNorm) return false;
-  return normalizeRemoteWorkspacePath(leftNorm) === normalizeRemoteWorkspacePath(rightNorm);
-};
-
-const currentWorkspaceMatchesSessionScope = (
-  current: WorkspaceInfo | null | undefined,
-  storedConnectionId: string | undefined,
-  storedSshHost: string | undefined,
-  workspacePath: string
-): current is WorkspaceInfo => {
-  if (current?.workspaceKind !== WorkspaceKind.Remote || !current.connectionId) {
-    return false;
-  }
-  if (!remotePathsMatch(current.rootPath, workspacePath)) {
-    return false;
-  }
-
-  const currentHost = normalizeOptional(current.sshHost)?.toLowerCase()
-    || hostFromSshConnectionId(current.connectionId);
-  const storedHost = normalizeOptional(storedSshHost)?.toLowerCase()
-    || hostFromSshConnectionId(storedConnectionId);
-  if (currentHost && storedHost) {
-    return currentHost === storedHost;
-  }
-
-  const storedConnection = normalizeOptional(storedConnectionId);
-  return !storedConnection || storedConnection === current.connectionId;
-};
-
-/// Resolve the effective connection_id for a session, preferring the
-/// current workspace's connection when the stored ID may be stale
-/// (e.g. after the user changed the SSH port).
-const resolveEffectiveConnectionId = (
-  storedConnectionId: string | undefined,
-  storedSshHost: string | undefined,
-  workspacePath: string
-): string | undefined => {
-  const current = workspaceManager.getState().currentWorkspace;
-  if (currentWorkspaceMatchesSessionScope(current, storedConnectionId, storedSshHost, workspacePath)) {
-    return current.connectionId;
-  }
-  return storedConnectionId;
-};
-
-const resolveEffectiveSshHost = (
-  storedSshHost: string | undefined,
-  storedConnectionId: string | undefined,
-  workspacePath: string
-): string | undefined => {
-  const current = workspaceManager.getState().currentWorkspace;
-  if (
-    currentWorkspaceMatchesSessionScope(current, storedConnectionId, storedSshHost, workspacePath)
-    && current.sshHost?.trim()
-  ) {
-    return current.sshHost.trim() || undefined;
-  }
-  return storedSshHost;
-};
-
 async function hydrateHistoricalSession(
   context: FlowChatContext,
   sessionId: string,
@@ -214,20 +128,21 @@ async function hydrateHistoricalSession(
     allowNonHistorical?: boolean;
     includeInternal?: boolean;
     deferFullHistoryUntilActive?: boolean;
-    location?: SessionHistoryHydrationLocation;
   },
 ): Promise<void> {
   const surfaceScope = getActiveSurfaceScope();
+  const initialSession = context.flowChatStore.getState().sessions.get(sessionId);
+  if (!initialSession) return;
+  const workspaceId = requireSessionWorkspaceId(initialSession);
   const pendingKey = pendingHistoryLoadKey(sessionId, surfaceScope);
   const existing = context.pendingHistoryLoads.get(pendingKey);
   if (existing) {
     const existingCapabilities = context.pendingHistoryLoadCapabilities?.get(pendingKey);
-    const requestedLocationKey = getHydrationLocationKey(options?.location);
     const requiresStrongerHydrate =
       (options?.includeInternal === true && existingCapabilities?.includeInternal !== true) ||
       (options?.deferFullHistoryUntilActive === false &&
         existingCapabilities?.deferFullHistoryUntilActive !== false) ||
-      (Boolean(requestedLocationKey) && existingCapabilities?.locationKey !== requestedLocationKey);
+      existingCapabilities?.workspaceId !== workspaceId;
     startupTrace.markPhase('historical_session_hydrate_reused');
     recordHistorySessionDiagnosticEvent(sessionId, 'hydrate_reused_pending', {
       notifyOnError,
@@ -295,12 +210,8 @@ async function hydrateHistoricalSession(
       return;
     }
 
-    const workspacePath = requireSessionWorkspacePath(
-      session.workspacePath || options?.location?.workspacePath,
-      sessionId,
-    );
-    const storedConnectionId = options?.location?.remoteConnectionId || session.remoteConnectionId;
-    const storedSshHost = options?.location?.remoteSshHost || session.remoteSshHost;
+    const storedConnectionId = session.remoteConnectionId;
+    const storedSshHost = session.remoteSshHost;
     const remote = isRemoteTraceContext(storedConnectionId, storedSshHost);
     const deferFullHistoryUntilActive = options?.deferFullHistoryUntilActive ?? true;
     markHistorySessionHydratePending(sessionId, {
@@ -315,32 +226,10 @@ async function hydrateHistoricalSession(
       hasRenderableContent: hasRenderableSessionContent(session),
     });
 
-    // Prefer the current workspace's connection info over the session's
-    // stored values.  When the user changes the SSH port the session's
-    // remoteConnectionId becomes stale; the active workspace always
-    // carries the up-to-date connection_id.
-    const effectiveConnectionId = resolveEffectiveConnectionId(
-      storedConnectionId,
-      storedSshHost,
-      workspacePath
-    );
-    const effectiveSshHost = resolveEffectiveSshHost(
-      storedSshHost,
-      storedConnectionId,
-      workspacePath
-    );
-
-    await context.flowChatStore.loadSessionHistory(
-      sessionId,
-      workspacePath,
-      undefined,
-      effectiveConnectionId,
-      effectiveSshHost,
-      {
+    await context.flowChatStore.loadSessionHistory(sessionId, {
         includeInternal: options?.includeInternal,
         deferFullHistoryUntilActive,
-      },
-    );
+      });
     surfaceScope.assertCurrent('finish historical session hydration');
   })();
 
@@ -351,7 +240,7 @@ async function hydrateHistoricalSession(
     promise: loadPromise,
     includeInternal: options?.includeInternal === true,
     deferFullHistoryUntilActive: options?.deferFullHistoryUntilActive ?? true,
-    locationKey: getHydrationLocationKey(options?.location),
+    workspaceId,
   });
 
   try {
@@ -393,14 +282,12 @@ async function hydrateHistoricalSession(
 export async function hydrateSessionHistoryForDetail(
   context: FlowChatContext,
   sessionId: string,
-  location?: SessionHistoryHydrationLocation,
 ): Promise<void> {
   const session = context.flowChatStore.getState().sessions.get(sessionId);
   await hydrateHistoricalSession(context, sessionId, false, {
     allowNonHistorical: true,
     includeInternal: session?.sessionKind === 'subagent',
     deferFullHistoryUntilActive: false,
-    location,
   });
 }
 
@@ -453,84 +340,15 @@ const isAssistantWorkspace = (workspace?: WorkspaceInfo | null): boolean => {
   return workspace?.workspaceKind === WorkspaceKind.Assistant;
 };
 
-const resolveSessionWorkspacePath = (
-  context: FlowChatContext,
-  config?: SessionConfig
-): string | null => {
-  const explicitWorkspacePath = config?.workspacePath?.trim();
-  if (explicitWorkspacePath) {
-    return explicitWorkspacePath;
-  }
-  // Peer Device Mode: always prefer the live peer workspace over any stale
-  // controller-local path left in FlowChat context.
-  if (isPeerDeviceModeActive()) {
-    const peerWorkspace = workspaceManager.getState().currentWorkspace;
-    const peerRoot = peerWorkspace?.rootPath?.trim();
-    if (peerRoot) {
-      return peerWorkspace?.workspaceKind === WorkspaceKind.Remote
-        ? normalizeRemoteWorkspacePath(peerRoot)
-        : peerRoot;
-    }
-  }
-  const fromFlowChat = context.currentWorkspacePath?.trim();
-  if (fromFlowChat) {
-    return fromFlowChat;
-  }
-  // Remote restore: AppLayout may skip FlowChat.initialize until SSH connects, so
-  // currentWorkspacePath stays null while global workspace already has rootPath.
-  const current = workspaceManager.getState().currentWorkspace;
-  const root = current?.rootPath?.trim();
-  if (!root) {
-    return null;
-  }
-  return current?.workspaceKind === WorkspaceKind.Remote
-    ? normalizeRemoteWorkspacePath(root)
-    : root;
-};
-
-const resolveSessionWorkspace = (
-  context: FlowChatContext,
-  config?: SessionConfig
-): WorkspaceInfo | null => {
+const resolveSessionWorkspace = (config: SessionConfig): WorkspaceInfo => {
   const state = workspaceManager.getState();
-  const configWorkspaceId = config?.workspaceId?.trim();
-  if (configWorkspaceId) {
-    const byId = state.openedWorkspaces.get(configWorkspaceId);
-    if (byId) return byId;
-  }
-
-  const workspacePath = resolveSessionWorkspacePath(context, config);
-  if (!workspacePath) return null;
-  const pathMatches = Array.from(state.openedWorkspaces.values()).filter(workspace => {
-    if (workspace.rootPath !== workspacePath) return false;
-    if (workspace.workspaceKind !== WorkspaceKind.Remote) return true;
-    const cid = config?.remoteConnectionId?.trim();
-    const host = config?.remoteSshHost?.trim();
-    if (cid && workspace.connectionId !== cid) return false;
-    if (host && (workspace.sshHost?.trim() ?? '') !== host) return false;
-    return true;
-  });
-  if (pathMatches.length === 0) {
-    return state.currentWorkspace;
-  }
-  if (pathMatches.length === 1) {
-    return pathMatches[0];
-  }
-  const configCid = config?.remoteConnectionId?.trim();
-  if (configCid) {
-    const byConn = pathMatches.find(w => w.connectionId === configCid);
-    if (byConn) return byConn;
-  }
-  const configHost = config?.remoteSshHost?.trim();
-  if (configHost) {
-    const byHost = pathMatches.find(w => (w.sshHost?.trim() ?? '') === configHost);
-    if (byHost) return byHost;
-  }
-  const cur = state.currentWorkspace;
-  if (cur && pathMatches.some(w => w.id === cur.id)) {
-    return cur;
-  }
-  return pathMatches[0];
+  const id = config.workspaceId ?? state.currentWorkspace?.id;
+  if (!id) throw new Error('Workspace ID is required to create a session');
+  const workspace = state.openedWorkspaces.get(id)
+    ?? (state.currentWorkspace?.id === id ? state.currentWorkspace : undefined)
+    ?? state.recentWorkspaces?.find(record => record.id === id);
+  if (!workspace) throw new Error(`Workspace ID is unavailable: ${id}`);
+  return workspace;
 };
 
 export const resolveAgentTypeForSessionCreation = async (
@@ -562,9 +380,7 @@ export const resolveAgentTypeForSessionCreation = async (
     }
 
     const availableModes = await agentAPI.getAvailableModes({
-      workspacePath: workspace?.rootPath,
-      remoteConnectionId: isRemoteWorkspace(workspace) ? workspace?.connectionId : undefined,
-      remoteSshHost: isRemoteWorkspace(workspace) ? workspace?.sshHost : undefined,
+      workspaceId: workspace?.id,
     });
     if (availableModes.some(mode => mode.id === configuredDefaultMode)) {
       return configuredDefaultMode;
@@ -607,13 +423,18 @@ export async function createChatSession(
 ): Promise<string> {
   const surfaceScope = getActiveSurfaceScope();
   try {
-    const workspacePath = resolveSessionWorkspacePath(context, config);
-    const workspace = resolveSessionWorkspace(context, config);
-
-    if (!workspacePath) {
-      throw new Error('Workspace path is required to create a session');
-    }
-    const projectWorkspacePath = config.projectWorkspacePath || workspacePath;
+    const workspace = resolveSessionWorkspace(config);
+    const workspacePath = workspace.rootPath;
+    const linkedWorktree = workspace.workspaceKind !== WorkspaceKind.Remote
+      && workspace.worktree && !workspace.worktree.isMain;
+    const projectId = linkedWorktree ? workspace.worktree?.mainWorkspaceId : workspace.id;
+    if (!projectId) throw new Error('Worktree project workspace ID is unavailable');
+    const catalog = workspaceManager.getState();
+    const projectWorkspace = projectId === workspace.id ? workspace
+      : catalog.openedWorkspaces.get(projectId)
+        ?? catalog.recentWorkspaces.find(record => record.id === projectId);
+    if (!projectWorkspace) throw new Error(`Project workspace ID is unavailable: ${projectId}`);
+    const projectWorkspacePath = projectWorkspace.rootPath;
     const remoteConnectionId =
       workspace?.workspaceKind === WorkspaceKind.Remote ? workspace.connectionId : undefined;
     const remoteSshHost =
@@ -622,12 +443,7 @@ export async function createChatSession(
         : undefined;
     const agentType = await resolveAgentTypeForSessionCreation(mode, workspace);
     surfaceScope.assertCurrent('resolve session creation mode');
-    const workspaceCreationKey =
-      workspace?.id?.trim()
-        ? workspace.id
-        : remoteConnectionId != null && remoteConnectionId !== ''
-          ? `${remoteConnectionId}\n${workspacePath}`
-          : workspacePath;
+    const workspaceCreationKey = workspace.id;
     const creationKey = surfaceScope.key(
       'session-create',
       surfaceScope.epoch,
@@ -728,9 +544,7 @@ export async function switchChatSession(
         }
         touchSessionActivity(
           sessionId,
-          sessionProjectWorkspacePath(latestSession),
-          latestSession.remoteConnectionId,
-          latestSession.remoteSshHost
+          requireSessionWorkspaceId(latestSession)
         ).catch(error => {
           if (isSurfaceChangedError(error)) {
             return;
@@ -929,10 +743,7 @@ export async function reloadSessionTitle(
 
   const metadata = await sessionAPI.loadSessionMetadata(
     sessionId,
-    requireSessionProjectWorkspacePath(session, sessionId),
-    session.remoteConnectionId,
-    session.remoteSshHost,
-  );
+    requireSessionWorkspaceId(session));
   if (!metadata) return;
 
   const titleState = deriveSessionTitleStateFromMetadata(metadata);
@@ -975,10 +786,7 @@ export async function forkChatSession(
   const response = await sessionAPI.forkSession(
     sourceSessionId,
     sourceTurnId,
-    projectWorkspacePath,
-    sourceSession.remoteConnectionId,
-    sourceSession.remoteSshHost
-  );
+    requireSessionWorkspaceId(sourceSession));
 
   const currentState = context.flowChatStore.getState();
   if (!currentState.sessions.has(response.sessionId)) {
@@ -1005,14 +813,7 @@ export async function forkChatSession(
     context.flowChatStore.switchSession(response.sessionId);
   }
 
-  await context.flowChatStore.loadSessionHistory(
-    response.sessionId,
-    projectWorkspacePath,
-    undefined,
-    sourceSession.remoteConnectionId,
-    sourceSession.remoteSshHost,
-    { deferFullHistoryUntilActive: true },
-  );
+  await context.flowChatStore.loadSessionHistory(response.sessionId, { deferFullHistoryUntilActive: true });
   context.flowChatStore.switchSession(response.sessionId);
 
   return response.sessionId;
@@ -1043,22 +844,12 @@ export async function ensureBackendSession(
   }
 
   const latestSession = context.flowChatStore.getState().sessions.get(sessionId) ?? session;
-  const workspacePath = requireSessionWorkspacePath(latestSession.workspacePath, sessionId);
+  const workspaceId = requireSessionWorkspaceId(latestSession);
+  const workspace = resolveSessionWorkspace({ workspaceId });
+  const workspacePath = workspace.rootPath;
   const projectWorkspacePath = requireSessionProjectWorkspacePath(latestSession, sessionId);
-
-  // Resolve effective connection info: prefer the current workspace's
-  // connection_id over the session's stored value.  When the user changes
-  // the SSH port the session's remoteConnectionId becomes stale.
-  const effectiveConnectionId = resolveEffectiveConnectionId(
-    latestSession.remoteConnectionId,
-    latestSession.remoteSshHost,
-    workspacePath
-  );
-  const effectiveSshHost = resolveEffectiveSshHost(
-    latestSession.remoteSshHost,
-    latestSession.remoteConnectionId,
-    workspacePath
-  );
+  const effectiveConnectionId = workspace.workspaceKind === WorkspaceKind.Remote ? workspace.connectionId : undefined;
+  const effectiveSshHost = workspace.workspaceKind === WorkspaceKind.Remote ? workspace.sshHost : undefined;
 
   const isHistoricalSession = latestSession.isHistorical === true;
   const isFirstTurn = isProjectedFirstRuntimeTurn(latestSession);
@@ -1108,9 +899,7 @@ export async function ensureBackendSession(
     surfaceScope.assertCurrent('ensure coordinator session');
     await agentAPI.ensureCoordinatorSession({
       sessionId,
-      workspacePath: projectWorkspacePath,
-      remoteConnectionId: effectiveConnectionId,
-      remoteSshHost: effectiveSshHost,
+      workspaceId,
       includeInternal: latestSession.sessionKind === 'subagent',
     });
     surfaceScope.assertCurrent('ensure coordinator session');
@@ -1125,9 +914,7 @@ export async function ensureBackendSession(
       'context-restore',
       surfaceScope.epoch,
       sessionId,
-      projectWorkspacePath,
-      effectiveConnectionId,
-      effectiveSshHost,
+      workspaceId,
     );
     const existingRestore = context.pendingContextRestores.get(restoreKey);
     if (existingRestore) {

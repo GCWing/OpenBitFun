@@ -33,7 +33,7 @@ export default function DeviceToolsPage({ manager, onBack }: { manager: RemoteSe
     }).catch(cause => { if (active) setError(String(cause)); });
     return () => { active = false; };
   }, [manager, targetEpoch]);
-  const location = { path: connection ? '/' : home, remote_connection_id: connection };
+  const location = { workspace_id: undefined, path: connection ? '/' : home, remote_connection_id: connection };
   return <div className="workspace-page workspace-page--tools device-tools-page"><div className="workspace-page__sheet">
     <MobilePageHeader className="workspace-page__header" title={t('workspace.tools')}
       actions={<MobileIconButton size="sm" appearance="surface" icon={<X/>} aria-label={t('common.close')} onClick={onBack}/>}/>

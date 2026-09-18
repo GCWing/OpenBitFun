@@ -44,10 +44,15 @@ export function installTrayUnreadService(): () => void {
     timer = setTimeout(() => { timer = undefined; void flush(); }, 100);
   };
   const unsubscribe = flowChatStore.subscribe(schedule);
+  // The tray only forwards the intent; read receipts stay owned by the store.
+  const unlistenMarkAllRead = systemAPI.onTrayMarkAllRead(() => {
+    flowChatStore.clearAllSessionUnreadCompletions();
+  });
   schedule();
   return () => {
     disposed = true;
     unsubscribe();
+    unlistenMarkAllRead();
     if (timer) clearTimeout(timer);
   };
 }

@@ -68,7 +68,7 @@ async fn ensure_mcp_server_available_for_context(
     context: &ToolUseContext,
 ) -> OpenBitFunResult<()> {
     if !manager
-        .server_available_for_context(server_id, context.workspace_root(), context.is_remote())
+        .server_available_for_context(server_id, context.workspace_id(), context.is_remote())
         .await
     {
         return Err(tool_error(format!(

@@ -222,7 +222,7 @@ impl OpenBitFunControlTool {
             return false;
         };
         get_agent_registry()
-            .get_agent(agent_type, context.workspace_root())
+            .get_agent(agent_type, context.workspace_id())
             .is_some_and(|agent| agent.is_readonly())
     }
 
@@ -808,6 +808,7 @@ mod tests {
             "connection-1".to_string(),
             "Remote".to_string(),
             crate::service::remote_ssh::workspace_state::WorkspaceSessionIdentity {
+                workspace_kind: openbitfun_core_types::WorkspaceKind::Remote,
                 hostname: "remote.example".to_string(),
                 logical_workspace_path: "/remote/workspace".to_string(),
                 remote_connection_id: Some("connection-1".to_string()),

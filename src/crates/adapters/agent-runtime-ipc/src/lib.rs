@@ -49,3 +49,5 @@ mod protocol_contract_tests;
 #[cfg(test)]
 #[path = "tests/shared_controller.rs"]
 mod shared_controller_tests;
+
+pub use operation::legacy_workspace_operation;

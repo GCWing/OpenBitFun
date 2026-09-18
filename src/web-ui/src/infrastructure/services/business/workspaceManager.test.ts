@@ -162,6 +162,12 @@ describe('WorkspaceManager startup initialization', () => {
     });
 
     expect(manager.getState().currentWorkspace?.name).toBe('Assistant renamed');
+    identityHandler?.({ payload: {
+      workspaceId: 'another-workspace', workspacePath: workspace.rootPath,
+      name: 'Wrong workspace', identity: { name: 'Wrong workspace' }, changedFields: ['name'],
+    } });
+    expect(manager.getState().currentWorkspace?.name).toBe('Assistant renamed');
+
   });
 
   it('refreshes workspace identity once the delayed listener is ready after startup', async () => {

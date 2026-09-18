@@ -205,18 +205,18 @@ final class MobileCoreAdapter {
         deviceDirectory.dispatch(intent: DeviceDirectoryIntentRetry(deviceId: deviceID))
     }
 
-    func setDirectoryWorkspaceExpanded(_ deviceID: String, path: String, expanded: Bool, connectionId: String? = nil, sshHost: String? = nil) {
+    func setDirectoryWorkspaceExpanded(_ deviceID: String, path: String, expanded: Bool, connectionId: String? = nil, sshHost: String? = nil, workspaceId: String? = nil) {
         deviceDirectory.dispatch(intent: DeviceDirectoryIntentSetWorkspaceExpanded(
             deviceId: deviceID,
             path: path,
-            expanded: expanded, remoteConnectionId: connectionId, remoteSshHost: sshHost
+            expanded: expanded, remoteConnectionId: connectionId, remoteSshHost: sshHost, workspaceId: workspaceId
         ))
     }
 
-    func retryDirectoryWorkspace(_ deviceID: String, path: String, connectionId: String? = nil, sshHost: String? = nil) {
+    func retryDirectoryWorkspace(_ deviceID: String, path: String, connectionId: String? = nil, sshHost: String? = nil, workspaceId: String? = nil) {
         deviceDirectory.dispatch(intent: DeviceDirectoryIntentRetryWorkspace(
             deviceId: deviceID,
-            path: path, remoteConnectionId: connectionId, remoteSshHost: sshHost
+            path: path, remoteConnectionId: connectionId, remoteSshHost: sshHost, workspaceId: workspaceId
         ))
     }
 
@@ -328,15 +328,18 @@ final class MobileCoreAdapter {
         modelID: String?,
         workspacePath: String? = nil,
         remoteConnectionId: String? = nil,
-        remoteSshHost: String? = nil
+        remoteSshHost: String? = nil,
+        workspaceId: String? = nil
     ) {
         guard let remoteSession else {
             log.error("Remote create unavailable target_kind=\(self.remoteTargetKind(self.remoteTargetKey), privacy: .public)")
             onCreateUnavailable?(requestID, remoteTargetKey)
             return
         }
-        log.info("Dispatching remote create target_kind=\(self.remoteTargetKind(self.remoteTargetKey), privacy: .public)")
+        log.info("Dispatching remote create target_kind=\(self.remoteTargetKind(self.remoteTargetKey), privacy: .public) by_id=\(workspaceId != nil, privacy: .public)")
         prepareDirectoryReconcile(requestID: requestID)
+        // The shared store sends only `workspace_id` when one is present; the legacy
+        // path projection is used solely for references that never had an ID.
         remoteSession.dispatch(
             intent: RemoteSessionIntentCreateSessionOperation(
                 requestId: requestID,
@@ -346,7 +349,8 @@ final class MobileCoreAdapter {
                 modelId: modelID,
                 workspacePath: workspacePath,
                 remoteConnectionId: remoteConnectionId,
-                remoteSshHost: remoteSshHost
+                remoteSshHost: remoteSshHost,
+                workspaceId: workspaceId
             )
         )
     }
@@ -416,8 +420,8 @@ final class MobileCoreAdapter {
     func selectDeviceToolsPanel(terminal: Bool) { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentSelectDeviceToolsPanel(panel: terminal ? .terminal : .files)) }
     func closeDeviceTools() { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentCloseDeviceTools.shared) }
     func startDeviceToolsTerminal() { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentStartDeviceToolsTerminal.shared) }
-    func openDeviceFiles(_ path: String, connectionId: String?) { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentOpenDeviceFiles(path: path, remoteConnectionId: connectionId)) }
-    func openDeviceTerminal(_ path: String, connectionId: String?) { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentOpenDeviceTerminal(path: path, remoteConnectionId: connectionId)) }
+    func openDeviceFiles(_ path: String, connectionId: String?, workspaceId: String? = nil) { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentOpenDeviceFiles(path: path, remoteConnectionId: connectionId, workspaceId: workspaceId)) }
+    func openDeviceTerminal(_ path: String, connectionId: String?, workspaceId: String? = nil) { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentOpenDeviceTerminal(path: path, remoteConnectionId: connectionId, workspaceId: workspaceId)) }
     func browseRuntimeDirectories(_ path: String, connectionId: String?, append: Bool) { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentBrowseWorkspaceDirectories(path: path, remoteConnectionId: connectionId, append: append)) }
     func sortRuntimeFiles(_ sort: RuntimeFileSort) { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentSortFiles(sort: sort)) }
     func closeRuntimeFileEditor() { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentCloseFileEditor.shared) }
@@ -439,12 +443,12 @@ final class MobileCoreAdapter {
     func writeRuntimeTerminal(_ data: String) { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentWriteTerminal(data: data)) }
     func closeRuntimeTerminal() { remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentCloseTerminal.shared) }
 
-    func selectRemoteWorkspace(path: String, remoteConnectionId: String? = nil, remoteSshHost: String? = nil) {
-        remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentSelectWorkspace(path: path, remoteConnectionId: remoteConnectionId, remoteSshHost: remoteSshHost))
+    func selectRemoteWorkspace(path: String, remoteConnectionId: String? = nil, remoteSshHost: String? = nil, workspaceId: String? = nil) {
+        remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentSelectWorkspace(path: path, remoteConnectionId: remoteConnectionId, remoteSshHost: remoteSshHost, inferSavedIdentity: workspaceId == nil, workspaceId: workspaceId))
     }
 
-    func selectRemoteAssistant(path: String) {
-        remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentSelectAssistant(path: path))
+    func selectRemoteAssistant(path: String, workspaceId: String? = nil) {
+        remoteWorkspace?.dispatch(intent: RemoteWorkspaceIntentSelectAssistant(path: path, workspaceId: workspaceId))
     }
 
     func loadRemoteWorkspaces() {

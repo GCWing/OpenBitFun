@@ -20,37 +20,26 @@ function readSource(relativePath: string): string {
 }
 
 describe('floating MiniApp chat activity', () => {
-  it('uses text-only Hi and Hello states in the design-system launcher', () => {
+  it('uses the design-system launcher to open the conversation dock', () => {
     const component = readSource('./FloatingMiniChat.tsx');
-    expect(component).toContain('IconButton, LauncherButton, Tooltip');
     expect(component).toContain('<LauncherButton');
-    expect(component).toContain(
-      'className="openbitfun-fmc__button openbitfun-fmc__button--hello"',
-    );
-    expect(component).not.toContain("from 'lucide-react'");
+    expect(component).toContain('className="openbitfun-fmc__button"');
+    expect(component).toContain('aria-expanded={dock.open}');
+    expect(component).toContain("aria-label={t('dock.open')}");
     expect(component).not.toContain('leadingIcon=');
-    expect(component).toContain("tVoice('voiceCall.call.launcherCompactLabel')");
-    expect(component).toContain("tVoice('voiceCall.call.launcherLabel')");
-    expect(component).toContain('openbitfun-fmc__button-label--compact');
-    expect(component).toContain('openbitfun-fmc__button-label--expanded');
+    expect(component).toContain("tv('voiceCall.call.launcherCompactLabel')");
+    expect(component).toContain('onClick={() => dock.setOpen(true)}');
   });
 
-  it('keeps Hi compact until fine-pointer hover or keyboard focus reveals Hello', () => {
+  it('hides the launcher while the retained dock is open', () => {
+    const component = readSource('./FloatingMiniChat.tsx');
     const stylesheet = readSource('./FloatingMiniChat.scss');
 
+    expect(component).toMatch(/<div\b[^>]*role="dialog"[^>]*data-motion="presence"/);
     expect(stylesheet).not.toContain('--openbitfun-color-control-launcher');
     expect(stylesheet).not.toContain('--openbitfun-color-control-highlight');
-    expect(stylesheet).toContain('.openbitfun-fmc__button--hello');
-    expect(stylesheet).toContain(
-      'inline-size: var(--openbitfun-control-launcher-button-block-size);',
-    );
-    expect(stylesheet).toContain('@media (hover: hover) and (pointer: fine)');
-    expect(stylesheet).toContain(
-      'inline-size: var(--openbitfun-control-launcher-button-min-inline-size);',
-    );
-    expect(stylesheet).toContain('.openbitfun-fmc__button-label--compact');
-    expect(stylesheet).toContain('.openbitfun-fmc__button-label--expanded');
-    expect(stylesheet).toContain('&:focus-visible');
+    expect(stylesheet).toMatch(/\.openbitfun-fmc__button\s*\{[\s\S]*?\.openbitfun-fmc--open &[\s\S]*?visibility: hidden;[\s\S]*?pointer-events: none;/);
+    expect(stylesheet).toContain('transition-behavior: allow-discrete;');
   });
 
   it.each([
@@ -90,16 +79,14 @@ describe('floating MiniApp chat activity', () => {
     expect(isFloatingMiniChatSessionExecuting(undefined)).toBe(false);
   });
 
-  it('binds the indicator to the tracked MiniApp session with reduced-motion fallback', () => {
+  it('keeps the live call reachable when collapsed and retains reduced-motion support', () => {
     const component = readSource('./FloatingMiniChat.tsx');
     const stylesheet = readSource('./FloatingMiniChat.scss');
 
-    expect(component).toContain('trackedSession: activeMiniAppSession');
-    expect(component).toContain('isMiniAppSessionExecuting && (');
-    expect(component).toContain('className="openbitfun-fmc__button-activity"');
-    expect(component).toContain('aria-busy={isMiniAppSessionExecuting || undefined}');
-    expect(stylesheet).toContain('@keyframes fmc-button-activity-spin');
-    expect(stylesheet).toContain('@keyframes fmc-button-activity-glow');
+    expect(component).toContain("const live = voice.phase !== 'idle'");
+    expect(component).toContain('{live ? <Phone size={16} />');
+    expect(component).toContain('const collapse = () => dock.setOpen(false)');
+    expect(component).toContain('onClick={voice.end}');
     expect(stylesheet).toContain('@media (prefers-reduced-motion: reduce)');
   });
 });

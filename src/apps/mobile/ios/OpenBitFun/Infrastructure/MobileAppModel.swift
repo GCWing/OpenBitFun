@@ -126,10 +126,11 @@ final class MobileAppModel: ObservableObject {
     var committedRemoteCreate: CommittedRemoteCreate?
     var remoteLastAppliedAuthority: RemoteAuthorityScope?
     var remoteSidebarWorkspaceState: RemoteWorkspaceUiStateReady?
-    var workspaceCatalog: [(path: String, name: String, selected: Bool, remoteConnectionId: String?, remoteSshHost: String?)] = []
+    typealias WorkspaceCatalogEntry = (path: String, name: String, selected: Bool, remoteConnectionId: String?, remoteSshHost: String?, workspaceId: String?)
+    var workspaceCatalog: [WorkspaceCatalogEntry] = []
     var pendingRemoteWorkspaceCreate: (path: String, agentType: String)?
     var pendingRemoteSessionRefreshWorkspace: MobileWorkspaceScope?
-    var pendingDirectoryWorkspace: (deviceKey: String, path: String, epoch: UInt64, remoteConnectionId: String?, remoteSshHost: String?)?
+    var pendingDirectoryWorkspace: (deviceKey: String, path: String, epoch: UInt64, remoteConnectionId: String?, remoteSshHost: String?, workspaceId: String?)?
     var pendingDirectoryRemoteDraft: PendingDirectoryRemoteDraft?
     var pendingRemoteAssistantCreate = false
     var selectedRemoteWorkspaceKind = ""

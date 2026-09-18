@@ -349,10 +349,41 @@ struct MobilePendingDownload: Identifiable, Equatable {
     }
 }
 
+/// A workspace reference as the phone holds it: the stable `workspaceId` when the
+/// host assigned one, otherwise the legacy `(connection, ssh host, path)` triple
+/// from pre-ID hosts and caches. The path is display text and an IO operand only.
 struct MobileWorkspaceScope: Equatable {
     let path: String
     let remoteConnectionId: String?
     let remoteSshHost: String?
+    var workspaceId: String? = nil
+
+    private var normalizedWorkspaceId: String? {
+        let value = (workspaceId ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    /// Stable key: `workspaceId ?: legacy triple`, matching `RemoteWorkspaceIdentity.key`.
+    var key: String {
+        if let id = normalizedWorkspaceId { return "workspace:\(id.utf8.count):\(id)" }
+        return [remoteConnectionId ?? "", remoteSshHost ?? "", Self.normalizedPath(path)]
+            .map { "\($0.utf8.count):\($0)" }.joined()
+    }
+
+    /// ID-first equality: when both sides carry a workspace ID only the IDs are
+    /// compared; when either side predates IDs the legacy triple decides.
+    func refersTo(_ other: MobileWorkspaceScope) -> Bool {
+        if let own = normalizedWorkspaceId, let theirs = other.normalizedWorkspaceId { return own == theirs }
+        return Self.normalizedPath(path) == Self.normalizedPath(other.path) &&
+            (remoteConnectionId ?? "") == (other.remoteConnectionId ?? "") &&
+            (remoteSshHost ?? "") == (other.remoteSshHost ?? "")
+    }
+
+    static func normalizedPath(_ path: String) -> String {
+        var value = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        while value.count > 1 && (value.hasSuffix("/") || value.hasSuffix("\\")) { value.removeLast() }
+        return value
+    }
 }
 
 struct ChatSession: Identifiable, Equatable {
@@ -385,9 +416,14 @@ struct PendingDirectoryRemoteDraft {
     let normalizedWorkspacePath: String
     var remoteConnectionId: String? = nil
     var remoteSshHost: String? = nil
+    var workspaceId: String? = nil
     var agentType: String = "code"
     let epoch: UInt64
     var selectionRequested: Bool
+
+    var scope: MobileWorkspaceScope {
+        MobileWorkspaceScope(path: workspacePath, remoteConnectionId: remoteConnectionId, remoteSshHost: remoteSshHost, workspaceId: workspaceId)
+    }
 }
 
 struct MobileAccountDevice: Identifiable, Equatable {
@@ -410,7 +446,8 @@ struct MobileDeviceDirectoryEntry: Identifiable, Equatable {
 }
 
 struct MobileWorkspaceGroup: Identifiable, Equatable {
-    var id: String { [deviceKey ?? "", remoteConnectionId ?? "", remoteSshHost ?? "", path].map { "\($0.utf8.count):\($0)" }.joined() }
+    var workspaceId: String? = nil
+    var id: String { if let workspaceId { return [deviceKey ?? "", workspaceId].map { "\($0.utf8.count):\($0)" }.joined() }; return [deviceKey ?? "", remoteConnectionId ?? "", remoteSshHost ?? "", path].map { "\($0.utf8.count):\($0)" }.joined() }
     let path: String
     let name: String
     let selected: Bool
@@ -420,6 +457,16 @@ struct MobileWorkspaceGroup: Identifiable, Equatable {
     var directoryStatus = "IDLE"
     var remoteConnectionId: String? = nil
     var remoteSshHost: String? = nil
+
+    var scope: MobileWorkspaceScope {
+        MobileWorkspaceScope(path: path, remoteConnectionId: remoteConnectionId, remoteSshHost: remoteSshHost, workspaceId: workspaceId)
+    }
+
+    /// ID-first identity comparison that ignores the device the row is filed under.
+    func refersTo(_ other: MobileWorkspaceGroup) -> Bool { scope.refersTo(other.scope) }
+
+    /// Device-independent key for per-workspace UI state (create menu anchors, expansion).
+    var scopeKey: String { scope.key }
 }
 
 enum MobileSessionListSectionKind: Equatable {
@@ -436,18 +483,36 @@ struct MobileSessionListSectionProjection: Identifiable {
     let path: String
     let name: String
     let sessions: [ChatSession]
+    /// Project sections only: the workspace the section stands for, ID-first.
+    var workspaceScope: MobileWorkspaceScope? = nil
 }
 
 struct MobileSessionWorkspaceOption: Identifiable {
-    var id: String { path }
+    /// `workspaceId ?: legacy triple`; two same-path workspaces are two options.
+    var id: String { key }
     let path: String
     let name: String
+    let workspaceId: String?
+    let remoteConnectionId: String?
+    let remoteSshHost: String?
+    let key: String
+
+    init(path: String, name: String, workspaceId: String? = nil, remoteConnectionId: String? = nil, remoteSshHost: String? = nil, key: String? = nil) {
+        self.path = path
+        self.name = name
+        self.workspaceId = workspaceId
+        self.remoteConnectionId = remoteConnectionId
+        self.remoteSshHost = remoteSshHost
+        self.key = key ?? MobileWorkspaceScope(path: path, remoteConnectionId: remoteConnectionId, remoteSshHost: remoteSshHost, workspaceId: workspaceId).key
+    }
 }
 
 struct MobileAssistantOption: Identifiable, Equatable {
-    var id: String { path }
+    /// The workspace ID when the host assigned one; the path only for pre-ID hosts.
+    var id: String { workspaceId ?? path }
     let path: String
     let name: String
+    var workspaceId: String? = nil
 }
 
 struct ComposerAttachment: Identifiable, Equatable {

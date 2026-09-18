@@ -38,7 +38,7 @@ import {
   resolveAcpModeState,
   resolveAcpReasoningState,
 } from '../utils/acpSessionConfig';
-import { sessionProjectWorkspacePath } from '../utils/sessionWorkspace';
+import { sessionProjectWorkspacePath, sessionWorkspaceId } from '../utils/sessionWorkspace';
 import { quickActions } from '@/shared/services/ide-control';
 import {
   buildContextUsageTooltip,
@@ -527,6 +527,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         ACPClientAPI.getSessionOptions({
           sessionId,
           clientId: acpClientId,
+          workspaceId: activeSession?.workspaceId || activeSession?.config.workspaceId,
           workspacePath: activeSession?.workspacePath || activeSession?.config.workspacePath,
           remoteConnectionId: activeSession?.remoteConnectionId,
           remoteSshHost: activeSession?.remoteSshHost,
@@ -561,6 +562,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     acpClientId,
     isAcpSession,
     sessionId,
+    activeSession?.config.workspaceId,
+    activeSession?.workspaceId,
   ]);
 
   useEffect(() => {
@@ -1298,6 +1301,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
         const options = await ACPClientAPI.setSessionModel({
           sessionId,
           clientId: acpClientId,
+          workspaceId: activeSession?.workspaceId || activeSession?.config.workspaceId,
           workspacePath: activeSession?.workspacePath || activeSession?.config.workspacePath,
           remoteConnectionId: activeSession?.remoteConnectionId,
           remoteSshHost: activeSession?.remoteSshHost,
@@ -1326,6 +1330,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             sessionId,
             modelName: modelId,
             reasoningPreset: nextReasoningPreset ?? null,
+            workspaceId: sessionWorkspaceId(session),
             workspacePath: sessionProjectWorkspacePath(session),
             remoteConnectionId: session.remoteConnectionId,
             remoteSshHost: session.remoteSshHost,
@@ -1383,6 +1388,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     sessionId,
     t,
     targetIsSubagent,
+    activeSession?.config.workspaceId,
+    activeSession?.workspaceId,
   ]);
 
   const handleSelectReasoningPreset = useCallback(async (presetId: string | null) => {
@@ -1430,6 +1437,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
           sessionId,
           modelName: currentNativeModelId,
           reasoningPreset: normalizedPreset ?? null,
+          workspaceId: sessionWorkspaceId(session),
           workspacePath: sessionProjectWorkspacePath(session),
           remoteConnectionId: session.remoteConnectionId,
           remoteSshHost: session.remoteSshHost,
@@ -1477,6 +1485,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       const options = await ACPClientAPI.setSessionConfigOption({
         sessionId,
         clientId: acpClientId,
+        workspaceId: activeSession?.workspaceId || activeSession?.config.workspaceId,
         workspacePath: activeSession?.workspacePath || activeSession?.config.workspacePath,
         remoteConnectionId: activeSession?.remoteConnectionId,
         remoteSshHost: activeSession?.remoteSshHost,
@@ -1502,6 +1511,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     loading,
     reasoningLoading,
     sessionId,
+    activeSession?.config.workspaceId,
+    activeSession?.workspaceId,
   ]);
 
   const handleSelectAcpReasoning = useCallback(async (presetId: string | null) => {
@@ -1511,6 +1522,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       const options = await ACPClientAPI.setSessionConfigOption({
         sessionId,
         clientId: acpClientId,
+        workspaceId: activeSession?.workspaceId || activeSession?.config.workspaceId,
         workspacePath: activeSession?.workspacePath || activeSession?.config.workspacePath,
         remoteConnectionId: activeSession?.remoteConnectionId,
         remoteSshHost: activeSession?.remoteSshHost,
@@ -1538,6 +1550,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     reasoningLoading,
     sessionId,
     t,
+    activeSession?.config.workspaceId,
+    activeSession?.workspaceId,
   ]);
 
   const handleSelectReasoningPresetFromMenu = useCallback(async (presetId: string | null) => {
@@ -1578,6 +1592,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
       const options = await ACPClientAPI.setSessionConfigOption({
         sessionId,
         clientId: acpClientId,
+        workspaceId: activeSession?.workspaceId || activeSession?.config.workspaceId,
         workspacePath: activeSession?.workspacePath || activeSession?.config.workspacePath,
         remoteConnectionId: activeSession?.remoteConnectionId,
         remoteSshHost: activeSession?.remoteSshHost,
@@ -1603,6 +1618,8 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     loading,
     sessionId,
     t,
+    activeSession?.config.workspaceId,
+    activeSession?.workspaceId,
   ]);
 
   const handleTriggerKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>) => {

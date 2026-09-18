@@ -292,6 +292,11 @@ mod tests {
             let path = std::env::temp_dir()
                 .join(format!("openbitfun-session-branch-test-{}", Uuid::new_v4()));
             std::fs::create_dir_all(&path).expect("test workspace should be created");
+            // Sessions only exist inside registered workspaces; register the
+            // fixture directory like a host that opened this folder. Keep the
+            // canonical path so record-derived IO projections compare equal.
+            let path = dunce::canonicalize(&path).expect("test workspace should canonicalize");
+            crate::service::workspace::legacy_compat::register_local_fixture_blocking(&path);
             Self { path }
         }
 

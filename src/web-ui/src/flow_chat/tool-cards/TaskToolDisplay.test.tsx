@@ -1393,9 +1393,8 @@ describeWithJsdom('TaskToolDisplay', () => {
 
     expect(mocks.loadBtwSessionHistory).toHaveBeenCalledWith({
       childSessionId: 'review-session-running',
-      workspacePath: 'D:\\workspace\\repo',
-      remoteConnectionId: 'remote-1',
-      remoteSshHost: 'host-1',
+      parentSessionId: 'parent-session',
+
     });
   });
 
@@ -1435,9 +1434,8 @@ describeWithJsdom('TaskToolDisplay', () => {
     );
     expect(mocks.loadBtwSessionHistory).toHaveBeenCalledWith({
       childSessionId: 'review-session-running',
-      workspacePath: 'D:\\workspace\\repo',
-      remoteConnectionId: 'remote-1',
-      remoteSshHost: 'host-1',
+      parentSessionId: 'parent-session',
+
     });
   });
 
@@ -1475,9 +1473,8 @@ describeWithJsdom('TaskToolDisplay', () => {
 
     expect(mocks.loadBtwSessionHistory).toHaveBeenCalledWith({
       childSessionId: 'review-session-dynamic',
-      workspacePath: 'D:\\workspace\\repo',
-      remoteConnectionId: 'remote-1',
-      remoteSshHost: 'host-1',
+      parentSessionId: 'parent-session',
+
     });
     expect(mocks.notificationError).not.toHaveBeenCalled();
   });

@@ -15,9 +15,9 @@ interface FileWatchEvent {
 }
 
 class FileSystemService implements IFileSystemService {
-  async loadFileTree(rootPath: string, options: FileSystemOptions = {}): Promise<FileSystemNode[]> {
+  async loadFileTree(workspaceId: string, rootPath: string, options: FileSystemOptions = {}): Promise<FileSystemNode[]> {
     try {
-      const rawFileTree = await workspaceAPI.getFileTree(rootPath);
+      const rawFileTree = await workspaceAPI.getFileTree(workspaceId, rootPath);
       const fileTree = this.transformRawFileTree(rawFileTree);
       return this.sortFileTree(fileTree, options.sortBy, options.sortOrder);
     } catch (error) {
@@ -26,23 +26,23 @@ class FileSystemService implements IFileSystemService {
     }
   }
 
-  async searchFiles(_rootPath: string, _query: string): Promise<FileSystemNode[]> {
+  async searchFiles(workspaceId: string, _query: string): Promise<FileSystemNode[]> {
     try {
-      const results = await workspaceAPI.searchFilenamesOnly(_rootPath, _query);
+      const results = await workspaceAPI.searchFilenamesOnly(workspaceId, _query);
       return results.map((result) => ({
         path: result.path,
         name: result.name,
         isDirectory: result.isDirectory,
       }));
     } catch (error) {
-      log.error('Failed to search files', { rootPath: _rootPath, query: _query, error });
+      log.error('Failed to search files', { workspaceId, query: _query, error });
       throw new Error(`Failed to search files: ${error}`);
     }
   }
 
-  async getDirectoryChildren(dirPath: string): Promise<FileSystemNode[]> {
+  async getDirectoryChildren(workspaceId: string, dirPath: string): Promise<FileSystemNode[]> {
     try {
-      const rawChildren = await workspaceAPI.getDirectoryChildren(dirPath);
+      const rawChildren = await workspaceAPI.explorerGetChildren(workspaceId, dirPath);
       const children = rawChildren.map((node: any) => this.transformRawNode(node));
       return this.sortFileTree(children);
     } catch (error) {
@@ -52,6 +52,7 @@ class FileSystemService implements IFileSystemService {
   }
 
   async getDirectoryChildrenPaginated(
+    workspaceId: string,
     dirPath: string, 
     offset: number = 0, 
     limit: number = 100
@@ -63,7 +64,7 @@ class FileSystemService implements IFileSystemService {
     limit: number;
   }> {
     try {
-      const result = await workspaceAPI.getDirectoryChildrenPaginated(dirPath, offset, limit);
+      const result = await workspaceAPI.getDirectoryChildrenPaginated(workspaceId, dirPath, offset, limit);
       const children = result.children.map((node: any) => this.transformRawNode(node));
       
       return {
@@ -177,11 +178,11 @@ class FileSystemService implements IFileSystemService {
     }
   }
 
-  async getFileContent(filePath: string): Promise<string> {
+  async getFileContent(workspaceId: string, filePath: string): Promise<string> {
     try {
-      return await workspaceAPI.readFileContent(filePath);
+      return await workspaceAPI.readWorkspaceFile(workspaceId, filePath);
     } catch (error) {
-      log.error('Failed to read file content', { filePath, error });
+      log.error('Failed to read file content', { workspaceId, filePath, error });
       throw new Error(`Failed to read file: ${error}`);
     }
   }

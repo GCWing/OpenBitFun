@@ -22,7 +22,7 @@ vi.mock('@/infrastructure/api', () => ({
     searchReferenceableSessions: vi.fn().mockResolvedValue([]),
   },
   workspaceAPI: {
-    getDirectoryChildren: vi.fn().mockResolvedValue([]),
+    explorerGetChildren: vi.fn().mockResolvedValue([]),
     searchFilenamesOnlyStreamDetailed: vi.fn().mockResolvedValue({
       searchId: 'search-1',
       searchKind: 'filenames',
@@ -89,6 +89,7 @@ const Harness: React.FC<HarnessProps> = ({
         isOpen={isOpen}
         searchQuery={searchQuery}
         workspacePath="/workspace"
+        workspaceId="workspace-id"
         remoteConnectionId={remoteConnectionId}
         anchorRef={anchorRef}
         entryView={entryView}
@@ -190,7 +191,7 @@ describe('ChatContextPicker overlay', () => {
 
   beforeEach(() => {
     Element.prototype.scrollIntoView = vi.fn();
-    vi.mocked(workspaceAPI.getDirectoryChildren).mockResolvedValue([]);
+    vi.mocked(workspaceAPI.explorerGetChildren).mockResolvedValue([]);
     vi.mocked(workspaceAPI.searchFilenamesOnlyStreamDetailed).mockResolvedValue({
       searchId: 'search-1',
       searchKind: 'filenames',
@@ -221,9 +222,9 @@ describe('ChatContextPicker overlay', () => {
     const picker = document.querySelector<HTMLElement>('.chat-context-picker--overlay');
     expect(picker?.parentElement?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
     expect(picker?.style.visibility).toBe('visible');
-    expect(workspaceAPI.getDirectoryChildren).toHaveBeenCalledWith(
+    expect(workspaceAPI.explorerGetChildren).toHaveBeenCalledWith(
+      'workspace-id',
       '/workspace',
-      'remote-connection-1',
     );
   });
 
@@ -245,7 +246,7 @@ describe('ChatContextPicker overlay', () => {
     expect(option('files')).toBeTruthy();
     expect(option('skills')).toBeTruthy();
     expect(option('add-image')).toBeTruthy();
-    expect(workspaceAPI.getDirectoryChildren).not.toHaveBeenCalled();
+    expect(workspaceAPI.explorerGetChildren).not.toHaveBeenCalled();
     expect(document.querySelector('[data-openbitfun-part="currentViewLabel"]')?.textContent)
       .toBe('contextPicker.menuTitle');
 
@@ -254,9 +255,9 @@ describe('ChatContextPicker overlay', () => {
       await Promise.resolve();
     });
 
-    expect(workspaceAPI.getDirectoryChildren).toHaveBeenCalledWith(
+    expect(workspaceAPI.explorerGetChildren).toHaveBeenCalledWith(
+      'workspace-id',
       '/workspace',
-      'remote-connection-1',
     );
   });
 
@@ -275,24 +276,24 @@ describe('ChatContextPicker overlay', () => {
       option('files')?.click();
       await Promise.resolve();
     });
-    expect(workspaceAPI.getDirectoryChildren).toHaveBeenCalledOnce();
+    expect(workspaceAPI.explorerGetChildren).toHaveBeenCalledOnce();
 
     await act(async () => {
       root.render(<Harness {...pickerProps} isOpen={false} />);
       await Promise.resolve();
     });
-    vi.mocked(workspaceAPI.getDirectoryChildren).mockClear();
+    vi.mocked(workspaceAPI.explorerGetChildren).mockClear();
     await act(async () => {
       root.render(<Harness {...pickerProps} />);
       await Promise.resolve();
     });
 
     expect(option('files')).toBeTruthy();
-    expect(workspaceAPI.getDirectoryChildren).not.toHaveBeenCalled();
+    expect(workspaceAPI.explorerGetChildren).not.toHaveBeenCalled();
   });
 
   it('shows the current directory as one continuous workspace-relative path', async () => {
-    vi.mocked(workspaceAPI.getDirectoryChildren).mockResolvedValueOnce([
+    vi.mocked(workspaceAPI.explorerGetChildren).mockResolvedValueOnce([
       {
         path: '/workspace/src',
         name: 'src',
@@ -313,7 +314,7 @@ describe('ChatContextPicker overlay', () => {
     expect(item?.querySelector('[data-openbitfun-part="label"]')?.textContent).toBe('src');
     expect(item?.querySelector('[data-openbitfun-part="metadata"]')).toBeNull();
 
-    vi.mocked(workspaceAPI.getDirectoryChildren).mockResolvedValueOnce([
+    vi.mocked(workspaceAPI.explorerGetChildren).mockResolvedValueOnce([
       {
         path: '/workspace/src/App.tsx',
         name: 'App.tsx',
@@ -387,7 +388,7 @@ describe('ChatContextPicker overlay', () => {
     expect(skillOptions[0]?.querySelector('[data-openbitfun-part="label"]')?.getAttribute('title')).toBe('');
     expect(skillOptions[1]?.querySelector('[data-openbitfun-part="metadata"]')?.textContent)
       .toBe('Build presentations');
-    expect(workspaceAPI.getDirectoryChildren).not.toHaveBeenCalled();
+    expect(workspaceAPI.explorerGetChildren).not.toHaveBeenCalled();
 
     await act(async () => {
       document.dispatchEvent(new KeyboardEvent('keydown', {
@@ -548,7 +549,7 @@ describe('ChatContextPicker overlay', () => {
   });
 
   it('does not present a remote browse failure as an empty directory', async () => {
-    vi.mocked(workspaceAPI.getDirectoryChildren).mockRejectedValueOnce(
+    vi.mocked(workspaceAPI.explorerGetChildren).mockRejectedValueOnce(
       new Error('remote connection unavailable'),
     );
 
@@ -616,8 +617,8 @@ describe('ChatContextPicker overlay', () => {
 
     expect(workspaceAPI.searchFilenamesOnlyStreamDetailed).toHaveBeenCalled();
     expect(
-      vi.mocked(workspaceAPI.searchFilenamesOnlyStreamDetailed).mock.calls[0]?.[10],
-    ).toBe('remote-connection-1');
+      vi.mocked(workspaceAPI.searchFilenamesOnlyStreamDetailed).mock.calls[0]?.[0],
+    ).toBe('workspace-id');
 
     await act(async () => {
       reportProgress?.({

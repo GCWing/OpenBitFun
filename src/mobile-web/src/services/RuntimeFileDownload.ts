@@ -1,4 +1,4 @@
-import type { RemoteSessionManager } from './RemoteSessionManager';
+import type { RemoteSessionManager, RuntimeFileWorkspace } from './RemoteSessionManager';
 
 interface DownloadWriter {
   write(bytes: Uint8Array): Promise<void>;
@@ -12,7 +12,7 @@ interface SavePickerHost {
 }
 export interface DownloadOptions {
   sessionId?: string;
-  workspace?: { path: string; remoteConnectionId?: string };
+  workspace?: RuntimeFileWorkspace;
   /** Captured by the calling view before the picker opens. */
   isCurrent: () => boolean;
   onProgress?: (downloaded: number, total: number) => void;

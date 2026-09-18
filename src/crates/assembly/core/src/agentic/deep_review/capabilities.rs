@@ -72,8 +72,8 @@ pub async fn review_capability_catalog(
     let mut agents = get_agent_registry()
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: context.agent_type.as_deref(),
-            workspace_root: (!context.is_remote())
-                .then(|| context.workspace_root())
+            workspace_id: (!context.is_remote())
+                .then(|| context.workspace_id())
                 .flatten(),
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
@@ -121,7 +121,7 @@ pub async fn review_capability_catalog(
     }
 
     let workspace_root = (!context.is_remote())
-        .then(|| context.workspace_root())
+        .then(|| context.workspace_id())
         .flatten();
     for agent in agents.into_iter().take(agent_limit) {
         let Ok(detail) = get_agent_registry()
@@ -170,7 +170,7 @@ async fn implicitly_invocable_skills(context: &ToolUseContext) -> Vec<SkillInfo>
     } else {
         skill_registry
             .get_implicitly_invocable_skills_for_workspace(
-                context.workspace_root(),
+                context.workspace.as_ref(),
                 context.agent_type.as_deref(),
             )
             .await
@@ -220,8 +220,8 @@ pub async fn resolve_review_capability(
         let agent = get_agent_registry()
             .get_subagents_for_query(&SubagentQueryContext {
                 parent_agent_type: context.agent_type.as_deref(),
-                workspace_root: (!context.is_remote())
-                    .then(|| context.workspace_root())
+                workspace_id: (!context.is_remote())
+                    .then(|| context.workspace_id())
                     .flatten(),
                 list_scope: SubagentListScope::TaskVisible,
                 include_disabled: false,
@@ -234,7 +234,7 @@ pub async fn resolve_review_capability(
                 OpenBitFunError::tool("Review agent is no longer available".to_string())
             })?;
         let workspace_root = (!context.is_remote())
-            .then(|| context.workspace_root())
+            .then(|| context.workspace_id())
             .flatten();
         let detail = get_agent_registry()
             .get_custom_subagent_detail_by_key(&agent.key, workspace_root)
@@ -314,7 +314,7 @@ async fn load_review_skill(
         registry
             .find_and_load_skill_by_key_for_workspace(
                 skill_key,
-                context.workspace_root(),
+                context.workspace.as_ref(),
                 context.agent_type.as_deref(),
             )
             .await

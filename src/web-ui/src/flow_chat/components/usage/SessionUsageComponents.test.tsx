@@ -17,6 +17,8 @@ import {
   FLOWCHAT_FOCUS_ITEM_EVENT,
   type FlowChatFocusItemRequest,
 } from '../../events/flowchatNavigation';
+import { flowChatStore } from '../../store/FlowChatStore';
+import type { FlowChatState, Session } from '../../types/flow-chat';
 import { SessionRuntimeStatusEntry } from './SessionRuntimeStatusEntry';
 import { SessionUsagePanel } from './SessionUsagePanel';
 import { sessionUsagePanelAppearanceDescriptor } from './appearance';
@@ -1532,6 +1534,23 @@ describe('Session usage report UI components', () => {
   });
 
   it('opens snapshot-backed file diffs from the detail panel', async () => {
+    // Snapshot IO is routed by the session's workspace ID; the path is only the operand.
+    flowChatStore.setState((): FlowChatState => ({
+      sessions: new Map([['session-1', {
+        sessionId: 'session-1',
+        title: 'Session 1',
+        dialogTurns: [],
+        status: 'idle',
+        config: { agentType: 'Standard' },
+        createdAt: 1,
+        lastActiveAt: 1,
+        error: null,
+        sessionKind: 'normal',
+        workspaceId: 'workspace-1',
+        workspacePath: 'D:/workspace/openbitfun',
+      } as Session]]),
+      activeSessionId: 'session-1',
+    }));
     snapshotApiMocks.getOperationDiff.mockResolvedValue({
       filePath: 'D:/workspace/openbitfun/src/main.rs',
       originalContent: 'before',
@@ -1584,7 +1603,6 @@ describe('Session usage report UI components', () => {
       'session-1',
       'D:/workspace/openbitfun/src/main.rs',
       'operation-1',
-      'D:/workspace/openbitfun',
     );
     expect(tabUtilsMocks.createDiffEditorTab).toHaveBeenCalledWith(
       'D:/workspace/openbitfun/src/main.rs',
@@ -1599,8 +1617,10 @@ describe('Session usage report UI components', () => {
       {
         titleKind: 'diff',
         duplicateKeyPrefix: 'diff',
+        workspaceId: 'workspace-1',
       },
     );
+    flowChatStore.setState((): FlowChatState => ({ sessions: new Map(), activeSessionId: null }));
   });
 
   it('shows slowest spans in the detail panel', () => {

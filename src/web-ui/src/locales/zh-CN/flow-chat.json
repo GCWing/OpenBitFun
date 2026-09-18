@@ -2791,5 +2791,21 @@
     "placeholder": "把需求发给 {{app}}…",
     "send": "发送",
     "hint": "消息将由 {{app}} 处理"
+  },
+  "dock": {
+    "hideConversation": "隐藏对话",
+    "openApp": "打开应用",
+    "loadingHistory": "正在加载记录…",
+    "newConversation": "新建操控会话",
+    "newConversationBusy": "结束当前任务或通话后可新建会话",
+    "open": "OpenBitFun 助手",
+    "tabs": "小窗会话",
+    "moveToMain": "移回主窗口",
+    "collapse": "收起",
+    "welcome": "一起管理 OpenBitFun，继续手头的事。",
+    "unavailable": "此会话暂不可用，请重新打开所属应用。",
+    "loadFailed": "暂时无法打开助手",
+    "retry": "重试",
+    "loading": "正在打开助手…"
   }
 }

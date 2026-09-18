@@ -9,15 +9,13 @@ import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFla
 export interface HtmlPreviewPanelProps {
   isActive: boolean;
   filePath: string;
-  workspacePath: string;
-  remoteConnectionId?: string;
+  workspaceId: string;
 }
 
 const HtmlPreviewPanel: React.FC<HtmlPreviewPanelProps> = ({
   isActive,
   filePath,
-  workspacePath,
-  remoteConnectionId,
+  workspaceId,
 }) => {
   const { t } = useTranslation('common');
   const [url, setUrl] = useState<string>();
@@ -30,8 +28,7 @@ const HtmlPreviewPanel: React.FC<HtmlPreviewPanelProps> = ({
     setError(undefined);
     void htmlPreviewApi.create({
       filePath,
-      workspacePath,
-      remoteConnectionId,
+      workspaceId,
       peerDeviceMode: isPeerDeviceModeActive(),
     })
       .then((result) => {
@@ -54,7 +51,7 @@ const HtmlPreviewPanel: React.FC<HtmlPreviewPanelProps> = ({
       }
     };
   // The session is intentionally recreated only when the opened file scope changes.
-  }, [filePath, workspacePath, remoteConnectionId]);
+  }, [filePath, workspaceId]);
 
   if (error) {
     return <div className="openbitfun-html-preview__error"><AlertTriangle size={16} /><span>{error}</span></div>;

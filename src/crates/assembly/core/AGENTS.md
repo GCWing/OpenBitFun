@@ -237,6 +237,8 @@ filter rather than a product-wide build):
 ```bash
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git,document-read --lib file_read_tool::tests
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib file_write_tool::tests
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib file_edit_tool::tests
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib classified_edit
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib delete_file_tool::tests
 cargo test -p openbitfun-core --no-default-features --features agent-runtime,remote-workspace,git --lib service::snapshot::
 ```
@@ -288,3 +290,22 @@ cargo test -p openbitfun-core --no-default-features --features remote-connect,to
 `tools-pages` selects only the Pages tool group. Account host wiring additionally
 requires `remote-connect`; CLI and Desktop select both explicitly. Pages does
 not select MiniApp runtime or market dependencies.
+
+Scheduled-job workspace identity and the temporary 1.0.0 target upgrade boundary:
+
+```bash
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,scheduled-jobs,git --lib service::cron::service::tests
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,scheduled-jobs,git --lib cron_100_target_upgrades_once
+```
+
+For workspace-ID fork ownership and pre-ID session-directory upgrade coverage:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib session_fork_
+```
+
+For remote search ID binding without a live SSH connection:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git,ssh-remote --lib service::search::remote::identity_tests
+```

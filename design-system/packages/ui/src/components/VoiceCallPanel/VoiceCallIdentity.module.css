@@ -1,0 +1,78 @@
+@layer openbitfun.components {
+  .root {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    block-size: calc(var(--openbitfun-control-height-sm) + var(--openbitfun-space-6));
+    min-block-size: 0;
+    transition: block-size 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .leading {
+    position: absolute;
+    inset-inline-start: var(--openbitfun-space-3);
+    inset-block-start: var(--openbitfun-space-3);
+    display: flex;
+    align-items: center;
+    block-size: var(--openbitfun-control-height-sm);
+  }
+  .content {
+    position: relative;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--openbitfun-space-1);
+    min-inline-size: 0;
+    max-inline-size: calc(100% - 2 * (var(--openbitfun-control-height-sm) + var(--openbitfun-space-4)));
+    block-size: var(--openbitfun-control-height-sm);
+    padding-inline: var(--openbitfun-space-2) var(--openbitfun-space-3);
+    box-sizing: border-box;
+  }
+  .action {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+    padding: 0;
+  }
+  .action::before {
+    opacity: 0;
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+  .action[data-hovered="true"]::before { opacity: 1; }
+  .action[hidden], .leading[hidden] { display: none; }
+  .root[data-disabled="true"] .content { opacity: var(--openbitfun-opacity-disabled); }
+  .artwork {
+    position: relative;
+    z-index: 1;
+    display: block;
+    flex: 0 0 auto;
+    inline-size: var(--openbitfun-control-height-sm);
+    block-size: var(--openbitfun-control-height-sm);
+    min-block-size: 0;
+    pointer-events: none;
+    transition: inline-size 480ms cubic-bezier(0.22, 1, 0.36, 1), block-size 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .artwork .logo {
+    color: inherit;
+  }
+  .label {
+    position: relative;
+    z-index: 1;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-label-sm-font-family);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    font-weight: var(--openbitfun-type-label-sm-font-weight);
+    line-height: var(--openbitfun-type-label-sm-line-height);
+    pointer-events: none;
+  }
+  .root[data-expanded="true"] { block-size: clamp(160px, 38cqh, 260px); transition-duration: 700ms; }
+  .root[data-expanded="true"] .content { inline-size: 100%; max-inline-size: 100%; block-size: 100%; padding: var(--openbitfun-space-2); }
+  .root[data-expanded="true"] .artwork { inline-size: 260px; block-size: 100%; transition-duration: 700ms; }
+  @media (prefers-reduced-motion: reduce) { .root, .artwork, .action::before { transition: none; } }
+}

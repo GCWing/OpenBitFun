@@ -5,6 +5,10 @@ import com.openbitfun.mobile.core.protocol.CommandStatus
 import com.openbitfun.mobile.core.protocol.RemoteCommand
 import com.openbitfun.mobile.core.transport.CloudAccountException
 import com.openbitfun.mobile.core.transport.CloudAccountFailure
+import com.openbitfun.mobile.core.transport.GitHubAuthorization
+import com.openbitfun.mobile.core.transport.GitHubAuthorizationPoll
+import com.openbitfun.mobile.core.transport.GitHubTokens
+import com.openbitfun.mobile.core.transport.TransportLog
 import com.openbitfun.mobile.core.transport.RemoteCommandTransport
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -12,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.DeserializationStrategy
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
+import kotlin.test.assertFailsWith
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -21,6 +26,52 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AccountStoreTest {
+    /**
+     * The sign-in poll runs for the minutes the user spends in a browser and a
+     * mail app, which is where a phone most reliably drops a connection. A
+     * single failure there used to end the sign-in and send them back to the
+     * start, so the loop keeps asking until the window closes and stops early
+     * only for a refusal the relay actually meant.
+     */
+    @Test fun signInPollOutlastsNetworkFailuresButNotARefusal() = runTest {
+        val start = GitHubAuthorization("txn", "secret", "https://auth.openbitfun.com/sign-in#ticket=t", 9_999_999_999L, 3)
+
+        var attempts = 0
+        val token = AuthorizationPoll.awaitAccessToken(start, TransportLog.None, nowSeconds = { 0 }) {
+            attempts++
+            when (attempts) {
+                1 -> throw CloudAccountException(CloudAccountFailure.NETWORK)
+                2 -> throw CloudAccountException(CloudAccountFailure.TIMEOUT)
+                3 -> throw CloudAccountException(CloudAccountFailure.RATE_LIMITED, 429)
+                4 -> GitHubAuthorizationPoll("pending")
+                else -> GitHubAuthorizationPoll("authorized", GitHubTokens("granted"))
+            }
+        }
+        assertEquals("granted", token)
+        assertEquals(5, attempts)
+
+        var refusals = 0
+        assertFailsWith<CloudAccountException> {
+            AuthorizationPoll.awaitAccessToken(start, TransportLog.None, nowSeconds = { 0 }) {
+                refusals++
+                throw CloudAccountException(CloudAccountFailure.AUTHENTICATION, 401)
+            }
+        }
+        assertEquals(1, refusals)
+
+        // A window that closed while every poll was failing is a network
+        // problem, and saying "authentication" would send the user looking in
+        // the wrong place.
+        var elapsed = 0L
+        val expired = assertFailsWith<CloudAccountException> {
+            AuthorizationPoll.awaitAccessToken(start.copy(expiresAt = 9L), TransportLog.None, nowSeconds = { elapsed }) {
+                elapsed += 3
+                throw CloudAccountException(CloudAccountFailure.NETWORK)
+            }
+        }
+        assertEquals(CloudAccountFailure.NETWORK, expired.failure)
+    }
+
     @Test fun cancelledLoginDirectoryCannotReviveAccountOrPersistSelectedDevice() = runTest {
         for (failure in listOf<Throwable?>(null, CloudAccountException(CloudAccountFailure.NETWORK),
             CloudAccountException(CloudAccountFailure.AUTHENTICATION), IllegalStateException("Late failure"))) {

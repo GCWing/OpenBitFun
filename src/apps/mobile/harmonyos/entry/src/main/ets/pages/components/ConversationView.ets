@@ -1,6 +1,6 @@
 import { InteractionMailboxPanel } from './InteractionMailboxPanel';
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
-import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
+import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { KeyboardAvoidMode } from '@kit.ArkUI';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { ChatTimelineItem, ObservableChatTimelineItem } from '../../model/ChatTimelineModels';
@@ -31,6 +31,8 @@ import {
   LINE,
   MUTED,
   PAGE_BG,
+  PAGE_BG_FADE,
+  PAGE_BG_OVERLAY,
   SHADOW_SUBTLE,
   SOFT,
   STATUS_DANGER,
@@ -45,6 +47,15 @@ export struct ConversationView {
   @Event onIntent: (intent: ConversationIntent) => void = (_intent: ConversationIntent) => {};
   @Event onRestoreSidebar: () => void = () => {};
   @Local showHeaderActions: boolean = false;
+  /**
+   * How much of the pane the two floating layers cover, measured rather than
+   * assumed: the composer grows with multiline text and attachments, and the
+   * mailbox appears without warning. The transcript runs the full height behind
+   * them and borrows these as its content insets, so a stale number would leave
+   * the first or last message stuck under a capsule.
+   */
+  @Local topInset: number = 0;
+  @Local bottomInset: number = 0;
   private previousKeyboardAvoidMode: KeyboardAvoidMode = KeyboardAvoidMode.OFFSET;
 
   aboutToAppear(): void {
@@ -59,17 +70,78 @@ export struct ConversationView {
   }
 
   build() {
-    Stack() {
-      Column() {
-        this.Header()
-        this.Mailbox()
-        if (this.hoverOperateMode) {
-          this.HoverBody()
-        } else {
-          this.StandardBody()
-        }
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.hoverOperateMode) {
+        this.HalfFoldedLayout()
+      } else {
+        this.FloatingLayout()
       }
-      .width('100%').height('100%').backgroundColor(PAGE_BG)
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor(PAGE_BG)
+  }
+
+  /**
+   * The transcript owns the whole pane; the header and the composer float over
+   * it and the transcript scrolls underneath both, fading out as it reaches
+   * either edge. Stack paints in order, so the body goes down first and the two
+   * overlay layers land on top of it.
+   */
+  @Builder
+  private FloatingLayout() {
+    Column() {
+      this.ConversationBody()
+    }
+    .width('100%')
+    .height('100%')
+
+    // A full-height layer that pins its content to the bottom. Stack aligns
+    // every child the same way, so the bottom layer carries its own alignment
+    // rather than fighting `alignContent`. It is see-through to touches above
+    // the composer, otherwise it would swallow every tap on the transcript.
+    Column() {
+      this.BottomOverlay()
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.End)
+    .hitTestBehavior(HitTestMode.Transparent)
+
+    Column() {
+      this.TopOverlay()
+    }
+    .width('100%')
+  }
+
+  /**
+   * Half-folded on a foldable the screen is physically two panes, and the
+   * transcript and the composer already have one each. Floating one over the
+   * other has nothing left to win there, so this layout stays stacked.
+   */
+  @Builder
+  private HalfFoldedLayout() {
+    Column() {
+      this.Header()
+      this.Mailbox()
+      FolderStack() {
+        Column() {
+          this.ConversationBody()
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ bottom: 12 })
+        Column() {
+          this.InlineStatusLine()
+          this.Composer()
+        }
+        .width('100%')
+      }
+      .alignContent(Alignment.Bottom)
+      .layoutWeight(1)
+      .width('100%')
+      .enableAnimation(true)
+      .autoHalfFold(true)
     }
     .width('100%')
     .height('100%')
@@ -77,34 +149,73 @@ export struct ConversationView {
   }
 
   @Builder
-  private StandardBody() {
+  private TopOverlay() {
     Column() {
-      this.ConversationBody()
-      this.Composer()
+      Column() {
+        this.Header()
+        this.Mailbox()
+      }
+      .width('100%')
+      .backgroundColor(PAGE_BG_OVERLAY)
+      .backgroundBlurStyle(BlurStyle.Thin)
+      this.TopEdgeFade()
     }
-    .layoutWeight(1)
     .width('100%')
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      this.topInset = newArea.height as number;
+    })
   }
 
   @Builder
-  private HoverBody() {
-    FolderStack() {
-      Column() {
-        this.ConversationBody()
-      }
-      .width('100%')
-      .height('100%')
-      .padding({ bottom: 12 })
-      Column() {
-        this.Composer()
-      }
-      .width('100%')
+  private BottomOverlay() {
+    Column() {
+      this.InlineStatusLine()
+      this.Composer()
     }
-    .alignContent(Alignment.Bottom)
-    .layoutWeight(1)
     .width('100%')
-    .enableAnimation(true)
-    .autoHalfFold(true)
+    // The fade covers the whole layer, not just a strip above it: the transcript
+    // runs behind the composer, so anything short of that leaves a line of text
+    // sitting crisp and legible beside the pill after it has already faded out
+    // higher up. It stops short of the page colour so the pill's blur still has
+    // something to work with.
+    .linearGradient({
+      angle: 180,
+      colors: [[PAGE_BG_FADE, 0.0], [PAGE_BG_OVERLAY, 0.45], [PAGE_BG_OVERLAY, 1.0]]
+    })
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      this.bottomInset = newArea.height as number;
+    })
+  }
+
+  /**
+   * Carries the header's opaque band down into the transcript. Without it a
+   * line of text is cut in half at the band's edge and reads as clipped rather
+   * than as continuing underneath. Never takes a touch: the transcript below
+   * it is still the thing being pointed at. The bottom layer needs no strip of
+   * its own — its whole background is the gradient.
+   */
+  @Builder
+  private TopEdgeFade() {
+    Column()
+      .width('100%')
+      .height(MobileDesignGeometry.conversationEdgeFadeHeight)
+      .hitTestBehavior(HitTestMode.None)
+      .linearGradient({
+        angle: 180,
+        colors: [[PAGE_BG, 0.0], [PAGE_BG_FADE, 1.0]]
+      })
+  }
+
+  @Builder
+  private InlineStatusLine() {
+    if (this.inlineStatusText.length > 0 && !this.shouldCenterInlineStatus()) {
+      Text(this.inlineStatusText)
+        .fontSize(MobileDesignTypography.labelSmall.size)
+        .lineHeight(MobileDesignTypography.labelSmall.lineHeight)
+        .fontColor(MUTED)
+        .width('100%')
+        .padding({ left: 20, right: 20, bottom: 8 })
+    }
   }
 
   @Builder
@@ -130,7 +241,7 @@ export struct ConversationView {
         }
         .width('100%')
         .height('100%')
-        if (this.isLoadingConversation) {
+        if (this.isLoadingTranscript) {
           ConversationLoadingState({
             maxContentWidth: this.composerPresentation === ComposerPresentation.Floating ? 760 : 0
           })
@@ -139,19 +250,15 @@ export struct ConversationView {
             .backgroundColor(PAGE_BG)
         }
       }
-      .layoutWeight(1)
       .width('100%')
-    }
-    if (this.inlineStatusText.length > 0 && !this.shouldCenterInlineStatus()) {
-      Text(this.inlineStatusText)
-        .fontSize(MobileDesignTypography.labelSmall.size).lineHeight(MobileDesignTypography.labelSmall.lineHeight).fontColor(MUTED).width('100%')
-        .padding({ left: 20, right: 20, bottom: 8 })
+      .height('100%')
     }
   }
 
   @Builder
   Header() {
     ConversationHeader({
+      translucent: true,
       title: this.headerTitle(),
       subtitle: this.headerSubtitle(),
       titleFallback: this.headerFallback(),
@@ -204,6 +311,8 @@ export struct ConversationView {
       activeFilePreviewPath: this.activeFilePreviewPath,
       activeFilePreviewLoading: this.activeFilePreviewLoading,
       maxContentWidth: this.composerPresentation === ComposerPresentation.Floating ? 760 : 0,
+      topInset: this.hoverOperateMode ? 0 : this.topInset,
+      bottomInset: this.hoverOperateMode ? 0 : this.bottomInset,
       onLoadOlder: () => {
         this.onLoadOlder();
       },
@@ -247,7 +356,6 @@ export struct ConversationView {
         .textAlign(TextAlign.Center)
         .maxLines(2)
     }
-    .layoutWeight(1)
     .width('100%')
     .height('100%')
     .padding({ left: 32, right: 32, bottom: 48 })
@@ -435,6 +543,14 @@ export struct ConversationView {
   private get composerCapabilities(): ChatComposerCapabilities { return this.state.composerCapabilities; }
   private get isBusy(): boolean { return this.state.isBusy; }
   private get isLoadingConversation(): boolean { return this.state.isLoadingConversation; }
+  /**
+   * The skeleton stands for a body with nothing in it yet, which is true both
+   * while the session is being identified and while its transcript is still
+   * crossing the relay. Only the first of those blanks the header.
+   */
+  private get isLoadingTranscript(): boolean {
+    return this.state.isLoadingConversation || this.state.isLoadingTranscript;
+  }
   private get canStop(): boolean { return this.state.canStop; }
   private get hasMoreMessages(): boolean { return this.state.hasMoreMessages; }
   private get timelineItems(): ObservableChatTimelineItem[] { return this.state.timelineItems; }

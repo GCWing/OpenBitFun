@@ -46,6 +46,11 @@ function getActiveWorkspacePath(): string | undefined {
   return flowChatStore.getActiveSession()?.workspacePath;
 }
 
+function getActiveWorkspaceId(): string | undefined {
+  const session = flowChatStore.getActiveSession();
+  return session?.workspaceId || session?.config?.workspaceId || undefined;
+}
+
 function stringifyPayload(payload: unknown): string {
   if (typeof payload === 'string') return payload;
   try {
@@ -105,6 +110,7 @@ export function handleWidgetBridgeEvent(
 
     const sessionId = getActiveSessionId();
     const workspacePath = getActiveWorkspacePath();
+    const workspaceId = getActiveWorkspaceId();
     const absoluteFilePath = normalizeFileTarget(filePath, workspacePath);
     const line = typeof event.line === 'number' && event.line > 0 ? event.line : undefined;
     const column = typeof event.column === 'number' && event.column > 0 ? event.column : undefined;
@@ -129,18 +135,21 @@ export function handleWidgetBridgeEvent(
       if (line && lineEnd && lineEnd > line) {
         fileTabManager.openFile({
           filePath: absoluteFilePath,
+          workspaceId,
           workspacePath,
           jumpToRange: { start: line, end: lineEnd },
           mode: 'agent',
         });
       } else if (line) {
         fileTabManager.openFileAndJump(absoluteFilePath, line, column, {
+          workspaceId,
           workspacePath,
           mode: 'agent',
         });
       } else {
         fileTabManager.openFile({
           filePath: absoluteFilePath,
+          workspaceId,
           workspacePath,
           mode: 'agent',
         });

@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+vi.mock('@/infrastructure/services/business/workspaceManager', () => ({ workspaceManager: { getState: () => ({ openedWorkspaces: new Map(), recentWorkspaces: [] }) } }));
+import { describe, expect, it, vi } from 'vitest';
 import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 import type { Session } from '../types/flow-chat';
 import {
   isRemoteWorkspaceSession,
+  isLocalWorkspaceSession,
   requireSessionProjectWorkspacePath,
   sessionExecutionWorkspacePath,
   sessionProjectWorkspacePath,
@@ -20,25 +22,17 @@ function session(
 }
 
 describe('sessionWorkspace', () => {
-  it('identifies remote workspace sessions from either session or workspace metadata', () => {
-    const localWorkspace = {
-      workspaceKind: WorkspaceKind.Normal,
-    } as WorkspaceInfo;
-    const remoteWorkspace = {
-      workspaceKind: WorkspaceKind.Remote,
-    } as WorkspaceInfo;
-
-    expect(isRemoteWorkspaceSession(undefined, localWorkspace)).toBe(false);
-    expect(
-      isRemoteWorkspaceSession({ remoteConnectionId: 'remote-1' }, localWorkspace),
-    ).toBe(true);
-    expect(
-      isRemoteWorkspaceSession(
-        { config: { remoteConnectionId: 'remote-2' } },
-        localWorkspace,
-      ),
-    ).toBe(true);
-    expect(isRemoteWorkspaceSession(undefined, remoteWorkspace)).toBe(true);
+  it('uses only the ID-selected object kind, even when SSH hints disagree', () => {
+    const local = { id: 'local-id', workspaceKind: WorkspaceKind.Normal } as WorkspaceInfo;
+    const remote = { id: 'remote-id', workspaceKind: WorkspaceKind.Remote } as WorkspaceInfo;
+    expect(isRemoteWorkspaceSession(undefined, local)).toBe(false);
+    expect(isRemoteWorkspaceSession(undefined, remote)).toBe(true);
+    expect(isRemoteWorkspaceSession({ workspaceId: local.id, config: { remoteConnectionId: 'dirty' } }, local)).toBe(false);
+    expect(isRemoteWorkspaceSession({ workspaceId: remote.id, config: {} }, remote)).toBe(true);
+    expect(isRemoteWorkspaceSession({ workspaceId: local.id }, remote)).toBe(false);
+    expect(isLocalWorkspaceSession({ workspaceId: local.id }, remote)).toBe(false);
+    expect(isLocalWorkspaceSession({ workspaceId: local.id }, local)).toBe(true);
+    expect(isLocalWorkspaceSession({ workspaceId: remote.id }, remote)).toBe(false);
   });
 
   it('keeps execution and project roots distinct for a worktree session', () => {

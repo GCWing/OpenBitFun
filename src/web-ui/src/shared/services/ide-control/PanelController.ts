@@ -156,6 +156,7 @@ export class PanelController implements IdeController {
           data: {
             ...baseDetail.data,
             filePath: config.file_path,
+            workspaceId: config.workspace_id,
             workspacePath: config.workspace_path,
           },
         };

@@ -810,3 +810,22 @@ describe('host-owned question timing', () => {
     expect(store.findToolItem('session-1', 'turn-1', 'ask-ended')?.userQuestionWait).toBeUndefined();
   });
 });
+
+describe('classified tool failure persistence', () => {
+  afterEach(resetStore);
+  it('retains failure details from live events in serialized history', () => {
+    const tool: FlowToolItem = { id: 'edit-1', type: 'tool', toolName: 'Edit', timestamp: 1000, status: 'running', toolCall: { id: 'edit-1', input: {} } };
+    const store = FlowChatStore.getInstance();
+    store.setState(() => ({ sessions: new Map([['session-1', createSessionWithTool(tool)]]), activeSessionId: 'session-1' }));
+    const detail = { code: 'edit_no_change', kind: 'guidance' };
+    processToolEvent(makeToolContext(), 'session-1', 'turn-1', 'round-1', {
+      event_type: 'Failed', tool_id: 'edit-1', tool_name: 'Edit', error: 'Inputs are equal', error_detail: detail,
+    });
+    const updated = store.findToolItem('session-1', 'turn-1', 'edit-1') as FlowToolItem;
+    expect(updated.status).toBe('error');
+    expect(updated.toolResult).toMatchObject({ success: false, result: { error_detail: detail } });
+    const session = store.getState().sessions.get('session-1')!;
+    const persisted = JSON.parse(JSON.stringify(convertDialogTurnToBackendFormat(session.dialogTurns[0])));
+    expect(persisted.modelRounds[0].toolItems[0].toolResult.result.error_detail).toEqual(detail);
+  });
+});

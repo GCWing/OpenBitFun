@@ -1,13 +1,19 @@
 import type { Session } from '../types/flow-chat';
 import { isDefaultSessionTitle, normalizeWorkspaceSessionNumber } from './sessionTitle';
-import { sessionProjectWorkspacePath } from './sessionWorkspace';
+import { sessionProjectWorkspaceId, sessionProjectWorkspacePath } from './sessionWorkspace';
 import { normalizePath, normalizeRemoteWorkspacePath } from '@/shared/utils/pathUtils';
 import { normalizeRemoteSessionScope } from '@/shared/utils/remoteSessionScope';
 
-/** The owning project is shared by local and managed-worktree sessions. */
+/**
+ * The owning project is shared by local and managed-worktree sessions. The
+ * project workspace ID is the identity; the path-derived key below only serves
+ * sessions persisted before workspace IDs were recorded.
+ */
 function workspaceKey(session: Session): string {
+  const projectWorkspaceId = sessionProjectWorkspaceId(session);
+  if (projectWorkspaceId) return JSON.stringify(['workspace', projectWorkspaceId]);
   const path = sessionProjectWorkspacePath(session);
-  if (!path) return JSON.stringify(['workspace', session.workspaceId ?? session.sessionId]);
+  if (!path) return JSON.stringify(['workspace', session.sessionId]);
   const remote = normalizeRemoteSessionScope(
     session.remoteConnectionId || session.config?.remoteConnectionId,
     session.remoteSshHost || session.config?.remoteSshHost,

@@ -164,7 +164,8 @@ async fn run_inner(store: &DispatchStore, job_id: &str) -> Result<()> {
     // turn because the persisted id already exists.
     let restore_error = agent_runtime
         .restore_session(AgentSessionRestoreRequest {
-            workspace_path: workspace_path.clone(),
+            workspace_id: Some(runtime.workspace().id.clone()),
+            workspace_path: String::new(),
             session_id: job.request.session_id.clone(),
             include_internal: false,
             remote_connection_id: None,
@@ -187,7 +188,7 @@ async fn run_inner(store: &DispatchStore, job_id: &str) -> Result<()> {
                     workspace_path: Some(workspace_path.clone()),
                     project_workspace_path: Some(workspace_path.clone()),
                     execution_target: Some(SessionExecutionTarget::local(workspace_path.clone())),
-                    workspace_id: None,
+                    workspace_id: Some(runtime.workspace().id.clone()),
                     remote_connection_id: None,
                     remote_ssh_host: None,
                     model_id: effective_model.clone(),
@@ -251,6 +252,7 @@ async fn run_inner(store: &DispatchStore, job_id: &str) -> Result<()> {
                     execution: Default::default(),
                     agent_type: job.request.agent_type.clone(),
                     workspace_path: Some(workspace_path),
+                    workspace_id: Some(runtime.workspace().id.clone()),
                     remote_connection_id: None,
                     remote_ssh_host: None,
                     policy: DialogSubmissionPolicy::for_source(AgentSubmissionSource::Cli),

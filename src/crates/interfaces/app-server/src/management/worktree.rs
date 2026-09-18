@@ -42,6 +42,7 @@ pub(crate) async fn bind_session(
         request.is_remote(),
         request.operation_id,
         request.session_id,
+        request.project_workspace_id,
         request.project_workspace_path,
         true,
     )
@@ -55,6 +56,7 @@ pub(crate) async fn release_session(
         request.is_remote(),
         request.operation_id,
         request.session_id,
+        request.project_workspace_id,
         request.project_workspace_path,
         false,
     )
@@ -65,6 +67,7 @@ async fn transition(
     remote: bool,
     operation_id: String,
     session_id: String,
+    project_workspace_id: Option<String>,
     project_workspace_path: Option<String>,
     enabled: bool,
 ) -> AppManagementResult<WorktreeBindingResponse> {
@@ -81,6 +84,7 @@ async fn transition(
     let result = WorktreeService::bind_session(WorktreeSessionBindingRequest {
         request_id: operation_id.clone(),
         session_id,
+        project_workspace_id,
         project_workspace_path,
         enabled,
     })
@@ -89,6 +93,8 @@ async fn transition(
     let execution_target = result.execution_target.clone();
     Ok(WorktreeBindingResponse {
         workspace_binding: AgentSessionWorkspaceBinding {
+            workspace_kind: Some(openbitfun_core::service::workspace::WorkspaceKind::Normal),
+            project_workspace_id: result.project_workspace_id,
             workspace_id: result.workspace_id,
             workspace_path: result.workspace_path,
             project_workspace_path: Some(result.project_workspace_path),

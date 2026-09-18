@@ -2,9 +2,7 @@
 //! Concrete IO stays in the existing local and SSH filesystem services.
 
 use super::FileSystemService;
-use crate::service::remote_ssh::{
-    get_remote_workspace_manager, lookup_remote_connection_with_hint, RemoteFileService,
-};
+use crate::service::remote_ssh::{get_remote_workspace_manager, RemoteFileService};
 
 /// Resolve an explicit file-operation connection without registering a workspace.
 /// Existing workspace providers remain supported; saved SSH profiles also own
@@ -48,8 +46,6 @@ async fn remote(
     let hint = hint.map(str::trim).filter(|value| !value.is_empty());
     let connection_id = if let Some(id) = hint {
         resolve_explicit_path_connection(path, id).await?
-    } else if let Some(entry) = lookup_remote_connection_with_hint(path, None).await {
-        entry.connection_id
     } else {
         return Ok(None);
     };

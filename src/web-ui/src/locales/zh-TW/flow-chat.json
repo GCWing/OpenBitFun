@@ -2791,5 +2791,21 @@
     "placeholder": "把需求傳給 {{app}}…",
     "send": "傳送",
     "hint": "訊息將由 {{app}} 處理"
+  },
+  "dock": {
+    "hideConversation": "隱藏對話",
+    "openApp": "開啟應用",
+    "loadingHistory": "正在載入記錄…",
+    "newConversation": "新增操控對話",
+    "newConversationBusy": "結束目前任務或通話後可新增對話",
+    "open": "OpenBitFun 助手",
+    "tabs": "小視窗對話",
+    "moveToMain": "移回主視窗",
+    "collapse": "收起",
+    "welcome": "一起管理 OpenBitFun，繼續手上的事。",
+    "unavailable": "此對話暫時無法使用，請重新開啟所屬應用。",
+    "loadFailed": "暫時無法開啟助手",
+    "retry": "重試",
+    "loading": "正在開啟助手…"
   }
 }

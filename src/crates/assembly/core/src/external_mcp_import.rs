@@ -14,7 +14,6 @@ use openbitfun_services_integrations::mcp::config::{
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ExternalMcpImportPreparation {
@@ -41,16 +40,16 @@ const MAX_IMPORT_PLAN_ITEMS: usize = 256;
 const MAX_NATIVE_ID_BYTES: usize = 160;
 
 pub async fn plan_external_mcp_import(
-    workspace_root: Option<PathBuf>,
+    workspace_id: Option<String>,
 ) -> ExternalSourceOperationResult<ExternalMcpImportPlanV1> {
     let config_service = mcp_config_service().await?;
-    Ok(compute_current_plan(workspace_root, &config_service)
+    Ok(compute_current_plan(workspace_id, &config_service)
         .await?
         .public)
 }
 
 pub async fn apply_external_mcp_import(
-    workspace_root: Option<PathBuf>,
+    workspace_id: Option<String>,
     request: ExternalMcpImportApplyRequestV1,
 ) -> ExternalSourceOperationResult<ExternalMcpImportApplyResultV1> {
     request.validate().map_err(|_| {
@@ -61,7 +60,7 @@ pub async fn apply_external_mcp_import(
         )
     })?;
     let config_service = mcp_config_service().await?;
-    let computed = compute_current_plan(workspace_root.clone(), &config_service).await?;
+    let computed = compute_current_plan(workspace_id.clone(), &config_service).await?;
     if request.plan_fingerprint != computed.public.plan_fingerprint {
         return Ok(stale_result(computed.public));
     }
@@ -92,7 +91,7 @@ pub async fn apply_external_mcp_import(
             outcome: ExternalMcpImportApplyOutcomeV1::Applied { imported },
         }),
         Err(MCPImportError::StaleConfiguration | MCPImportError::TargetConflict { .. }) => {
-            let refreshed = compute_current_plan(workspace_root, &config_service).await?;
+            let refreshed = compute_current_plan(workspace_id, &config_service).await?;
             Ok(stale_result(refreshed.public))
         }
         Err(error) => Err(map_import_error(error)),
@@ -120,12 +119,12 @@ async fn mcp_config_service(
 }
 
 async fn compute_current_plan(
-    workspace_root: Option<PathBuf>,
+    workspace_id: Option<String>,
     config_service: &crate::service::mcp::config::MCPConfigService,
 ) -> ExternalSourceOperationResult<ComputedPlan> {
-    let workspace_root = ensure_local_workspace(workspace_root).await?;
+    let workspace_id = ensure_local_workspace(workspace_id).await?;
     let candidates =
-        crate::external_sources::collect_external_mcp_import_candidates(workspace_root.as_deref())
+        crate::external_sources::collect_external_mcp_import_candidates(workspace_id.as_deref())
             .await
             .map_err(|_| {
                 operation_error(
@@ -149,14 +148,25 @@ async fn compute_current_plan(
 }
 
 async fn ensure_local_workspace(
-    workspace_root: Option<PathBuf>,
-) -> ExternalSourceOperationResult<Option<PathBuf>> {
-    if let Some(root) = workspace_root.as_ref() {
-        if crate::service::remote_ssh::workspace_state::is_remote_path(
-            root.to_string_lossy().as_ref(),
-        )
-        .await
-        {
+    workspace_id: Option<String>,
+) -> ExternalSourceOperationResult<Option<String>> {
+    if let Some(id) = workspace_id.as_deref() {
+        let service =
+            crate::service::workspace::get_global_workspace_service().ok_or_else(|| {
+                operation_error(
+                    ExternalSourceOperationErrorCode::Unavailable,
+                    "Workspace service is unavailable",
+                    true,
+                )
+            })?;
+        let workspace = service.require_workspace(id).await.map_err(|_| {
+            operation_error(
+                ExternalSourceOperationErrorCode::InvalidRequest,
+                "Unknown workspace ID",
+                false,
+            )
+        })?;
+        if workspace.workspace_kind == crate::service::workspace::WorkspaceKind::Remote {
             return Err(operation_error(
                 ExternalSourceOperationErrorCode::Unsupported,
                 "External MCP import is not available for a remote workspace",
@@ -164,7 +174,7 @@ async fn ensure_local_workspace(
             ));
         }
     }
-    Ok(workspace_root)
+    Ok(workspace_id)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

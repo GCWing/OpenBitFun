@@ -19,7 +19,6 @@ use crate::agentic::deep_review_policy::canonical_review_worker_agent_type;
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 use std::sync::{Arc, OnceLock};
 
@@ -56,8 +55,8 @@ pub type CustomSubagentDetail = CustomAgentDetail;
 pub struct AgentRegistry {
     /// id -> agent_entry
     agents: RwLock<HashMap<String, AgentEntry>>,
-    /// workspace root -> (project subagent id -> agent_entry)
-    project_subagents: RwLock<HashMap<PathBuf, HashMap<String, AgentEntry>>>,
+    /// workspace ID -> (project subagent id -> agent_entry)
+    project_subagents: RwLock<HashMap<String, HashMap<String, AgentEntry>>>,
     user_custom_agents_loaded: RwLock<bool>,
     custom_load_state: tokio::sync::Mutex<custom_watch::CustomAgentLoadState>,
     external_subagents: Arc<external::ExternalSubagentRegistryState>,
@@ -92,7 +91,7 @@ impl AgentRegistry {
 
     fn read_project_subagents(
         &self,
-    ) -> std::sync::RwLockReadGuard<'_, HashMap<PathBuf, HashMap<String, AgentEntry>>> {
+    ) -> std::sync::RwLockReadGuard<'_, HashMap<String, HashMap<String, AgentEntry>>> {
         match self.project_subagents.read() {
             Ok(guard) => guard,
             Err(poisoned) => {
@@ -104,7 +103,7 @@ impl AgentRegistry {
 
     fn write_project_subagents(
         &self,
-    ) -> std::sync::RwLockWriteGuard<'_, HashMap<PathBuf, HashMap<String, AgentEntry>>> {
+    ) -> std::sync::RwLockWriteGuard<'_, HashMap<String, HashMap<String, AgentEntry>>> {
         match self.project_subagents.write() {
             Ok(guard) => guard,
             Err(poisoned) => {
@@ -114,11 +113,7 @@ impl AgentRegistry {
         }
     }
 
-    fn find_agent_entry(
-        &self,
-        agent_type: &str,
-        workspace_root: Option<&Path>,
-    ) -> Option<AgentEntry> {
+    fn find_agent_entry(&self, agent_type: &str, workspace_id: Option<&str>) -> Option<AgentEntry> {
         if let Some(entry) = self.external_subagents.find_generation_entry(agent_type) {
             return Some(entry);
         }
@@ -126,7 +121,7 @@ impl AgentRegistry {
             return Some(entry);
         }
 
-        if let Some(root) = workspace_root {
+        if let Some(root) = workspace_id {
             let project_subagents = self.read_project_subagents();
             if let Some(entry) = project_subagents
                 .get(root)
@@ -154,9 +149,9 @@ impl AgentRegistry {
     pub fn get_agent(
         &self,
         agent_type: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> Option<Arc<dyn Agent>> {
-        self.find_agent_entry(agent_type, workspace_root)
+        self.find_agent_entry(agent_type, workspace_id)
             .map(|entry| entry.agent)
     }
 
@@ -166,7 +161,7 @@ impl AgentRegistry {
     pub(crate) fn get_local_agent(
         &self,
         agent_type: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> Option<Arc<dyn Agent>> {
         if let Some(entry) = self.read_agents().values().find(|entry| {
             entry.source != types::AgentSource::External
@@ -174,7 +169,7 @@ impl AgentRegistry {
         }) {
             return Some(entry.agent.clone());
         }
-        workspace_root
+        workspace_id
             .and_then(|root| {
                 self.read_project_subagents()
                     .get(root)?
@@ -255,8 +250,8 @@ impl openbitfun_agent_runtime::sdk::RuntimeAgentRegistry for AgentRegistry {
         query: openbitfun_agent_runtime::sdk::RuntimeAgentRegistryQuery<'_>,
     ) -> Vec<String> {
         let mut ids = self.read_agents().keys().cloned().collect::<Vec<_>>();
-        if let Some(workspace_root) = query.workspace_root {
-            if let Some(entries) = self.read_project_subagents().get(workspace_root) {
+        if let Some(workspace_id) = query.workspace_id {
+            if let Some(entries) = self.read_project_subagents().get(workspace_id) {
                 ids.extend(entries.keys().cloned());
             }
         }

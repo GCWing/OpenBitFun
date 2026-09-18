@@ -5,16 +5,15 @@ use crate::agentic::tools::framework::ToolUseContext;
 use crate::agentic::tools::registry::{get_global_tool_registry, ToolRef};
 use crate::agentic::tools::tool_context_runtime::build_tool_description_context;
 use crate::agentic::WorkspaceBinding;
-#[cfg(feature = "remote-workspace")]
-use crate::service::remote_ssh::workspace_state::lookup_remote_connection;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatMcpCatalogRequest {
     pub mode_id: String,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     #[serde(default)]
     pub workspace_path: Option<String>,
     #[serde(default)]
@@ -41,37 +40,52 @@ pub struct ChatMcpCatalog {
 pub async fn build_chat_mcp_catalog(
     request: ChatMcpCatalogRequest,
 ) -> Result<ChatMcpCatalog, String> {
-    // Never interpret a remote POSIX path on the controller. Remote workspace
-    // MCP discovery needs a target-owned catalog before this entry can support it.
-    if request
-        .remote_connection_id
-        .as_deref()
-        .is_some_and(|id| !id.trim().is_empty())
-    {
-        return Err("MCP chat discovery is unsupported for remote workspaces".into());
-    }
-    let workspace_path = request
+    let id = if let Some(id) = request.workspace_id {
+        Some(id)
+    } else if let Some(path) = request
         .workspace_path
         .as_deref()
-        .map(str::trim)
-        .filter(|path| !path.is_empty());
-    if let Some(path) = workspace_path {
-        #[cfg(feature = "remote-workspace")]
-        if lookup_remote_connection(path).await.is_some() {
-            return Err("MCP chat discovery is unsupported for remote workspaces".into());
-        }
-        if !std::path::Path::new(path).is_absolute() {
-            return Err("MCP chat discovery requires an absolute workspace path".into());
-        }
+        .filter(|path| !path.is_empty())
+    {
+        // The single upgrade adapter handles old client payloads before routing.
+        let service = crate::service::workspace::get_global_workspace_service()
+            .ok_or_else(|| "Workspace service is unavailable".to_string())?;
+        Some(
+            service
+                .resolve_legacy_workspace_reference(
+                    None,
+                    path,
+                    request.remote_connection_id.as_deref(),
+                    None,
+                )
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "Legacy workspace reference is unavailable".to_string())?
+                .id,
+        )
+    } else {
+        None
+    };
+    let workspace = match id {
+        Some(id) => Some(
+            WorkspaceBinding::resolve(&id)
+                .await
+                .map_err(|error| error.to_string())?,
+        ),
+        None => None,
+    };
+    if workspace.as_ref().is_some_and(WorkspaceBinding::is_remote) {
+        return Err("MCP chat discovery is unsupported for remote workspaces".into());
     }
-    let workspace = workspace_path.map(|path| WorkspaceBinding::new(None, PathBuf::from(path)));
     let mode_id = request.mode_id.trim();
     let registry = get_agent_registry();
-    let root = workspace.as_ref().map(WorkspaceBinding::root_path);
-    if registry.get_agent(mode_id, root).is_none() {
+    let workspace_id = workspace
+        .as_ref()
+        .and_then(|workspace| workspace.workspace_id.as_deref());
+    if registry.get_agent(mode_id, workspace_id).is_none() {
         return Err(format!("Agent mode is unavailable: {mode_id}"));
     }
-    let policy = registry.get_agent_tool_policy(mode_id, root).await;
+    let policy = registry.get_agent_tool_policy(mode_id, workspace_id).await;
     let context = build_tool_description_context(
         mode_id,
         workspace.as_ref(),
@@ -270,8 +284,14 @@ mod tests {
 
     #[tokio::test]
     async fn remote_requests_are_rejected_before_reading_local_registries() {
+        let record = crate::service::workspace::legacy_compat::register_remote_fixture(
+            "/srv/mcp-project",
+            "mcp-ssh",
+            "mcp-host",
+        )
+        .await;
         let request: ChatMcpCatalogRequest = serde_json::from_value(json!({
-            "modeId": "Standard", "workspacePath": "/srv/project", "remoteConnectionId": "ssh-peer",
+            "modeId": "Standard", "workspaceId": record.id,
         }))
         .unwrap();
         assert!(build_chat_mcp_catalog(request)

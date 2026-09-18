@@ -15,15 +15,15 @@ use openbitfun_services_integrations::remote_connect::{
     build_remote_image_submission_request, build_remote_model_catalog,
     build_remote_session_create_request, build_remote_submission_request, cancel_remote_task,
     handle_remote_command, handle_remote_workspace_file_command, make_slim_tool_params,
-    normalize_remote_model_selection, normalize_remote_session_model_id, project_remote_chat_user,
-    project_remote_plan_tool, read_remote_workspace_file, read_remote_workspace_file_chunk,
-    read_remote_workspace_file_info, remote_answer_question_response,
-    remote_assistant_list_response, remote_assistant_updated_response,
-    remote_dialog_steer_response, remote_dialog_submit_outcome_from_scheduler,
-    remote_dialog_submit_response, remote_file_chunk_response, remote_file_content_response,
-    remote_file_display_name, remote_file_info_response, remote_initial_sync_response,
-    remote_interaction_accepted_response, remote_messages_response,
-    remote_model_catalog_poll_delta, remote_model_selection_needs_config,
+    no_host_image_pixels, normalize_remote_model_selection, normalize_remote_session_model_id,
+    project_remote_chat_user, project_remote_plan_tool, read_remote_workspace_file,
+    read_remote_workspace_file_chunk, read_remote_workspace_file_info,
+    remote_answer_question_response, remote_assistant_list_response,
+    remote_assistant_updated_response, remote_dialog_steer_response,
+    remote_dialog_submit_outcome_from_scheduler, remote_dialog_submit_response,
+    remote_file_chunk_response, remote_file_content_response, remote_file_display_name,
+    remote_file_info_response, remote_initial_sync_response, remote_interaction_accepted_response,
+    remote_messages_response, remote_model_catalog_poll_delta, remote_model_selection_needs_config,
     remote_no_change_poll_response, remote_persisted_poll_response, remote_plan_build_content,
     remote_recent_workspaces_response, remote_session_created_response,
     remote_session_deleted_response, remote_session_info, remote_session_list_response,
@@ -267,13 +267,18 @@ fn remote_chat_projection_owner_extracts_images_and_display_text() {
                 "data_url": "not-a-data-url"
             },
             {
+                "name": "dropped-on-the-desktop.png",
+                "image_path": "/Users/dev/Pictures/dropped-on-the-desktop.png"
+            },
+            {
                 "name": "",
                 "ignored": true
             }
         ]
     });
 
-    let projection = project_remote_chat_user(Some(&metadata), "fallback question");
+    let projection =
+        project_remote_chat_user(Some(&metadata), "fallback question", &no_host_image_pixels);
 
     assert_eq!(
         projection.images,
@@ -286,6 +291,12 @@ fn remote_chat_projection_owner_extracts_images_and_display_text() {
                 name: "raw-image".to_string(),
                 data_url: "not-a-data-url".to_string(),
             },
+            // A path-only attachment keeps its place in the timeline so clients
+            // can say the image did not arrive instead of showing nothing.
+            ChatImageAttachment {
+                name: "dropped-on-the-desktop.png".to_string(),
+                data_url: String::new(),
+            },
         ]
     );
     assert_eq!(projection.content, " original question ");
@@ -293,6 +304,7 @@ fn remote_chat_projection_owner_extracts_images_and_display_text() {
         project_remote_chat_user(
             Some(&serde_json::json!({ "original_text": "  keep exact question text  " })),
             "fallback question",
+            &no_host_image_pixels,
         )
         .content,
         "  keep exact question text  "
@@ -301,14 +313,174 @@ fn remote_chat_projection_owner_extracts_images_and_display_text() {
         project_remote_chat_user(
             None,
             "User uploaded a file.\nUser's question:\n  explain this  ",
+            &no_host_image_pixels,
         )
         .content,
         "explain this"
     );
     assert_eq!(
-        project_remote_chat_user(None, "  keep fallback spacing  ").content,
+        project_remote_chat_user(None, "  keep fallback spacing  ", &no_host_image_pixels).content,
         "  keep fallback spacing  "
     );
+}
+
+const TINY_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+/// A 1x1 PNG, small enough to travel within the mobile thumbnail budget.
+const TINY_PNG: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+    0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xcf, 0xc0, 0x50,
+    0x0f, 0x00, 0x04, 0x85, 0x01, 0x80, 0x84, 0xa9, 0x8c, 0x21, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+    0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+];
+
+#[test]
+fn remote_chat_projection_owner_recovers_pixels_behind_an_attachment_path() {
+    let metadata = serde_json::json!({
+        "original_text": "look at this",
+        "images": [
+            {
+                "name": "dropped-on-the-desktop.png",
+                "image_path": "/Users/dev/Pictures/dropped-on-the-desktop.png",
+                "mime_type": "image/png"
+            },
+            {
+                "name": "private-key",
+                "image_path": "/Users/dev/.ssh/id_ed25519",
+                "mime_type": "image/png"
+            },
+            {
+                "name": "moved-away.png",
+                "image_path": "/Users/dev/Pictures/moved-away.png",
+                "mime_type": "image/png"
+            }
+        ]
+    });
+
+    let read_pixels = |image_path: &str| match image_path {
+        "/Users/dev/Pictures/dropped-on-the-desktop.png" => Some(TINY_PNG.to_vec()),
+        // Split so the repository's secret scanner does not read this fixture
+        // as a real leaked key. There is no key material here, only the header
+        // a private key would start with.
+        "/Users/dev/.ssh/id_ed25519" => Some(
+            concat!("-----BEGIN OPENSSH ", "PRIVATE KEY-----")
+                .as_bytes()
+                .to_vec(),
+        ),
+        _ => None,
+    };
+    let projection = project_remote_chat_user(Some(&metadata), "fallback", &read_pixels);
+
+    assert_eq!(
+        projection.images,
+        vec![
+            // The pixels behind the path travel, typed from the bytes rather
+            // than from the recorded mime, so an old conversation shows its
+            // image on a client that cannot reach this filesystem.
+            ChatImageAttachment {
+                name: "dropped-on-the-desktop.png".to_string(),
+                data_url: format!("data:image/png;base64,{TINY_PNG_BASE64}"),
+            },
+            // A path aimed at something that is not an image never comes back
+            // as base64, whatever the attachment claims its type is.
+            ChatImageAttachment {
+                name: "private-key".to_string(),
+                data_url: String::new(),
+            },
+            // A path that no longer resolves still names the attachment.
+            ChatImageAttachment {
+                name: "moved-away.png".to_string(),
+                data_url: String::new(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn relay_records_carry_attachment_pixels_on_the_turn_record_alone() {
+    let turn: openbitfun_services_core::session::DialogTurnData = serde_json::from_value(
+        serde_json::json!({
+            "turnId": "turn-1",
+            "turnIndex": 0,
+            "sessionId": "session-1",
+            "timestamp": 1_700_000_000_u64,
+            "startTime": 1_700_000_000_u64,
+            "status": "completed",
+            "userMessage": {
+                "id": "message-user-1",
+                "content": "look at this",
+                "timestamp": 1_700_000_000_u64,
+                "metadata": {
+                    "original_text": "look at this",
+                    "images": [
+                        {"name": "dropped.png", "image_path": "/Users/dev/Pictures/dropped.png", "mime_type": "image/png"},
+                        {"name": "already-inline.png", "image_path": "/Users/dev/Pictures/dropped.png", "data_url": "data:image/png;base64,recorded"}
+                    ]
+                }
+            },
+            "modelRounds": [{
+                "id": "round-1",
+                "turnId": "turn-1",
+                "roundIndex": 0,
+                "timestamp": 1_700_000_000_u64,
+                "startTime": 1_700_000_000_u64,
+                "status": "completed",
+                "textItems": [{"id": "item-1", "roundId": "round-1", "turnId": "turn-1", "content": "on it", "timestamp": 1_700_000_000_u64, "orderIndex": 0, "status": "completed", "isStreaming": false}],
+                "thinkingItems": [],
+                "toolItems": []
+            }]
+        }),
+    )
+    .expect("turn fixture deserializes");
+
+    let read_pixels = |image_path: &str| match image_path {
+        "/Users/dev/Pictures/dropped.png" => Some(TINY_PNG.to_vec()),
+        _ => None,
+    };
+    let records =
+        openbitfun_services_integrations::remote_connect::session_records::records_from_turns(
+            std::slice::from_ref(&turn),
+            &read_pixels,
+        )
+        .expect("records build");
+
+    let images_of = |record: &serde_json::Value| {
+        record["turn"]["userMessage"]["metadata"]["images"]
+            .as_array()
+            .expect("attachments survive the record")
+            .iter()
+            .map(|image| image["data_url"].as_str().unwrap_or_default().to_string())
+            .collect::<Vec<_>>()
+    };
+
+    // The turn record is what clients build the user message from, so the pixels
+    // behind a recorded path join it there and a recorded data URL is left alone.
+    let turn_record = records
+        .iter()
+        .find(|record| record["id"] == "turn/turn-1")
+        .expect("turn record is published");
+    assert_eq!(
+        images_of(turn_record),
+        vec![
+            format!("data:image/png;base64,{TINY_PNG_BASE64}"),
+            "data:image/png;base64,recorded".to_string(),
+        ]
+    );
+
+    // Round and item records repeat the turn only as a parent header. Inlining
+    // there would send the same image once per item, so they stay as recorded.
+    for record in records
+        .iter()
+        .filter(|record| record["id"] != "turn/turn-1")
+    {
+        assert_eq!(
+            images_of(record),
+            vec![String::new(), "data:image/png;base64,recorded".to_string()],
+            "header of {} should not carry recovered pixels",
+            record["id"]
+        );
+    }
 }
 
 #[test]
@@ -573,6 +745,7 @@ impl RecordingDialogHost {
         remote_ssh_host: &str,
     ) -> Self {
         self.binding_workspace = Some(RemoteDialogWorkspaceBinding {
+            workspace_id: None,
             workspace_path: workspace_path.to_string(),
             remote_connection_id: Some(remote_connection_id.to_string()),
             remote_ssh_host: Some(remote_ssh_host.to_string()),
@@ -830,6 +1003,7 @@ impl RemoteCommandRuntimeHost for RecordingCommandHost {
     async fn handle_workspace_command(&self, _command: &RemoteCommand) -> RemoteResponse {
         self.events.lock().unwrap().push("workspace".to_string());
         RemoteResponse::WorkspaceInfo {
+            workspace_id: None,
             has_workspace: false,
             path: None,
             project_name: None,
@@ -846,8 +1020,10 @@ impl RemoteCommandRuntimeHost for RecordingCommandHost {
         self.events.lock().unwrap().push("session".to_string());
         RemoteResponse::SessionCreated {
             session_id: "session-created".to_string(),
+            workspace_id: None,
             workspace_path: None,
             remote_connection_id: None,
+            remote_ssh_host: None,
         }
     }
 
@@ -1126,6 +1302,7 @@ async fn remote_connect_command_owner_preserves_cancel_and_group_routing() {
         &RemoteCommand::GetFileInfo {
             path: "README.md".to_string(),
             session_id: None,
+            workspace_id: None,
             workspace_path: None,
             remote_connection_id: None,
         },
@@ -1748,6 +1925,7 @@ impl RemoteWorkspaceFileRuntimeHost for UnavailableSessionFileHost {
         session: Option<&str>,
         _: Option<&str>,
         _: Option<&str>,
+        _: Option<&str>,
         _: u64,
         _: u64,
     ) -> Result<Option<RemoteWorkspaceFileChunk>, String> {
@@ -1759,6 +1937,7 @@ impl RemoteWorkspaceFileRuntimeHost for UnavailableSessionFileHost {
         &self,
         _: &str,
         session: Option<&str>,
+        _: Option<&str>,
         _: Option<&str>,
         _: Option<&str>,
     ) -> Result<Option<RemoteWorkspaceFileInfo>, String> {
@@ -1781,12 +1960,14 @@ async fn remote_connect_file_provider_errors_never_fall_back_to_local_files() {
             session_id: session_id.clone(),
             offset: 0,
             limit: 3,
+            workspace_id: None,
             workspace_path: None,
             remote_connection_id: None,
         },
         RemoteCommand::GetFileInfo {
             path,
             session_id,
+            workspace_id: None,
             workspace_path: None,
             remote_connection_id: None,
         },
@@ -1811,12 +1992,14 @@ impl RemoteWorkspaceFileRuntimeHost for ExplicitFileWorkspaceHost {
         &self,
         _: &str,
         session: Option<&str>,
+        workspace_id: Option<&str>,
         workspace: Option<&str>,
         connection: Option<&str>,
         _: u64,
         _: u64,
     ) -> Result<Option<RemoteWorkspaceFileChunk>, String> {
         assert_eq!(session, None);
+        assert_eq!(workspace_id, None);
         assert_eq!(workspace, Some("/captured/workspace"));
         assert_eq!(connection, Some("saved-runtime-profile"));
         Ok(None)
@@ -1825,13 +2008,71 @@ impl RemoteWorkspaceFileRuntimeHost for ExplicitFileWorkspaceHost {
         &self,
         _: &str,
         session: Option<&str>,
+        workspace_id: Option<&str>,
         workspace: Option<&str>,
         connection: Option<&str>,
     ) -> Result<Option<RemoteWorkspaceFileInfo>, String> {
         assert_eq!(session, None);
+        assert_eq!(workspace_id, None);
         assert_eq!(workspace, Some("/captured/workspace"));
         assert_eq!(connection, Some("saved-runtime-profile"));
         Ok(None)
+    }
+}
+
+struct WorkspaceIdFileHost;
+
+#[async_trait::async_trait]
+impl RemoteWorkspaceFileRuntimeHost for WorkspaceIdFileHost {
+    async fn resolve_remote_file_workspace_root(&self, _: Option<&str>) -> Option<PathBuf> {
+        panic!("Workspace ID identity must never fall back to the selected local workspace")
+    }
+    async fn read_remote_file_chunk(
+        &self,
+        _: &str,
+        session: Option<&str>,
+        workspace_id: Option<&str>,
+        workspace: Option<&str>,
+        connection: Option<&str>,
+        _: u64,
+        _: u64,
+    ) -> Result<Option<RemoteWorkspaceFileChunk>, String> {
+        assert_eq!(session, None);
+        assert_eq!(workspace_id, Some("workspace-42"));
+        assert_eq!(workspace, None);
+        assert_eq!(connection, None);
+        Ok(None)
+    }
+    async fn remote_file_info(
+        &self,
+        _: &str,
+        session: Option<&str>,
+        workspace_id: Option<&str>,
+        workspace: Option<&str>,
+        connection: Option<&str>,
+    ) -> Result<Option<RemoteWorkspaceFileInfo>, String> {
+        assert_eq!(session, None);
+        assert_eq!(workspace_id, Some("workspace-42"));
+        assert_eq!(workspace, None);
+        assert_eq!(connection, None);
+        Ok(None)
+    }
+}
+
+#[tokio::test]
+async fn remote_connect_workspace_id_file_identity_is_forwarded_without_local_fallback() {
+    for name in ["read_file_chunk", "get_file_info"] {
+        let command: RemoteCommand = serde_json::from_value(serde_json::json!({
+            "cmd": name, "path": "file.bin", "workspace_id": "workspace-42",
+            "offset": 0, "limit": 3
+        }))
+        .unwrap();
+        assert_eq!(
+            handle_remote_workspace_file_command(&WorkspaceIdFileHost, &command).await,
+            RemoteResponse::Error {
+                message: "This host cannot resolve an explicit file workspace".into()
+            }
+        );
     }
 }
 
@@ -1919,6 +2160,7 @@ fn remote_connect_execution_response_helpers_preserve_wire_shape() {
 #[test]
 fn remote_connect_workspace_response_helpers_own_wire_shape() {
     let workspace = RemoteWorkspaceFacts {
+        workspace_id: "test-workspace".to_string(),
         path: "D:/workspace/project".to_string(),
         name: "project".to_string(),
         git_branch: Some("main".to_string()),
@@ -1942,6 +2184,7 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
     assert_eq!(
         info_json["capabilities"],
         serde_json::json!([
+            "workspace_id_references_v1",
             REMOTE_CAPABILITY_HARNESS_PROFILES_V1,
             REMOTE_CAPABILITY_DIALOG_STEER_V1,
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
@@ -1967,6 +2210,7 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
 
     let recent_json = serde_json::to_value(remote_recent_workspaces_response(vec![
         RemoteRecentWorkspaceFacts {
+            workspace_id: "test-workspace".to_string(),
             path: workspace.path.clone(),
             name: workspace.name.clone(),
             last_opened: "2026-05-25T00:00:00Z".to_string(),
@@ -1990,6 +2234,7 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
 
     let assistant_json = serde_json::to_value(remote_assistant_list_response(vec![
         RemoteAssistantWorkspaceFacts {
+            workspace_id: "test-workspace".to_string(),
             path: "D:/workspace/assistant".to_string(),
             name: "assistant".to_string(),
             assistant_id: Some("assistant-2".to_string()),
@@ -2004,12 +2249,14 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
 
     assert_eq!(
         remote_workspace_updated_response(Ok(RemoteWorkspaceUpdate {
+            workspace_id: "test-workspace".to_string(),
             path: "D:/workspace/project".to_string(),
             name: "project".to_string(),
             remote_connection_id: None,
             remote_ssh_host: None,
         })),
         RemoteResponse::WorkspaceUpdated {
+            workspace_id: Some("test-workspace".to_string()),
             success: true,
             path: Some("D:/workspace/project".to_string()),
             project_name: Some("project".to_string()),
@@ -2021,6 +2268,7 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
     assert_eq!(
         remote_assistant_updated_response(Err("open failed".to_string())),
         RemoteResponse::AssistantUpdated {
+            workspace_id: None,
             success: false,
             path: None,
             name: None,
@@ -2030,31 +2278,97 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
 }
 
 #[test]
+fn remote_connect_session_list_hides_child_sessions_and_counts_only_what_it_sends() {
+    // Desktop nests btw/review/miniapp children under their parent. The remote
+    // command path is flat, so a child would read as a standalone conversation.
+    let metadata = vec![
+        RemoteSessionMetadata {
+            session_id: "parent".to_string(),
+            name: "iOS sidebar spacing".to_string(),
+            agent_type: "Standard".to_string(),
+            created_at_ms: 1_700_000_000_000,
+            last_active_at_ms: 1_700_000_001_000,
+            turn_count: 2,
+            parent_session_id: None,
+            relationship_kind: None,
+        },
+        RemoteSessionMetadata {
+            session_id: "btw".to_string(),
+            name: "why did it grep with bash".to_string(),
+            agent_type: "Standard".to_string(),
+            created_at_ms: 1_700_000_002_000,
+            last_active_at_ms: 1_700_000_003_000,
+            turn_count: 1,
+            parent_session_id: Some("parent".to_string()),
+            relationship_kind: Some("btw".to_string()),
+        },
+    ];
+
+    let list =
+        remote_session_list_response(metadata, Some("/workspace/project"), Some("project"), 1, 0);
+    let list_json = serde_json::to_value(list).expect("serialize session list");
+    assert_eq!(list_json["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(list_json["sessions"][0]["session_id"], "parent");
+    // The child is gone before pagination, so the page is the whole list.
+    assert_eq!(list_json["has_more"], false);
+    assert!(list_json["sessions"][0].get("parent_session_id").is_none());
+}
+
+#[test]
+fn remote_connect_session_info_carries_child_lineage_to_clients() {
+    let child = RemoteSessionMetadata {
+        session_id: "btw".to_string(),
+        name: "why did it grep with bash".to_string(),
+        agent_type: "Standard".to_string(),
+        created_at_ms: 1_700_000_002_000,
+        last_active_at_ms: 1_700_000_003_000,
+        turn_count: 1,
+        parent_session_id: Some("parent".to_string()),
+        relationship_kind: Some("btw".to_string()),
+    };
+    assert!(child.is_child_session());
+
+    let info = remote_session_info(&child, None, None);
+    let json = serde_json::to_value(info).expect("serialize session info");
+    assert_eq!(json["parent_session_id"], "parent");
+    assert_eq!(json["relationship_kind"], "btw");
+}
+
+#[test]
 fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
     let metadata = vec![
         RemoteSessionMetadata {
+            workspace_id: None,
             session_id: "session-1".to_string(),
             name: "first".to_string(),
             agent_type: "Standard".to_string(),
             created_at_ms: 1_700_000_000_000,
             last_active_at_ms: 1_700_000_001_000,
             turn_count: 3,
+            parent_session_id: None,
+            relationship_kind: None,
         },
         RemoteSessionMetadata {
+            workspace_id: None,
             session_id: "session-2".to_string(),
             name: "second".to_string(),
             agent_type: "Cowork".to_string(),
             created_at_ms: 1_700_000_002_000,
             last_active_at_ms: 1_700_000_003_000,
             turn_count: 5,
+            parent_session_id: None,
+            relationship_kind: None,
         },
         RemoteSessionMetadata {
+            workspace_id: None,
             session_id: "session-3".to_string(),
             name: "third".to_string(),
             agent_type: "Cowork".to_string(),
             created_at_ms: 1_700_000_004_000,
             last_active_at_ms: 1_700_000_005_000,
             turn_count: 8,
+            parent_session_id: None,
+            relationship_kind: None,
         },
     ];
 
@@ -2085,6 +2399,7 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
 
     let initial = remote_initial_sync_response(
         Some(RemoteWorkspaceFacts {
+            workspace_id: "test-workspace".to_string(),
             path: "D:/workspace/project".to_string(),
             name: "project".to_string(),
             git_branch: Some("main".to_string()),
@@ -2110,6 +2425,7 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
     assert_eq!(
         initial_json["capabilities"],
         serde_json::json!([
+            "workspace_id_references_v1",
             REMOTE_CAPABILITY_HARNESS_PROFILES_V1,
             REMOTE_CAPABILITY_DIALOG_STEER_V1,
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
@@ -2131,8 +2447,10 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
         remote_session_created_response("session-new"),
         RemoteResponse::SessionCreated {
             session_id: "session-new".to_string(),
+            workspace_id: None,
             workspace_path: None,
             remote_connection_id: None,
+            remote_ssh_host: None,
         }
     );
     assert_eq!(
@@ -2314,6 +2632,7 @@ fn remote_connect_command_wire_shape_lives_in_owner_contract() {
     assert_eq!(cancel["turn_id"], "turn-1");
 
     let list = serde_json::to_value(RemoteCommand::ListSessions {
+        workspace_id: None,
         workspace_path: Some("/workspace/project".to_string()),
         remote_connection_id: Some("conn-1".to_string()),
         remote_ssh_host: Some("host-1".to_string()),

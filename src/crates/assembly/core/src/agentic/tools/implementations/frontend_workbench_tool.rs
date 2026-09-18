@@ -249,6 +249,7 @@ mod tests {
             "connection-1".to_string(),
             "Remote".to_string(),
             crate::service::remote_ssh::workspace_state::WorkspaceSessionIdentity {
+                workspace_kind: openbitfun_core_types::WorkspaceKind::Remote,
                 hostname: "remote.example".to_string(),
                 logical_workspace_path: "/srv/project".to_string(),
                 remote_connection_id: Some("connection-1".to_string()),

@@ -42,6 +42,10 @@ static REPOSITORY_LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<AsyncMutex<()>>>>> 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeListRequest {
+    /// Owning project workspace ID. Hosts resolve the local project path from
+    /// this ID; `project_workspace_path` is the legacy/IO projection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     pub project_workspace_path: String,
 }
 
@@ -52,6 +56,11 @@ pub struct WorktreeProjectListRequest {}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeProjectSummary {
+    /// Workspace ID of the open workspace whose root is this project's main
+    /// worktree. `None` when the main worktree is not itself an open
+    /// workspace and only linked worktrees of it are open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     pub project_workspace_path: String,
     pub worktrees: Vec<WorktreeSummary>,
 }
@@ -60,6 +69,8 @@ pub struct WorktreeProjectSummary {
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeCreateRequest {
     pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     pub project_workspace_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_workspace_path: Option<String>,
@@ -85,6 +96,8 @@ pub struct WorktreeCreateResult {
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeCreateBranchRequest {
     pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     pub project_workspace_path: String,
     pub worktree_id: String,
     pub branch: String,
@@ -94,6 +107,8 @@ pub struct WorktreeCreateBranchRequest {
 #[serde(rename_all = "camelCase")]
 pub struct WorktreePromoteRequest {
     pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     pub project_workspace_path: String,
     pub worktree_id: String,
 }
@@ -102,6 +117,8 @@ pub struct WorktreePromoteRequest {
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeRemoveRequest {
     pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     pub project_workspace_path: String,
     pub worktree_id: String,
     #[serde(default)]
@@ -112,6 +129,8 @@ pub struct WorktreeRemoveRequest {
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeRecreateRequest {
     pub request_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     pub project_workspace_path: String,
     pub worktree_id: String,
 }
@@ -154,6 +173,8 @@ impl WorktreeRegistry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RegisteredWorktree {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    workspace_id: Option<String>,
     worktree_id: String,
     path: String,
     base_ref: Option<String>,
@@ -274,11 +295,8 @@ impl WorktreeService {
         }
         let mut cleanup_issues = Vec::new();
         if let Some(workspace_service) = get_global_workspace_service() {
-            if let Some(workspace) = workspace_service
-                .get_workspace_by_path(Path::new(&record.path))
-                .await
-            {
-                if let Err(remove_error) = workspace_service.remove_workspace(&workspace.id).await {
+            if let Some(workspace_id) = record.workspace_id.as_deref() {
+                if let Err(remove_error) = workspace_service.remove_workspace(workspace_id).await {
                     cleanup_issues.push(format!(
                         "workspace registration could not be removed: {remove_error}"
                     ));
@@ -345,9 +363,10 @@ impl WorktreeService {
         let project_paths = known_project_workspace_paths().await;
         let mut projects = Vec::new();
 
-        for project_path in project_paths {
+        for (project_path, project_workspace_id) in project_paths {
             match Self::list_scoped(
                 WorktreeListRequest {
+                    project_workspace_id: project_workspace_id.clone(),
                     project_workspace_path: path_string(&project_path),
                 },
                 Some(&managed_root),
@@ -363,6 +382,7 @@ impl WorktreeService {
                         continue;
                     }
                     projects.push(WorktreeProjectSummary {
+                        project_workspace_id,
                         project_workspace_path: path_string(&project_path),
                         worktrees,
                     });
@@ -544,6 +564,7 @@ impl WorktreeService {
 
         let created_claim = claimed_by.clone();
         registry.worktrees.push(RegisteredWorktree {
+            workspace_id: tracked_workspace_id.clone(),
             worktree_id: worktree_id.clone(),
             path: path_string(&target_path),
             base_ref: Some(base_ref.to_string()),
@@ -830,11 +851,8 @@ impl WorktreeService {
         .map_err(map_git_error)?;
         let mut cleanup_issues = Vec::new();
         if let Some(workspace_service) = get_global_workspace_service() {
-            if let Some(workspace) = workspace_service
-                .get_workspace_by_path(Path::new(&summary.path))
-                .await
-            {
-                if let Err(remove_error) = workspace_service.remove_workspace(&workspace.id).await {
+            if let Some(workspace_id) = summary.workspace_id.as_deref() {
+                if let Err(remove_error) = workspace_service.remove_workspace(workspace_id).await {
                     cleanup_issues.push(format!(
                         "workspace registration could not be removed: {remove_error}"
                     ));
@@ -1090,6 +1108,7 @@ impl WorktreeService {
                     ))
                 );
                 registry.worktrees.push(RegisteredWorktree {
+                    workspace_id: None,
                     worktree_id: worktree_id.clone(),
                     path: git_worktree.path.clone(),
                     base_ref: git_worktree.branch.clone(),
@@ -1155,32 +1174,50 @@ impl WorktreeService {
                 .then_with(|| left.path.cmp(&right.path))
         });
         if let Some(workspace_service) = get_global_workspace_service() {
-            for summary in &summaries {
-                if summary.is_main
+            for summary in &mut summaries {
+                let record = registry
+                    .worktrees
+                    .iter_mut()
+                    .find(|record| record.worktree_id == summary.worktree_id);
+                if let Some(record) = record.as_ref() {
+                    summary.workspace_id = record.workspace_id.clone();
+                }
+                if summary.workspace_id.is_some()
+                    || summary.is_main
                     || summary.missing
                     || summary.lifecycle == WorktreeLifecycle::External
-                    || workspace_service
-                        .get_workspace_by_path(Path::new(&summary.path))
-                        .await
-                        .is_some()
                 {
                     continue;
                 }
-                workspace_service
-                    .track_workspace_activity(
-                        PathBuf::from(&summary.path),
-                        WorkspaceCreateOptions::default(),
-                        WorkspaceActivityMode::RefreshMetadata,
-                    )
+                // Upgrade-only: old worktree registry rows have no workspace ID.
+                let workspace = match workspace_service
+                    .resolve_legacy_workspace_reference(None, &summary.path, None, None)
                     .await
-                    .map_err(|workspace_error| {
-                        error(
-                            WorktreeErrorCode::IoFailed,
-                            format!(
-                                "Failed to restore a managed worktree workspace registration: {workspace_error}"
-                            ),
+                    .map_err(|error_| error(WorktreeErrorCode::IoFailed, error_.to_string()))?
+                {
+                    Some(workspace) if workspace.workspace_kind != WorkspaceKind::Remote => {
+                        workspace
+                    }
+                    Some(_) => {
+                        return Err(error(
+                            WorktreeErrorCode::RemoteUnsupported,
+                            "Managed local worktree cannot reference a remote workspace",
+                        ))
+                    }
+                    None => workspace_service
+                        .track_workspace_activity(
+                            PathBuf::from(&summary.path),
+                            WorkspaceCreateOptions::default(),
+                            WorkspaceActivityMode::RefreshMetadata,
                         )
-                    })?;
+                        .await
+                        .map_err(|error_| error(WorktreeErrorCode::IoFailed, error_.to_string()))?,
+                };
+                summary.workspace_id = Some(workspace.id.clone());
+                if let Some(record) = record {
+                    record.workspace_id = Some(workspace.id);
+                    changed = true;
+                }
             }
         }
         Ok((summaries, changed))
@@ -1424,12 +1461,9 @@ impl WorktreeService {
             }
 
             if let Some(workspace_service) = get_global_workspace_service() {
-                if let Some(workspace) = workspace_service
-                    .get_workspace_by_path(Path::new(&summary.path))
-                    .await
-                {
+                if let Some(workspace_id) = summary.workspace_id.as_deref() {
                     if let Err(workspace_error) =
-                        workspace_service.remove_workspace(&workspace.id).await
+                        workspace_service.remove_workspace(workspace_id).await
                     {
                         log::warn!(
                             "Automatically removed worktree {}, but its workspace registration could not be removed: {}",
@@ -1457,12 +1491,14 @@ impl WorktreeService {
     }
 }
 
-async fn known_project_workspace_paths() -> Vec<PathBuf> {
+/// Known local Git projects, keyed by main worktree path, paired with the ID
+/// of the open workspace whose root is that main worktree when one exists.
+async fn known_project_workspace_paths() -> Vec<(PathBuf, Option<String>)> {
     let Some(workspace_service) = get_global_workspace_service() else {
         return Vec::new();
     };
     let workspaces = workspace_service.list_workspaces().await;
-    let mut projects = HashMap::<String, PathBuf>::new();
+    let mut projects = HashMap::<String, (PathBuf, Option<String>)>::new();
 
     for workspace in workspaces {
         if workspace.workspace_kind != WorkspaceKind::Normal || !workspace.root_path.is_dir() {
@@ -1475,11 +1511,18 @@ async fn known_project_workspace_paths() -> Vec<PathBuf> {
             continue;
         };
         let main_path = PathBuf::from(main_worktree.path);
-        projects.insert(normalized_lookup_path(&main_path), main_path);
+        let main_key = normalized_lookup_path(&main_path);
+        let owns_main = normalized_lookup_path(&workspace.root_path) == main_key;
+        let entry = projects
+            .entry(main_key)
+            .or_insert_with(|| (main_path, None));
+        if owns_main && entry.1.is_none() {
+            entry.1 = Some(workspace.id.clone());
+        }
     }
 
     let mut paths = projects.into_values().collect::<Vec<_>>();
-    paths.sort_by_key(|left| path_string(left));
+    paths.sort_by_key(|(path, _)| path_string(path));
     paths
 }
 
@@ -1551,6 +1594,10 @@ async fn build_summary(
     let session_summaries = associated
         .iter()
         .map(|metadata| WorktreeSessionSummary {
+            workspace_id: metadata
+                .project_workspace_id
+                .clone()
+                .or_else(|| metadata.workspace_id.clone()),
             session_id: metadata.session_id.clone(),
             session_name: metadata.session_name.clone(),
             status: session_status_name(&metadata.status).to_string(),
@@ -1578,6 +1625,7 @@ async fn build_summary(
         )
     };
     Ok(WorktreeSummary {
+        workspace_id: None,
         worktree_id: worktree_id.to_string(),
         project_workspace_path: path_string(&context.project_workspace_path),
         path: git_worktree.path,
@@ -2044,6 +2092,7 @@ mod tests {
 
     fn removable_summary() -> WorktreeSummary {
         WorktreeSummary {
+            workspace_id: None,
             worktree_id: "wt-1".to_string(),
             project_workspace_path: "/repo".to_string(),
             path: "/worktrees/wt-1".to_string(),
@@ -2344,6 +2393,7 @@ mod tests {
             ("external", WorktreeLifecycle::External, 2),
         ] {
             registry.worktrees.push(RegisteredWorktree {
+                workspace_id: None,
                 worktree_id: worktree_id.to_string(),
                 path: format!("/worktrees/{worktree_id}"),
                 base_ref: Some("main".to_string()),
@@ -2371,6 +2421,7 @@ mod tests {
             ("claimed", 10, Some("dispatch:job-1")),
         ] {
             registry.worktrees.push(RegisteredWorktree {
+                workspace_id: None,
                 worktree_id: worktree_id.to_string(),
                 path: format!("/worktrees/{worktree_id}"),
                 base_ref: Some("main".to_string()),
@@ -2396,6 +2447,7 @@ mod tests {
         let mut registry = WorktreeRegistry::new(project);
         for worktree_id in ["new", "old"] {
             registry.worktrees.push(RegisteredWorktree {
+                workspace_id: None,
                 worktree_id: worktree_id.to_string(),
                 path: format!("/worktrees/{worktree_id}"),
                 base_ref: Some("main".to_string()),
@@ -2419,6 +2471,7 @@ mod tests {
         let mut registry = WorktreeRegistry::new(project);
         for (worktree_id, created_at_ms) in [("newest", 100), ("recent", 90)] {
             registry.worktrees.push(RegisteredWorktree {
+                workspace_id: None,
                 worktree_id: worktree_id.to_string(),
                 path: format!("/worktrees/{worktree_id}"),
                 base_ref: Some("main".to_string()),
@@ -2450,6 +2503,7 @@ mod tests {
         };
         let mut registry = WorktreeRegistry::new(&project);
         registry.worktrees.push(RegisteredWorktree {
+            workspace_id: None,
             worktree_id: "wt-restored".to_string(),
             path: "/managed/wt-restored".to_string(),
             base_ref: Some("main".to_string()),
@@ -2506,6 +2560,7 @@ mod tests {
         let project = Path::new("/repo");
         let mut registry = WorktreeRegistry::new(project);
         registry.worktrees.push(RegisteredWorktree {
+            workspace_id: None,
             worktree_id: "wt-claimed".to_string(),
             path: "/managed/wt-claimed".to_string(),
             base_ref: Some("main".to_string()),
@@ -2555,6 +2610,7 @@ mod tests {
             ("wt-other", Some("dispatch:job-2")),
         ] {
             registry.worktrees.push(RegisteredWorktree {
+                workspace_id: None,
                 worktree_id: worktree_id.to_string(),
                 path: format!("/managed/{worktree_id}"),
                 base_ref: Some("main".to_string()),

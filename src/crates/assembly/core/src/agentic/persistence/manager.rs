@@ -1132,17 +1132,21 @@ impl PersistenceManager {
     ) -> SessionMetadata {
         let last_active_at = Self::system_time_to_unix_ms(session.last_activity_at);
 
-        let resolved_identity =
-            if let Some(workspace_root) = session.config.workspace_path.as_deref() {
-                resolve_workspace_session_identity(
-                    workspace_root,
-                    session.config.remote_connection_id.as_deref(),
-                    session.config.remote_ssh_host.as_deref(),
-                )
+        let resolved_identity = if let Some(id) = session.config.workspace_id.as_deref() {
+            crate::agentic::WorkspaceBinding::resolve(id)
                 .await
-            } else {
-                None
-            };
+                .ok()
+                .map(|binding| binding.session_identity)
+        } else if let Some(workspace_root) = session.config.workspace_path.as_deref() {
+            resolve_workspace_session_identity(
+                workspace_root,
+                session.config.remote_connection_id.as_deref(),
+                session.config.remote_ssh_host.as_deref(),
+            )
+            .await
+        } else {
+            None
+        };
 
         let workspace_root = resolved_identity
             .as_ref()
@@ -1155,7 +1159,7 @@ impl PersistenceManager {
             .map(|identity| identity.hostname.clone())
             .or_else(|| existing.and_then(|value| value.workspace_hostname.clone()))
             .or_else(|| {
-                if session.config.remote_connection_id.is_some() {
+                if session.config.is_remote_workspace() {
                     session.config.remote_ssh_host.clone()
                 } else {
                     Some(LOCAL_WORKSPACE_SSH_HOST.to_string())
@@ -1163,6 +1167,8 @@ impl PersistenceManager {
             });
 
         build_persisted_session_metadata(SessionMetadataBuildFacts {
+            workspace_id: session.config.workspace_id.as_deref(),
+            project_workspace_id: session.config.project_workspace_id.as_deref(),
             session_id: &session.session_id,
             session_name: &session.session_name,
             agent_type: &session.agent_type,
@@ -2546,11 +2552,11 @@ impl PersistenceManager {
         Ok(session)
     }
 
-    fn build_session_from_persisted_parts(
+    async fn build_session_from_persisted_parts(
         metadata: SessionMetadata,
         stored_state: Option<StoredSessionStateFile>,
         turns: &[DialogTurnData],
-    ) -> Session {
+    ) -> OpenBitFunResult<Session> {
         let legacy_minimal = stored_state
             .as_ref()
             .is_some_and(|value| value.config.legacy_minimal_agent);
@@ -2559,6 +2565,12 @@ impl PersistenceManager {
             .map(|value| value.config.clone())
             .unwrap_or_default();
         config.legacy_minimal_agent = false;
+        if config.project_workspace_id.is_none() {
+            config.project_workspace_id = metadata.project_workspace_id.clone();
+        }
+        if config.workspace_id.is_none() {
+            config.workspace_id = metadata.workspace_id.clone();
+        }
         if config.workspace_path.is_none() {
             config.workspace_path = metadata.workspace_path.clone();
         }
@@ -2568,6 +2580,7 @@ impl PersistenceManager {
                 .clone()
                 .filter(|host| host != LOCAL_WORKSPACE_SSH_HOST && host != "_unresolved");
         }
+        crate::agentic::workspace::normalize_session_workspace(&mut config).await?;
         if config.model_id.is_none() && !metadata.model_name.is_empty() {
             config.model_id = Some(metadata.model_name.clone());
         }
@@ -2584,7 +2597,7 @@ impl PersistenceManager {
         let last_activity_at = Self::unix_ms_to_system_time(metadata.last_active_at);
         let dialog_turn_ids = turns.iter().map(|turn| turn.turn_id.clone()).collect();
 
-        Session {
+        Ok(Session {
             session_id: metadata.session_id.clone(),
             session_name: metadata.session_name.clone(),
             agent_type: if legacy_minimal {
@@ -2613,7 +2626,7 @@ impl PersistenceManager {
             created_at,
             updated_at: last_activity_at,
             last_activity_at,
-        }
+        })
     }
 
     /// Read identity/config facts without loading dialog content or restoring a
@@ -2633,11 +2646,7 @@ impl PersistenceManager {
         let state = self
             .load_stored_session_state(storage_path, session_id)
             .await?;
-        Ok(Self::build_session_from_persisted_parts(
-            metadata,
-            state,
-            &[],
-        ))
+        Self::build_session_from_persisted_parts(metadata, state, &[]).await
     }
 
     /// Load session and return the persisted turns read while rebuilding the session header.
@@ -2697,7 +2706,8 @@ impl PersistenceManager {
         let turns = read_result.turns;
 
         let build_started_at = Instant::now();
-        let session = Self::build_session_from_persisted_parts(metadata, stored_state, &turns);
+        let session =
+            Self::build_session_from_persisted_parts(metadata, stored_state, &turns).await?;
         let build_session_duration_ms = elapsed_ms_u64(build_started_at);
         let total_duration_ms = elapsed_ms_u64(started_at);
 
@@ -2834,7 +2844,8 @@ impl PersistenceManager {
             )
         };
         let build_started_at = Instant::now();
-        let session = Self::build_session_from_persisted_parts(metadata, stored_state, &turns);
+        let session =
+            Self::build_session_from_persisted_parts(metadata, stored_state, &turns).await?;
         let build_session_duration_ms = elapsed_ms_u64(build_started_at);
         let total_duration = started_at.elapsed();
 
@@ -4606,6 +4617,11 @@ mod tests {
                 Uuid::new_v4()
             ));
             std::fs::create_dir_all(&path).expect("test workspace should be created");
+            // Sessions only exist inside registered workspaces; register the
+            // fixture directory like a host that opened this folder. Keep the
+            // canonical path so record-derived IO projections compare equal.
+            let path = dunce::canonicalize(&path).expect("test workspace should canonicalize");
+            crate::service::workspace::legacy_compat::register_local_fixture_blocking(&path);
             Self { path }
         }
 
@@ -4775,6 +4791,52 @@ mod tests {
             .expect_err("path-like session id must be rejected");
 
         assert!(error.to_string().contains("session_id"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn legacy_local_session_identity_is_repaired_after_restart_and_resave() {
+        let workspace = TestWorkspace::new();
+        let manager = PersistenceManager::new(workspace.path_manager()).unwrap();
+        let mut value = serde_json::to_value(SessionConfig::default()).unwrap();
+        value["workspace_path"] = serde_json::json!(workspace.path().to_string_lossy());
+        value["remote_ssh_host"] = serde_json::json!("localhost");
+        value.as_object_mut().unwrap().remove("workspace_kind");
+        let config: SessionConfig = serde_json::from_value(value).unwrap();
+        let session = Session::new_with_id(
+            "legacy-local-identity".into(),
+            "Keep title".into(),
+            "Standard".into(),
+            config,
+        );
+        manager
+            .save_session(workspace.path(), &session)
+            .await
+            .unwrap();
+        drop(manager);
+        let manager = PersistenceManager::new(workspace.path_manager()).unwrap();
+        let restored = manager
+            .load_session(workspace.path(), &session.session_id)
+            .await
+            .unwrap();
+        assert_eq!(restored.session_name, "Keep title");
+        assert_eq!(
+            restored.config.workspace_kind,
+            Some(openbitfun_core_types::WorkspaceKind::Normal)
+        );
+        assert!(restored.config.remote_ssh_host.is_none());
+        assert!(!restored.config.is_remote_workspace());
+        manager
+            .save_session(workspace.path(), &restored)
+            .await
+            .unwrap();
+        drop(manager);
+        let manager = PersistenceManager::new(workspace.path_manager()).unwrap();
+        let again = manager
+            .load_session(workspace.path(), &session.session_id)
+            .await
+            .unwrap();
+        assert_eq!(again.config.workspace_kind, restored.config.workspace_kind);
+        assert!(again.config.remote_ssh_host.is_none());
     }
 
     #[tokio::test]
@@ -7571,11 +7633,19 @@ mod tests {
         let workspace = TestWorkspace::new();
         let path_manager = workspace.path_manager();
         let manager = PersistenceManager::new(path_manager.clone()).expect("persistence manager");
+        let remote_path = format!("/home/wsp/corrupt-index-{}", Uuid::new_v4());
+        let remote_workspace = crate::service::workspace::legacy_compat::register_remote_fixture(
+            &remote_path,
+            "ssh-1",
+            "dev-host",
+        )
+        .await;
         let sessions_dir = crate::service::WorkspaceRuntimeService::new(path_manager)
-            .context_for_remote_workspace("dev-host", "/home/wsp/project")
+            .context_for_remote_workspace("dev-host", &remote_path)
             .sessions_dir;
         let config = SessionConfig {
-            workspace_path: Some("/home/wsp/project".to_string()),
+            workspace_id: Some(remote_workspace.id.clone()),
+            workspace_path: Some(remote_path.clone()),
             remote_connection_id: Some("ssh-1".to_string()),
             remote_ssh_host: Some("dev-host".to_string()),
             ..Default::default()

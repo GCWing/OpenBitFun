@@ -23,6 +23,8 @@ export interface SessionLineageNode {
   agentId?: string;
   lifecycle: SessionLineageLifecycle;
   createdAt: number;
+  /** Owning workspace ID; authoritative when present. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -91,6 +93,7 @@ function nodeFromMetadata(metadata: SessionLineageEntry): FlatSessionLineageNode
     agentId: metadata.agentId,
     lifecycle: metadataLifecycle(metadata),
     createdAt: metadata.createdAtMs,
+    workspaceId: metadata.workspaceId,
     workspacePath: metadata.workspacePath,
     remoteConnectionId: metadata.remoteConnectionId,
     remoteSshHost: metadata.remoteSshHost,
@@ -109,6 +112,7 @@ function nodeFromSession(session: Session): FlatSessionLineageNode {
     agentId: undefined,
     lifecycle: sessionLineageLifecycleForSession(session),
     createdAt: session.createdAt,
+    workspaceId: session.workspaceId || session.config.workspaceId,
     workspacePath: session.workspacePath,
     remoteConnectionId: session.remoteConnectionId,
     remoteSshHost: session.remoteSshHost,

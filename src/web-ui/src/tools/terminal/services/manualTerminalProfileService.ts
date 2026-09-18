@@ -1,3 +1,5 @@
+import { migrateLegacyTerminalProfiles } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
+import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { STORAGE_KEYS } from '@/shared/constants/app';
 import { createLogger } from '@/shared/utils/logger';
 
@@ -26,13 +28,22 @@ export interface ManualTerminalProfileInput {
   shellType?: string;
 }
 
+export interface TerminalProfileWorkspace {
+  surfaceId: string;
+  workspaceId: string;
+}
+
+export function terminalProfileWorkspaceKey(workspace: TerminalProfileWorkspace): string {
+  return JSON.stringify([workspace.surfaceId, workspace.workspaceId]);
+}
+
 const EMPTY_STATE: ManualTerminalProfilesState = {
   version: 1,
   profiles: [],
 };
 
-function getStorageKey(workspacePath: string): string {
-  return `${STORAGE_KEYS.MANUAL_TERMINAL_PROFILES}:${workspacePath}`;
+function getStorageKey(workspace: TerminalProfileWorkspace): string {
+  return `${STORAGE_KEYS.MANUAL_TERMINAL_PROFILES}:id:${terminalProfileWorkspaceKey(workspace)}`;
 }
 
 export function generateManualTerminalProfileId(): string {
@@ -82,14 +93,20 @@ function normalizeState(raw: unknown): ManualTerminalProfilesState {
   };
 }
 
-export function loadManualTerminalProfiles(workspacePath: string): ManualTerminalProfilesState {
+export function loadManualTerminalProfiles(workspace: TerminalProfileWorkspace): ManualTerminalProfilesState {
   try {
-    const raw = localStorage.getItem(getStorageKey(workspacePath));
+    const key = getStorageKey(workspace);
+    if (localStorage.getItem(key) === null) {
+      const state = workspaceManager.getState();
+      migrateLegacyTerminalProfiles(localStorage, STORAGE_KEYS.MANUAL_TERMINAL_PROFILES, key, workspace,
+        [...state.openedWorkspaces.values(), ...state.recentWorkspaces]);
+    }
+    const raw = localStorage.getItem(key);
     if (raw !== null) {
       return normalizeState(JSON.parse(raw));
     }
   } catch (error) {
-    logger.error('Failed to load manual terminal profiles', { workspacePath, error });
+    logger.error('Failed to load manual terminal profiles', { workspace, error });
     throw new Error('Saved terminal configurations could not be read; existing data has been preserved');
   }
 
@@ -97,42 +114,42 @@ export function loadManualTerminalProfiles(workspacePath: string): ManualTermina
 }
 
 export function saveManualTerminalProfiles(
-  workspacePath: string,
+  workspace: TerminalProfileWorkspace,
   state: ManualTerminalProfilesState,
 ): void {
   // Do not replace an unreadable or newer-format record with a normalized subset.
-  loadManualTerminalProfiles(workspacePath);
+  loadManualTerminalProfiles(workspace);
   try {
-    localStorage.setItem(getStorageKey(workspacePath), JSON.stringify(normalizeState(state)));
+    localStorage.setItem(getStorageKey(workspace), JSON.stringify(normalizeState(state)));
   } catch (error) {
-    logger.error('Failed to save manual terminal profiles', { workspacePath, error });
+    logger.error('Failed to save manual terminal profiles', { workspace, error });
     throw error;
   }
 }
 
-export function listManualTerminalProfiles(workspacePath: string): ManualTerminalProfile[] {
-  return loadManualTerminalProfiles(workspacePath).profiles;
+export function listManualTerminalProfiles(workspace: TerminalProfileWorkspace): ManualTerminalProfile[] {
+  return loadManualTerminalProfiles(workspace).profiles;
 }
 
 export function getManualTerminalProfileById(
-  workspacePath: string,
+  workspace: TerminalProfileWorkspace,
   profileId: string,
 ): ManualTerminalProfile | undefined {
-  return listManualTerminalProfiles(workspacePath).find((profile) => profile.id === profileId);
+  return listManualTerminalProfiles(workspace).find((profile) => profile.id === profileId);
 }
 
 export function getManualTerminalProfileBySessionId(
-  workspacePath: string,
+  workspace: TerminalProfileWorkspace,
   sessionId: string,
 ): ManualTerminalProfile | undefined {
-  return listManualTerminalProfiles(workspacePath).find((profile) => profile.sessionId === sessionId);
+  return listManualTerminalProfiles(workspace).find((profile) => profile.sessionId === sessionId);
 }
 
 export function upsertManualTerminalProfile(
-  workspacePath: string,
+  workspace: TerminalProfileWorkspace,
   input: ManualTerminalProfileInput,
 ): ManualTerminalProfile {
-  const currentState = loadManualTerminalProfiles(workspacePath);
+  const currentState = loadManualTerminalProfiles(workspace);
   const existingProfile = currentState.profiles.find(
     (profile) => profile.id === input.id || profile.sessionId === input.sessionId,
   );
@@ -159,7 +176,7 @@ export function upsertManualTerminalProfile(
     nextProfiles.push(normalizedProfile);
   }
 
-  saveManualTerminalProfiles(workspacePath, {
+  saveManualTerminalProfiles(workspace, {
     ...currentState,
     profiles: nextProfiles,
   });
@@ -167,9 +184,9 @@ export function upsertManualTerminalProfile(
   return normalizedProfile;
 }
 
-export function deleteManualTerminalProfile(workspacePath: string, profileId: string): void {
-  const currentState = loadManualTerminalProfiles(workspacePath);
-  saveManualTerminalProfiles(workspacePath, {
+export function deleteManualTerminalProfile(workspace: TerminalProfileWorkspace, profileId: string): void {
+  const currentState = loadManualTerminalProfiles(workspace);
+  saveManualTerminalProfiles(workspace, {
     ...currentState,
     profiles: currentState.profiles.filter((profile) => profile.id !== profileId),
   });

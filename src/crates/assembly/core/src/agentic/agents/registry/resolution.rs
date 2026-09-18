@@ -6,7 +6,6 @@ use crate::service::config::GlobalConfig;
 use crate::service::config::SubagentModelSelection;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use log::{debug, error, warn};
-use std::path::Path;
 
 impl AgentRegistry {
     /// Returns a source-neutral explicit model selection for a delegated
@@ -14,10 +13,10 @@ impl AgentRegistry {
     pub fn get_explicit_subagent_model_selection(
         &self,
         agent_type: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> Option<SubagentModelSelection> {
         let config = self
-            .find_agent_entry(agent_type, workspace_root)?
+            .find_agent_entry(agent_type, workspace_id)?
             .custom_config?;
         if !config.model_is_explicit {
             return None;
@@ -40,15 +39,14 @@ impl AgentRegistry {
     pub async fn get_model_id_for_agent(
         &self,
         agent_type: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
     ) -> OpenBitFunResult<String> {
-        let externally_owned = workspace_root
+        let externally_owned = workspace_id
             .is_some_and(|workspace| self.is_external_subagent_route(agent_type, Some(workspace)));
         let entry = if externally_owned {
-            workspace_root
-                .and_then(|workspace| self.find_external_route_entry(agent_type, workspace))
+            workspace_id.and_then(|workspace| self.find_external_route_entry(agent_type, workspace))
         } else {
-            self.find_agent_entry(agent_type, workspace_root)
+            self.find_agent_entry(agent_type, workspace_id)
         };
         let entry = entry.ok_or_else(|| {
             error!("[AgentRegistry] Agent not found: {}", agent_type);

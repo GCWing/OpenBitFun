@@ -40,6 +40,17 @@ User bubbles apply `type.modifier.leading.tight` for 18px leading, with 12px
 padding on all sides and a 12px corner radius. They fit their content and wrap
 within the conversation width; a single line is 42px high at the default size.
 
+`VoiceCallTranscript` exposes its `entries` part for host-owned reading insets
+and `data-scrolled` when records have moved below their starting position. Hosts
+can layer compact controls above that viewport without creating another scroller.
+Each entry may supply `activity` beneath its message; the host owns its real
+processing state, localized accessible label, and completion lifecycle.
+Its `presentation="chat"` variant uses FlowChat's `type.flow.control` text size
+and weight, `type.flow.body` font stack and leading, `color.content.primary`
+text, and `color.action.quiet.hover` user-bubble fill. `compact` controls spacing
+independently. The default `presentation="voice"` retains the call typography
+and inverse colors; hosts can switch presentation on the existing viewport.
+
 `VoiceParticleLogo` is also exported independently. Its `readAudio` callback
 reads `{ user, assistant, assistantSpeaking }` once per animation frame. The
 two spectra are FFT byte bins from analysers configured with `fftSize = 256`;
@@ -324,7 +335,10 @@ Sized icon slots in buttons, tabs, menu items and fields own their glyph geometr
 Pass catalog `Icon` nodes through `leadingIcon`, `trailingIcon`, `icon` or the
 matching component slot, just as for SVG icons. These slots constrain catalog
 icons to the component's size; a standalone `Icon` retains its explicit size
-(24px by default). Do not shrink the catalog globally to correct a slot mismatch.
+(24px by default). They also normalize a direct Lucide glyph that still has
+Lucide's default 2px stroke to the shared 1.6 line weight and inherit the slot's
+color. Explicit non-default strokes and non-Lucid SVG artwork remain unchanged.
+Do not shrink the catalog globally to correct a slot mismatch.
 
 `IconButton` defaults to `quiet`: its resting surface is transparent, hover and
 pressed states use shared action feedback, and keyboard focus keeps a visible
@@ -449,6 +463,14 @@ nearest design-system root. Stable `parts` wrappers preserve host data hooks;
 they must forward all props and refs and retain public component ownership.
 `useSubmenuIntent` is available for product popovers that need the same pointer
 corridor behavior.
+
+Custom composed menus reuse `useDismissibleLayer` and the public `usePresence`
+hook. Keep the positioned/measured layer separate from its animated surface,
+retain geometry until presence unmounts it, and make exiting content inert.
+Presence cancels a pending exit when reopened and honors reduced motion.
+The host should opt a presence-owned surface out of its fallback animations;
+outside-pointer dismissal leaves the clicked control's focus alone, while
+Escape and menu actions restore the trigger before handing off to another UI.
 
 ## FlowChat tool cards
 

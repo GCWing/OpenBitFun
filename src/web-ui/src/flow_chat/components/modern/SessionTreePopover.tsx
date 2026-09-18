@@ -33,6 +33,8 @@ export interface SessionTreeSelection {
   agentType?: string;
   subagentType?: string;
   agentId?: string;
+  /** Owning workspace ID; authoritative when present. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -41,7 +43,7 @@ export interface SessionTreeSelection {
 
 interface SessionTreePopoverProps {
   sessionId?: string;
-  fallbackWorkspacePath?: string;
+  fallbackWorkspaceId?: string;
   hasActiveDescendants?: boolean;
   onSelectSession?: (selection: SessionTreeSelection) => void;
   onCancelSession?: (selection: SessionTreeSelection) => Promise<boolean>;
@@ -75,7 +77,7 @@ function nodeDisplayTitle(node: SessionLineageNode): string {
 
 export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
   sessionId,
-  fallbackWorkspacePath,
+  fallbackWorkspaceId,
   hasActiveDescendants = false,
   onSelectSession,
   onCancelSession,
@@ -111,8 +113,8 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
     const requestGeneration = requestGenerationRef.current + 1;
     requestGenerationRef.current = requestGeneration;
     const session = flowChatStore.getState().sessions.get(sessionId);
-    const workspacePath = session?.workspacePath || fallbackWorkspacePath;
-    if (!workspacePath) {
+    const workspaceId = session?.workspaceId || session?.config.workspaceId || fallbackWorkspaceId;
+    if (!workspaceId) {
       if (requestGeneration === requestGenerationRef.current) setLoadFailed(true);
       return;
     }
@@ -122,9 +124,7 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
     try {
       const nextSnapshot = await sessionAPI.getSessionLineage({
         sessionId,
-        workspacePath,
-        remoteConnectionId: session?.remoteConnectionId,
-        remoteSshHost: session?.remoteSshHost,
+        workspaceId,
       });
       if (requestGeneration === requestGenerationRef.current) {
         setSnapshot(nextSnapshot);
@@ -138,7 +138,7 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
         setIsLoading(false);
       }
     }
-  }, [fallbackWorkspacePath, sessionId]);
+  }, [fallbackWorkspaceId, sessionId]);
 
   useEffect(() => {
     requestGenerationRef.current += 1;
@@ -334,6 +334,7 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
       agentType: node.agentType,
       subagentType: node.subagentType,
       agentId: node.agentId,
+      workspaceId: node.workspaceId,
       workspacePath: node.workspacePath,
       remoteConnectionId: node.remoteConnectionId,
       remoteSshHost: node.remoteSshHost,
@@ -389,6 +390,7 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
       agentType: node.agentType,
       subagentType: node.subagentType,
       agentId: node.agentId,
+      workspaceId: node.workspaceId,
       workspacePath: node.workspacePath,
       remoteConnectionId: node.remoteConnectionId,
       remoteSshHost: node.remoteSshHost,

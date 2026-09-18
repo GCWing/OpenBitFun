@@ -79,7 +79,10 @@ pub struct QueuedTurn {
     pub prepended_messages: Vec<Message>,
     pub turn_id: Option<String>,
     pub agent_type: String,
+    /// Execution root projection; storage selection prefers `workspace_id`.
     pub workspace_path: Option<String>,
+    /// Owning workspace ID supplied by ID-aware callers to locate an unloaded session.
+    pub workspace_id: Option<String>,
     pub remote_connection_id: Option<String>,
     pub remote_ssh_host: Option<String>,
     pub policy: DialogSubmissionPolicy,
@@ -814,6 +817,7 @@ impl DialogScheduler {
             turn_id: Some(resolved_turn_id.clone()),
             agent_type: delivery.agent_type,
             workspace_path: delivery.workspace_path,
+            workspace_id: None,
             remote_connection_id: delivery.remote_connection_id,
             remote_ssh_host: delivery.remote_ssh_host,
             policy: DialogSubmissionPolicy::new(DialogTriggerSource::AgentSession, queue_priority),
@@ -956,6 +960,7 @@ impl DialogScheduler {
             turn_id: Some(resolved_turn_id.clone()),
             agent_type,
             workspace_path,
+            workspace_id: None,
             remote_connection_id,
             remote_ssh_host,
             policy,
@@ -1004,6 +1009,7 @@ impl DialogScheduler {
             turn_id: Some(resolved_turn_id.clone()),
             agent_type,
             workspace_path: session.config.workspace_path.clone(),
+            workspace_id: None,
             remote_connection_id: session.config.remote_connection_id.clone(),
             remote_ssh_host: session.config.remote_ssh_host.clone(),
             policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::AgentSession),
@@ -1174,13 +1180,35 @@ impl DialogScheduler {
                 session.config.project_workspace_path.as_deref(),
             );
         }
-        if let Some(workspace_path) = queued_turn.workspace_path.as_deref() {
-            let requested_storage_path = Self::resolve_session_restore_path(
-                workspace_path,
-                queued_turn.remote_connection_id.as_deref(),
-                queued_turn.remote_ssh_host.as_deref(),
+        let requested_workspace_id = queued_turn
+            .workspace_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(ToOwned::to_owned);
+        let requested_storage_path = if let Some(workspace_id) = requested_workspace_id.as_deref() {
+            // ID-aware callers locate the session by its owning workspace; the
+            // path on the request is only an execution-root projection.
+            Some(
+                CoreSessionStorePort::default()
+                    .resolve_workspace_storage(workspace_id)
+                    .await
+                    .map(|resolution| resolution.effective_storage_path)
+                    .map_err(SchedulerSubmitError::Port)?,
             )
-            .await?;
+        } else if let Some(workspace_path) = queued_turn.workspace_path.as_deref() {
+            Some(
+                Self::resolve_session_restore_path(
+                    workspace_path,
+                    queued_turn.remote_connection_id.as_deref(),
+                    queued_turn.remote_ssh_host.as_deref(),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+        if let Some(requested_storage_path) = requested_storage_path {
             if let Some(restored_session) = self
                 .restore_missing_session_before_admission(&session_id, &requested_storage_path)
                 .await?
@@ -1194,6 +1222,11 @@ impl DialogScheduler {
             self.session_manager
                 .validate_session_storage_path_binding(&session_id, &requested_storage_path)
                 .map_err(SchedulerSubmitError::Core)?;
+            if requested_workspace_id.is_some() {
+                // The session is loaded and bound by ID; an omitted locator makes
+                // the coordinator reuse that binding instead of re-resolving a path.
+                queued_turn.workspace_path = None;
+            }
         }
         let state = self
             .session_manager
@@ -2702,7 +2735,12 @@ impl DialogScheduler {
                         "External subagent delegation does not accept attachments or prepended reminders",
                     ));
                 }
-                if request.remote_connection_id.is_some() || request.remote_ssh_host.is_some() {
+                if self
+                    .coordinator
+                    .get_session_manager()
+                    .get_session(&request.session_id)
+                    .is_some_and(|session| session.config.is_remote_workspace())
+                {
                     return Err(PortError::new(
                         PortErrorKind::NotAvailable,
                         "External subagent delegation is unavailable for remote workspaces",
@@ -2746,6 +2784,7 @@ impl DialogScheduler {
             turn_id: Some(resolved_turn_id.clone()),
             agent_type: request.agent_type,
             workspace_path: request.workspace_path,
+            workspace_id: request.workspace_id,
             remote_connection_id: request.remote_connection_id,
             remote_ssh_host: request.remote_ssh_host,
             policy: request.policy,
@@ -3211,6 +3250,15 @@ mod tests {
         assert_eq!(error.kind, PortErrorKind::InvalidRequest);
     }
 
+    /// Creates a fixture workspace directory and registers it as a local
+    /// workspace record. Sessions only exist inside registered workspaces, so
+    /// path-only session configs naming it resolve like a host-opened folder.
+    fn fixture_workspace_dir(path: PathBuf) -> PathBuf {
+        std::fs::create_dir_all(&path).expect("workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(&path);
+        path
+    }
+
     fn test_scheduler() -> (
         Arc<DialogScheduler>,
         Arc<SessionManager>,
@@ -3299,8 +3347,7 @@ mod tests {
     async fn submission_preflight_commits_a_persisted_revert_marker() {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "reverted-session";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -3361,8 +3408,7 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "parent-session";
         let turn_id = "parent-turn";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -3421,8 +3467,7 @@ mod tests {
     async fn idle_background_result_uses_the_session_logical_agent_route() {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "external-parent-session";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -3469,7 +3514,7 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler_with_persistence(true);
         let session_id = "evicted-interrupted-session";
         let turn_id = "interrupted-turn";
-        let workspace = root.path().join("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         let model_binding_fingerprint = model_runtime_binding_fingerprint(&AIModelConfig {
             id: "model-original".to_string(),
             name: "model-original".to_string(),
@@ -3553,8 +3598,7 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "goal-parent-session";
         let turn_id = "goal-parent-turn";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -3619,6 +3663,7 @@ mod tests {
             turn_id: Some(turn_id.to_string()),
             agent_type: "Standard".to_string(),
             workspace_path: Some("/workspace".to_string()),
+            workspace_id: None,
             remote_connection_id: None,
             remote_ssh_host: None,
             policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::DesktopUi),
@@ -3684,8 +3729,7 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler_with_persistence(true);
         let session_id = "interrupted-queue-hold";
         let turn_id = "turn-interrupted";
-        let workspace = root.path().join("workspace-interrupted-hold");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace-interrupted-hold"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -3740,8 +3784,7 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let parent_session_id = "parent-session";
         let child_session_id = "background-child-session";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(parent_session_id.to_string()),
@@ -3813,8 +3856,7 @@ mod tests {
     #[tokio::test]
     async fn dialog_port_preserves_not_found_for_a_missing_session() {
         let (scheduler, _, _, root) = test_scheduler();
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
 
         let error = scheduler
             .submit_dialog_turn(AgentDialogTurnRequest {
@@ -3826,6 +3868,7 @@ mod tests {
                 execution: Default::default(),
                 agent_type: "Standard".to_string(),
                 workspace_path: Some(workspace.to_string_lossy().to_string()),
+                workspace_id: None,
                 remote_connection_id: None,
                 remote_ssh_host: None,
                 policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
@@ -3857,8 +3900,7 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "queued-session";
         let turn_id = "queued-turn";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -3892,6 +3934,7 @@ mod tests {
                 execution: Default::default(),
                 agent_type: "Standard".to_string(),
                 workspace_path: None,
+                workspace_id: None,
                 remote_connection_id: None,
                 remote_ssh_host: None,
                 policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
@@ -3933,8 +3976,7 @@ mod tests {
     async fn delegated_dialog_turn_rejects_instead_of_queueing_behind_an_active_turn() {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "delegated-busy-session";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -3972,6 +4014,7 @@ mod tests {
                     },
                 agent_type: "Standard".to_string(),
                 workspace_path: None,
+                workspace_id: None,
                 remote_connection_id: None,
                 remote_ssh_host: None,
                 policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
@@ -3992,8 +4035,7 @@ mod tests {
     async fn delegated_dialog_turn_does_not_clear_a_queue_from_an_error_session() {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "delegated-error-session";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -4027,6 +4069,7 @@ mod tests {
                 execution: Default::default(),
                 agent_type: "Standard".to_string(),
                 workspace_path: None,
+                workspace_id: None,
                 remote_connection_id: None,
                 remote_ssh_host: None,
                 policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
@@ -4062,6 +4105,7 @@ mod tests {
                     },
                 agent_type: "Standard".to_string(),
                 workspace_path: None,
+                workspace_id: None,
                 remote_connection_id: None,
                 remote_ssh_host: None,
                 policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
@@ -4086,8 +4130,7 @@ mod tests {
     async fn reject_busy_dialog_port_does_not_enqueue_or_replace_the_active_turn() {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "acp-session";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -4121,6 +4164,7 @@ mod tests {
                 execution: Default::default(),
                 agent_type: "Standard".to_string(),
                 workspace_path: None,
+                workspace_id: None,
                 remote_connection_id: None,
                 remote_ssh_host: None,
                 policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
@@ -4156,8 +4200,7 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "duplicate-active-session";
         let turn_id = "duplicate-turn";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -4194,6 +4237,7 @@ mod tests {
                 execution: Default::default(),
                 agent_type: "Standard".to_string(),
                 workspace_path: None,
+                workspace_id: None,
                 remote_connection_id: None,
                 remote_ssh_host: None,
                 policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
@@ -4213,10 +4257,8 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "workspace-bound-session";
         let turn_id = "wrong-workspace-turn";
-        let workspace_a = root.path().join("workspace-a");
-        let workspace_b = root.path().join("workspace-b");
-        std::fs::create_dir_all(&workspace_a).expect("workspace a");
-        std::fs::create_dir_all(&workspace_b).expect("workspace b");
+        let workspace_a = fixture_workspace_dir(root.path().join("workspace-a"));
+        let workspace_b = fixture_workspace_dir(root.path().join("workspace-b"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -4239,6 +4281,7 @@ mod tests {
                 execution: Default::default(),
                 agent_type: "Standard".to_string(),
                 workspace_path: Some(workspace_b.to_string_lossy().to_string()),
+                workspace_id: None,
                 remote_connection_id: None,
                 remote_ssh_host: None,
                 policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
@@ -4265,8 +4308,7 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "invalid-agent-session";
         let turn_id = "invalid-agent-turn";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -4290,6 +4332,7 @@ mod tests {
                 execution: Default::default(),
                 agent_type: "agent-that-does-not-exist".to_string(),
                 workspace_path: None,
+                workspace_id: None,
                 remote_connection_id: None,
                 remote_ssh_host: None,
                 policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::Cli),
@@ -4309,8 +4352,7 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "known-turn-session";
         let turn_id = "known-turn";
-        let workspace = root.path().join("workspace");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -4375,8 +4417,7 @@ mod tests {
         session_id: &str,
         turn_id: &str,
     ) {
-        let workspace = root.path().join(format!("workspace-{session_id}"));
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join(format!("workspace-{session_id}")));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),
@@ -4579,8 +4620,7 @@ mod tests {
         let (scheduler, session_manager, _, root) = test_scheduler();
         let session_id = "session-maintenance-retire";
         let turn_id = "turn-active";
-        let workspace = root.path().join("workspace-maintenance-retire");
-        std::fs::create_dir_all(&workspace).expect("workspace");
+        let workspace = fixture_workspace_dir(root.path().join("workspace-maintenance-retire"));
         session_manager
             .create_session_with_id(
                 Some(session_id.to_string()),

@@ -14,8 +14,7 @@ use openbitfun_core::service::git::{
     GitTrustOutcome, GitTrustReport, GitTrustState,
 };
 use openbitfun_core::service::remote_ssh::{
-    build_remote_git_command as build_remote_git_command_shared, is_remote_path,
-    lookup_remote_connection, normalize_remote_workspace_path,
+    build_remote_git_command as build_remote_git_command_shared, normalize_remote_workspace_path,
 };
 use openbitfun_core::service::workspace::WorktreeTopologyFreshness;
 use serde::{Deserialize, Serialize};
@@ -56,36 +55,54 @@ struct RemoteGitOutput {
     exit_code: i32,
 }
 
-/// Resolves the remote workspace a Git request belongs to, if any.
-///
-/// `Ok(None)` means "this path is on this machine". It must not also mean "this
-/// path belongs to another machine but I could not say which": overlapping
-/// registered roots with no usable connection hint make `lookup_remote_connection`
-/// answer `None` for a path that plainly is remote (`is_remote_path` still says
-/// so), and treating that as local hands the request to the local `GitService`.
-/// For a read that reports a stranger's repository; for `git_trust_repository`
-/// it writes *this* user's global `safe.directory` for a path that lives
-/// somewhere else — a real, wrong, host operation whenever a same-named path
-/// happens to exist here. Remote workspace search already refuses the identical
-/// ambiguity out loud (`search_api::workspace_search_unavailable_message`).
+/// Resolve the execution environment from the authoritative workspace object.
+/// repository_path is only an IO location inside that workspace, never its key.
 async fn resolve_remote_git_target(
+    workspace_id: &str,
     repository_path: &str,
 ) -> Result<Option<RemoteGitTarget>, String> {
-    if let Some(entry) = lookup_remote_connection(repository_path).await {
-        return Ok(Some(RemoteGitTarget {
-            connection_id: entry.connection_id,
-            repository_path: normalize_remote_workspace_path(repository_path),
-        }));
+    let service = openbitfun_core::service::workspace::get_global_workspace_service()
+        .ok_or("Workspace service is unavailable")?;
+    let workspace = service
+        .require_workspace(workspace_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    if workspace.workspace_kind != openbitfun_core::service::workspace::WorkspaceKind::Remote {
+        return Ok(None);
     }
+    let connection_id = workspace
+        .remote_ssh_connection_id()
+        .ok_or("Remote workspace has no saved SSH connection ID")?
+        .to_string();
+    Ok(Some(RemoteGitTarget {
+        connection_id,
+        repository_path: normalize_remote_workspace_path(repository_path),
+    }))
+}
 
-    if is_remote_path(repository_path).await {
-        return Err(format!(
-            "Remote workspace is not registered with OpenBitFun SSH state: no single SSH connection \
-             matches {repository_path}"
-        ));
+/// Old HostInvoke payloads are decoded only at this temporary upgrade boundary.
+async fn resolve_git_request(
+    workspace_id: &mut Option<String>,
+    repository_path: &mut String,
+) -> Result<(), String> {
+    let service = openbitfun_core::service::workspace::get_global_workspace_service()
+        .ok_or("Workspace service is unavailable")?;
+    let workspace = match workspace_id.as_deref() {
+        Some(id) => service
+            .require_workspace(id)
+            .await
+            .map_err(|e| e.to_string())?,
+        None => service
+            .resolve_legacy_workspace_reference(None, repository_path, None, None)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Legacy Git workspace cannot be resolved; select a workspace by ID")?,
+    };
+    if workspace_id.is_some() || repository_path.is_empty() {
+        *repository_path = workspace.root_path.to_string_lossy().into_owned();
     }
-
-    Ok(None)
+    *workspace_id = Some(workspace.id);
+    Ok(())
 }
 
 fn build_remote_git_command(repository_path: &str, args: &[String]) -> String {
@@ -408,12 +425,18 @@ fn git_log_args(params: &GitLogParams) -> Vec<String> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitRepositoryRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitResolveRevisionRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub revision: String,
 }
@@ -421,6 +444,9 @@ pub struct GitResolveRevisionRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitBranchesRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub include_remote: Option<bool>,
 }
@@ -428,6 +454,9 @@ pub struct GitBranchesRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitsRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub params: Option<GitLogParams>,
 }
@@ -435,6 +464,9 @@ pub struct GitCommitsRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitAddFilesRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub params: GitAddParams,
 }
@@ -442,6 +474,9 @@ pub struct GitAddFilesRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCommitRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub params: GitCommitParams,
 }
@@ -449,6 +484,9 @@ pub struct GitCommitRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitPushRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub params: GitPushParams,
 }
@@ -456,6 +494,9 @@ pub struct GitPushRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitPullRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub params: GitPullParams,
 }
@@ -463,6 +504,9 @@ pub struct GitPullRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCheckoutBranchRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub branch_name: String,
 }
@@ -470,6 +514,9 @@ pub struct GitCheckoutBranchRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCreateBranchRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub branch_name: String,
     pub start_point: Option<String>,
@@ -478,6 +525,9 @@ pub struct GitCreateBranchRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitDeleteBranchRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub branch_name: String,
     pub force: Option<bool>,
@@ -486,6 +536,9 @@ pub struct GitDeleteBranchRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitDiffRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub params: GitDiffParams,
 }
@@ -493,6 +546,9 @@ pub struct GitDiffRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitChangedFilesRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub params: GitChangedFilesParams,
 }
@@ -500,6 +556,9 @@ pub struct GitChangedFilesRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitResetFilesRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub files: Vec<String>,
     pub staged: Option<bool>,
@@ -508,6 +567,9 @@ pub struct GitResetFilesRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitResetToCommitRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub commit_hash: String,
     pub mode: String, // "soft", "mixed", or "hard"
@@ -516,6 +578,9 @@ pub struct GitResetToCommitRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitGetFileContentRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub file_path: String,
     pub commit: Option<String>,
@@ -524,6 +589,9 @@ pub struct GitGetFileContentRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitCherryPickRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub commit_hash: String,
     pub no_commit: Option<bool>,
@@ -532,6 +600,9 @@ pub struct GitCherryPickRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitAddWorktreeRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub branch: String,
     pub create_branch: Option<bool>,
@@ -540,6 +611,9 @@ pub struct GitAddWorktreeRequest {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitRemoveWorktreeRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub repository_path: String,
     pub worktree_path: String,
     pub force: Option<bool>,
@@ -554,9 +628,15 @@ pub struct GitRemoveWorktreeRequest {
 #[tauri::command]
 pub async fn git_get_repository_trust(
     state: State<'_, AppState>,
-    request: GitRepositoryRequest,
+    mut request: GitRepositoryRequest,
 ) -> Result<GitTrustReport, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         return inspect_remote_repository_trust(&state, &target).await;
     }
 
@@ -580,9 +660,15 @@ pub async fn git_get_repository_trust(
 #[tauri::command]
 pub async fn git_trust_repository(
     state: State<'_, AppState>,
-    request: GitRepositoryRequest,
+    mut request: GitRepositoryRequest,
 ) -> Result<GitTrustOutcome, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let report = inspect_remote_repository_trust(&state, &target).await?;
         info!(
             "Git repository trust must be granted on the remote host: path={}",
@@ -712,10 +798,16 @@ fn remote_probe_found_repository(output: &RemoteGitOutput) -> bool {
 pub async fn git_is_repository(
     state: State<'_, AppState>,
     startup_trace: State<'_, DesktopStartupTrace>,
-    request: GitRepositoryRequest,
+    mut request: GitRepositoryRequest,
 ) -> Result<bool, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let trace_started = Instant::now();
-    let result = if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    let result = if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         execute_remote_git_command(
             &state,
             &target,
@@ -742,9 +834,15 @@ pub async fn git_is_repository(
 #[tauri::command]
 pub async fn git_get_repository(
     state: State<'_, AppState>,
-    request: GitRepositoryRequest,
+    mut request: GitRepositoryRequest,
 ) -> Result<GitRepository, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let current_branch = execute_remote_git_success(
             &state,
             &target,
@@ -805,11 +903,17 @@ pub async fn git_get_repository(
 pub async fn git_get_repository_basic(
     state: State<'_, AppState>,
     startup_trace: State<'_, DesktopStartupTrace>,
-    request: GitRepositoryRequest,
+    mut request: GitRepositoryRequest,
 ) -> Result<GitRepository, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let trace_started = Instant::now();
     let result = async {
-        if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+        if let Some(target) = resolve_remote_git_target(
+            request.workspace_id.as_deref().expect("resolved workspace"),
+            &request.repository_path,
+        )
+        .await?
+        {
             let current_branch = execute_remote_git_success(
                 &state,
                 &target,
@@ -861,14 +965,20 @@ pub async fn git_get_repository_basic(
 #[tauri::command]
 pub async fn git_resolve_revision(
     state: State<'_, AppState>,
-    request: GitResolveRevisionRequest,
+    mut request: GitResolveRevisionRequest,
 ) -> Result<String, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let revision = request.revision.trim();
     if revision.is_empty() {
         return Err("Revision cannot be empty".to_string());
     }
 
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         return execute_remote_git_success(
             &state,
             &target,
@@ -890,9 +1000,15 @@ pub async fn git_resolve_revision(
 #[tauri::command]
 pub async fn git_get_status(
     state: State<'_, AppState>,
-    request: GitRepositoryRequest,
+    mut request: GitRepositoryRequest,
 ) -> Result<GitStatus, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let output = execute_remote_git_success(
             &state,
             &target,
@@ -921,10 +1037,16 @@ pub async fn git_get_status(
 #[tauri::command]
 pub async fn git_get_branches(
     state: State<'_, AppState>,
-    request: GitBranchesRequest,
+    mut request: GitBranchesRequest,
 ) -> Result<Vec<GitBranch>, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let include_remote = request.include_remote.unwrap_or(false);
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let mut args = vec![
             "for-each-ref".to_string(),
             "--format=%(if)%(HEAD)%(then)*%(else) %(end)%09%(refname)%09%(refname:short)%09%(upstream:short)%09%(objectname)%09%(committerdate:iso-strict)".to_string(),
@@ -951,10 +1073,16 @@ pub async fn git_get_branches(
 #[tauri::command]
 pub async fn git_get_enhanced_branches(
     state: State<'_, AppState>,
-    request: GitBranchesRequest,
+    mut request: GitBranchesRequest,
 ) -> Result<Vec<GitBranch>, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let include_remote = request.include_remote.unwrap_or(false);
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let mut args = vec![
             "for-each-ref".to_string(),
             "--format=%(if)%(HEAD)%(then)*%(else) %(end)%09%(refname)%09%(refname:short)%09%(upstream:short)%09%(objectname)%09%(committerdate:iso-strict)".to_string(),
@@ -981,10 +1109,16 @@ pub async fn git_get_enhanced_branches(
 #[tauri::command]
 pub async fn git_get_commits(
     state: State<'_, AppState>,
-    request: GitCommitsRequest,
+    mut request: GitCommitsRequest,
 ) -> Result<Vec<GitCommit>, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let params = request.params.unwrap_or_default();
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let output = execute_remote_git_success(&state, &target, &git_log_args(&params)).await?;
         return Ok(parse_remote_commits(&output));
     }
@@ -1003,9 +1137,15 @@ pub async fn git_get_commits(
 #[tauri::command]
 pub async fn git_add_files(
     state: State<'_, AppState>,
-    request: GitAddFilesRequest,
+    mut request: GitAddFilesRequest,
 ) -> Result<GitOperationResult, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let mut args = vec!["add".to_string()];
         if request.params.all.unwrap_or(false) {
             args.push("-A".to_string());
@@ -1031,9 +1171,15 @@ pub async fn git_add_files(
 #[tauri::command]
 pub async fn git_commit(
     state: State<'_, AppState>,
-    request: GitCommitRequest,
+    mut request: GitCommitRequest,
 ) -> Result<GitOperationResult, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let mut args = vec![
             "commit".to_string(),
             "-m".to_string(),
@@ -1069,9 +1215,15 @@ pub async fn git_commit(
 #[tauri::command]
 pub async fn git_push(
     state: State<'_, AppState>,
-    request: GitPushRequest,
+    mut request: GitPushRequest,
 ) -> Result<GitOperationResult, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let mut args = vec!["push".to_string()];
         if request.params.force.unwrap_or(false) {
             args.push("--force".to_string());
@@ -1102,9 +1254,15 @@ pub async fn git_push(
 #[tauri::command]
 pub async fn git_pull(
     state: State<'_, AppState>,
-    request: GitPullRequest,
+    mut request: GitPullRequest,
 ) -> Result<GitOperationResult, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let mut args = vec!["pull".to_string()];
         if request.params.rebase.unwrap_or(false) {
             args.push("--rebase".to_string());
@@ -1132,9 +1290,15 @@ pub async fn git_pull(
 #[tauri::command]
 pub async fn git_checkout_branch(
     state: State<'_, AppState>,
-    request: GitCheckoutBranchRequest,
+    mut request: GitCheckoutBranchRequest,
 ) -> Result<GitOperationResult, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         return execute_remote_git_operation(
             &state,
             &target,
@@ -1157,9 +1321,15 @@ pub async fn git_checkout_branch(
 #[tauri::command]
 pub async fn git_create_branch(
     state: State<'_, AppState>,
-    request: GitCreateBranchRequest,
+    mut request: GitCreateBranchRequest,
 ) -> Result<GitOperationResult, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let mut args = vec![
             "checkout".to_string(),
             "-b".to_string(),
@@ -1189,10 +1359,16 @@ pub async fn git_create_branch(
 #[tauri::command]
 pub async fn git_delete_branch(
     state: State<'_, AppState>,
-    request: GitDeleteBranchRequest,
+    mut request: GitDeleteBranchRequest,
 ) -> Result<GitOperationResult, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let force = request.force.unwrap_or(false);
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         return execute_remote_git_operation(
             &state,
             &target,
@@ -1219,9 +1395,15 @@ pub async fn git_delete_branch(
 #[tauri::command]
 pub async fn git_get_diff(
     state: State<'_, AppState>,
-    request: GitDiffRequest,
+    mut request: GitDiffRequest,
 ) -> Result<String, String> {
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         return execute_remote_git_success(&state, &target, &build_git_diff_args(&request.params))
             .await;
     }
@@ -1240,14 +1422,20 @@ pub async fn git_get_diff(
 #[tauri::command]
 pub async fn git_get_changed_files(
     state: State<'_, AppState>,
-    request: GitChangedFilesRequest,
+    mut request: GitChangedFilesRequest,
 ) -> Result<Vec<GitChangedFile>, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     info!(
         "Getting changed Git files for repository: {}",
         request.repository_path
     );
 
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let output = execute_remote_git_success(
             &state,
             &target,
@@ -1268,8 +1456,9 @@ pub async fn git_get_changed_files(
 #[tauri::command]
 pub async fn git_reset_files(
     state: State<'_, AppState>,
-    request: GitResetFilesRequest,
+    mut request: GitResetFilesRequest,
 ) -> Result<GitOperationResult, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let staged = request.staged.unwrap_or(false);
 
     info!(
@@ -1277,7 +1466,12 @@ pub async fn git_reset_files(
         request.repository_path, staged, request.files
     );
 
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let mut args = vec!["restore".to_string()];
         if staged {
             args.push("--staged".to_string());
@@ -1301,14 +1495,20 @@ pub async fn git_reset_files(
 #[tauri::command]
 pub async fn git_get_file_content(
     state: State<'_, AppState>,
-    request: GitGetFileContentRequest,
+    mut request: GitGetFileContentRequest,
 ) -> Result<String, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     info!(
         "Getting file content for '{}' at commit '{:?}' in repo '{}'",
         request.file_path, request.commit, request.repository_path
     );
 
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let object_spec = format!(
             "{}:{}",
             request.commit.as_deref().unwrap_or("HEAD"),
@@ -1332,14 +1532,20 @@ pub async fn git_get_file_content(
 #[tauri::command]
 pub async fn git_reset_to_commit(
     state: State<'_, AppState>,
-    request: GitResetToCommitRequest,
+    mut request: GitResetToCommitRequest,
 ) -> Result<GitOperationResult, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     info!(
         "Resetting to commit '{}' with mode '{}' in repo '{}'",
         request.commit_hash, request.mode, request.repository_path
     );
 
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let mode_flag = match request.mode.as_str() {
             "soft" => "--soft",
             "mixed" => "--mixed",
@@ -1376,16 +1582,25 @@ pub async fn git_reset_to_commit(
 #[tauri::command]
 pub async fn git_get_graph(
     _state: State<'_, AppState>,
-    repository_path: String,
+    repository_path: Option<String>,
+    mut workspace_id: Option<String>,
     max_count: Option<usize>,
     branch_name: Option<String>,
 ) -> Result<openbitfun_core::service::git::GitGraph, String> {
+    let mut repository_path = repository_path.unwrap_or_default();
     info!(
         "Getting git graph: repository_path={}, max_count={:?}, branch_name={:?}",
         repository_path, max_count, branch_name
     );
 
-    if resolve_remote_git_target(&repository_path).await?.is_some() {
+    resolve_git_request(&mut workspace_id, &mut repository_path).await?;
+    if resolve_remote_git_target(
+        workspace_id.as_deref().expect("resolved workspace"),
+        &repository_path,
+    )
+    .await?
+    .is_some()
+    {
         return Err("Git graph is not supported for remote SSH workspaces yet".to_string());
     }
 
@@ -1397,8 +1612,9 @@ pub async fn git_get_graph(
 #[tauri::command]
 pub async fn git_cherry_pick(
     state: State<'_, AppState>,
-    request: GitCherryPickRequest,
+    mut request: GitCherryPickRequest,
 ) -> Result<GitOperationResult, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let no_commit = request.no_commit.unwrap_or(false);
 
     info!(
@@ -1406,7 +1622,12 @@ pub async fn git_cherry_pick(
         request.commit_hash, request.repository_path, no_commit
     );
 
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         let mut args = vec!["cherry-pick".to_string()];
         if no_commit {
             args.push("-n".to_string());
@@ -1429,11 +1650,17 @@ pub async fn git_cherry_pick(
 #[tauri::command]
 pub async fn git_cherry_pick_abort(
     state: State<'_, AppState>,
-    request: GitRepositoryRequest,
+    mut request: GitRepositoryRequest,
 ) -> Result<GitOperationResult, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     info!("Aborting cherry-pick in repo '{}'", request.repository_path);
 
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         return execute_remote_git_operation(
             &state,
             &target,
@@ -1456,14 +1683,20 @@ pub async fn git_cherry_pick_abort(
 #[tauri::command]
 pub async fn git_cherry_pick_continue(
     state: State<'_, AppState>,
-    request: GitRepositoryRequest,
+    mut request: GitRepositoryRequest,
 ) -> Result<GitOperationResult, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     info!(
         "Continuing cherry-pick in repo '{}'",
         request.repository_path
     );
 
-    if let Some(target) = resolve_remote_git_target(&request.repository_path).await? {
+    if let Some(target) = resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    {
         return execute_remote_git_operation(
             &state,
             &target,
@@ -1486,13 +1719,17 @@ pub async fn git_cherry_pick_continue(
 #[tauri::command]
 pub async fn git_list_worktrees(
     state: State<'_, AppState>,
-    request: GitRepositoryRequest,
+    mut request: GitRepositoryRequest,
 ) -> Result<Vec<openbitfun_core::service::git::GitWorktreeInfo>, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     info!("Listing worktrees for '{}'", request.repository_path);
 
-    if resolve_remote_git_target(&request.repository_path)
-        .await?
-        .is_some()
+    if resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    .is_some()
     {
         return Err("Git worktrees are not supported for remote SSH workspaces yet".to_string());
     }
@@ -1516,17 +1753,21 @@ pub async fn git_list_worktrees(
 #[tauri::command]
 pub async fn git_add_worktree(
     state: State<'_, AppState>,
-    request: GitAddWorktreeRequest,
+    mut request: GitAddWorktreeRequest,
 ) -> Result<openbitfun_core::service::git::GitWorktreeInfo, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let create_branch = request.create_branch.unwrap_or(false);
     info!(
         "Adding worktree for branch '{}' in '{}' (create_branch: {})",
         request.branch, request.repository_path, create_branch
     );
 
-    if resolve_remote_git_target(&request.repository_path)
-        .await?
-        .is_some()
+    if resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    .is_some()
     {
         return Err("Git worktrees are not supported for remote SSH workspaces yet".to_string());
     }
@@ -1551,17 +1792,21 @@ pub async fn git_add_worktree(
 #[tauri::command]
 pub async fn git_remove_worktree(
     state: State<'_, AppState>,
-    request: GitRemoveWorktreeRequest,
+    mut request: GitRemoveWorktreeRequest,
 ) -> Result<GitOperationResult, String> {
+    resolve_git_request(&mut request.workspace_id, &mut request.repository_path).await?;
     let force = request.force.unwrap_or(false);
     info!(
         "Removing worktree '{}' from '{}' (force: {})",
         request.worktree_path, request.repository_path, force
     );
 
-    if resolve_remote_git_target(&request.repository_path)
-        .await?
-        .is_some()
+    if resolve_remote_git_target(
+        request.workspace_id.as_deref().expect("resolved workspace"),
+        &request.repository_path,
+    )
+    .await?
+    .is_some()
     {
         return Err("Git worktrees are not supported for remote SSH workspaces yet".to_string());
     }

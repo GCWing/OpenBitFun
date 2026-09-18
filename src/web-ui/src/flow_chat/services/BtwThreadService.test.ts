@@ -70,6 +70,7 @@ describe('BtwThreadService', () => {
     sessions.set('parent-1', {
       sessionId: 'parent-1',
       mode: 'Standard',
+      workspaceId: 'workspace-1',
       workspacePath: '/workspace',
       remoteConnectionId: 'remote-1',
       remoteSshHost: 'host-1',
@@ -109,6 +110,7 @@ describe('BtwThreadService', () => {
         sessionName: 'Deep review',
         agentType: 'DeepReview',
         sessionId: 'review_child_review-request-1',
+        workspaceId: 'workspace-1',
         workspacePath: '/workspace',
         remoteConnectionId: 'remote-1',
         remoteSshHost: 'host-1',

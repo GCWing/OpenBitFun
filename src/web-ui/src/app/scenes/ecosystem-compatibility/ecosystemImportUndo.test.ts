@@ -10,24 +10,37 @@ vi.mock('@/infrastructure/api/service-api/ExternalHooksAPI', () => ({ externalHo
 import { applyImportUndo, matchesSkillReceipt, prepareMcpUndo, readSkillImportReceipt, rememberSkillImport } from './ecosystemImportUndo';
 
 const native = { key: 'native-demo', path: '/native/demo', sourceId: 'openbitfun', level: 'user', isBuiltin: false } as SkillInfo;
-const key = (source: string) => `openbitfun:external-skill-import:${JSON.stringify(['', source])}`;
+const key = (source: string) => `openbitfun:external-skill-import:v2:${JSON.stringify(['local', '', source])}`;
 
 describe('external import undo ownership and compatibility', () => {
   beforeEach(() => { vi.resetAllMocks(); localStorage.clear(); resetDeviceSurfaceForTest(); });
 
   it('reads saved native identities after reload and shares user copies across workspaces', () => {
-    rememberSkillImport('/source/demo', native, '/workspace');
+    rememberSkillImport('/source/demo', native, 'workspace-id');
     const saved = JSON.parse(localStorage.getItem(key('/source/demo'))!);
     localStorage.setItem(key('/source/demo'), JSON.stringify({ ...saved, futureOptionalField: true }));
-    expect(readSkillImportReceipt('/source/demo', '/another-workspace')).toMatchObject(saved);
+    expect(readSkillImportReceipt('/source/demo', 'another-workspace-id')).toMatchObject(saved);
     expect(matchesSkillReceipt({ ...native, sourceId: 'codex' }, saved)).toBe(false);
     expect(matchesSkillReceipt({ ...native, isBuiltin: true }, saved)).toBe(false);
   });
 
   it('keeps project copy receipts scoped to the owning workspace', () => {
-    rememberSkillImport('/project-source/demo', { ...native, level: 'project' }, '/a');
-    expect(readSkillImportReceipt('/project-source/demo', '/a')).not.toBeNull();
-    expect(readSkillImportReceipt('/project-source/demo', '/b')).toBeNull();
+    rememberSkillImport('/project-source/demo', { ...native, level: 'project' }, 'workspace-a');
+    expect(readSkillImportReceipt('/project-source/demo', 'workspace-a')).not.toBeNull();
+    expect(readSkillImportReceipt('/project-source/demo', 'workspace-b')).toBeNull();
+  });
+
+  it('rejects project imports without an ID and never reads project receipts from the global slot', async () => {
+    const source = '/missing-owner/demo';
+    expect(() => rememberSkillImport(source, { ...native, level: 'project' })).toThrow('workspace ID');
+    expect(localStorage.getItem(key(source))).toBeNull();
+    const receipt = { schemaVersion: 1 as const, sourcePath: source, nativeKey: native.key, nativePath: native.path, level: 'project' as const };
+    localStorage.setItem(key(source), JSON.stringify(receipt));
+    expect(readSkillImportReceipt(source)).toBeNull();
+    expect(readSkillImportReceipt(source, 'workspace-a')).toBeNull();
+    await expect(applyImportUndo({ kind: 'skill', target: native.path, receipt })).rejects.toThrow('workspace ID');
+    expect(mocks.scan).not.toHaveBeenCalled();
+    expect(localStorage.getItem(key(source))).toBe(JSON.stringify(receipt));
   });
 
   it.each(['{broken', '{"schemaVersion":99,"important":"preserve"}'])('preserves unreadable or newer receipts: %s', (stored) => {

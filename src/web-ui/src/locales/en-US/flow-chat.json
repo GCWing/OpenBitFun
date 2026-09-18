@@ -2791,5 +2791,21 @@
     "placeholder": "Send a request to {{app}}…",
     "send": "Send",
     "hint": "Messages are handled by {{app}}"
+  },
+  "dock": {
+    "hideConversation": "Hide conversation",
+    "openApp": "Open app",
+    "loadingHistory": "Loading messages…",
+    "newConversation": "New control conversation",
+    "newConversationBusy": "Finish the current task or call to start a new conversation",
+    "open": "OpenBitFun assistant",
+    "tabs": "Floating conversations",
+    "moveToMain": "Move to main window",
+    "collapse": "Collapse",
+    "welcome": "Manage OpenBitFun and keep your work moving.",
+    "unavailable": "This conversation is unavailable. Reopen its app.",
+    "loadFailed": "Unable to open the assistant",
+    "retry": "Retry",
+    "loading": "Opening assistant…"
   }
 }

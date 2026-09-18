@@ -7,6 +7,7 @@ interface WritePlanDisplayProps {
   toolItem: FlowToolItem;
   planFilePath: string;
   initialContent: string;
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
 }
@@ -15,6 +16,7 @@ export const WritePlanDisplay: React.FC<WritePlanDisplayProps> = ({
   toolItem,
   planFilePath,
   initialContent,
+  workspaceId,
   workspacePath,
   remoteConnectionId,
 }) => (
@@ -25,6 +27,7 @@ export const WritePlanDisplay: React.FC<WritePlanDisplayProps> = ({
     cacheKey={toolItem.id}
     toolName="Write"
     storageKind="project-file"
+    workspaceId={workspaceId}
     workspacePath={workspacePath}
     remoteConnectionId={remoteConnectionId}
   />

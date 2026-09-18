@@ -1,3 +1,4 @@
+import type { GitWorkspaceScope } from '@/infrastructure/api/service-api/GitAPI';
 /** Git diff view. */
 
 import { OverflowText, Button, Icon, IconButton, SegmentedControl } from '@openbitfun/ui';
@@ -7,13 +8,14 @@ import { FileText, Minus, EyeOff, AlertCircle } from 'lucide-react';
 
 import { gitService } from '../../services';
 import { createLogger } from '@/shared/utils/logger';
+import { useStableGitWorkspaceScope } from '../../hooks/useStableGitWorkspaceScope';
 import './GitDiffView.scss';
 
 const log = createLogger('GitDiffView');
 
 interface GitDiffViewProps {
   /** Repository path */
-  repositoryPath: string;
+  repositoryPath: GitWorkspaceScope;
   /** Source commit hash */
   sourceCommit?: string;
   /** Target commit hash */
@@ -107,13 +109,14 @@ const parseDiffOutput = (diffOutput: string): DiffFile[] => {
 };
 
 const GitDiffView: React.FC<GitDiffViewProps> = ({
-  repositoryPath,
+  repositoryPath: workspaceReference,
   sourceCommit,
   targetCommit,
   filePath,
   showStaged = false,
   className = ''
 }) => {
+  const repositoryPath = useStableGitWorkspaceScope(workspaceReference);
   const { t } = useTranslation('panels/git');
   const [diffFiles, setDiffFiles] = useState<DiffFile[]>([]);
   const [loading, setLoading] = useState(false);

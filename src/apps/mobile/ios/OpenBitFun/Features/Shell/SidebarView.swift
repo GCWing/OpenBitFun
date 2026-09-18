@@ -140,7 +140,7 @@ struct SidebarView: View {
         .overlayPreferenceValue(SidebarWorkspaceCreateAnchorKey.self) { anchors in
             GeometryReader { proxy in
                 if let path = workspaceCreatePath,
-                   let workspace = workspaceCreateTarget ?? model.remoteWorkspaces.first(where: { ($0.path + ":" + ($0.remoteConnectionId ?? "")) == path }),
+                   let workspace = workspaceCreateTarget ?? model.remoteWorkspaces.first(where: { $0.scopeKey == path }),
                    let anchor = anchors[path] {
                     let frame = proxy[anchor]
                     let menuHeight = HarnessProfilePolicy.shared.supported(capabilities: model.remoteHostCapabilities)
@@ -172,7 +172,7 @@ struct SidebarView: View {
                workspaceCreatePath == nil,
                let workspace = model.remoteWorkspaces.first {
                 try? await Task.sleep(nanoseconds: 450_000_000)
-                workspaceCreatePath = workspace.path + ":" + (workspace.remoteConnectionId ?? "")
+                workspaceCreatePath = workspace.scopeKey
             } else if ProcessInfo.processInfo.arguments.contains("--sidebar-actions"),
                       compactActionSession == nil,
                       let session = model.sessionListSections.flatMap(\.sessions).first {
@@ -296,7 +296,7 @@ struct SidebarView: View {
 
             }
             .frame(height: 38)
-            .padding(.top, 18)
+            .padding(.top, 10)
 
             if let error = model.accountDirectoryError {
                 Button { model.refreshRemoteDevices() } label: {
@@ -427,6 +427,7 @@ struct SidebarView: View {
         let visibleWorkspaceCount = visibleDeviceWorkspaceCounts[device.id] ?? 3
         ForEach(device.workspaces.prefix(visibleWorkspaceCount)) { workspace in
             let scopedWorkspace = MobileWorkspaceGroup(
+                workspaceId: workspace.workspaceId,
                 path: workspace.path,
                 name: workspace.name,
                 selected: workspace.selected,
@@ -455,14 +456,14 @@ struct SidebarView: View {
                 },
                 onToggleCreate: {
                     workspaceCreateTarget = scopedWorkspace
-                    workspaceCreatePath = scopedWorkspace.path + ":" + (scopedWorkspace.remoteConnectionId ?? "")
+                    workspaceCreatePath = scopedWorkspace.scopeKey
                 },
                 onOpenWorkspace: { model.selectDirectoryWorkspace(scopedWorkspace) },
                 onOpenSession: { model.selectDirectorySession($0) }, onActions: { session in
                     if permanent { onPermanentActions?(session) } else { compactActionSession = session }
                 },
                 selectedDeviceKey: model.accountSelectedDeviceID,
-                selectedWorkspacePath: model.workspaceCatalog.first(where: { $0.selected })?.path,
+                selectedWorkspace: model.selectedWorkspaceScope,
                 directoryLoadStatus: workspace.directoryStatus,
                 onRetryDirectoryLoad: {
                     model.retryDirectoryWorkspace(device: device, workspace: scopedWorkspace)
@@ -552,10 +553,12 @@ struct SidebarView: View {
     ) -> some View {
         let workspaces = sections.flatMap { section -> [MobileWorkspaceGroup] in
             guard section.kind == .project else { return [] }
-            let sources = model.remoteWorkspaces.filter { normalizedWorkspacePath($0.path) == normalizedWorkspacePath(section.path) }
+            // ID-first: a section stands for one workspace identity, so a same-path sibling never joins it.
+            guard let sectionScope = section.workspaceScope else { return [] }
+            let sources = model.remoteWorkspaces.filter { $0.scope.refersTo(sectionScope) }
             if sources.isEmpty { return [] }
             return sources.map { source in
-                MobileWorkspaceGroup(path: source.path, name: source.name, selected: source.selected,
+                MobileWorkspaceGroup(workspaceId: source.workspaceId, path: source.path, name: source.name, selected: source.selected,
                     sessions: section.sessions, deviceKey: normalizedDeviceKey(model.remoteExpectedDeviceKey),
                     remoteConnectionId: source.remoteConnectionId, remoteSshHost: source.remoteSshHost)
             }
@@ -563,19 +566,19 @@ struct SidebarView: View {
         return ForEach(workspaces) { workspace in
             SidebarWorkspaceRow(
                 workspace: workspace,
-                expanded: expandedWorkspacePaths.contains(workspace.path) || workspace.selected,
+                expanded: expandedWorkspacePaths.contains(workspace.scopeKey) || workspace.selected,
                 selectedSessionID: model.surface == .remote ? model.selectedSessionID : nil,
                 metadata: remoteSessionMetadata,
                 onToggle: {
-                    if expandedWorkspacePaths.contains(workspace.path) {
-                        expandedWorkspacePaths.remove(workspace.path)
+                    if expandedWorkspacePaths.contains(workspace.scopeKey) {
+                        expandedWorkspacePaths.remove(workspace.scopeKey)
                     } else {
-                        expandedWorkspacePaths.insert(workspace.path)
+                        expandedWorkspacePaths.insert(workspace.scopeKey)
                     }
                 },
                 onToggleCreate: {
                     if HarnessProfilePolicy.shared.supported(capabilities: model.remoteHostCapabilities) {
-                        workspaceCreatePath = workspaceCreatePath == workspace.path + ":" + (workspace.remoteConnectionId ?? "") ? nil : workspace.path + ":" + (workspace.remoteConnectionId ?? "")
+                        workspaceCreatePath = workspaceCreatePath == workspace.scopeKey ? nil : workspace.scopeKey
                     } else {
                         model.createRemoteSession(in: workspace, agentType: "code")
                     }
@@ -588,7 +591,7 @@ struct SidebarView: View {
                     else { compactActionSession = session }
                 },
                 selectedDeviceKey: normalizedDeviceKey(model.remoteExpectedDeviceKey),
-                selectedWorkspacePath: model.workspaceCatalog.first(where: { $0.selected })?.path
+                selectedWorkspace: model.selectedWorkspaceScope
             )
         }
     }
@@ -684,10 +687,15 @@ struct SidebarView: View {
     private func remoteIsAssistant(_ session: ChatSession) -> Bool {
         let agent = session.agentType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if ["claw", "assistant", "chat"].contains(agent) { return true }
-        let path = normalizedWorkspacePath(session.workspacePath)
-        return !path.isEmpty && model.remoteAssistants.contains {
-            normalizedWorkspacePath($0.path) == path
+        let assistants = model.remoteAssistants
+        if let workspaceId = session.workspaceScope?.workspaceId?.trimmingCharacters(in: .whitespacesAndNewlines), !workspaceId.isEmpty {
+            // An ID-bearing session is an assistant session only if an assistant row carries that ID.
+            return assistants.contains { $0.workspaceId == workspaceId }
         }
+        // Pre-ID session: the path may name an assistant, but only when it names exactly one.
+        let path = normalizedWorkspacePath(session.workspacePath)
+        guard !path.isEmpty else { return false }
+        return assistants.filter { normalizedWorkspacePath($0.path) == path }.count == 1
     }
 
     private func remoteWorkspacePath(_ session: ChatSession) -> String {
@@ -945,7 +953,7 @@ private struct SidebarWorkspaceRow: View {
     let onOpenSession: (ChatSession) -> Void
     let onActions: (ChatSession) -> Void
     var selectedDeviceKey: String? = nil
-    var selectedWorkspacePath: String? = nil
+    var selectedWorkspace: MobileWorkspaceScope? = nil
     var directoryLoadStatus = "READY"
     var onRetryDirectoryLoad: (() -> Void)? = nil
     var createMenu: AnyView? = nil
@@ -953,13 +961,9 @@ private struct SidebarWorkspaceRow: View {
 
     private func isSelected(_ session: ChatSession) -> Bool {
         guard selectedSessionID == session.id,
-              normalizedDeviceKey(selectedDeviceKey) == normalizedDeviceKey(workspace.deviceKey) else { return false }
-        func normalized(_ path: String?) -> String {
-            var value = (path ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            while value.count > 1 && value.hasSuffix("/") { value.removeLast() }
-            return value
-        }
-        return normalized(selectedWorkspacePath) == normalized(workspace.path)
+              normalizedDeviceKey(selectedDeviceKey) == normalizedDeviceKey(workspace.deviceKey),
+              let selectedWorkspace else { return false }
+        return selectedWorkspace.refersTo(workspace.scope)
     }
 
     var body: some View {
@@ -1013,7 +1017,7 @@ private struct SidebarWorkspaceRow: View {
                 .anchorPreference(
                     key: SidebarWorkspaceCreateAnchorKey.self,
                     value: .bounds,
-                    transform: { [workspace.path + ":" + (workspace.remoteConnectionId ?? ""): $0] }
+                    transform: { [workspace.scopeKey: $0] }
                 )
             }
             .padding(.leading, 6)

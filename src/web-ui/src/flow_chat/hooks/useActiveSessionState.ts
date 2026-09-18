@@ -1,12 +1,9 @@
-/**
- * Subscribe to the active session state.
- * Processing status now comes from SessionStateMachine.
- */
-
-import { useState, useEffect } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { getActiveSurfaceId, onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { flowChatStore } from '../store/FlowChatStore';
 import { stateMachineManager } from '../state-machine';
 import { ProcessingPhase } from '../state-machine/types';
+import { useConversationViewScope } from '../contexts/conversationViewScope';
 
 export interface ActiveSessionState {
   sessionId: string | null;
@@ -16,73 +13,35 @@ export interface ActiveSessionState {
   status: 'active' | 'idle' | 'error';
 }
 
+/** Explicit view selection takes precedence over the main scene selection. */
 export const useActiveSessionState = (): ActiveSessionState => {
-  const [sessionState, setSessionState] = useState<ActiveSessionState>(() => {
-    const session = flowChatStore.getActiveSession();
-    const machine = session ? stateMachineManager.get(session.sessionId) : null;
-    const isProcessing = machine ? machine.getCurrentState() === 'processing' : false;
-    const processingPhase = machine ? machine.getContext().processingPhase : null;
-    
-    return {
-      sessionId: session?.sessionId || null,
-      isProcessing,
-      processingPhase,
-      error: session?.error || null,
-      status: session?.status || 'idle'
-    };
-  });
-
-  useEffect(() => {
-    const unsubscribeStore = flowChatStore.subscribe((newState) => {
-      const session = newState.sessions.get(newState.activeSessionId || '');
-      const machine = session ? stateMachineManager.get(session.sessionId) : null;
-      const isProcessing = machine ? machine.getCurrentState() === 'processing' : false;
-      const processingPhase = machine ? machine.getContext().processingPhase : null;
-      
-      setSessionState(prev => {
-        const newSessionState: ActiveSessionState = {
-          sessionId: session?.sessionId || null,
-          isProcessing,
-          processingPhase,
-          error: session?.error || null,
-          status: session?.status || 'idle'
-        };
-        
-        // Shallow compare to avoid unnecessary updates.
-        if (
-          prev.sessionId === newSessionState.sessionId &&
-          prev.isProcessing === newSessionState.isProcessing &&
-          prev.processingPhase === newSessionState.processingPhase &&
-          prev.error === newSessionState.error &&
-          prev.status === newSessionState.status
-        ) {
-          return prev;
-        }
-        
-        return newSessionState;
-      });
-    });
-    
-    // Keep processing fields in sync with the state machine.
-    const unsubscribeMachine = stateMachineManager.subscribeGlobal((sessionId, machineSnapshot) => {
-      const currentSession = flowChatStore.getActiveSession();
-      if (currentSession?.sessionId === sessionId) {
-        const state = machineSnapshot.currentState;
-        const isProcessing = state === 'processing';
-        const processingPhase = machineSnapshot.context.processingPhase;
-        setSessionState(prev => {
-          if (prev.isProcessing === isProcessing && prev.processingPhase === processingPhase) return prev;
-          return { ...prev, isProcessing, processingPhase };
-        });
-      }
-    });
-
+  const scope = useConversationViewScope();
+  const surfaceId = scope?.surfaceId;
+  const sessionId = scope?.sessionId;
+  const getSnapshot = useMemo(() => {
+    let previous: ActiveSessionState | undefined;
     return () => {
-      unsubscribeStore();
-      unsubscribeMachine();
+      const state = flowChatStore.getState();
+      const session = sessionId !== undefined && surfaceId !== undefined
+        ? (surfaceId === getActiveSurfaceId() ? state.sessions.get(sessionId) : undefined)
+        : state.sessions.get(state.activeSessionId ?? '');
+      const machine = session ? stateMachineManager.get(session.sessionId) : undefined;
+      const next: ActiveSessionState = {
+        sessionId: session?.sessionId ?? null,
+        isProcessing: machine?.getCurrentState() === 'processing',
+        processingPhase: machine?.getContext().processingPhase ?? null,
+        error: session?.error ?? null,
+        status: session?.status ?? 'idle',
+      };
+      if (!previous || Object.keys(next).some(key => next[key as keyof ActiveSessionState] !== previous![key as keyof ActiveSessionState])) previous = next;
+      return previous;
     };
+  }, [surfaceId, sessionId]);
+  const subscribe = useCallback((notify: () => void) => {
+    const stopStore = flowChatStore.subscribe(notify);
+    const stopMachine = stateMachineManager.subscribeGlobal(notify);
+    const stopSurface = onSurfaceActivated(notify);
+    return () => { stopStore(); stopMachine(); stopSurface(); };
   }, []);
-
-  return sessionState;
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
-

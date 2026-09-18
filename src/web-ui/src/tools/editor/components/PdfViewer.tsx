@@ -1,4 +1,5 @@
 import { useEditorDocument } from '../services/EditorDocument';
+import { standaloneEditorFileAccess } from '../services/editorFileAccess';
 import React, {
   useCallback,
   useEffect,
@@ -77,6 +78,8 @@ interface PdfPageCanvasProps {
 export interface PdfViewerProps {
   isActiveTab?: boolean;
   filePath: string;
+  /** Owning workspace ID for viewers rendered without an EditorDocument. */
+  workspaceId?: string;
   fileName?: string;
   className?: string;
 }
@@ -305,9 +308,12 @@ const PdfPageCanvas: React.FC<PdfPageCanvasProps> = ({
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({ isActiveTab = true,
   filePath,
+  workspaceId,
   className = '',
 }) => {
   const documentSession = useEditorDocument();
+  const standaloneFiles = useMemo(() => standaloneEditorFileAccess(workspaceId), [workspaceId]);
+  const documentFiles = documentSession?.files ?? standaloneFiles;
   const [retryKey, setRetryKey] = useState(0);
   const { t, formatNumber } = useI18n('tools');
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -361,8 +367,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ isActiveTab = true,
     setLoading(true);
 
     try {
-      const workspaceAPI = documentSession?.files ?? (await import('@/infrastructure/api')).workspaceAPI;
-      const encoded = await workspaceAPI.readFileContent(filePath, 'base64');
+      const encoded = await documentFiles.readFileContent(filePath, 'base64');
       if (loadEpochRef.current !== loadEpoch) {
         return;
       }
@@ -402,7 +407,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({ isActiveTab = true,
       setError(t('editor.pdfViewer.loadFailedWithMessage', { message: errorMessage(loadError) }));
       setLoading(false);
     }
-  }, [documentSession, filePath, t]);
+  }, [documentFiles, filePath, t]);
 
   useEffect(() => {
     if (isActiveTab && error && documentSession?.isCurrent()) setRetryKey(key => key + 1);

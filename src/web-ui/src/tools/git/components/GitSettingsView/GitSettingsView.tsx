@@ -1,3 +1,4 @@
+import type { GitWorkspaceScope } from '@/infrastructure/api/service-api/GitAPI';
 /** Git settings view. */
 
 import { Button, Checkbox, Field, Icon, IconButton, Input, Select, TabGroup, ScrollArea } from '@openbitfun/ui';
@@ -8,7 +9,7 @@ import './GitSettingsView.scss';
 
 interface GitSettingsViewProps {
   /** Repository path */
-  repositoryPath: string;
+  repositoryPath: GitWorkspaceScope;
   /** Class name */
   className?: string;
 }

@@ -113,7 +113,7 @@ export const WorkspaceRelatedPathsDialog: React.FC<WorkspaceRelatedPathsDialogPr
     setExternalReferencesLoading(true);
     setExternalReferencesFailed(false);
     void externalSourcesAPI
-      .getWorkspaceReferences(workspace.rootPath, workspace.id)
+      .getWorkspaceReferences(workspace.id)
       .then(snapshot => {
         if (!cancelled) {
           setExternalReferences(snapshot.references);

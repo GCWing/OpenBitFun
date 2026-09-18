@@ -138,6 +138,13 @@ export struct ChatTimeline {
   @Param activeFilePreviewPath: string = '';
   @Param activeFilePreviewLoading: boolean = false;
   @Param maxContentWidth: number = 0;
+  /**
+   * How much of the pane the floating header and composer cover. The list runs
+   * the full height behind them, so without these the first and last messages
+   * would sit under a capsule and never come out from under it.
+   */
+  @Param topInset: number = 0;
+  @Param bottomInset: number = 0;
   @Event onLoadOlder: () => void = () => {};
   @Event onApproveTool: (toolId: string, updatedInput?: Object) => void =
     (_toolId: string, _updatedInput?: Object) => {};
@@ -316,9 +323,15 @@ export struct ChatTimeline {
       .padding({
         left: MobileDesignGeometry.contentGutter,
         right: MobileDesignGeometry.contentGutter,
-        top: 0,
-        bottom: 12
+        bottom: this.bottomInset > 0 ? 0 : 12
       })
+      // Content offsets, not padding: padding shrinks the viewport, so the
+      // transcript would stop at the floating header and composer instead of
+      // running underneath them. These reserve the space at rest and still let
+      // the content scroll through — ArkUI's equivalent of Compose's
+      // contentPadding and SwiftUI's safeAreaInset.
+      .contentStartOffset(this.topInset)
+      .contentEndOffset(this.bottomInset)
       // A streaming reply grows in place rather than arriving as a new item, so
       // the bottom of the list has to be the anchor — otherwise the text the
       // agent is writing right now renders below the fold and never comes back.
@@ -354,7 +367,8 @@ export struct ChatTimeline {
         .backgroundColor(CARD)
         .borderRadius(21)
         .shadow({ radius: 14, color: SHADOW_SUBTLE, offsetY: 5 })
-        .margin({ bottom: 4 })
+        // Rides above the floating composer rather than hiding behind it.
+        .margin({ bottom: this.bottomInset + 4 })
         .onClick(() => {
           this.stickToBottom = true;
           this.userScrollActive = false;

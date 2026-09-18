@@ -36,10 +36,7 @@ pub struct SnapshotManager {
 
 impl SnapshotManager {
     /// Creates a new snapshot manager.
-    pub async fn new(
-        workspace_dir: PathBuf,
-        config: Option<SnapshotConfig>,
-    ) -> SnapshotResult<Self> {
+    async fn new(workspace_dir: PathBuf, config: Option<SnapshotConfig>) -> SnapshotResult<Self> {
         #[cfg(test)]
         record_snapshot_manager_new_for_test(&workspace_dir).await;
 
@@ -481,8 +478,8 @@ impl SnapshotManager {
     }
 }
 
-fn snapshot_managers() -> &'static StdRwLock<HashMap<PathBuf, Arc<SnapshotManager>>> {
-    static SNAPSHOT_MANAGERS: OnceLock<StdRwLock<HashMap<PathBuf, Arc<SnapshotManager>>>> =
+fn snapshot_managers() -> &'static StdRwLock<HashMap<String, Arc<SnapshotManager>>> {
+    static SNAPSHOT_MANAGERS: OnceLock<StdRwLock<HashMap<String, Arc<SnapshotManager>>>> =
         OnceLock::new();
     SNAPSHOT_MANAGERS.get_or_init(|| StdRwLock::new(HashMap::new()))
 }
@@ -492,21 +489,20 @@ fn snapshot_managers() -> &'static StdRwLock<HashMap<PathBuf, Arc<SnapshotManage
 /// view is built once per workspace and reused until a writer supersedes it.
 /// Views never see writes anyway: in-process writers register in
 /// `snapshot_managers` (checked first), and that registration evicts the view.
-fn snapshot_view_managers() -> &'static StdRwLock<HashMap<PathBuf, Arc<SnapshotManager>>> {
-    static SNAPSHOT_VIEW_MANAGERS: OnceLock<StdRwLock<HashMap<PathBuf, Arc<SnapshotManager>>>> =
+fn snapshot_view_managers() -> &'static StdRwLock<HashMap<String, Arc<SnapshotManager>>> {
+    static SNAPSHOT_VIEW_MANAGERS: OnceLock<StdRwLock<HashMap<String, Arc<SnapshotManager>>>> =
         OnceLock::new();
     SNAPSHOT_VIEW_MANAGERS.get_or_init(|| StdRwLock::new(HashMap::new()))
 }
 
-fn snapshot_manager_init_locks() -> &'static AsyncMutex<HashMap<PathBuf, Arc<AsyncMutex<()>>>> {
-    static SNAPSHOT_MANAGER_INIT_LOCKS: OnceLock<
-        AsyncMutex<HashMap<PathBuf, Arc<AsyncMutex<()>>>>,
-    > = OnceLock::new();
+fn snapshot_manager_init_locks() -> &'static AsyncMutex<HashMap<String, Arc<AsyncMutex<()>>>> {
+    static SNAPSHOT_MANAGER_INIT_LOCKS: OnceLock<AsyncMutex<HashMap<String, Arc<AsyncMutex<()>>>>> =
+        OnceLock::new();
     SNAPSHOT_MANAGER_INIT_LOCKS.get_or_init(|| AsyncMutex::new(HashMap::new()))
 }
 
-async fn snapshot_manager_init_lock(workspace_dir: &Path) -> Arc<AsyncMutex<()>> {
-    let workspace_key = snapshot_workspace_key(workspace_dir);
+async fn snapshot_manager_init_lock(workspace_id: &str) -> Arc<AsyncMutex<()>> {
+    let workspace_key = workspace_id.to_owned();
     let mut locks = snapshot_manager_init_locks().lock().await;
     locks
         .entry(workspace_key)
@@ -514,7 +510,7 @@ async fn snapshot_manager_init_lock(workspace_dir: &Path) -> Arc<AsyncMutex<()>>
         .clone()
 }
 
-fn snapshot_workspace_key(workspace_dir: &Path) -> PathBuf {
+fn canonical_snapshot_io_path(workspace_dir: &Path) -> PathBuf {
     dunce::canonicalize(workspace_dir).unwrap_or_else(|_| workspace_dir.to_path_buf())
 }
 
@@ -522,8 +518,7 @@ fn snapshot_workspace_key(workspace_dir: &Path) -> PathBuf {
 /// the same path and host while accessing different users or containers.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct BoundSnapshotKey {
-    identity: WorkspaceSessionIdentity,
-    runtime_root: PathBuf,
+    workspace_id: String,
 }
 
 #[derive(Default)]
@@ -550,11 +545,11 @@ fn bound_snapshot_context(
 ) -> SnapshotResult<WorkspaceRuntimeContext> {
     match &context.target {
         WorkspaceRuntimeTarget::LocalWorkspace { workspace_root } => {
-            if identity.remote_connection_id.is_some()
+            if identity.is_remote()
                 || identity.hostname
                     != openbitfun_services_core::workspace_identity::LOCAL_WORKSPACE_SSH_HOST
-                || snapshot_workspace_key(workspace_root)
-                    != snapshot_workspace_key(Path::new(&identity.logical_workspace_path))
+                || canonical_snapshot_io_path(workspace_root)
+                    != canonical_snapshot_io_path(Path::new(&identity.logical_workspace_path))
             {
                 return Err(SnapshotError::ConfigError(
                     "Snapshot workspace identity does not match its local runtime context".into(),
@@ -609,60 +604,73 @@ fn bound_snapshot_context(
 /// The caller must resolve both from the same WorkspaceBinding; this function
 /// never selects a transport by looking up a path on the controller.
 pub async fn get_or_create_snapshot_manager_with_workspace(
-    identity: &WorkspaceSessionIdentity,
+    workspace_id: &str,
     workspace_fs: Arc<dyn WorkspaceFileSystem>,
     runtime_context: WorkspaceRuntimeContext,
     config: Option<SnapshotConfig>,
 ) -> SnapshotResult<Arc<SnapshotManager>> {
-    open_bound_snapshot_manager(identity, Some(workspace_fs), runtime_context, config, false).await
+    open_bound_snapshot_manager(
+        workspace_id,
+        Some(workspace_fs),
+        runtime_context,
+        config,
+        false,
+    )
+    .await
 }
 
 /// Open connection-scoped persisted facts without creating any runtime state.
 pub async fn open_snapshot_manager_for_workspace_view(
-    identity: &WorkspaceSessionIdentity,
+    workspace_id: &str,
     workspace_fs: Option<Arc<dyn WorkspaceFileSystem>>,
     runtime_context: WorkspaceRuntimeContext,
 ) -> SnapshotResult<Arc<SnapshotManager>> {
-    open_bound_snapshot_manager(identity, workspace_fs, runtime_context, None, true).await
+    open_bound_snapshot_manager(workspace_id, workspace_fs, runtime_context, None, true).await
 }
 
 /// Read recorded operation history from controller storage. This does not
 /// connect to SSH, create runtime directories or infer a connection from paths.
 pub async fn open_snapshot_history_for_workspace(
-    identity: &WorkspaceSessionIdentity,
+    workspace_id: &str,
 ) -> SnapshotResult<Arc<SnapshotManager>> {
+    let binding = crate::agentic::WorkspaceBinding::resolve(workspace_id)
+        .await
+        .map_err(|error| SnapshotError::ConfigError(error.to_string()))?;
+    let identity = &binding.session_identity;
     let runtime_service = get_workspace_runtime_service_arc();
-    let context = if identity.remote_connection_id.is_some() {
+    let context = if identity.is_remote() {
         runtime_service
             .context_for_remote_workspace(&identity.hostname, &identity.logical_workspace_path)
     } else {
         runtime_service.context_for_local_workspace(Path::new(&identity.logical_workspace_path))
     };
-    open_snapshot_manager_for_workspace_view(identity, None, context).await
+    open_snapshot_manager_for_workspace_view(workspace_id, None, context).await
 }
 
 async fn open_bound_snapshot_manager(
-    identity: &WorkspaceSessionIdentity,
+    workspace_id: &str,
     workspace_fs: Option<Arc<dyn WorkspaceFileSystem>>,
     runtime_context: WorkspaceRuntimeContext,
     config: Option<SnapshotConfig>,
     read_only: bool,
 ) -> SnapshotResult<Arc<SnapshotManager>> {
+    let binding = crate::agentic::WorkspaceBinding::resolve(workspace_id)
+        .await
+        .map_err(|error| SnapshotError::ConfigError(error.to_string()))?;
+    let identity = &binding.session_identity;
     let runtime_context = bound_snapshot_context(identity, runtime_context)?;
     if matches!(
         runtime_context.target,
         WorkspaceRuntimeTarget::LocalWorkspace { .. }
     ) {
         return if read_only {
-            open_snapshot_manager_for_view(Path::new(&identity.logical_workspace_path)).await
+            open_snapshot_manager_for_view(workspace_id).await
         } else {
-            get_or_create_snapshot_manager(PathBuf::from(&identity.logical_workspace_path), config)
-                .await
+            get_or_create_snapshot_manager(workspace_id, config).await
         };
     }
     let key = BoundSnapshotKey {
-        identity: identity.clone(),
-        runtime_root: runtime_context.runtime_root.clone(),
+        workspace_id: workspace_id.to_owned(),
     };
     let init_lock = bound_snapshot_init_locks()
         .lock()
@@ -731,13 +739,9 @@ async fn open_bound_snapshot_manager(
 }
 
 #[cfg(test)]
-pub(super) async fn clear_bound_snapshot_manager_for_test(
-    identity: &WorkspaceSessionIdentity,
-    runtime_root: &Path,
-) {
+pub(super) async fn clear_bound_snapshot_manager_for_test(workspace_id: &str) {
     let key = BoundSnapshotKey {
-        identity: identity.clone(),
-        runtime_root: runtime_root.into(),
+        workspace_id: workspace_id.to_owned(),
     };
     let mut managers = bound_snapshot_managers().lock().await;
     managers.writers.remove(&key);
@@ -780,7 +784,7 @@ async fn record_snapshot_manager_new_for_test(workspace_dir: &Path) {
 #[cfg(test)]
 fn observe_snapshot_manager_new_for_test(workspace_dir: &Path) {
     if let Ok(mut observed_workspace) = snapshot_manager_observed_workspace_for_test().write() {
-        *observed_workspace = Some(snapshot_workspace_key(workspace_dir));
+        *observed_workspace = Some(canonical_snapshot_io_path(workspace_dir));
     }
     SNAPSHOT_MANAGER_NEW_COUNT_FOR_TEST.store(0, Ordering::SeqCst);
 }
@@ -796,12 +800,12 @@ fn set_snapshot_manager_new_delay_for_test(delay: Duration) {
 }
 
 #[cfg(test)]
-pub(crate) fn clear_snapshot_manager_for_test(workspace_dir: &Path) {
+pub(crate) fn clear_snapshot_manager_for_test(workspace_id: &str) {
     if let Ok(mut managers) = snapshot_managers().write() {
-        managers.remove(&snapshot_workspace_key(workspace_dir));
+        managers.remove(workspace_id);
     }
     if let Ok(mut views) = snapshot_view_managers().write() {
-        views.remove(&snapshot_workspace_key(workspace_dir));
+        views.remove(workspace_id);
     }
 }
 
@@ -1138,7 +1142,9 @@ impl WrappedTool {
         let workspace_fs = context.file_system_for_path(&resolved)?;
         let runtime_context = context.ensure_current_workspace_runtime().await?;
         let snapshot_manager = get_or_create_snapshot_manager_with_workspace(
-            &binding.session_identity,
+            binding.workspace_id.as_deref().ok_or_else(|| {
+                crate::OpenBitFunError::service("Workspace ID is required for snapshot tracking")
+            })?,
             workspace_fs.clone(),
             runtime_context,
             None,
@@ -1272,11 +1278,27 @@ impl WrappedTool {
     }
 }
 
+async fn local_snapshot_io_root(workspace_id: &str) -> SnapshotResult<PathBuf> {
+    let service = crate::service::workspace::get_global_workspace_service()
+        .ok_or_else(|| SnapshotError::ConfigError("Workspace service is unavailable".into()))?;
+    let record = service
+        .require_workspace(workspace_id)
+        .await
+        .map_err(|error| SnapshotError::ConfigError(error.to_string()))?;
+    if record.workspace_kind == crate::service::workspace::WorkspaceKind::Remote {
+        return Err(SnapshotError::ConfigError(
+            "Local snapshot manager requires a local workspace ID".into(),
+        ));
+    }
+    Ok(record.root_path)
+}
+
 pub async fn get_or_create_snapshot_manager(
-    workspace_dir: PathBuf,
+    workspace_id: &str,
     config: Option<SnapshotConfig>,
 ) -> SnapshotResult<Arc<SnapshotManager>> {
-    let workspace_key = snapshot_workspace_key(&workspace_dir);
+    let workspace_key = workspace_id.to_owned();
+    let workspace_dir = local_snapshot_io_root(workspace_id).await?;
     if let Some(existing) = get_snapshot_manager_for_workspace(&workspace_key) {
         return Ok(existing);
     }
@@ -1297,7 +1319,7 @@ pub async fn get_or_create_snapshot_manager(
         "Snapshot manager cold initialization started: workspace={}",
         workspace_dir.display()
     );
-    let manager = Arc::new(SnapshotManager::new(workspace_key.clone(), config).await?);
+    let manager = Arc::new(SnapshotManager::new(workspace_dir.clone(), config).await?);
     {
         let mut managers = snapshot_managers().write().map_err(|_| {
             SnapshotError::ConfigError("Snapshot manager store lock poisoned".to_string())
@@ -1320,8 +1342,8 @@ pub async fn get_or_create_snapshot_manager(
     Ok(manager)
 }
 
-pub fn get_snapshot_manager_for_workspace(workspace_dir: &Path) -> Option<Arc<SnapshotManager>> {
-    let workspace_key = snapshot_workspace_key(workspace_dir);
+pub fn get_snapshot_manager_for_workspace(workspace_id: &str) -> Option<Arc<SnapshotManager>> {
+    let workspace_key = workspace_id.to_owned();
     snapshot_managers()
         .read()
         .ok()
@@ -1331,9 +1353,10 @@ pub fn get_snapshot_manager_for_workspace(workspace_dir: &Path) -> Option<Arc<Sn
 /// Opens persisted Snapshot facts for queries without registering a writer or
 /// creating workspace runtime state.
 pub async fn open_snapshot_manager_for_view(
-    workspace_dir: &Path,
+    workspace_id: &str,
 ) -> SnapshotResult<Arc<SnapshotManager>> {
-    let workspace_key = snapshot_workspace_key(workspace_dir);
+    let workspace_dir = local_snapshot_io_root(workspace_id).await?;
+    let workspace_key = workspace_id.to_owned();
     if let Some(manager) = get_snapshot_manager_for_workspace(&workspace_key) {
         return Ok(manager);
     }
@@ -1352,8 +1375,8 @@ pub async fn open_snapshot_manager_for_view(
 
     let started_at = Instant::now();
     let runtime_context =
-        get_workspace_runtime_service_arc().context_for_local_workspace(&workspace_key);
-    let mut snapshot_service = SnapshotService::new(workspace_key.clone(), runtime_context, None);
+        get_workspace_runtime_service_arc().context_for_local_workspace(&workspace_dir);
+    let mut snapshot_service = SnapshotService::new(workspace_dir.clone(), runtime_context, None);
     snapshot_service.initialize_for_view().await?;
     let view = Arc::new(SnapshotManager {
         snapshot_service: Arc::new(RwLock::new(snapshot_service)),
@@ -1369,7 +1392,7 @@ pub async fn open_snapshot_manager_for_view(
     Ok(view)
 }
 
-fn get_snapshot_view_manager_for_workspace(workspace_key: &Path) -> Option<Arc<SnapshotManager>> {
+fn get_snapshot_view_manager_for_workspace(workspace_key: &str) -> Option<Arc<SnapshotManager>> {
     snapshot_view_managers()
         .read()
         .ok()
@@ -1377,22 +1400,22 @@ fn get_snapshot_view_manager_for_workspace(workspace_key: &Path) -> Option<Arc<S
 }
 
 pub fn ensure_snapshot_manager_for_workspace(
-    workspace_dir: &Path,
+    workspace_id: &str,
 ) -> SnapshotResult<Arc<SnapshotManager>> {
-    get_snapshot_manager_for_workspace(workspace_dir).ok_or_else(|| {
+    get_snapshot_manager_for_workspace(workspace_id).ok_or_else(|| {
         SnapshotError::ConfigError(format!(
             "Snapshot manager not initialized for workspace: {}",
-            workspace_dir.display()
+            workspace_id
         ))
     })
 }
 
 /// Initializes a snapshot manager for the provided workspace.
 pub async fn initialize_snapshot_manager_for_workspace(
-    workspace_dir: PathBuf,
+    workspace_id: &str,
     config: Option<SnapshotConfig>,
 ) -> SnapshotResult<()> {
-    get_or_create_snapshot_manager(workspace_dir, config).await?;
+    get_or_create_snapshot_manager(workspace_id, config).await?;
     debug!("Snapshot manager initialized for workspace");
     Ok(())
 }
@@ -1425,17 +1448,23 @@ mod tests {
     use uuid::Uuid;
 
     struct TestWorkspace {
+        id: String,
         path: PathBuf,
     }
 
     impl TestWorkspace {
-        fn new() -> Self {
+        async fn new() -> Self {
             let path = std::env::temp_dir().join(format!(
                 "openbitfun-snapshot-manager-test-{}",
                 Uuid::new_v4()
             ));
             std::fs::create_dir_all(&path).expect("test workspace should be created");
-            Self { path }
+            let record =
+                crate::service::workspace::legacy_compat::register_local_fixture(&path, None).await;
+            Self {
+                path,
+                id: record.id,
+            }
         }
 
         fn path(&self) -> &Path {
@@ -1445,18 +1474,21 @@ mod tests {
 
     impl Drop for TestWorkspace {
         fn drop(&mut self) {
-            clear_snapshot_manager_for_test(&self.path);
+            clear_snapshot_manager_for_test(&self.id);
             let _ = std::fs::remove_dir_all(&self.path);
         }
     }
 
-    fn tool_context(workspace: PathBuf, session_id: &str) -> ToolUseContext {
+    async fn tool_context(workspace: PathBuf, session_id: &str) -> ToolUseContext {
+        let record =
+            crate::service::workspace::legacy_compat::register_local_fixture(&workspace, None)
+                .await;
         ToolUseContext {
             tool_call_id: Some("snapshot-write-call".to_string()),
             agent_type: None,
             session_id: Some(session_id.to_string()),
             dialog_turn_id: None,
-            workspace: Some(WorkspaceBinding::new(None, workspace)),
+            workspace: Some(WorkspaceBinding::new(Some(record.id.clone()), workspace)),
             loaded_deferred_tool_specs: Vec::new(),
             primary_model_facts: tool_runtime::context::PrimaryModelFacts::default(),
             custom_data: HashMap::new(),
@@ -1564,7 +1596,7 @@ mod tests {
 
     #[tokio::test]
     async fn wrapped_mutation_executes_once_and_records_snapshot() {
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let _runtime_guard = set_workspace_runtime_service_for_current_test(Arc::new(
             WorkspaceRuntimeService::new(Arc::new(PathManager::with_user_root_for_tests(
                 workspace.path().join("user-root"),
@@ -1580,7 +1612,7 @@ mod tests {
         });
         let tool = wrap_tool_for_snapshot_tracking(original.clone());
         let input = serde_json::json!({ "file_path": "mutation.txt" });
-        let context = tool_context(workspace.path().to_path_buf(), "single-mutation");
+        let context = tool_context(workspace.path().to_path_buf(), "single-mutation").await;
 
         let results = tool
             .call(&input, &context)
@@ -1609,8 +1641,7 @@ mod tests {
             tool.render_tool_result_message(&input),
             original.render_tool_result_message(&input)
         );
-        let manager =
-            get_snapshot_manager_for_workspace(workspace.path()).expect("snapshot manager");
+        let manager = get_snapshot_manager_for_workspace(&workspace.id).expect("snapshot manager");
         assert_eq!(
             manager.get_session_files("single-mutation").await.unwrap(),
             vec![file.clone()]
@@ -1624,7 +1655,7 @@ mod tests {
 
     #[tokio::test]
     async fn wrapped_mutation_executes_once_when_snapshot_start_fails() {
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let runtime = Arc::new(WorkspaceRuntimeService::new(Arc::new(
             PathManager::with_user_root_for_tests(workspace.path().join("user-root")),
         )));
@@ -1634,7 +1665,7 @@ mod tests {
             .await
             .unwrap()
             .context;
-        get_or_create_snapshot_manager(workspace.path().to_path_buf(), None)
+        get_or_create_snapshot_manager(&workspace.id, None)
             .await
             .unwrap();
         block_metadata_storage(&runtime_context.snapshot_metadata_dir);
@@ -1651,7 +1682,7 @@ mod tests {
         let results = tool
             .call(
                 &serde_json::json!({ "file_path": "mutation.txt" }),
-                &tool_context(workspace.path().to_path_buf(), "failed-start"),
+                &tool_context(workspace.path().to_path_buf(), "failed-start").await,
             )
             .await
             .expect("snapshot start failure must preserve tool success");
@@ -1662,7 +1693,7 @@ mod tests {
 
     #[tokio::test]
     async fn wrapped_mutation_does_not_repeat_when_snapshot_completion_fails() {
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let runtime = Arc::new(WorkspaceRuntimeService::new(Arc::new(
             PathManager::with_user_root_for_tests(workspace.path().join("user-root")),
         )));
@@ -1684,7 +1715,7 @@ mod tests {
         let results = tool
             .call(
                 &serde_json::json!({ "file_path": "mutation.txt" }),
-                &tool_context(workspace.path().to_path_buf(), "failed-completion"),
+                &tool_context(workspace.path().to_path_buf(), "failed-completion").await,
             )
             .await
             .expect("snapshot completion failure must preserve tool success");
@@ -1695,7 +1726,7 @@ mod tests {
 
     #[tokio::test]
     async fn wrapped_mutation_preserves_tool_error_without_repeating() {
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let _runtime_guard = set_workspace_runtime_service_for_current_test(Arc::new(
             WorkspaceRuntimeService::new(Arc::new(PathManager::with_user_root_for_tests(
                 workspace.path().join("user-root"),
@@ -1713,7 +1744,7 @@ mod tests {
         let error = tool
             .call(
                 &serde_json::json!({ "file_path": "mutation.txt" }),
-                &tool_context(workspace.path().to_path_buf(), "failed-tool"),
+                &tool_context(workspace.path().to_path_buf(), "failed-tool").await,
             )
             .await
             .expect_err("original tool error must propagate");
@@ -1730,16 +1761,23 @@ mod tests {
     #[cfg(feature = "remote-workspace")]
     #[tokio::test]
     async fn wrapped_remote_mutation_preserves_tool_error_without_repeating() {
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let remote_root = format!("/openbitfun-tests/snapshot-single-call/{}", Uuid::new_v4());
         let connection_id = format!("snapshot-test-{}", Uuid::new_v4());
-        let mut context = tool_context(PathBuf::from(&remote_root), "failed-remote-tool");
+        let mut context = tool_context(workspace.path().to_path_buf(), "failed-remote-tool").await;
+        let record = crate::service::workspace::legacy_compat::register_remote_fixture(
+            &remote_root,
+            &connection_id,
+            "test-host",
+        )
+        .await;
         context.workspace = Some(WorkspaceBinding::new_remote(
-            None,
+            Some(record.id.clone()),
             PathBuf::from(&remote_root),
             connection_id.clone(),
             "test".into(),
             openbitfun_services_core::workspace_identity::WorkspaceSessionIdentity {
+                workspace_kind: openbitfun_core_types::WorkspaceKind::Remote,
                 hostname: "test-host".into(),
                 logical_workspace_path: remote_root.clone(),
                 remote_connection_id: Some(connection_id),
@@ -1769,13 +1807,13 @@ mod tests {
             "{error}"
         );
         assert_single_mutation(&file, &calls, "mutation\n");
-        assert!(get_snapshot_manager_for_workspace(Path::new(&remote_root)).is_none());
+        assert!(get_snapshot_manager_for_workspace(&record.id).is_none());
     }
 
-    #[test]
-    fn delete_keeps_its_input_path_instead_of_canonical_permission_resource() {
-        let workspace = TestWorkspace::new();
-        let context = tool_context(workspace.path().to_path_buf(), "delete-session");
+    #[tokio::test]
+    async fn delete_keeps_its_input_path_instead_of_canonical_permission_resource() {
+        let workspace = TestWorkspace::new().await;
+        let context = tool_context(workspace.path().to_path_buf(), "delete-session").await;
         let tool = super::WrappedTool::new(Arc::new(DeleteFileTool::new()));
 
         assert_eq!(
@@ -1787,7 +1825,7 @@ mod tests {
 
     #[tokio::test]
     async fn wrapped_delete_rejects_symlink_before_mutation() {
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let _runtime_guard = set_workspace_runtime_service_for_current_test(Arc::new(
             WorkspaceRuntimeService::new(Arc::new(PathManager::with_user_root_for_tests(
                 workspace.path().join("user-root"),
@@ -1802,7 +1840,7 @@ mod tests {
         if std::os::windows::fs::symlink_file(&target, &link).is_err() {
             return;
         }
-        let context = tool_context(workspace.path().to_path_buf(), "delete-link-session");
+        let context = tool_context(workspace.path().to_path_buf(), "delete-link-session").await;
         let tool = wrap_tool_for_snapshot_tracking(Arc::new(DeleteFileTool::new()));
 
         let error = tool
@@ -1820,7 +1858,7 @@ mod tests {
 
     #[tokio::test]
     async fn wrapped_write_payload_records_and_rolls_back_created_file() {
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let _runtime_guard = set_workspace_runtime_service_for_current_test(Arc::new(
             WorkspaceRuntimeService::new(Arc::new(PathManager::with_user_root_for_tests(
                 workspace.path().join("user-root"),
@@ -1829,7 +1867,7 @@ mod tests {
         let alias_anchor = workspace.path().join("alias-anchor");
         std::fs::create_dir_all(&alias_anchor).expect("alias anchor");
         let workspace_alias = alias_anchor.join("..");
-        let context = tool_context(workspace_alias, "write-session");
+        let context = tool_context(workspace_alias, "write-session").await;
         let tool = wrap_tool_for_snapshot_tracking(Arc::new(FileWriteTool::new()));
         let file = workspace.path().join("new/deep/file.txt");
 
@@ -1840,7 +1878,7 @@ mod tests {
         .await
         .expect("wrapped Write should succeed");
 
-        let manager = get_snapshot_manager_for_workspace(workspace.path())
+        let manager = get_snapshot_manager_for_workspace(&workspace.id)
             .expect("Write should initialize snapshot manager");
         assert_eq!(
             manager
@@ -1860,18 +1898,18 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn concurrent_get_or_create_initializes_snapshot_manager_once_per_workspace() {
         let _test_guard = snapshot_manager_test_serial_lock().lock().await;
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let _runtime_guard = set_workspace_runtime_service_for_current_test(Arc::new(
             WorkspaceRuntimeService::new(Arc::new(PathManager::with_user_root_for_tests(
                 workspace.path().join("user-root"),
             ))),
         ));
-        clear_snapshot_manager_for_test(workspace.path());
+        clear_snapshot_manager_for_test(&workspace.id);
         observe_snapshot_manager_new_for_test(workspace.path());
         set_snapshot_manager_new_delay_for_test(Duration::from_millis(80));
 
-        let first = get_or_create_snapshot_manager(workspace.path().to_path_buf(), None);
-        let second = get_or_create_snapshot_manager(workspace.path().to_path_buf(), None);
+        let first = get_or_create_snapshot_manager(&workspace.id, None);
+        let second = get_or_create_snapshot_manager(&workspace.id, None);
         let (first, second) = tokio::join!(first, second);
 
         set_snapshot_manager_new_delay_for_test(Duration::ZERO);
@@ -1885,7 +1923,7 @@ mod tests {
 
     #[tokio::test]
     async fn read_only_view_reloads_persisted_history_without_becoming_a_writer() {
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let _runtime_guard = set_workspace_runtime_service_for_current_test(Arc::new(
             WorkspaceRuntimeService::new(Arc::new(PathManager::with_user_root_for_tests(
                 workspace.path().join("user-root"),
@@ -1893,7 +1931,7 @@ mod tests {
         ));
         let file = workspace.path().join("tracked.txt");
         tokio::fs::write(&file, "before").await.expect("seed file");
-        let writer = get_or_create_snapshot_manager(workspace.path().to_path_buf(), None)
+        let writer = get_or_create_snapshot_manager(&workspace.id, None)
             .await
             .expect("writer manager");
         let operation_id = writer
@@ -1914,9 +1952,9 @@ mod tests {
             .complete_file_modification("session-1", &operation_id, 1)
             .await
             .expect("complete operation");
-        clear_snapshot_manager_for_test(workspace.path());
+        clear_snapshot_manager_for_test(&workspace.id);
 
-        let view = open_snapshot_manager_for_view(workspace.path())
+        let view = open_snapshot_manager_for_view(&workspace.id)
             .await
             .expect("read-only view");
 
@@ -1924,7 +1962,7 @@ mod tests {
             view.get_session_files("session-1").await.unwrap(),
             vec![file]
         );
-        assert!(get_snapshot_manager_for_workspace(workspace.path()).is_none());
+        assert!(get_snapshot_manager_for_workspace(&workspace.id).is_none());
         let error = view
             .record_file_change(
                 "session-2",
@@ -1940,18 +1978,18 @@ mod tests {
 
     #[tokio::test]
     async fn view_manager_is_cached_and_superseded_by_a_later_writer() {
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let _runtime_guard = set_workspace_runtime_service_for_current_test(Arc::new(
             WorkspaceRuntimeService::new(Arc::new(PathManager::with_user_root_for_tests(
                 workspace.path().join("user-root"),
             ))),
         ));
-        clear_snapshot_manager_for_test(workspace.path());
+        clear_snapshot_manager_for_test(&workspace.id);
 
-        let first_view = open_snapshot_manager_for_view(workspace.path())
+        let first_view = open_snapshot_manager_for_view(&workspace.id)
             .await
             .expect("first view");
-        let second_view = open_snapshot_manager_for_view(workspace.path())
+        let second_view = open_snapshot_manager_for_view(&workspace.id)
             .await
             .expect("second view");
         assert!(
@@ -1959,10 +1997,10 @@ mod tests {
             "repeated view opens must reuse the cached view instead of reloading the index"
         );
 
-        let writer = get_or_create_snapshot_manager(workspace.path().to_path_buf(), None)
+        let writer = get_or_create_snapshot_manager(&workspace.id, None)
             .await
             .expect("writer manager");
-        let view_after_writer = open_snapshot_manager_for_view(workspace.path())
+        let view_after_writer = open_snapshot_manager_for_view(&workspace.id)
             .await
             .expect("view after writer");
         assert!(
@@ -1978,19 +2016,19 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn read_only_view_waits_for_an_in_flight_writer_initialization() {
         let _test_guard = snapshot_manager_test_serial_lock().lock().await;
-        let workspace = TestWorkspace::new();
+        let workspace = TestWorkspace::new().await;
         let _runtime_guard = set_workspace_runtime_service_for_current_test(Arc::new(
             WorkspaceRuntimeService::new(Arc::new(PathManager::with_user_root_for_tests(
                 workspace.path().join("user-root"),
             ))),
         ));
-        clear_snapshot_manager_for_test(workspace.path());
+        clear_snapshot_manager_for_test(&workspace.id);
         observe_snapshot_manager_new_for_test(workspace.path());
         set_snapshot_manager_new_delay_for_test(Duration::from_millis(80));
 
-        let workspace_path = workspace.path().to_path_buf();
+        let workspace_id = workspace.id.clone();
         let writer_task = tokio::spawn(async move {
-            get_or_create_snapshot_manager(workspace_path, None)
+            get_or_create_snapshot_manager(&workspace_id, None)
                 .await
                 .expect("writer manager")
         });
@@ -2000,7 +2038,13 @@ mod tests {
         let alias_anchor = workspace.path().join("alias-anchor");
         std::fs::create_dir_all(&alias_anchor).expect("alias anchor");
         let workspace_alias = alias_anchor.join("..");
-        let view = open_snapshot_manager_for_view(&workspace_alias)
+        let alias_record = crate::service::workspace::legacy_compat::register_local_fixture(
+            &workspace_alias,
+            None,
+        )
+        .await;
+        assert_eq!(alias_record.id, workspace.id);
+        let view = open_snapshot_manager_for_view(&alias_record.id)
             .await
             .expect("aliased view waits for writer");
         let writer = writer_task.await.expect("writer task");

@@ -1,6 +1,8 @@
+import { getActiveSurfaceScope, isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
  
 
 import { api } from './ApiClient';
+import { migrateLegacySkillReceipts, upgradeLegacyWorktreeReferences, workspaceIdRequest } from './legacyWorkspaceCompatibility';
 import { createTauriCommandError } from '../errors/TauriCommandError';
 
 export interface ApplicationState {
@@ -34,6 +36,7 @@ export interface WorkspaceIdentity {
 }
 
 export interface WorkspaceWorktreeInfo {
+  mainWorkspaceId?: string;
   path: string;
   branch?: string | null;
   mainRepoPath: string;
@@ -63,7 +66,7 @@ export interface WorkspaceInfo {
   relatedPaths?: RelatedPath[];
   connectionId?: string;
   connectionName?: string;
-  /** With `rootPath`, forms logical key `{sshHost}:{rootPath}`; local uses `localhost`. */
+  /** SSH endpoint metadata; workspace identity is exclusively `id`. */
   sshHost?: string;
 }
 
@@ -141,7 +144,23 @@ export class GlobalAPI {
    
   async initializeWorkspaceStartupState(): Promise<WorkspaceStartupStateSnapshot> {
     try {
-      return await api.invoke('initialize_workspace_startup_state');
+      const scope = getActiveSurfaceScope();
+      const snapshot = await api.invoke<WorkspaceStartupStateSnapshot>('initialize_workspace_startup_state');
+      scope.assertCurrent('upgrade workspace catalog');
+      const records = upgradeLegacyWorktreeReferences([
+        ...snapshot.openedWorkspaces, ...snapshot.recentWorkspaces,
+        ...(snapshot.currentWorkspace ? [snapshot.currentWorkspace] : []),
+      ]);
+      const byId = new Map(records.map(record => [record.id, record]));
+      if (isLocalSurface(scope.surfaceId)) {
+        try { migrateLegacySkillReceipts(localStorage, records); } catch { /* Storage may be unavailable. */ }
+      }
+      return {
+        ...snapshot,
+        openedWorkspaces: snapshot.openedWorkspaces.map(record => byId.get(record.id)!),
+        recentWorkspaces: snapshot.recentWorkspaces.map(record => byId.get(record.id)!),
+        currentWorkspace: snapshot.currentWorkspace ? byId.get(snapshot.currentWorkspace.id)! : null,
+      };
     } catch (error) {
       throw createTauriCommandError('initialize_workspace_startup_state', error);
     }
@@ -170,10 +189,14 @@ export class GlobalAPI {
   }
 
    
-  async openWorkspace(path: string): Promise<WorkspaceInfo> {
+  async openWorkspaceById(workspaceId: string): Promise<WorkspaceInfo> {
+    return api.invoke('open_workspace', { request: await workspaceIdRequest(workspaceId, 'path') });
+  }
+
+  async createLocalWorkspace(path: string): Promise<WorkspaceInfo> {
     try {
       return await api.invoke('open_workspace', { 
-        request: { path } 
+        request: { path, createLocal: true }
       });
     } catch (error) {
       throw createTauriCommandError('open_workspace', error, { path });
@@ -322,9 +345,7 @@ export class GlobalAPI {
    
   async getRecentWorkspaces(): Promise<WorkspaceInfo[]> {
     try {
-      return await api.invoke('get_recent_workspaces', { 
-        request: {} 
-      });
+      return upgradeLegacyWorktreeReferences(await api.invoke<WorkspaceInfo[]>('get_recent_workspaces', { request: {} }));
     } catch (error) {
       throw createTauriCommandError('get_recent_workspaces', error);
     }
@@ -350,22 +371,20 @@ export class GlobalAPI {
 
   async getOpenedWorkspaces(): Promise<WorkspaceInfo[]> {
     try {
-      return await api.invoke('get_opened_workspaces', {
-        request: {}
-      });
+      return upgradeLegacyWorktreeReferences(await api.invoke<WorkspaceInfo[]>('get_opened_workspaces', { request: {} }));
     } catch (error) {
       throw createTauriCommandError('get_opened_workspaces', error);
     }
   }
 
    
-  async scanWorkspaceInfo(workspacePath: string): Promise<WorkspaceInfo | null> {
+  async scanWorkspaceInfo(workspaceId: string): Promise<WorkspaceInfo | null> {
     try {
       return await api.invoke('scan_workspace_info', { 
-        request: { workspacePath } 
+        request: await workspaceIdRequest(workspaceId, 'workspacePath')
       });
     } catch (error) {
-      throw createTauriCommandError('scan_workspace_info', error, { workspacePath });
+      throw createTauriCommandError('scan_workspace_info', error, { workspaceId });
     }
   }
 

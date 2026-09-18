@@ -622,6 +622,8 @@ impl AgentSessionManagementPort for FakeOwner {
             return Ok(None);
         }
         Ok(Some(AgentSessionWorkspaceBinding {
+            workspace_kind: None,
+            project_workspace_id: None,
             workspace_id: None,
             workspace_path: "D:/workspace/project".to_string(),
             project_workspace_path: None,

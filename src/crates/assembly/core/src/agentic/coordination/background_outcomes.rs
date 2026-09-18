@@ -673,6 +673,7 @@ mod tests {
         let root = tempfile::tempdir().expect("background outcome temp directory");
         let workspace = root.path().join("workspace");
         std::fs::create_dir_all(&workspace).expect("create workspace");
+        crate::service::workspace::legacy_compat::register_local_fixture_blocking(&workspace);
         let path_manager = Arc::new(PathManager::with_user_root_for_tests(
             root.path().join("config"),
         ));

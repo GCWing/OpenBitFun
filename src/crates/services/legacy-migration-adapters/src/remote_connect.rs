@@ -629,6 +629,7 @@ fn merge_chat_state(source: &BotChatStateRecord, target: &mut BotChatStateRecord
     }
     if target.current_assistant.is_none() {
         target.current_assistant = source.current_assistant.clone();
+        target.current_assistant_id = source.current_assistant_id.clone();
         imported_source_context |= target.current_assistant.is_some();
     }
     if target.current_assistant_name.is_none() {
@@ -1432,11 +1433,13 @@ mod tests {
                     chat_id: "chat-1".to_string(),
                     paired: true,
                     current_workspace: workspace.map(|path| owner::BotWorkspaceRefRecord {
+                        workspace_id: None,
                         path: path.to_string(),
                         remote_connection_id: Some("ssh-user@example.invalid:22".to_string()),
                         remote_ssh_host: Some("example.invalid".to_string()),
                     }),
                     current_assistant: None,
+                    current_assistant_id: None,
                     current_assistant_name: None,
                     current_session_id: None,
                     display_mode: owner::BotDisplayModeRecord::Assistant,

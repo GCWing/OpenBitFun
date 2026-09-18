@@ -83,6 +83,7 @@ export interface WorkspaceIdentity {
 }
 
 export interface WorkspaceWorktreeInfo {
+  mainWorkspaceId?: string;
   path: string;
   branch?: string | null;
   mainRepoPath: string;
@@ -233,6 +234,7 @@ export interface GlobalStateAPI {
 
   
   openWorkspace(path: string): Promise<WorkspaceInfo>;
+  openWorkspaceById(workspaceId: string): Promise<WorkspaceInfo>;
   openRemoteWorkspace(
     remotePath: string,
     connectionId: string,
@@ -261,11 +263,11 @@ export interface GlobalStateAPI {
   getRecentWorkspaces(): Promise<WorkspaceInfo[]>;
   removeWorkspaceFromRecent(workspaceId: string): Promise<void>;
   cleanupInvalidWorkspaces(): Promise<number>;
-  scanWorkspaceInfo(workspacePath: string): Promise<WorkspaceInfo | null>;
+  scanWorkspaceInfo(workspaceId: string): Promise<WorkspaceInfo | null>;
   
   
-  startFileWatch(path: string, recursive?: boolean): Promise<void>;
-  stopFileWatch(path: string): Promise<void>;
+  startFileWatch(workspaceId: string, path: string, recursive?: boolean): Promise<void>;
+  stopFileWatch(workspaceId: string, path: string): Promise<void>;
   getWatchedPaths(): Promise<string[]>;
 }
 
@@ -347,6 +349,7 @@ function mapWorkspaceWorktree(
     path: worktree.path,
     branch: worktree.branch ?? undefined,
     mainRepoPath: worktree.mainRepoPath,
+    mainWorkspaceId: worktree.mainWorkspaceId,
     isMain: worktree.isMain,
   };
 }
@@ -533,7 +536,11 @@ export function createGlobalStateAPI(): GlobalStateAPI {
         throw new Error('Path parameter is required and cannot be empty');
       }
       
-      return mapWorkspaceInfo(await globalAPI.openWorkspace(path));
+      return mapWorkspaceInfo(await globalAPI.createLocalWorkspace(path));
+    },
+
+    async openWorkspaceById(workspaceId: string): Promise<WorkspaceInfo> {
+      return mapWorkspaceInfo(await globalAPI.openWorkspaceById(workspaceId));
     },
 
     async openRemoteWorkspace(
@@ -622,18 +629,18 @@ export function createGlobalStateAPI(): GlobalStateAPI {
       return await globalAPI.cleanupInvalidWorkspaces();
     },
 
-    async scanWorkspaceInfo(workspacePath: string): Promise<WorkspaceInfo | null> {
-      const workspace = await globalAPI.scanWorkspaceInfo(workspacePath);
+    async scanWorkspaceInfo(workspaceId: string): Promise<WorkspaceInfo | null> {
+      const workspace = await globalAPI.scanWorkspaceInfo(workspaceId);
       return workspace ? mapWorkspaceInfo(workspace) : null;
     },
 
     
-    async startFileWatch(path: string, recursive?: boolean): Promise<void> {
-      return await workspaceAPI.startFileWatch(path, recursive);
+    async startFileWatch(workspaceId: string, path: string, recursive?: boolean): Promise<void> {
+      return await workspaceAPI.startFileWatch(workspaceId, path, recursive);
     },
 
-    async stopFileWatch(path: string): Promise<void> {
-      return await workspaceAPI.stopFileWatch(path);
+    async stopFileWatch(workspaceId: string, path: string): Promise<void> {
+      return await workspaceAPI.stopFileWatch(workspaceId, path);
     },
 
     async getWatchedPaths(): Promise<string[]> {

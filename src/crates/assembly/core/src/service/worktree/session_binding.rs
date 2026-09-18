@@ -12,8 +12,6 @@
 use crate::agentic::coordination::get_global_coordinator;
 use crate::agentic::keyed_lock::KeyedAsyncLock;
 use crate::agentic::session::{SessionExecutionBindingError, SessionExecutionBindingUpdate};
-use crate::service::remote_ssh::workspace_state::LOCAL_WORKSPACE_SSH_HOST;
-use crate::service::workspace::get_global_workspace_service;
 use crate::service::worktree::{
     WorktreeCreateRequest, WorktreeListRequest, WorktreeRemoveRequest, WorktreeService,
 };
@@ -21,7 +19,6 @@ use openbitfun_core_types::{
     SessionExecutionTarget, WorktreeError, WorktreeErrorCode, WorktreeLifecycle,
 };
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 use std::sync::LazyLock;
 
 /// Serializes the complete Git-create/rebind/release transition for one session.
@@ -38,7 +35,11 @@ static SESSION_BINDING_LOCKS: LazyLock<KeyedAsyncLock> = LazyLock::new(KeyedAsyn
 pub struct WorktreeSessionBindingRequest {
     pub request_id: String,
     pub session_id: String,
-    /// Stable owner path used to locate view-only or evicted persisted sessions.
+    /// Owning project workspace ID used to locate view-only or evicted
+    /// persisted sessions. Authoritative when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
+    /// Legacy owner path for peers that predate workspace IDs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_workspace_path: Option<String>,
     /// `true` moves the session into a managed worktree, `false` back to the project.
@@ -48,6 +49,8 @@ pub struct WorktreeSessionBindingRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorktreeSessionBindingResult {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     pub session_id: String,
     pub workspace_path: String,
     pub project_workspace_path: String,
@@ -61,6 +64,8 @@ pub struct WorktreeSessionBindingResult {
 
 /// Session facts the binding decision depends on.
 struct SessionBindingContext {
+    workspace_id: Option<String>,
+    project_workspace_id: Option<String>,
     project_workspace_path: String,
     execution_target: SessionExecutionTarget,
     /// Why an actual transition is forbidden. An already-satisfied binding
@@ -95,8 +100,15 @@ async fn load_binding_context(
     let session_manager = coordinator.get_session_manager();
     let session = session_manager.get_session(&request.session_id);
 
-    let (workspace_path, project_workspace_path, execution_target, mut transition_blocker) =
-        if let Some(session) = session {
+    let workspace_id;
+    let project_workspace_id;
+    let (workspace_path, project_workspace_path, execution_target, transition_blocker) =
+        if let Some(mut session) = session {
+            crate::agentic::workspace::normalize_session_workspace(&mut session.config)
+                .await
+                .map_err(|error_| error(WorktreeErrorCode::IoFailed, error_.to_string()))?;
+            workspace_id = session.config.workspace_id.clone();
+            project_workspace_id = session.config.project_workspace_id.clone();
             let transition_blocker = if !session.dialog_turn_ids.is_empty() {
                 Some(error(
                     WorktreeErrorCode::WorktreeBusy,
@@ -107,7 +119,7 @@ async fn load_binding_context(
                     WorktreeErrorCode::WorktreeBusy,
                     "Worktree isolation cannot be changed while the session is processing",
                 ))
-            } else if session.config.remote_connection_id.is_some() {
+            } else if session.config.is_remote_workspace() {
                 Some(error(
                     WorktreeErrorCode::RemoteUnsupported,
                     "Managed worktrees are not supported for remote SSH workspaces yet",
@@ -139,23 +151,59 @@ async fn load_binding_context(
                 transition_blocker,
             )
         } else {
-            let project_workspace_path = request
-                .project_workspace_path
+            let requested_project_workspace_id = request
+                .project_workspace_id
                 .as_deref()
                 .map(str::trim)
-                .filter(|path| !path.is_empty())
-                .ok_or_else(|| {
-                    error(
-                        WorktreeErrorCode::WorktreeNotFound,
-                        format!(
-                            "Session not found: {}. The project workspace path is required to restore historical sessions",
-                            request.session_id
-                        ),
-                    )
-                })?
-                .to_string();
+                .filter(|id| !id.is_empty());
+            let (project_workspace_path, session_storage_root) =
+                match requested_project_workspace_id {
+                    Some(requested_project_workspace_id) => {
+                        use openbitfun_runtime_ports::SessionStorePort;
+                        let workspace = crate::service::workspace::get_global_workspace_service()
+                            .ok_or_else(|| {
+                                error(
+                                    WorktreeErrorCode::IoFailed,
+                                    "Workspace service is not initialized",
+                                )
+                            })?
+                            .require_workspace(requested_project_workspace_id)
+                            .await
+                            .map_err(|workspace_error| {
+                                error(WorktreeErrorCode::InvalidPath, workspace_error.to_string())
+                            })?;
+                        let storage = crate::agentic::session::session_store_port::CoreSessionStorePort::default()
+                        .resolve_workspace_storage(&workspace.id)
+                        .await
+                        .map_err(|storage_error| {
+                            error(WorktreeErrorCode::IoFailed, storage_error.to_string())
+                        })?;
+                        (
+                            workspace.root_path.to_string_lossy().into_owned(),
+                            storage.effective_storage_path,
+                        )
+                    }
+                    None => {
+                        let path = request
+                        .project_workspace_path
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|path| !path.is_empty())
+                        .ok_or_else(|| {
+                            error(
+                                WorktreeErrorCode::WorktreeNotFound,
+                                format!(
+                                    "Session not found: {}. The project workspace ID is required to restore historical sessions",
+                                    request.session_id
+                                ),
+                            )
+                        })?
+                        .to_string();
+                        (path.clone(), std::path::PathBuf::from(path))
+                    }
+                };
             let metadata = session_manager
-                .load_session_metadata(Path::new(&project_workspace_path), &request.session_id)
+                .load_session_metadata(&session_storage_root, &request.session_id)
                 .await
                 .map_err(|metadata_error| {
                     error(
@@ -169,15 +217,30 @@ async fn load_binding_context(
                         format!("Session not found: {}", request.session_id),
                     )
                 })?;
+            let mut config = crate::agentic::core::SessionConfig {
+                workspace_id: metadata.workspace_id.clone(),
+                project_workspace_id: metadata.project_workspace_id.clone(),
+                workspace_path: metadata
+                    .workspace_path
+                    .clone()
+                    .or_else(|| Some(project_workspace_path.clone())),
+                project_workspace_path: metadata.project_workspace_path.clone(),
+                remote_ssh_host: metadata.workspace_hostname.clone(),
+                ..Default::default()
+            };
+            crate::agentic::workspace::normalize_session_workspace(&mut config)
+                .await
+                .map_err(|error_| error(WorktreeErrorCode::IoFailed, error_.to_string()))?;
+            workspace_id = config.workspace_id.clone();
+            project_workspace_id = config.project_workspace_id.clone();
             let transition_blocker = if metadata.turn_count > 0 {
                 Some(error(
                     WorktreeErrorCode::WorktreeBusy,
                     "Worktree isolation can only be changed before the session's first message",
                 ))
-            } else if persisted_session_is_remote(metadata.workspace_hostname.as_deref()) {
-                // The persisted record carries the remote marker itself, so a
-                // build without the SSH registry still refuses here instead
-                // of creating a controller-local worktree for a remote path.
+            } else if config.is_remote_workspace() {
+                // The owning workspace record determines location after the
+                // historical metadata has crossed the upgrade adapter.
                 Some(error(
                     WorktreeErrorCode::RemoteUnsupported,
                     "Managed worktrees are not supported for remote SSH workspaces yet",
@@ -206,16 +269,6 @@ async fn load_binding_context(
             )
         };
 
-    if transition_blocker.is_none()
-        && crate::service::remote_ssh::workspace_state::is_remote_path(&project_workspace_path)
-            .await
-    {
-        transition_blocker = Some(error(
-            WorktreeErrorCode::RemoteUnsupported,
-            "Managed worktrees are not supported for remote SSH workspaces yet",
-        ));
-    }
-
     if workspace_path.trim().is_empty() {
         return Err(error(
             WorktreeErrorCode::InvalidPath,
@@ -224,6 +277,8 @@ async fn load_binding_context(
     }
 
     Ok(SessionBindingContext {
+        workspace_id,
+        project_workspace_id,
         project_workspace_path,
         execution_target,
         transition_blocker,
@@ -232,12 +287,6 @@ async fn load_binding_context(
 
 /// A persisted session names its workspace host; anything but the local host
 /// marks the session as remote even when no SSH connection is registered.
-fn persisted_session_is_remote(workspace_hostname: Option<&str>) -> bool {
-    workspace_hostname
-        .map(str::trim)
-        .is_some_and(|host| !host.is_empty() && host != LOCAL_WORKSPACE_SSH_HOST)
-}
-
 fn binding_action(
     context: &SessionBindingContext,
     enabled: bool,
@@ -258,17 +307,12 @@ fn binding_action(
     })
 }
 
-async fn current_workspace_id(root_path: &str) -> Option<String> {
-    get_global_workspace_service()?
-        .get_workspace_by_path(Path::new(root_path))
-        .await
-        .map(|workspace| workspace.id)
-}
-
 async fn rebind(
     session_id: &str,
     project_workspace_path: &str,
     execution_target: SessionExecutionTarget,
+    workspace_id: Option<String>,
+    project_workspace_id: Option<String>,
 ) -> Result<WorktreeSessionBindingResult, WorktreeError> {
     let coordinator = get_global_coordinator().ok_or_else(|| {
         error(
@@ -276,7 +320,12 @@ async fn rebind(
             "Session coordinator is not initialized",
         )
     })?;
-    let workspace_id = current_workspace_id(&execution_target.root_path).await;
+    let workspace_id = Some(workspace_id.ok_or_else(|| {
+        error(
+            WorktreeErrorCode::WorktreeNotFound,
+            "Workspace ID is required for a session binding",
+        )
+    })?);
 
     coordinator
         .get_session_manager()
@@ -304,6 +353,7 @@ async fn rebind(
         })?;
 
     Ok(WorktreeSessionBindingResult {
+        project_workspace_id,
         session_id: session_id.to_string(),
         workspace_path: execution_target.root_path.clone(),
         project_workspace_path: project_workspace_path.to_string(),
@@ -329,10 +379,11 @@ impl WorktreeService {
             SessionBindingAction::AlreadyBound => {
                 // Already in the requested state; report it rather than churn Git.
                 Ok(WorktreeSessionBindingResult {
+                    project_workspace_id: context.project_workspace_id.clone(),
                     session_id: request.session_id,
                     workspace_path: context.execution_target.root_path.clone(),
                     project_workspace_path: context.project_workspace_path,
-                    workspace_id: current_workspace_id(&context.execution_target.root_path).await,
+                    workspace_id: context.workspace_id.clone(),
                     execution_target: context.execution_target,
                     retained_worktree_path: None,
                 })
@@ -351,6 +402,7 @@ impl WorktreeService {
         let settings = Self::settings().await;
         let created = Self::create(WorktreeCreateRequest {
             request_id: request.request_id.clone(),
+            project_workspace_id: None,
             project_workspace_path: context.project_workspace_path.clone(),
             source_workspace_path: Some(context.execution_target.root_path.clone()),
             base_ref: None,
@@ -365,6 +417,8 @@ impl WorktreeService {
             &request.session_id,
             &created.worktree.project_workspace_path,
             created.execution_target,
+            created.worktree.workspace_id.clone(),
+            context.project_workspace_id.clone(),
         )
         .await
         {
@@ -410,10 +464,13 @@ impl WorktreeService {
             &request.session_id,
             &context.project_workspace_path,
             SessionExecutionTarget::local(context.project_workspace_path.clone()),
+            context.project_workspace_id.clone(),
+            context.project_workspace_id.clone(),
         )
         .await?;
 
         let removable = Self::list(WorktreeListRequest {
+            project_workspace_id: None,
             project_workspace_path: context.project_workspace_path.clone(),
         })
         .await
@@ -436,6 +493,7 @@ impl WorktreeService {
         if removable {
             match Self::remove(WorktreeRemoveRequest {
                 request_id: request.request_id.clone(),
+                project_workspace_id: None,
                 project_workspace_path: context.project_workspace_path.clone(),
                 worktree_id,
                 force: false,
@@ -457,20 +515,11 @@ impl WorktreeService {
 #[cfg(test)]
 mod tests {
     use super::{
-        binding_action, error, persisted_session_is_remote, SessionBindingAction,
-        SessionBindingContext, WorktreeSessionBindingRequest, SESSION_BINDING_LOCKS,
+        binding_action, error, SessionBindingAction, SessionBindingContext,
+        WorktreeSessionBindingRequest, SESSION_BINDING_LOCKS,
     };
     use openbitfun_core_types::{SessionExecutionTarget, WorktreeErrorCode};
     use std::time::Duration;
-
-    #[test]
-    fn persisted_workspace_hostname_marks_remote_sessions() {
-        assert!(!persisted_session_is_remote(None));
-        assert!(!persisted_session_is_remote(Some("localhost")));
-        assert!(!persisted_session_is_remote(Some("   ")));
-        assert!(persisted_session_is_remote(Some("build.example.test")));
-        assert!(persisted_session_is_remote(Some("_unresolved")));
-    }
 
     #[test]
     fn binding_request_keeps_legacy_callers_compatible() {
@@ -503,6 +552,8 @@ mod tests {
     #[test]
     fn already_satisfied_binding_is_a_no_op_after_the_first_message() {
         let context = SessionBindingContext {
+            workspace_id: Some("workspace".into()),
+            project_workspace_id: Some("workspace".into()),
             project_workspace_path: "/repo".to_string(),
             execution_target: SessionExecutionTarget::local("/repo"),
             transition_blocker: Some(error(

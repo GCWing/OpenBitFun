@@ -33,7 +33,7 @@ export const LauncherButton = forwardRef<
       type={type}
     >
       {leadingIcon !== undefined && leadingIcon !== null && (
-        <span aria-hidden="true" className={styles.icon} data-openbitfun-part="icon">
+        <span aria-hidden="true" className={styles.icon} data-openbitfun-icon-slot="true" data-openbitfun-part="icon">
           {leadingIcon}
         </span>
       )}

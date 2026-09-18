@@ -18,9 +18,6 @@ export function externalSourceRequestScopeKey(
   return JSON.stringify({
     host: facts.peerDeviceId ? `peer:${facts.peerDeviceId}` : 'local',
     workspaceId: facts.workspaceId ?? null,
-    workspaceKind: facts.workspaceKind ?? null,
-    remoteConnectionId: facts.remoteConnectionId ?? null,
-    remoteHost: facts.remoteHost ?? null,
-    workspacePath: facts.workspacePath?.trim() || null,
+
   });
 }

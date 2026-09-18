@@ -66,11 +66,26 @@ impl MemoryPhase2Consolidator for InternalAgentMemoryPhase2Consolidator {
             model_id,
             task_description
         );
+        let workspace_service = crate::service::workspace::get_global_workspace_service()
+            .ok_or_else(|| OpenBitFunError::service("Workspace service is unavailable"))?;
+        // Explicitly register the internal execution folder. Once registered,
+        // internal Agent requests carry its ID and never infer SSH from a path.
+        let workspace = workspace_service
+            .track_workspace_activity(
+                memory_root.to_path_buf(),
+                crate::service::workspace::WorkspaceCreateOptions {
+                    add_to_recent: false,
+                    auto_set_current: false,
+                    ..Default::default()
+                },
+                crate::service::workspace::WorkspaceActivityMode::TouchOnly,
+            )
+            .await?;
         let request = InternalAgentExecutionRequest {
             task_description,
             agent_type: "MemoryPhase2".to_string(),
             session_name: "Memory Phase 2 Consolidation".to_string(),
-            workspace_path: memory_root.to_string_lossy().to_string(),
+            workspace_id: workspace.id,
             model_id: model_id.clone(),
             created_by: Some("memory-phase2".to_string()),
             context: HashMap::new(),

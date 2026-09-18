@@ -53,6 +53,8 @@ export interface UpdateAcpClientSubagentConfigRequest extends AcpClientSubagentC
 export interface CreateAcpFlowSessionRequest {
   clientId: string;
   sessionName?: string;
+  /** Workspace identity; authoritative when present. Paths below are IO projections. */
+  workspaceId?: string;
   workspacePath: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -70,6 +72,8 @@ export interface StartAcpDialogTurnRequest {
   userInput: string;
   originalUserInput?: string;
   turnId: string;
+  /** Workspace identity; authoritative when present. Paths below are IO projections. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -81,6 +85,8 @@ export interface StartAcpDialogTurnRequest {
 export interface CancelAcpDialogTurnRequest {
   sessionId: string;
   clientId: string;
+  /** Workspace identity; authoritative when present. Paths below are IO projections. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -89,6 +95,8 @@ export interface CancelAcpDialogTurnRequest {
 export interface GetAcpSessionOptionsRequest {
   sessionId: string;
   clientId: string;
+  /** Workspace identity; authoritative when present. Paths below are IO projections. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -97,6 +105,8 @@ export interface GetAcpSessionOptionsRequest {
 export interface SetAcpSessionModelRequest {
   sessionId: string;
   clientId: string;
+  /** Workspace identity; authoritative when present. Paths below are IO projections. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -110,6 +120,8 @@ export type AcpSessionConfigValue =
 export interface SetAcpSessionConfigOptionRequest {
   sessionId: string;
   clientId: string;
+  /** Workspace identity; authoritative when present. Paths below are IO projections. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;

@@ -21,12 +21,12 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
  * to hold; this one fires once per wait and its numbers are the whole point of
  * it, so it is worth pinning that it fires exactly once and says the truth.
  */
-const mocks = vi.hoisted(() => ({ traceViewport: vi.fn() }));
+const mocks = vi.hoisted(() => ({ traceViewport: vi.fn(), traceViewportRepeating: vi.fn() }));
 vi.mock('@/infrastructure/diagnostics/flowChatViewportDiagnostics', async () => {
   const actual = await vi.importActual<
     typeof import('@/infrastructure/diagnostics/flowChatViewportDiagnostics')
   >('@/infrastructure/diagnostics/flowChatViewportDiagnostics');
-  return { ...actual, traceViewport: mocks.traceViewport };
+  return { ...actual, traceViewport: mocks.traceViewport, traceViewportRepeating: mocks.traceViewportRepeating };
 });
 
 const VIEWPORT_HEIGHT = 500;
@@ -106,6 +106,7 @@ describe('useFlowChatViewportAnchor', () => {
 
   beforeEach(() => {
     mocks.traceViewport.mockReset();
+    mocks.traceViewportRepeating.mockReset();
     container = document.createElement('div');
     scroller = document.createElement('div');
     document.body.append(container, scroller);
@@ -582,6 +583,76 @@ describe('useFlowChatViewportAnchor', () => {
     expect(ranFrames).toBe(ANCHOR_SETTLE_FRAMES);
     expect(frames).toHaveLength(0);
     expect(scroller.scrollTop).toBe(0);
+  });
+
+  it('does not renew the frame budget for identical resize notifications', () => {
+    layoutTurns({ 'turn-3': 100 });
+    api.captureAnchor();
+    api.openSettleWindow('resize');
+    for (let i = 0; i < ANCHOR_SETTLE_FRAMES; i += 1) {
+      api.openSettleWindow('resize');
+      runFrame();
+    }
+    expect(frames).toHaveLength(0);
+    // Same total height does not mean the anchored content stayed put.
+    layoutTurns({ 'turn-3': 120 });
+    api.openSettleWindow('resize');
+    expect(scroller.scrollTop).toBe(20);
+    expect(frames).toHaveLength(1);
+  });
+
+  it('stops retrying a clamped correction until the geometry changes', () => {
+    let top = 0;
+    const writes = vi.fn((value: number) => { top = Math.max(0, value); });
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true, get: () => top, set: writes,
+    });
+    layoutTurns({ 'turn-3': 100 });
+    api.captureAnchor();
+    layoutTurns({ 'turn-3': 80 });
+    api.openSettleWindow();
+    for (let i = 0; i < ANCHOR_SETTLE_FRAMES; i += 1) runFrame();
+    expect(writes).toHaveBeenCalledTimes(1);
+    expect(frames).toHaveLength(0);
+    // A real displacement makes a new, now satisfiable correction.
+    layoutTurns({ 'turn-3': 120 });
+    api.openSettleWindow('resize');
+    expect(scroller.scrollTop).toBe(20);
+    expect(writes).toHaveBeenCalledTimes(2);
+  });
+
+  it('continues partial corrections when they reduce the residual', () => {
+    let top = 0;
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true, get: () => top,
+      set: (value: number) => { top += (value - top) / 2; },
+    });
+    layoutTurns({ 'turn-3': 100 });
+    api.captureAnchor();
+    layoutTurns({ 'turn-3': 108 });
+    api.openSettleWindow();
+    for (let i = 0; i < 4; i += 1) runFrame();
+    expect(Math.abs(scroller.scrollTop - 8)).toBeLessThan(0.5);
+  });
+
+  it('reports reversals without suppressing valid late layout corrections', () => {
+    layoutTurns({ 'turn-3': 100 });
+    api.captureAnchor();
+    api.openSettleWindow('items');
+    for (let i = 0; i < 30; i += 1) {
+      layoutTurns({ 'turn-3': i % 2 === 0 ? 108 : 100 });
+      runFrame();
+    }
+    expect(scroller.scrollTop).toBe(0);
+    const results = mocks.traceViewportRepeating.mock.calls
+      .map(([, probe]) => probe).filter(probe => probe.location === 'anchor.correctionResult');
+    expect(results).toHaveLength(30);
+    expect(results.at(-1)?.data()).toMatchObject({
+      source: 'items', requestedPx: -8, appliedPx: -8, residualPx: 0,
+      improved: true, correctionCount: 30, reversalCount: 29, cumulativeTravelPx: 240,
+    });
+    for (let i = 0; i < ANCHOR_SETTLE_FRAMES; i += 1) runFrame();
+    expect(frames).toHaveLength(0);
   });
 
   it('winds the settle window down while another owner holds the viewport', () => {

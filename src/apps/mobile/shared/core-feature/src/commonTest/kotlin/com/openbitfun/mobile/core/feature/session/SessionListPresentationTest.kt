@@ -2,6 +2,7 @@ package com.openbitfun.mobile.core.feature.session
 
 import com.openbitfun.mobile.core.domain.RecentWorkspace
 import com.openbitfun.mobile.core.domain.RemoteSession
+import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -229,6 +230,81 @@ class SessionListPresentationTest {
         assertEquals(0, complete.nextCount)
     }
 
+    private val identityWorkspace = SessionWorkspaceContext(
+        selectedPath = "/repo",
+        selectedName = "Local",
+        selectedKind = "normal",
+        recent = listOf(
+            RecentWorkspace("/repo", "Local", "", "normal", null, null, "ws-local"),
+            RecentWorkspace("/repo", "SSH", "", "remote", "host", "saved-1", "ws-ssh"),
+            RecentWorkspace("/repo", "Helper", "", "assistant", null, null, "ws-helper"),
+        ),
+        selectedWorkspaceId = "ws-local",
+        selectedRemoteConnectionId = null,
+        selectedRemoteSshHost = null,
+    )
+
+    @Test
+    fun workspacesSharingAPathAreSeparateProjectsKeyedByWorkspaceId() {
+        val sessions = listOf(
+            session("local", path = "/repo", workspaceId = "ws-local"),
+            session("ssh", path = "/repo", workspaceId = "ws-ssh"),
+            session("gone", path = "/repo", workspaceId = "ws-gone"),
+        )
+        val view = SessionListPresentation.view(sessions, identityWorkspace, defaults, now)
+        val projects = view.sections.filterIsInstance<SessionListSection.Project>()
+        assertEquals(listOf("ws-local", "ws-ssh"), projects.map { it.workspaceId })
+        assertEquals(listOf("/repo", "/repo"), projects.map { it.path }, "the path is display text only")
+        assertTrue(projects[0].key != projects[1].key)
+        assertEquals(listOf("local"), projects[0].sessions.map { it.id })
+        assertEquals(listOf("ssh"), projects[1].sessions.map { it.id })
+        // An ID the catalog does not know is filed nowhere; it must not land on a same-path row.
+        assertTrue(view.sections.flatMap { it.sessions }.none { it.id == "gone" })
+    }
+
+    @Test
+    fun aPreIdSessionResolvesThroughTheLegacyTripleAndAnAmbiguousRootIsFiledNowhere() {
+        val sessions = listOf(
+            session("by-connection", path = "/repo", remoteConnectionId = "saved-1"),
+            session("bare-path", path = "/repo"),
+        )
+        val view = SessionListPresentation.view(sessions, identityWorkspace, defaults, now)
+        val projects = view.sections.filterIsInstance<SessionListSection.Project>()
+        assertEquals(listOf("by-connection"), projects.first { it.workspaceId == "ws-ssh" }.sessions.map { it.id })
+        // "/repo" alone matches the local and the SSH row (the assistant row has kind assistant but
+        // still shares the root), so nothing may be picked on the user's behalf.
+        assertTrue(view.sections.flatMap { it.sessions }.none { it.id == "bare-path" })
+    }
+
+    @Test
+    fun assistantDetectionUsesTheCatalogRowKindByIdNotThePath() {
+        val helper = session("helper", agentType = "code", path = "/repo", workspaceId = "ws-helper")
+        val project = session("project", agentType = "code", path = "/repo", workspaceId = "ws-local")
+        assertEquals(SessionAgentGroup.CHAT, SessionListPresentation.agentGroup(helper, identityWorkspace))
+        assertEquals(SessionAgentGroup.CODE, SessionListPresentation.agentGroup(project, identityWorkspace))
+        val view = SessionListPresentation.view(listOf(helper, project), identityWorkspace, defaults, now)
+        assertEquals(listOf("helper"), view.sections.filterIsInstance<SessionListSection.Chat>().single().sessions.map { it.id })
+        assertTrue(view.sections.none { it is SessionListSection.Project && it.workspaceId == "ws-helper" })
+    }
+
+    @Test
+    fun workspaceOptionsCarryIdsAndFiltersMatchByKeyWithLegacyPathFallback() {
+        val sessions = listOf(
+            session("local", path = "/repo", workspaceId = "ws-local"),
+            session("ssh", path = "/repo", workspaceId = "ws-ssh"),
+            session("stray", path = "/elsewhere"),
+        )
+        val options = SessionListPresentation.workspaceOptions(sessions, identityWorkspace)
+        assertEquals(listOf("ws-local", "ws-ssh", "ws-helper", null), options.map { it.workspaceId })
+        assertEquals(4, options.map { it.key }.toSet().size, "same-path rows are distinct options")
+        fun ids(filter: String) = SessionListPresentation.view(sessions, identityWorkspace, defaults.copy(workspaceFilter = filter), now)
+            .sections.flatMap { it.sessions }.map { it.id }.sorted()
+        assertEquals(listOf("ssh"), ids(options.first { it.workspaceId == "ws-ssh" }.key))
+        assertEquals(listOf("local"), ids(options.first { it.workspaceId == "ws-local" }.key))
+        // A filter persisted as a bare path before IDs existed keeps matching by path.
+        assertEquals(listOf("local", "ssh"), ids("/repo"))
+    }
+
     private fun session(
         id: String,
         agentType: String = "code",
@@ -236,7 +312,9 @@ class SessionListPresentationTest {
         updatedAt: String = "1754726400000",
         createdAt: String = "1754726400000",
         path: String? = "/work/openbitfun",
-    ) = RemoteSession(
+        workspaceId: String? = null,
+        remoteConnectionId: String? = null,
+    ) = if (workspaceId == null && remoteConnectionId == null) RemoteSession(
         id = id,
         title = id,
         agentType = agentType,
@@ -246,5 +324,16 @@ class SessionListPresentationTest {
         messageCount = 0,
         workspacePath = path,
         workspaceName = null,
+    ) else RemoteSession(
+        id = id,
+        title = id,
+        agentType = agentType,
+        status = status,
+        updatedAt = updatedAt,
+        createdAt = createdAt,
+        messageCount = 0,
+        workspacePath = path,
+        workspaceName = null,
+        workspaceIdentity = RemoteWorkspaceIdentity(path.orEmpty(), remoteConnectionId, null, workspaceId),
     )
 }

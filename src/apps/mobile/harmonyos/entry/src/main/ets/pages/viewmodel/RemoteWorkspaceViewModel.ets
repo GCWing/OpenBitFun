@@ -56,12 +56,12 @@ export class RemoteWorkspaceViewModel {
     await this.loadAssistants();
   }
 
-  async selectWorkspace(path: string, connectionId?: string, sshHost?: string): Promise<boolean> {
-    return await this.select(path, false, connectionId, sshHost);
+  async selectWorkspace(path: string, connectionId?: string, sshHost?: string, workspaceId?: string): Promise<boolean> {
+    return await this.select(path, false, connectionId, sshHost, workspaceId);
   }
 
-  async selectAssistant(path: string): Promise<boolean> {
-    return await this.select(path, true);
+  async selectAssistant(path: string, workspaceId?: string): Promise<boolean> {
+    return await this.select(path, true, undefined, undefined, workspaceId);
   }
 
   async loadRecentWorkspacesInBackground(): Promise<void> {
@@ -164,8 +164,10 @@ export class RemoteWorkspaceViewModel {
     }
   }
 
-  private async select(path: string, assistant: boolean, connectionId?: string, sshHost?: string): Promise<boolean> {
-    if (this.hooks.isBusy() || path.trim().length === 0 || !this.hooks.isRemoteAvailable()) {
+  private async select(path: string, assistant: boolean, connectionId?: string, sshHost?: string, workspaceId?: string): Promise<boolean> {
+    // A reference is complete with either its ID or, for pre-ID rows, its path.
+    const id = workspaceId?.trim() || undefined;
+    if (this.hooks.isBusy() || (path.trim().length === 0 && id === undefined) || !this.hooks.isRemoteAvailable()) {
       return false;
     }
     try {
@@ -173,7 +175,7 @@ export class RemoteWorkspaceViewModel {
       this.hooks.onStatus(RemoteI18n.t(assistant ?
         'status.switchingAssistant' : 'status.switchingWorkspace'));
       const workspace = assistant ?
-        await this.coordinator.switchAssistant(path) : await this.coordinator.switchWorkspace(path, connectionId, sshHost);
+        await this.coordinator.switchAssistant(path, id) : await this.coordinator.switchWorkspace(path, connectionId, sshHost, id);
       this.hooks.onWorkspaceSelected(workspace);
       this.pageState.closePickers();
       this.pageState.clear();

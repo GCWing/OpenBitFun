@@ -1,6 +1,6 @@
 import type { Session } from '../types/flow-chat';
 import { isProjectedSessionEmpty } from './flowChatTurnIdentity';
-import { sessionProjectWorkspacePath } from './sessionWorkspace';
+import { sessionProjectWorkspaceId, sessionProjectWorkspacePath } from './sessionWorkspace';
 
 type SessionWorktreeFacts = Pick<
   Session,
@@ -11,6 +11,7 @@ type SessionWorktreeFacts = Pick<
   | 'turnCatalog'
   | 'workspaceId'
   | 'workspacePath'
+  | 'projectWorkspaceId'
   | 'projectWorkspacePath'
   | 'config'
 >;
@@ -41,6 +42,8 @@ export function isSessionWorktreeIsolationEnabled(
 
 export interface SessionWorktreeMaterializationPlan {
   enabled: boolean;
+  /** Owning project workspace ID; the path below is only the Git IO operand. */
+  projectWorkspaceId?: string;
   projectWorkspacePath: string;
 }
 
@@ -66,7 +69,12 @@ export function sessionWorktreeMaterializationPlan(
   if (!projectWorkspacePath) {
     throw new Error('Project workspace path is required to prepare worktree isolation');
   }
-  return { enabled: requested, projectWorkspacePath };
+  const projectWorkspaceId = sessionProjectWorkspaceId(session);
+  return {
+    enabled: requested,
+    ...(projectWorkspaceId ? { projectWorkspaceId } : {}),
+    projectWorkspacePath,
+  };
 }
 
 /**
@@ -82,6 +90,7 @@ export function sessionWorktreeBindingSubscriptionKey(session: SessionWorktreeFa
     session.turnCatalog?.totalTurnCount ?? '',
     session.workspaceId ?? '',
     session.workspacePath ?? '',
+    session.projectWorkspaceId ?? '',
     session.projectWorkspacePath ?? '',
     session.config.projectWorkspacePath ?? '',
     session.config.executionTarget?.kind ?? '',

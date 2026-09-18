@@ -165,7 +165,8 @@ internal fun RemoteSessionListContent(
     var revealedSectionKeys by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
     // Not saveable, like the delete confirmation: an open menu is a finger
     // half-way through a gesture, not a place to come back to.
-    var projectCreateMenuPath by remember { mutableStateOf<String?>(null) }
+    // Keyed by the project's identity key, never its path: two open workspaces may share a root.
+    var projectCreateMenuKey by remember { mutableStateOf<String?>(null) }
     var viewSettings by rememberSaveable(stateSaver = SessionViewSettings.Saver) {
         mutableStateOf(SessionViewSettings.Default)
     }
@@ -250,28 +251,25 @@ internal fun RemoteSessionListContent(
                             section = section,
                             collapsed = collapsed,
                             createMenuOpen = section is SessionListSection.Project &&
-                                projectCreateMenuPath == section.path,
+                                projectCreateMenuKey == section.key,
                             onToggleCreateMenu = if (section is SessionListSection.Project) {
                                 {
-                                    projectCreateMenuPath = if (projectCreateMenuPath == section.path) {
+                                    projectCreateMenuKey = if (projectCreateMenuKey == section.key) {
                                         null
                                     } else {
-                                        section.path
+                                        section.key
                                     }
                                 }
                             } else null,
-                            onDismissCreateMenu = { projectCreateMenuPath = null },
+                            onDismissCreateMenu = { projectCreateMenuKey = null },
                             onCreateAgent = if (section is SessionListSection.Project) {
                                 { agentType ->
-                                    projectCreateMenuPath = null
-                                    val scope = workspaceState as? RemoteWorkspaceUiState.Ready
-                                    val matching = scope?.workspaces.orEmpty().filter { it.path == section.path }
-                                    val selected = scope?.selected?.takeIf { it.path == section.path }
-                                    if (selected != null || matching.size == 1) {
-                                        onIntent(RemoteSessionIntent.CreateSession(agentType, "", "", null, section.path, (if (selected != null) selected.remoteConnectionId else matching.singleOrNull()?.remoteConnectionId),
-                                            (if (selected != null) selected.remoteSshHost else matching.singleOrNull()?.remoteSshHost)))
-                                    } else onCreate()
-
+                                    projectCreateMenuKey = null
+                                    // The section already carries the resolved workspace identity: with an
+                                    // ID the create is addressed by ID only; a pre-ID row sends its legacy
+                                    // triple. The shared store refuses unknown IDs instead of retrying by path.
+                                    onIntent(RemoteSessionIntent.CreateSession(agentType, "", "", null, section.path,
+                                        section.remoteConnectionId, section.remoteSshHost, section.workspaceId))
                                 }
                             } else null,
                             onCreateAssistant = if (section is SessionListSection.Chat) {
@@ -529,6 +527,9 @@ private fun RemoteWorkspaceUiState.asSessionContext(): SessionWorkspaceContext {
             selectedName = ready?.selected?.name.orEmpty(),
             selectedKind = ready?.selected?.kind.orEmpty(),
             recent = ready?.workspaces.orEmpty(),
+            selectedWorkspaceId = ready?.selected?.workspaceId,
+            selectedRemoteConnectionId = ready?.selected?.remoteConnectionId,
+            selectedRemoteSshHost = ready?.selected?.remoteSshHost,
         )
     }
 }
@@ -702,7 +703,7 @@ internal fun ProjectCreateControl(
 
 private fun sectionKey(section: SessionListSection): String = when (section) {
     is SessionListSection.Chat -> "chat"
-    is SessionListSection.Project -> "project:" + section.path
+    is SessionListSection.Project -> "project:" + section.key
     is SessionListSection.Today -> "today"
     is SessionListSection.Yesterday -> "yesterday"
     is SessionListSection.Earlier -> "earlier"
@@ -841,6 +842,8 @@ private fun SessionFailure(state: RemoteSessionUiState.Failed, onRetry: () -> Un
                     RemoteSessionFailureReason.RATE_LIMITED -> R.string.sessions_failed_rate_limited
                     RemoteSessionFailureReason.PROTOCOL_MISMATCH -> R.string.sessions_failed_protocol_mismatch
                     RemoteSessionFailureReason.SESSION_NOT_FOUND -> R.string.sessions_failed_session_not_found
+                    RemoteSessionFailureReason.WORKSPACE_ID_UNSUPPORTED -> R.string.sessions_failed_workspace_id_unsupported
+                    RemoteSessionFailureReason.WORKSPACE_ID_UNKNOWN -> R.string.sessions_failed_workspace_id_unknown
                     // Exhaustive on purpose rather than an `else`: every reason
                     // that reaches this screen was raised to say something
                     // specific, and a new one falling into the generic line is

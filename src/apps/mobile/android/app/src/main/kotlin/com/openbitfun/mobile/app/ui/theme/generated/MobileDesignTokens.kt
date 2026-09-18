@@ -13,11 +13,13 @@ internal object MobileDesignColors {
         val Transparent = Color(0x00000000)
         val PageBg = Color(0xFFFFFFFF)
         val PageBgFade = Color(0x00FFFFFF)
+        val PageBgOverlay = Color(0xB8FFFFFF)
         val Ink = Color(0xFF171717)
         val Muted = Color(0xFF706F6A)
         val Subtle = Color(0xFFA5A39B)
         val Line = Color(0xFFE9E7E2)
         val Card = Color(0xFFFFFFFF)
+        val CardOverlay = Color(0xCCFFFFFF)
         val Accent = Color(0xFF111111)
         val FileLink = Color(0xFF2563EB)
         val PrimaryAction = Color(0xFF111111)
@@ -65,11 +67,13 @@ internal object MobileDesignColors {
         val Transparent = Color(0x00000000)
         val PageBg = Color(0xFF151514)
         val PageBgFade = Color(0x00151514)
+        val PageBgOverlay = Color(0xB8151514)
         val Ink = Color(0xFFF4F3EF)
         val Muted = Color(0xFFAAA8A0)
         val Subtle = Color(0xFF77756E)
         val Line = Color(0xFF363531)
         val Card = Color(0xFF252522)
+        val CardOverlay = Color(0xCC252522)
         val Accent = Color(0xFF5B5954)
         val FileLink = Color(0xFF60A5FA)
         val PrimaryAction = Color(0xFF454540)
@@ -140,6 +144,8 @@ internal object MobileDesignGeometry {
     val ContentGutter = 16.dp
     val ConnectionStripHeight = 48.dp
     val TimelineTopPadding = 22.dp
+    val ConversationOverlaySideInset = 16.dp
+    val ConversationEdgeFadeHeight = 28.dp
     val MessageSpacing = 18.dp
     val MessageBubbleMaxWidth = 276.dp
     val MessageBubbleHorizontalPadding = 14.dp

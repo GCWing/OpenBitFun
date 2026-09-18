@@ -45,6 +45,25 @@ use crate::diagnostics::with_session_conflict_help;
 use crate::runtime::approval::{approval_metadata, CliApprovalPolicy};
 use crate::runtime::CliRuntimeContext;
 
+async fn upgrade_shared_workspace_binding(
+    binding: AgentSessionWorkspaceBinding,
+) -> Result<AgentSessionWorkspaceBinding> {
+    if binding.workspace_id.is_some()
+        && binding.project_workspace_id.is_some()
+        && binding.workspace_kind.is_some()
+    {
+        return Ok(binding);
+    }
+    let service =
+        openbitfun_core::service::workspace::get_global_workspace_service().ok_or_else(|| {
+            anyhow::anyhow!("Workspace service is unavailable for legacy Runtime binding upgrade")
+        })?;
+    service
+        .upgrade_legacy_session_binding(binding)
+        .await
+        .map_err(Into::into)
+}
+
 fn shared_restore_error(error: RuntimeIpcClientError) -> anyhow::Error {
     let error = if matches!(&error, RuntimeIpcClientError::Remote(remote) if remote.code == RuntimeIpcErrorCode::FrameTooLarge)
     {
@@ -239,6 +258,8 @@ impl SessionOperationError {
 
 #[derive(Clone, Debug)]
 struct CliWorkspacePaths {
+    workspace_kind: Option<openbitfun_core::service::workspace::WorkspaceKind>,
+    project_workspace_id: Option<String>,
     workspace_id: Option<String>,
     project: Option<PathBuf>,
     execution: Option<PathBuf>,
@@ -250,6 +271,8 @@ struct CliWorkspacePaths {
 impl CliWorkspacePaths {
     fn new(workspace_path: Option<PathBuf>) -> Self {
         Self {
+            workspace_kind: None,
+            project_workspace_id: None,
             workspace_id: None,
             project: workspace_path.clone(),
             execution: workspace_path,
@@ -276,6 +299,8 @@ impl CliWorkspacePaths {
     }
 
     fn apply_binding(&mut self, binding: &AgentSessionWorkspaceBinding) {
+        self.workspace_kind = binding.workspace_kind.clone();
+        self.project_workspace_id = binding.project_workspace_id.clone();
         self.workspace_id = binding.workspace_id.clone();
         let execution = PathBuf::from(&binding.workspace_path);
         let project = binding
@@ -294,6 +319,8 @@ impl CliWorkspacePaths {
     fn binding(&self) -> AgentSessionWorkspaceBinding {
         let execution = self.execution();
         AgentSessionWorkspaceBinding {
+            workspace_kind: self.workspace_kind.clone(),
+            project_workspace_id: self.project_workspace_id.clone(),
             workspace_id: self.workspace_id.clone(),
             workspace_path: execution.to_string_lossy().to_string(),
             project_workspace_path: Some(self.project().to_string_lossy().to_string()),
@@ -313,33 +340,29 @@ impl CliWorkspacePaths {
         self.execution_target = Some(SessionExecutionTarget::local(
             project.to_string_lossy().to_string(),
         ));
-        self.workspace_id = None;
+        self.workspace_id = self.project_workspace_id.clone();
         self.remote_connection_id = None;
         self.remote_ssh_host = None;
         project
     }
 
     fn workspace_diff_unavailable_reason(&self) -> Option<&'static str> {
-        if self.remote_connection_id.is_some() || self.remote_ssh_host.is_some() {
+        if self.workspace_id.is_none()
+            || self.project_workspace_id.is_none()
+            || self.workspace_kind.is_none()
+        {
+            return Some("Workspace diff is unavailable until workspace identity is resolved");
+        }
+        if self.workspace_kind == Some(openbitfun_core::service::workspace::WorkspaceKind::Remote) {
             return Some("Workspace diff is unavailable for remote Sessions");
         }
-        let execution = self.execution();
-        let project = self.project();
-        if !same_workspace_location(&execution, &project) {
+        if self.workspace_id != self.project_workspace_id {
             return Some(
                 "Workspace diff is unavailable when the Session uses a different worktree",
             );
         }
         None
     }
-}
-
-fn same_workspace_location(left: &Path, right: &Path) -> bool {
-    left == right
-        || dunce::canonicalize(left)
-            .ok()
-            .zip(dunce::canonicalize(right).ok())
-            .is_some_and(|(left, right)| left == right)
 }
 
 /// CLI-owned client for the portable Agent Runtime SDK.
@@ -376,12 +399,18 @@ pub(crate) struct CliAgentMode {
 type SharedBroadcast<T> = Arc<RwLock<Option<broadcast::Sender<T>>>>;
 
 impl CliAgentRuntimeClient {
-    pub(crate) fn new(runtime: &CliRuntimeContext, workspace_path: Option<PathBuf>) -> Self {
+    /// The runtime's activated workspace record is the only workspace
+    /// identity; its root path is read from that record, never passed in.
+    pub(crate) fn new(runtime: &CliRuntimeContext) -> Self {
+        let mut paths = CliWorkspacePaths::new(Some(runtime.workspace().root_path.clone()));
+        paths.workspace_id = Some(runtime.workspace().id.clone());
+        paths.project_workspace_id = Some(runtime.workspace().id.clone());
+        paths.workspace_kind = Some(runtime.workspace().workspace_kind.clone());
         Self {
             backend: CliAgentRuntimeBackend::Embedded(runtime.agent_runtime().clone()),
             context_reload: Some(Arc::new(runtime.compatibility().clone())),
             approval_policy: Arc::new(RwLock::new(runtime.approval_policy())),
-            workspace_paths: Arc::new(RwLock::new(CliWorkspacePaths::new(workspace_path))),
+            workspace_paths: Arc::new(RwLock::new(paths)),
             session_id: Arc::new(Mutex::new(None)),
             current_turn_id: Arc::new(Mutex::new(None)),
             shared_agent_events: None,
@@ -390,7 +419,14 @@ impl CliAgentRuntimeClient {
         }
     }
 
-    pub(crate) fn new_shared(client: RuntimeIpcClient, workspace_path: Option<PathBuf>) -> Self {
+    pub(crate) fn new_shared(
+        client: RuntimeIpcClient,
+        workspace: &openbitfun_core::service::workspace::WorkspaceInfo,
+    ) -> Self {
+        let mut paths = CliWorkspacePaths::new(Some(workspace.root_path.clone()));
+        paths.workspace_id = Some(workspace.id.clone());
+        paths.project_workspace_id = Some(workspace.id.clone());
+        paths.workspace_kind = Some(workspace.workspace_kind.clone());
         let (agent_sender, _) = broadcast::channel(256);
         let (permission_sender, _) = broadcast::channel(64);
         let shared_agent_events = Arc::new(RwLock::new(Some(agent_sender.clone())));
@@ -409,7 +445,7 @@ impl CliAgentRuntimeClient {
             backend: CliAgentRuntimeBackend::Shared(client),
             context_reload: None,
             approval_policy: Arc::new(RwLock::new(CliApprovalPolicy::Ask)),
-            workspace_paths: Arc::new(RwLock::new(CliWorkspacePaths::new(workspace_path))),
+            workspace_paths: Arc::new(RwLock::new(paths)),
             session_id,
             current_turn_id: Arc::new(Mutex::new(None)),
             shared_agent_events: Some(shared_agent_events),
@@ -422,12 +458,20 @@ impl CliAgentRuntimeClient {
     pub(crate) fn new_embedded_for_test(
         runtime: AgentRuntime,
         workspace_path: Option<PathBuf>,
+        workspace_id: Option<String>,
     ) -> Self {
+        let mut paths = CliWorkspacePaths::new(workspace_path);
+        paths.workspace_id = workspace_id.clone();
+        paths.project_workspace_id = workspace_id;
+        paths.workspace_kind = paths
+            .workspace_id
+            .is_some()
+            .then_some(openbitfun_core::service::workspace::WorkspaceKind::Normal);
         Self {
             backend: CliAgentRuntimeBackend::Embedded(runtime),
             context_reload: None,
             approval_policy: Arc::new(RwLock::new(CliApprovalPolicy::Ask)),
-            workspace_paths: Arc::new(RwLock::new(CliWorkspacePaths::new(workspace_path))),
+            workspace_paths: Arc::new(RwLock::new(paths)),
             session_id: Arc::new(Mutex::new(None)),
             current_turn_id: Arc::new(Mutex::new(None)),
             shared_agent_events: None,
@@ -453,10 +497,9 @@ impl CliAgentRuntimeClient {
                         error
                     );
                 }
-                let workspace = PathBuf::from(&binding.workspace_path);
                 if let Err(error) =
                     openbitfun_core::external_sources::ensure_external_source_workspace_snapshot(
-                        Some(&workspace),
+                        binding.workspace_id.as_deref(),
                     )
                     .await
                 {
@@ -464,7 +507,8 @@ impl CliAgentRuntimeClient {
                 }
                 runtime
                     .list_agent_modes(AgentModeCatalogQuery {
-                        workspace_root: Some(workspace.to_string_lossy().to_string()),
+                        workspace_id: binding.workspace_id.clone(),
+                        workspace_root: None,
                         include_external: true,
                     })
                     .await
@@ -599,6 +643,10 @@ impl CliAgentRuntimeClient {
             .execution()
     }
 
+    pub(crate) fn workspace_id(&self) -> Option<String> {
+        self.current_workspace_binding().workspace_id
+    }
+
     pub(crate) fn workspace_path_string(&self) -> String {
         self.workspace_path_buf().to_string_lossy().to_string()
     }
@@ -630,20 +678,9 @@ impl CliAgentRuntimeClient {
             .binding()
     }
 
-    pub(crate) fn remote_workspace_scope(&self) -> (Option<String>, Option<String>) {
-        let paths = self
-            .workspace_paths
-            .read()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        (
-            paths.remote_connection_id.clone(),
-            paths.remote_ssh_host.clone(),
-        )
-    }
-
     pub(crate) fn is_remote_workspace(&self) -> bool {
-        let (connection_id, ssh_host) = self.remote_workspace_scope();
-        connection_id.is_some() || ssh_host.is_some()
+        self.current_workspace_binding().workspace_kind
+            == Some(openbitfun_core::service::workspace::WorkspaceKind::Remote)
     }
 
     fn execution_target(&self) -> Option<SessionExecutionTarget> {
@@ -667,10 +704,11 @@ impl CliAgentRuntimeClient {
 
     async fn list_sessions_in_workspace(
         &self,
-        workspace_path: &Path,
+        workspace_id: &str,
     ) -> Result<Vec<AgentSessionSummary>> {
         let request = AgentSessionListRequest {
-            workspace_path: workspace_path.to_string_lossy().to_string(),
+            workspace_id: Some(workspace_id.to_owned()),
+            workspace_path: String::new(),
             remote_connection_id: None,
             remote_ssh_host: None,
         };
@@ -680,7 +718,14 @@ impl CliAgentRuntimeClient {
                 .await
                 .map_err(|error| anyhow::anyhow!(error.into_message())),
             CliAgentRuntimeBackend::Shared(client) => match client
-                .request(RuntimeIpcOperation::ListSessions { request })
+                .request(if client.capabilities().workspace_id_references {
+                    RuntimeIpcOperation::ListSessions { request }
+                } else {
+                    openbitfun_agent_runtime_ipc::legacy_workspace_operation(
+                        RuntimeIpcOperation::ListSessions { request },
+                        &self.project_workspace_path_buf().to_string_lossy(),
+                    )
+                })
                 .await?
             {
                 RuntimeIpcOperationResult::Sessions { sessions } => Ok(sessions),
@@ -690,8 +735,11 @@ impl CliAgentRuntimeClient {
     }
 
     pub(crate) async fn list_sessions(&self) -> Result<Vec<AgentSessionSummary>> {
-        let workspace_path = self.current_workspace_path();
-        self.list_sessions_in_workspace(&workspace_path).await
+        let id = self
+            .current_workspace_binding()
+            .project_workspace_id
+            .ok_or_else(|| anyhow::anyhow!("Project workspace ID is unavailable"))?;
+        self.list_sessions_in_workspace(&id).await
     }
 
     pub(crate) async fn session_lineage(
@@ -699,6 +747,12 @@ impl CliAgentRuntimeClient {
         root_session_id: &str,
     ) -> Result<Option<AgentSessionLineageSnapshot>> {
         let request = AgentSessionLineageRequest {
+            workspace_id: self
+                .workspace_paths
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .workspace_id
+                .clone(),
             workspace_path: self.current_workspace_path().to_string_lossy().into_owned(),
             anchor_session_id: root_session_id.to_string(),
             remote_connection_id: None,
@@ -726,6 +780,7 @@ impl CliAgentRuntimeClient {
         required_settled_turn_ids: &[String],
     ) -> std::result::Result<AgentSessionLineageInspection, SessionOperationError> {
         let request = AgentSessionLineageTranscriptRequest {
+            workspace_id: self.workspace_id(),
             workspace_path: self.current_workspace_path().to_string_lossy().into_owned(),
             root_session_id: root_session_id.to_string(),
             session_id: session_id.to_string(),
@@ -760,6 +815,7 @@ impl CliAgentRuntimeClient {
         expected_active_turn_id: &str,
     ) -> Result<openbitfun_agent_runtime::sdk::AgentTurnCancellationResult> {
         let request = AgentSessionLineageCancellationRequest {
+            workspace_id: self.workspace_id(),
             workspace_path: self.current_workspace_path().to_string_lossy().into_owned(),
             root_session_id: root_session_id.to_string(),
             session_id: session_id.to_string(),
@@ -797,7 +853,7 @@ impl CliAgentRuntimeClient {
         tracing::info!("Restoring session: {}", session_id);
 
         let project_workspace = self.current_workspace_path();
-        let sessions = self.list_sessions_in_workspace(&project_workspace).await?;
+        let sessions = self.list_sessions().await?;
         let previous_summary =
             validated_session_summary(&sessions, session_id, &project_workspace)?;
 
@@ -806,6 +862,7 @@ impl CliAgentRuntimeClient {
                 CliAgentRuntimeBackend::Embedded(runtime) => {
                     let restored = runtime
                         .restore_session(AgentSessionRestoreRequest {
+                            workspace_id: self.workspace_id(),
                             workspace_path: project_workspace.to_string_lossy().to_string(),
                             session_id: session_id.to_string(),
                             include_internal: false,
@@ -842,11 +899,22 @@ impl CliAgentRuntimeClient {
                     (restored.session, transcript, restored_turn_id, None, None)
                 }
                 CliAgentRuntimeBackend::Shared(client) => match client
-                    .request(RuntimeIpcOperation::RestoreSession {
-                        request: RuntimeSessionRestoreRequest {
-                            workspace_path: project_workspace.to_string_lossy().to_string(),
-                            session_id: session_id.to_string(),
-                        },
+                    .request({
+                        let operation = RuntimeIpcOperation::RestoreSession {
+                            request: RuntimeSessionRestoreRequest {
+                                workspace_id: self.workspace_id(),
+                                workspace_path: String::new(),
+                                session_id: session_id.to_string(),
+                            },
+                        };
+                        if client.capabilities().workspace_id_references {
+                            operation
+                        } else {
+                            openbitfun_agent_runtime_ipc::legacy_workspace_operation(
+                                operation,
+                                &project_workspace.to_string_lossy(),
+                            )
+                        }
                     })
                     .await
                     .map_err(shared_restore_error)?
@@ -882,11 +950,11 @@ impl CliAgentRuntimeClient {
             };
 
         let binding = if let Some(binding) = shared_workspace_binding {
+            let binding = upgrade_shared_workspace_binding(binding).await?;
             self.set_workspace_binding(&binding);
             binding
         } else {
-            self.resolve_session_workspace_binding(session_id, &project_workspace)
-                .await?
+            self.resolve_session_workspace_binding(session_id).await?
         };
         self.ensure_embedded_plugin_workspace_ready(&binding)
             .await?;
@@ -916,9 +984,7 @@ impl CliAgentRuntimeClient {
     async fn resolve_session_workspace_binding(
         &self,
         session_id: &str,
-        fallback_project_workspace: &Path,
     ) -> Result<AgentSessionWorkspaceBinding> {
-        let fallback_project = fallback_project_workspace.to_string_lossy().to_string();
         let resolved = match &self.backend {
             CliAgentRuntimeBackend::Embedded(runtime) => runtime
                 .resolve_session_workspace_binding(AgentSessionWorkspaceRequest {
@@ -928,14 +994,9 @@ impl CliAgentRuntimeClient {
                 .map_err(|error| anyhow::anyhow!(error.into_message()))?,
             CliAgentRuntimeBackend::Shared(_) => None,
         };
-        let binding = resolved.unwrap_or_else(|| AgentSessionWorkspaceBinding {
-            workspace_id: None,
-            workspace_path: fallback_project.clone(),
-            project_workspace_path: Some(fallback_project.clone()),
-            execution_target: Some(SessionExecutionTarget::local(fallback_project)),
-            remote_connection_id: None,
-            remote_ssh_host: None,
-        });
+        let binding = resolved.ok_or_else(|| {
+            anyhow::anyhow!("Session {session_id} has no resolved workspace binding")
+        })?;
 
         self.set_workspace_binding(&binding);
         Ok(binding)
@@ -955,9 +1016,7 @@ impl CliAgentRuntimeClient {
         if self.is_shared() {
             return Err(anyhow::anyhow!("Session {session_id} is not attached"));
         }
-        let project_workspace = self.project_workspace_path_buf();
-        self.resolve_session_workspace_binding(session_id, &project_workspace)
-            .await
+        self.resolve_session_workspace_binding(session_id).await
     }
 
     pub(crate) async fn reload_context(&self, request: AgentContextReloadRequest) -> Result<()> {
@@ -999,10 +1058,7 @@ impl CliAgentRuntimeClient {
         }
         // Session creation holds session_id until activation has completed.
         // Resolve directly instead of re-locking that non-reentrant mutex.
-        let project_workspace = self.project_workspace_path_buf();
-        let binding = self
-            .resolve_session_workspace_binding(session_id, &project_workspace)
-            .await?;
+        let binding = self.resolve_session_workspace_binding(session_id).await?;
         self.ensure_embedded_plugin_workspace_ready(&binding).await
     }
 
@@ -1013,6 +1069,7 @@ impl CliAgentRuntimeClient {
         match &self.backend {
             CliAgentRuntimeBackend::Embedded(runtime) => runtime
                 .delete_session(AgentSessionDeleteRequest {
+                    workspace_id: self.workspace_id(),
                     workspace_path: self.project_workspace_path_string(),
                     session_id: session_id.to_string(),
                     remote_connection_id: None,
@@ -1065,6 +1122,7 @@ impl CliAgentRuntimeClient {
         match &self.backend {
             CliAgentRuntimeBackend::Embedded(runtime) => {
                 let request = AgentSessionRenameRequest {
+                    workspace_id: self.workspace_id(),
                     workspace_path: self.project_workspace_path_string(),
                     session_id: session_id.to_string(),
                     session_name: session_name.to_string(),
@@ -1133,7 +1191,8 @@ impl CliAgentRuntimeClient {
     ) -> Result<AgentSessionForkResult> {
         self.embedded_runtime("forking sessions")?
             .fork_session(AgentSessionForkRequest {
-                workspace_path: self.project_workspace_path_string(),
+                workspace_id: self.workspace_id(),
+                workspace_path: String::new(),
                 source_session_id: source_session_id.to_string(),
                 remote_connection_id: None,
                 remote_ssh_host: None,
@@ -1158,7 +1217,8 @@ impl CliAgentRuntimeClient {
                     Some(source_turn_id) => {
                         runtime
                             .fork_session_before_turn(AgentSessionForkBeforeTurnRequest {
-                                workspace_path: workspace_path.clone(),
+                                workspace_id: self.workspace_id(),
+                                workspace_path: String::new(),
                                 source_session_id,
                                 source_turn_id: source_turn_id.to_string(),
                                 remote_connection_id: None,
@@ -1169,7 +1229,8 @@ impl CliAgentRuntimeClient {
                     None => {
                         runtime
                             .fork_session(AgentSessionForkRequest {
-                                workspace_path: workspace_path.clone(),
+                                workspace_id: self.workspace_id(),
+                                workspace_path: String::new(),
                                 source_session_id,
                                 remote_connection_id: None,
                                 remote_ssh_host: None,
@@ -1180,6 +1241,7 @@ impl CliAgentRuntimeClient {
                 .map_err(|error| anyhow::anyhow!(error.into_message()))?;
                 let restored = runtime
                     .restore_session(AgentSessionRestoreRequest {
+                        workspace_id: self.workspace_id(),
                         workspace_path: workspace_path.clone(),
                         session_id: forked.session_id.clone(),
                         include_internal: false,
@@ -1216,10 +1278,11 @@ impl CliAgentRuntimeClient {
         };
 
         let binding = if let Some(binding) = shared_workspace_binding {
+            let binding = upgrade_shared_workspace_binding(binding).await?;
             self.set_workspace_binding(&binding);
             binding
         } else {
-            self.resolve_session_workspace_binding(&session.session_id, Path::new(&workspace_path))
+            self.resolve_session_workspace_binding(&session.session_id)
                 .await?
         };
         self.ensure_embedded_plugin_workspace_ready(&binding)
@@ -1239,6 +1302,7 @@ impl CliAgentRuntimeClient {
     ) -> Result<AgentSessionRevertResult> {
         let session_id = self.require_session_id().await?;
         let request = AgentSessionRevertRequest {
+            workspace_id: self.workspace_id(),
             workspace_path: self.project_workspace_path_string(),
             session_id: session_id.clone(),
             remote_connection_id: None,
@@ -1374,7 +1438,8 @@ impl CliAgentRuntimeClient {
         let project_workspace = self.project_workspace_path_buf();
         if let Ok(sessions) = runtime
             .list_sessions(AgentSessionListRequest {
-                workspace_path: project_workspace.to_string_lossy().to_string(),
+                workspace_id: self.current_workspace_binding().project_workspace_id,
+                workspace_path: String::new(),
                 remote_connection_id: None,
                 remote_ssh_host: None,
             })
@@ -1396,7 +1461,7 @@ impl CliAgentRuntimeClient {
                     workspace_path: Some(workspace.to_string_lossy().to_string()),
                     project_workspace_path: Some(project_workspace.to_string_lossy().to_string()),
                     execution_target: self.execution_target(),
-                    workspace_id: None,
+                    workspace_id: self.workspace_id(),
                     remote_connection_id: None,
                     remote_ssh_host: None,
                     model_id: None,
@@ -1416,6 +1481,7 @@ impl CliAgentRuntimeClient {
         let project_workspace = self.project_workspace_path_buf();
         match runtime
             .restore_session(AgentSessionRestoreRequest {
+                workspace_id: self.workspace_id(),
                 workspace_path: project_workspace.to_string_lossy().to_string(),
                 session_id: session_id.to_string(),
                 include_internal: false,
@@ -1425,9 +1491,7 @@ impl CliAgentRuntimeClient {
             .await
         {
             Ok(_) => {
-                let binding = self
-                    .resolve_session_workspace_binding(session_id, &project_workspace)
-                    .await?;
+                let binding = self.resolve_session_workspace_binding(session_id).await?;
                 self.ensure_embedded_plugin_workspace_ready(&binding)
                     .await?;
                 tracing::info!("Backend session restored: {}", session_id);
@@ -1470,7 +1534,7 @@ impl CliAgentRuntimeClient {
                     workspace_path: Some(workspace_path),
                     project_workspace_path: Some(project_workspace_path),
                     execution_target: self.execution_target(),
-                    workspace_id: None,
+                    workspace_id: self.workspace_id(),
                     remote_connection_id: None,
                     remote_ssh_host: None,
                     model_id: None,
@@ -1515,7 +1579,7 @@ impl CliAgentRuntimeClient {
             workspace_path: Some(self.workspace_path_string()),
             project_workspace_path: None,
             execution_target: None,
-            workspace_id: None,
+            workspace_id: self.workspace_id(),
             remote_connection_id: None,
             remote_ssh_host: None,
             model_id,
@@ -1684,9 +1748,11 @@ impl CliAgentRuntimeClient {
             turn_id: Some(turn_id.clone()),
             execution,
             agent_type: agent_type.to_string(),
-            // Dialog submission uses this path to locate persisted session
-            // state. Execution still comes from the session's resolved binding.
+            // Dialog submission locates persisted session state through the
+            // owning project workspace ID; the path is only its IO projection.
+            // Execution still comes from the session's resolved binding.
             workspace_path: Some(self.project_workspace_path_string()),
+            workspace_id: self.current_workspace_binding().project_workspace_id,
             remote_connection_id: None,
             remote_ssh_host: None,
             policy: DialogSubmissionPolicy::for_source(AgentSubmissionSource::Cli),
@@ -1963,7 +2029,7 @@ impl CliAgentRuntimeClient {
             workspace_path: Some(project_workspace_path.clone()),
             project_workspace_path: Some(project_workspace_path.clone()),
             execution_target: Some(SessionExecutionTarget::local(project_workspace_path)),
-            workspace_id: None,
+            workspace_id: self.workspace_id(),
             remote_connection_id: None,
             remote_ssh_host: None,
             model_id: None,
@@ -2384,6 +2450,8 @@ mod tests {
     fn workspace_paths_keep_project_and_execution_roots_separate() {
         let mut paths = CliWorkspacePaths::new(Some("/project".into()));
         let binding = AgentSessionWorkspaceBinding {
+            workspace_kind: Some(openbitfun_core::service::workspace::WorkspaceKind::Normal),
+            project_workspace_id: Some("project-1".into()),
             workspace_id: Some("workspace-1".to_string()),
             workspace_path: "/managed-worktree".to_string(),
             project_workspace_path: Some("/project".to_string()),
@@ -2417,6 +2485,7 @@ mod tests {
             Path::new("/project").to_path_buf()
         );
         assert_eq!(paths.execution(), Path::new("/project"));
+        assert_eq!(paths.workspace_id.as_deref(), Some("project-1"));
         assert!(paths
             .execution_target
             .as_ref()
@@ -2427,9 +2496,15 @@ mod tests {
     #[test]
     fn workspace_diff_fails_closed_for_other_worktrees_and_remote_sessions() {
         let mut paths = CliWorkspacePaths::new(Some("/project".into()));
+        assert!(paths.workspace_diff_unavailable_reason().is_some());
+        paths.workspace_id = Some("project-1".into());
+        paths.project_workspace_id = Some("project-1".into());
+        paths.workspace_kind = Some(openbitfun_core::service::workspace::WorkspaceKind::Normal);
         assert_eq!(paths.workspace_diff_unavailable_reason(), None);
 
         paths.apply_binding(&AgentSessionWorkspaceBinding {
+            workspace_kind: Some(openbitfun_core::service::workspace::WorkspaceKind::Normal),
+            project_workspace_id: Some("project-1".into()),
             workspace_id: Some("workspace-1".to_string()),
             workspace_path: "/managed-worktree".to_string(),
             project_workspace_path: Some("/project".to_string()),
@@ -2450,7 +2525,9 @@ mod tests {
             .is_some_and(|reason| reason.contains("different worktree")));
 
         paths.apply_binding(&AgentSessionWorkspaceBinding {
-            workspace_id: None,
+            workspace_kind: Some(openbitfun_core::service::workspace::WorkspaceKind::Remote),
+            project_workspace_id: Some("remote-workspace".into()),
+            workspace_id: Some("remote-workspace".into()),
             workspace_path: "/project".to_string(),
             project_workspace_path: Some("/project".to_string()),
             execution_target: Some(SessionExecutionTarget::local("/project")),
@@ -2866,6 +2943,55 @@ mod dual_backend_behavior_tests {
 
     use super::CliAgentRuntimeClient;
 
+    /// User root of the isolated workspace catalog every test in this binary
+    /// shares. It lives under the process temp directory and is never the
+    /// developer's real data directory.
+    static ISOLATED_USER_ROOT: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
+    /// Install an isolated global workspace service before any fixture creates
+    /// a record. The production code under test resolves the global service,
+    /// so without this the fixtures' temp folders would be persisted into the
+    /// developer's real `workspace_data.json` as opened, current workspaces.
+    async fn ensure_isolated_workspace_catalog() -> PathBuf {
+        use openbitfun_core::service::workspace::{
+            get_global_workspace_service, set_global_workspace_service, WorkspaceService,
+        };
+
+        let user_root = ISOLATED_USER_ROOT
+            .get_or_init(|| {
+                std::env::temp_dir()
+                    .join("openbitfun-cli-runtime-client-tests")
+                    .join(uuid::Uuid::new_v4().simple().to_string())
+                    .join("user-root")
+            })
+            .clone();
+        if get_global_workspace_service().is_none() {
+            let service = WorkspaceService::new_isolated_for_tests(user_root.clone()).await;
+            set_global_workspace_service(Arc::new(service));
+        }
+        let installed = get_global_workspace_service()
+            .expect("global workspace service installed")
+            .path_manager()
+            .user_root_dir()
+            .to_path_buf();
+        assert_eq!(
+            installed, user_root,
+            "CLI runtime client tests must run against an isolated workspace catalog, not the real user data directory"
+        );
+        user_root
+    }
+
+    /// Open the fixture directory as a real local workspace record. The
+    /// embedded client, the fixture runtime, and the shared handler all
+    /// address that workspace by this ID, exactly as production hosts do.
+    async fn open_fixture_workspace(workspace: &Path) -> String {
+        ensure_isolated_workspace_catalog().await;
+        crate::create_cli_local_workspace(workspace)
+            .await
+            .expect("fixture workspace record")
+            .id
+    }
+
     fn fixture_identity() -> RuntimeInstanceIdentity {
         let identity = format!(
             "{}{}",
@@ -2877,6 +3003,7 @@ mod dual_backend_behavior_tests {
     #[derive(Clone)]
     struct FixtureState {
         workspace: PathBuf,
+        workspace_id: String,
         event_queue: Arc<EventQueue>,
         sessions:
             Arc<StdMutex<HashMap<String, openbitfun_agent_runtime::sdk::AgentSessionSummary>>>,
@@ -2886,9 +3013,10 @@ mod dual_backend_behavior_tests {
     }
 
     impl FixtureState {
-        fn new(workspace: PathBuf) -> Self {
+        fn new(workspace: PathBuf, workspace_id: String) -> Self {
             Self {
                 workspace,
+                workspace_id,
                 event_queue: Arc::new(EventQueue::new(EventQueueConfig::default())),
                 sessions: Arc::new(StdMutex::new(HashMap::new())),
                 transcripts: Arc::new(StdMutex::new(HashMap::new())),
@@ -2923,10 +3051,14 @@ mod dual_backend_behavior_tests {
             );
         }
 
+        /// The fixture runtime answers like the production owner: a session's
+        /// binding names its workspace by ID, and the path is a projection.
         fn workspace_binding(&self) -> AgentSessionWorkspaceBinding {
             let workspace = self.workspace.to_string_lossy().into_owned();
             AgentSessionWorkspaceBinding {
-                workspace_id: None,
+                workspace_kind: Some(openbitfun_core::service::workspace::WorkspaceKind::Normal),
+                project_workspace_id: Some(self.workspace_id.clone()),
+                workspace_id: Some(self.workspace_id.clone()),
                 workspace_path: workspace.clone(),
                 project_workspace_path: Some(workspace.clone()),
                 execution_target: Some(SessionExecutionTarget::local(workspace)),
@@ -3291,9 +3423,9 @@ mod dual_backend_behavior_tests {
     }
 
     impl Fixture {
-        fn new(workspace: &Path) -> Self {
+        fn new(workspace: &Path, workspace_id: &str) -> Self {
             let workspace = dunce::canonicalize(workspace).expect("canonical workspace");
-            let state = FixtureState::new(workspace.clone());
+            let state = FixtureState::new(workspace.clone(), workspace_id.to_string());
             let queue = state.event_queue.clone();
             let event_source = AgentEventSource::new(queue.clone());
             let store = Arc::new(MemoryPermissionStore::default());
@@ -3342,6 +3474,7 @@ mod dual_backend_behavior_tests {
             CliAgentRuntimeClient::new_embedded_for_test(
                 self.runtime.clone(),
                 Some(self.workspace.clone()),
+                Some(self.state.workspace_id.clone()),
             )
         }
     }
@@ -3350,9 +3483,11 @@ mod dual_backend_behavior_tests {
     fn embedded_client_preserves_managed_workspace_binding() {
         let root = tempfile::tempdir().expect("workspace root");
         let workspace = dunce::canonicalize(root.path()).expect("canonical workspace");
-        let fixture = Fixture::new(&workspace);
+        let fixture = Fixture::new(&workspace, "workspace-1");
         let client = fixture.embedded_client();
         let binding = AgentSessionWorkspaceBinding {
+            workspace_kind: None,
+            project_workspace_id: None,
             workspace_id: Some("workspace-1".to_string()),
             workspace_path: workspace.join("managed-worktree").display().to_string(),
             project_workspace_path: Some(workspace.display().to_string()),
@@ -3385,8 +3520,12 @@ mod dual_backend_behavior_tests {
         let identity = fixture_identity();
 
         let handler = Arc::new(
-            SharedRuntimeHandler::build_for_test(fixture.runtime.clone(), &fixture.workspace)
-                .expect("shared runtime handler"),
+            SharedRuntimeHandler::build_for_test(
+                fixture.runtime.clone(),
+                &fixture.workspace,
+                &fixture.state.workspace_id,
+            )
+            .expect("shared runtime handler"),
         );
         let server = RuntimeIpcServer::bind_with_handler(
             root.path(),
@@ -3427,9 +3566,15 @@ mod dual_backend_behavior_tests {
         tokio::task::JoinHandle<()>,
     ) {
         let (root, client, server_task) = shared_backend(fixture).await;
+        ensure_isolated_workspace_catalog().await;
         (
             root,
-            CliAgentRuntimeClient::new_shared(client, Some(fixture.workspace.clone())),
+            CliAgentRuntimeClient::new_shared(
+                client,
+                &crate::create_cli_local_workspace(&fixture.workspace)
+                    .await
+                    .unwrap(),
+            ),
             server_task,
         )
     }
@@ -3638,8 +3783,9 @@ mod dual_backend_behavior_tests {
         };
         let root = tempfile::tempdir().unwrap();
         let workspace = dunce::canonicalize(root.path()).unwrap();
+        let workspace_id = open_fixture_workspace(&workspace).await;
         for shared in [false, true] {
-            let fixture = Fixture::new(&workspace);
+            let fixture = Fixture::new(&workspace, &workspace_id);
             let shared_backend = if shared {
                 Some(shared_client(&fixture).await)
             } else {
@@ -3685,12 +3831,13 @@ mod dual_backend_behavior_tests {
     async fn embedded_and_shared_clients_are_behaviorally_equivalent() {
         let root = tempfile::tempdir().expect("workspace root");
         let workspace = dunce::canonicalize(root.path()).expect("canonical workspace");
+        let workspace_id = open_fixture_workspace(&workspace).await;
 
-        let embedded_fixture = Fixture::new(&workspace);
+        let embedded_fixture = Fixture::new(&workspace, &workspace_id);
         let embedded_client = embedded_fixture.embedded_client();
         let embedded = observe_backend(&embedded_client, &embedded_fixture).await;
 
-        let shared_fixture = Fixture::new(&workspace);
+        let shared_fixture = Fixture::new(&workspace, &workspace_id);
         let (_root, shared_client, _server_task) = shared_client(&shared_fixture).await;
         let shared = observe_backend(&shared_client, &shared_fixture).await;
 
@@ -3723,9 +3870,10 @@ mod dual_backend_behavior_tests {
     async fn embedded_and_shared_clients_preserve_outcome_unknown() {
         let root = tempfile::tempdir().expect("workspace root");
         let workspace = dunce::canonicalize(root.path()).expect("canonical workspace");
+        let workspace_id = open_fixture_workspace(&workspace).await;
 
         for shared in [false, true] {
-            let fixture = Fixture::new(&workspace);
+            let fixture = Fixture::new(&workspace, &workspace_id);
             let (_root, client, _server_task);
             if shared {
                 let tuple = shared_client(&fixture).await;
@@ -3772,7 +3920,8 @@ mod dual_backend_behavior_tests {
     async fn shared_handler_rejects_remote_lineage_scope() {
         let root = tempfile::tempdir().expect("workspace root");
         let workspace = dunce::canonicalize(root.path()).expect("canonical workspace");
-        let fixture = Fixture::new(&workspace);
+        let workspace_id = open_fixture_workspace(&workspace).await;
+        let fixture = Fixture::new(&workspace, &workspace_id);
         let (_root, client, _server_task) = shared_backend(&fixture).await;
 
         let create_request = AgentSessionCreateRequest {
@@ -3803,6 +3952,7 @@ mod dual_backend_behavior_tests {
         let response = client
             .request(RuntimeIpcOperation::GetSessionLineage {
                 request: openbitfun_agent_runtime::sdk::AgentSessionLineageRequest {
+                    workspace_id: None,
                     workspace_path: fixture.workspace.to_string_lossy().into_owned(),
                     anchor_session_id: session.session_id,
                     remote_connection_id: Some("remote-connection".to_string()),
@@ -3821,7 +3971,8 @@ mod dual_backend_behavior_tests {
     async fn shared_disconnect_projects_system_error_event() {
         let root = tempfile::tempdir().expect("workspace root");
         let workspace = dunce::canonicalize(root.path()).expect("canonical workspace");
-        let fixture = Fixture::new(&workspace);
+        let workspace_id = open_fixture_workspace(&workspace).await;
+        let fixture = Fixture::new(&workspace, &workspace_id);
         let (_root, client, server_task) = shared_client(&fixture).await;
         let mut events = client
             .subscribe_events()

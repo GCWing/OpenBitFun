@@ -1,3 +1,4 @@
+import { getActiveSurfaceId, getActiveSurfaceScope, type SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 import { workspaceAPI } from '@/infrastructure/api';
 import type { ExplorerNodeDto } from '@/infrastructure/api/service-api/tauri-commands';
@@ -72,6 +73,8 @@ function normalizeForCompare(path: string): string {
 }
 
 interface BackendWatchRef {
+  scope: SurfaceScope;
+  workspaceId: string;
   count: number;
   rootPath: string;
   recursiveCount: number;
@@ -93,8 +96,8 @@ function normalizeForWatchKey(path: string): string {
   return isWindowsLike ? normalized.toLowerCase() : normalized;
 }
 
-function toBackendWatchKey(path: string): string {
-  return normalizeForWatchKey(path);
+function toBackendWatchKey(workspaceId: string, path: string): string {
+  return JSON.stringify([getActiveSurfaceId(), workspaceId, normalizeForWatchKey(path)]);
 }
 
 function diagnosticWatchKey(path: string): string {
@@ -153,6 +156,10 @@ function requestBackendWatchSync(key: string, ref: BackendWatchRef): void {
           return;
         }
 
+        if (!ref.scope.isCurrent()) {
+          backendWatchRefs.delete(key);
+          return;
+        }
         const desiredRecursive = desiredBackendRecursive(ref);
         if (desiredRecursive === ref.backendRecursive) {
           if (desiredRecursive === null) {
@@ -162,7 +169,7 @@ function requestBackendWatchSync(key: string, ref: BackendWatchRef): void {
         }
 
         if (desiredRecursive === null) {
-          await workspaceAPI.stopFileWatch(ref.rootPath);
+          await workspaceAPI.stopFileWatch(ref.workspaceId, ref.rootPath);
           ref.backendRecursive = null;
           if (ref.count <= 0) {
             backendWatchRefs.delete(key);
@@ -170,7 +177,7 @@ function requestBackendWatchSync(key: string, ref: BackendWatchRef): void {
           continue;
         }
 
-        await workspaceAPI.startFileWatch(ref.rootPath, desiredRecursive);
+        await workspaceAPI.startFileWatch(ref.workspaceId, ref.rootPath, desiredRecursive);
         ref.backendRecursive = desiredRecursive;
       }
     } catch (error) {
@@ -189,11 +196,14 @@ function requestBackendWatchSync(key: string, ref: BackendWatchRef): void {
   })();
 }
 
-function retainBackendWatch(rootPath: string, recursive: boolean): BackendWatchLease {
-  const key = toBackendWatchKey(rootPath);
+function retainBackendWatch(workspaceId: string, rootPath: string, recursive: boolean): BackendWatchLease {
+  const key = toBackendWatchKey(workspaceId, rootPath);
   let ref = backendWatchRefs.get(key);
+  if (ref && !ref.scope.isCurrent()) ref = undefined;
   if (!ref) {
     ref = {
+      scope: getActiveSurfaceScope(),
+      workspaceId,
       count: 0,
       rootPath,
       recursiveCount: 0,
@@ -244,7 +254,7 @@ function mapEventKind(kind: string): FileSystemChangeEvent['type'] {
 
 export class TauriExplorerFileSystemProvider implements ExplorerFileSystemProvider {
   async getChildren(request: ExplorerChildrenRequest): Promise<FileSystemNode[]> {
-    const rawChildren = await workspaceAPI.explorerGetChildren(request.path, request.remoteConnectionId);
+    const rawChildren = await workspaceAPI.explorerGetChildren(request.workspaceId ?? '', request.path);
     return sortNodes(
       rawChildren.map((node) => transformRawNode(node)),
       request.options?.sortBy,
@@ -261,7 +271,8 @@ export class TauriExplorerFileSystemProvider implements ExplorerFileSystemProvid
     let active = true;
     const recursive = options.recursive ?? true;
     const normalizedRoot = normalizeForCompare(rootPath);
-    const backendWatchLease = retainBackendWatch(rootPath, recursive);
+    if (!options.workspaceId) throw new Error('Workspace ID is required to watch workspace files');
+    const backendWatchLease = retainBackendWatch(options.workspaceId, rootPath, recursive);
 
     const start = async () => {
       try {

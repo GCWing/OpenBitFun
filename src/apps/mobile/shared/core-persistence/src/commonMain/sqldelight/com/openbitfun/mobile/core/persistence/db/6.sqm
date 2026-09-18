@@ -1,0 +1,33 @@
+-- v6 -> v7: workspace identity for cached sessions and workspaces.
+--
+-- Cached sessions remember which workspace owns them. The identity path is a
+-- separate nullable column so an explicit local identity (no ID, no connection)
+-- can still be told apart from a pre-identity row; all four stay NULL for rows
+-- written by older builds, which keep loading as legacy path-only records.
+ALTER TABLE remote_session_list ADD COLUMN workspace_identity_path TEXT;
+ALTER TABLE remote_session_list ADD COLUMN workspace_id TEXT;
+ALTER TABLE remote_session_list ADD COLUMN remote_connection_id TEXT;
+ALTER TABLE remote_session_list ADD COLUMN remote_ssh_host TEXT;
+
+-- The workspace catalog was keyed by (device_key, path). Two workspaces on one
+-- host may share a path (a local folder and an SSH folder, two SSH hosts), so
+-- the row identity becomes the workspace ID or, for rows without one, the
+-- legacy (connection, ssh host, path) triple. SQLite cannot drop a primary key
+-- in place, so the table is rebuilt; every existing row is carried over with
+-- NULL identity columns and its original order.
+CREATE TABLE remote_workspace_list_v7 (
+    device_key TEXT NOT NULL,
+    path TEXT NOT NULL,
+    name TEXT NOT NULL,
+    last_opened TEXT NOT NULL,
+    workspace_kind TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    workspace_id TEXT,
+    remote_connection_id TEXT,
+    remote_ssh_host TEXT
+);
+INSERT INTO remote_workspace_list_v7(device_key, path, name, last_opened, workspace_kind, seq)
+SELECT device_key, path, name, last_opened, workspace_kind, seq FROM remote_workspace_list ORDER BY device_key, seq;
+DROP TABLE remote_workspace_list;
+ALTER TABLE remote_workspace_list_v7 RENAME TO remote_workspace_list;
+CREATE INDEX remote_workspace_list_device_seq_index ON remote_workspace_list(device_key, seq);

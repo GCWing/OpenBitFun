@@ -1,6 +1,7 @@
 package com.openbitfun.mobile.core.feature.session
 
 import com.openbitfun.mobile.core.domain.ChatTimelineState
+import com.openbitfun.mobile.core.domain.LegacyWorkspaceCompatibility
 import com.openbitfun.mobile.core.domain.RemoteSession
 import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
 import com.openbitfun.mobile.core.domain.SessionAgentTypes
@@ -99,6 +100,16 @@ public enum class CreateSessionOperationFailure {
     DEVICE_MISMATCH,
     PROTOCOL,
     CANCELLED,
+
+    /**
+     * The request named a workspace by ID but the connected host does not
+     * advertise `workspace_id_references_v1`. The ID is kept and nothing is sent:
+     * downgrading to the path would let the host pick a same-path workspace.
+     */
+    WORKSPACE_ID_UNSUPPORTED,
+
+    /** The request named a workspace ID this host does not serve. */
+    WORKSPACE_ID_UNKNOWN,
 }
 
 /** Independent backward-page request state; never blocks live generation. */
@@ -151,6 +162,16 @@ public enum class RemoteSessionFailureReason {
 
     /** The relay is throttling this client. */
     RATE_LIMITED,
+
+    /**
+     * The command named a workspace by ID but the connected host does not
+     * advertise `workspace_id_references_v1`. Nothing was sent; the path is
+     * never substituted for an ID the client knows.
+     */
+    WORKSPACE_ID_UNSUPPORTED,
+
+    /** The host does not serve the workspace ID the command named. */
+    WORKSPACE_ID_UNKNOWN,
 }
 
 public enum class WorkspaceSessionDirectoryStatus {
@@ -158,6 +179,13 @@ public enum class WorkspaceSessionDirectoryStatus {
     LOADING,
     READY,
     FAILED,
+
+    /**
+     * The branch is keyed by a workspace ID the connected host cannot address
+     * (it lacks `workspace_id_references_v1` or no longer serves the ID). The
+     * cached sessions stay visible; loading by path is not attempted.
+     */
+    UNSUPPORTED,
 }
 
 /** One independently loaded workspace branch in a live remote session store. */
@@ -167,11 +195,15 @@ public data class WorkspaceSessionDirectoryEntry public constructor(
     public val sessions: List<RemoteSession>,
     public val remoteConnectionId: String?,
     public val remoteSshHost: String?,
+    public val workspaceId: String?,
 ) {
+    public constructor(path: String, status: WorkspaceSessionDirectoryStatus, sessions: List<RemoteSession>, remoteConnectionId: String?, remoteSshHost: String?) :
+        this(path, status, sessions, remoteConnectionId, remoteSshHost, null)
+
     public constructor(path: String, status: WorkspaceSessionDirectoryStatus, sessions: List<RemoteSession>) :
         this(path, status, sessions, null, null)
 
-    public val identity: RemoteWorkspaceIdentity get() = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost)
+    public val identity: RemoteWorkspaceIdentity get() = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost, workspaceId)
 }
 
 public data class WorkspaceSessionDirectoryUiState public constructor(
@@ -179,10 +211,23 @@ public data class WorkspaceSessionDirectoryUiState public constructor(
 ) {
     public fun workspace(path: String): WorkspaceSessionDirectoryEntry? = workspace(path, null, null)
 
-    public fun workspace(path: String, remoteConnectionId: String?, remoteSshHost: String?): WorkspaceSessionDirectoryEntry? {
-        val identity = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost)
-        return workspaces.firstOrNull { it.identity.matches(identity) }
+    /**
+     * Legacy lookup: the reference has no ID, so it is matched through
+     * [LegacyWorkspaceCompatibility] against the loaded branches. Ambiguous
+     * paths resolve to nothing rather than to the first branch.
+     */
+    public fun workspace(path: String, remoteConnectionId: String?, remoteSshHost: String?): WorkspaceSessionDirectoryEntry? =
+        workspace(RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost))
+
+    /** ID-first lookup: an identity with a workspace ID matches on the ID alone. */
+    public fun workspace(identity: RemoteWorkspaceIdentity): WorkspaceSessionDirectoryEntry? {
+        identity.workspaceId?.let { id -> return workspaces.firstOrNull { it.workspaceId == id } }
+        val resolved = LegacyWorkspaceCompatibility.resolve(identity, workspaces.map { it.identity }) ?: return null
+        return workspaces.firstOrNull { it.identity.matches(resolved) }
     }
+
+    public fun workspaceById(workspaceId: String): WorkspaceSessionDirectoryEntry? =
+        workspaces.firstOrNull { it.workspaceId == workspaceId }
 }
 
 
@@ -362,11 +407,18 @@ public sealed interface RemoteSessionIntent {
     public data object LoadOlderMessages : RemoteSessionIntent
 
     /** Load one sidebar workspace branch without changing the desktop's active workspace. */
+    /**
+     * Load one workspace's sessions for the directory tree. With a [workspaceId]
+     * only the ID is sent; the legacy fields are used only for rows that never
+     * had an ID.
+     */
     public data class LoadWorkspaceSessions public constructor(
         public val path: String,
         public val remoteConnectionId: String?,
         public val remoteSshHost: String?,
+        public val workspaceId: String?,
     ) : RemoteSessionIntent {
+        public constructor(path: String, remoteConnectionId: String?, remoteSshHost: String?) : this(path, remoteConnectionId, remoteSshHost, null)
         public constructor(path: String) : this(path, null, null)
     }
 
@@ -374,7 +426,9 @@ public sealed interface RemoteSessionIntent {
         public val path: String,
         public val remoteConnectionId: String?,
         public val remoteSshHost: String?,
+        public val workspaceId: String?,
     ) : RemoteSessionIntent {
+        public constructor(path: String, remoteConnectionId: String?, remoteSshHost: String?) : this(path, remoteConnectionId, remoteSshHost, null)
         public constructor(path: String) : this(path, null, null)
     }
 
@@ -405,7 +459,14 @@ public sealed interface RemoteSessionIntent {
         public val workspacePath: String?,
         public val remoteConnectionId: String?,
         public val remoteSshHost: String?,
+        /**
+         * Target workspace by ID. When set, `create_session` carries only the ID;
+         * [workspacePath] then only labels the in-flight operation. Null keeps
+         * the legacy path projection for rows that never had an ID.
+         */
+        public val workspaceId: String?,
     ) : RemoteSessionIntent {
+        public constructor(agentType: String, title: String, instruction: String, modelId: String?, workspacePath: String?, remoteConnectionId: String?, remoteSshHost: String?) : this(agentType, title, instruction, modelId, workspacePath, remoteConnectionId, remoteSshHost, null)
         public constructor(agentType: String, title: String, instruction: String, modelId: String?, workspacePath: String?, remoteConnectionId: String?) : this(agentType, title, instruction, modelId, workspacePath, remoteConnectionId, null)
         public constructor(agentType: String, title: String, instruction: String, modelId: String?, workspacePath: String?) : this(agentType, title, instruction, modelId, workspacePath, null)
         public constructor(
@@ -428,7 +489,9 @@ public sealed interface RemoteSessionIntent {
         public val workspacePath: String?,
         public val remoteConnectionId: String?,
         public val remoteSshHost: String?,
+        public val workspaceId: String?,
     ) : RemoteSessionIntent {
+        public constructor(requestId: String, agentType: String, title: String, instruction: String, modelId: String?, workspacePath: String?, remoteConnectionId: String?, remoteSshHost: String?) : this(requestId, agentType, title, instruction, modelId, workspacePath, remoteConnectionId, remoteSshHost, null)
         public constructor(requestId: String, agentType: String, title: String, instruction: String, modelId: String?, workspacePath: String?, remoteConnectionId: String?) : this(requestId, agentType, title, instruction, modelId, workspacePath, remoteConnectionId, null)
         public constructor(requestId: String, agentType: String, title: String, instruction: String, modelId: String?, workspacePath: String?) : this(requestId, agentType, title, instruction, modelId, workspacePath, null)
         public constructor(

@@ -21,9 +21,8 @@ use openbitfun_core::agentic::core::Session;
 use openbitfun_core::agentic::persistence::{SessionBranchResult, SessionMetadataPage};
 use openbitfun_core::agentic::session::SessionViewRestoreTiming;
 use openbitfun_core::product_runtime::{CoreAgentRuntimeCompatibility, CoreProductAgentRuntime};
-use openbitfun_core::service::remote_ssh::workspace_state::{
-    get_effective_session_path, LOCAL_WORKSPACE_SSH_HOST,
-};
+#[cfg(test)]
+use openbitfun_core::service::remote_ssh::workspace_state::get_effective_session_path;
 use openbitfun_core::service::remote_ssh::SSHConnectionManager;
 use openbitfun_core::service::session::{
     DialogTurnData, DialogTurnKind, SessionContextUsage, SessionMetadata, SessionStatus,
@@ -53,6 +52,7 @@ pub enum UiSessionMetadataField {
 
 #[derive(Debug, Clone)]
 pub(crate) struct DesktopSessionScopeRequest {
+    pub workspace_id: Option<String>,
     pub workspace_path: String,
     pub remote_connection_id: Option<String>,
     pub remote_ssh_host: Option<String>,
@@ -158,6 +158,7 @@ fn overlay_live_session_state(restored: &mut Session, live: Option<Session>) {
 
 #[derive(Clone)]
 struct ResolvedDesktopSessionScope {
+    workspace_id: String,
     workspace_path: String,
     effective_storage_path: PathBuf,
     remote_connection_id: Option<String>,
@@ -169,103 +170,62 @@ struct ResolvedDesktopSessionScope {
 #[derive(Clone)]
 struct DesktopSessionScopeResolver {
     workspace_service: Arc<WorkspaceService>,
-    ssh_manager: Arc<RwLock<Option<SSHConnectionManager>>>,
 }
 
 impl DesktopSessionScopeResolver {
-    async fn resolve(&self, request: DesktopSessionScopeRequest) -> ResolvedDesktopSessionScope {
-        let remote_connection_id = normalized_optional(request.remote_connection_id.as_deref());
-        let requested_remote_ssh_host = normalized_remote_ssh_host(
-            remote_connection_id.as_deref(),
-            request.remote_ssh_host.as_deref(),
-        );
-        let registered_remote_ssh_host =
-            if let Some(connection_id) = remote_connection_id.as_deref() {
-                self.workspace_service
-                    .remote_ssh_host_for_remote_workspace(connection_id, &request.workspace_path)
-                    .await
-            } else {
-                None
-            };
-        let remote_binding_verified = remote_connection_id.is_some()
-            && registered_remote_ssh_host
-                .as_deref()
-                .is_some_and(|registered| {
-                    requested_remote_ssh_host
-                        .as_deref()
-                        .is_none_or(|requested| requested.eq_ignore_ascii_case(registered))
-                });
-        let mut saved_remote_ssh_host = None;
-        if requested_remote_ssh_host.is_none() && registered_remote_ssh_host.is_none() {
-            if let Some(connection_id) = remote_connection_id.as_deref() {
-                let manager = self.ssh_manager.read().await.clone();
-                if let Some(manager) = manager {
-                    saved_remote_ssh_host = manager
-                        .get_saved_host_for_connection_id(connection_id)
-                        .await;
-                }
-            }
+    async fn resolve(
+        &self,
+        request: DesktopSessionScopeRequest,
+    ) -> DesktopSessionApplicationResult<ResolvedDesktopSessionScope> {
+        let workspace = if let Some(id) = request.workspace_id.as_deref() {
+            self.workspace_service.require_workspace(id).await
+        } else {
+            // Upgrade-only ingress for existing 1.0.0 clients. Runtime and
+            // persistence below this boundary consume the resolved object.
+            self.workspace_service
+                .resolve_legacy_workspace_reference(
+                    None,
+                    &request.workspace_path,
+                    request.remote_connection_id.as_deref(),
+                    request.remote_ssh_host.as_deref(),
+                )
+                .await
+                .and_then(|record| {
+                    record.ok_or_else(|| OpenBitFunError::service("Workspace ID is unavailable"))
+                })
         }
-        let resolved_remote_ssh_host = choose_remote_ssh_host(
-            requested_remote_ssh_host.as_deref(),
-            registered_remote_ssh_host.as_deref(),
-            saved_remote_ssh_host.as_deref(),
-        );
-        let effective_storage_path = get_effective_session_path(
-            &request.workspace_path,
-            remote_connection_id.as_deref(),
-            resolved_remote_ssh_host.as_deref(),
-        )
-        .await;
-
-        ResolvedDesktopSessionScope {
-            workspace_path: request.workspace_path,
-            effective_storage_path,
+        .map_err(desktop_core_session_error)?;
+        use openbitfun_runtime_ports::SessionStorePort;
+        let storage = openbitfun_core::agentic::session::CoreSessionStorePort::default()
+            .resolve_workspace_storage(&workspace.id)
+            .await
+            .map_err(|error| DesktopSessionApplicationError::Core(error.to_string()))?;
+        let remote =
+            workspace.workspace_kind == openbitfun_core::service::workspace::WorkspaceKind::Remote;
+        let remote_connection_id = if remote {
+            workspace.remote_ssh_connection_id().map(str::to_owned)
+        } else {
+            None
+        };
+        let host = if remote {
+            workspace
+                .metadata
+                .get("sshHost")
+                .and_then(|value| value.as_str())
+                .map(str::to_owned)
+        } else {
+            None
+        };
+        Ok(ResolvedDesktopSessionScope {
+            workspace_id: workspace.id.clone(),
+            workspace_path: workspace.root_path.to_string_lossy().into_owned(),
+            effective_storage_path: storage.effective_storage_path,
             remote_connection_id,
-            requested_remote_ssh_host,
-            resolved_remote_ssh_host,
-            remote_binding_verified,
-        }
+            requested_remote_ssh_host: host.clone(),
+            resolved_remote_ssh_host: host,
+            remote_binding_verified: remote,
+        })
     }
-}
-
-fn normalized_optional(value: Option<&str>) -> Option<String> {
-    value
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(ToOwned::to_owned)
-}
-
-fn normalized_remote_ssh_host(
-    remote_connection_id: Option<&str>,
-    remote_ssh_host: Option<&str>,
-) -> Option<String> {
-    let host = normalized_optional(remote_ssh_host)?;
-    if remote_connection_id.is_none() && is_local_workspace_host(&host) {
-        return None;
-    }
-    Some(host)
-}
-
-fn is_local_workspace_host(host: &str) -> bool {
-    let host = host.to_ascii_lowercase();
-    host == LOCAL_WORKSPACE_SSH_HOST
-        || host.starts_with("localhost:")
-        || host == "127.0.0.1"
-        || host.starts_with("127.0.0.1:")
-        || host == "::1"
-        || host == "[::1]"
-        || host.starts_with("[::1]:")
-}
-
-fn choose_remote_ssh_host(
-    requested: Option<&str>,
-    registered: Option<&str>,
-    saved: Option<&str>,
-) -> Option<String> {
-    normalized_optional(requested)
-        .or_else(|| normalized_optional(registered))
-        .or_else(|| normalized_optional(saved))
 }
 
 #[async_trait]
@@ -288,7 +248,7 @@ impl DesktopSessionApplication {
         scheduler: Arc<DialogScheduler>,
         token_usage_service: Arc<TokenUsageService>,
         workspace_service: Arc<WorkspaceService>,
-        ssh_manager: Arc<RwLock<Option<SSHConnectionManager>>>,
+        _ssh_manager: Arc<RwLock<Option<SSHConnectionManager>>>,
         host_effects: Arc<dyn DesktopSessionHostEffects>,
         session_event_journal: Arc<SessionEventJournal>,
     ) -> Result<Self, String> {
@@ -304,10 +264,7 @@ impl DesktopSessionApplication {
             coordinator,
             agent_runtime,
             compatibility,
-            scope_resolver: DesktopSessionScopeResolver {
-                workspace_service,
-                ssh_manager,
-            },
+            scope_resolver: DesktopSessionScopeResolver { workspace_service },
             host_effects,
         })
     }
@@ -344,7 +301,7 @@ impl DesktopSessionApplication {
     async fn resolved_scope(
         &self,
         request: DesktopSessionScopeRequest,
-    ) -> ResolvedDesktopSessionScope {
+    ) -> DesktopSessionApplicationResult<ResolvedDesktopSessionScope> {
         self.scope_resolver.resolve(request).await
     }
 
@@ -380,16 +337,15 @@ impl DesktopSessionApplication {
         &self,
         request: DesktopSessionScopeRequest,
     ) -> DesktopSessionApplicationResult<()> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)
     }
 
     pub(crate) async fn ensure_configured_plugin_instance(
         &self,
         request: DesktopSessionScopeRequest,
-        project_id: Option<String>,
     ) -> DesktopSessionApplicationResult<()> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         if scope.remote_connection_id.is_some() {
             if !openbitfun_core::plugin_host::configured_plugins_present()
@@ -403,12 +359,9 @@ impl DesktopSessionApplication {
                 scope.workspace_path
             )));
         }
-        let workspace_path = PathBuf::from(&scope.workspace_path);
         openbitfun_core::plugin_host::ensure_configured_plugin_instance(
             crate::PLUGIN_HOST_LAUNCH_POLICY,
-            workspace_path.clone(),
-            workspace_path,
-            project_id,
+            &scope.workspace_id,
         )
         .await
         .map_err(|error| DesktopSessionApplicationError::Core(error.to_string()))
@@ -418,12 +371,19 @@ impl DesktopSessionApplication {
         &self,
         request: DesktopSessionScopeRequest,
     ) -> DesktopSessionApplicationResult<Vec<SessionMetadata>> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         let storage_path = self.storage_path(&scope);
-        self.compatibility
+        let mut records = self
+            .compatibility
             .list_persisted_sessions(&storage_path)
             .await
-            .map_err(|error| DesktopSessionApplicationError::Core(error.to_string()))
+            .map_err(|error| DesktopSessionApplicationError::Core(error.to_string()))?;
+        for record in &mut records {
+            record
+                .workspace_id
+                .get_or_insert_with(|| scope.workspace_id.clone());
+        }
+        Ok(records)
     }
 
     pub(crate) async fn list_persisted_sessions_page(
@@ -433,9 +393,10 @@ impl DesktopSessionApplication {
         limit: usize,
         session_ids: Option<&[String]>,
     ) -> DesktopSessionApplicationResult<SessionMetadataPage> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         let storage_path = self.storage_path(&scope);
-        self.compatibility
+        let mut page = self
+            .compatibility
             .list_persisted_sessions_page_with_activity(
                 &self.agent_runtime,
                 &storage_path,
@@ -444,7 +405,13 @@ impl DesktopSessionApplication {
                 session_ids,
             )
             .await
-            .map_err(|error| DesktopSessionApplicationError::Core(error.to_string()))
+            .map_err(|error| DesktopSessionApplicationError::Core(error.to_string()))?;
+        for record in &mut page.sessions {
+            record
+                .workspace_id
+                .get_or_insert_with(|| scope.workspace_id.clone());
+        }
+        Ok(page)
     }
 
     pub(crate) async fn search_session_content(
@@ -454,7 +421,7 @@ impl DesktopSessionApplication {
         limit: usize,
         include_archived: bool,
     ) -> DesktopSessionApplicationResult<SessionContentSearchResponse> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.compatibility
             .search_persisted_session_content(
                 &self.storage_path(&scope),
@@ -471,9 +438,10 @@ impl DesktopSessionApplication {
         request: DesktopSessionScopeRequest,
         anchor_session_id: &str,
     ) -> DesktopSessionApplicationResult<Option<AgentSessionLineageSnapshot>> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.agent_runtime
             .get_session_lineage(AgentSessionLineageRequest {
+                workspace_id: Some(scope.workspace_id),
                 workspace_path: scope.workspace_path,
                 anchor_session_id: anchor_session_id.to_string(),
                 remote_connection_id: scope.remote_connection_id,
@@ -500,7 +468,7 @@ impl DesktopSessionApplication {
         session_id: &str,
         options: &SessionTranscriptExportOptions,
     ) -> DesktopSessionApplicationResult<SessionTranscriptExport> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         self.compatibility
             .export_persisted_session_transcript(&self.storage_path(&scope), session_id, options)
@@ -514,7 +482,7 @@ impl DesktopSessionApplication {
         session_id: &str,
         limit: Option<usize>,
     ) -> DesktopSessionApplicationResult<Vec<DialogTurnData>> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         let storage_path = self.storage_path(&scope);
         self.compatibility
             .load_persisted_session_turns(&storage_path, session_id, limit)
@@ -527,7 +495,7 @@ impl DesktopSessionApplication {
         scope_request: DesktopSessionScopeRequest,
         mut request: SessionTurnWindowRequest,
     ) -> DesktopSessionApplicationResult<SessionTurnWindowResponse> {
-        let scope = self.resolved_scope(scope_request).await;
+        let scope = self.resolved_scope(scope_request).await?;
         let storage_path = self.storage_path(&scope);
         request.workspace_path = storage_path.clone();
         self.compatibility
@@ -541,7 +509,7 @@ impl DesktopSessionApplication {
         request: DesktopSessionScopeRequest,
         session_id: &str,
     ) -> DesktopSessionApplicationResult<Option<SessionMetadata>> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         let storage_path = self.storage_path(&scope);
         self.compatibility
             .load_persisted_session_metadata(&storage_path, session_id)
@@ -554,7 +522,7 @@ impl DesktopSessionApplication {
         request: DesktopSessionScopeRequest,
         turn: &DialogTurnData,
     ) -> DesktopSessionApplicationResult<()> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         let storage_path = self.storage_path(&scope);
         // An externally projected Session has no Runtime state to restore, and
@@ -594,7 +562,7 @@ impl DesktopSessionApplication {
         request: DesktopSessionScopeRequest,
         session_id: &str,
     ) -> DesktopSessionApplicationResult<()> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         let storage_path = self.storage_path(&scope);
         self.compatibility
@@ -614,7 +582,7 @@ impl DesktopSessionApplication {
                 "At least one session metadata field is required".to_string(),
             ));
         }
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         let storage_path = self.storage_path(&scope);
         let session_id = incoming.session_id.clone();
@@ -633,11 +601,12 @@ impl DesktopSessionApplication {
         session_id: String,
         include_hidden_subagents: bool,
     ) -> DesktopSessionApplicationResult<SessionUsageReport> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         let storage_path = self.storage_path(&scope);
         let mut report = self
             .agent_runtime
             .generate_session_usage(AgentSessionUsageRequest {
+                workspace_id: Some(scope.workspace_id.clone()),
                 session_id,
                 workspace_path: Some(storage_path.to_string_lossy().to_string()),
                 remote_connection_id: scope.remote_connection_id.clone(),
@@ -658,12 +627,13 @@ impl DesktopSessionApplication {
         source_session_id: String,
         source_turn_id: String,
     ) -> DesktopSessionApplicationResult<SessionBranchResult> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         let result = self
             .agent_runtime
             .fork_session_at_turn(AgentSessionForkAtTurnRequest {
-                workspace_path: scope.workspace_path.clone(),
+                workspace_id: Some(scope.workspace_id.clone()),
+                workspace_path: String::new(),
                 source_session_id,
                 source_turn_id,
                 remote_connection_id: scope.remote_connection_id,
@@ -684,10 +654,11 @@ impl DesktopSessionApplication {
         session_id: String,
         archived: bool,
     ) -> DesktopSessionApplicationResult<()> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         self.agent_runtime
             .set_session_archived(AgentSessionArchiveStateRequest {
+                workspace_id: Some(scope.workspace_id.clone()),
                 workspace_path: scope.workspace_path.clone(),
                 session_id,
                 archived,
@@ -703,7 +674,7 @@ impl DesktopSessionApplication {
         request: DesktopSessionScopeRequest,
         session_id: String,
     ) -> DesktopSessionApplicationResult<()> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         delete_session_with_host_effects(
             &self.agent_runtime,
@@ -722,7 +693,7 @@ impl DesktopSessionApplication {
     ) -> DesktopSessionApplicationResult<String> {
         let normalized_title = title.trim().to_string();
         if let Some(request) = request {
-            let scope = self.resolved_scope(request).await;
+            let scope = self.resolved_scope(request).await?;
             self.ensure_runtime_ownership(&scope)?;
             if !self
                 .compatibility
@@ -739,7 +710,8 @@ impl DesktopSessionApplication {
             }
             self.agent_runtime
                 .rename_session(AgentSessionRenameRequest {
-                    workspace_path: scope.workspace_path.clone(),
+                    workspace_id: Some(scope.workspace_id.clone()),
+                    workspace_path: String::new(),
                     session_id: session_id.clone(),
                     session_name: title,
                     remote_connection_id: scope.remote_connection_id,
@@ -780,12 +752,12 @@ impl DesktopSessionApplication {
         {
             return Ok(());
         }
-        if request.workspace_path.trim().is_empty() {
+        if request.workspace_id.is_none() && request.workspace_path.trim().is_empty() {
             return Err(DesktopSessionApplicationError::Validation(
-                "workspace_path is required when the session is not loaded".to_string(),
+                "workspace_id is required when the session is not loaded".to_string(),
             ));
         }
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         let storage_path = self.storage_path(&scope);
         self.compatibility
@@ -800,7 +772,7 @@ impl DesktopSessionApplication {
         session_id: &str,
         include_internal: bool,
     ) -> DesktopSessionApplicationResult<Session> {
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         let storage_path = self.storage_path(&scope);
         self.compatibility
@@ -842,7 +814,7 @@ impl DesktopSessionApplication {
         F: FnOnce(u64) + Send,
     {
         let path_started_at = Instant::now();
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         let storage_path = self.storage_path(&scope);
         let resolve_storage_path_duration_ms =
             path_started_at.elapsed().as_millis().min(u64::MAX as u128) as u64;
@@ -896,7 +868,7 @@ impl DesktopSessionApplication {
         F: FnOnce(u64) + Send,
     {
         let path_started_at = Instant::now();
-        let scope = self.resolved_scope(request).await;
+        let scope = self.resolved_scope(request).await?;
         self.ensure_runtime_ownership(&scope)?;
         let storage_path = self.storage_path(&scope);
         let resolve_storage_path_duration_ms =
@@ -924,6 +896,7 @@ async fn delete_session_with_host_effects(
     host_effects.release_session(&session_id).await;
     agent_runtime
         .delete_session(AgentSessionDeleteRequest {
+            workspace_id: Some(scope.workspace_id.clone()),
             workspace_path: scope.workspace_path.clone(),
             session_id: session_id.clone(),
             remote_connection_id: scope.remote_connection_id,
@@ -1135,6 +1108,7 @@ mod tests {
 
     fn delete_test_scope() -> ResolvedDesktopSessionScope {
         ResolvedDesktopSessionScope {
+            workspace_id: "test-workspace".to_string(),
             workspace_path: "D:/workspace/project".to_string(),
             effective_storage_path: PathBuf::from("D:/managed/project/sessions"),
             remote_connection_id: None,
@@ -1158,55 +1132,6 @@ mod tests {
             }))
             .build()
             .expect("delete test runtime")
-    }
-
-    #[test]
-    fn optional_scope_values_are_trimmed_without_inventing_identity() {
-        assert_eq!(
-            normalized_optional(Some(" host ")),
-            Some("host".to_string())
-        );
-        assert_eq!(normalized_optional(Some("  ")), None);
-        assert_eq!(normalized_optional(None), None);
-    }
-
-    #[test]
-    fn local_host_sentinels_require_a_remote_connection_id() {
-        for host in [
-            "localhost",
-            "LOCALHOST:22",
-            "127.0.0.1",
-            "127.0.0.1:22",
-            "::1",
-            "[::1]:22",
-        ] {
-            assert_eq!(normalized_remote_ssh_host(None, Some(host)), None);
-        }
-
-        assert_eq!(
-            normalized_remote_ssh_host(Some("connection-1"), Some(" localhost ")),
-            Some("localhost".to_string())
-        );
-        assert_eq!(
-            normalized_remote_ssh_host(None, Some(" legacy.example ")),
-            Some("legacy.example".to_string())
-        );
-    }
-
-    #[test]
-    fn remote_host_resolution_preserves_request_registry_and_offline_saved_precedence() {
-        assert_eq!(
-            choose_remote_ssh_host(Some("request-host"), Some("live-host"), Some("saved-host")),
-            Some("request-host".to_string())
-        );
-        assert_eq!(
-            choose_remote_ssh_host(None, Some("live-host"), Some("saved-host")),
-            Some("live-host".to_string())
-        );
-        assert_eq!(
-            choose_remote_ssh_host(None, None, Some(" saved-host ")),
-            Some("saved-host".to_string())
-        );
     }
 
     #[test]
@@ -1281,15 +1206,10 @@ mod tests {
     async fn offline_saved_ssh_host_resolves_to_the_same_remote_session_tree() {
         let connection_id = "offline-saved-host-test";
         let workspace_path = "/srv/offline-project";
-        let saved_host =
-            choose_remote_ssh_host(None, None, Some("saved.example")).expect("saved SSH host");
+        let saved_host = "saved.example";
 
-        let resolved = get_effective_session_path(
-            workspace_path,
-            Some(connection_id),
-            Some(saved_host.as_str()),
-        )
-        .await;
+        let resolved =
+            get_effective_session_path(workspace_path, Some(connection_id), Some(saved_host)).await;
         let unresolved =
             get_effective_session_path(workspace_path, Some(connection_id), None).await;
 

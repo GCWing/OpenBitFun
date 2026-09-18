@@ -49,8 +49,8 @@
     letter-spacing: var(--openbitfun-type-heading-panel-letter-spacing);
   }
 
-  .root .back,
-  .root .close {
+  .header .back,
+  .header .close {
     inline-size: 40px;
     block-size: 40px;
     flex: 0 0 40px;
@@ -58,11 +58,11 @@
     color: inherit;
   }
 
-  .root .back {
+  .header .back {
     background: color-mix(in srgb, currentColor 10%, transparent);
   }
 
-  .root .close {
+  .header .close {
     background: transparent;
     opacity: 0.5;
   }
@@ -76,18 +76,44 @@
   }
 
   .conversation {
-    display: flex;
     flex: 1 1 auto;
-    flex-direction: column;
     min-block-size: 0;
-    gap: calc(var(--openbitfun-space-8) + var(--openbitfun-space-1));
+    min-inline-size: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: var(--openbitfun-space-2) var(--openbitfun-space-6) var(--openbitfun-space-2) var(--openbitfun-space-10);
     color: inherit;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+    overflow-anchor: none;
+    font-size: var(--openbitfun-type-body-lg-font-size);
+    line-height: var(--openbitfun-type-body-lg-line-height);
   }
+
+  .entries {
+    display: flex;
+    flex-direction: column;
+    gap: calc(var(--openbitfun-space-8) + var(--openbitfun-space-1));
+    min-inline-size: 0;
+  }
+
+  .entry {
+    display: flex;
+    min-inline-size: 0;
+    flex-direction: column;
+  }
+
+  .activity {
+    display: flex;
+    align-items: center;
+    min-block-size: var(--openbitfun-space-3);
+    margin-block-start: var(--openbitfun-space-2);
+    padding-inline: var(--openbitfun-space-3);
+    color: inherit;
+    opacity: var(--openbitfun-opacity-hover);
+  }
+
+  .activity[data-role="user"] { align-self: flex-end; }
 
   .user {
     align-self: flex-end;
@@ -96,7 +122,7 @@
     box-sizing: border-box;
     padding: var(--openbitfun-space-3);
     border-radius: var(--openbitfun-radius-lg);
-    background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 30%, transparent);
+    background: color-mix(in srgb, currentColor 12%, transparent);
     line-height: var(--openbitfun-type-modifier-leading-tight-line-height);
   }
 
@@ -115,7 +141,7 @@
     padding: var(--openbitfun-space-6) var(--openbitfun-space-6) clamp(var(--openbitfun-space-5), 7.4cqh, 54px);
   }
 
-  .root .control {
+  .controls .control {
     inline-size: 74px;
     block-size: 74px;
     flex: 0 0 74px;
@@ -125,29 +151,28 @@
     color: inherit;
   }
 
-  .root .control [data-openbitfun-part="icon"] { inline-size: 28px; block-size: 28px; }
-  .root :is(.back, .close) [data-openbitfun-part="icon"] { inline-size: 20px; block-size: 20px; }
-  .root :is(.control, .back, .close)::before { content: none; }
+  .controls .control [data-openbitfun-part="icon"] { inline-size: 28px; block-size: 28px; }
+  .header :is(.back, .close) [data-openbitfun-part="icon"] { inline-size: 20px; block-size: 20px; }
+  :is(.header, .controls) :is(.control, .back, .close)::before { content: none; }
 
-  .root :is(.control, .back, .close):hover:not(:disabled) {
+  :is(.header, .controls) :is(.control, .back, .close):hover:not(:disabled) {
     background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 30%, transparent);
     color: inherit;
     opacity: 1;
   }
 
-  .root :is(.control, .back, .close):active:not(:disabled) {
+  :is(.header, .controls) :is(.control, .back, .close):active:not(:disabled) {
     background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 40%, transparent);
   }
 
-  .root :is(.control, .back, .close):focus-visible {
+  :is(.header, .controls) :is(.control, .back, .close):focus-visible {
     outline: var(--openbitfun-focus-width) solid currentColor;
     outline-offset: var(--openbitfun-focus-offset);
   }
 
   @container (height < 520px) {
     .controls { padding-block: var(--openbitfun-space-3); }
-    .root .control { inline-size: 56px; block-size: 56px; flex-basis: 56px; }
-    .conversation { gap: var(--openbitfun-space-5); }
+    .controls .control { inline-size: 56px; block-size: 56px; flex-basis: 56px; }
   }
 
   @media (prefers-reduced-transparency: reduce) {
@@ -166,6 +191,57 @@
       backdrop-filter: none;
     }
     .user { border: 1px solid CanvasText; }
-    .root :is(.control, .back, .close) { border: 1px solid ButtonText; color: ButtonText; opacity: 1; }
+    :is(.header, .controls) :is(.control, .back, .close) { border: 1px solid ButtonText; color: ButtonText; opacity: 1; }
   }
+
+  .root.embedded {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .compactTranscript { padding: var(--openbitfun-space-3) var(--openbitfun-space-6); }
+  .compactTranscript .entries { gap: var(--openbitfun-space-5); }
+  .compactTranscript .status { font-size: var(--openbitfun-type-label-sm-font-size); opacity: 0.75; }
+
+  /* The transcript changes presentation without replacing its reading viewport.
+     Match FlowChat's user text and prose roles; compact only controls spacing. */
+  .conversation[data-openbitfun-presentation="chat"] {
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-flow-body-font-family);
+    font-size: var(--openbitfun-type-flow-control-font-size);
+    font-weight: var(--openbitfun-type-flow-control-font-weight);
+    line-height: var(--openbitfun-type-flow-body-line-height);
+    letter-spacing: var(--openbitfun-type-flow-body-letter-spacing);
+  }
+
+  .conversation[data-openbitfun-presentation="chat"] .user {
+    background: var(--openbitfun-color-action-quiet-hover);
+    border-radius: calc(var(--openbitfun-control-flow-chat-card-radius) + 2px);
+    line-height: inherit;
+  }
+
+  .conversation[data-openbitfun-presentation="chat"] .status {
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-flow-support-font-size);
+    font-weight: var(--openbitfun-type-flow-support-font-weight);
+    line-height: var(--openbitfun-type-flow-support-line-height);
+    opacity: 1;
+  }
+
+  .controls { transition: padding 480ms cubic-bezier(0.22, 1, 0.36, 1); }
+  .controls .control { transition: inline-size 480ms, block-size 480ms, flex-basis 480ms; }
+  .compactControls { padding: var(--openbitfun-space-2); gap: var(--openbitfun-space-2); }
+  .compactControls .control {
+    inline-size: 32px;
+    block-size: 32px;
+    flex-basis: 32px;
+    color: inherit;
+    background: color-mix(in srgb, currentColor 12%, transparent);
+  }
+  .compactControls .control [data-openbitfun-part="icon"] { inline-size: 16px; block-size: 16px; }
+  @media (prefers-reduced-motion: reduce) { .controls, .controls .control { transition: none; } }
 }

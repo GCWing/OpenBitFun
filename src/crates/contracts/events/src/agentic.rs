@@ -583,6 +583,8 @@ pub enum ToolEventData {
         params: Option<serde_json::Value>,
         error: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        error_detail: Option<openbitfun_core_types::errors::ToolErrorDetail>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         duration_ms: Option<u64>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         queue_wait_ms: Option<u64>,
@@ -818,6 +820,25 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn failed_tool_event_preserves_optional_classification_across_versions() {
+        let legacy = serde_json::json!({"event_type":"Failed", "tool_id":"edit-1", "tool_name":"Edit", "error":"[guidance] Read again"});
+        let event: ToolEventData = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(serde_json::to_value(&event)
+            .unwrap()
+            .get("error_detail")
+            .is_none());
+        for kind in ["guidance", "future_kind"] {
+            let mut payload = legacy.clone();
+            payload["error_detail"] = serde_json::json!({"code":"edit_no_change", "kind":kind});
+            let event: ToolEventData = serde_json::from_value(payload.clone()).unwrap();
+            assert_eq!(
+                serde_json::to_value(event).unwrap()["error_detail"],
+                payload["error_detail"]
+            );
+        }
+    }
+
+    #[test]
     fn model_round_completed_serializes_optional_timing_fields() {
         let event = AgenticEvent::ModelRoundCompleted {
             session_id: "session-1".to_string(),
@@ -1014,6 +1035,7 @@ mod tests {
         let event = ToolEventData::Failed {
             params: None,
             identity: ToolEventIdentity::direct("tool-1", "write_file"),
+            error_detail: None,
             error: "failed".to_string(),
             duration_ms: Some(120),
             queue_wait_ms: Some(10),

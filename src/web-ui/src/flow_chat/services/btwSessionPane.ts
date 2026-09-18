@@ -15,6 +15,11 @@ export type BtwSessionViewKind = 'review-check';
 export interface BtwSessionPanelData {
   childSessionId: string;
   parentSessionId: string;
+  /** Workspace that owns the parent session; the identity used for routing. */
+  workspaceId?: string;
+  /** Main project workspace when the parent session executes in a linked worktree. */
+  projectWorkspaceId?: string;
+  /** Execution root of the parent session. IO projection only, kept for legacy tabs. */
   workspacePath?: string;
   viewKind?: BtwSessionViewKind;
   displayTitle?: string;
@@ -30,6 +35,7 @@ export interface BtwSessionPanelMetadata {
 export interface EnsureBtwSessionAvailableParams {
   childSessionId: string;
   parentSessionId: string;
+  workspaceId?: string;
   workspacePath?: string;
   sessionKind?: 'btw' | 'review' | 'deep_review' | 'miniapp' | 'subagent';
   sessionTitle?: string;
@@ -43,9 +49,7 @@ export interface EnsureBtwSessionAvailableParams {
 
 export interface LoadBtwSessionHistoryParams {
   childSessionId: string;
-  workspacePath?: string;
-  remoteConnectionId?: string;
-  remoteSshHost?: string;
+  parentSessionId?: string;
 }
 
 type AgentCanvasState = ReturnType<typeof useAgentCanvasStore.getState>;
@@ -84,10 +88,36 @@ const requestRightPanelExpansion = (): void => {
   }
 };
 
+export interface BtwSessionPanelWorkspace {
+  workspaceId?: string;
+  projectWorkspaceId?: string;
+  workspacePath?: string;
+}
+
+/** Workspace identity of the parent session, falling back to an explicit override. */
+const resolveBtwSessionPanelWorkspace = (
+  parentSessionId: string,
+  override: { workspaceId?: string; workspacePath?: string },
+): BtwSessionPanelWorkspace => {
+  const parent = flowChatStore.getState().sessions.get(parentSessionId);
+  const workspaceId = override.workspaceId
+    || parent?.workspaceId
+    || parent?.config?.workspaceId
+    || undefined;
+  const projectWorkspaceId = parent?.projectWorkspaceId
+    || parent?.config?.projectWorkspaceId
+    || undefined;
+  return {
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(projectWorkspaceId && projectWorkspaceId !== workspaceId ? { projectWorkspaceId } : {}),
+    workspacePath: override.workspacePath || parent?.workspacePath,
+  };
+};
+
 export const buildBtwSessionPanelContent = (
   childSessionId: string,
   parentSessionId: string,
-  workspacePath?: string,
+  workspace: BtwSessionPanelWorkspace,
   viewKind?: BtwSessionViewKind,
   displayTitle?: string,
 ): PanelContent => ({
@@ -96,7 +126,9 @@ export const buildBtwSessionPanelContent = (
   data: {
     childSessionId,
     parentSessionId,
-    workspacePath,
+    ...(workspace.workspaceId ? { workspaceId: workspace.workspaceId } : {}),
+    ...(workspace.projectWorkspaceId ? { projectWorkspaceId: workspace.projectWorkspaceId } : {}),
+    workspacePath: workspace.workspacePath,
     ...(viewKind ? { viewKind } : {}),
     ...(displayTitle?.trim() ? { displayTitle: displayTitle.trim() } : {}),
   } satisfies BtwSessionPanelData,
@@ -134,18 +166,20 @@ export const selectActiveBtwSessionTab = (state: AgentCanvasState): CanvasTab | 
 };
 
 export async function loadBtwSessionHistory(params: LoadBtwSessionHistoryParams): Promise<void> {
-  const location = params.workspacePath
-    ? {
-        workspacePath: params.workspacePath,
-        remoteConnectionId: params.remoteConnectionId,
-        remoteSshHost: params.remoteSshHost,
-      }
-    : undefined;
-  if (location) {
-    await flowChatManager.hydrateSessionHistoryForDetail(params.childSessionId, location);
-  } else {
-    await flowChatManager.hydrateSessionHistoryForDetail(params.childSessionId);
+  const sessions = flowChatStore.getState().sessions;
+  const child = sessions.get(params.childSessionId);
+  if (!(child?.workspaceId ?? child?.config?.workspaceId)) {
+    const parentId = params.parentSessionId ?? child?.parentSessionId;
+    const parent = parentId ? sessions.get(parentId) : undefined;
+    // Read the child's persisted binding from its parent's project store.
+    // Never assign the parent's execution ID: a child may own a worktree.
+    const storageOwnerId = parent?.projectWorkspaceId ?? parent?.config?.projectWorkspaceId
+      ?? parent?.workspaceId ?? parent?.config?.workspaceId;
+    if (!storageOwnerId || !await flowChatStore.ensurePersistedSessionMetadata(params.childSessionId, storageOwnerId)) {
+      throw new Error('Child session workspace is unavailable');
+    }
   }
+  await flowChatManager.hydrateSessionHistoryForDetail(params.childSessionId);
 }
 
 interface EnsureBtwSessionAvailableResult {
@@ -196,6 +230,9 @@ function ensureBtwSessionAvailableInternal(
         sessionKind: params.sessionKind || 'btw',
         parentToolCallId: params.parentToolCallId,
         subagentType: params.subagentType,
+        // Only an explicitly supplied child workspace ID is trusted here; the
+        // parent's ID is never inherited because a child may own a worktree.
+        ...(params.workspaceId ? { workspaceId: params.workspaceId } : {}),
       },
       resolvedRemoteConnectionId,
       resolvedRemoteSshHost,
@@ -219,20 +256,9 @@ function ensureBtwSessionAvailableInternal(
       (sessionToHydrate.historyState === 'metadata-only' || sessionToHydrate.historyState === 'failed')
     );
 
-  const workspacePath = resolvedWorkspacePath || sessionToHydrate?.workspacePath;
-  if (!shouldHydrate || !workspacePath) {
-    return { historyLoadRequested: false };
-  }
-
+  if (!shouldHydrate) return { historyLoadRequested: false };
   void loadBtwSessionHistory({
-    childSessionId: params.childSessionId,
-    ...(!sessionToHydrate?.workspacePath
-      ? {
-          workspacePath,
-          remoteConnectionId: resolvedRemoteConnectionId,
-          remoteSshHost: resolvedRemoteSshHost,
-        }
-      : {}),
+    childSessionId: params.childSessionId, parentSessionId: params.parentSessionId,
   }).catch(() => undefined);
   return { historyLoadRequested: true };
 }
@@ -244,6 +270,7 @@ export function ensureBtwSessionAvailable(params: EnsureBtwSessionAvailableParam
 export function openBtwSessionInAuxPane(params: {
   childSessionId: string;
   parentSessionId: string;
+  workspaceId?: string;
   workspacePath?: string;
   expand?: boolean;
   sessionKind?: 'btw' | 'review' | 'deep_review' | 'miniapp' | 'subagent';
@@ -265,31 +292,15 @@ export function openBtwSessionInAuxPane(params: {
     !ensureResult.historyLoadRequested &&
     !isSessionHistoryComplete(childSession)
   ) {
-    const parentSession = flowChatStore.getState().sessions.get(params.parentSessionId);
-    const workspacePath =
-      params.workspacePath || childSession?.workspacePath || parentSession?.workspacePath;
-    if (workspacePath) {
-      void loadBtwSessionHistory({
-        childSessionId: params.childSessionId,
-        ...(!childSession?.workspacePath
-          ? {
-              workspacePath,
-              remoteConnectionId:
-                params.remoteConnectionId ||
-                childSession?.remoteConnectionId ||
-                parentSession?.remoteConnectionId,
-              remoteSshHost:
-                params.remoteSshHost || childSession?.remoteSshHost || parentSession?.remoteSshHost,
-            }
-          : {}),
-      }).catch(() => undefined);
-    }
+    void loadBtwSessionHistory({
+      childSessionId: params.childSessionId, parentSessionId: params.parentSessionId,
+    }).catch(() => undefined);
   }
 
   const content = buildBtwSessionPanelContent(
     params.childSessionId,
     params.parentSessionId,
-    params.workspacePath,
+    resolveBtwSessionPanelWorkspace(params.parentSessionId, params),
     params.viewKind,
     params.sessionTitle,
   );

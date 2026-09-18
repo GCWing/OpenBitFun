@@ -57,7 +57,8 @@ pnpm --dir src/mobile-web run test:realtime-sync # ordered live updates, gap rec
 pnpm --dir src/mobile-web run test:account-login # account login without an online desktop
 pnpm --dir src/mobile-web run test:account-browser # real Chrome tabs, persistence, migration, races; simulated Relay
 pnpm --dir src/mobile-web run test:images # image preparation and upload limits
-pnpm --dir src/mobile-web run test:workspace-identity # SSH host scope and legacy cache records
+pnpm --dir src/mobile-web run test:workspace-identity # workspace ID wire projection, capability gate, legacy routing and cache records
+pnpm --dir src/mobile-web run test:remote-cache-browser # real IndexedDB read of pre-ID session cache records
 pnpm --dir src/mobile-web run type-check
 pnpm run build:mobile-web
 ```

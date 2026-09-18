@@ -32,6 +32,7 @@ import type { SendMessageOptions, SubmissionDraft, TurnTracker } from '../../ses
 import { assertSessionSubmissionAllowed } from '../../store/sessionMutationStore';
 import { hasInterruptedTurnHoldingQueue } from '../../utils/interruptedTurnRecovery';
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
+import { hasPendingVoiceExchanges, replayVoiceExchanges } from '../controlConversation';
 
 export { syncSessionModelSelection } from '../../utils/modelSync';
 export { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
@@ -320,6 +321,12 @@ export async function sendMessage(
   beginSubmission();
 
   try {
+    // Recover final native replies before starting the next text turn. Keep
+    // normal text sends synchronous and inside the existing surface fence.
+    if (hasPendingVoiceExchanges(sessionId)) {
+      await replayVoiceExchanges(sessionId);
+      surfaceScopeAtSend.assertCurrent('restore conversation history before submission');
+    }
     const refreshedSession = context.flowChatStore.getState().sessions.get(sessionId) ?? session;
     const currentAgentType = (agentType?.trim() || refreshedSession.mode || 'Standard').trim();
     const acpClientId = acpClientIdFromMode(currentAgentType);

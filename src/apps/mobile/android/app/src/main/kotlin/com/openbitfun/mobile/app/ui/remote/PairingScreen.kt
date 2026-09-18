@@ -399,21 +399,25 @@ internal fun RemoteWorkspacePanel(
                 }
             }
             if (state.savedConnectionsFailure) Text(stringResource(R.string.workspace_connections_failed), color = MaterialTheme.colorScheme.error)
+            // A hand-typed path has no workspace ID: only the legacy projection can be sent.
             TextButton(enabled = !state.busy && workspacePath.isNotBlank(), onClick = {
                 onIntent(RemoteWorkspaceIntent.SelectWorkspace(workspacePath, savedConnectionId, null))
             }) { Text(stringResource(R.string.workspace_open_path)) }
+            state.workspaceReferenceFailure?.let { failure ->
+                Text(stringResource(workspaceReferenceFailureText(failure)), color = MaterialTheme.colorScheme.error)
+            }
             state.workspaces.forEach { workspace ->
                 TextButton(
-                    onClick = { onIntent(RemoteWorkspaceIntent.SelectWorkspace(workspace.path, workspace.remoteConnectionId, workspace.remoteSshHost)) },
-                    enabled = !state.busy && state.selected?.path != workspace.path,
+                    onClick = { onIntent(RemoteWorkspaceIntent.SelectWorkspace(workspace.path, workspace.remoteConnectionId, workspace.remoteSshHost, false, workspace.workspaceId)) },
+                    enabled = !state.busy && !state.isSelected(workspace),
                 ) { Text(workspace.displayName) }
             }
             if (state.assistants.isNotEmpty()) {
                 Text(stringResource(R.string.assistants_title), style = MaterialTheme.typography.titleSmall)
                 state.assistants.forEach { assistant ->
                     TextButton(
-                        onClick = { onIntent(RemoteWorkspaceIntent.SelectAssistant(assistant.path)) },
-                        enabled = !state.busy,
+                        onClick = { onIntent(RemoteWorkspaceIntent.SelectAssistant(assistant.path, assistant.workspaceId)) },
+                        enabled = !state.busy && !state.isSelected(assistant),
                     ) { Text(assistant.name) }
                 }
             }

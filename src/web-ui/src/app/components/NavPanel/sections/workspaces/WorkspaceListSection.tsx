@@ -4,7 +4,6 @@ import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext'
 import { notificationService } from '@/shared/notification-system';
 import WorkspaceItem from './WorkspaceItem';
 import SessionsSection, { type WorkspaceSessionScope } from '../sessions/SessionsSection';
-import { isRemoteWorkspace } from '@/shared/types';
 import { useWorkspaceSessionViewStore } from '../../workspaceSessionView';
 import {
   isWorkspaceBackedSessionGroupActive,
@@ -75,9 +74,6 @@ const WorkspaceListSection: React.FC<WorkspaceListSectionProps> = ({ variant }) 
       ? workspaces.map(workspace => ({
           workspaceId: workspace.id,
           workspaceName: workspace.name,
-          workspacePath: workspace.rootPath,
-          remoteConnectionId: isRemoteWorkspace(workspace) ? workspace.connectionId : null,
-          remoteSshHost: isRemoteWorkspace(workspace) ? workspace.sshHost : null,
         }))
       : []
   ), [variant, workspaces]);

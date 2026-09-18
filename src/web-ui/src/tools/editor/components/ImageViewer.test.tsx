@@ -9,7 +9,7 @@ vi.mock('../services/EditorDocument', () => {
   const session = { files: { readFileContent: mocks.read }, isCurrent: mocks.current };
   return { useEditorDocument: () => session };
 });
-vi.mock('@/infrastructure/api', () => ({ workspaceAPI: { readFileContent: mocks.localRead } }));
+vi.mock('@/infrastructure/api', () => ({ workspaceAPI: { readWorkspaceFile: mocks.localRead } }));
 vi.mock('@/infrastructure/i18n', () => {
   const t = (key: string) => key;
   return { useI18n: () => ({ t }) };

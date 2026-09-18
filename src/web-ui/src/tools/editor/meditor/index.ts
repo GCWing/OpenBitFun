@@ -2,7 +2,6 @@ export { MEditor } from './components/MEditor'
 export type { MEditorProps } from './components/MEditor'
 
 export { EditArea } from './components/EditArea'
-export { Preview } from './components/Preview'
 export { TiptapEditor } from './components/TiptapEditor'
 export type { TiptapEditorHandle } from './components/TiptapEditor'
 

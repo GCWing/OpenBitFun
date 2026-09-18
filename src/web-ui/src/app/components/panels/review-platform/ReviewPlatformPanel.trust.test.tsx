@@ -39,22 +39,11 @@ vi.mock('@/flow_chat/services/btwSessionPane', () => ({ openBtwSessionInAuxPane:
 vi.mock('@/shared/services/ide-control', () => ({ quickActions: {} }));
 vi.mock('@/shared/stores/contextStore', () => ({ useContextStore: {} }));
 vi.mock('@/infrastructure/markdown', () => ({ MarkdownRenderer: () => null }));
-vi.mock('@openbitfun/ui', () => {
-  const Box = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
-  const Button = ({ children, onClick, disabled, 'aria-label': label }: {
-    children?: React.ReactNode; onClick?: () => void; disabled?: boolean; 'aria-label'?: string;
-  }) => <button onClick={onClick} disabled={disabled} aria-label={label}>{children}</button>;
-  return {
-    Button, IconButton: Button, Icon: () => null, Input: () => null, Combobox: () => null,
-    Field: Box, ScrollArea: Box, TabGroup: () => null, Tooltip: Box, OverflowText: Box,
-    Dialog: () => null, DialogBody: Box, DialogClose: Box, DialogHeader: Box,
-    DialogHeading: Box, DialogTitle: Box,
-  };
-});
 
 let dom: { window: Window & typeof globalThis };
 let root: Root;
 let container: HTMLDivElement;
+const workspaceId = 'workspace-review-trust-test';
 const workspacePath = '/workspace/review-trust-test';
 const error = new TauriCommandError('Command failed', {
   command: 'review_platform_get_workspace_snapshot',
@@ -85,8 +74,12 @@ afterEach(() => {
 
 describe('Review platform trust interaction', () => {
   it.each([false, true])('does not prompt during automatic loading (detailOnly=%s)', async (detailOnly) => {
-    await act(async () => root.render(<ReviewPlatformPanel workspacePath={workspacePath} detailOnly={detailOnly} />));
+    await act(async () => root.render(<ReviewPlatformPanel workspaceId={workspaceId} workspacePath={workspacePath} detailOnly={detailOnly} />));
     expect(detailOnly ? mocks.context : mocks.snapshot).toHaveBeenCalledTimes(1);
+    expect(detailOnly ? mocks.context : mocks.snapshot).toHaveBeenCalledWith(
+      { workspaceId, repositoryPath: workspacePath },
+      ...(detailOnly ? [null] : [null, 1, 10, 'all']),
+    );
     expect(mocks.confirm).not.toHaveBeenCalled();
     expect(mocks.trust).not.toHaveBeenCalled();
     expect(container.textContent).toContain('panels/git:trust.required');
@@ -96,12 +89,16 @@ describe('Review platform trust interaction', () => {
   it.each([true, false])('asks on Retry and replays only after approval (approved=%s)', async (approved) => {
     mocks.confirm.mockResolvedValue(approved);
     mocks.trust.mockResolvedValue({ state: 'trusted', repositoryPath: workspacePath });
-    await act(async () => root.render(<ReviewPlatformPanel workspacePath={workspacePath} />));
+    await act(async () => root.render(<ReviewPlatformPanel workspaceId={workspaceId} workspacePath={workspacePath} />));
     const retry = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Retry');
     expect(retry).toBeTruthy();
     await act(async () => retry!.click());
     expect(mocks.confirm).toHaveBeenCalledTimes(1);
     expect(mocks.trust).toHaveBeenCalledTimes(approved ? 1 : 0);
+    if (approved) {
+      // Trust is granted to the workspace by ID; the path only names the repository inside it.
+      expect(mocks.trust).toHaveBeenCalledWith({ workspaceId, repositoryPath: workspacePath });
+    }
     expect(mocks.snapshot).toHaveBeenCalledTimes(approved ? 3 : 2);
     expect(container.textContent).toContain('panels/git:trust.required');
   });

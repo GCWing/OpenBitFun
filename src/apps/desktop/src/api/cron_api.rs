@@ -46,11 +46,32 @@ pub async fn list_cron_jobs(request: ListCronJobsRequest) -> Result<Vec<CronJob>
     );
 
     let service = cron_service()?;
+    // Legacy wire ingress only. Filtering below has no path-based API.
+    let workspace_id = if request.workspace_id.is_some()
+        || request.workspace_path.is_some()
+        || request.remote_connection_id.is_some()
+    {
+        let workspaces = openbitfun_core::service::workspace::get_global_workspace_service()
+            .ok_or_else(|| "Workspace service is unavailable".to_string())?;
+        Some(
+            workspaces
+                .resolve_legacy_workspace_reference(
+                    request.workspace_id.as_deref(),
+                    request.workspace_path.as_deref().unwrap_or_default(),
+                    request.remote_connection_id.as_deref(),
+                    None,
+                )
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| "Scheduled job workspace is unavailable".to_string())?
+                .id,
+        )
+    } else {
+        None
+    };
     Ok(service
         .list_jobs_filtered(
-            request.workspace_path.as_deref(),
-            request.workspace_id.as_deref(),
-            request.remote_connection_id.as_deref(),
+            workspace_id.as_deref(),
             request.session_id.as_deref(),
             request.target_kind,
         )

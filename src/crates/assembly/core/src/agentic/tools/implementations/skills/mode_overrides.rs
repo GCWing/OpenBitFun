@@ -129,37 +129,133 @@ pub async fn set_global_user_skill_disabled(
         .await
 }
 
-/// Local workspace identity is canonicalized so aliases share one availability policy.
-fn skill_workspace_identity(root: &Path) -> OpenBitFunResult<String> {
-    dunce::canonicalize(root)
-        .map(|path| path.to_string_lossy().into_owned())
-        .map_err(|error| OpenBitFunError::tool(format!("Invalid Skill workspace: {error}")))
+/// The workspace whose project-level Skill availability policy is being read
+/// or written. The record ID owns the policy; the root only names the folder
+/// whose retired canonical-path entry may still need a one-time upgrade.
+#[derive(Debug, Clone, Copy)]
+pub struct SkillPolicyWorkspace<'a> {
+    pub workspace_id: &'a str,
+    pub root: &'a Path,
 }
 
-pub async fn load_globally_disabled_project_skills(root: &Path) -> OpenBitFunResult<Vec<String>> {
-    let identity = skill_workspace_identity(root)?;
+impl<'a> SkillPolicyWorkspace<'a> {
+    pub fn from_record(record: &'a crate::service::workspace::WorkspaceInfo) -> Self {
+        Self {
+            workspace_id: record.id.as_str(),
+            root: record.root_path.as_path(),
+        }
+    }
+
+    /// A session binding names its workspace by ID; a binding written before
+    /// workspace IDs has no project policy scope until it is upgraded.
+    pub fn from_binding(binding: &'a crate::agentic::workspace::WorkspaceBinding) -> Option<Self> {
+        let workspace_id = binding
+            .workspace_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())?;
+        Some(Self {
+            workspace_id,
+            root: binding.root_path(),
+        })
+    }
+}
+
+/// Settings key that owns a workspace's project-level Skill availability.
+fn skill_workspace_identity(workspace_id: &str) -> String {
+    format!("workspace:{}", workspace_id.trim())
+}
+
+/// Retired canonical-path key written by builds that predate workspace IDs.
+fn legacy_skill_workspace_identity(root: &Path) -> Option<String> {
+    dunce::canonicalize(root)
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
+/// Copy a retired canonical-path entry to the workspace ID key once. The old
+/// entry is kept for rollback and an existing ID entry is never overwritten.
+fn upgrade_legacy_project_skill_availability(
+    settings: &mut SkillSettingsConfig,
+    legacy_identity: Option<&str>,
+    identity: &str,
+) -> bool {
+    if settings
+        .globally_disabled_project_skills
+        .contains_key(identity)
+    {
+        return false;
+    }
+    let Some(keys) = legacy_identity
+        .and_then(|legacy| settings.globally_disabled_project_skills.get(legacy))
+        .cloned()
+    else {
+        return false;
+    };
+    settings
+        .globally_disabled_project_skills
+        .insert(identity.to_string(), keys);
+    true
+}
+
+pub async fn load_globally_disabled_project_skills(
+    workspace: SkillPolicyWorkspace<'_>,
+) -> OpenBitFunResult<Vec<String>> {
+    let identity = skill_workspace_identity(workspace.workspace_id);
     let config_service = GlobalConfigManager::get_service().await?;
     let settings: SkillSettingsConfig =
         config_service.get_config(Some("ai.skill_settings")).await?;
-    Ok(settings
-        .globally_disabled_project_skills
-        .get(&identity)
-        .cloned()
-        .unwrap_or_default())
+    if let Some(keys) = settings.globally_disabled_project_skills.get(&identity) {
+        return Ok(keys.clone());
+    }
+    let legacy_identity = legacy_skill_workspace_identity(workspace.root);
+    if legacy_identity.as_deref().is_none_or(|legacy| {
+        !settings
+            .globally_disabled_project_skills
+            .contains_key(legacy)
+    }) {
+        return Ok(Vec::new());
+    }
+    config_service
+        .update_config("ai.skill_settings", |settings: &mut SkillSettingsConfig| {
+            upgrade_legacy_project_skill_availability(
+                settings,
+                legacy_identity.as_deref(),
+                &identity,
+            );
+            Ok(settings
+                .globally_disabled_project_skills
+                .get(&identity)
+                .cloned()
+                .unwrap_or_default())
+        })
+        .await
 }
 
 pub async fn set_global_project_skill_disabled(
-    root: &Path,
+    workspace: SkillPolicyWorkspace<'_>,
     skill_key: &str,
     disabled: bool,
 ) -> OpenBitFunResult<Vec<String>> {
-    let identity = skill_workspace_identity(root)?;
+    let identity = skill_workspace_identity(workspace.workspace_id);
+    let legacy_identity = legacy_skill_workspace_identity(workspace.root);
     let config_service = GlobalConfigManager::get_service().await?;
     config_service
         .update_config("ai.skill_settings", |settings: &mut SkillSettingsConfig| {
-            Ok(update_project_skill_availability(
-                settings, &identity, skill_key, disabled,
-            ))
+            upgrade_legacy_project_skill_availability(
+                settings,
+                legacy_identity.as_deref(),
+                &identity,
+            );
+            let keys = update_project_skill_availability(settings, &identity, skill_key, disabled);
+            if keys.is_empty() {
+                // Re-enabling the last project Skill applies to the retired
+                // entry too; otherwise the next load would upgrade it again.
+                if let Some(legacy) = legacy_identity.as_deref() {
+                    settings.globally_disabled_project_skills.remove(legacy);
+                }
+            }
+            Ok(keys)
         })
         .await
 }
@@ -191,23 +287,18 @@ mod availability_tests {
     use super::*;
 
     #[test]
-    fn project_switches_share_path_aliases_but_isolate_workspaces_and_user_policy() {
-        let temp = tempfile::tempdir().unwrap();
-        let first = temp.path().join("first");
-        let second = temp.path().join("second");
-        std::fs::create_dir(&first).unwrap();
-        std::fs::create_dir(&second).unwrap();
-        let first_id = skill_workspace_identity(&first).unwrap();
-        let alias = skill_workspace_identity(&first.join(".")).unwrap();
-        assert_eq!(first_id, alias);
-        let second_id = skill_workspace_identity(&second).unwrap();
+    fn project_policy_is_keyed_by_workspace_id_and_isolates_user_policy() {
+        let first_id = skill_workspace_identity("workspace-first");
+        let padded = skill_workspace_identity(" workspace-first ");
+        assert_eq!(first_id, padded);
+        let second_id = skill_workspace_identity("workspace-second");
         let key = "project::agents::review";
         let mut settings = SkillSettingsConfig::default();
         settings
             .globally_disabled_user_skills
             .push("user::home.agents::review".into());
         update_project_skill_availability(&mut settings, &first_id, key, true);
-        update_project_skill_availability(&mut settings, &alias, key, true);
+        update_project_skill_availability(&mut settings, &padded, key, true);
         assert_eq!(settings.globally_disabled_project_skills[&first_id], [key]);
         assert!(!settings
             .globally_disabled_project_skills
@@ -215,7 +306,7 @@ mod availability_tests {
         update_project_skill_availability(&mut settings, &second_id, key, true);
         let mut restored: SkillSettingsConfig =
             serde_json::from_value(serde_json::to_value(settings).unwrap()).unwrap();
-        update_project_skill_availability(&mut restored, &alias, key, false);
+        update_project_skill_availability(&mut restored, &padded, key, false);
         assert!(!restored
             .globally_disabled_project_skills
             .contains_key(&first_id));
@@ -224,6 +315,58 @@ mod availability_tests {
             restored.globally_disabled_user_skills,
             ["user::home.agents::review"]
         );
+    }
+
+    #[test]
+    fn legacy_canonical_path_policy_upgrades_once_to_the_workspace_id_key() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("project");
+        std::fs::create_dir(&root).unwrap();
+        let legacy = legacy_skill_workspace_identity(&root).unwrap();
+        assert_eq!(
+            legacy,
+            legacy_skill_workspace_identity(&root.join(".")).unwrap()
+        );
+        let identity = skill_workspace_identity("workspace-1");
+        let key = "project::agents::review";
+
+        // Settings written by a pre-ID build carry only the canonical-path key.
+        let mut settings = SkillSettingsConfig::default();
+        settings
+            .globally_disabled_project_skills
+            .insert(legacy.clone(), vec![key.to_string()]);
+        let mut settings: SkillSettingsConfig =
+            serde_json::from_value(serde_json::to_value(&settings).unwrap()).unwrap();
+        assert!(upgrade_legacy_project_skill_availability(
+            &mut settings,
+            Some(&legacy),
+            &identity
+        ));
+        assert_eq!(settings.globally_disabled_project_skills[&identity], [key]);
+        // The retired entry stays for rollback.
+        assert_eq!(settings.globally_disabled_project_skills[&legacy], [key]);
+
+        // An existing ID entry is never overwritten by the retired one.
+        update_project_skill_availability(&mut settings, &identity, "project::other", true);
+        assert!(!upgrade_legacy_project_skill_availability(
+            &mut settings,
+            Some(&legacy),
+            &identity
+        ));
+        assert_eq!(
+            settings.globally_disabled_project_skills[&identity],
+            [key, "project::other"]
+        );
+        // Without a legacy entry there is nothing to upgrade.
+        let mut fresh = SkillSettingsConfig::default();
+        assert!(!upgrade_legacy_project_skill_availability(
+            &mut fresh,
+            Some("/nowhere"),
+            &identity
+        ));
+        assert!(!upgrade_legacy_project_skill_availability(
+            &mut fresh, None, &identity
+        ));
     }
 }
 

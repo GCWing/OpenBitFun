@@ -15,7 +15,7 @@ describe('instruction source inventory contract', () => {
       ecosystemId: 'shared', name: 'AGENTS.md', path: '/project/AGENTS.md', scope: 'project', pathPatterns: [], futureField: true,
     }], failedEcosystems: [], futureField: true });
     expect((await instructionSourcesAPI.getCatalog('/project')).entries).toHaveLength(1);
-    expect(invoke).toHaveBeenCalledWith('get_instruction_source_catalog', { request: { workspacePath: '/project' } });
+    expect(invoke).toHaveBeenCalledWith('get_instruction_source_catalog', { request: { workspaceId: '/project' } });
   });
 
   it.each([null, {}, { schemaVersion: 2, entries: [], failedEcosystems: [] },

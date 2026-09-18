@@ -63,6 +63,7 @@ export interface PlanDisplayProps {
   /** Runtime artifacts may still be copied into the project by legacy cards. */
   storageKind?: 'runtime-artifact' | 'project-file';
   /** Explicit workspace scope for remote-safe reads and status updates. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
 }
@@ -77,19 +78,28 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
   initialContent,
   toolName = 'CreatePlan',
   storageKind = 'runtime-artifact',
+  workspaceId,
   workspacePath,
   remoteConnectionId,
 }) => {
   const { t } = useTranslation('flow-chat');
   const { workspace: currentWorkspace } = useOptionalCurrentWorkspace();
   const effectiveCacheKey = cacheKey || planFilePath;
+  const effectiveWorkspaceId = workspaceId ?? currentWorkspace?.id;
   const effectiveWorkspacePath = workspacePath ?? currentWorkspace?.rootPath ?? '';
   const effectiveRemoteConnectionId = remoteConnectionId ?? currentWorkspace?.connectionId;
   const planFileRef = useMemo(() => ({
     planFilePath,
+    workspaceId: effectiveWorkspaceId,
     workspacePath: effectiveWorkspacePath,
     remoteConnectionId: effectiveRemoteConnectionId,
-  }), [effectiveRemoteConnectionId, effectiveWorkspacePath, planFilePath]);
+  }), [effectiveRemoteConnectionId, effectiveWorkspaceId, effectiveWorkspacePath, planFilePath]);
+  /** Plan file IO is routed by the owning workspace ID; the connection is only a pre-ID fallback. */
+  const readPlanContent = useCallback((): Promise<string> => (
+    effectiveWorkspaceId
+      ? workspaceAPI.readWorkspaceFile(effectiveWorkspaceId, planFilePath)
+      : workspaceAPI.readFileContent(planFilePath, undefined, effectiveRemoteConnectionId)
+  ), [effectiveRemoteConnectionId, effectiveWorkspaceId, planFilePath]);
   
   const [refreshedData, setRefreshedData] = useState<PlanData | null>(() => {
     return planDataCache.get(effectiveCacheKey) || null;
@@ -198,11 +208,7 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
       }
 
       try {
-        const content = await workspaceAPI.readFileContent(
-          planFilePath,
-          undefined,
-          effectiveRemoteConnectionId,
-        );
+        const content = await readPlanContent();
         const parsed = parsePlanMarkdown(content);
         const newPlanData: PlanData = {
           name: parsed.name || initialName,
@@ -263,7 +269,7 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
         clearTimeout(debounceTimer);
       }
     };
-  }, [effectiveCacheKey, effectiveRemoteConnectionId, planFilePath, planFileRef, planDirectoryPath, initialName, initialOverview, initialTodos, status]);
+  }, [effectiveCacheKey, planFilePath, planFileRef, planDirectoryPath, readPlanContent, initialName, initialOverview, initialTodos, status]);
 
   // Build button status transitions: build -> building -> built.
   const buildStatus = useMemo((): 'build' | 'building' | 'built' => {
@@ -329,18 +335,10 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
     setHasSavedToProject(false);
     setIsSavingToProject(true);
     try {
-      const content = await workspaceAPI.readFileContent(
-        planFilePath,
-        undefined,
-        effectiveRemoteConnectionId,
-      );
-      await workspaceAPI.createDirectory(projectPlansDirectory, currentWorkspace.connectionId);
-      await workspaceAPI.writeFileContent(
-        currentWorkspace.rootPath,
-        projectPlanPath,
-        content,
-        currentWorkspace.connectionId,
-      );
+      const content = await readPlanContent();
+      // The destination is the current workspace, addressed by ID.
+      await workspaceAPI.createWorkspaceDirectory(currentWorkspace.id, projectPlansDirectory);
+      await workspaceAPI.writeWorkspaceFile(currentWorkspace.id, projectPlanPath, content);
       globalEventBus.emit('file-tree:refresh');
       setHasSavedToProject(true);
       saveSuccessTimerRef.current = setTimeout(() => {
@@ -357,7 +355,7 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
     } finally {
       setIsSavingToProject(false);
     }
-  }, [currentWorkspace, effectiveRemoteConnectionId, isSavingToProject, planFilePath, t]);
+  }, [currentWorkspace, isSavingToProject, planFilePath, readPlanContent, t]);
 
   const handleBuild = useCallback(async () => {
     if (!planFilePath || buildStatus !== 'build') return;
@@ -367,11 +365,7 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
       if (!sessionId) {
         throw new Error('No active session');
       }
-      const content = await workspaceAPI.readFileContent(
-        planFilePath,
-        undefined,
-        effectiveRemoteConnectionId,
-      );
+      const content = await readPlanContent();
       const parsed = parsePlanMarkdown(content);
       
       const latestPlanData: PlanData = {
@@ -391,6 +385,7 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
         sessionId,
         planFilePath,
         todoIds,
+        workspaceId: effectiveWorkspaceId,
         workspacePath: effectiveWorkspacePath,
         remoteConnectionId: effectiveRemoteConnectionId,
       });
@@ -413,7 +408,7 @@ Read the plan file before making changes and treat it as the source of truth. Do
       log.error('Build failed', { cacheKey: effectiveCacheKey, planFilePath, error });
       planBuildStateService.cancelBuild(planFileRef);
     }
-  }, [planFilePath, planFileRef, buildStatus, effectiveCacheKey, effectiveRemoteConnectionId, effectiveWorkspacePath, initialName, initialOverview, initialTodos]);
+  }, [planFilePath, planFileRef, buildStatus, effectiveCacheKey, effectiveRemoteConnectionId, effectiveWorkspaceId, effectiveWorkspacePath, initialName, initialOverview, initialTodos, readPlanContent]);
 
   const handleToggleTodos = useCallback(() => {
     applyExpandedState(isTodosExpanded, !isTodosExpanded, setIsTodosExpanded);

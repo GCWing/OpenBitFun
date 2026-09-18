@@ -1,23 +1,48 @@
-import { OverflowText,
+import {
+  Alert,
   Button,
+  CardHeader,
+  ChangeCount,
   Combobox,
+  Disclosure,
+  Empty,
   Field,
+  FieldGroup,
+  FieldRow,
+  FormSection,
   Icon,
   IconButton,
   Input as DesignInput,
+  LoadingState,
+  MenuPopover,
+  NavigationPanel,
+  NavigationPanelBody,
+  NavigationPanelContent,
+  NavigationPanelFooter,
+  NavigationPanelHeader,
+  NavigationPanelItem,
+  OverflowText,
   ScrollArea,
+  SearchField,
+  SegmentedControl,
+  Stack,
+  StatusPill,
   TabGroup,
+  Toolbar,
+  ToolbarGroup,
   Tooltip,
   type ComboboxOption,
+  type StatusPillTone,
   Dialog,
   DialogBody,
   DialogClose,
+  DialogFooter,
   DialogHeader,
   DialogHeading,
   DialogTitle,
 } from '@openbitfun/ui';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CircleDot, Code2, GitPullRequest, GitPullRequestClosed, KeyRound, Loader2, MessageSquareText, ShieldCheck } from 'lucide-react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { GitPullRequest, GitPullRequestClosed, KeyRound, MessageSquareText, MoreHorizontal } from 'lucide-react';
 import { MarkdownRenderer } from '@/infrastructure/markdown';
 import { reviewPlatformAPI, systemAPI, type ReviewPlatformAccount, type ReviewPlatformAuthChallenge, type ReviewPlatformCiItem, type ReviewPlatformCiLog, type ReviewPlatformCommit, type ReviewPlatformDetailSection, type ReviewPlatformFile, type ReviewPlatformPagination, type ReviewPlatformPullRequest, type ReviewPlatformPullRequestDetail, type ReviewPlatformPullRequestDetailPage, type ReviewPlatformRemote, type ReviewPlatformRepositoryRef, type ReviewPlatformThread, type ReviewPlatformWorkspaceSnapshot } from '@/infrastructure/api';
 import { createLogger } from '@/shared/utils/logger';
@@ -64,6 +89,7 @@ const log = createLogger('ReviewPlatformPanel');
 
 interface ReviewPlatformPanelProps {
   workspacePath?: string;
+  workspaceId: string;
   initialRemoteId?: string;
   initialPullRequestId?: string;
   initialPullRequestUrl?: string;
@@ -72,7 +98,6 @@ interface ReviewPlatformPanelProps {
 
 type DetailTab = 'overview' | 'changes' | 'commits';
 type ListStateFilter = 'all' | 'open' | 'draft' | 'merged' | 'closed';
-type SnapshotCacheState = 'none' | 'cached' | 'refreshing';
 
 const PR_PAGE_SIZE = 10;
 const CI_PAGE_SIZE = 20;
@@ -170,20 +195,22 @@ function detailPageInfo(pagination: ReviewPlatformPagination, itemCount: number)
   };
 }
 
-function snapshotCacheKey(workspacePath: string, remoteId: string | null, page: number, perPage: number, mode: 'list' | 'context', state: ListStateFilter): string {
-  return `${workspacePath}::${remoteId ?? 'default'}::${page}::${perPage}::${mode}::${state}`;
+// Caches are keyed by the owning workspace ID, never by path: two workspaces
+// (for example a local checkout and a remote one) may share a root path.
+function snapshotCacheKey(workspaceId: string, remoteId: string | null, page: number, perPage: number, mode: 'list' | 'context', state: ListStateFilter): string {
+  return `${workspaceId}::${remoteId ?? 'default'}::${page}::${perPage}::${mode}::${state}`;
 }
 
-function detailCacheKey(workspacePath: string, remoteId: string, pullRequestId: string): string {
-  return `${workspacePath}::${remoteId}::${pullRequestId}`;
+function detailCacheKey(workspaceId: string, remoteId: string, pullRequestId: string): string {
+  return `${workspaceId}::${remoteId}::${pullRequestId}`;
 }
 
-function detailPageCacheKey(workspacePath: string, remoteId: string, pullRequestId: string, section: ReviewPlatformDetailSection, page: number, perPage: number): string {
-  return `${workspacePath}::${remoteId}::${pullRequestId}::${section}::${page}::${perPage}`;
+function detailPageCacheKey(workspaceId: string, remoteId: string, pullRequestId: string, section: ReviewPlatformDetailSection, page: number, perPage: number): string {
+  return `${workspaceId}::${remoteId}::${pullRequestId}::${section}::${page}::${perPage}`;
 }
 
-function clearDetailPageCacheForPullRequest(workspacePath: string, remoteId: string, pullRequestId: string): void {
-  const prefix = `${workspacePath}::${remoteId}::${pullRequestId}::`;
+function clearDetailPageCacheForPullRequest(workspaceId: string, remoteId: string, pullRequestId: string): void {
+  const prefix = `${workspaceId}::${remoteId}::${pullRequestId}::`;
   for (const key of detailPageCache.keys()) {
     if (key.startsWith(prefix)) {
       detailPageCache.delete(key);
@@ -217,23 +244,37 @@ function mergeDetailPage(
   };
 }
 
-function remotePreferenceKey(workspacePath: string): string {
+function remotePreferenceKey(workspaceId: string): string {
+  return `${REMOTE_STORAGE_PREFIX}id:${workspaceId}`;
+}
+
+/** Pre-ID installs stored the preference under the workspace path. */
+function legacyRemotePreferenceKey(workspacePath: string): string {
   return `${REMOTE_STORAGE_PREFIX}${workspacePath}`;
 }
 
-function readRememberedRemote(workspacePath?: string): string | null {
-  if (!workspacePath || typeof window === 'undefined') return null;
+function readRememberedRemote(workspaceId: string, workspacePath?: string): string | null {
+  if (!workspaceId || typeof window === 'undefined') return null;
   try {
-    return window.localStorage.getItem(remotePreferenceKey(workspacePath));
+    const remembered = window.localStorage.getItem(remotePreferenceKey(workspaceId));
+    if (remembered !== null) return remembered;
+    if (!workspacePath) return null;
+    // Migrate the legacy path-keyed preference onto the workspace ID.
+    const legacy = window.localStorage.getItem(legacyRemotePreferenceKey(workspacePath));
+    if (legacy !== null) {
+      window.localStorage.setItem(remotePreferenceKey(workspaceId), legacy);
+      window.localStorage.removeItem(legacyRemotePreferenceKey(workspacePath));
+    }
+    return legacy;
   } catch {
     return null;
   }
 }
 
-function rememberRemote(workspacePath: string | undefined, remoteId: string | null): void {
-  if (!workspacePath || typeof window === 'undefined') return;
+function rememberRemote(workspaceId: string, remoteId: string | null): void {
+  if (!workspaceId || typeof window === 'undefined') return;
   try {
-    const key = remotePreferenceKey(workspacePath);
+    const key = remotePreferenceKey(workspaceId);
     if (remoteId) {
       window.localStorage.setItem(key, remoteId);
     } else {
@@ -266,9 +307,7 @@ function formatAbsoluteTime(value: string): string {
 }
 
 function getPrIcon(pr: ReviewPlatformPullRequest) {
-  if (pr.state === 'merged') return <GitPullRequest size={15} className="review-platform__state-icon review-platform__state-icon--merged" />;
-  if (pr.state === 'closed') return <GitPullRequestClosed size={15} className="review-platform__state-icon review-platform__state-icon--closed" />;
-  return <GitPullRequest size={15} className="review-platform__state-icon review-platform__state-icon--open" />;
+  return <Icon glyph={pr.state === 'closed' ? GitPullRequestClosed : GitPullRequest} size="sm" tone={pr.state === 'closed' ? 'danger' : pr.state === 'merged' ? 'info' : pr.state === 'draft' ? 'muted' : 'success'} />;
 }
 
 function decisionLabel(decision: ReviewPlatformPullRequest['reviewDecision']): string {
@@ -298,6 +337,13 @@ function stateLabel(state: ReviewPlatformPullRequest['state']): string {
       return state;
   }
 }
+
+const pullRequestStateTones: Record<ReviewPlatformPullRequest['state'], StatusPillTone> = {
+  open: 'success',
+  draft: 'neutral',
+  merged: 'accent',
+  closed: 'danger',
+};
 
 function providerLabel(remote: ReviewPlatformRemote | ReviewPlatformAccount | null): string {
   if (!remote) return 'No provider';
@@ -659,12 +705,20 @@ function canExpandCiItem(remote: ReviewPlatformRemote | null, item: ReviewPlatfo
 
 export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
   workspacePath,
+  workspaceId,
   initialRemoteId,
   initialPullRequestId,
   initialPullRequestUrl,
   detailOnly = false,
 }) => {
   const { t } = useI18n('panels/git');
+  const authFormId = useId();
+  const backButtonRef = useRef<HTMLButtonElement>(null);
+  const selectedRowRef = useRef<HTMLButtonElement>(null);
+  const detailMenuRef = useRef<HTMLButtonElement>(null);
+  const panelFocusRequested = useRef(false);
+  const [panelView, setPanelView] = useState<'list' | 'detail'>('list');
+  const [detailMenuOpen, setDetailMenuOpen] = useState(false);
   const snapshotRequestSeq = useRef(0);
   const detailRequestSeq = useRef(0);
   const detailSectionRequestSeq = useRef(0);
@@ -698,7 +752,6 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
   const [ciLogById, setCiLogById] = useState<Record<string, ReviewPlatformCiLog>>({});
   const [ciLogErrorById, setCiLogErrorById] = useState<Record<string, string>>({});
   const [ciLogLoadingIds, setCiLogLoadingIds] = useState<Set<string>>(() => new Set());
-  const [snapshotCacheState, setSnapshotCacheState] = useState<SnapshotCacheState>('none');
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authToken, setAuthToken] = useState('');
   const [authSaving, setAuthSaving] = useState(false);
@@ -796,13 +849,13 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     const requestedRemoteId = nextRemoteId !== undefined
       ? nextRemoteId
       : detailOnly
-        ? readRememberedRemote(workspacePath)
+        ? readRememberedRemote(workspaceId, workspacePath)
         : null;
     const requestedPage = Math.max(1, options?.page ?? 1);
     const requestedState = detailOnly ? 'all' : options?.state ?? serverStateFilter.current;
     const snapshotMode = detailOnly ? 'context' : 'list';
     setListRemoteId(requestedRemoteId ?? null);
-    const requestedCacheKey = snapshotCacheKey(workspacePath, requestedRemoteId ?? null, requestedPage, PR_PAGE_SIZE, snapshotMode, requestedState);
+    const requestedCacheKey = snapshotCacheKey(workspaceId, requestedRemoteId ?? null, requestedPage, PR_PAGE_SIZE, snapshotMode, requestedState);
     const cached = snapshotCache.get(requestedCacheKey);
     const force = options?.force === true;
 
@@ -816,7 +869,6 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
       setVerifiedDetailKey(null);
       setDetailError(null);
       setError(null);
-      setSnapshotCacheState('cached');
       setLoading(false);
       return;
     } else {
@@ -825,30 +877,30 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
       setDetail(null);
       setVerifiedDetailKey(null);
       setDetailError(null);
-      setSnapshotCacheState('none');
     }
 
     setLoading(true);
     setError(null);
     try {
+      const repository = { workspaceId, repositoryPath: workspacePath };
       const fetchSnapshot = () => detailOnly
-        ? reviewPlatformAPI.getWorkspaceContext(workspacePath, requestedRemoteId ?? null)
+        ? reviewPlatformAPI.getWorkspaceContext(repository, requestedRemoteId ?? null)
         : reviewPlatformAPI.getWorkspaceSnapshot(
-            workspacePath,
+            repository,
             requestedRemoteId ?? null,
             requestedPage,
             PR_PAGE_SIZE,
             requestedState,
           );
       const next = options?.userInitiated
-        ? await withGitRepositoryTrustRecovery(fetchSnapshot, { userInitiated: true })
+        ? await withGitRepositoryTrustRecovery(fetchSnapshot, { workspaceId, repositoryPath: workspacePath }, { userInitiated: true })
         : await fetchSnapshot();
       if (snapshotRequestSeq.current !== requestSeq) return;
       setSnapshot(next);
       const remoteId = next.selectedRemoteId ?? next.remotes[0]?.id ?? null;
       setSelectedRemoteId(remoteId);
       setPageIndex(Math.max(0, (next.pagination.page || requestedPage) - 1));
-      rememberRemote(workspacePath, remoteId);
+      rememberRemote(workspaceId, remoteId);
       setSelectedPrId(detailOnly ? null : next.pullRequests[0]?.id ?? null);
       setDetail(null);
       setVerifiedDetailKey(null);
@@ -856,9 +908,8 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
       const entry = { snapshot: next, fetchedAt: Date.now() };
       snapshotCache.set(requestedCacheKey, entry);
       if (remoteId) {
-        snapshotCache.set(snapshotCacheKey(workspacePath, remoteId, requestedPage, PR_PAGE_SIZE, snapshotMode, requestedState), entry);
+        snapshotCache.set(snapshotCacheKey(workspaceId, remoteId, requestedPage, PR_PAGE_SIZE, snapshotMode, requestedState), entry);
       }
-      setSnapshotCacheState('cached');
     } catch (err) {
       if (snapshotRequestSeq.current !== requestSeq) return;
       const message = reviewPlatformErrorMessage(err, 'Failed to load pull requests');
@@ -869,13 +920,13 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
         setLoading(false);
       }
     }
-  }, [detailOnly, workspacePath]);
+  }, [detailOnly, workspacePath, workspaceId]);
 
   const loadDetail = useCallback(async (repo: ReviewPlatformRepositoryRef | null, remoteId: string, pullRequestId: string, options?: { force?: boolean }) => {
     const requestSeq = ++detailRequestSeq.current;
     detailSectionRequestSeq.current += 1;
     const repositoryPath = workspacePath || repo?.workspacePath || '';
-    const cacheKey = detailCacheKey(repositoryPath, remoteId, pullRequestId);
+    const cacheKey = detailCacheKey(workspaceId, remoteId, pullRequestId);
     const cached = detailCache.get(cacheKey);
     const force = options?.force === true;
 
@@ -883,7 +934,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     setVerifiedDetailKey(null);
     if (force) {
       detailCache.delete(cacheKey);
-      clearDetailPageCacheForPullRequest(repositoryPath, remoteId, pullRequestId);
+      clearDetailPageCacheForPullRequest(workspaceId, remoteId, pullRequestId);
     }
 
     if (cached && !force) {
@@ -895,6 +946,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     setDetailLoading(true);
     try {
       const nextDetail = await reviewPlatformAPI.getPullRequestDetailPage({
+        workspaceId,
         repositoryPath,
         remoteId,
         pullRequestId,
@@ -904,7 +956,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
       });
       if (detailRequestSeq.current !== requestSeq) return;
       if (cached && !samePullRequestRevisions(cached.detail, nextDetail)) {
-        clearDetailPageCacheForPullRequest(repositoryPath, remoteId, pullRequestId);
+        clearDetailPageCacheForPullRequest(workspaceId, remoteId, pullRequestId);
       }
       setDetail((current) => mergeRevalidatedPullRequestOverview(current, nextDetail));
       detailCache.set(cacheKey, { detail: nextDetail, fetchedAt: Date.now() });
@@ -921,7 +973,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
         setDetailLoading(false);
       }
     }
-  }, [workspacePath]);
+  }, [workspacePath, workspaceId]);
 
   const applySectionPagination = useCallback((section: Exclude<ReviewPlatformDetailSection, 'overview'>, pagination: ReviewPlatformPagination) => {
     if (section === 'ci') {
@@ -946,8 +998,8 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
   ) => {
     const repositoryPath = workspacePath || repo?.workspacePath || '';
     const page = Math.max(1, pageIndex + 1);
-    const cacheKey = detailPageCacheKey(repositoryPath, remoteId, pullRequestId, section, page, perPage);
-    const overviewCacheKey = detailCacheKey(repositoryPath, remoteId, pullRequestId);
+    const cacheKey = detailPageCacheKey(workspaceId, remoteId, pullRequestId, section, page, perPage);
+    const overviewCacheKey = detailCacheKey(workspaceId, remoteId, pullRequestId);
     const cached = detailPageCache.get(cacheKey);
     const force = options?.force === true;
     const matchesVerifiedOverview = (pageDetail: ReviewPlatformPullRequestDetail) => {
@@ -957,7 +1009,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
 
     if (cached && !force) {
       if (!matchesVerifiedOverview(cached.detail)) {
-        clearDetailPageCacheForPullRequest(repositoryPath, remoteId, pullRequestId);
+        clearDetailPageCacheForPullRequest(workspaceId, remoteId, pullRequestId);
         void loadDetail(repo, remoteId, pullRequestId, { force: true });
         return;
       }
@@ -971,6 +1023,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     setDetailError(null);
     try {
       const nextPage = await reviewPlatformAPI.getPullRequestDetailPage({
+        workspaceId,
         repositoryPath,
         remoteId,
         pullRequestId,
@@ -980,7 +1033,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
       });
       if (detailSectionRequestSeq.current !== requestSeq) return;
       if (!matchesVerifiedOverview(nextPage)) {
-        clearDetailPageCacheForPullRequest(repositoryPath, remoteId, pullRequestId);
+        clearDetailPageCacheForPullRequest(workspaceId, remoteId, pullRequestId);
         void loadDetail(repo, remoteId, pullRequestId, { force: true });
         return;
       }
@@ -996,16 +1049,25 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
         setDetailLoading(false);
       }
     }
-  }, [applySectionPagination, loadDetail, workspacePath]);
+  }, [applySectionPagination, loadDetail, workspacePath, workspaceId]);
 
   useEffect(() => {
     serverStateFilter.current = 'all';
+    setPanelView('list');
     setStateFilter('all');
     setSnapshot(emptySnapshot());
     void loadSnapshot(detailOnly && initialRemoteId ? initialRemoteId : undefined, { state: 'all' });
   }, [detailOnly, initialRemoteId, loadSnapshot]);
 
   useEffect(() => flowChatStore.subscribe(setFlowState), []);
+
+  useEffect(() => {
+    if (!panelFocusRequested.current) return;
+    panelFocusRequested.current = false;
+    // The back button is hidden in split view, where focus stays on the list.
+    const target = panelView === 'detail' ? backButtonRef.current : selectedRowRef.current;
+    target?.focus({ preventScroll: true });
+  }, [panelView, selectedPrId]);
 
   useEffect(() => {
     if (!selectedRemoteId) {
@@ -1053,7 +1115,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
 
     if (nextRemoteId && selectedRemoteId !== nextRemoteId) {
       setSelectedRemoteId(nextRemoteId);
-      rememberRemote(workspacePath, nextRemoteId);
+      rememberRemote(workspaceId, nextRemoteId);
     }
 
     if (selectedPrId !== targetPullRequestId) {
@@ -1070,10 +1132,12 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     snapshot.remotes,
     snapshot.selectedRemoteId,
     workspacePath,
+    workspaceId,
   ]);
 
   useEffect(() => {
     setActiveTab('overview');
+    setDetailMenuOpen(false);
     setExpandedFileKeys(new Set());
     setExpandedCiItemIds(new Set());
     setCiLogById({});
@@ -1096,7 +1160,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
 
   useEffect(() => {
     if (!hasDetail || !selectedRemoteId || !selectedPrId || (!repository && !workspacePath)) return;
-    if (verifiedDetailKey !== detailCacheKey(workspacePath || repository?.workspacePath || '', selectedRemoteId, selectedPrId)) return;
+    if (verifiedDetailKey !== detailCacheKey(workspaceId, selectedRemoteId, selectedPrId)) return;
     let disposed = false;
     if (activeTab === 'overview') {
       void (async () => {
@@ -1129,6 +1193,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     selectedRemoteId,
     verifiedDetailKey,
     workspacePath,
+    workspaceId,
   ]);
 
   const visiblePullRequests = useMemo(() => {
@@ -1152,7 +1217,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
       ? flowState.sessions.get(flowState.activeSessionId)
       : undefined;
     const sameWorkspace = (session?: Session) =>
-      Boolean(session && (!workspacePath || normalizePath(session.workspacePath ?? '') === normalizePath(workspacePath)));
+      Boolean(session && session.workspaceId === workspaceId);
 
     if (activeSession?.sessionKind === 'normal' && sameWorkspace(activeSession)) {
       return activeSession;
@@ -1172,11 +1237,11 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     return sessions
       .filter(session => session.sessionKind === 'normal' && sameWorkspace(session))
       .sort((left, right) => (right.lastActiveAt || right.updatedAt || right.createdAt) - (left.lastActiveAt || left.updatedAt || left.createdAt))[0];
-  }, [flowState.activeSessionId, flowState.sessions, workspacePath]);
+  }, [flowState.activeSessionId, flowState.sessions, workspaceId]);
 
   const currentPullRequest = detail ?? selectedPr;
   const selectedDetailKey = selectedRemoteId && selectedPrId
-    ? detailCacheKey(workspacePath || repository?.workspacePath || '', selectedRemoteId, selectedPrId)
+    ? detailCacheKey(workspaceId, selectedRemoteId, selectedPrId)
     : null;
   const currentRevisionsVerified = Boolean(
     selectedDetailKey && verifiedDetailKey === selectedDetailKey,
@@ -1268,22 +1333,11 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     ? Math.min(totalCount, currentPageIndex * pagination.perPage + snapshot.pullRequests.length)
     : currentPageIndex * pagination.perPage + snapshot.pullRequests.length;
 
-  const summary = useMemo(() => {
-    const prs = snapshot.pullRequests;
-    return {
-      open: prs.filter(pr => pr.state === 'open').length,
-      draft: prs.filter(pr => pr.state === 'draft').length,
-      merged: prs.filter(pr => pr.state === 'merged').length,
-      reviewRequired: prs.filter(pr => pr.reviewDecision === 'changes_requested' || pr.reviewDecision === 'pending').length,
-    };
-  }, [snapshot.pullRequests]);
-
-  const headerLabel = selectedRemote ? remoteLabel(selectedRemote) : repository ? repository.projectPath : 'No repository';
   const isGithubUserList = !detailOnly && selectedRemote?.platform === 'github';
-  const panelTitle = detailOnly ? 'Pull Request' : isGithubUserList ? 'My Open Pull Requests' : 'Pull Requests';
 
   const handleRemoteChange = useCallback((value: string | number | (string | number)[]) => {
     const remoteId = Array.isArray(value) ? String(value[0] ?? '') : String(value);
+    setPanelView('list');
     setSelectedRemoteId(remoteId || null);
     setSelectedPrId(null);
     setDetail(null);
@@ -1291,12 +1345,13 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     setStateFilter('all');
     serverStateFilter.current = 'all';
     setPageIndex(0);
-    rememberRemote(workspacePath, remoteId || null);
+    rememberRemote(workspaceId, remoteId || null);
     setSnapshot(emptySnapshot());
     void loadSnapshot(remoteId || null, { page: 1, state: 'all' });
-  }, [loadSnapshot, workspacePath]);
+  }, [loadSnapshot, workspaceId]);
 
   const handleStateChange = useCallback((state: ListStateFilter) => {
+    setPanelView('list');
     setStateFilter(state);
     if (snapshot.capabilities.supportedPullRequestStates?.includes(state)) {
       serverStateFilter.current = state;
@@ -1306,6 +1361,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
   }, [listRemoteId, loadSnapshot, snapshot.capabilities.supportedPullRequestStates]);
 
   const handlePageChange = useCallback((nextPageIndex: number) => {
+    setPanelView('list');
     const nextPage = Math.max(1, nextPageIndex + 1);
     setSelectedPrId(null);
     setDetail(null);
@@ -1334,39 +1390,35 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
   ) => {
     if (itemCount <= 0 || (page.totalPages <= 1 && !page.hasNext && page.pageIndex === 0)) return null;
     return (
-      <div data-openbitfun-component="review-platform" data-openbitfun-part="pagination" className="review-platform__pagination review-platform__detail-pagination">
-        <Tooltip content={`Previous ${label} page`}>
+      <Toolbar
+        data-openbitfun-product-component="review-platform"
+        data-openbitfun-product-part="pagination"
+        bordered={false}
+        leading={<OverflowText>{label}: {page.start}-{page.end} of {page.totalLabel}</OverflowText>}
+        trailing={<ToolbarGroup>
           <IconButton
             aria-label={`Previous ${label} page`}
-            className="review-platform__icon-button"
             size="sm"
             disabled={page.pageIndex === 0}
             onClick={() => onPageChange(page.pageIndex - 1)}
             icon={<Icon name="chevron-left" size="sm" />}
           />
-        </Tooltip>
-        <span>
-          {label}: {page.start}-{page.end} of {page.totalLabel}
-        </span>
-        <Tooltip content={`Next ${label} page`}>
           <IconButton
             aria-label={`Next ${label} page`}
-            className="review-platform__icon-button"
             size="sm"
             disabled={!page.hasNext && page.pageIndex >= page.totalPages - 1}
             onClick={() => onPageChange(page.pageIndex + 1)}
             icon={<Icon name="chevron-right" size="sm" />}
           />
-        </Tooltip>
-      </div>
+        </ToolbarGroup>}
+      />
     );
   }, []);
 
-  const renderDetailLoading = useCallback((message: string, refreshing = false) => (
-    <div data-openbitfun-component="review-platform" data-openbitfun-part="loadingState" className={`review-platform__thread-loading${refreshing ? ' review-platform__thread-loading--refreshing' : ''}`} aria-live="polite">
-      <Loader2 size={14} />
-      <span>{message}</span>
-    </div>
+  const renderDetailLoading = useCallback((message: string) => (
+    <LoadingState size="sm" role="status" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="loadingState">
+      {message}
+    </LoadingState>
   ), []);
 
   const handleOpenExternal = useCallback(async () => {
@@ -1415,6 +1467,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
 
     try {
       const nextLog = await reviewPlatformAPI.getPullRequestCiLog({
+        workspaceId,
         repositoryPath,
         remoteId: selectedRemoteId,
         pullRequestId: selectedPrId,
@@ -1435,7 +1488,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
         return next;
       });
     }
-  }, [ciLogById, repository, selectedPrId, selectedRemote, selectedRemoteId, workspacePath]);
+  }, [ciLogById, repository, selectedPrId, selectedRemote, selectedRemoteId, workspacePath, workspaceId]);
 
   const toggleCiExpanded = useCallback((item: ReviewPlatformCiItem) => {
     if (expandedCiItemIds.has(item.id)) {
@@ -1521,7 +1574,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     let ownsSharedLaunch = false;
     try {
       const reviewTarget = await reviewPlatformAPI.getPullRequestReviewTarget(
-        workspacePath,
+        { workspaceId, repositoryPath: workspacePath },
         selectedRemote.id,
         selectedPr.id,
       );
@@ -1549,7 +1602,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
         baseRevision: freshPullRequest.baseRevision,
         headRevision: freshPullRequest.headRevision,
       });
-      const cacheKey = detailCacheKey(workspacePath, selectedRemote.id, selectedPr.id);
+      const cacheKey = detailCacheKey(workspaceId, selectedRemote.id, selectedPr.id);
       setDetail((current) => current ? { ...current, ...reviewTarget.pullRequest } : current);
       setSnapshot((current) => ({
         ...current,
@@ -1572,6 +1625,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
       }
       const prepared = await prepareReviewLaunchFromPullRequest({
         workspacePath,
+        workspaceId,
         remote: selectedRemote,
         repository,
         reviewTarget,
@@ -1626,6 +1680,7 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     selectedPr,
     selectedRemote,
     workspacePath,
+    workspaceId,
   ]);
 
   const handleAddFileDiffContext = useCallback(async (file: ReviewPlatformFile) => {
@@ -1780,27 +1835,31 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
   const renderAuthGate = useCallback((mode: 'inline' | 'detail' = 'inline') => {
     if (!authChallenge || !selectedRemote || selectedRemote.platform === 'unknown') return null;
     return (
-      <div data-openbitfun-component="review-platform" data-openbitfun-part="authGate" className={`review-platform__auth-gate review-platform__auth-gate--${mode}`}>
-        <div className="review-platform__auth-gate-icon">
-          <KeyRound size={18} />
-        </div>
-        <div className="review-platform__auth-gate-copy" data-openbitfun-component="review-platform" data-openbitfun-part="authCopy">
-          <strong>{authChallengeTitle(authChallenge)}</strong>
-          <span>{authChallenge.message}</span>
-          <span>{authChallenge.host} · {authChallenge.projectPath}</span>
-          <span>{selectedRemote.platform === 'github' ? 'CLI authorization' : 'Required scopes'}: {authChallengeScopes(authChallenge)}</span>
-        </div>
-        <div className="review-platform__auth-gate-actions" data-openbitfun-component="review-platform" data-openbitfun-part="authActions">
-          <Button size="sm" variant="primary" onClick={handleOpenAuthModal} disabled={authSaving} leadingIcon={<KeyRound size={13} />}>
+      <Alert
+        data-openbitfun-product-component="review-platform"
+        data-openbitfun-product-part="authGate"
+        className={`review-platform__auth-gate review-platform__auth-gate--${mode}`}
+        tone="warning"
+        role="status"
+        title={authChallengeTitle(authChallenge)}
+        message={authChallenge.message}
+        description={<Stack gap="3">
+          <span data-openbitfun-product-component="review-platform" data-openbitfun-product-part="authCopy">
+            {authChallenge.host} · {authChallenge.projectPath}<br />
+            {selectedRemote.platform === 'github' ? 'CLI authorization' : 'Required scopes'}: {authChallengeScopes(authChallenge)}
+          </span>
+          <ToolbarGroup className="review-platform__wrap" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="authActions">
+            <Button size="sm" variant="primary" onClick={handleOpenAuthModal} disabled={authSaving} leadingIcon={<KeyRound size={13} />}>
 
-            {selectedRemote.platform === 'github' ? 'Authenticate' : authChallenge.state === 'missing' ? 'Add token' : 'Update token'}
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => refreshAuthSnapshot(selectedRemote.id)} disabled={authSaving || loading} leadingIcon={<Icon name="refresh" size="lg" style={{ width: 13, height: 13 }} />}>
+              {selectedRemote.platform === 'github' ? 'Authenticate' : authChallenge.state === 'missing' ? 'Add token' : 'Update token'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => refreshAuthSnapshot(selectedRemote.id)} disabled={authSaving || loading} leadingIcon={<Icon name="refresh" size="sm" />}>
 
-            Retry
-          </Button>
-        </div>
-      </div>
+              Retry
+            </Button>
+          </ToolbarGroup>
+        </Stack>}
+      />
     );
   }, [authChallenge, authSaving, handleOpenAuthModal, loading, refreshAuthSnapshot, selectedRemote]);
 
@@ -1850,32 +1909,19 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
     }
   }, [activeTab, changePageIndex, ciPageIndex, commitPageIndex, loadDetail, loadDetailSection, repository, reviewPageIndex, selectedPrId, selectedRemoteId, workspacePath]);
 
-  const remoteStatus = selectedRemote
-    ? `${providerLabel(selectedRemote)} · ${authLabel(account)}`
-    : 'No remote detected';
-  const displayPr = currentPullRequest;
+  const displayPr = currentRevisionsVerified ? currentPullRequest : selectedPrFromList ?? currentPullRequest;
   const displayStatistics = selectedPrFromList && (!detail || samePullRequestRevisions(selectedPrFromList, detail))
     ? resolvedPullRequestStatistics(selectedPrFromList, detail)
     : displayPr;
   const displayLineStats = resolvedLineStats(displayStatistics);
-  const checksText = displayPr && displayPr.checks.total > 0
-    ? `${displayPr.checks.passed}/${displayPr.checks.total}`
-    : 'N/A';
   const emptyStateMessage = snapshot.message
-    || account?.message
-    || selectedRemote?.message
+    || (account && account.authState !== 'connected' && account.authState !== 'not_required' ? account.message : null)
+    || (selectedRemote && selectedRemote.authState !== 'connected' && selectedRemote.authState !== 'not_required' ? selectedRemote.message : null)
     || (snapshot.remotes.length
       ? isGithubUserList && !query.trim()
         ? 'No open pull requests authored by the current GitHub CLI account.'
         : 'No pull requests match the current filter.'
       : 'No supported remotes were detected.');
-  const loadingLabel = loading
-    ? snapshotCacheState === 'refreshing'
-      ? 'Refreshing cached pull requests...'
-      : 'Loading pull requests...'
-    : snapshotCacheState === 'cached'
-      ? 'Cached pull requests'
-      : null;
   const checksStatusText = !displayPr || displayPr.checks.total === 0
     ? 'No checks'
     : displayPr.checks.failed > 0
@@ -1883,9 +1929,6 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
       : displayPr.checks.pending > 0
         ? `${displayPr.checks.pending} pending`
         : 'All checks passed';
-  const commentsText = reviewItemCount > 0
-    ? `${reviewItemCount} comment${reviewItemCount === 1 ? '' : 's'}`
-    : 'No comments';
   const reviewStatusText = latestCurrentReview
     ? currentPullRequestReviewStatusText(latestCurrentReview)
     : latestStaleReview
@@ -1909,241 +1952,215 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
   };
 
   return (
-    <div data-openbitfun-component="review-platform" data-openbitfun-part="root" data-openbitfun-layout={detailOnly ? 'detail' : 'full'} className={`review-platform${detailOnly ? ' review-platform--detail-only' : ''}`}>
+    <div data-openbitfun-product-component="review-platform" data-openbitfun-product-part="root" data-openbitfun-layout={detailOnly ? 'detail' : 'full'} data-openbitfun-view={detailOnly ? 'detail' : selectedPr ? panelView : 'list'} className={`review-platform${detailOnly ? ' review-platform--detail-only' : ''}`}>
       {!detailOnly && (
-        <div className="review-platform__topbar" data-openbitfun-component="review-platform" data-openbitfun-part="chrome">
-          <div className="review-platform__brand" data-openbitfun-component="review-platform" data-openbitfun-part="brand">
-            <span className="review-platform__brand-icon"><GitPullRequest size={17} /></span>
-            <div className="review-platform__brand-copy">
-              <span className="review-platform__title" data-openbitfun-component="review-platform" data-openbitfun-part="title">{panelTitle}</span>
-              <span className="review-platform__subtitle" data-openbitfun-component="review-platform" data-openbitfun-part="subtitle">{headerLabel}</span>
-            </div>
-          </div>
-
-          <div className="review-platform__topbar-actions" data-openbitfun-component="review-platform" data-openbitfun-part="actions">
-            <div className="review-platform__remote-select">
-              <Combobox
-                size="sm"
-                value={selectedRemoteId ?? ''}
-                options={remoteOptions}
-                placeholder="Select remote"
-                disabled={!remoteOptions.length || loading}
-                onValueChange={handleRemoteChange}
-              />
-            </div>
-            {account && (
-              <Tooltip content={`${account.label} · ${authSourceLabel(account.authSource)}`}>
-                <span className={`review-platform__account review-platform__account--${account.authState}`}>
-                  <ShieldCheck size={13} />
-                  <OverflowText>{authLabel(account)}</OverflowText>
-                </span>
-              </Tooltip>
-            )}
+        <Toolbar className="review-platform__toolbar" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="chrome"
+          leading={<Combobox
+            className="review-platform__remote-select"
+            aria-label="Repository"
+            size="sm"
+            value={selectedRemoteId ?? ''}
+            options={remoteOptions}
+            placeholder="Select repository"
+            disabled={!remoteOptions.length || loading}
+            onValueChange={handleRemoteChange}
+          />}
+          trailing={<ToolbarGroup data-openbitfun-product-component="review-platform" data-openbitfun-product-part="actions">
             <Tooltip content={selectedRemote?.platform === 'github' ? 'GitHub CLI authentication' : account?.authSource === 'stored' ? 'Update token' : 'Add token'}>
               <IconButton
                 aria-label={selectedRemote?.platform === 'github' ? 'GitHub CLI authentication' : account?.authSource === 'stored' ? 'Update token' : 'Add token'}
-                className="review-platform__icon-button"
                 size="sm"
                 disabled={!selectedRemote || selectedRemote.platform === 'unknown' || loading || authSaving}
                 onClick={handleOpenAuthModal}
                 icon={<KeyRound size={14} />}
               />
             </Tooltip>
-            {account?.authSource === 'stored' && (
-              <Tooltip content="Clear token">
-                <IconButton
-                  aria-label="Clear token"
-                  className="review-platform__icon-button"
-                  size="sm"
-                  disabled={!selectedRemote || loading || authSaving}
-                  onClick={handleClearAuthToken}
-                  icon={<Icon name="delete" size="sm" />}
-                />
-              </Tooltip>
-            )}
             <Tooltip content="Refresh">
               <IconButton
                 aria-label="Refresh"
                 data-testid="review-platform-refresh"
-                className="review-platform__icon-button"
                 size="sm"
                 onClick={() => void loadSnapshot(listRemoteId, { force: true, page: currentPageIndex + 1, userInitiated: true })}
                 loading={loading}
                 icon={<Icon name="refresh" size="sm" />}
               />
             </Tooltip>
-          </div>
-        </div>
+          </ToolbarGroup>}
+        />
       )}
 
-      {!detailOnly && (
-      <div className="review-platform__subbar" data-openbitfun-component="review-platform" data-openbitfun-part="statusBar">
-        <div className="review-platform__status-line" data-openbitfun-component="review-platform" data-openbitfun-part="statusLine">
-          <span><CircleDot size={12} /> {summary.open} open on page</span>
-          {!isGithubUserList && <span><GitPullRequestClosed size={12} /> {summary.merged} merged on page</span>}
-          <span><Icon name="spark" size="xs" /> {summary.reviewRequired} review on page</span>
-          <span><Icon name="link" size="xs" /> {remoteStatus}</span>
-          {loadingLabel && (
-            <span className={loading ? 'review-platform__loading-status' : 'review-platform__cache-label'}>
-              {loading && <Loader2 size={12} className="review-platform__loading-inline review-platform__loading-inline--icon" />}
-              {loadingLabel}
-            </span>
-          )}
-        </div>
-      </div>
-      )}
-
-      {authChallenge && !detailOnly && renderAuthGate('inline')}
-
-      <div className="review-platform__body" data-openbitfun-component="review-platform" data-openbitfun-part="body">
+      <div className={`review-platform__body${!detailOnly && !selectedPr ? ' review-platform__body--list-only' : ''}`} data-openbitfun-product-component="review-platform" data-openbitfun-product-part="body">
         {!detailOnly && (
-        <aside className="review-platform__list" data-openbitfun-component="review-platform" data-openbitfun-part="listPane" aria-label="Pull request list">
-          <div className="review-platform__list-toolbar" data-openbitfun-component="review-platform" data-openbitfun-part="listToolbar">
-            <DesignInput
-              value={query}
-              onChange={event => setQuery(event.target.value)}
-              placeholder="Search pull requests"
-              leading={<Icon name="search" size="sm" />}
-              trailing={query ? <IconButton
-                aria-label="Clear search"
-                className="review-platform__icon-button"
-                size="sm"
-                onClick={() => setQuery('')}
-                icon={<Icon name="xmark" size="sm" />}
-              /> : undefined}
-              size="sm"
-            />
-            {!isGithubUserList && (
-              <div className="review-platform__state-filters" data-openbitfun-component="review-platform" data-openbitfun-part="filters">
-                {(['all', 'open', 'draft', 'merged', 'closed'] as ListStateFilter[]).map(state => (
-                  <button
-                    key={state}
-                    type="button"
-                    className={`review-platform__state-chip${stateFilter === state ? ' is-active' : ''}`}
-                    data-testid={`review-platform-filter-${state}`}
-                    aria-pressed={stateFilter === state}
-                    disabled={selectedRemote?.platform === 'gitee' && state !== 'all' && !snapshot.capabilities.supportedPullRequestStates?.includes(state)}
-                    onClick={() => handleStateChange(state)}
-                  >
-                    {state === 'all' ? 'All' : stateLabel(state)}
-                  </button>
-                ))}
-              </div>
-            )}
-            {selectedRemote?.platform === 'gitee' && !snapshot.capabilities.supportedPullRequestStates?.length && (
-              <div role="status">{t('reviewPlatform.stateFilterUnsupported')}</div>
-            )}
-          </div>
+          <NavigationPanel className="review-platform__list" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="listPane" aria-label="Pull request list">
+            <NavigationPanelHeader data-openbitfun-product-component="review-platform" data-openbitfun-product-part="listToolbar">
+              <Stack gap="2">
+                {authChallenge && renderAuthGate('inline')}
+                <SearchField
+                  value={query}
+                  onChange={event => setQuery(event.target.value)}
+                  placeholder={isGithubUserList ? 'Search my open pull requests' : 'Search pull requests'}
+                  aria-label="Search pull requests"
+                  leadingIcon={<Icon name="search" size="sm" />}
+                  clearLabel={query ? 'Clear search' : undefined}
+                  onClear={() => setQuery('')}
+                  size="sm"
+                />
+                {!isGithubUserList && (
+                  <SegmentedControl
+                    aria-label="Pull request state"
+                    data-openbitfun-product-component="review-platform"
+                    data-openbitfun-product-part="filters"
+                    value={stateFilter}
+                    variant="pills"
+                    tone="neutral"
+                    onValueChange={value => handleStateChange(value as ListStateFilter)}
+                    options={(['all', 'open', 'draft', 'merged', 'closed'] as ListStateFilter[]).map(state => ({
+                      value: state,
+                      label: state === 'all' ? 'All' : stateLabel(state),
+                      disabled: selectedRemote?.platform === 'gitee' && state !== 'all' && !snapshot.capabilities.supportedPullRequestStates?.includes(state),
+                    }))}
+                  />
+                )}
+                {selectedRemote?.platform === 'gitee' && !snapshot.capabilities.supportedPullRequestStates?.length && (
+                  <Alert tone="warning" role="status" message={t('reviewPlatform.stateFilterUnsupported')} />
+                )}
+              </Stack>
+            </NavigationPanelHeader>
 
-          <ScrollArea className="review-platform__list-scroll" data-openbitfun-component="review-platform" data-openbitfun-part="listScroll">
-            {loading && (
-              <div data-testid="review-platform-list-loading" className="review-platform__empty-state" data-openbitfun-component="review-platform" data-openbitfun-part="emptyState">Loading pull requests...</div>
+            <NavigationPanelBody data-openbitfun-product-component="review-platform" data-openbitfun-product-part="listScroll">
+              <NavigationPanelContent>
+                {loading && (
+                  <LoadingState size="sm" role="status" data-testid="review-platform-list-loading" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="loadingState">Loading pull requests...</LoadingState>
+                )}
+                {error && (
+                  <Alert tone="error" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="errorState"
+                    message={error.includes('review_platform_state_filter_unsupported') ? t('reviewPlatform.stateFilterUnsupported') : error}
+                    description={
+                      <Button size="sm" variant="outline" onClick={() => void loadSnapshot(listRemoteId, { force: true, page: currentPageIndex + 1, userInitiated: true })}>
+                        Retry
+                      </Button>
+                    }
+                  />
+                )}
+                {!loading && !error && !authChallenge && !visiblePullRequests.length && (
+                  <Empty icon={<GitPullRequest />} description={emptyStateMessage} data-openbitfun-product-component="review-platform" data-openbitfun-product-part="emptyState" />
+                )}
+                {!loading && !error && visiblePullRequests.map(pr => {
+                  const pullRequestRemote = pr.providerId
+                    ? snapshot.remotes.find(remote => remote.id === pr.providerId)
+                    : selectedRemote;
+                  const selected = selectedPrId === pr.id && (!pr.providerId || pr.providerId === selectedRemoteId);
+                  return (
+                    <NavigationPanelItem data-openbitfun-product-component="review-platform" data-openbitfun-product-part="listItem"
+                      data-testid="review-platform-pr-row"
+                      data-pr-number={pr.number}
+                      data-pr-state={pr.state}
+                      data-openbitfun-state={selected ? 'selected' : ''}
+                      key={`${pr.providerId ?? selectedRemoteId ?? 'remote'}:${pr.id}`}
+                      selected={selected}
+                      ref={selected ? selectedRowRef : undefined}
+                      labelBehavior="static"
+                      leading={getPrIcon(pr)}
+                      onClick={() => {
+                        if (pr.providerId && pr.providerId !== selectedRemoteId) {
+                          setSelectedRemoteId(pr.providerId);
+                          rememberRemote(workspaceId, pr.providerId);
+                        }
+                        panelFocusRequested.current = true;
+                        setPanelView('detail');
+                        setSelectedPrId(pr.id);
+                      }}
+                    >
+                      <span className="review-platform__list-copy" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="listItemMain">
+                        <OverflowText data-openbitfun-product-component="review-platform" data-openbitfun-product-part="listItemTitle">{pr.title}</OverflowText>
+                        <OverflowText className="review-platform__meta" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="listItemMeta">
+                          {[isGithubUserList && pullRequestRemote?.projectPath, `#${pr.number}`, pr.author, formatRelativeTime(pr.updatedAt)].filter(Boolean).join(' · ')}
+                        </OverflowText>
+                      </span>
+                    </NavigationPanelItem>
+                  );
+                })}
+              </NavigationPanelContent>
+            </NavigationPanelBody>
+            {!loading && !error && (totalPages > 1 || pagination.hasNext) && (
+              <NavigationPanelFooter data-testid="review-platform-pagination" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="pagination">
+                <Tooltip content="Previous page">
+                  <IconButton
+                    aria-label="Previous page"
+                    data-testid="review-platform-previous-page"
+                    size="sm"
+                    disabled={currentPageIndex === 0}
+                    onClick={() => handlePageChange(currentPageIndex - 1)}
+                    icon={<Icon name="chevron-left" size="sm" />}
+                  />
+                </Tooltip>
+                <span>
+                  {pageStart}-{pageEnd} of {totalCount ?? `${pageEnd}+`}
+                </span>
+                <Tooltip content="Next page">
+                  <IconButton
+                    aria-label="Next page"
+                    data-testid="review-platform-next-page"
+                    size="sm"
+                    disabled={!pagination.hasNext && currentPageIndex >= totalPages - 1}
+                    onClick={() => handlePageChange(currentPageIndex + 1)}
+                    icon={<Icon name="chevron-right" size="sm" />}
+                  />
+                </Tooltip>
+              </NavigationPanelFooter>
             )}
-            {error && (
-              <div className="review-platform__error-state" data-openbitfun-component="review-platform" data-openbitfun-part="errorState">
-                <Icon name="xmark" size="md" />
-                <span>{error.includes('review_platform_state_filter_unsupported') ? t('reviewPlatform.stateFilterUnsupported') : error}</span>
-                <Button size="sm" variant="outline" onClick={() => void loadSnapshot(listRemoteId, { force: true, page: currentPageIndex + 1, userInitiated: true })}>
-                  Retry
-                </Button>
-              </div>
-            )}
-            {!loading && !error && !authChallenge && !visiblePullRequests.length && (
-              <div className="review-platform__empty-state" data-openbitfun-component="review-platform" data-openbitfun-part="emptyState">
-                <GitPullRequest size={18} />
-                <span>{emptyStateMessage}</span>
-              </div>
-            )}
-            {!loading && !error && visiblePullRequests.map(pr => (
-              (() => {
-                const pullRequestRemote = pr.providerId
-                  ? snapshot.remotes.find(remote => remote.id === pr.providerId)
-                  : selectedRemote;
-                const cachedDetail = pullRequestRemote
-                  ? detailCache.get(detailCacheKey(workspacePath || repository?.workspacePath || '', pullRequestRemote.id, pr.id))
-                  : undefined;
-                const statistics = resolvedPullRequestStatistics(pr, cachedDetail?.detail);
-                const lineStats = resolvedLineStats(statistics);
-                return (
-                  <button data-overflow-trigger data-openbitfun-component="review-platform" data-openbitfun-part="listItem"
-                    data-testid="review-platform-pr-row"
-                    data-pr-number={pr.number}
-                    data-pr-state={pr.state}
-                    data-openbitfun-state={selectedPrId === pr.id && (!pr.providerId || pr.providerId === selectedRemoteId) ? 'selected' : ''}
-                    key={`${pr.providerId ?? selectedRemoteId ?? 'remote'}:${pr.id}`}
-                    type="button"
-                    className={`review-platform__pr-row${selectedPrId === pr.id && (!pr.providerId || pr.providerId === selectedRemoteId) ? ' is-selected' : ''}`}
-                    onClick={() => {
-                      if (pr.providerId && pr.providerId !== selectedRemoteId) {
-                        setSelectedRemoteId(pr.providerId);
-                        rememberRemote(workspacePath, pr.providerId);
-                      }
-                      setSelectedPrId(pr.id);
-                    }}
-                  >
-                    <span className="review-platform__pr-icon">{getPrIcon(pr)}</span>
-                    <span className="review-platform__pr-main" data-openbitfun-component="review-platform" data-openbitfun-part="listItemMain">
-                      <OverflowText className="review-platform__pr-title" data-openbitfun-component="review-platform" data-openbitfun-part="listItemTitle">{pr.title}</OverflowText>
-                      <span className="review-platform__pr-meta" data-openbitfun-component="review-platform" data-openbitfun-part="listItemMeta">
-                        {pullRequestRemote?.projectPath ? `${pullRequestRemote.projectPath} · ` : ''}#{pr.number} · {pr.sourceBranch} → {pr.targetBranch}
-                      </span>
-                      <span className="review-platform__pr-meta review-platform__pr-meta--secondary">
-                        {pr.author} · {formatRelativeTime(pr.updatedAt)}
-                      </span>
-                    </span>
-                    <span className="review-platform__pr-stats" data-openbitfun-component="review-platform" data-openbitfun-part="listItemStats">
-                      <span className={`review-platform__decision review-platform__decision--${pr.reviewDecision}`}>
-                        {decisionLabel(pr.reviewDecision)}
-                      </span>
-                      <span className="review-platform__counts">
-                        <span data-testid="review-platform-pr-files">{resolvedChangedFileCount(statistics) ?? '—'} files</span>
-                        <span data-testid="review-platform-pr-additions" className="review-platform__additions">{lineStats ? `+${lineStats.additions}` : '—'}</span>
-                        <span data-testid="review-platform-pr-deletions" className="review-platform__deletions">{lineStats ? `-${lineStats.deletions}` : '—'}</span>
-                      </span>
-                    </span>
-                  </button>
-                );
-              })()
-            ))}
-          </ScrollArea>
-          {!loading && !error && (totalPages > 1 || pagination.hasNext) && (
-            <div data-testid="review-platform-pagination" className="review-platform__pagination" data-openbitfun-component="review-platform" data-openbitfun-part="pagination">
-              <Tooltip content="Previous page">
-                <IconButton
-                  aria-label="Previous page"
-                  data-testid="review-platform-previous-page"
-                  className="review-platform__icon-button"
-                  size="sm"
-                  disabled={currentPageIndex === 0}
-                  onClick={() => handlePageChange(currentPageIndex - 1)}
-                  icon={<Icon name="chevron-left" size="sm" />}
-                />
-              </Tooltip>
-              <span>
-                {pageStart}-{pageEnd} of {totalCount ?? `${pageEnd}+`}
-              </span>
-              <Tooltip content="Next page">
-                <IconButton
-                  aria-label="Next page"
-                  data-testid="review-platform-next-page"
-                  className="review-platform__icon-button"
-                  size="sm"
-                  disabled={!pagination.hasNext && currentPageIndex >= totalPages - 1}
-                  onClick={() => handlePageChange(currentPageIndex + 1)}
-                  icon={<Icon name="chevron-right" size="sm" />}
-                />
-              </Tooltip>
-            </div>
-          )}
-        </aside>
+          </NavigationPanel>
         )}
 
-        <main className="review-platform__detail" data-openbitfun-component="review-platform" data-openbitfun-part="detailPane">
+        {(detailOnly || selectedPr) && <main className="review-platform__detail" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="detailPane">
+          {(!detailOnly || selectedPr) && (
+            <Toolbar
+              className="review-platform__detail-toolbar"
+              data-openbitfun-product-component="review-platform"
+              data-openbitfun-product-part="detailActions"
+              leading={!detailOnly ? (
+                <Button
+                  className="review-platform__back"
+                  ref={backButtonRef}
+                  data-testid="review-platform-back"
+                  size="sm"
+                  variant="text"
+                  leadingIcon={<Icon name="chevron-left" size="sm" />}
+                  onClick={() => {
+                    panelFocusRequested.current = true;
+                    setPanelView('list');
+                  }}
+                >Pull requests</Button>
+              ) : <OverflowText className="review-platform__meta">{selectedRemote?.projectPath}</OverflowText>}
+              trailing={selectedPr && <ToolbarGroup>
+                <Tooltip content={!parentSession ? 'Open or create a chat first' : 'Start Review'}>
+                  <span>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      onClick={handleStartReview}
+                      disabled={!parentSession || !repository || !selectedRemote || reviewLaunching || detailLoading || latestCurrentReview?.lifecycle === 'running'}
+                      loading={reviewLaunching}
+                      leadingIcon={<Icon name="spark" size="xs" />}
+                    >{latestCurrentReview?.lifecycle === 'running' ? 'Review running' : 'Review'}</Button>
+                  </span>
+                </Tooltip>
+                <Tooltip content="Pull request actions">
+                  <IconButton
+                    ref={detailMenuRef}
+                    aria-label="Pull request actions"
+                    aria-haspopup="menu"
+                    aria-expanded={detailMenuOpen}
+                    size="sm"
+                    icon={<MoreHorizontal size={16} />}
+                    onClick={() => setDetailMenuOpen(open => !open)}
+                  />
+                </Tooltip>
+              </ToolbarGroup>}
+            />
+          )}
           {!selectedPr && detailOnly && (loading || detailLoading) && (
-            <div className="review-platform__detail-empty">
-              <Loader2 size={20} className="review-platform__loading-inline review-platform__loading-inline--icon" />
-              <span>Loading pull request details...</span>
-            </div>
+            <LoadingState className="review-platform__detail-empty" role="status">Loading pull request details...</LoadingState>
           )}
 
           {!selectedPr && detailOnly && !loading && !detailLoading && authChallenge && (
@@ -2153,10 +2170,11 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
           )}
 
           {!selectedPr && detailOnly && !loading && !detailLoading && !authChallenge && (detailError || error) && (
-            <div className="review-platform__detail-empty">
-              <Icon name="xmark" size="lg" />
-              <span>{detailError || error}</span>
-              <div className="review-platform__detail-empty-actions">
+            <Empty
+              className="review-platform__detail-empty"
+              icon={<Icon name="info" tone="danger" />}
+              description={detailError || error}
+              actions={<>
                 <Button size="sm" variant="outline" onClick={handleRetryDetail}>
                   Retry
                 </Button>
@@ -2166,18 +2184,16 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
                     {selectedRemote.platform === 'github' ? 'Authenticate' : account?.authSource === 'stored' ? 'Update token' : 'Add token'}
                   </Button>
                 )}
-              </div>
-            </div>
+              </>}
+            />
           )}
 
           {!selectedPr && detailOnly && !loading && !detailLoading && !authChallenge && !detailError && !error && (
-            <div className="review-platform__detail-empty">
-              <GitPullRequest size={24} />
-              <span>
-                {snapshot.message
-                  || 'This pull request could not be resolved from the remotes of the current workspace.'}
-              </span>
-              <div className="review-platform__detail-empty-actions">
+            <Empty
+              className="review-platform__detail-empty"
+              icon={<GitPullRequest />}
+              description={snapshot.message || 'This pull request could not be resolved from the remotes of the current workspace.'}
+              actions={<>
                 <Button
                   size="sm"
                   variant="outline"
@@ -2196,145 +2212,57 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
                     Open in browser
                   </Button>
                 )}
-              </div>
-            </div>
-          )}
-
-          {!selectedPr && !detailOnly && !loading && (
-            <div className="review-platform__detail-empty">
-              <GitPullRequest size={24} />
-              <span>Select a pull request to inspect it.</span>
-            </div>
+              </>}
+            />
           )}
 
           {selectedPr && (
             <>
-              <div className="review-platform__detail-header" data-openbitfun-component="review-platform" data-openbitfun-part="detailHeader">
-                <div className="review-platform__detail-title-block" data-openbitfun-component="review-platform" data-openbitfun-part="detailTitle">
-                  <div className="review-platform__detail-title-row">
-                    {getPrIcon(selectedPr)}
-                    <h3><OverflowText>{selectedPr.title}</OverflowText></h3>
-                    <span data-testid="review-platform-detail-state" className={`review-platform__detail-state review-platform__detail-state--${displayPr?.state ?? selectedPr.state}`} data-openbitfun-component="review-platform" data-openbitfun-part="detailState">
+              <FormSection
+                className="review-platform__detail-header"
+                data-openbitfun-product-component="review-platform"
+                data-openbitfun-product-part="detailHeader"
+                headingAs="h3"
+                title={<span data-openbitfun-product-component="review-platform" data-openbitfun-product-part="detailTitle">{selectedPr.title}</span>}
+                description={
+                  <Stack direction="horizontal" gap="2" align="center" wrap className="review-platform__detail-meta" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="detailMeta">
+                    <StatusPill data-testid="review-platform-detail-state" tone={pullRequestStateTones[displayPr?.state ?? selectedPr.state]} data-openbitfun-product-component="review-platform" data-openbitfun-product-part="detailState">
                       {stateLabel(displayPr?.state ?? selectedPr.state)}
-                    </span>
-                  </div>
-                  <div className="review-platform__detail-meta" data-openbitfun-component="review-platform" data-openbitfun-part="detailMeta">
+                    </StatusPill>
                     <span>#{selectedPr.number}</span>
-                    <span><Icon name="clock" size="xs" /> {formatAbsoluteTime(selectedPr.updatedAt) || formatRelativeTime(selectedPr.updatedAt)}</span>
-                  </div>
-                </div>
-                <div className="review-platform__detail-actions" data-openbitfun-component="review-platform" data-openbitfun-part="detailActions">
-                  <Tooltip content={!parentSession ? 'Open or create a chat first' : 'Start Review'}>
-                    <span>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        onClick={handleStartReview}
-                        disabled={
-                          !parentSession ||
-                          !repository ||
-                          !selectedRemote ||
-                          reviewLaunching ||
-                          detailLoading ||
-                          latestCurrentReview?.lifecycle === 'running'
-                        }
-                        loading={reviewLaunching}
-                        leadingIcon={<Icon name="spark" size="xs" />}
-                      >
-
-                        {latestCurrentReview?.lifecycle === 'running' ? 'Review running' : 'Review'}
-                      </Button>
-                    </span>
-                  </Tooltip>
-                  <Button size="sm" variant="outline" onClick={handleOpenExternal} disabled={!selectedPr.webUrl && !initialPullRequestUrl} leadingIcon={<Icon name="link" size="xs" />}>
-
-                    Open
-                  </Button>
-                  {detailOnly && selectedRemote && selectedRemote.platform !== 'unknown' && (
-                    <Tooltip content={selectedRemote.platform === 'github' ? 'GitHub CLI authentication' : account?.authSource === 'stored' ? 'Update token' : 'Add token'}>
-                      <IconButton
-                        aria-label={selectedRemote.platform === 'github' ? 'GitHub CLI authentication' : account?.authSource === 'stored' ? 'Update token' : 'Add token'}
-                        className="review-platform__icon-button"
-                        size="sm"
-                        onClick={handleOpenAuthModal}
-                        disabled={authSaving}
-                        icon={<KeyRound size={14} />}
-                      />
-                    </Tooltip>
-                  )}
-                  <Tooltip content="Refresh pull request">
-                    <IconButton
-                      aria-label="Refresh pull request"
-                      className="review-platform__icon-button"
-                      size="sm"
-                      disabled={detailLoading}
-                      onClick={handleRefreshDetail}
-                      loading={detailLoading}
-                      icon={<Icon name="refresh" size="sm" />}
-                    />
-                  </Tooltip>
-                </div>
-              </div>
-
-              <div className="review-platform__fact-list" data-openbitfun-component="review-platform" data-openbitfun-part="facts">
-                <div className="review-platform__fact-row">
-                  <span className="review-platform__fact-label"><Code2 size={14} /> Branches</span>
-                  <div className="review-platform__fact-value review-platform__fact-value--branch">
-                    <strong><OverflowText>{displayPr?.sourceBranch ?? selectedPr.sourceBranch}</OverflowText></strong>
-                    <Icon name="chevron-right" size="xs" />
-                    <strong><OverflowText>{displayPr?.targetBranch ?? selectedPr.targetBranch}</OverflowText></strong>
-                    <span data-testid="review-platform-detail-files">{resolvedChangedFileCount(displayStatistics) ?? '—'} files</span>
-                    <span data-testid="review-platform-detail-additions" className="review-platform__additions">{displayLineStats ? `+${displayLineStats.additions}` : '—'}</span>
-                    <span data-testid="review-platform-detail-deletions" className="review-platform__deletions">{displayLineStats ? `-${displayLineStats.deletions}` : '—'}</span>
-                  </div>
-                </div>
-                <div className="review-platform__fact-row">
-                  <span className="review-platform__fact-label"><Icon name="user" size="sm" /> Author</span>
-                  <div className="review-platform__fact-value">
-                    <strong>{displayPr?.author ?? selectedPr.author}</strong>
-                  </div>
-                </div>
-                <div className="review-platform__fact-row">
-                  <span className="review-platform__fact-label"><MessageSquareText size={14} /> Comments</span>
-                  <div className="review-platform__fact-value">{commentsText}</div>
-                </div>
-                <div className="review-platform__fact-row">
-                  <span className="review-platform__fact-label"><Icon name="check-circle" size="sm" /> Checks</span>
-                  <div className="review-platform__fact-value">
-                    <strong>{checksStatusText}</strong>
-                    {displayPr && displayPr.checks.total > 0 && <span>{checksText}</span>}
-                  </div>
-                </div>
-                <div className="review-platform__fact-row">
-                  <span className="review-platform__fact-label"><Icon name="spark" size="sm" /> OpenBitFun Review</span>
-                  <div className="review-platform__fact-value review-platform__fact-value--review">
-                    <OverflowText>{reviewStatusText}</OverflowText>
-                    {(latestCurrentReview || latestStaleReview || latestUnknownReview) && (
-                      <Button size="sm" variant="outline" onClick={handleOpenLatestReview}>
-                        Open Review
-                      </Button>
+                    <span>{displayPr?.author ?? selectedPr.author}</span>
+                    <span>{formatAbsoluteTime(selectedPr.updatedAt) || formatRelativeTime(selectedPr.updatedAt)}</span>
+                    {(displayPr?.reviewDecision === 'approved' || displayPr?.reviewDecision === 'changes_requested') && (
+                      <StatusPill tone={displayPr.reviewDecision === 'approved' ? 'success' : 'danger'}>{decisionLabel(displayPr.reviewDecision)}</StatusPill>
                     )}
-                  </div>
-                </div>
-              </div>
+                  </Stack>
+                }
+              >
+                <Stack gap="2" className="review-platform__meta" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="facts">
+                  <OverflowText>{displayPr?.sourceBranch ?? selectedPr.sourceBranch} → {displayPr?.targetBranch ?? selectedPr.targetBranch}</OverflowText>
+                  <Stack direction="horizontal" gap="2" align="center" wrap>
+                    <span data-testid="review-platform-detail-files">{resolvedChangedFileCount(displayStatistics) ?? '—'} files</span>
+                    {displayLineStats ? <ChangeCount data-testid="review-platform-detail-line-stats" additions={displayLineStats.additions} deletions={displayLineStats.deletions} /> : <span data-testid="review-platform-detail-line-stats">—</span>}
+                  </Stack>
+                </Stack>
+              </FormSection>
 
-              <div className="review-platform__tabs" data-openbitfun-component="review-platform" data-openbitfun-part="tabs">
+              <div className="review-platform__tabs" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="tabs">
                 {(detail?.limitations?.length ?? 0) > 0 && (
-                  <div className="review-platform__detail-error" role="status">
-                    <span>{detail!.limitations!.map(limitation => {
-                      switch (limitation) {
-                        case 'gitee_file_list_limit': return t('reviewPlatform.fileLimit');
-                        case 'gitee_commit_list_limit': return t('reviewPlatform.commitLimit');
-                        case 'provider_comment_list_incomplete': return t('reviewPlatform.commentsLimited');
-                        case 'provider_ci_list_incomplete': return t('reviewPlatform.checksLimited');
-                        case 'provider_ci_head_unavailable': return t('reviewPlatform.ciHeadUnavailable');
-                        default: return t('reviewPlatform.limited');
-                      }
-                    }).join(' ')}</span>
-                  </div>
+                  <Alert tone="warning" role="status" message={detail!.limitations!.map(limitation => {
+                    switch (limitation) {
+                      case 'gitee_file_list_limit': return t('reviewPlatform.fileLimit');
+                      case 'gitee_commit_list_limit': return t('reviewPlatform.commitLimit');
+                      case 'provider_comment_list_incomplete': return t('reviewPlatform.commentsLimited');
+                      case 'provider_ci_list_incomplete': return t('reviewPlatform.checksLimited');
+                      case 'provider_ci_head_unavailable': return t('reviewPlatform.ciHeadUnavailable');
+                      default: return t('reviewPlatform.limited');
+                    }
+                  }).join(' ')} />
                 )}
-                <div className="review-platform__tab-bar" data-openbitfun-component="review-platform" data-openbitfun-part="tabBar">
+                <Toolbar className="review-platform__tab-bar" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="tabBar" leading={
                   <TabGroup
+                    aria-label="Pull request details"
                     items={[
                       { value: 'overview', label: 'Overview' },
                       { value: 'changes', label: 'Changes' },
@@ -2343,290 +2271,227 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
                     value={activeTab}
                     onValueChange={(value) => setActiveTab(value as DetailTab)}
                   />
-                </div>
+                } />
                 {activeTab === 'overview' && (
-                  <ScrollArea className="review-platform__tab-content review-platform__overview-scroll" data-openbitfun-component="review-platform" data-openbitfun-part="tabContent">
-                    <section className="review-platform__detail-section" data-openbitfun-component="review-platform" data-openbitfun-part="section">
-                      <div className="review-platform__detail-section-heading" data-openbitfun-component="review-platform" data-openbitfun-part="sectionHeading">
-                        <span>Description</span>
-                        <Button size="sm" variant="outline" onClick={handleFillPrContext} disabled={!selectedPr} leadingIcon={<MessageSquareText size={13} />}>
-
-                          Add to chat
-                        </Button>
+                  <ScrollArea className="review-platform__tab-content" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="tabContent">
+                    {detailLoading && renderDetailLoading(detail ? 'Refreshing pull request...' : 'Loading pull request...')}
+                    {detailError && <Alert tone="error" message={detailError} description={<Button size="sm" variant="outline" onClick={handleRetryDetail}>Retry</Button>} />}
+                    {detail && (
+                      <div className="review-platform__body-markdown" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="section">
+                        {detail.body ? <MarkdownRenderer content={detail.body} basePath={workspacePath} /> : <p className="review-platform__meta">No description provided.</p>}
                       </div>
-                      {detailError ? (
-                        <div className="review-platform__detail-error">
-                          <Icon name="xmark" size="sm" />
-                          <span>{detailError}</span>
-                          <Button size="sm" variant="outline" onClick={handleRetryDetail}>
-                            Retry
-                          </Button>
-                        </div>
-                      ) : detail ? (
-                        <div className="review-platform__body-markdown review-platform__body-markdown--plain">
-                          {detail.body
-                            ? <MarkdownRenderer content={detail.body} basePath={workspacePath} />
-                            : <span className="review-platform__section-empty">No description was provided.</span>}
-                        </div>
-                      ) : (
-                        renderDetailLoading('Loading pull request summary...')
-                      )}
-                    </section>
-
-                    <section className="review-platform__detail-section review-platform__ci-list" data-openbitfun-component="review-platform" data-openbitfun-part="section">
-                      <div className="review-platform__detail-section-heading" data-openbitfun-component="review-platform" data-openbitfun-part="sectionHeading">
-                        <span>Checks</span>
-                        <div className="review-platform__detail-section-actions" data-openbitfun-component="review-platform" data-openbitfun-part="sectionActions">
-                          <span className="review-platform__section-count">
-                            {ciTotal ? `${ciTotal} items · ${checksText}` : checksStatusText}
-                          </span>
-                          <Button size="sm" variant="outline" onClick={handleAddCiPageContext} disabled={!selectedPr || !detail || detailLoading} leadingIcon={<MessageSquareText size={13} />}>
-
-                            Add page
-                          </Button>
-                        </div>
-                      </div>
-                      {detailLoading && renderDetailLoading(pagedCiItems.length ? 'Refreshing checks...' : 'Loading checks...', pagedCiItems.length > 0)}
-                      {pagedCiItems.map(item => {
-                        const tone = ciItemTone(item);
-                        const isCiExpanded = expandedCiItemIds.has(item.id);
-                        const ciLog = ciLogById[item.id];
-                        const ciLogLoading = ciLogLoadingIds.has(item.id);
-                        const ciLogError = ciLogErrorById[item.id];
-                        const logAvailable = canLoadCiLog(selectedRemote, item);
-                        const expandable = canExpandCiItem(selectedRemote, item);
-                        return (
-                          <article data-openbitfun-component="review-platform" data-openbitfun-part="ciItem" key={item.id} className={`review-platform__ci-item review-platform__ci-item--${tone}`}>
-                            <div className="review-platform__ci-head" data-openbitfun-component="review-platform" data-openbitfun-part="ciHead">
-                              <div className="review-platform__ci-main">
-                                <strong><OverflowText>{item.name}</OverflowText></strong>
-                                <OverflowText>{[item.detail, item.stage].filter(Boolean).join(' · ')}</OverflowText>
-                              </div>
-                              <div className="review-platform__ci-actions">
-                                <span className={`review-platform__ci-status review-platform__ci-status--${tone}`} data-openbitfun-component="review-platform" data-openbitfun-part="ciStatus">
-                                  {ciItemStatusText(item)}
-                                </span>
-                                {expandable && (
-                                  <Tooltip content={isCiExpanded ? 'Collapse details' : 'Expand details'}>
-                                    <IconButton
-                                      aria-label={isCiExpanded ? 'Collapse details' : 'Expand details'}
-                                      className="review-platform__icon-button review-platform__ci-action"
-                                      size="sm"
-                                      onClick={() => toggleCiExpanded(item)}
-                                      disabled={ciLogLoading}
-                                      aria-busy={ciLogLoading}
-                                      icon={isCiExpanded ? <Icon name="chevron-down" size="xs" /> : <Icon name="chevron-right" size="xs" />}
-                                    />
-                                  </Tooltip>
+                    )}
+                    {(latestCurrentReview || latestStaleReview || latestUnknownReview) && (
+                      <CardHeader title="OpenBitFun Review" description={reviewStatusText} actions={
+                        <Button size="sm" variant="text" onClick={handleOpenLatestReview}>Open Review</Button>
+                      } />
+                    )}
+                    <Disclosure
+                      key={'checks:' + selectedRemoteId + ':' + selectedPrId}
+                      summary="Checks"
+                      description={checksStatusText}
+                      disabled={!detailLoading && ciItems.length === 0}
+                      data-openbitfun-product-component="review-platform"
+                      data-openbitfun-product-part="section"
+                    >
+                      <FieldGroup appearance="plain">
+                        {pagedCiItems.map(item => {
+                          const tone = ciItemTone(item);
+                          const isCiExpanded = expandedCiItemIds.has(item.id);
+                          const ciLog = ciLogById[item.id];
+                          const ciLogLoading = ciLogLoadingIds.has(item.id);
+                          const ciLogError = ciLogErrorById[item.id];
+                          const logAvailable = canLoadCiLog(selectedRemote, item);
+                          const expandable = canExpandCiItem(selectedRemote, item);
+                          return (
+                            <FieldRow data-openbitfun-product-component="review-platform" data-openbitfun-product-part="ciItem" key={item.id}>
+                              <Stack gap="3">
+                                <CardHeader
+                                  data-openbitfun-product-component="review-platform"
+                                  data-openbitfun-product-part="ciHead"
+                                  title={<OverflowText>{item.name}</OverflowText>}
+                                  description={<StatusPill tone={tone === 'passed' ? 'success' : tone === 'failed' ? 'danger' : 'warning'} data-openbitfun-product-component="review-platform" data-openbitfun-product-part="ciStatus">
+                                    {ciItemStatusText(item)}
+                                  </StatusPill>}
+                                  actions={<ToolbarGroup>
+                                    {expandable && (
+                                      <Tooltip content={isCiExpanded ? 'Collapse details' : 'Expand details'}>
+                                        <IconButton
+                                          aria-label={isCiExpanded ? 'Collapse details' : 'Expand details'}
+                                          size="sm"
+                                          onClick={() => toggleCiExpanded(item)}
+                                          disabled={ciLogLoading}
+                                          aria-busy={ciLogLoading}
+                                          aria-expanded={isCiExpanded}
+                                          icon={isCiExpanded ? <Icon name="chevron-down" size="xs" /> : <Icon name="chevron-right" size="xs" />}
+                                        />
+                                      </Tooltip>
+                                    )}
+                                    <Tooltip content="Add this result to chat">
+                                      <IconButton
+                                        aria-label="Add this result to chat"
+                                        size="sm"
+                                        onClick={() => void handleAddCiItemContext(item)}
+                                        disabled={!selectedPr}
+                                        icon={<MessageSquareText size={13} />}
+                                      />
+                                    </Tooltip>
+                                    {item.webUrl && (
+                                      <Tooltip content="Open result in provider">
+                                        <IconButton
+                                          aria-label="Open result in provider"
+                                          size="sm"
+                                          onClick={() => void handleOpenCiUrl(item.webUrl)}
+                                          icon={<Icon name="link" size="xs" />}
+                                        />
+                                      </Tooltip>
+                                    )}
+                                  </ToolbarGroup>}
+                                />
+                                {isCiExpanded && (
+                                  <Stack gap="3" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="ciLog">
+                                    <dl className="review-platform__ci-details">
+                                      {item.stage && <div className="review-platform__fact-row"><dt>Stage</dt><dd>{item.stage}</dd></div>}
+                                      {item.detail && <div className="review-platform__fact-row"><dt>Detail</dt><dd>{item.detail}</dd></div>}
+                                      {item.webUrl && <div className="review-platform__fact-row"><dt>URL</dt><dd>{item.webUrl}</dd></div>}
+                                    </dl>
+                                    {ciLogLoading && renderDetailLoading('Loading check details...')}
+                                    {!ciLogLoading && ciLogError && logAvailable && (
+                                      <Alert tone="error" message={ciLogError} description={<Button size="sm" variant="outline" onClick={() => void loadCiLog(item)}>Retry</Button>} />
+                                    )}
+                                    {!ciLogLoading && !ciLogError && (ciLog?.log || item.log) && <pre tabIndex={0} aria-label={item.name} className="review-platform__ci-log-block">{ciLog?.log || item.log}</pre>}
+                                    {!ciLogLoading && !ciLogError && ciLog && !ciLog.log && !item.log && ciLog.message && <Alert role="status" message={ciLog.message} />}
+                                  </Stack>
                                 )}
-                                <Tooltip content="Add this result to chat">
-                                  <IconButton
-                                    aria-label="Add this result to chat"
-                                    className="review-platform__icon-button review-platform__ci-action"
-                                    size="sm"
-                                    onClick={() => void handleAddCiItemContext(item)}
-                                    disabled={!selectedPr}
-                                    icon={<MessageSquareText size={13} />}
-                                  />
-                                </Tooltip>
-                                {item.webUrl && (
-                                  <Tooltip content="Open result in provider">
-                                    <IconButton
-                                      aria-label="Open result in provider"
-                                      className="review-platform__icon-button review-platform__ci-action"
-                                      size="sm"
-                                      onClick={() => void handleOpenCiUrl(item.webUrl)}
-                                      icon={<Icon name="link" size="xs" />}
-                                    />
-                                  </Tooltip>
-                                )}
-                              </div>
-                            </div>
-                            {isCiExpanded && (
-                              <div className="review-platform__ci-log-panel" data-openbitfun-component="review-platform" data-openbitfun-part="ciLog">
-                                <div className="review-platform__ci-detail-grid">
-                                  {item.stage && <div><span>Stage</span><strong>{item.stage}</strong></div>}
-                                  {item.detail && <div><span>Detail</span><strong>{item.detail}</strong></div>}
-                                  {item.webUrl && <div><span>URL</span><strong>{item.webUrl}</strong></div>}
-                                </div>
-                                {ciLogLoading && renderDetailLoading('Loading check details...')}
-                                {!ciLogLoading && ciLogError && logAvailable && (
-                                  <div className="review-platform__detail-error">
-                                    <Icon name="xmark" size="sm" />
-                                    <span>{ciLogError}</span>
-                                    <Button size="sm" variant="outline" onClick={() => void loadCiLog(item)}>Retry</Button>
-                                  </div>
-                                )}
-                                {!ciLogLoading && !ciLogError && (ciLog?.log || item.log) && <pre className="review-platform__ci-log-block">{ciLog?.log || item.log}</pre>}
-                                {!ciLogLoading && !ciLogError && ciLog && !ciLog.log && !item.log && ciLog.message && <div className="review-platform__ci-log-empty">{ciLog.message}</div>}
-                              </div>
-                            )}
-                          </article>
-                        );
-                      })}
-                      {!detailLoading && detail && ciItems.length === 0 && <div className="review-platform__empty-state">No checks were reported.</div>}
+                              </Stack>
+                            </FieldRow>
+                          );
+                        })}
+                      </FieldGroup>
                       {renderDetailPagination('Checks', ciPage, ciTotal, setCiPageIndex)}
-                    </section>
+                    </Disclosure>
 
-                    <section className="review-platform__detail-section review-platform__threads" data-openbitfun-component="review-platform" data-openbitfun-part="section">
-                      <div className="review-platform__detail-section-heading" data-openbitfun-component="review-platform" data-openbitfun-part="sectionHeading">
-                        <span>Comments</span>
-                        <div className="review-platform__detail-section-actions" data-openbitfun-component="review-platform" data-openbitfun-part="sectionActions">
-                          <span className="review-platform__section-count">{reviewItemCount}</span>
-                          <Button size="sm" variant="outline" onClick={handleAddReviewsContext} disabled={!selectedPr || !detail} leadingIcon={<MessageSquareText size={13} />}>
-
-                            Add to chat
-                          </Button>
-                        </div>
-                      </div>
-                      {detailLoading && renderDetailLoading(reviewThreads.length ? 'Refreshing comments...' : 'Loading comments...', reviewThreads.length > 0)}
-                      {pagedReviewThreads.map(thread => {
-                        const parent = thread.replyToProviderCommentId
-                          ? reviewThreadByCommentId.get(thread.replyToProviderCommentId)
-                          : null;
-                        return (
-                          <article data-openbitfun-component="review-platform" data-openbitfun-part="thread"
-                            key={thread.id}
-                            className={[
-                              'review-platform__thread',
-                              thread.resolved ? 'is-resolved' : '',
-                              `review-platform__thread--${thread.kind}`,
-                              parent ? 'review-platform__thread--reply' : '',
-                            ].filter(Boolean).join(' ')}
-                          >
-                            <div className="review-platform__thread-head" data-openbitfun-component="review-platform" data-openbitfun-part="threadHead">
-                              <div className="review-platform__thread-tags">
-                                <span className={`review-platform__thread-tag review-platform__thread-tag--${thread.kind}`}>
-                                  {thread.kind === 'review' ? 'Review' : 'Comment'}
-                                </span>
-                                <span className={`review-platform__thread-tag review-platform__thread-tag--${thread.resolved ? 'resolved' : 'open'}`}>
-                                  {thread.resolved ? 'Resolved' : 'Open'}
-                                </span>
-                              </div>
-                              <span>{formatRelativeTime(thread.updatedAt) || formatAbsoluteTime(thread.updatedAt)}</span>
-                            </div>
-                            <div className="review-platform__thread-meta"><strong>{thread.author}</strong></div>
-                            {parent && (
-                              <div className="review-platform__thread-reply-block">
-                                <div className="review-platform__thread-reply-header">
-                                  <span className="review-platform__thread-reply-label">Reply to</span>
-                                  <span className="review-platform__thread-reply-author">@{parent.author}</span>
-                                </div>
-                                <div className="review-platform__thread-reply-body"><MarkdownRenderer content={parent.body} basePath={workspacePath} /></div>
-                              </div>
-                            )}
-                            <div className="review-platform__thread-body" data-openbitfun-component="review-platform" data-openbitfun-part="threadBody"><MarkdownRenderer content={thread.body} basePath={workspacePath} /></div>
-                            {thread.filePath && <OverflowText className="review-platform__thread-anchor">{thread.filePath}{thread.line ? `:${thread.line}` : ''}</OverflowText>}
-                          </article>
-                        );
-                      })}
-                      {!detailLoading && detail && reviewThreads.length === 0 && <div className="review-platform__empty-state">No comments yet.</div>}
+                    <Disclosure
+                      key={'comments:' + selectedRemoteId + ':' + selectedPrId}
+                      summary={'Comments (' + reviewItemCount + ')'}
+                      disabled={!detailLoading && reviewThreads.length === 0}
+                      data-openbitfun-product-component="review-platform"
+                      data-openbitfun-product-part="section"
+                    >
+                      <FieldGroup appearance="plain">
+                        {pagedReviewThreads.map(thread => {
+                          const parent = thread.replyToProviderCommentId
+                            ? reviewThreadByCommentId.get(thread.replyToProviderCommentId)
+                            : null;
+                          return (
+                            <FieldRow data-openbitfun-product-component="review-platform" data-openbitfun-product-part="thread" key={thread.id}>
+                              <Stack gap="3">
+                                <CardHeader
+                                  data-openbitfun-product-component="review-platform"
+                                  data-openbitfun-product-part="threadHead"
+                                  title={thread.author}
+                                  description={formatRelativeTime(thread.updatedAt) || formatAbsoluteTime(thread.updatedAt)}
+                                  actions={<ToolbarGroup>
+                                    {thread.kind === 'review' && <StatusPill tone="neutral">Review</StatusPill>}
+                                    {thread.resolved && <StatusPill tone="success">Resolved</StatusPill>}
+                                  </ToolbarGroup>}
+                                />
+                                {parent && (
+                                  <Disclosure summary={'Reply to @' + parent.author}>
+                                    <div className="review-platform__body-markdown"><MarkdownRenderer content={parent.body} basePath={workspacePath} /></div>
+                                  </Disclosure>
+                                )}
+                                <div className="review-platform__body-markdown" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="threadBody"><MarkdownRenderer content={thread.body} basePath={workspacePath} /></div>
+                                {thread.filePath && <OverflowText className="review-platform__thread-anchor">{thread.filePath}{thread.line ? `:${thread.line}` : ''}</OverflowText>}
+                              </Stack>
+                            </FieldRow>
+                          );
+                        })}
+                      </FieldGroup>
                       {renderDetailPagination('Comments', reviewPage, reviewThreads.length, setReviewPageIndex)}
-                    </section>
+                    </Disclosure>
                   </ScrollArea>
                 )}
 
                 {activeTab === 'changes' && (
-                  <ScrollArea className="review-platform__tab-content review-platform__file-list" data-openbitfun-component="review-platform" data-openbitfun-part="fileList">
+                  <ScrollArea className="review-platform__tab-content" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="fileList">
                     {detailError && (
-                      <div className="review-platform__detail-error">
-                        <Icon name="xmark" size="sm" />
-                        <span>{detailError}</span>
+                      <Alert tone="error" message={detailError} description={
                         <Button size="sm" variant="outline" onClick={handleRetryDetail}>
                           Retry
                         </Button>
-                      </div>
+                      } />
                     )}
-                    {detailLoading && renderDetailLoading(pagedChangedFiles.length ? 'Refreshing files...' : 'Loading files...', pagedChangedFiles.length > 0)}
-                    {pagedChangedFiles.map(file => {
-                      const key = fileKey(file);
-                      const isExpanded = expandedFileKeys.has(key);
-                      return (
-                        <article data-openbitfun-component="review-platform" data-openbitfun-part="fileCard" key={key} className="review-platform__file-card">
-                          <div className="review-platform__file-row" data-openbitfun-component="review-platform" data-openbitfun-part="fileRow">
-                            <button data-overflow-trigger
-                              type="button"
-                              className="review-platform__file-main"
-                              data-openbitfun-component="review-platform"
-                              data-openbitfun-part="fileMain"
-                              aria-expanded={isExpanded}
-                              onClick={() => toggleFileExpanded(key)}
+                    {detailLoading && renderDetailLoading(pagedChangedFiles.length ? 'Refreshing files...' : 'Loading files...')}
+                    <FieldGroup appearance="plain">
+                      {pagedChangedFiles.map(file => {
+                        const key = fileKey(file);
+                        const isExpanded = expandedFileKeys.has(key);
+                        return (
+                          <FieldRow key={key} padding="none" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="fileRow">
+                            <Disclosure
+                              data-openbitfun-product-component="review-platform"
+                              data-openbitfun-product-part="fileCard"
+                              summary={file.path}
+                              description={<span className="review-platform__inline-meta">
+                                <StatusPill tone={file.status === 'added' ? 'success' : file.status === 'deleted' ? 'danger' : 'neutral'} data-openbitfun-product-component="review-platform" data-openbitfun-product-part="fileStatus">{file.status}</StatusPill>
+                                <ChangeCount additions={file.additions} deletions={file.deletions} data-openbitfun-product-component="review-platform" data-openbitfun-product-part="fileDelta" />
+                              </span>}
+                              open={isExpanded}
+                              onOpenChange={() => toggleFileExpanded(key)}
+                              unmountOnClose
+                              actions={<Tooltip content="Add to chat">
+                                <IconButton aria-label={`Add ${file.path} to chat`} size="sm" onClick={() => void handleAddFileDiffContext(file)} disabled={!selectedPr} icon={<MessageSquareText size={13} />} />
+                              </Tooltip>}
                             >
-                              <span className="review-platform__file-toggle">
-                                {isExpanded ? <Icon name="chevron-down" size="sm" /> : <Icon name="chevron-right" size="sm" />}
-                              </span>
-                              <span className={`review-platform__file-status review-platform__file-status--${file.status}`} data-openbitfun-component="review-platform" data-openbitfun-part="fileStatus">
-                                {file.status}
-                              </span>
-                              <OverflowText className="review-platform__file-path" data-openbitfun-component="review-platform" data-openbitfun-part="filePath">{file.path}</OverflowText>
-                              <span className="review-platform__file-delta" data-openbitfun-component="review-platform" data-openbitfun-part="fileDelta">
-                                <span className="review-platform__additions">+{file.additions}</span>
-                                <span className="review-platform__deletions">-{file.deletions}</span>
-                              </span>
-                            </button>
-                            <Button className="review-platform__file-add-button" size="sm" variant="outline" onClick={() => void handleAddFileDiffContext(file)} disabled={!selectedPr} leadingIcon={<MessageSquareText size={13} />}>
-
-                              Add
-                            </Button>
-                          </div>
-                          {isExpanded && (
-                            file.patch ? (
-                              <pre className="review-platform__diff-block" data-openbitfun-component="review-platform" data-openbitfun-part="diff" aria-label={`Diff for ${file.path}`}>
-                                {file.patch.split('\n').map((line, index) => (
-                                  <span key={`${file.path}-${index}`} className={diffLineClass(line)}>
-                                    {line || ' '}
-                                  </span>
-                                ))}
-                              </pre>
-                            ) : (
-                              <div className="review-platform__diff-empty">No inline diff is available for this file.</div>
-                            )
-                          )}
-                        </article>
-                      );
-                    })}
+                              {file.patch ? (
+                                <pre tabIndex={0} className="review-platform__diff-block" data-openbitfun-product-component="review-platform" data-openbitfun-product-part="diff" aria-label={`Diff for ${file.path}`}>
+                                  {file.patch.split('\n').map((line, index) => (
+                                    <span key={`${file.path}-${index}`} className={diffLineClass(line)}>
+                                      {line || ' '}
+                                    </span>
+                                  ))}
+                                </pre>
+                              ) : (
+                                <Empty imageSize="sm" icon={<Icon name="files" />} description="No inline diff is available for this file." />
+                              )}
+                            </Disclosure>
+                          </FieldRow>
+                        );
+                      })}
+                    </FieldGroup>
                     {!detailLoading && detail && detail.files.length === 0 && (
-                      <div className="review-platform__empty-state">
-                        {detail.changedFileCountKnown === false
-                          ? 'Changed files are currently unavailable from this provider.'
-                          : 'No changed files were returned by this provider.'}
-                      </div>
+                      <Empty imageSize="sm" icon={<Icon name="files" />} description={detail.changedFileCountKnown === false
+                        ? 'Changed files are currently unavailable from this provider.'
+                        : 'No changed files were returned by this provider.'} />
                     )}
                     {renderDetailPagination('Files', changePage, changedFiles.length, setChangePageIndex)}
                   </ScrollArea>
                 )}
 
                 {activeTab === 'commits' && (
-                  <ScrollArea className="review-platform__tab-content review-platform__timeline">
-                    <div className="review-platform__section-heading">
-                      <span>Commits</span>
-                      <Button size="sm" variant="outline" onClick={handleAddCommitsContext} disabled={!selectedPr || !detail} leadingIcon={<MessageSquareText size={13} />}>
-
-                        Add to chat
-                      </Button>
-                    </div>
+                  <ScrollArea className="review-platform__tab-content">
                     {detailError && (
-                      <div className="review-platform__detail-error">
-                        <Icon name="xmark" size="sm" />
-                        <span>{detailError}</span>
+                      <Alert tone="error" message={detailError} description={
                         <Button size="sm" variant="outline" onClick={handleRetryDetail}>
                           Retry
                         </Button>
-                      </div>
+                      } />
                     )}
-                    {detailLoading && renderDetailLoading(pagedCommits.length ? 'Refreshing commits...' : 'Loading commits...', pagedCommits.length > 0)}
-                    {pagedCommits.map(commit => (
-                      <div key={commit.hash} className="review-platform__timeline-item">
-                        <Icon name="commit" size="sm" />
-                        <span className="review-platform__timeline-main">
-                          <strong><OverflowText>{commit.title}</OverflowText></strong>
-                          <span>{commit.author} · {formatRelativeTime(commit.committedAt)}</span>
-                        </span>
-                        <code>{commit.shortHash}</code>
-                      </div>
-                    ))}
+                    {detailLoading && renderDetailLoading(pagedCommits.length ? 'Refreshing commits...' : 'Loading commits...')}
+                    <FieldGroup appearance="plain">
+                      {pagedCommits.map(commit => (
+                        <FieldRow key={commit.hash}>
+                          <CardHeader
+                            leading={<Icon name="commit" size="sm" />}
+                            title={commit.title}
+                            description={`${commit.author} · ${formatRelativeTime(commit.committedAt)} · ${commit.shortHash}`}
+                          />
+                        </FieldRow>
+                      ))}
+                    </FieldGroup>
                     {!detailLoading && detail && commits.length === 0 && (
-                      <div className="review-platform__empty-state">No commits were returned by this provider.</div>
+                      <Empty imageSize="sm" icon={<Icon name="commit" />} description="No commits were returned by this provider." />
                     )}
                     {renderDetailPagination('Commits', commitPage, commits.length, setCommitPageIndex)}
                   </ScrollArea>
@@ -2634,8 +2499,44 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
               </div>
             </>
           )}
-        </main>
+        </main>}
       </div>
+      <MenuPopover
+        open={detailMenuOpen}
+        anchorRef={detailMenuRef}
+        onClose={() => setDetailMenuOpen(false)}
+        aria-label="Pull request actions"
+        items={[
+          {
+            id: 'add-context', label: 'Add to chat', icon: <MessageSquareText size={14} />,
+            disabled: !selectedPr,
+            submenu: [
+              { id: 'add-overview', label: 'Pull request overview', onSelect: () => void handleFillPrContext() },
+              ...(activeTab === 'overview' ? [
+                { id: 'add-checks', label: 'Checks on this page', disabled: !detail || detailLoading || !ciItems.length, onSelect: () => void handleAddCiPageContext() },
+                { id: 'add-comments', label: 'Comments on this page', disabled: !detail || detailLoading || !reviewThreads.length, onSelect: () => void handleAddReviewsContext() },
+              ] : []),
+              ...(activeTab === 'commits' ? [
+                { id: 'add-commits', label: 'Commits on this page', disabled: !detail || detailLoading || !commits.length, onSelect: () => void handleAddCommitsContext() },
+              ] : []),
+            ],
+          },
+          {
+            id: 'open-external', label: 'Open in browser', icon: <Icon name="arrow-up-right" size="sm" />,
+            disabled: !selectedPr?.webUrl && !initialPullRequestUrl, onSelect: () => void handleOpenExternal(),
+          },
+          {
+            id: 'refresh', label: 'Refresh pull request', icon: <Icon name="refresh" size="sm" />,
+            disabled: !selectedPr || detailLoading, onSelect: () => void handleRefreshDetail(),
+          },
+          { id: 'account-separator', label: '', separator: true },
+          {
+            id: 'authenticate', label: selectedRemote?.platform === 'github' ? 'GitHub CLI authentication' : account?.authSource === 'stored' ? 'Update token' : 'Add token',
+            icon: <KeyRound size={14} />, disabled: !selectedRemote || selectedRemote.platform === 'unknown' || authSaving,
+            onSelect: handleOpenAuthModal,
+          },
+        ]}
+      />
       <Dialog
         open={authModalOpen}
         onOpenChange={(nextOpen) => {
@@ -2650,93 +2551,100 @@ export const ReviewPlatformPanel: React.FC<ReviewPlatformPanelProps> = ({
           <DialogHeading>
             <DialogTitle>{selectedRemote?.platform === 'github' ? 'GitHub CLI authentication' : `${selectedRemote ? providerLabel(selectedRemote) : 'Provider'} token`}</DialogTitle>
           </DialogHeading>
-          <DialogClose />
+          <DialogClose disabled={authSaving} />
         </DialogHeader>
         <DialogBody>
-        <form
-          className="review-platform__auth-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleSaveAuthToken();
-          }}
-        >
-          <div className="review-platform__auth-target">
-            <OverflowText>{selectedRemote?.host ?? 'No remote'}</OverflowText>
-            <strong><OverflowText>{selectedRemote?.projectPath ?? ''}</OverflowText></strong>
-          </div>
-          {selectedRemote?.platform === 'github' ? (
-            <div className="review-platform__gh-auth">
-              <span>Run this command in the integrated terminal, finish the GitHub CLI flow, then retry.</span>
-              <code>{`gh auth login --hostname ${selectedRemote.host}`}</code>
-              {authError && <span className="review-platform__gh-auth-error">{authError}</span>}
-            </div>
-          ) : (
-            <Field label="Token" controlWidth="fill" error={authError ?? undefined}>
-              <DesignInput
-                type="password"
-                autoComplete="off"
-                autoFocus
-                value={authToken}
-                disabled={authSaving}
-                onChange={event => {
-                  setAuthToken(event.target.value);
-                  if (authError) setAuthError(null);
-                }}
-              />
-            </Field>
-          )}
-          <div className="review-platform__auth-actions">
-            <Button
-              type="button"
-              size="sm"
-              variant="fill"
-              disabled={authSaving}
-              onClick={() => {
-                setAuthModalOpen(false);
-                setAuthError(null);
-              }}
-            >
-              Cancel
+          <form
+            id={authFormId}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSaveAuthToken();
+            }}
+          >
+            <Stack gap="4">
+              <CardHeader title={selectedRemote?.projectPath ?? ''} description={
+                [selectedRemote?.host, account?.label, authLabel(account), account && authSourceLabel(account.authSource)].filter(Boolean).join(' · ')
+              } />
+              {selectedRemote?.platform === 'github' ? (
+                <Stack gap="3">
+                  <Alert role="status" message="Run this command in the integrated terminal, finish the GitHub CLI flow, then retry." />
+                  <pre tabIndex={0} className="review-platform__ci-log-block">{`gh auth login --hostname ${selectedRemote.host}`}</pre>
+                  {authError && <Alert tone="error" message={authError} />}
+                </Stack>
+              ) : (
+                <Field label="Token" controlWidth="fill" error={authError ?? undefined}>
+                  <DesignInput
+                    type="password"
+                    autoComplete="off"
+                    autoFocus
+                    value={authToken}
+                    disabled={authSaving}
+                    onChange={event => {
+                      setAuthToken(event.target.value);
+                      if (authError) setAuthError(null);
+                    }}
+                  />
+                </Field>
+              )}
+            </Stack>
+          </form>
+        </DialogBody>
+        <DialogFooter>
+          {account?.authSource === 'stored' && (
+            <Button type="button" size="sm" variant="text" disabled={!selectedRemote || authSaving || loading} onClick={() => void handleClearAuthToken()}>
+              Clear token
             </Button>
-            {selectedRemote?.platform === 'github' ? (
-              <>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={authSaving}
-                  onClick={() => void handleCopyGithubAuthCommand()}
-                  leadingIcon={<Icon name="duplicate" size="xs" />}
-                >
-
-                  Copy
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="primary"
-                  loading={authSaving}
-                  onClick={() => void handleOpenGithubAuthTerminal()}
-                  leadingIcon={<Icon name="terminal" size="xs" />}
-                >
-
-                  Open terminal
-                </Button>
-              </>
-            ) : (
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="fill"
+            disabled={authSaving}
+            onClick={() => {
+              setAuthModalOpen(false);
+              setAuthError(null);
+            }}
+          >
+            Cancel
+          </Button>
+          {selectedRemote?.platform === 'github' ? (
+            <>
               <Button
-                type="submit"
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={authSaving}
+                onClick={() => void handleCopyGithubAuthCommand()}
+                leadingIcon={<Icon name="duplicate" size="xs" />}
+              >
+
+                Copy
+              </Button>
+              <Button
+                type="button"
                 size="sm"
                 variant="primary"
                 loading={authSaving}
-                disabled={!authToken.trim()}
+                onClick={() => void handleOpenGithubAuthTerminal()}
+                leadingIcon={<Icon name="terminal" size="xs" />}
               >
-                Save
+
+                Open terminal
               </Button>
-            )}
-          </div>
-        </form>
-              </DialogBody>
+            </>
+          ) : (
+            <Button
+              type="submit"
+              form={authFormId}
+              size="sm"
+              variant="primary"
+              loading={authSaving}
+              disabled={!authToken.trim()}
+            >
+              Save
+            </Button>
+          )}
+        </DialogFooter>
       </Dialog>
       {deepReviewConsentDialog}
     </div>

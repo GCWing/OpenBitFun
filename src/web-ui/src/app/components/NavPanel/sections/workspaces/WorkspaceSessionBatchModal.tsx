@@ -1,3 +1,5 @@
+import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
+import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { OverflowText,
   Button,
   Checkbox,
@@ -29,10 +31,9 @@ import './WorkspaceSessionBatchModal.scss';
 interface WorkspaceSessionBatchModalProps {
   isOpen: boolean;
   onClose: () => void;
-  workspacePath: string;
+  /** Authoritative workspace scope; every load and mutation is keyed by it. */
+  workspaceId: string;
   workspaceLabel: string;
-  remoteConnectionId?: string | null;
-  remoteSshHost?: string | null;
 }
 
 type BatchActionKind = 'archive' | 'delete' | null;
@@ -114,12 +115,12 @@ function getDeletionPlan(selectedIds: Set<string>, sessions: SessionBatchItem[])
 const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
   isOpen,
   onClose,
-  workspacePath,
+  workspaceId,
   workspaceLabel,
-  remoteConnectionId = null,
-  remoteSshHost = null,
 }) => {
   const { t, formatDate, formatRelativeTime } = useI18n('common');
+  // Display-only projection of the workspace root; never used to select data.
+  const workspacePath = workspaceManager.getState().openedWorkspaces.get(workspaceId)?.rootPath ?? '';
   const [sessions, setSessions] = useState<SessionBatchItem[]>([]);
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
@@ -131,20 +132,16 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
     setLoadFailed(false);
     try {
       const metadataList = await sessionAPI.listSessions(
-        workspacePath,
-        remoteConnectionId || undefined,
-        remoteSshHost || undefined
+        workspaceId
       );
-      const filtered = metadataList.filter(metadata => {
+      const filtered = metadataList.map(metadata => ({ ...metadata, workspaceId: metadata.workspaceId ??
+        resolveLegacySessionWorkspace(metadata, [...workspaceManager.getState().openedWorkspaces.values()])?.id })).filter(metadata => {
         if (metadata.status === 'archived') {
           return false;
         }
         if (
           !sessionBelongsToWorkspaceNavRow(
-            metadata,
-            workspacePath,
-            remoteConnectionId,
-            remoteSshHost
+            metadata, workspaceId
           )
         ) {
           return false;
@@ -155,12 +152,12 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
       setSessions(buildSessionBatchItems(filtered));
       setSelectedSessionIds(new Set());
     } catch (error) {
-      log.error('Failed to load workspace sessions for batch management', { error, workspacePath });
+      log.error('Failed to load workspace sessions for batch management', { error, workspaceId });
       setLoadFailed(true);
     } finally {
       setIsLoading(false);
     }
-  }, [remoteConnectionId, remoteSshHost, workspacePath]);
+  }, [workspaceId]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -209,12 +206,8 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
   }, [allSessionIds]);
 
   const refreshWorkspaceSessions = useCallback(async () => {
-    await flowChatManager.refreshWorkspaceSessions({
-      rootPath: workspacePath,
-      connectionId: remoteConnectionId || undefined,
-      sshHost: remoteSshHost || undefined,
-    });
-  }, [remoteConnectionId, remoteSshHost, workspacePath]);
+    await flowChatManager.refreshWorkspaceSessions({ id: workspaceId });
+  }, [workspaceId]);
 
   const handleArchiveSelected = useCallback(async () => {
     if (selectedCount === 0) {
@@ -238,7 +231,7 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
       }
       await loadSessions();
     } catch (error) {
-      log.error('Failed to archive selected sessions', { error, workspacePath });
+      log.error('Failed to archive selected sessions', { error, workspaceId });
       notificationService.error(t('nav.sessions.bulkArchiveFailed'), { duration: 4000 });
     } finally {
       setActionKind(null);
@@ -249,7 +242,7 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
     selectedCount,
     selectedSessionIds,
     t,
-    workspacePath,
+    workspaceId,
   ]);
 
   const handleDeleteSelected = useCallback(async () => {
@@ -279,7 +272,7 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
           log.error('Failed to delete selected root session', {
             error,
             rootSessionId: rootId,
-            workspacePath,
+            workspaceId,
           });
         }
       }
@@ -293,7 +286,7 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
       }
       await loadSessions();
     } catch (error) {
-      log.error('Failed to delete selected sessions', { error, workspacePath });
+      log.error('Failed to delete selected sessions', { error, workspaceId });
       notificationService.error(t('nav.sessions.bulkDeleteFailed'), { duration: 4000 });
     } finally {
       setActionKind(null);
@@ -305,7 +298,7 @@ const WorkspaceSessionBatchModal: React.FC<WorkspaceSessionBatchModalProps> = ({
     selectedSessionIds,
     sessions,
     t,
-    workspacePath,
+    workspaceId,
   ]);
 
   return (

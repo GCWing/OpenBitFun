@@ -7,6 +7,11 @@ import UIKit
 struct ChatTimelineView: View {
     @ObservedObject var model: MobileAppModel
     var onLoadOlderMessages: (() -> Void)? = nil
+    /// Height of the floating bottom layer, so the jump-to-bottom button rides
+    /// above the composer instead of hiding behind it. The transcript's own
+    /// padding comes from `safeAreaInset`; an overlay does not get that, which
+    /// is why this one number still has to be passed in.
+    var bottomOverlayInset: CGFloat = 0
     @StateObject private var scrollController = TimelineScrollController()
     @State private var historyAnchor: (id: String, top: CGFloat, firstID: String)?
 
@@ -130,6 +135,7 @@ struct ChatTimelineView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(18)
+                    .padding(.bottom, bottomOverlayInset)
                     .accessibilityIdentifier("timeline.scrollToBottom")
                     .accessibilityLabel(Text(model.localized("滚动到底部")))
                 }

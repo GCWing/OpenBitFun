@@ -1,7 +1,7 @@
 import {
   ExternalSourceApiError,
   invokeExternalSourceCommand,
-  normalizeOptionalWorkspacePath,
+  normalizeOptionalWorkspaceId,
 } from './ExternalSourcesAPI';
 
 export interface ExternalHookSourceKey {
@@ -559,45 +559,45 @@ function normalizeApplyResult(value: unknown): ExternalHookImportApplyResult {
 }
 
 export const externalHooksAPI = {
-  async getCatalog(workspacePath?: string, forceRefresh = false) {
+  async getCatalog(workspaceId?: string, forceRefresh = false) {
     const response = await invokeExternalSourceCommand<unknown>('get_external_hook_catalog', {
       request: {
-        workspacePath: normalizeOptionalWorkspacePath(workspacePath),
+        workspaceId: normalizeOptionalWorkspaceId(workspaceId),
         forceRefresh,
       },
     });
     return normalizeCatalog(response);
   },
-  async getImportSnapshot(workspacePath?: string, refreshUpdates = false) {
+  async getImportSnapshot(workspaceId?: string, refreshUpdates = false) {
     const response = await invokeExternalSourceCommand<unknown>(
       'get_external_hook_import_snapshot',
       {
         request: {
-          workspacePath: normalizeOptionalWorkspacePath(workspacePath),
+          workspaceId: normalizeOptionalWorkspaceId(workspaceId),
           refreshUpdates,
         },
       },
     );
     return normalizeImportSnapshot(response);
   },
-  async planImport(workspacePath: string | undefined, sourceKey: ExternalHookSourceKey) {
+  async planImport(workspaceId: string | undefined, sourceKey: ExternalHookSourceKey) {
     const response = await invokeExternalSourceCommand<unknown>(
       'plan_external_hook_import_command',
       {
         request: {
-          workspacePath: normalizeOptionalWorkspacePath(workspacePath),
+          workspaceId: normalizeOptionalWorkspaceId(workspaceId),
           source: sourceKey,
         },
       },
     );
     return normalizeImportPlan(response);
   },
-  async applyImport(workspacePath: string | undefined, plan: ExternalHookImportPlan) {
+  async applyImport(workspaceId: string | undefined, plan: ExternalHookImportPlan) {
     const response = await invokeExternalSourceCommand<unknown>(
       'apply_external_hook_import_command',
       {
         request: {
-          workspacePath: normalizeOptionalWorkspacePath(workspacePath),
+          workspaceId: normalizeOptionalWorkspaceId(workspaceId),
           importRequest: {
             schemaVersion: 1,
             source: plan.source.key,
@@ -609,7 +609,7 @@ export const externalHooksAPI = {
     return normalizeApplyResult(response);
   },
   async mutateImport(
-    workspacePath: string | undefined,
+    workspaceId: string | undefined,
     expectedRevision: string,
     action: ExternalHookImportMutation,
   ) {
@@ -617,7 +617,7 @@ export const externalHooksAPI = {
       'mutate_external_hook_import_command',
       {
         request: {
-          workspacePath: normalizeOptionalWorkspacePath(workspacePath),
+          workspaceId: normalizeOptionalWorkspaceId(workspaceId),
           mutation: { schemaVersion: 1, expectedRevision, action },
         },
       },

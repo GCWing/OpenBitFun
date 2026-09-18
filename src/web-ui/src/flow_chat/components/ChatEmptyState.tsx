@@ -25,7 +25,7 @@ export const ChatEmptyState: React.FC = () => {
       }
 
       try {
-        const status = await gitService.getStatus(currentWorkspace.rootPath);
+        const status = await gitService.getStatus({ workspaceId: currentWorkspace.id });
         if (status) {
           setCurrentBranch(status.current_branch || '');
         }

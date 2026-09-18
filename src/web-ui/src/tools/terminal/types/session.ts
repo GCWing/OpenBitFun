@@ -15,6 +15,7 @@ export type ShellType =
   | 'Sh';
 
 export interface CreateSessionRequest {
+  workspaceId?: string;
   sessionId?: string;
   name?: string;
   shellType?: ShellType | string;
@@ -30,6 +31,7 @@ export interface CreateSessionRequest {
 }
 
 export interface SessionResponse {
+  workspaceId?: string;
   id: string;
   name: string;
   shellType: string;

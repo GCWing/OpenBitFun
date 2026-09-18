@@ -40,6 +40,9 @@ pub struct OpenBitFunAcpRuntime {
 pub(crate) struct AcpSessionState {
     pub(crate) acp_session_id: String,
     pub(crate) openbitfun_session_id: String,
+    /// Owning workspace record ID; the authoritative session workspace.
+    pub(crate) workspace_id: String,
+    /// ACP `cwd` operand, kept as the storage/IO projection of that workspace.
     pub(crate) cwd: String,
     pub(crate) mode_id: String,
     pub(crate) model_id: String,

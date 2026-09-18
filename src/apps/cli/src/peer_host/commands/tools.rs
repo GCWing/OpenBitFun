@@ -42,19 +42,34 @@ pub(crate) async fn list_subagents(command: &str, args: &Value) -> Result<Value,
         .transpose()
         .map_err(|error| format!("Invalid subagent source: {error}"))?;
     let visible = command == "list_visible_subagents";
-    let workspace = optional_string(request, "workspacePath");
-    let external_sources_supported = match workspace.as_deref() {
-        Some(path) => {
-            !openbitfun_core::service::remote_ssh::workspace_state::is_remote_path(path).await
-        }
-        None => true,
+    let workspace_id = optional_string(request, "workspaceId");
+    let legacy_path = optional_string(request, "workspacePath");
+    let workspace = if workspace_id.is_some() || legacy_path.is_some() {
+        let service = openbitfun_core::service::workspace::get_global_workspace_service()
+            .ok_or("Workspace service is unavailable")?;
+        Some(
+            service
+                .resolve_legacy_workspace_reference(
+                    workspace_id.as_deref(),
+                    legacy_path.as_deref().unwrap_or_default(),
+                    None,
+                    None,
+                )
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or("Unknown workspace reference")?,
+        )
+    } else {
+        None
     };
-    let workspace = workspace.map(std::path::PathBuf::from);
+    let external_sources_supported = workspace.as_ref().is_none_or(|record| {
+        record.workspace_kind != openbitfun_core::service::workspace::WorkspaceKind::Remote
+    });
     let mut agents = openbitfun_core::agentic::get_agent_registry()
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: parent.as_deref(),
-            workspace_root: external_sources_supported
-                .then_some(workspace.as_deref())
+            workspace_id: external_sources_supported
+                .then_some(workspace.as_ref().map(|record| record.id.as_str()))
                 .flatten(),
             list_scope: if visible {
                 SubagentListScope::TaskVisible

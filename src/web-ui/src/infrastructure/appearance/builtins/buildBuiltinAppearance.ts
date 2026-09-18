@@ -307,6 +307,8 @@ function createAppearanceOwnedTokens(
     '--openbitfun-component-config-page-row-hover-background': configPageRowHover,
     '--openbitfun-component-scene-viewport-border-width': palette.layout?.sceneViewportBorder === false ? '0' : '1px',
     '--openbitfun-component-badge-padding-block': '2px',
+    // Annotation selections retain the UIKit cyan across named product themes.
+    '--openbitfun-component-conversation-excerpt-accent': String(themes.light['color.accent.default']),
     '--openbitfun-domain-context-compression': purple[500],
     '--openbitfun-domain-generative-ui': '#06b6d4',
     '--openbitfun-domain-mini-app': purple[500],

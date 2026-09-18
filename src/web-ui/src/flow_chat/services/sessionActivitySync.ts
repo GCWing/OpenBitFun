@@ -1,9 +1,7 @@
 /** Shared request coordinator. One queue per app, never one timer per row. */
 export interface ActivityTarget {
   sessionId: string;
-  workspacePath: string;
-  remoteConnectionId?: string;
-  remoteSshHost?: string;
+  workspaceId: string;
 }
 
 export class SessionActivitySync {
@@ -37,7 +35,7 @@ export class SessionActivitySync {
     const generation = this.generation;
     const scopes = new Map<string, ActivityTarget[]>();
     for (const target of this.pending.values()) {
-      const key = JSON.stringify([target.workspacePath, target.remoteConnectionId, target.remoteSshHost]);
+      const key = target.workspaceId;
       const group = scopes.get(key) ?? [];
       group.push(target);
       scopes.set(key, group);

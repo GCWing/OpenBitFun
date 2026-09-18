@@ -27,6 +27,8 @@ macro_rules! unit_response {
 #[serde(rename_all = "camelCase")]
 pub struct ListAgentModesRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
     #[serde(default)]
     pub include_external: bool,
@@ -131,6 +133,10 @@ pub struct SubmitDialogTurnBody {
     #[serde(default, skip_serializing_if = "AgentDialogTurnExecution::is_standard")]
     pub execution: AgentDialogTurnExecution,
     pub agent_type: String,
+    /// Owning workspace ID; authoritative when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only pre-ID storage selector. Current clients send `workspace_id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -158,6 +164,7 @@ impl SubmitDialogTurnBody {
             execution: self.execution,
             agent_type: self.agent_type,
             workspace_path: self.workspace_path,
+            workspace_id: self.workspace_id,
             remote_connection_id: self.remote_connection_id,
             remote_ssh_host: self.remote_ssh_host,
             policy: self.policy.unwrap_or(default_policy),
@@ -181,6 +188,7 @@ impl From<AgentDialogTurnRequest> for SubmitDialogTurnRequest {
             turn_id: request.turn_id,
             execution: request.execution,
             agent_type: request.agent_type,
+            workspace_id: request.workspace_id,
             workspace_path: request.workspace_path,
             remote_connection_id: request.remote_connection_id,
             remote_ssh_host: request.remote_ssh_host,
@@ -270,6 +278,10 @@ pub enum RunSessionSpec {
     Create {
         session_name: String,
         agent_type: String,
+        /// Owning workspace ID; authoritative when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        workspace_id: Option<String>,
+        /// Legacy execution root for pre-ID clients.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         workspace_path: Option<String>,
     },

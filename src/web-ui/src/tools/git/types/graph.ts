@@ -1,3 +1,4 @@
+import type { GitWorkspaceScope } from '@/infrastructure/api/service-api/GitAPI';
 /**
  * Git graph view types
  */
@@ -33,7 +34,7 @@ export interface GitGraphInteractionState {
 }
 
 export interface GitGraphViewProps {
-  repositoryPath: string;
+  repositoryPath: GitWorkspaceScope;
   maxCount?: number;
   config?: GitGraphViewConfig;
   onCommitSelect?: (hash: string) => void;

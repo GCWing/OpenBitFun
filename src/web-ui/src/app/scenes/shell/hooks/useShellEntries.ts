@@ -39,18 +39,18 @@ export interface UseShellEntriesReturn {
 }
 
 export function useShellEntries(targetWorkspace?: WorkspaceInfo | null): UseShellEntriesReturn {
-  const { activeWorkspace, openedWorkspacesList } = useWorkspaceContext();
+  const { activeWorkspace } = useWorkspaceContext();
   const workspace = targetWorkspace === undefined ? activeWorkspace : targetWorkspace;
   const workspacePath = workspace?.rootPath ?? '';
   const scope = useSyncExternalStore(onSurfaceActivated, getActiveSurfaceScope, getActiveSurfaceScope);
   const isRemote = workspace?.workspaceKind === 'remote';
-  const currentConnectionId = workspace?.connectionId ?? null;
-  // Keep legacy local keys; never load controller profiles on another target.
-  const profileKey = scope.surfaceId === 'local' && !isRemote
-    ? workspacePath : scope.key('terminal-profiles', currentConnectionId, workspacePath);
-  const workspaces = useMemo(() => openedWorkspacesList.map(item => ({
-    rootPath: item.rootPath, isRemote: item.workspaceKind === 'remote', connectionId: item.connectionId,
-  })), [openedWorkspacesList]);
+  const currentConnectionId = isRemote ? workspace?.connectionId ?? null : null;
+  const workspaceId = workspace?.id;
+  const profileWorkspace = useMemo(
+    () => (workspaceId ? { surfaceId: scope.surfaceId, workspaceId } : undefined),
+    [scope.surfaceId, workspaceId],
+  );
+  const profileKey = scope.key('terminal-profiles', workspace?.id);
 
   const [editingState, setEditingTerminal] = useState<EditingTerminalState | null>(null);
   const editingTerminal = editingState?.key === profileKey ? editingState : null;
@@ -66,7 +66,7 @@ export function useShellEntries(targetWorkspace?: WorkspaceInfo | null): UseShel
     removeProfile,
     getProfileById,
     getProfileBySessionId,
-  } = useManualTerminalProfiles(workspacePath ? profileKey : undefined);
+  } = useManualTerminalProfiles(profileWorkspace);
   const savedSessionIds = useMemo(() => new Set(profiles.map(profile => profile.sessionId)), [profiles]);
   const {
     assertCurrent,
@@ -82,11 +82,11 @@ export function useShellEntries(targetWorkspace?: WorkspaceInfo | null): UseShel
     renameSessionLocally,
     hasSession,
   } = useTerminalSessions({
+    workspaceId: workspace?.id,
     workspacePath,
     isRemote,
     currentConnectionId,
     scope,
-    workspaces,
     savedSessionIds,
   });
 

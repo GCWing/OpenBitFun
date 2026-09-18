@@ -6,12 +6,21 @@ const source = vi.hoisted(() => ({
   notify: undefined as (() => void) | undefined,
   desktop: true,
   send: vi.fn().mockResolvedValue(undefined),
+  markAllRead: vi.fn(),
+  onMarkAllRead: undefined as (() => void) | undefined,
 }));
 vi.mock('@/infrastructure/runtime', () => ({ isTauriRuntime: () => source.desktop }));
-vi.mock('@/infrastructure/api/service-api/SystemAPI', () => ({ systemAPI: { setTrayUnreadCount: source.send } }));
+vi.mock('@/infrastructure/api/service-api/SystemAPI', () => ({ systemAPI: {
+  setTrayUnreadCount: source.send,
+  onTrayMarkAllRead: (callback: () => void) => {
+    source.onMarkAllRead = callback;
+    return () => { source.onMarkAllRead = undefined; };
+  },
+} }));
 vi.mock('../store/FlowChatStore', () => ({ flowChatStore: {
   getState: () => ({ sessions: source.sessions }),
   subscribe: (notify: () => void) => { source.notify = notify; return () => { source.notify = undefined; }; },
+  clearAllSessionUnreadCompletions: source.markAllRead,
 } }));
 import { countUnreadSessions, installTrayUnreadService } from './trayUnreadService';
 
@@ -21,6 +30,8 @@ afterEach(() => {
   source.notify = undefined;
   source.desktop = true;
   source.send.mockClear();
+  source.markAllRead.mockClear();
+  source.onMarkAllRead = undefined;
   vi.useRealTimers();
 });
 
@@ -94,6 +105,16 @@ describe('tray unread projection', () => {
     expect(source.send).toHaveBeenCalledTimes(2);
     expect(source.send).toHaveBeenLastCalledWith(0);
     dispose();
+  });
+
+  it('clears every unread receipt when the tray menu asks, and detaches on dispose', async () => {
+    vi.useFakeTimers();
+    const dispose = installTrayUnreadService();
+    await vi.advanceTimersByTimeAsync(100);
+    source.onMarkAllRead?.();
+    expect(source.markAllRead).toHaveBeenCalledTimes(1);
+    dispose();
+    expect(source.onMarkAllRead).toBeUndefined();
   });
 
   it('does not install native IO on web surfaces', () => {

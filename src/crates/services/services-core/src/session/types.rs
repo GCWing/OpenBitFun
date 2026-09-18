@@ -288,6 +288,16 @@ pub struct SessionMetadata {
     )]
     pub workspace_hostname: Option<String>,
 
+    /// Owning-host workspace ID. Paths above are location projections only.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "workspace_id"
+    )]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
+
     /// Unread completion status for the session.
     /// 'completed' → green dot, 'error' → red dot.
     /// Cleared after the user switches to the session and the content renders.
@@ -1184,6 +1194,8 @@ impl SessionMetadata {
             project_workspace_path: None,
             execution_target: None,
             workspace_hostname: None,
+            workspace_id: None,
+            project_workspace_id: None,
             unread_completion: None,
             needs_user_attention: None,
             last_turn: None,

@@ -8,6 +8,7 @@ import {
   RecentWorkspaceEntry,
   RemoteModelCatalog,
   RemoteSession,
+  RemoteWorkspaceIdentity,
   SelectedImageAttachment,
   SessionSummary
 } from '../../model/RemoteModels';
@@ -43,6 +44,8 @@ export class RemotePageState {
   @Trace showRemoteUrlInput: boolean = false;
   @Trace workspaceName: string = '';
   @Trace workspacePath: string = '';
+  /** Stable record ID of the active workspace; empty for pre-ID hosts. */
+  @Trace workspaceId: string = '';
   @Trace workspaceConnectionId: string = '';
   @Trace workspaceSshHost: string = '';
   @Trace workspaceBranch: string = '';
@@ -62,6 +65,11 @@ export class RemotePageState {
   @Trace hasMoreSessions: boolean = false;
   @Trace isLoadingSessions: boolean = false;
   @Trace isLoadingConversation: boolean = false;
+  // Separate from isLoadingConversation, which means the session itself is not
+  // known yet and so blanks the header. Here the session is known and named;
+  // only its transcript is still on the way, and the header should keep saying
+  // which conversation the pane is about while the body says it is filling.
+  @Trace isLoadingTranscript: boolean = false;
   @Trace pendingSessionId: string = '';
   @Trace isConversationDismissed: boolean = false;
   @Trace sessionErrorText: string = '';
@@ -192,15 +200,30 @@ export class RemotePageState {
     workspaceBranch: string = '',
     workspaceKind: string = 'normal',
     remoteConnectionId: string = '',
-    remoteSshHost: string = ''
+    remoteSshHost: string = '',
+    workspaceId: string = ''
   ): void {
     this.workspaceName = workspaceName;
     this.workspacePath = workspacePath;
     this.workspaceConnectionId = remoteConnectionId;
     this.workspaceSshHost = remoteSshHost;
+    this.workspaceId = workspaceId;
     this.assistantId = assistantId;
     this.workspaceBranch = workspaceBranch;
     this.workspaceKind = workspaceKind;
+  }
+
+  /**
+   * The active workspace as a reference. Empty strings from the page state
+   * become absent fields so the identity compares like catalog rows do.
+   */
+  workspaceIdentity(): RemoteWorkspaceIdentity {
+    return {
+      workspaceId: this.workspaceId.length > 0 ? this.workspaceId : undefined,
+      path: this.workspacePath,
+      remoteConnectionId: this.workspaceConnectionId.length > 0 ? this.workspaceConnectionId : undefined,
+      remoteSshHost: this.workspaceSshHost.length > 0 ? this.workspaceSshHost : undefined
+    };
   }
 
   setRecentWorkspaces(recentWorkspaces: RecentWorkspaceEntry[]): void {
@@ -239,6 +262,7 @@ export class RemotePageState {
     this.interactionMailbox = new InteractionMailboxState();
     this.conversation.clearActiveSession();
     this.isLoadingConversation = false;
+    this.isLoadingTranscript = false;
     this.pendingSessionId = '';
     this.isConversationDismissed = false;
     this.setModelCatalog(RemoteUiState.emptyModelCatalog(), '');
@@ -325,6 +349,10 @@ export class RemotePageState {
     this.isLoadingConversation = loading;
   }
 
+  setTranscriptLoading(loading: boolean): void {
+    this.isLoadingTranscript = loading;
+  }
+
   setPendingSessionId(sessionId: string): void {
     this.pendingSessionId = sessionId;
   }
@@ -343,6 +371,7 @@ export class RemotePageState {
     this.hasMoreSessions = false;
     this.isLoadingSessions = false;
     this.isLoadingConversation = false;
+    this.isLoadingTranscript = false;
     this.pendingSessionId = '';
     this.isConversationDismissed = false;
     this.isLoadingHome = false;
@@ -357,6 +386,7 @@ export class RemotePageState {
     this.hasMoreSessions = false;
     this.isLoadingSessions = false;
     this.isLoadingConversation = false;
+    this.isLoadingTranscript = false;
     this.pendingSessionId = '';
     this.isConversationDismissed = false;
     this.isLoadingHome = false;

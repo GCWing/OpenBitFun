@@ -14,9 +14,10 @@ export interface BatchImportResult { id: string; name: string; status: 'imported
 
 /** One reviewed MCP transaction; independent Skill/Hook failures do not erase successful copies. */
 export async function applyEcosystemBatch(
-  entries: BatchImportEntry[], workspacePath: string | undefined,
+  entries: BatchImportEntry[], workspace: { workspaceId?: string },
   onResult: (result: BatchImportResult) => void,
 ): Promise<void> {
+  const { workspaceId } = workspace;
   const scope = getActiveSurfaceScope();
   if (!isLocalSurface(scope.surfaceId)) throw new Error('External batch import requires the local host');
   const mcpEntries = entries.filter((entry) => entry.kind === 'mcp');
@@ -25,7 +26,7 @@ export async function applyEcosystemBatch(
     let error: string | undefined;
     try {
       scope.assertCurrent('apply reviewed MCP batch');
-      const response = await externalSourcesAPI.applyMcpImport(workspacePath, mcpEntries[0].plan,
+      const response = await externalSourcesAPI.applyMcpImport(workspaceId, mcpEntries[0].plan,
         mcpEntries.map(({ candidateId }) => ({ candidateId })));
       scope.assertCurrent('confirm MCP batch');
       status = response.outcome.status === 'stale' ? 'stale' : 'imported';
@@ -40,20 +41,20 @@ export async function applyEcosystemBatch(
       scope.assertCurrent('apply reviewed external import');
       if (entry.kind === 'skill') {
         await configAPI.addSkill({ sourcePath: entry.skill.path, sourceKey: entry.skill.key,
-          level: entry.level, workspacePath, ...(entry.targetName ? { targetName: entry.targetName } : {}),
+          level: entry.level, workspaceId, ...(entry.targetName ? { targetName: entry.targetName } : {}),
           ...(entry.preview ? { expectedSourceFingerprint: entry.preview.fingerprint } : {}) });
         status = 'imported';
       } else {
         // Earlier imports change the target revision. Refresh it while requiring the
         // exact source behavior and executable handlers that the user reviewed.
-        const fresh = await externalHooksAPI.planImport(workspacePath, entry.plan.source.key);
+        const fresh = await externalHooksAPI.planImport(workspaceId, entry.plan.source.key);
         scope.assertCurrent('apply reviewed Hook import');
         if (fresh.behaviorVersion !== entry.plan.behaviorVersion
           || JSON.stringify(fresh.handlers) !== JSON.stringify(entry.plan.handlers)
           || JSON.stringify(fresh.skipped) !== JSON.stringify(entry.plan.skipped)
           || fresh.disposition === 'unavailable') status = 'stale';
         else {
-          const response = await externalHooksAPI.applyImport(workspacePath, fresh);
+          const response = await externalHooksAPI.applyImport(workspaceId, fresh);
           status = response.outcome.kind === 'stale' ? 'stale' : 'imported';
         }
       }

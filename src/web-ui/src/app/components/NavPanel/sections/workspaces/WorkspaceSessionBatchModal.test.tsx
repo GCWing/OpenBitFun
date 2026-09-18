@@ -39,10 +39,10 @@ describe('Claw session batch management', () => {
     vi.clearAllMocks();
     mocks.confirmDanger.mockResolvedValue(true);
     mocks.listSessions.mockResolvedValue([
-      { sessionId: 'claw-1', sessionName: 'First assistant chat', agentType: 'Claw', workspacePath: '/assistant', remoteConnectionId: 'ssh-one', status: 'idle', createdAt: 1, lastActiveAt: 1 },
-      { sessionId: 'claw-2', sessionName: 'Second assistant chat', agentType: 'Claw', workspacePath: '/assistant', remoteConnectionId: 'ssh-one', status: 'idle', createdAt: 2, lastActiveAt: 2 },
-      { sessionId: 'other-host', sessionName: 'Other host', agentType: 'Claw', workspacePath: '/assistant', remoteConnectionId: 'ssh-two', status: 'idle' },
-      { sessionId: 'archived', sessionName: 'Archived chat', agentType: 'Claw', workspacePath: '/assistant', remoteConnectionId: 'ssh-one', status: 'archived' },
+      { sessionId: 'claw-1', sessionName: 'First assistant chat', agentType: 'Claw', workspacePath: '/assistant', remoteConnectionId: 'ssh-one', workspaceId: 'assistant-one', status: 'idle', createdAt: 1, lastActiveAt: 1 },
+      { sessionId: 'claw-2', sessionName: 'Second assistant chat', agentType: 'Claw', workspacePath: '/assistant', remoteConnectionId: 'ssh-one', workspaceId: 'assistant-one', status: 'idle', createdAt: 2, lastActiveAt: 2 },
+      { sessionId: 'other-host', sessionName: 'Other host', agentType: 'Claw', workspacePath: '/assistant', remoteConnectionId: 'ssh-two', workspaceId: 'assistant-two', status: 'idle' },
+      { sessionId: 'archived', sessionName: 'Archived chat', agentType: 'Claw', workspacePath: '/assistant', remoteConnectionId: 'ssh-one', workspaceId: 'assistant-one', status: 'archived' },
     ]);
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -54,9 +54,9 @@ describe('Claw session batch management', () => {
   });
   async function renderAndSelectAll() {
     await act(async () => root.render(
-      <WorkspaceSessionBatchModal isOpen onClose={() => {}} workspacePath="/assistant" workspaceLabel="Claw" remoteConnectionId="ssh-one" />,
+      <WorkspaceSessionBatchModal workspaceId="assistant-one" isOpen onClose={() => {}} workspaceLabel="Claw" />,
     ));
-    expect(mocks.listSessions).toHaveBeenCalledWith('/assistant', 'ssh-one', undefined);
+    expect(mocks.listSessions).toHaveBeenCalledWith('assistant-one');
     expect(container.textContent).toContain('First assistant chat');
     expect(container.textContent).toContain('Second assistant chat');
     expect(container.textContent).not.toContain('Other host');
@@ -75,7 +75,7 @@ describe('Claw session batch management', () => {
     expect(mocks.confirmWarning).not.toHaveBeenCalled();
     expect(mocks.confirmDanger).not.toHaveBeenCalled();
     expect(mocks.archiveChatSession.mock.calls).toEqual([['claw-2'], ['claw-1']]);
-    expect(mocks.refreshWorkspaceSessions).toHaveBeenCalledWith({ rootPath: '/assistant', connectionId: 'ssh-one', sshHost: undefined });
+    expect(mocks.refreshWorkspaceSessions).toHaveBeenCalledWith({ id: 'assistant-one' });
   });
 
   it('deletes selected Claw sessions after explicit confirmation', async () => {

@@ -91,6 +91,11 @@ Primitive/reference 色值只存在于主题 authoring、明确的主题 preset 
 数值接近不是唯一判断标准；相邻背景/边框、文本层级、状态色、diff、syntax 和数据系列必须结合同时
 出现时的区分度审查。反过来，也不能以“可能有视觉差异”为理由给每个组件建立近似私有颜色。
 
+对话注释由 Web UI Appearance 的 `--openbitfun-component-conversation-excerpt-accent` 承载 UIKit 青色，
+引用公开浅色主题的 accent（`#059cb0`），保持各内置主题的注释标识一致。全局 selection 是中性选中语义，
+全局 accent 则随主题变化，均不满足这项局部设计约束。正文拖选、编辑与定位高亮使用此色的 30% 底色和
+同色文字；注释编号和工具栏交互复用同一 Token。系统强制色模式下正文选区使用系统 Highlight/HighlightText。
+
 ## 普通 UI 的硬约束
 
 普通应用组件和页面必须满足：

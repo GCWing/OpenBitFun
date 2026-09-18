@@ -75,6 +75,8 @@ export interface PanelConfig {
    
   data?: Record<string, any>;
    
+  workspace_id?: string;
+   
   workspace_path?: string;
    
   analysis_type?: string;

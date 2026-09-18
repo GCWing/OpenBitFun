@@ -53,7 +53,8 @@ vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({
 
 vi.mock('@/infrastructure/api', () => ({
   workspaceAPI: {
-    readFileContent: (...args: unknown[]) => mocks.readFileContent(...args),
+    // Standalone viewers read through the owning workspace ID, never a bare path.
+    readWorkspaceFile: (...args: unknown[]) => mocks.readFileContent(...args),
   },
 }));
 
@@ -304,10 +305,10 @@ describe('PdfViewer', () => {
     mocks.readFileContent.mockResolvedValue('AQID');
     mocks.getDocument.mockReturnValue(pdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="/remote/report.pdf" fileName="report.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/report.pdf" fileName="report.pdf" />));
     await flushAsyncWork();
 
-    expect(mocks.readFileContent).toHaveBeenCalledWith('/remote/report.pdf', 'base64');
+    expect(mocks.readFileContent).toHaveBeenCalledWith('workspace-remote', '/remote/report.pdf', 'base64');
     expect(container.textContent).not.toContain('report.pdf');
     expect(mocks.getDocument).toHaveBeenCalledWith(expect.objectContaining({
       data: new Uint8Array([1, 2, 3]),
@@ -336,7 +337,7 @@ describe('PdfViewer', () => {
     mocks.readFileContent.mockResolvedValue('AQID');
     mocks.getDocument.mockReturnValue(pdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="/remote/report.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/report.pdf" />));
     await flushAsyncWork();
 
     const renderObserver = observerInstances.find(instance => instance.rootMargin === '150% 0px');
@@ -375,7 +376,7 @@ describe('PdfViewer', () => {
     mocks.readFileContent.mockResolvedValue('AQID');
     mocks.getDocument.mockReturnValue(pdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="/remote/restricted.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/restricted.pdf" />));
     await flushAsyncWork();
 
     const textLayer = container.querySelector('.openbitfun-pdf-viewer__text-layer');
@@ -390,7 +391,7 @@ describe('PdfViewer', () => {
     mocks.readFileContent.mockResolvedValue('AQID');
     mocks.getDocument.mockReturnValue(pdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="/remote/report.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/report.pdf" />));
     await flushAsyncWork();
 
     const currentPageObserver = observerInstances.find(instance => instance.rootMargin === '0px');
@@ -414,7 +415,7 @@ describe('PdfViewer', () => {
     mocks.readFileContent.mockResolvedValue('AQID');
     mocks.getDocument.mockReturnValue(pdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="/remote/report.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/report.pdf" />));
     await flushAsyncWork();
 
     const nextPage = container.querySelector<HTMLButtonElement>('[aria-label="editor.pdfViewer.nextPage"]');
@@ -434,7 +435,7 @@ describe('PdfViewer', () => {
     mocks.readFileContent.mockResolvedValue('AQID');
     mocks.getDocument.mockReturnValue(pdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="/remote/report.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/report.pdf" />));
     await flushAsyncWork();
 
     const pageInput = container.querySelector<HTMLInputElement>(
@@ -468,7 +469,7 @@ describe('PdfViewer', () => {
     mocks.readFileContent.mockResolvedValue('AQID');
     mocks.getDocument.mockReturnValue(pdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="/remote/report.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/report.pdf" />));
     await flushAsyncWork();
 
     const scrollContainer = container.querySelector<HTMLElement>('.openbitfun-pdf-viewer__container');
@@ -526,7 +527,7 @@ describe('PdfViewer', () => {
     mocks.readFileContent.mockResolvedValue('AQID');
     mocks.getDocument.mockReturnValue(pdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="/remote/report.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/report.pdf" />));
     await flushAsyncWork();
 
     const zoomLevel = container.querySelector<HTMLSelectElement>(
@@ -559,7 +560,7 @@ describe('PdfViewer', () => {
     mocks.readFileContent.mockResolvedValue('AQID');
     mocks.getDocument.mockReturnValue(pdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="/remote/report.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/report.pdf" />));
     await flushAsyncWork();
 
     const firstPage = container.querySelector<HTMLElement>('[data-page-number="1"]');
@@ -602,9 +603,9 @@ describe('PdfViewer', () => {
       .mockResolvedValueOnce('BAUG');
     mocks.getDocument.mockReturnValue(secondPdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="/remote/old.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/old.pdf" />));
     await flushAsyncWork();
-    act(() => root.render(<PdfViewer filePath="/remote/new.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="/remote/new.pdf" />));
     await flushAsyncWork();
 
     firstRead.resolve('AQID');
@@ -622,7 +623,7 @@ describe('PdfViewer', () => {
     mocks.readFileContent.mockResolvedValue('AQID');
     mocks.getDocument.mockReturnValue(pdf.loadingTask);
 
-    act(() => root.render(<PdfViewer filePath="C:\\docs\\report.pdf" />));
+    act(() => root.render(<PdfViewer workspaceId="workspace-remote" filePath="C:\\docs\\report.pdf" />));
     await flushAsyncWork();
     const scrollContainer = container.querySelector<HTMLElement>('.openbitfun-pdf-viewer__container');
     const removeEventListenerSpy = vi.spyOn(scrollContainer!, 'removeEventListener');

@@ -13,3 +13,12 @@ export function displayFileToolGuidanceMessage(message: unknown): string {
     ? message.slice(FILE_TOOL_GUIDANCE_PREFIX.length)
     : message;
 }
+
+/** Explicit classification wins over legacy text, including unknown kinds. */
+export function isFileToolGuidanceResult(message: unknown, result: unknown): boolean {
+  if (result && typeof result === 'object' && 'error_detail' in result) {
+    const detail = result.error_detail;
+    return Boolean(detail && typeof detail === 'object' && 'kind' in detail && detail.kind === 'guidance');
+  }
+  return isFileToolGuidanceMessage(message);
+}

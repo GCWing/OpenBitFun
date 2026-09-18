@@ -19,6 +19,9 @@ import {
   shortSessionId
 } from './ConversationRuntime';
 
+/** Longest a streaming turn's transcript write is held back, in milliseconds. */
+const REMOTE_TRANSCRIPT_CACHE_INTERVAL_MS: number = 400;
+
 export class RemoteTranscriptController {
   private readonly remote: RemotePageState;
   private readonly remoteRuntime?: RemoteConversationDependencies;
@@ -28,6 +31,7 @@ export class RemoteTranscriptController {
   private knownRemoteMessageCount: number = 0;
   private isSyncingAfterTurn: boolean = false;
   private isRebuildingRemoteTranscript: boolean = false;
+  private pendingTranscriptCache: number = -1;
 
   constructor(
     remote: RemotePageState,
@@ -276,6 +280,10 @@ export class RemoteTranscriptController {
 
   resetRemoteTimeline(sessionId: string): void {
     const runtime = requireRemoteRuntime(this.remoteRuntime);
+    if (this.pendingTranscriptCache !== -1) {
+      clearTimeout(this.pendingTranscriptCache);
+      this.pendingTranscriptCache = -1;
+    }
     runtime.timeline.reset(sessionId);
     this.knownPollVersionValue = 0;
     this.syncRemoteTimeline();
@@ -314,7 +322,12 @@ export class RemoteTranscriptController {
     runtime.timeline.applySnapshot(snapshot);
     this.syncRemoteTimeline();
     if (snapshot.messageSnapshot !== undefined) {
-      this.cacheRemoteTranscript(snapshot.sessionId, true);
+      // A streaming turn restates the whole transcript on every chunk. Writing
+      // all of it back each time re-encrypts the session dozens of times a
+      // second for a cache nothing reads until the next open, so during a turn
+      // only the last write of a burst is kept.
+      if (this.hasRunningRemoteTurn()) this.scheduleTranscriptCache(snapshot.sessionId);
+      else this.cacheTranscriptNow(snapshot.sessionId, true);
     } else if (snapshot.newMessages.length > 0) {
       this.cacheRemoteTranscript(snapshot.sessionId, false);
     }
@@ -348,6 +361,22 @@ export class RemoteTranscriptController {
    * that cannot be written only costs the next open a fetch it used to pay for
    * anyway.
    */
+  private scheduleTranscriptCache(sessionId: string): void {
+    if (this.pendingTranscriptCache !== -1) return;
+    this.pendingTranscriptCache = setTimeout(() => {
+      this.pendingTranscriptCache = -1;
+      this.cacheRemoteTranscript(sessionId, true);
+    }, REMOTE_TRANSCRIPT_CACHE_INTERVAL_MS);
+  }
+
+  private cacheTranscriptNow(sessionId: string, authoritativeSnapshot: boolean): void {
+    if (this.pendingTranscriptCache !== -1) {
+      clearTimeout(this.pendingTranscriptCache);
+      this.pendingTranscriptCache = -1;
+    }
+    this.cacheRemoteTranscript(sessionId, authoritativeSnapshot);
+  }
+
   private cacheRemoteTranscript(sessionId: string, authoritativeSnapshot: boolean): void {
     const runtime = requireRemoteRuntime(this.remoteRuntime);
     const state: ChatTimelineState = runtime.timeline.snapshotState();

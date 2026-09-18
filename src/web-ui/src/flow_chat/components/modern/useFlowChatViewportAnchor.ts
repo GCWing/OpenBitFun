@@ -87,6 +87,7 @@ type AnchorRestoreOutcome =
   | 'in-place'
   | 'awaiting-turn'
   | 'stood-down'
+  | 'blocked'
   | 'no-anchor';
 
 export interface FlowChatViewportAnchorApi {
@@ -180,7 +181,7 @@ export interface FlowChatViewportAnchorApi {
    * but where it is, the displacement and its repair are one paint instead of
    * two.
    */
-  openSettleWindow: () => void;
+  openSettleWindow: (source?: 'items' | 'resize' | 'snapshot' | 'resume') => void;
 }
 
 export function useFlowChatViewportAnchor({
@@ -231,6 +232,10 @@ export function useFlowChatViewportAnchor({
   const lastUserScrollIntentAtRef = useRef(0);
   /** Frames left in which the anchor is still being re-asserted. */
   const settleFramesRef = useRef(0);
+  const blockedGeometryRef = useRef<string | null>(null);
+  const lastResizeGeometryRef = useRef<string | null>(null);
+  const correctionStatsRef = useRef({ count: 0, reversals: 0, travelPx: 0, lastSign: 0 });
+  const settleSourceRef = useRef<string>('items');
   /**
    * The next settle window takes a reading position instead of restoring one.
    *
@@ -318,6 +323,9 @@ export function useFlowChatViewportAnchor({
   const captureAnchorAt = useCallback((source: 'explicit' | 'scroll' | 'navigation') => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
+    blockedGeometryRef.current = null;
+    lastResizeGeometryRef.current = null;
+    correctionStatsRef.current = { count: 0, reversals: 0, travelPx: 0, lastSign: 0 };
     const previous = anchorRef.current;
     const next = selectViewportAnchor(
       readViewportAnchorCandidates(scroller),
@@ -570,9 +578,16 @@ export function useFlowChatViewportAnchor({
       carryAnchorThroughScroll(scroller, 'viewport-moved');
     }
     const rebased = anchorRef.current ?? anchor;
+    const currentOffsetPx = readTurnAnchorOffsetPx(scroller, element);
+    const geometry = JSON.stringify([
+      rebased.turnId, rebased.offsetFromScrollerTop, currentOffsetPx,
+      scroller.scrollTop, scroller.scrollHeight, scroller.clientHeight, scroller.clientWidth,
+    ]);
+    if (blockedGeometryRef.current === geometry) return 'blocked';
+    blockedGeometryRef.current = null;
     const correction = viewportAnchorCorrectionPx(
       rebased,
-      readTurnAnchorOffsetPx(scroller, element),
+      currentOffsetPx,
     );
     /*
      * Already where it belongs, which still counts as answered — and is now the
@@ -609,7 +624,7 @@ export function useFlowChatViewportAnchor({
     const felt = Math.abs(correction) >= ANCHOR_NOTABLE_CORRECTION_PX;
     traceViewportRepeating(`anchor|correcting|${felt ? 'felt' : 'rounding'}|${rebased.turnId}`, {
       location: 'anchor.correct',
-      message: 'anchor put the reading position back',
+      message: 'anchor requested a reading position correction',
       travelPx: correction,
       data: () => ({
         turnId: rebased.turnId,
@@ -644,7 +659,44 @@ export function useFlowChatViewportAnchor({
         scrollRangePx: roundViewportPx(scroller.scrollHeight),
       }),
     });
+    const beforePx = scroller.scrollTop;
     shiftViewportRef.current(correction);
+    const appliedPx = scroller.scrollTop - beforePx;
+    const residualPx = viewportAnchorCorrectionPx(rebased, readTurnAnchorOffsetPx(scroller, element));
+    const improved = Math.abs(residualPx) < ANCHOR_CORRECTION_EPSILON_PX
+      || Math.abs(residualPx) < Math.abs(correction);
+    const stats = correctionStatsRef.current;
+    const sign = Math.sign(correction);
+    if (stats.lastSign !== 0 && stats.lastSign !== sign) stats.reversals += 1;
+    stats.lastSign = sign;
+    stats.count += 1;
+    stats.travelPx += Math.abs(appliedPx);
+    const magnitudeBand = Math.abs(correction) >= ANCHOR_NOTABLE_CORRECTION_PX ? 'felt' : 'rounding';
+    traceViewportRepeating(`anchor|result|${rebased.turnId}|${improved}|${sign}|${magnitudeBand}`, {
+      location: 'anchor.correctionResult',
+      message: 'measured the result of an anchor correction',
+      travelPx: appliedPx,
+      data: () => ({
+        turnId: rebased.turnId, source: settleSourceRef.current,
+        frameStartMs: correctionFrameStartMsRef.current,
+        requestedPx: roundViewportPx(correction), appliedPx: roundViewportPx(appliedPx),
+        residualPx: roundViewportPx(residualPx), improved,
+        correctionCount: stats.count, reversalCount: stats.reversals,
+        cumulativeTravelPx: roundViewportPx(stats.travelPx),
+        scrollTopPx: roundViewportPx(scroller.scrollTop), scrollHeightPx: scroller.scrollHeight,
+        viewportHeightPx: scroller.clientHeight,
+        anchorItemKey: element.dataset.virtualItemKey ?? null,
+        renderedFirstIndex: scroller.querySelector('[data-virtual-index]')?.getAttribute('data-virtual-index') ?? null,
+        renderedRowCount: scroller.querySelectorAll('[data-virtual-index]').length,
+      }),
+    });
+    if (!improved) {
+      blockedGeometryRef.current = JSON.stringify([
+        rebased.turnId, rebased.offsetFromScrollerTop,
+        readTurnAnchorOffsetPx(scroller, element), scroller.scrollTop,
+        scroller.scrollHeight, scroller.clientHeight, scroller.clientWidth,
+      ]);
+    }
     /*
      * The shift put the Turn back at the stored offset, so advancing only the
      * position keeps the two halves agreeing. This is the one movement of
@@ -652,7 +704,7 @@ export function useFlowChatViewportAnchor({
      */
     anchorScrollTopRef.current = scroller.scrollTop;
     isRestoringViewportResumeRef.current = false;
-    return 'corrected';
+    return improved ? 'corrected' : 'blocked';
   }, [carryAnchorThroughScroll, reportMissingTurnWait, scrollerRef]);
 
   const attemptRestoreRef = useRef(attemptRestore);
@@ -674,7 +726,23 @@ export function useFlowChatViewportAnchor({
     return outcome === 'corrected' || outcome === 'in-place';
   }, []);
 
-  const openSettleWindow = useCallback(() => {
+  const openSettleWindow = useCallback((source: 'items' | 'resize' | 'snapshot' | 'resume' = 'items') => {
+    const scroller = scrollerRef.current;
+    if (source === 'resize' && scroller) {
+      const anchor = anchorRef.current;
+      const element = anchor ? findRenderedTurnAnchorElement(scroller, anchor.turnId) : null;
+      const geometry = JSON.stringify([
+        scroller.scrollHeight, scroller.clientWidth, scroller.clientHeight,
+        anchor?.turnId, element ? readTurnAnchorOffsetPx(scroller, element) + scroller.scrollTop : null,
+      ]);
+      if (lastResizeGeometryRef.current === geometry) return;
+      lastResizeGeometryRef.current = geometry;
+    }
+    settleSourceRef.current = source;
+    traceViewportRepeating(`anchor|settle-open|${source}`, {
+      location: 'anchor.settleOpened', message: 'opened an anchor settle window',
+      data: () => ({ source, remainingFrames: settleFramesRef.current, alreadyRunning: settleFrameRef.current !== null }),
+    });
     settleFramesRef.current = ANCHOR_SETTLE_FRAMES;
     if (recaptureOnNextSettleRef.current) {
       /*
@@ -736,10 +804,15 @@ export function useFlowChatViewportAnchor({
       correctionFrameStartMsRef.current = null;
       if (settleFramesRef.current > 0) {
         settleFrameRef.current = requestAnimationFrame(step);
+      } else {
+        traceViewportRepeating(`anchor|settle-ended|${outcome}`, {
+          location: 'anchor.settleEnded', message: 'anchor settle window ended',
+          data: () => ({ source: settleSourceRef.current, outcome, ...correctionStatsRef.current }),
+        });
       }
     };
     settleFrameRef.current = requestAnimationFrame(step);
-  }, [captureAnchorAt]);
+  }, [captureAnchorAt, scrollerRef]);
 
   useEffect(() => () => {
     if (settleFrameRef.current !== null) {

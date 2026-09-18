@@ -52,7 +52,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       <span aria-hidden="true" className={styles.progress} data-openbitfun-part="progress" />
       <span className={styles.content} data-openbitfun-part="content">
         {leadingIcon && (
-          <span aria-hidden="true" className={classNames(styles.icon, styles.leadingIcon)} data-openbitfun-part="leading-icon">
+          <span aria-hidden="true" className={classNames(styles.icon, styles.leadingIcon)} data-openbitfun-icon-slot="true" data-openbitfun-part="leading-icon">
             {leadingIcon}
           </span>
         )}
@@ -62,7 +62,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
           <OverflowText className={styles.label} data-openbitfun-part="label">{children}</OverflowText>
         )}
         {trailingIcon && (
-          <span aria-hidden="true" className={classNames(styles.icon, styles.trailingIcon)} data-openbitfun-part="trailing-icon">
+          <span aria-hidden="true" className={classNames(styles.icon, styles.trailingIcon)} data-openbitfun-icon-slot="true" data-openbitfun-part="trailing-icon">
             {trailingIcon}
           </span>
         )}

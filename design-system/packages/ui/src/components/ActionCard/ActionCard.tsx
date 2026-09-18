@@ -67,7 +67,7 @@ export const ActionCard = forwardRef<HTMLButtonElement, ActionCardProps>(
           type={type}
         >
           {leading !== undefined && leading !== null && (
-            <span aria-hidden="true" className={styles.leading} data-openbitfun-part="leading">
+            <span aria-hidden="true" className={styles.leading} data-openbitfun-icon-slot="true" data-openbitfun-part="leading">
               {leading}
             </span>
           )}

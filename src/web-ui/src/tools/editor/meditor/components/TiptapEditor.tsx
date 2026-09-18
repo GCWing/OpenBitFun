@@ -27,6 +27,7 @@ import { getMotionAwareScrollBehavior } from '@/shared/utils/motionPreference';
 import { activeEditTargetService } from '@/tools/editor/services/ActiveEditTargetService';
 import { MarkdownAlignmentExtension } from '../extensions/MarkdownAlignmentExtension';
 import { BlockIdExtension } from '../extensions/BlockIdExtension';
+import { SoftBreakExtension } from '../extensions/SoftBreakExtension';
 import { MarkdownImage } from '../extensions/MarkdownImageExtension';
 import {
   MarkdownTable,
@@ -574,6 +575,7 @@ export const TiptapEditor = React.forwardRef<TiptapEditorHandle, TiptapEditorPro
       }),
       MarkdownAlignmentExtension,
       BlockIdExtension,
+      SoftBreakExtension,
       MarkdownImage.configure({
         fileAccess,
         editLabel: t('editor.markdownEditor.editImage'),

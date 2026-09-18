@@ -1,6 +1,7 @@
 package com.openbitfun.mobile.core.feature.directory
 
 import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
+import com.openbitfun.mobile.core.domain.LegacyWorkspaceCompatibility
 import com.openbitfun.mobile.core.domain.identity
 import com.openbitfun.mobile.core.domain.belongsTo
 
@@ -47,10 +48,10 @@ public class DeviceDirectoryStore internal constructor(
             is DeviceDirectoryIntent.Retry -> retry(intent.deviceId)
             is DeviceDirectoryIntent.SetWorkspaceExpanded -> setWorkspaceExpanded(
                 intent.deviceId,
-                RemoteWorkspaceIdentity(intent.path, intent.remoteConnectionId, intent.remoteSshHost),
+                RemoteWorkspaceIdentity(intent.path, intent.remoteConnectionId, intent.remoteSshHost, intent.workspaceId),
                 intent.expanded,
             )
-            is DeviceDirectoryIntent.RetryWorkspace -> retryWorkspace(intent.deviceId, RemoteWorkspaceIdentity(intent.path, intent.remoteConnectionId, intent.remoteSshHost))
+            is DeviceDirectoryIntent.RetryWorkspace -> retryWorkspace(intent.deviceId, RemoteWorkspaceIdentity(intent.path, intent.remoteConnectionId, intent.remoteSshHost, intent.workspaceId))
             DeviceDirectoryIntent.Stop -> stop()
         }
     }
@@ -201,18 +202,22 @@ public class DeviceDirectoryStore internal constructor(
         startLoad(id, slot, entry)
     }
 
-    private fun setWorkspaceExpanded(deviceId: String, identity: RemoteWorkspaceIdentity, expanded: Boolean) {
+    private fun setWorkspaceExpanded(deviceId: String, reference: RemoteWorkspaceIdentity, expanded: Boolean) {
+        val identity = LegacyWorkspaceCompatibility.resolve(reference, devices[deviceId]?.workspaces.orEmpty().map { it.identity() })
+            ?: run { setEntry(deviceId) { it.copy(status = DeviceDirectoryStatus.FAILED, error = DeviceDirectoryFailure.LOAD_FAILED) }; return }
         val id = deviceId.trim()
         val normalizedPath = normalizeWorkspacePath(identity.path)
         val entry = devices[id] ?: return
         if (normalizedPath.isEmpty()) return
         updateWorkspaceState(id, identity) { it.copy(expanded = expanded) }
         if (!expanded || !entry.online) return
-        val state = devices[id]?.workspace(identity.path, identity.remoteConnectionId, identity.remoteSshHost)
+        val state = devices[id]?.workspace(identity)
         if (state?.status != WorkspaceDirectoryStatus.READY) loadWorkspaceSessions(id, identity, false)
     }
 
-    private fun retryWorkspace(deviceId: String, identity: RemoteWorkspaceIdentity) {
+    private fun retryWorkspace(deviceId: String, reference: RemoteWorkspaceIdentity) {
+        val identity = LegacyWorkspaceCompatibility.resolve(reference, devices[deviceId]?.workspaces.orEmpty().map { it.identity() })
+            ?: run { setEntry(deviceId) { it.copy(status = DeviceDirectoryStatus.FAILED, error = DeviceDirectoryFailure.LOAD_FAILED) }; return }
         val id = deviceId.trim()
         val normalizedPath = normalizeWorkspacePath(identity.path)
         val entry = devices[id] ?: return
@@ -226,7 +231,7 @@ public class DeviceDirectoryStore internal constructor(
         if (workspaceLoads[key]?.isActive == true) return
         val entry = devices[deviceId] ?: return
         if (!entry.online) return
-        val existing = entry.workspace(identity.path, identity.remoteConnectionId, identity.remoteSshHost)
+        val existing = entry.workspace(identity)
         if (!force && existing?.status == WorkspaceDirectoryStatus.READY) return
         val slot = slotFor(deviceId) ?: run {
             updateWorkspaceState(deviceId, identity) { it.copy(status = WorkspaceDirectoryStatus.FAILED) }
@@ -236,7 +241,7 @@ public class DeviceDirectoryStore internal constructor(
         updateWorkspaceState(deviceId, identity) { it.copy(status = WorkspaceDirectoryStatus.LOADING) }
         val job = scope.launch {
             try {
-                val loaded = slot.sessionStore.sessionsForWorkspace(identity.path, identity.remoteConnectionId, identity.remoteSshHost)
+                val loaded = slot.sessionStore.sessionsForWorkspace(identity)
                 if (!isCurrentWorkspace(key, generation) || devices[deviceId]?.online != true) return@launch
                 val current = devices[deviceId] ?: return@launch
                 val merged = replaceWorkspaceSessions(current.sessions, identity, loaded)
@@ -383,7 +388,7 @@ public class DeviceDirectoryStore internal constructor(
         current: List<WorkspaceDirectoryEntry>, workspaces: List<RecentWorkspace>,
     ): List<WorkspaceDirectoryEntry> = workspaces.map { workspace ->
         current.firstOrNull { it.identity.matches(workspace.identity()) }?.copy(path = workspace.path)
-            ?: WorkspaceDirectoryEntry(workspace.path, false, WorkspaceDirectoryStatus.IDLE, workspace.remoteConnectionId, workspace.remoteSshHost)
+            ?: WorkspaceDirectoryEntry(workspace.path, false, WorkspaceDirectoryStatus.IDLE, workspace.remoteConnectionId, workspace.remoteSshHost, workspace.workspaceId)
     }
 
     private fun updateWorkspaceList(
@@ -394,7 +399,7 @@ public class DeviceDirectoryStore internal constructor(
         val updated = current.map { entry ->
             if (entry.identity.matches(identity)) { found = true; transform(entry) } else entry
         }.toMutableList()
-        if (!found) updated += transform(WorkspaceDirectoryEntry(identity.path, false, WorkspaceDirectoryStatus.IDLE, identity.remoteConnectionId, identity.remoteSshHost))
+        if (!found) updated += transform(WorkspaceDirectoryEntry(identity.path, false, WorkspaceDirectoryStatus.IDLE, identity.remoteConnectionId, identity.remoteSshHost, identity.workspaceId))
         return updated
     }
 

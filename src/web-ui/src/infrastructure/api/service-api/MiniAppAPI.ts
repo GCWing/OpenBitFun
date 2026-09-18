@@ -154,6 +154,9 @@ export interface AgentEnsureSessionOptions {
 
 export interface AgentEnsureSessionResult {
   sessionId: string;
+  /** Owning workspace ID of the hidden MiniApp agent session. */
+  workspaceId?: string;
+  /** MiniApp appdata workspace root as an IO operand. */
   workspacePath: string;
   created: boolean;
 }

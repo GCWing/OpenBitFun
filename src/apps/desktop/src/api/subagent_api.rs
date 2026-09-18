@@ -7,22 +7,26 @@ use openbitfun_core::agentic::agents::{
     SubagentListScope, SubagentQueryContext,
 };
 use openbitfun_core::service::config::SubagentModelSelection;
-use openbitfun_core::service::remote_ssh::workspace_state::is_remote_path;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::path::PathBuf;
 use tauri::State;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListSubagentsRequest {
     pub source: Option<SubAgentSource>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListVisibleSubagentsRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
     pub parent_agent_type: String,
 }
@@ -30,27 +34,52 @@ pub struct ListVisibleSubagentsRequest {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListManageableSubagentsRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
     pub parent_agent_type: String,
 }
 
-fn workspace_root_from_request(workspace_path: Option<&str>) -> Option<PathBuf> {
-    workspace_path
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
+async fn query_workspace_from_request(
+    state: &AppState,
+    workspace_id: Option<&str>,
+    legacy_path: Option<&str>,
+) -> Result<(Option<String>, bool), String> {
+    if workspace_id.is_none() && legacy_path.is_none() {
+        return Ok((None, true));
+    }
+    let record = state
+        .workspace_service
+        .resolve_legacy_workspace_reference(
+            workspace_id,
+            legacy_path.unwrap_or_default(),
+            None,
+            None,
+        )
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or("Unknown workspace reference")?;
+    let local = record.workspace_kind != openbitfun_core::service::workspace::WorkspaceKind::Remote;
+    Ok((Some(record.id), local))
 }
 
-async fn supports_local_external_sources(workspace_path: Option<&str>) -> bool {
-    match workspace_path {
-        Some(path) if !path.is_empty() => !is_remote_path(path).await,
-        _ => true,
+pub(super) async fn local_workspace_from_request(
+    state: &AppState,
+    workspace_id: Option<&str>,
+    legacy_path: Option<&str>,
+) -> Result<Option<String>, String> {
+    let (id, local) = query_workspace_from_request(state, workspace_id, legacy_path).await?;
+    if !local {
+        return Err("Custom Agent management is unsupported for remote workspaces".into());
     }
+    Ok(id)
 }
 
 fn reject_external_subagent_mutation(
     state: &AppState,
     subagent_id: &str,
-    workspace: Option<&std::path::Path>,
+    workspace: Option<&str>,
 ) -> Result<(), String> {
     if state
         .agent_registry
@@ -68,9 +97,12 @@ pub async fn list_subagents(
     state: State<'_, AppState>,
     request: ListSubagentsRequest,
 ) -> Result<Vec<AgentInfo>, String> {
-    let external_sources_supported =
-        supports_local_external_sources(request.workspace_path.as_deref()).await;
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let (workspace, external_sources_supported) = query_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     let query_workspace = external_sources_supported
         .then_some(workspace.as_deref())
         .flatten();
@@ -78,7 +110,7 @@ pub async fn list_subagents(
         .agent_registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: None,
-            workspace_root: query_workspace,
+            workspace_id: query_workspace,
             list_scope: SubagentListScope::RegistryManagement,
             include_disabled: true,
             external_sources_supported,
@@ -101,9 +133,12 @@ pub async fn list_visible_subagents(
     state: State<'_, AppState>,
     request: ListVisibleSubagentsRequest,
 ) -> Result<Vec<AgentInfo>, String> {
-    let external_sources_supported =
-        supports_local_external_sources(request.workspace_path.as_deref()).await;
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let (workspace, external_sources_supported) = query_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     let query_workspace = external_sources_supported
         .then_some(workspace.as_deref())
         .flatten();
@@ -111,7 +146,7 @@ pub async fn list_visible_subagents(
         .agent_registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some(request.parent_agent_type.as_str()),
-            workspace_root: query_workspace,
+            workspace_id: query_workspace,
             list_scope: SubagentListScope::TaskVisible,
             include_disabled: false,
             external_sources_supported,
@@ -124,9 +159,12 @@ pub async fn list_manageable_subagents(
     state: State<'_, AppState>,
     request: ListManageableSubagentsRequest,
 ) -> Result<Vec<AgentInfo>, String> {
-    let external_sources_supported =
-        supports_local_external_sources(request.workspace_path.as_deref()).await;
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let (workspace, external_sources_supported) = query_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     let query_workspace = external_sources_supported
         .then_some(workspace.as_deref())
         .flatten();
@@ -134,7 +172,7 @@ pub async fn list_manageable_subagents(
         .agent_registry
         .get_subagents_for_query(&SubagentQueryContext {
             parent_agent_type: Some(request.parent_agent_type.as_str()),
-            workspace_root: query_workspace,
+            workspace_id: query_workspace,
             list_scope: SubagentListScope::RegistryManagement,
             include_disabled: true,
             external_sources_supported,
@@ -146,6 +184,9 @@ pub async fn list_manageable_subagents(
 #[serde(rename_all = "camelCase")]
 pub struct GetSubagentDetailRequest {
     pub subagent_id: String,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -154,7 +195,12 @@ pub async fn get_subagent_detail(
     state: State<'_, AppState>,
     request: GetSubagentDetailRequest,
 ) -> Result<CustomSubagentDetail, String> {
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let workspace = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     reject_external_subagent_mutation(&state, &request.subagent_id, workspace.as_deref())?;
     state
         .agent_registry
@@ -167,6 +213,9 @@ pub async fn get_subagent_detail(
 #[serde(rename_all = "camelCase")]
 pub struct DeleteSubagentRequest {
     pub subagent_id: String,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -176,7 +225,12 @@ pub async fn delete_subagent(
     request: DeleteSubagentRequest,
 ) -> Result<(), String> {
     let subagent_id = request.subagent_id;
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let workspace = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     reject_external_subagent_mutation(&state, &subagent_id, workspace.as_deref())?;
 
     let file_path = state
@@ -209,6 +263,9 @@ pub struct UpdateSubagentRequest {
     pub tools: Option<Vec<String>>,
     pub readonly: Option<bool>,
     pub review: Option<bool>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -223,7 +280,12 @@ pub async fn update_subagent(
     if request.prompt.trim().is_empty() {
         return Err("Prompt cannot be empty".to_string());
     }
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let workspace = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     reject_external_subagent_mutation(&state, &request.subagent_id, workspace.as_deref())?;
     state
         .agent_registry
@@ -257,6 +319,9 @@ pub struct CreateSubagentRequest {
     pub tools: Option<Vec<String>>,
     pub readonly: Option<bool>,
     pub review: Option<bool>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -315,7 +380,12 @@ pub async fn create_subagent(
 ) -> Result<(), String> {
     let name = request.name.trim();
     validate_agent_name(name)?;
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let workspace = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
 
     if request.level == SubagentLevel::Project && workspace.is_none() {
         return Err("Project-level Agent requires opening a workspace first".to_string());
@@ -342,8 +412,13 @@ pub async fn create_subagent(
     let agents_dir = match request.level {
         SubagentLevel::User => pm.user_agents_dir(),
         SubagentLevel::Project => {
-            let root = workspace.as_deref().ok_or("Workspace path not available")?;
-            pm.project_agents_dir(root)
+            let id = workspace.as_deref().ok_or("Workspace ID not available")?;
+            let record = state
+                .workspace_service
+                .require_workspace(id)
+                .await
+                .map_err(|error| error.to_string())?;
+            pm.project_agents_dir(&record.root_path)
         }
     };
 
@@ -400,6 +475,9 @@ pub async fn create_subagent(
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReloadSubagentsRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -408,11 +486,16 @@ pub async fn reload_subagents(
     state: State<'_, AppState>,
     request: ReloadSubagentsRequest,
 ) -> Result<(), String> {
-    let workspace_root = workspace_root_from_request(request.workspace_path.as_deref())
-        .ok_or_else(|| "workspacePath is required to reload project subagents".to_string())?;
+    let workspace_root = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?
+    .ok_or_else(|| "workspaceId is required to reload project subagents".to_string())?;
     state
         .agent_registry
-        .load_custom_subagents(workspace_root.as_path())
+        .load_custom_subagents(workspace_root.as_str())
         .await;
     Ok(())
 }
@@ -436,6 +519,9 @@ pub struct UpdateSubagentConfigRequest {
     pub model: Option<String>,
     #[serde(default)]
     pub clear_model_override: bool,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID clients.
     pub workspace_path: Option<String>,
 }
 
@@ -452,7 +538,12 @@ pub async fn update_subagent_config(
     request: UpdateSubagentConfigRequest,
 ) -> Result<UpdateSubagentConfigResponse, String> {
     let subagent_id = &request.subagent_id;
-    let workspace = workspace_root_from_request(request.workspace_path.as_deref());
+    let workspace = local_workspace_from_request(
+        &state,
+        request.workspace_id.as_deref(),
+        request.workspace_path.as_deref(),
+    )
+    .await?;
     reject_external_subagent_mutation(&state, subagent_id, workspace.as_deref())?;
     if let Some(workspace) = workspace.as_deref() {
         state.agent_registry.load_custom_subagents(workspace).await;
@@ -511,13 +602,12 @@ pub async fn update_subagent_config(
             if let Some(workspace) = workspace.as_deref() {
                 return Err(format!(
                     "Project Sub-Agent '{}' was not found in workspace '{}'",
-                    subagent_id,
-                    workspace.display()
+                    subagent_id, workspace
                 ));
             }
 
             return Err(format!(
-                "workspacePath is required to update project Sub-Agent '{}'",
+                "workspaceId is required to update project Sub-Agent '{}'",
                 subagent_id
             ));
         }

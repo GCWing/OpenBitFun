@@ -254,6 +254,20 @@ impl ChatMode {
             .clone()
             .or_else(|| self.workspace.clone())
             .or_else(|| Some(self.agent.workspace_path_string()));
+        // Sessions are stored under their owning project workspace; the bound
+        // session names it by ID. Fall back to the client's own workspace ID only
+        // when the chat still points at that same workspace.
+        let workspace_id = chat_state
+            .project_workspace_id()
+            .map(str::to_string)
+            .or_else(|| {
+                let agent_path = self.agent.workspace_path_string();
+                (workspace_path
+                    .as_deref()
+                    .is_none_or(|path| path == agent_path))
+                .then(|| self.agent.workspace_id())
+                .flatten()
+            });
         let agent = self.agent.clone();
 
         /*
@@ -279,6 +293,7 @@ impl ChatMode {
 
                     agent
                         .generate_session_usage_report(AgentSessionUsageRequest {
+                            workspace_id,
                             session_id,
                             workspace_path: Some(workspace_path),
                             remote_connection_id: None,

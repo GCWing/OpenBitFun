@@ -68,7 +68,7 @@
     overflow: hidden;
     min-block-size: 0;
     border-radius: var(--openbitfun-radius-sm);
-    background: var(--openbitfun-color-surface-canvas);
+    background: var(--openbitfun-color-surface-scene);
   }
 
   .outputFrame[data-density="compact"] {

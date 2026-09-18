@@ -101,6 +101,7 @@
     "cancel": "Cancel"
   },
   "scene": {
+    "conversation": "Conversation",
     "loading": "Loading...",
     "loadFailed": "Load failed: {{error}}",
     "retry": "Retry",

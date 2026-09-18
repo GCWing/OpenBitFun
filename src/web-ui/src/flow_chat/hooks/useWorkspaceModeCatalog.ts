@@ -13,13 +13,11 @@ const log = createLogger('WorkspaceModeCatalog');
  */
 export function useWorkspaceModeCatalog(
   scope: {
-    workspacePath?: string;
-    remoteConnectionId?: string;
-    remoteSshHost?: string;
+    workspaceId?: string;
   },
   publishModes: (modes: ModeInfo[]) => void,
 ): () => Promise<void> {
-  const { workspacePath, remoteConnectionId, remoteSshHost } = scope;
+  const { workspaceId } = scope;
   const publishModesRef = useRef(publishModes);
   const mountedRef = useRef(false);
   const requestSequenceRef = useRef(0);
@@ -30,9 +28,7 @@ export function useWorkspaceModeCatalog(
     try {
       const { agentAPI } = await import('@/infrastructure/api/service-api/AgentAPI');
       const modes = await agentAPI.getAvailableModes({
-        workspacePath: workspacePath || undefined,
-        remoteConnectionId: remoteConnectionId || undefined,
-        remoteSshHost: remoteSshHost || undefined,
+        workspaceId,
       });
       if (mountedRef.current && requestId === requestSequenceRef.current) {
         publishModesRef.current(modes);
@@ -42,7 +38,7 @@ export function useWorkspaceModeCatalog(
         log.error('Failed to fetch available modes', { error });
       }
     }
-  }, [remoteConnectionId, remoteSshHost, workspacePath]);
+  }, [workspaceId]);
 
   useEffect(() => {
     mountedRef.current = true;

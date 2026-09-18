@@ -9,6 +9,7 @@ pub const LOCAL_WORKSPACE_SSH_HOST: &str = "localhost";
 /// Unified workspace identity used to resolve session persistence for local and remote workspaces.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct WorkspaceSessionIdentity {
+    pub workspace_kind: openbitfun_core_types::WorkspaceKind,
     pub hostname: String,
     /// Canonical local root or normalized remote root used to identify the logical workspace.
     pub logical_workspace_path: String,
@@ -17,7 +18,7 @@ pub struct WorkspaceSessionIdentity {
 
 impl WorkspaceSessionIdentity {
     pub fn is_remote(&self) -> bool {
-        self.hostname != LOCAL_WORKSPACE_SSH_HOST
+        self.workspace_kind == openbitfun_core_types::WorkspaceKind::Remote
     }
 
     pub fn logical_workspace_path(&self) -> &str {
@@ -246,6 +247,7 @@ pub fn workspace_session_identity(
             .filter(|s| !s.is_empty())
             .map(str::to_string)?;
         return Some(WorkspaceSessionIdentity {
+            workspace_kind: openbitfun_core_types::WorkspaceKind::Remote,
             hostname,
             logical_workspace_path: normalize_remote_workspace_path(workspace_path),
             remote_connection_id: Some(connection_id),
@@ -255,6 +257,7 @@ pub fn workspace_session_identity(
     let local_root =
         normalize_local_workspace_root_for_stable_id(Path::new(workspace_path)).ok()?;
     Some(WorkspaceSessionIdentity {
+        workspace_kind: openbitfun_core_types::WorkspaceKind::Normal,
         hostname: LOCAL_WORKSPACE_SSH_HOST.to_string(),
         logical_workspace_path: local_root,
         remote_connection_id: None,

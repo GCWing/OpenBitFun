@@ -137,9 +137,15 @@ pub(super) async fn run(
                 None => {}
             },
             recv = external_source_recv => match recv {
-                Some(Ok((workspace_path, snapshot))) => {
+                Some(Ok((workspace_id, snapshot))) => {
+                    let workspace_path = match openbitfun_core::service::workspace::get_global_workspace_service() {
+                        Some(service) => service.require_workspace(&workspace_id).await.ok()
+                            .map(|record| record.root_path.to_string_lossy().into_owned()).unwrap_or_default(),
+                        None => String::new(),
+                    };
                     if let Err(error) = cx.send_notification(ExternalSourceEventNotification {
                         cursor: event_state.next_cursor(EventStream::ExternalSource),
+                        workspace_id: Some(workspace_id),
                         workspace_path,
                         snapshot,
                     }) {

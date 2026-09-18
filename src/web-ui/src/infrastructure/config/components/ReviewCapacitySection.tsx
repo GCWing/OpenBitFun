@@ -15,7 +15,7 @@ import {
 
 const ReviewCapacitySection: React.FC = () => {
   const { t } = useTranslation('settings/review-capacity');
-  const { workspacePath } = useCurrentWorkspace();
+  const { workspace } = useCurrentWorkspace();
   const { error: notifyError, success: notifySuccess } = useNotification();
   const desktopRuntime = isTauriRuntime();
   const [loading, setLoading] = useState(desktopRuntime);
@@ -28,7 +28,7 @@ const ReviewCapacitySection: React.FC = () => {
     setLoading(true);
     setLoadError(null);
     try {
-      setTeam(await loadDefaultReviewTeam(workspacePath || undefined));
+      setTeam(await loadDefaultReviewTeam(workspace?.id));
     } catch (error) {
       const message = error instanceof Error ? error.message : t('messages.loadFailed');
       setLoadError(message);
@@ -36,7 +36,7 @@ const ReviewCapacitySection: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [desktopRuntime, notifyError, t, workspacePath]);
+  }, [desktopRuntime, notifyError, t, workspace?.id]);
 
   useEffect(() => {
     void loadData();

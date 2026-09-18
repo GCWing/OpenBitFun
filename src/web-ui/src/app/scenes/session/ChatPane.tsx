@@ -5,7 +5,7 @@
  * Renamed from panels/CenterPanel. All logic preserved.
  */
 
-import React, { useCallback, memo, useEffect, useRef, useState } from 'react';
+import React, { useCallback, memo, useEffect, useRef, useState, useMemo, useContext } from 'react';
 import { ChatFileDropOverlay } from './ChatFileDropOverlay';
 import type { FileDropPreview, FileDropPosition } from '@/shared/types/fileDropPreview';
 import { ModernFlowChatContainer as FlowChatContainer } from '../../../flow_chat/components/modern/ModernFlowChatContainer';
@@ -16,8 +16,14 @@ import { type LineRange } from '@/shared/editor/LineRange';
 import path from 'path-browserify';
 import { createLogger } from '@/shared/utils/logger';
 import { hasNonFileUriScheme } from '@/shared/utils/pathUtils';
+import { sessionWorkspaceId } from '../../../flow_chat/session-drivers/sessionFileNavigation';
 
 import './ChatPane.scss';
+import { ConversationViewProvider } from '@/flow_chat/contexts/ConversationViewProvider';
+import { openWorkbenchContent } from '@/shared/services/workbenchContentService';
+import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import type { ConversationSessionRef } from '@/flow_chat/contexts/conversationViewScope';
+import { ConversationTextVisibilityContext } from '@/flow_chat/contexts/conversationViewScope';
 
 const log = createLogger('ChatPane');
 const TASK_DETAIL_PANEL_EXPAND_DEFER_MS = 520;
@@ -26,6 +32,9 @@ const TASK_DETAIL_IDLE_TIMEOUT_MS = 300;
 const preloadTaskDetailPanel = () => import('@/flow_chat/components/TaskDetailPanel');
 
 interface ChatPaneProps {
+  sessionRef?: ConversationSessionRef;
+  presentation?: 'standard' | 'compact';
+  viewId?: string;
   width: number;
   isFullscreen: boolean;
   isSceneActive?: boolean;
@@ -46,9 +55,10 @@ interface ChatPaneProps {
 }
 
 const ChatPaneInner: React.FC<ChatPaneProps> = ({
+  sessionRef,
   width: _width,
   isFullscreen,
-  isSceneActive = true,
+  isSceneActive: hostActive = true,
   workspacePath,
   isDragging: _isDragging = false,
   showChatInput = false,
@@ -57,6 +67,7 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
   emptyState,
   chatInputRegistration,
 }) => {
+  const isSceneActive = useContext(ConversationTextVisibilityContext) && hostActive;
   const addTab = useCanvasStore(state => state.addTab);
   const fileDropTargetRef = useRef<HTMLDivElement>(null);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
@@ -96,11 +107,14 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
     fileTabManager.openFile({
       filePath: absoluteFilePath,
       fileName,
+      // The conversation's session owns the referenced file.
+      workspaceId: sessionWorkspaceId(flowChatStore.getActiveSession()?.sessionId),
       workspacePath,
       jumpToRange: lineRange,
+      scope: sessionRef ? { surfaceId: sessionRef.surfaceId, workspacePath, remoteConnectionId: flowChatStore.getState().sessions.get(sessionRef.sessionId)?.remoteConnectionId } : undefined,
       mode: 'agent'
     });
-  }, [workspacePath]);
+  }, [workspacePath, sessionRef]);
 
   useEffect(() => {
     return () => {
@@ -130,6 +144,11 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
       return;
     }
 
+    if (sessionRef) {
+      openWorkbenchContent({ type: tabInfo.type, title: tabInfo.title, data: { ...tabInfo.data, sessionId: sessionRef.sessionId } },
+        { scope: { surfaceId: sessionRef.surfaceId, workspacePath, remoteConnectionId: flowChatStore.getState().sessions.get(sessionRef.sessionId)?.remoteConnectionId } });
+      return;
+    }
     if (tabInfo.type !== 'task-detail') {
       addPanelTab(tabInfo);
       return;
@@ -162,7 +181,7 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
     }, TASK_DETAIL_PANEL_EXPAND_DEFER_MS);
 
     deferredTaskDetailTimersRef.current.push(timerId);
-  }, [addPanelTab]);
+  }, [addPanelTab, sessionRef, workspacePath]);
 
   return (
     <div data-openbitfun-component="chat-pane" data-openbitfun-part="root"
@@ -201,7 +220,14 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
   );
 };
 
-const ChatPane = memo(ChatPaneInner);
+const ChatPane = memo((props: ChatPaneProps) => {
+  const sessionId = props.sessionRef?.sessionId;
+  const surfaceId = props.sessionRef?.surfaceId;
+  const scope = useMemo(() => sessionId !== undefined && surfaceId !== undefined
+    ? { sessionId, surfaceId, viewId: props.viewId ?? 'floating', presentation: props.presentation ?? 'compact' } : null,
+    [sessionId, surfaceId, props.viewId, props.presentation]);
+  return scope ? <ConversationViewProvider scope={scope}><ChatPaneInner {...props} /></ConversationViewProvider> : <ChatPaneInner {...props} />;
+});
 ChatPane.displayName = 'ChatPane';
 
 export default ChatPane;

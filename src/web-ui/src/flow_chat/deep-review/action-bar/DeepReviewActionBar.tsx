@@ -595,16 +595,19 @@ export const ReviewActionBar: React.FC<ReviewActionBarProps> = ({ childSessionId
             '/review',
             workspacePath,
             childSession.remoteConnectionId,
+            childSession.workspaceId,
           )
         : followUpReviewTargetFilePaths.length > 0
         ? await prepareReviewLaunchFromSessionFiles(followUpReviewTargetFilePaths, {
             workspacePath,
+            workspaceId: childSession.workspaceId,
             remoteConnectionId: childSession.remoteConnectionId,
           })
         : await prepareReviewLaunchFromSlashCommand(
             '/review',
             workspacePath,
             childSession.remoteConnectionId,
+            childSession.workspaceId,
           );
       if (prepared.mode === 'strict' && prepared.requiresConsent) {
         const confirmed = await confirmDeepReviewLaunch(prepared.runManifest, {

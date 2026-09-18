@@ -24,6 +24,11 @@
     .m-editor-tiptap-block-highlighted {
       background: color-mix(in srgb, var(--openbitfun-color-status-warning-content) 15%, transparent);
     }
+    // A Markdown soft break is a space, not a line break: collapse just that
+    // character so hard-wrapped source paragraphs still fill the column.
+    .m-editor-soft-break {
+      white-space: normal;
+    }
     > .m-editor-frontmatter + * { margin-top: 0; }
     > p.is-empty { position: relative; }
     > p.is-empty::before {

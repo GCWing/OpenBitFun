@@ -74,7 +74,7 @@ vi.mock('@openbitfun/ui', async importOriginal => {
 
 vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({
   useWorkspaceContext: () => ({
-    currentWorkspace: { rootPath: '/workspace' },
+    currentWorkspace: { id: 'workspace-1', rootPath: '/workspace' },
   }),
 }));
 
@@ -588,7 +588,7 @@ describe('FlowChatHeader', () => {
       )?.click();
     });
 
-    expect(createReviewPlatformTabMock).toHaveBeenCalledWith('/workspace');
+    expect(createReviewPlatformTabMock).toHaveBeenCalledWith('workspace-1', '/workspace');
     expect(document.querySelector('[data-testid="flowchat-header-session-overview-panel"]')).toBeNull();
   });
 
@@ -626,8 +626,14 @@ describe('FlowChatHeader', () => {
       pullRequestItem?.click();
     });
 
-    expect(getWorkspaceSnapshotMock).toHaveBeenCalledWith('/workspace', null, 1, 3);
+    expect(getWorkspaceSnapshotMock).toHaveBeenCalledWith(
+      { workspaceId: 'workspace-1', repositoryPath: '/workspace' },
+      null,
+      1,
+      3,
+    );
     expect(createReviewPlatformPullRequestDetailTabMock).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
       workspacePath: '/workspace',
       remoteId: 'origin:github:openbitfun',
       pullRequestId: '42',

@@ -11,7 +11,7 @@ import { flowChatStore } from '../store/FlowChatStore';
 import { buildSessionMetadata } from '../utils/sessionMetadata';
 import type { ReviewActionBarState } from '../store/deepReviewActionBarStore';
 import type { ReviewActionPersistedState, SessionMetadata } from '@/shared/types/session-history';
-import { sessionProjectWorkspacePath } from '../utils/sessionWorkspace';
+import { requireSessionWorkspaceId } from '../utils/sessionWorkspace';
 
 const log = createLogger('ReviewActionBarPersistence');
 
@@ -19,9 +19,8 @@ export async function persistReviewActionState(state: ReviewActionBarState): Pro
   if (!state.childSessionId) return;
 
   const session = flowChatStore.getState().sessions.get(state.childSessionId);
-  if (!session?.workspacePath) return;
-  const projectWorkspacePath = sessionProjectWorkspacePath(session);
-  if (!projectWorkspacePath) return;
+  if (!session) return;
+  const workspaceId = requireSessionWorkspaceId(session);
 
   const stateReviewTargetFilePaths = state.reviewTargetFilePaths ?? [];
   const remediationModifiedFilePaths = state.remediationModifiedFilePaths ?? [];
@@ -65,9 +64,7 @@ export async function persistReviewActionState(state: ReviewActionBarState): Pro
     try {
       existingMetadata = await sessionAPI.loadSessionMetadata(
         state.childSessionId,
-        projectWorkspacePath,
-        session.remoteConnectionId,
-        session.remoteSshHost
+        workspaceId
       );
     } catch (error) {
       log.warn('Failed to load session metadata before persisting review action state', {
@@ -83,10 +80,8 @@ export async function persistReviewActionState(state: ReviewActionBarState): Pro
 
     await sessionAPI.saveSessionMetadata(
       metadata,
-      projectWorkspacePath,
-      ['reviewActionState'],
-      session.remoteConnectionId,
-      session.remoteSshHost
+      workspaceId,
+      ['reviewActionState']
     );
   } catch (error) {
     log.warn('Failed to persist review action state', { sessionId: state.childSessionId, error });
@@ -94,9 +89,9 @@ export async function persistReviewActionState(state: ReviewActionBarState): Pro
   }
 }
 
-export async function clearPersistedReviewState(sessionId: string, workspacePath: string): Promise<void> {
+export async function clearPersistedReviewState(sessionId: string, workspaceId: string): Promise<void> {
   try {
-    const existingMetadata = await sessionAPI.loadSessionMetadata(sessionId, workspacePath);
+    const existingMetadata = await sessionAPI.loadSessionMetadata(sessionId, workspaceId);
     if (!existingMetadata) return;
 
     const metadata = { ...existingMetadata };
@@ -104,7 +99,7 @@ export async function clearPersistedReviewState(sessionId: string, workspacePath
 
     await sessionAPI.saveSessionMetadata(
       metadata,
-      workspacePath,
+      workspaceId,
       ['reviewActionState']
     );
   } catch (error) {
@@ -114,16 +109,12 @@ export async function clearPersistedReviewState(sessionId: string, workspacePath
 
 export async function loadPersistedReviewState(
   sessionId: string,
-  workspacePath: string,
-  remoteConnectionId?: string,
-  remoteSshHost?: string
+  workspaceId: string
 ): Promise<ReviewActionPersistedState | null> {
   try {
     const metadata = await sessionAPI.loadSessionMetadata(
       sessionId,
-      workspacePath,
-      remoteConnectionId,
-      remoteSshHost
+      workspaceId
     );
     return metadata?.reviewActionState ?? null;
   } catch (error) {

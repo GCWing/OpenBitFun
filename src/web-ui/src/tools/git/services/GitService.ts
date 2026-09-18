@@ -1,3 +1,4 @@
+import { GitWorkspaceScope, gitWorkspaceKey } from '@/infrastructure/api/service-api/GitAPI';
 /**
  * Git service layer - interacts with backend Tauri commands
  */
@@ -76,7 +77,7 @@ export class GitService {
     });
   }
 
-  private async ensureFreshOperationState(repositoryPath: string): Promise<void> {
+  private async ensureFreshOperationState(repositoryPath: GitWorkspaceScope): Promise<void> {
     await gitStateManager.refresh(repositoryPath, {
       force: true,
       layers: ['basic', 'status'],
@@ -85,14 +86,14 @@ export class GitService {
     });
   }
 
-  private isInNonGitCache(path: string): boolean {
+  private isInNonGitCache(path: GitWorkspaceScope): boolean {
     this.clearExpiredCache();
-    return this.nonGitRepositoryCache.has(path);
+    return this.nonGitRepositoryCache.has(gitWorkspaceKey(path));
   }
 
-  private addToNonGitCache(path: string): void {
-    this.nonGitRepositoryCache.add(path);
-    this.cacheTimestamps.set(path, Date.now());
+  private addToNonGitCache(path: GitWorkspaceScope): void {
+    this.nonGitRepositoryCache.add(gitWorkspaceKey(path));
+    this.cacheTimestamps.set(gitWorkspaceKey(path), Date.now());
   }
 
   /**
@@ -104,7 +105,7 @@ export class GitService {
    * returning `null` for minutes, outliving a trust decision the user just
    * made and hiding the error the recovery flow needs to see.
    */
-  private cacheFailureAsNonGit(path: string, error: unknown): void {
+  private cacheFailureAsNonGit(path: GitWorkspaceScope, error: unknown): void {
     if (isGitRepositoryUntrustedError(error)) {
       return;
     }
@@ -134,9 +135,9 @@ export class GitService {
     return { ...result, error: this.describeOperationFailure(result.error, fallbackKey) };
   }
 
-  private removeFromNonGitCache(path: string): void {
-    this.nonGitRepositoryCache.delete(path);
-    this.cacheTimestamps.delete(path);
+  private removeFromNonGitCache(path: GitWorkspaceScope): void {
+    this.nonGitRepositoryCache.delete(gitWorkspaceKey(path));
+    this.cacheTimestamps.delete(gitWorkspaceKey(path));
   }
 
   private adaptRepository(apiRepo: import('@/infrastructure/api/service-api/GitAPI').GitRepository): GitRepository {
@@ -206,7 +207,7 @@ export class GitService {
     });
   }
 
-  async isGitRepository(path: string): Promise<boolean> {
+  async isGitRepository(path: GitWorkspaceScope): Promise<boolean> {
     try {
       if (this.isInNonGitCache(path)) {
         return false;
@@ -235,7 +236,7 @@ export class GitService {
     }
   }
 
-  async getRepository(path: string): Promise<GitRepository | null> {
+  async getRepository(path: GitWorkspaceScope): Promise<GitRepository | null> {
     try {
       if (this.isInNonGitCache(path)) {
         return null;
@@ -262,7 +263,7 @@ export class GitService {
     }
   }
 
-  async getStatus(repositoryPath: string): Promise<GitStatus | null> {
+  async getStatus(repositoryPath: GitWorkspaceScope): Promise<GitStatus | null> {
     try {
       if (this.isInNonGitCache(repositoryPath)) {
         return null;
@@ -287,7 +288,7 @@ export class GitService {
     }
   }
 
-  async getBranches(repositoryPath: string, includeRemote: boolean = false): Promise<GitBranch[]> {
+  async getBranches(repositoryPath: GitWorkspaceScope, includeRemote: boolean = false): Promise<GitBranch[]> {
     try {
       const result = await gitAPI.getBranches(repositoryPath, includeRemote);
       return this.adaptBranches(result);
@@ -297,7 +298,7 @@ export class GitService {
     }
   }
 
-  async getCommits(repositoryPath: string, params: GitLogParams = {}): Promise<GitCommit[]> {
+  async getCommits(repositoryPath: GitWorkspaceScope, params: GitLogParams = {}): Promise<GitCommit[]> {
     try {
       const result = await gitAPI.getCommits(repositoryPath, params);
       return this.adaptCommits(result);
@@ -310,7 +311,7 @@ export class GitService {
   /**
    * Stage files.
    */
-  async addFiles(repositoryPath: string, params: GitAddParams): Promise<GitOperationResult> {
+  async addFiles(repositoryPath: GitWorkspaceScope, params: GitAddParams): Promise<GitOperationResult> {
     try {
       const result = await gitAPI.addFiles(repositoryPath, params);
       return this.explainOperationResult(result, 'panels/git:errors.addFailed');
@@ -326,7 +327,7 @@ export class GitService {
   /**
    * Commit changes.
    */
-  async commit(repositoryPath: string, params: GitCommitParams): Promise<GitOperationResult> {
+  async commit(repositoryPath: GitWorkspaceScope, params: GitCommitParams): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.commit(repositoryPath, params);
@@ -343,7 +344,7 @@ export class GitService {
   /**
    * Push to remote.
    */
-  async push(repositoryPath: string, params: GitPushParams = {}): Promise<GitOperationResult> {
+  async push(repositoryPath: GitWorkspaceScope, params: GitPushParams = {}): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.push(repositoryPath, params);
@@ -360,7 +361,7 @@ export class GitService {
   /**
    * Pull from remote.
    */
-  async pull(repositoryPath: string, params: GitPullParams = {}): Promise<GitOperationResult> {
+  async pull(repositoryPath: GitWorkspaceScope, params: GitPullParams = {}): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.pull(repositoryPath, params);
@@ -377,7 +378,7 @@ export class GitService {
   /**
    * Checkout a branch.
    */
-  async checkoutBranch(repositoryPath: string, branchName: string): Promise<GitOperationResult> {
+  async checkoutBranch(repositoryPath: GitWorkspaceScope, branchName: string): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.checkoutBranch(repositoryPath, branchName);
@@ -394,7 +395,7 @@ export class GitService {
   /**
    * Create a branch.
    */
-  async createBranch(repositoryPath: string, branchName: string, startPoint?: string): Promise<GitOperationResult> {
+  async createBranch(repositoryPath: GitWorkspaceScope, branchName: string, startPoint?: string): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.createBranch(repositoryPath, branchName, startPoint);
@@ -411,7 +412,7 @@ export class GitService {
   /**
    * Delete a branch.
    */
-  async deleteBranch(repositoryPath: string, branchName: string, force: boolean = false): Promise<GitOperationResult> {
+  async deleteBranch(repositoryPath: GitWorkspaceScope, branchName: string, force: boolean = false): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.deleteBranch(repositoryPath, branchName, force);
@@ -428,7 +429,7 @@ export class GitService {
   /**
    * Get diff output.
    */
-  async getDiff(repositoryPath: string, params: GitDiffParams): Promise<string> {
+  async getDiff(repositoryPath: GitWorkspaceScope, params: GitDiffParams): Promise<string> {
     try {
       const result = await gitAPI.getDiff(repositoryPath, params);
       return result;
@@ -441,7 +442,7 @@ export class GitService {
   /**
    * Reset changes for one or more files.
    */
-  async resetFiles(repositoryPath: string, files: string[], staged: boolean = false): Promise<GitOperationResult> {
+  async resetFiles(repositoryPath: GitWorkspaceScope, files: string[], staged: boolean = false): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.resetFiles(repositoryPath, files, staged);
@@ -458,7 +459,7 @@ export class GitService {
   /**
    * Reset to a commit.
    */
-  async resetToCommit(repositoryPath: string, commitHash: string, mode: 'soft' | 'mixed' | 'hard' = 'mixed'): Promise<GitOperationResult> {
+  async resetToCommit(repositoryPath: GitWorkspaceScope, commitHash: string, mode: 'soft' | 'mixed' | 'hard' = 'mixed'): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.resetToCommit(repositoryPath, commitHash, mode);
@@ -475,7 +476,7 @@ export class GitService {
   /**
    * Get file content at a commit (defaults to current HEAD if provided by backend).
    */
-  async getFileContent(repositoryPath: string, filePath: string, commit?: string): Promise<string> {
+  async getFileContent(repositoryPath: GitWorkspaceScope, filePath: string, commit?: string): Promise<string> {
     try {
       const result = await gitAPI.getFileContent(repositoryPath, filePath, commit);
       return result;
@@ -488,7 +489,7 @@ export class GitService {
   /**
    * Get enhanced branch list (falls back to basic list on failure).
    */
-  async getEnhancedBranches(repositoryPath: string, includeRemote: boolean = false): Promise<GitBranch[]> {
+  async getEnhancedBranches(repositoryPath: GitWorkspaceScope, includeRemote: boolean = false): Promise<GitBranch[]> {
     try {
       const result = await gitAPI.getEnhancedBranches(repositoryPath, includeRemote);
       return this.adaptBranches(result);
@@ -502,7 +503,7 @@ export class GitService {
   /**
    * Cherry-pick a commit onto the current branch.
    */
-  async cherryPick(repositoryPath: string, commitHash: string, noCommit: boolean = false): Promise<GitOperationResult> {
+  async cherryPick(repositoryPath: GitWorkspaceScope, commitHash: string, noCommit: boolean = false): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.cherryPick(repositoryPath, commitHash, noCommit);
@@ -519,7 +520,7 @@ export class GitService {
   /**
    * Abort an in-progress cherry-pick.
    */
-  async cherryPickAbort(repositoryPath: string): Promise<GitOperationResult> {
+  async cherryPickAbort(repositoryPath: GitWorkspaceScope): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.cherryPickAbort(repositoryPath);
@@ -536,7 +537,7 @@ export class GitService {
   /**
    * Continue an in-progress cherry-pick.
    */
-  async cherryPickContinue(repositoryPath: string): Promise<GitOperationResult> {
+  async cherryPickContinue(repositoryPath: GitWorkspaceScope): Promise<GitOperationResult> {
     try {
       await this.ensureFreshOperationState(repositoryPath);
       const result = await gitAPI.cherryPickContinue(repositoryPath);

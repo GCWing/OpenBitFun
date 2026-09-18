@@ -225,6 +225,8 @@ pub enum SpeechRealtimeEventKind {
     UserTranscriptCompleted,
     AssistantTextDelta,
     AssistantTextCompleted,
+    /// All output items, including function calls, for this response have settled.
+    AssistantResponseCompleted,
     AssistantAudioStarted,
     AssistantAudioDelta,
     AssistantAudioCompleted,

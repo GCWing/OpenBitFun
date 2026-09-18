@@ -28,7 +28,7 @@ vi.mock('../state/GitStateManager', () => ({
   gitStateManager: gitStateManagerMock,
 }));
 
-const repositoryPath = 'D:/workspace/OpenBitFun';
+const repositoryPath = { workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/OpenBitFun' };
 
 describe('GitService dangerous operation refresh guard', () => {
   beforeEach(() => {
@@ -78,7 +78,7 @@ describe('GitService non-repository cache', () => {
   });
 
   it('remembers a path that really is not a repository', async () => {
-    const path = 'D:/workspace/not-a-repo';
+    const path = { workspaceId: 'D:/workspace/not-a-repo', repositoryPath: 'D:/workspace/not-a-repo' };
     gitApiMocks.getStatus.mockRejectedValue(new Error('not a git repository'));
 
     await expect(gitService.getStatus(path)).resolves.toBeNull();
@@ -90,9 +90,9 @@ describe('GitService non-repository cache', () => {
   it('does not remember an ownership rejection as "not a repository"', async () => {
     // Caching it would outlive the trust decision the user is about to make,
     // and would hide the error the recovery flow keys off.
-    const path = 'D:/workspace/untrusted-repo';
+    const path = { workspaceId: 'D:/workspace/untrusted-repo', repositoryPath: 'D:/workspace/untrusted-repo' };
     gitApiMocks.getStatus.mockRejectedValue(
-      new Error(`git_repository_untrusted: ${path}`),
+      new Error(`git_repository_untrusted: ${path.repositoryPath}`),
     );
 
     await expect(gitService.getStatus(path)).resolves.toBeNull();
@@ -102,9 +102,9 @@ describe('GitService non-repository cache', () => {
   });
 
   it('keeps reprobing a repository the ownership gate blocked', async () => {
-    const path = 'D:/workspace/untrusted-probe';
+    const path = { workspaceId: 'D:/workspace/untrusted-probe', repositoryPath: 'D:/workspace/untrusted-probe' };
     gitApiMocks.isGitRepository.mockRejectedValue(
-      new Error(`git_repository_untrusted: ${path}`),
+      new Error(`git_repository_untrusted: ${path.repositoryPath}`),
     );
 
     await expect(gitService.isGitRepository(path)).resolves.toBe(false);
@@ -124,7 +124,7 @@ describe('GitService mutation ownership rejections', () => {
 
   it('names the wall when a local mutation throws the stable code', async () => {
     gitApiMocks.commit.mockRejectedValue(
-      new Error(`git_repository_untrusted: ${repositoryPath}`),
+      new Error(`git_repository_untrusted: ${repositoryPath.repositoryPath}`),
     );
 
     await expect(gitService.commit(repositoryPath, { message: 'test' })).resolves.toEqual({

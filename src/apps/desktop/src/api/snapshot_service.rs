@@ -1,18 +1,17 @@
 //! Snapshot Service API
 
 use log::{info, warn};
+use openbitfun_core::agentic::workspace::WorkspaceBinding;
 use openbitfun_core::product_runtime::{
     CoreSessionMaintenancePermit, CoreSessionMutationPermit, CoreSessionReadPermit,
-};
-use openbitfun_core::service::remote_ssh::workspace_state::{
-    is_remote_path, workspace_session_identity,
 };
 use openbitfun_core::service::snapshot::{
     ensure_snapshot_manager_for_workspace, get_snapshot_manager_for_workspace,
     initialize_snapshot_manager_for_workspace, open_snapshot_history_for_workspace,
     open_snapshot_manager_for_view, FileChangeEntry, OperationType, SnapshotManager,
 };
-use openbitfun_runtime_ports::{AgentSessionWorkspaceLocation, SessionStoragePathRequest};
+use openbitfun_core::service::workspace::WorkspaceKind;
+use openbitfun_runtime_ports::{AgentSessionWorkspaceLocation, SessionStorePort};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::{path::PathBuf, sync::Arc};
@@ -22,6 +21,11 @@ use crate::runtime::{DesktopRuntimeContext, DesktopSessionScopeRequest};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SnapshotRemoteScope {
+    #[serde(default, alias = "workspaceId")]
+    pub workspace_id: Option<String>,
+    /// Host-resolved fact. Never accept a client-supplied classification.
+    #[serde(skip)]
+    workspace_kind: Option<WorkspaceKind>,
     #[serde(default, alias = "remoteConnectionId")]
     pub remote_connection_id: Option<String>,
     #[serde(default, alias = "remoteSshHost")]
@@ -29,25 +33,60 @@ pub struct SnapshotRemoteScope {
 }
 
 impl SnapshotRemoteScope {
-    fn declares_remote(&self) -> bool {
-        self.remote_connection_id
-            .as_deref()
-            .is_some_and(|value| !value.trim().is_empty())
-            || self
-                .remote_ssh_host
-                .as_deref()
-                .is_some_and(|value| !value.trim().is_empty())
+    fn declares_remote(&self) -> Result<bool, String> {
+        self.workspace_kind
+            .as_ref()
+            .map(|kind| *kind == WorkspaceKind::Remote)
+            .ok_or_else(|| "Snapshot workspace must be resolved by ID before use".into())
     }
+
+    fn id(&self) -> Result<&str, String> {
+        self.workspace_id
+            .as_deref()
+            .filter(|id| !id.is_empty())
+            .ok_or_else(|| "Snapshot workspace ID is required".into())
+    }
+}
+
+async fn resolve_snapshot_scope(
+    path: &mut String,
+    scope: &mut SnapshotRemoteScope,
+) -> Result<(), String> {
+    let service = openbitfun_core::service::workspace::get_global_workspace_service()
+        .ok_or("Workspace service is unavailable")?;
+    let workspace = if let Some(id) = scope.workspace_id.as_deref() {
+        service
+            .require_workspace(id)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        // Temporary 1.0.0 wire upgrade boundary. Business logic never keys by path.
+        service
+            .resolve_legacy_workspace_reference(
+                None,
+                path,
+                scope.remote_connection_id.as_deref(),
+                scope.remote_ssh_host.as_deref(),
+            )
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Legacy snapshot workspace cannot be resolved")?
+    };
+    *path = workspace.root_path.to_string_lossy().into_owned();
+    scope.workspace_kind = Some(workspace.workspace_kind);
+    scope.workspace_id = Some(workspace.id);
+    Ok(())
 }
 
 async fn ensure_local_runtime_ownership(
     runtime: &DesktopRuntimeContext,
-    workspace_path: &str,
+    scope: &SnapshotRemoteScope,
 ) -> Result<(), String> {
     runtime
         .session_application()
         .ensure_workspace_runtime_ownership(DesktopSessionScopeRequest {
-            workspace_path: workspace_path.to_string(),
+            workspace_id: Some(scope.id()?.to_owned()),
+            workspace_path: String::new(),
             remote_connection_id: None,
             remote_ssh_host: None,
         })
@@ -62,7 +101,7 @@ pub struct RollbackSessionRequest {
     #[serde(default)]
     #[serde(alias = "deleteSession")]
     pub delete_session: bool, // Whether to also delete the session (default false)
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -72,7 +111,7 @@ pub struct RollbackSessionRequest {
 pub struct AcceptSessionRequest {
     #[serde(alias = "sessionId")]
     pub session_id: String,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -84,7 +123,7 @@ pub struct AcceptFileRequest {
     pub session_id: String,
     #[serde(alias = "filePath")]
     pub file_path: String,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -94,7 +133,7 @@ pub struct AcceptFileRequest {
 pub struct GetSessionFilesRequest {
     #[serde(alias = "sessionId")]
     pub session_id: String,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -104,7 +143,7 @@ pub struct GetSessionFilesRequest {
 pub struct GetSessionTurnsRequest {
     #[serde(alias = "sessionId")]
     pub session_id: String,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -116,7 +155,7 @@ pub struct GetTurnFilesRequest {
     pub session_id: String,
     #[serde(alias = "turnIndex")]
     pub turn_index: usize,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -131,7 +170,7 @@ pub struct GetFileDiffRequest {
     #[serde(default)]
     #[serde(alias = "operationId")]
     pub operation_id: Option<String>,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -141,7 +180,7 @@ pub struct GetFileDiffRequest {
 pub struct GetBaselineSnapshotDiffRequest {
     #[serde(rename = "filePath")]
     pub file_path: String,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -153,7 +192,7 @@ pub struct GetOperationDiffRequest {
     pub filePath: String,
     #[serde(default)]
     pub operationId: Option<String>,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -163,7 +202,7 @@ pub struct GetOperationDiffRequest {
 pub struct GetSessionFileDiffStatsRequest {
     pub sessionId: String,
     pub filePath: String,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -173,7 +212,7 @@ pub struct GetSessionFileDiffStatsRequest {
 pub struct GetOperationSummaryRequest {
     pub sessionId: String,
     pub operationId: String,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -183,7 +222,7 @@ pub struct GetOperationSummaryRequest {
 pub struct GetSessionStatsRequest {
     #[serde(alias = "sessionId")]
     pub session_id: String,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -193,7 +232,7 @@ pub struct GetSessionStatsRequest {
 pub struct GetFileChangeHistoryRequest {
     #[serde(alias = "filePath")]
     pub file_path: String,
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -201,7 +240,7 @@ pub struct GetFileChangeHistoryRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GetAllModifiedFilesRequest {
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -209,7 +248,7 @@ pub struct GetAllModifiedFilesRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SnapshotWorkspaceRequest {
-    #[serde(alias = "workspacePath")]
+    #[serde(default, alias = "workspacePath")]
     pub workspace_path: String,
     #[serde(flatten)]
     pub remote_scope: SnapshotRemoteScope,
@@ -221,8 +260,8 @@ async fn resolve_workspace_dir(workspace_path: &str) -> Result<PathBuf, String> 
     }
 
     let workspace_dir = PathBuf::from(workspace_path);
-    // Remote paths don't exist on the local filesystem — skip the existence check
-    if !is_remote_path(workspace_path).await && !workspace_dir.exists() {
+    // This helper only receives a resolved local workspace IO root.
+    if !workspace_dir.exists() {
         return Err(format!(
             "Workspace directory does not exist: {}",
             workspace_path
@@ -233,21 +272,19 @@ async fn resolve_workspace_dir(workspace_path: &str) -> Result<PathBuf, String> 
 }
 
 async fn ensure_snapshot_manager_ready_for(
-    workspace_path: &str,
+    workspace_id: &str,
     caller: &str,
 ) -> Result<Arc<SnapshotManager>, String> {
     let started_at = std::time::Instant::now();
-    // Remote workspaces don't support the snapshot system
-    if is_remote_path(workspace_path).await {
-        return Err(format!(
-            "Snapshot system not supported for remote workspace: {}",
-            workspace_path
-        ));
+    let binding = WorkspaceBinding::resolve(workspace_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    if binding.is_remote() {
+        return Err("Local snapshot manager requires a local workspace".into());
     }
+    let workspace_dir = resolve_workspace_dir(&binding.root_path_string()).await?;
 
-    let workspace_dir = resolve_workspace_dir(workspace_path).await?;
-
-    if let Some(manager) = get_snapshot_manager_for_workspace(&workspace_dir) {
+    if let Some(manager) = get_snapshot_manager_for_workspace(workspace_id) {
         let duration_ms = started_at.elapsed().as_millis();
         if duration_ms >= 20 {
             log::debug!(
@@ -266,7 +303,7 @@ async fn ensure_snapshot_manager_ready_for(
         workspace_dir.display()
     );
 
-    initialize_snapshot_manager_for_workspace(workspace_dir.clone(), None)
+    initialize_snapshot_manager_for_workspace(workspace_id, None)
         .await
         .map_err(|e| {
             format!(
@@ -276,7 +313,7 @@ async fn ensure_snapshot_manager_ready_for(
             )
         })?;
 
-    let manager = ensure_snapshot_manager_for_workspace(&workspace_dir)
+    let manager = ensure_snapshot_manager_for_workspace(workspace_id)
         .map_err(|e| format!("Failed to get snapshot manager: {}", e))?;
     log::debug!(
         "Snapshot manager ready: caller={}, workspace={}, source=lazy_init, duration_ms={}",
@@ -291,7 +328,7 @@ async fn ensure_local_snapshot_mutation_path(
     workspace_path: &str,
     remote_scope: &SnapshotRemoteScope,
 ) -> Result<(), String> {
-    if remote_scope.declares_remote() || is_remote_path(workspace_path).await {
+    if remote_scope.declares_remote()? {
         return Err(format!(
             "Snapshot system not supported for remote workspace: {}",
             workspace_path
@@ -305,9 +342,8 @@ async fn ensure_complete_rollback_supported(
     remote_scope: &SnapshotRemoteScope,
     explicit_location: Option<AgentSessionWorkspaceLocation>,
 ) -> Result<(), String> {
-    let is_remote = remote_scope.declares_remote()
-        || explicit_location == Some(AgentSessionWorkspaceLocation::Remote)
-        || (explicit_location.is_none() && is_remote_path(workspace_path).await);
+    let is_remote = remote_scope.declares_remote()?
+        || explicit_location == Some(AgentSessionWorkspaceLocation::Remote);
     if is_remote {
         return Err(format!(
             "Complete rollback is not supported for remote workspaces because complete file snapshot coverage is unavailable. No workspace files or session messages were changed: {workspace_path}"
@@ -320,14 +356,13 @@ async fn snapshot_manager_for_view(
     workspace_path: &str,
     remote_scope: &SnapshotRemoteScope,
 ) -> Result<Arc<SnapshotManager>, String> {
-    if remote_scope.declares_remote() || is_remote_path(workspace_path).await {
+    if remote_scope.declares_remote()? {
         return Err(format!(
             "Snapshot view unavailable (snapshot_remote_workspace_unavailable): remote workspace {} has no local snapshot runtime",
             workspace_path
         ));
     }
-    let workspace_dir = resolve_workspace_dir(workspace_path).await?;
-    open_snapshot_manager_for_view(&workspace_dir)
+    open_snapshot_manager_for_view(remote_scope.id()?)
         .await
         .map_err(|error| format!("Failed to open snapshot view: {error}"))
 }
@@ -339,27 +374,10 @@ async fn snapshot_manager_for_recorded_operation(
     workspace_path: &str,
     remote_scope: &SnapshotRemoteScope,
 ) -> Result<Arc<SnapshotManager>, String> {
-    if !remote_scope.declares_remote() {
+    if !remote_scope.declares_remote()? {
         return snapshot_manager_for_view(workspace_path, remote_scope).await;
     }
-    let connection_id = remote_scope
-        .remote_connection_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let hostname = remote_scope
-        .remote_ssh_host
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    if connection_id.is_none() || hostname.is_none() {
-        return Err("Snapshot operation view unavailable: the remote Session requires its saved connection id and host; no local fallback was attempted".into());
-    }
-    let identity =
-        workspace_session_identity(workspace_path, connection_id, hostname).ok_or_else(|| {
-            "Snapshot operation view unavailable: invalid remote workspace identity".to_string()
-        })?;
-    open_snapshot_history_for_workspace(&identity)
+    open_snapshot_history_for_workspace(remote_scope.id()?)
         .await
         .map_err(|error| format!("Snapshot operation view unavailable: {error}"))
 }
@@ -368,20 +386,6 @@ struct SnapshotHistoryMutation {
     _maintenance: CoreSessionMaintenancePermit,
     _mutation: CoreSessionMutationPermit,
     _storage_path: PathBuf,
-}
-
-async fn begin_snapshot_history_read(
-    runtime: &DesktopRuntimeContext,
-    workspace_path: &str,
-    session_id: &str,
-) -> Result<CoreSessionReadPermit, String> {
-    begin_snapshot_history_read_for_scope(
-        runtime,
-        workspace_path,
-        session_id,
-        &SnapshotRemoteScope::default(),
-    )
-    .await
 }
 
 async fn begin_snapshot_history_read_for_scope(
@@ -395,34 +399,24 @@ async fn begin_snapshot_history_read_for_scope(
     // disk; holding the session mutation lock across that load stalls every
     // waiter on the same session, including the next dialog-turn start. After
     // warming, the caller's in-permit view lookup is a cache hit.
-    if remote_scope.declares_remote() {
+    if remote_scope.declares_remote()? {
         snapshot_manager_for_recorded_operation(workspace_path, remote_scope).await?;
-    } else if !is_remote_path(workspace_path).await {
-        let workspace_dir = resolve_workspace_dir(workspace_path).await?;
-        open_snapshot_manager_for_view(&workspace_dir)
+    } else {
+        open_snapshot_manager_for_view(remote_scope.id()?)
             .await
             .map_err(|error| format!("Failed to open snapshot view: {error}"))?;
     }
     let compatibility = runtime.session_application().compatibility();
-    let storage_path = compatibility
-        .resolve_persisted_session_storage_path(SessionStoragePathRequest {
-            workspace_path: PathBuf::from(workspace_path),
-            remote_connection_id: remote_scope.remote_connection_id.clone(),
-            remote_ssh_host: remote_scope.remote_ssh_host.clone(),
-        })
+    let storage_path = openbitfun_core::agentic::session::CoreSessionStorePort::default()
+        .resolve_workspace_storage(remote_scope.id()?)
         .await
-        .map_err(|error| {
-            format!("Failed to resolve session storage before snapshot view: {error}")
-        })?;
-    let read = if remote_scope.declares_remote() {
-        let identity = workspace_session_identity(
-            workspace_path,
-            remote_scope.remote_connection_id.as_deref(),
-            remote_scope.remote_ssh_host.as_deref(),
-        )
-        .ok_or_else(|| {
-            "Snapshot operation view unavailable: invalid Session identity".to_string()
-        })?;
+        .map_err(|e| e.to_string())?
+        .effective_storage_path;
+    let read = if remote_scope.declares_remote()? {
+        let identity = WorkspaceBinding::resolve(remote_scope.id()?)
+            .await
+            .map_err(|e| e.to_string())?
+            .session_identity;
         compatibility
             .begin_persisted_session_read_for_workspace(&storage_path, session_id, &identity)
             .await
@@ -436,20 +430,15 @@ async fn begin_snapshot_history_read_for_scope(
 
 async fn begin_snapshot_history_mutation(
     runtime: &DesktopRuntimeContext,
-    workspace_path: &str,
+    remote_scope: &SnapshotRemoteScope,
     session_id: &str,
 ) -> Result<SnapshotHistoryMutation, String> {
     let compatibility = runtime.session_application().compatibility();
-    let storage_path = compatibility
-        .resolve_persisted_session_storage_path(SessionStoragePathRequest {
-            workspace_path: PathBuf::from(workspace_path),
-            remote_connection_id: None,
-            remote_ssh_host: None,
-        })
+    let storage_path = openbitfun_core::agentic::session::CoreSessionStorePort::default()
+        .resolve_workspace_storage(remote_scope.id()?)
         .await
-        .map_err(|error| {
-            format!("Failed to resolve session storage before snapshot mutation: {error}")
-        })?;
+        .map_err(|e| e.to_string())?
+        .effective_storage_path;
     compatibility
         .ensure_session_loaded_from_storage_path(&storage_path, session_id, false)
         .await
@@ -479,20 +468,21 @@ async fn begin_snapshot_history_mutation(
 pub async fn rollback_session(
     app_handle: AppHandle,
     runtime: State<'_, DesktopRuntimeContext>,
-    request: RollbackSessionRequest,
+    mut request: RollbackSessionRequest,
 ) -> Result<Vec<String>, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     ensure_complete_rollback_supported(&request.workspace_path, &request.remote_scope, None)
         .await?;
-    ensure_local_runtime_ownership(runtime.inner(), &request.workspace_path).await?;
+    ensure_local_runtime_ownership(runtime.inner(), &request.remote_scope).await?;
     let _history_mutation = begin_snapshot_history_mutation(
         runtime.inner(),
-        &request.workspace_path,
+        &request.remote_scope,
         &request.session_id,
     )
     .await?;
 
     let manager =
-        ensure_snapshot_manager_ready_for(&request.workspace_path, "rollback_session").await?;
+        ensure_snapshot_manager_ready_for(request.remote_scope.id()?, "rollback_session").await?;
 
     let restored_files = manager
         .rollback_session(&request.session_id)
@@ -519,19 +509,46 @@ pub async fn rollback_session(
 #[tauri::command]
 pub async fn rollback_session_to_turn(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: openbitfun_runtime_ports::AgentSessionRollbackToTurnRequest,
+    mut request: openbitfun_runtime_ports::AgentSessionRollbackToTurnRequest,
 ) -> Result<openbitfun_runtime_ports::AgentSessionRollbackToTurnOutcome, String> {
+    let service = openbitfun_core::service::workspace::get_global_workspace_service()
+        .ok_or("Workspace service is unavailable")?;
+    let workspace = if let Some(id) = request.workspace_id.as_deref() {
+        service
+            .require_workspace(id)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        service
+            .resolve_legacy_workspace_reference(
+                None,
+                &request.workspace_path,
+                request.remote_connection_id.as_deref(),
+                request.remote_ssh_host.as_deref(),
+            )
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Legacy rollback workspace cannot be resolved")?
+    };
+    let location =
+        if workspace.workspace_kind == openbitfun_core::service::workspace::WorkspaceKind::Remote {
+            AgentSessionWorkspaceLocation::Remote
+        } else {
+            request.remote_connection_id = None;
+            request.remote_ssh_host = None;
+            AgentSessionWorkspaceLocation::Local
+        };
+    request.workspace_id = Some(workspace.id);
+    request.workspace_path = workspace.root_path.to_string_lossy().into_owned();
     let remote_scope = SnapshotRemoteScope {
+        workspace_id: request.workspace_id.clone(),
+        workspace_kind: Some(workspace.workspace_kind),
         remote_connection_id: request.remote_connection_id.clone(),
         remote_ssh_host: request.remote_ssh_host.clone(),
     };
-    ensure_complete_rollback_supported(
-        &request.workspace_path,
-        &remote_scope,
-        request.explicit_workspace_location(),
-    )
-    .await?;
-    ensure_local_runtime_ownership(runtime.inner(), &request.workspace_path).await?;
+    ensure_complete_rollback_supported(&request.workspace_path, &remote_scope, Some(location))
+        .await?;
+    ensure_local_runtime_ownership(runtime.inner(), &remote_scope).await?;
     runtime
         .session_application()
         .rollback_session_to_turn(request)
@@ -543,18 +560,19 @@ pub async fn rollback_session_to_turn(
 pub async fn accept_session(
     app_handle: AppHandle,
     runtime: State<'_, DesktopRuntimeContext>,
-    request: AcceptSessionRequest,
+    mut request: AcceptSessionRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
-    ensure_local_runtime_ownership(runtime.inner(), &request.workspace_path).await?;
+    ensure_local_runtime_ownership(runtime.inner(), &request.remote_scope).await?;
     let _history_mutation = begin_snapshot_history_mutation(
         runtime.inner(),
-        &request.workspace_path,
+        &request.remote_scope,
         &request.session_id,
     )
     .await?;
     let manager =
-        ensure_snapshot_manager_ready_for(&request.workspace_path, "accept_session").await?;
+        ensure_snapshot_manager_ready_for(request.remote_scope.id()?, "accept_session").await?;
 
     manager
         .accept_session(&request.session_id)
@@ -578,17 +596,19 @@ pub async fn accept_session(
 pub async fn accept_file(
     app_handle: AppHandle,
     runtime: State<'_, DesktopRuntimeContext>,
-    request: AcceptFileRequest,
+    mut request: AcceptFileRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
-    ensure_local_runtime_ownership(runtime.inner(), &request.workspace_path).await?;
+    ensure_local_runtime_ownership(runtime.inner(), &request.remote_scope).await?;
     let _history_mutation = begin_snapshot_history_mutation(
         runtime.inner(),
-        &request.workspace_path,
+        &request.remote_scope,
         &request.session_id,
     )
     .await?;
-    let manager = ensure_snapshot_manager_ready_for(&request.workspace_path, "accept_file").await?;
+    let manager =
+        ensure_snapshot_manager_ready_for(request.remote_scope.id()?, "accept_file").await?;
 
     manager
         .accept_file(&request.session_id, &request.file_path)
@@ -613,17 +633,19 @@ pub async fn accept_file(
 pub async fn reject_file(
     app_handle: AppHandle,
     runtime: State<'_, DesktopRuntimeContext>,
-    request: AcceptFileRequest,
+    mut request: AcceptFileRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
-    ensure_local_runtime_ownership(runtime.inner(), &request.workspace_path).await?;
+    ensure_local_runtime_ownership(runtime.inner(), &request.remote_scope).await?;
     let _history_mutation = begin_snapshot_history_mutation(
         runtime.inner(),
-        &request.workspace_path,
+        &request.remote_scope,
         &request.session_id,
     )
     .await?;
-    let manager = ensure_snapshot_manager_ready_for(&request.workspace_path, "reject_file").await?;
+    let manager =
+        ensure_snapshot_manager_ready_for(request.remote_scope.id()?, "reject_file").await?;
 
     let restored_files = manager
         .reject_file(&request.session_id, &request.file_path)
@@ -653,15 +675,15 @@ pub async fn reject_file(
 #[tauri::command]
 pub async fn get_session_files(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetSessionFilesRequest,
+    mut request: GetSessionFilesRequest,
 ) -> Result<Vec<String>, String> {
-    if request.remote_scope.declares_remote() || is_remote_path(&request.workspace_path).await {
-        return Ok(vec![]);
-    }
-    let read = begin_snapshot_history_read(
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
+    ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
+    let read = begin_snapshot_history_read_for_scope(
         runtime.inner(),
         &request.workspace_path,
         &request.session_id,
+        &request.remote_scope,
     )
     .await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
@@ -680,15 +702,15 @@ pub async fn get_session_files(
 #[tauri::command]
 pub async fn get_session_turns(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetSessionTurnsRequest,
+    mut request: GetSessionTurnsRequest,
 ) -> Result<Vec<usize>, String> {
-    if request.remote_scope.declares_remote() || is_remote_path(&request.workspace_path).await {
-        return Ok(vec![]);
-    }
-    let read = begin_snapshot_history_read(
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
+    ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
+    let read = begin_snapshot_history_read_for_scope(
         runtime.inner(),
         &request.workspace_path,
         &request.session_id,
+        &request.remote_scope,
     )
     .await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
@@ -701,15 +723,15 @@ pub async fn get_session_turns(
 #[tauri::command]
 pub async fn get_turn_files(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetTurnFilesRequest,
+    mut request: GetTurnFilesRequest,
 ) -> Result<Vec<String>, String> {
-    if request.remote_scope.declares_remote() || is_remote_path(&request.workspace_path).await {
-        return Ok(vec![]);
-    }
-    let read = begin_snapshot_history_read(
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
+    ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
+    let read = begin_snapshot_history_read_for_scope(
         runtime.inner(),
         &request.workspace_path,
         &request.session_id,
+        &request.remote_scope,
     )
     .await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
@@ -731,13 +753,15 @@ pub async fn get_turn_files(
 #[tauri::command]
 pub async fn get_file_diff(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetFileDiffRequest,
+    mut request: GetFileDiffRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
-    let read = begin_snapshot_history_read(
+    let read = begin_snapshot_history_read_for_scope(
         runtime.inner(),
         &request.workspace_path,
         &request.session_id,
+        &request.remote_scope,
     )
     .await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
@@ -758,9 +782,10 @@ pub async fn get_file_diff(
 #[tauri::command]
 pub async fn get_operation_diff(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetOperationDiffRequest,
+    mut request: GetOperationDiffRequest,
 ) -> Result<serde_json::Value, String> {
-    if request.remote_scope.declares_remote()
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
+    if request.remote_scope.declares_remote()?
         && request
             .operationId
             .as_deref()
@@ -833,12 +858,17 @@ pub async fn get_operation_diff(
 #[tauri::command]
 pub async fn get_session_file_diff_stats(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetSessionFileDiffStatsRequest,
+    mut request: GetSessionFileDiffStatsRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
-    let read =
-        begin_snapshot_history_read(runtime.inner(), &request.workspace_path, &request.sessionId)
-            .await?;
+    let read = begin_snapshot_history_read_for_scope(
+        runtime.inner(),
+        &request.workspace_path,
+        &request.sessionId,
+        &request.remote_scope,
+    )
+    .await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
 
     let stats = manager
@@ -856,8 +886,9 @@ pub async fn get_session_file_diff_stats(
 #[tauri::command]
 pub async fn get_operation_summary(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetOperationSummaryRequest,
+    mut request: GetOperationSummaryRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     let read = begin_snapshot_history_read_for_scope(
         runtime.inner(),
         &request.workspace_path,
@@ -894,15 +925,15 @@ pub async fn get_operation_summary(
 #[tauri::command]
 pub async fn get_session_operations(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetSessionFilesRequest,
+    mut request: GetSessionFilesRequest,
 ) -> Result<serde_json::Value, String> {
-    if request.remote_scope.declares_remote() || is_remote_path(&request.workspace_path).await {
-        return Ok(serde_json::Value::Array(Vec::new()));
-    }
-    let read = begin_snapshot_history_read(
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
+    ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
+    let read = begin_snapshot_history_read_for_scope(
         runtime.inner(),
         &request.workspace_path,
         &request.session_id,
+        &request.remote_scope,
     )
     .await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
@@ -948,18 +979,16 @@ pub async fn get_session_operations(
 pub async fn accept_operation(
     app_handle: AppHandle,
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetOperationSummaryRequest,
+    mut request: GetOperationSummaryRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
-    ensure_local_runtime_ownership(runtime.inner(), &request.workspace_path).await?;
-    let _history_mutation = begin_snapshot_history_mutation(
-        runtime.inner(),
-        &request.workspace_path,
-        &request.sessionId,
-    )
-    .await?;
+    ensure_local_runtime_ownership(runtime.inner(), &request.remote_scope).await?;
+    let _history_mutation =
+        begin_snapshot_history_mutation(runtime.inner(), &request.remote_scope, &request.sessionId)
+            .await?;
     let manager =
-        ensure_snapshot_manager_ready_for(&request.workspace_path, "accept_operation").await?;
+        ensure_snapshot_manager_ready_for(request.remote_scope.id()?, "accept_operation").await?;
 
     let summary = manager
         .get_operation_summary(&request.sessionId, &request.operationId)
@@ -994,18 +1023,16 @@ pub async fn accept_operation(
 pub async fn reject_operation(
     app_handle: AppHandle,
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetOperationSummaryRequest,
+    mut request: GetOperationSummaryRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
-    ensure_local_runtime_ownership(runtime.inner(), &request.workspace_path).await?;
-    let _history_mutation = begin_snapshot_history_mutation(
-        runtime.inner(),
-        &request.workspace_path,
-        &request.sessionId,
-    )
-    .await?;
+    ensure_local_runtime_ownership(runtime.inner(), &request.remote_scope).await?;
+    let _history_mutation =
+        begin_snapshot_history_mutation(runtime.inner(), &request.remote_scope, &request.sessionId)
+            .await?;
     let manager =
-        ensure_snapshot_manager_ready_for(&request.workspace_path, "reject_operation").await?;
+        ensure_snapshot_manager_ready_for(request.remote_scope.id()?, "reject_operation").await?;
 
     let summary = manager
         .get_operation_summary(&request.sessionId, &request.operationId)
@@ -1045,20 +1072,15 @@ pub async fn reject_operation(
 #[tauri::command]
 pub async fn get_session_stats(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetSessionStatsRequest,
+    mut request: GetSessionStatsRequest,
 ) -> Result<serde_json::Value, String> {
-    if request.remote_scope.declares_remote() || is_remote_path(&request.workspace_path).await {
-        return Ok(serde_json::json!({
-            "session_id": request.session_id,
-            "total_files": 0,
-            "total_turns": 0,
-            "total_changes": 0
-        }));
-    }
-    let read = begin_snapshot_history_read(
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
+    ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
+    let read = begin_snapshot_history_read_for_scope(
         runtime.inner(),
         &request.workspace_path,
         &request.session_id,
+        &request.remote_scope,
     )
     .await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
@@ -1070,8 +1092,9 @@ pub async fn get_session_stats(
 
 #[tauri::command]
 pub async fn get_snapshot_system_stats(
-    request: SnapshotWorkspaceRequest,
+    mut request: SnapshotWorkspaceRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
 
     let stats = manager
@@ -1084,11 +1107,10 @@ pub async fn get_snapshot_system_stats(
 
 #[tauri::command]
 pub async fn get_snapshot_sessions(
-    request: SnapshotWorkspaceRequest,
+    mut request: SnapshotWorkspaceRequest,
 ) -> Result<Vec<String>, String> {
-    if request.remote_scope.declares_remote() || is_remote_path(&request.workspace_path).await {
-        return Ok(vec![]);
-    }
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
+    ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
 
     manager
@@ -1099,8 +1121,9 @@ pub async fn get_snapshot_sessions(
 
 #[tauri::command]
 pub async fn check_git_isolation(
-    request: SnapshotWorkspaceRequest,
+    mut request: SnapshotWorkspaceRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
 
     let is_isolated = manager
@@ -1117,11 +1140,10 @@ pub async fn check_git_isolation(
 #[tauri::command]
 pub async fn get_file_change_history(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetFileChangeHistoryRequest,
+    mut request: GetFileChangeHistoryRequest,
 ) -> Result<serde_json::Value, String> {
-    if request.remote_scope.declares_remote() || is_remote_path(&request.workspace_path).await {
-        return Ok(serde_json::Value::Array(Vec::new()));
-    }
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
+    ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
 
     let file_path = PathBuf::from(&request.file_path);
@@ -1131,9 +1153,13 @@ pub async fn get_file_change_history(
         .map_err(|error| format!("Failed to list snapshot sessions: {error}"))?;
     let mut changes = Vec::new();
     for session_id in session_ids {
-        let read =
-            begin_snapshot_history_read(runtime.inner(), &request.workspace_path, &session_id)
-                .await?;
+        let read = begin_snapshot_history_read_for_scope(
+            runtime.inner(),
+            &request.workspace_path,
+            &session_id,
+            &request.remote_scope,
+        )
+        .await?;
         let session = manager
             .get_session_before(&session_id, read.visible_turn_end())
             .await
@@ -1164,11 +1190,10 @@ pub async fn get_file_change_history(
 #[tauri::command]
 pub async fn get_all_modified_files(
     runtime: State<'_, DesktopRuntimeContext>,
-    request: GetAllModifiedFilesRequest,
+    mut request: GetAllModifiedFilesRequest,
 ) -> Result<Vec<String>, String> {
-    if request.remote_scope.declares_remote() || is_remote_path(&request.workspace_path).await {
-        return Ok(vec![]);
-    }
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
+    ensure_local_snapshot_mutation_path(&request.workspace_path, &request.remote_scope).await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
 
     let session_ids = manager
@@ -1177,9 +1202,13 @@ pub async fn get_all_modified_files(
         .map_err(|error| format!("Failed to list snapshot sessions: {error}"))?;
     let mut files = BTreeSet::new();
     for session_id in session_ids {
-        let read =
-            begin_snapshot_history_read(runtime.inner(), &request.workspace_path, &session_id)
-                .await?;
+        let read = begin_snapshot_history_read_for_scope(
+            runtime.inner(),
+            &request.workspace_path,
+            &session_id,
+            &request.remote_scope,
+        )
+        .await?;
         files.extend(
             manager
                 .get_session_files_before(&session_id, read.visible_turn_end())
@@ -1197,8 +1226,9 @@ pub async fn get_all_modified_files(
 
 #[tauri::command]
 pub async fn get_baseline_snapshot_diff(
-    request: GetBaselineSnapshotDiffRequest,
+    mut request: GetBaselineSnapshotDiffRequest,
 ) -> Result<serde_json::Value, String> {
+    resolve_snapshot_scope(&mut request.workspace_path, &mut request.remote_scope).await?;
     let manager = snapshot_manager_for_view(&request.workspace_path, &request.remote_scope).await?;
 
     let file_path = PathBuf::from(&request.file_path);
@@ -1236,17 +1266,23 @@ mod tests {
         get_snapshot_manager_for_workspace, snapshot_manager_for_view, SnapshotRemoteScope,
     };
 
+    fn resolved_scope(kind: super::WorkspaceKind) -> SnapshotRemoteScope {
+        SnapshotRemoteScope {
+            workspace_id: Some("opaque-workspace-id".into()),
+            workspace_kind: Some(kind),
+            ..Default::default()
+        }
+    }
+
     #[tokio::test]
-    async fn incomplete_remote_operation_scope_never_opens_colliding_local_history() {
+    async fn unresolved_scope_never_opens_colliding_local_history() {
         let workspace = tempfile::tempdir().unwrap();
         for scope in [
+            SnapshotRemoteScope::default(),
             SnapshotRemoteScope {
                 remote_connection_id: Some("connection-1".into()),
-                remote_ssh_host: None,
-            },
-            SnapshotRemoteScope {
-                remote_connection_id: None,
                 remote_ssh_host: Some("host-1".into()),
+                ..Default::default()
             },
         ] {
             let result = super::snapshot_manager_for_recorded_operation(
@@ -1254,9 +1290,8 @@ mod tests {
                 &scope,
             )
             .await;
-            let error = result.err().expect("incomplete identity must fail closed");
-            assert!(error.contains("saved connection id and host"));
-            assert!(get_snapshot_manager_for_workspace(workspace.path()).is_none());
+            assert!(result.err().unwrap().contains("resolved by ID"));
+            assert!(get_snapshot_manager_for_workspace("opaque-workspace-id").is_none());
             assert_eq!(std::fs::read_dir(workspace.path()).unwrap().count(), 0);
         }
     }
@@ -1267,7 +1302,7 @@ mod tests {
             "sessionId": "session-1", "operationId": "operation-1", "workspacePath": "/srv/project",
         }))
         .unwrap();
-        assert!(!legacy.remote_scope.declares_remote());
+        assert!(legacy.remote_scope.declares_remote().is_err());
         let remote: super::GetOperationSummaryRequest = serde_json::from_value(serde_json::json!({
             "sessionId": "session-1", "operationId": "operation-1", "workspacePath": "/srv/project",
             "remoteConnectionId": "ssh:user@host:22", "remoteSshHost": "host",
@@ -1313,98 +1348,54 @@ mod tests {
         assert_eq!(request.remote_ssh_host.as_deref(), Some("example.com"));
     }
 
+    #[test]
+    fn id_only_wire_round_trip_cannot_supply_the_authoritative_kind() {
+        let request: super::GetSessionFilesRequest = serde_json::from_value(serde_json::json!({
+            "sessionId": "session-1", "workspaceId": "opaque-id", "workspaceKind": "remote",
+        }))
+        .unwrap();
+        assert_eq!(
+            request.remote_scope.workspace_id.as_deref(),
+            Some("opaque-id")
+        );
+        assert!(request.workspace_path.is_empty());
+        assert!(request.remote_scope.declares_remote().is_err());
+        let restored: super::GetSessionFilesRequest =
+            serde_json::from_value(serde_json::to_value(request).unwrap()).unwrap();
+        assert_eq!(
+            restored.remote_scope.workspace_id.as_deref(),
+            Some("opaque-id")
+        );
+    }
+
     #[tokio::test]
     async fn remote_snapshot_mutation_is_rejected_before_writer_initialization() {
-        let workspace = tempfile::tempdir().expect("create workspace");
-        let workspace_path = workspace.path().to_string_lossy().to_string();
-        let remote =
-            openbitfun_core::service::remote_ssh::workspace_state::init_remote_workspace_manager();
-        remote
-            .register_remote_workspace(
-                workspace_path.clone(),
-                "snapshot-remote-test".to_string(),
-                "Snapshot remote test".to_string(),
-                "snapshot-test-host".to_string(),
-            )
-            .await;
-
-        let error = ensure_local_snapshot_mutation_path(&workspace_path, &Default::default())
-            .await
-            .expect_err("remote mutation must fail closed");
-
-        assert!(error.contains("not supported for remote workspace"));
-        assert!(get_snapshot_manager_for_workspace(workspace.path()).is_none());
-        assert_eq!(
-            std::fs::read_dir(workspace.path())
-                .expect("workspace remains readable")
-                .count(),
-            0
-        );
-        remote
-            .unregister_remote_workspace("snapshot-remote-test", &workspace_path)
-            .await;
-
-        let disconnected_scope = SnapshotRemoteScope {
-            remote_connection_id: Some("snapshot-test-connection".to_string()),
-            remote_ssh_host: Some("snapshot-test-host".to_string()),
-        };
-        let disconnected_error =
-            ensure_local_snapshot_mutation_path(&workspace_path, &disconnected_scope)
+        let workspace = tempfile::tempdir().unwrap();
+        let scope = resolved_scope(super::WorkspaceKind::Remote);
+        let error =
+            ensure_local_snapshot_mutation_path(&workspace.path().to_string_lossy(), &scope)
                 .await
-                .expect_err("structured session facts remain remote after registry removal");
-        assert!(disconnected_error.contains("not supported for remote workspace"));
-        assert!(get_snapshot_manager_for_workspace(workspace.path()).is_none());
-    }
-
-    #[tokio::test]
-    async fn remote_complete_rollback_reports_missing_file_snapshot_coverage() {
-        let scope = SnapshotRemoteScope {
-            remote_connection_id: Some("connection-1".to_string()),
-            remote_ssh_host: Some("example.com".to_string()),
-        };
-
+                .unwrap_err();
+        assert!(error.contains("not supported for remote workspace"));
+        assert!(get_snapshot_manager_for_workspace("opaque-workspace-id").is_none());
+        assert_eq!(std::fs::read_dir(workspace.path()).unwrap().count(), 0);
         let error = ensure_complete_rollback_supported("/root/repos", &scope, None)
             .await
-            .expect_err("remote rollback must fail before changing files or history");
-
-        assert_eq!(
-            error,
-            "Complete rollback is not supported for remote workspaces because complete file snapshot coverage is unavailable. No workspace files or session messages were changed: /root/repos"
-        );
+            .unwrap_err();
+        assert!(error.contains("complete file snapshot coverage is unavailable"));
     }
 
     #[tokio::test]
-    async fn explicit_local_rollback_identity_wins_over_a_remote_path_collision() {
-        let workspace = tempfile::tempdir().expect("create local workspace");
-        let workspace_path = workspace.path().to_string_lossy().to_string();
-        let remote =
-            openbitfun_core::service::remote_ssh::workspace_state::init_remote_workspace_manager();
-        remote
-            .register_remote_workspace(
-                workspace_path.clone(),
-                "rollback-path-collision".to_string(),
-                "Rollback collision test".to_string(),
-                "remote.example".to_string(),
-            )
-            .await;
-
-        let legacy_error =
-            ensure_complete_rollback_supported(&workspace_path, &Default::default(), None)
-                .await
-                .expect_err("legacy path-only requests must retain remote fallback behavior");
-        assert!(legacy_error.contains("not supported for remote workspaces"));
-
-        ensure_complete_rollback_supported(
-            &workspace_path,
-            &Default::default(),
-            Some(openbitfun_runtime_ports::AgentSessionWorkspaceLocation::Local),
-        )
-        .await
-        .expect("explicit local identity must disambiguate the registered remote path");
-
-        remote
-            .unregister_remote_workspace("rollback-path-collision", &workspace_path)
-            .await;
+    async fn local_kind_ignores_stale_ssh_metadata() {
+        let mut scope = resolved_scope(super::WorkspaceKind::Normal);
+        scope.remote_connection_id = Some("old-connection".into());
+        scope.remote_ssh_host = Some("old-host".into());
+        ensure_complete_rollback_supported("/srv/shared", &scope, None)
+            .await
+            .unwrap();
+        ensure_local_snapshot_mutation_path("/srv/shared", &scope)
+            .await
+            .unwrap();
     }
 
     #[test]
@@ -1483,17 +1474,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn snapshot_view_does_not_initialize_a_writer() {
+    async fn snapshot_view_requires_a_registered_id_before_reading_local_history() {
         let workspace = tempfile::tempdir().expect("create workspace");
-        assert!(get_snapshot_manager_for_workspace(workspace.path()).is_none());
+        assert!(get_snapshot_manager_for_workspace("opaque-workspace-id").is_none());
 
-        snapshot_manager_for_view(
+        let result = snapshot_manager_for_view(
             &workspace.path().to_string_lossy(),
-            &SnapshotRemoteScope::default(),
+            &resolved_scope(super::WorkspaceKind::Normal),
         )
-        .await
-        .expect("an empty read-only view remains available");
-        assert!(get_snapshot_manager_for_workspace(workspace.path()).is_none());
+        .await;
+        assert!(
+            result.is_err(),
+            "a path cannot substitute for an unavailable workspace ID"
+        );
+        assert_eq!(std::fs::read_dir(workspace.path()).unwrap().count(), 0);
+        assert!(get_snapshot_manager_for_workspace("opaque-workspace-id").is_none());
     }
 
     #[tokio::test]
@@ -1502,6 +1497,7 @@ mod tests {
         let scope = SnapshotRemoteScope {
             remote_connection_id: Some("connection-1".to_string()),
             remote_ssh_host: Some("host-1".to_string()),
+            ..resolved_scope(super::WorkspaceKind::Remote)
         };
 
         let error = match snapshot_manager_for_view(&workspace.path().to_string_lossy(), &scope)
@@ -1512,6 +1508,6 @@ mod tests {
         };
 
         assert!(error.contains("snapshot_remote_workspace_unavailable"));
-        assert!(get_snapshot_manager_for_workspace(workspace.path()).is_none());
+        assert!(get_snapshot_manager_for_workspace("opaque-workspace-id").is_none());
     }
 }

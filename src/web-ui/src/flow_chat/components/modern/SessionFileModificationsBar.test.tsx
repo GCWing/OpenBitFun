@@ -69,8 +69,14 @@ vi.mock('../../../infrastructure/api', () => ({
 
 vi.mock('../../../infrastructure/contexts/WorkspaceContext', () => ({
   useCurrentWorkspace: () => ({
-    workspace: { rootPath: 'D:/workspace/project' },
+    workspace: { id: 'workspace-1', workspaceKind: 'local', rootPath: 'D:/workspace/project' },
   }),
+}));
+
+// The session-driver registry pulls in the local driver and its runtime
+// services; this bar only needs the session's workspace ID from it.
+vi.mock('../../session-drivers/sessionFileNavigation', () => ({
+  sessionWorkspaceId: (sessionId: string | undefined) => (sessionId === 'parent-session' ? 'workspace-1' : undefined),
 }));
 
 vi.mock('../../../shared/utils/tabUtils', () => ({
@@ -160,15 +166,15 @@ describe('SessionFileModificationsBar', () => {
     });
 
     expect(mocks.getSessionFiles).not.toHaveBeenCalledWith('child-review-session');
+    // The owning session identifies the snapshot workspace (by ID, inside the
+    // API); the current workspace path is not passed as a scope operand.
     expect(mocks.getSessionFileDiffStats).toHaveBeenCalledWith(
       'parent-session',
       'src/current-session.ts',
-      'D:/workspace/project',
     );
     expect(mocks.getSessionFileDiffStats).not.toHaveBeenCalledWith(
       'child-review-session',
       'src/child-review-only.ts',
-      expect.anything(),
     );
     expect(container.textContent).toContain('1 files');
     expect(container.textContent).not.toContain('child-review-only.ts');

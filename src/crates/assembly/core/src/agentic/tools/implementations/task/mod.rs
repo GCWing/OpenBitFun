@@ -103,13 +103,13 @@ impl TaskTool {
 
     async fn get_enabled_agents(context: Option<&ToolUseContext>) -> Vec<AgentInfo> {
         let registry = get_agent_registry();
-        let workspace_root = context.and_then(|ctx| ctx.workspace_root());
+        let workspace_id = context.and_then(|ctx| ctx.workspace_id());
         let parent_agent_type = context.and_then(|ctx| ctx.agent_type.as_deref());
-        registry.load_custom_agents(workspace_root).await;
+        registry.load_custom_agents(workspace_id).await;
         registry
             .get_subagents_for_query(&SubagentQueryContext {
                 parent_agent_type,
-                workspace_root,
+                workspace_id,
                 list_scope: SubagentListScope::TaskVisible,
                 include_disabled: false,
                 external_sources_supported: context.is_none_or(|ctx| !ctx.is_remote()),

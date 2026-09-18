@@ -45,6 +45,10 @@ pub struct AppState {
     // temporarily dead under browser-direct ACP-over-WS. Kept for the follow-up
     // that brings external_sources onto the app-server schema.
     #[allow(dead_code)]
+    external_workspace_id: Option<String>,
+    /// Canonical root of the owned workspace. Only used to upgrade legacy
+    /// `workspacePath` requests to the owned workspace ID; never an identity.
+    #[allow(dead_code)]
     external_workspace_root: Option<PathBuf>,
     allowed_browser_origins: Arc<HashSet<String>>,
     dispatch_host: Option<Arc<DispatchHostState>>,
@@ -180,7 +184,24 @@ async fn main() -> Result<()> {
     if let Err(error) = ssh_manager.load_known_hosts().await {
         tracing::warn!(error = %error, "Failed to load SSH known hosts");
     }
+    // The Server Host's project workspace is the record bootstrap activated;
+    // external-source requests are scoped to it by workspace ID.
+    let external_workspace_id = server_state
+        .initial_workspace
+        .as_ref()
+        .map(|workspace| workspace.id.clone());
+    let external_workspace_root = server_state
+        .initial_workspace
+        .as_ref()
+        .map(|workspace| {
+            workspace
+                .root_path
+                .canonicalize()
+                .unwrap_or_else(|_| workspace.root_path.clone())
+        })
+        .or(external_workspace_root);
     let app_state = AppState {
+        external_workspace_id,
         external_workspace_root,
         allowed_browser_origins: Arc::new(allowed_browser_origins),
         dispatch_host: Some(Arc::new(DispatchHostState {

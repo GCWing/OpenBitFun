@@ -573,7 +573,7 @@ impl Default for PathManager {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl PathManager {
     pub(crate) fn with_user_root_for_tests(user_root: PathBuf) -> Self {
         let base = user_root

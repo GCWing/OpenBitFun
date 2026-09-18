@@ -2,12 +2,12 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "5473331e06ecd4bfafbf9b547d48b4fe1561ccf69d86fdfde51ea10dc919531c",
-  "commandCount": 664,
+  "commandCount": 667,
   "coverage": {
-    "commandCount": 664,
+    "commandCount": 667,
     "documentedCommandCount": 613,
-    "implementationCommandCount": 51,
-    "implementationDigest": "233258957d404d017612c63fc57b2d6630543a50c4a10c059b5fb2623b621827"
+    "implementationCommandCount": 54,
+    "implementationDigest": "242daa957f208d78ed9ffcbb7e0694ef22f4c5569a0eeec4c50c985d4fb29ea8"
   },
   "commands": [
     {
@@ -23,7 +23,7 @@
       "visibility": "documented",
       "rustPath": "accept_file",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn accept_file( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, request: AcceptFileRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn accept_file( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, mut request: AcceptFileRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -39,7 +39,7 @@
       "visibility": "documented",
       "rustPath": "accept_operation",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn accept_operation( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, request: GetOperationSummaryRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn accept_operation( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, mut request: GetOperationSummaryRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -55,7 +55,7 @@
       "visibility": "documented",
       "rustPath": "accept_session",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn accept_session( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, request: AcceptSessionRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn accept_session( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, mut request: AcceptSessionRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -355,7 +355,7 @@
       "visibility": "documented",
       "rustPath": "api::agentic_api::activate_session_goal",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
-      "signature": "fn activate_session_goal( coordinator: State<'_, Arc<ConversationCoordinator>>, app_state: State<'_, AppState>, request: ActivateSessionGoalRequest, ) -> Result<ActivateSessionGoalResponse, String>",
+      "signature": "fn activate_session_goal( coordinator: State<'_, Arc<ConversationCoordinator>>, request: ActivateSessionGoalRequest, ) -> Result<ActivateSessionGoalResponse, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -371,7 +371,7 @@
       "visibility": "documented",
       "rustPath": "add_skill",
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
-      "signature": "fn add_skill( _state: State<'_, AppState>, source_path: String, level: String, workspace_path: Option<String>, source_key: Option<String>, target_name: Option<String>, expected_source_fingerprint: Option<String>, ) -> Result<String, String>",
+      "signature": "fn add_skill( _state: State<'_, AppState>, source_path: String, level: String, workspace_id: Option<String>, workspace_path: Option<String>, source_key: Option<String>, target_name: Option<String>, expected_source_fingerprint: Option<String>, ) -> Result<String, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -1119,7 +1119,7 @@
       "visibility": "documented",
       "rustPath": "check_git_isolation",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn check_git_isolation( request: SnapshotWorkspaceRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn check_git_isolation( mut request: SnapshotWorkspaceRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -1231,7 +1231,7 @@
       "visibility": "documented",
       "rustPath": "api::agentic_api::clear_session_thread_goal",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
-      "signature": "fn clear_session_thread_goal( coordinator: State<'_, Arc<ConversationCoordinator>>, app_state: State<'_, AppState>, request: ClearSessionThreadGoalRequest, ) -> Result<(), String>",
+      "signature": "fn clear_session_thread_goal( coordinator: State<'_, Arc<ConversationCoordinator>>, request: ClearSessionThreadGoalRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -1279,7 +1279,7 @@
       "visibility": "documented",
       "rustPath": "api::agentic_api::compact_session",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
-      "signature": "fn compact_session( coordinator: State<'_, Arc<ConversationCoordinator>>, app_state: State<'_, AppState>, request: CompactSessionRequest, ) -> Result<StartDialogTurnResponse, String>",
+      "signature": "fn compact_session( coordinator: State<'_, Arc<ConversationCoordinator>>, request: CompactSessionRequest, ) -> Result<StartDialogTurnResponse, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -1449,6 +1449,20 @@
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
       "signature": "fn create_assistant_workspace( state: State<'_, AppState>, app: tauri::AppHandle, _request: CreateAssistantWorkspaceRequest, ) -> Result<WorkspaceInfoDto, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "create_control_conversation",
+      "moduleId": "agentic",
+      "capabilityId": "feature.ai-assistant",
+      "capabilityIds": [
+        "feature.ai-assistant"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::agentic_api::create_control_conversation",
+      "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
+      "signature": "fn create_control_conversation( coordinator: State<'_, Arc<ConversationCoordinator>>, request: openbitfun_core::agentic::coordination::CreateControlConversationRequest, ) -> Result<openbitfun_core::agentic::coordination::ControlConversation, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "create_cron_job",
@@ -1835,7 +1849,7 @@
       "visibility": "documented",
       "rustPath": "delete_skill",
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
-      "signature": "fn delete_skill( state: State<'_, AppState>, skill_key: String, workspace_path: Option<String>, expected_import_id: Option<String>, ) -> Result<String, String>",
+      "signature": "fn delete_skill( state: State<'_, AppState>, skill_key: String, workspace_id: Option<String>, workspace_path: Option<String>, expected_import_id: Option<String>, ) -> Result<String, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -2233,8 +2247,22 @@
       "visibility": "implementation",
       "rustPath": "api::agentic_api::ensure_assistant_bootstrap",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
-      "signature": "fn ensure_assistant_bootstrap( coordinator: State<'_, Arc<ConversationCoordinator>>, request: EnsureAssistantBootstrapRequest, ) -> Result<EnsureAssistantBootstrapResponse, String>",
+      "signature": "fn ensure_assistant_bootstrap( coordinator: State<'_, Arc<ConversationCoordinator>>, app_state: State<'_, AppState>, request: EnsureAssistantBootstrapRequest, ) -> Result<EnsureAssistantBootstrapResponse, String>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
+    },
+    {
+      "id": "ensure_control_conversation",
+      "moduleId": "agentic",
+      "capabilityId": "feature.ai-assistant",
+      "capabilityIds": [
+        "feature.ai-assistant"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::agentic_api::ensure_control_conversation",
+      "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
+      "signature": "fn ensure_control_conversation( coordinator: State<'_, Arc<ConversationCoordinator>>, ) -> Result<openbitfun_core::agentic::coordination::ControlConversation, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "ensure_coordinator_session",
@@ -2615,7 +2643,7 @@
       "visibility": "documented",
       "rustPath": "get_all_modified_files",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_all_modified_files( runtime: State<'_, DesktopRuntimeContext>, request: GetAllModifiedFilesRequest, ) -> Result<Vec<String>, String>",
+      "signature": "fn get_all_modified_files( runtime: State<'_, DesktopRuntimeContext>, mut request: GetAllModifiedFilesRequest, ) -> Result<Vec<String>, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -2729,7 +2757,7 @@
       "visibility": "documented",
       "rustPath": "get_baseline_snapshot_diff",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_baseline_snapshot_diff( request: GetBaselineSnapshotDiffRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn get_baseline_snapshot_diff( mut request: GetBaselineSnapshotDiffRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -2983,7 +3011,7 @@
       "visibility": "documented",
       "rustPath": "get_file_change_history",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_file_change_history( runtime: State<'_, DesktopRuntimeContext>, request: GetFileChangeHistoryRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn get_file_change_history( runtime: State<'_, DesktopRuntimeContext>, mut request: GetFileChangeHistoryRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -2999,7 +3027,7 @@
       "visibility": "documented",
       "rustPath": "get_file_diff",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_file_diff( runtime: State<'_, DesktopRuntimeContext>, request: GetFileDiffRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn get_file_diff( runtime: State<'_, DesktopRuntimeContext>, mut request: GetFileDiffRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -3342,7 +3370,7 @@
       "visibility": "documented",
       "rustPath": "get_mode_skill_configs",
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
-      "signature": "fn get_mode_skill_configs( state: State<'_, AppState>, mode_id: String, force_refresh: Option<bool>, include_diagnostics: Option<bool>, workspace_path: Option<String>, ) -> Result<Value, String>",
+      "signature": "fn get_mode_skill_configs( state: State<'_, AppState>, mode_id: String, force_refresh: Option<bool>, include_diagnostics: Option<bool>, workspace_id: Option<String>, workspace_path: Option<String>, ) -> Result<Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3422,7 +3450,7 @@
       "visibility": "documented",
       "rustPath": "get_operation_diff",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_operation_diff( runtime: State<'_, DesktopRuntimeContext>, request: GetOperationDiffRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn get_operation_diff( runtime: State<'_, DesktopRuntimeContext>, mut request: GetOperationDiffRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -3438,7 +3466,7 @@
       "visibility": "documented",
       "rustPath": "get_operation_summary",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_operation_summary( runtime: State<'_, DesktopRuntimeContext>, request: GetOperationSummaryRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn get_operation_summary( runtime: State<'_, DesktopRuntimeContext>, mut request: GetOperationSummaryRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -3598,7 +3626,7 @@
       "visibility": "documented",
       "rustPath": "get_session_file_diff_stats",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_session_file_diff_stats( runtime: State<'_, DesktopRuntimeContext>, request: GetSessionFileDiffStatsRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn get_session_file_diff_stats( runtime: State<'_, DesktopRuntimeContext>, mut request: GetSessionFileDiffStatsRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3614,7 +3642,7 @@
       "visibility": "documented",
       "rustPath": "get_session_files",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_session_files( runtime: State<'_, DesktopRuntimeContext>, request: GetSessionFilesRequest, ) -> Result<Vec<String>, String>",
+      "signature": "fn get_session_files( runtime: State<'_, DesktopRuntimeContext>, mut request: GetSessionFilesRequest, ) -> Result<Vec<String>, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3660,7 +3688,7 @@
       "visibility": "documented",
       "rustPath": "get_session_operations",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_session_operations( runtime: State<'_, DesktopRuntimeContext>, request: GetSessionFilesRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn get_session_operations( runtime: State<'_, DesktopRuntimeContext>, mut request: GetSessionFilesRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3692,7 +3720,7 @@
       "visibility": "documented",
       "rustPath": "get_session_stats",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_session_stats( runtime: State<'_, DesktopRuntimeContext>, request: GetSessionStatsRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn get_session_stats( runtime: State<'_, DesktopRuntimeContext>, mut request: GetSessionStatsRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3708,7 +3736,7 @@
       "visibility": "documented",
       "rustPath": "api::agentic_api::get_session_thread_goal",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
-      "signature": "fn get_session_thread_goal( coordinator: State<'_, Arc<ConversationCoordinator>>, app_state: State<'_, AppState>, startup_trace: State<'_, DesktopStartupTrace>, request: GetSessionThreadGoalRequest, ) -> Result<GetSessionThreadGoalResponse, String>",
+      "signature": "fn get_session_thread_goal( coordinator: State<'_, Arc<ConversationCoordinator>>, startup_trace: State<'_, DesktopStartupTrace>, request: GetSessionThreadGoalRequest, ) -> Result<GetSessionThreadGoalResponse, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3724,7 +3752,7 @@
       "visibility": "documented",
       "rustPath": "get_session_turns",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_session_turns( runtime: State<'_, DesktopRuntimeContext>, request: GetSessionTurnsRequest, ) -> Result<Vec<usize>, String>",
+      "signature": "fn get_session_turns( runtime: State<'_, DesktopRuntimeContext>, mut request: GetSessionTurnsRequest, ) -> Result<Vec<usize>, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3756,7 +3784,7 @@
       "visibility": "documented",
       "rustPath": "get_skill_configs",
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
-      "signature": "fn get_skill_configs( state: State<'_, AppState>, force_refresh: Option<bool>, include_diagnostics: Option<bool>, workspace_path: Option<String>, ) -> Result<Value, String>",
+      "signature": "fn get_skill_configs( state: State<'_, AppState>, force_refresh: Option<bool>, include_diagnostics: Option<bool>, workspace_id: Option<String>, workspace_path: Option<String>, ) -> Result<Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3772,7 +3800,7 @@
       "visibility": "documented",
       "rustPath": "get_snapshot_sessions",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_snapshot_sessions( request: SnapshotWorkspaceRequest, ) -> Result<Vec<String>, String>",
+      "signature": "fn get_snapshot_sessions( mut request: SnapshotWorkspaceRequest, ) -> Result<Vec<String>, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3788,7 +3816,7 @@
       "visibility": "documented",
       "rustPath": "get_snapshot_system_stats",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_snapshot_system_stats( request: SnapshotWorkspaceRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn get_snapshot_system_stats( mut request: SnapshotWorkspaceRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3918,7 +3946,7 @@
       "visibility": "documented",
       "rustPath": "get_turn_files",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn get_turn_files( runtime: State<'_, DesktopRuntimeContext>, request: GetTurnFilesRequest, ) -> Result<Vec<String>, String>",
+      "signature": "fn get_turn_files( runtime: State<'_, DesktopRuntimeContext>, mut request: GetTurnFilesRequest, ) -> Result<Vec<String>, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -3982,7 +4010,7 @@
       "visibility": "documented",
       "rustPath": "git_add_files",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_add_files( state: State<'_, AppState>, request: GitAddFilesRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_add_files( state: State<'_, AppState>, mut request: GitAddFilesRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -3998,7 +4026,7 @@
       "visibility": "documented",
       "rustPath": "git_add_worktree",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_add_worktree( state: State<'_, AppState>, request: GitAddWorktreeRequest, ) -> Result<openbitfun_core::service::git::GitWorktreeInfo, String>",
+      "signature": "fn git_add_worktree( state: State<'_, AppState>, mut request: GitAddWorktreeRequest, ) -> Result<openbitfun_core::service::git::GitWorktreeInfo, String>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -4014,7 +4042,7 @@
       "visibility": "documented",
       "rustPath": "git_checkout_branch",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_checkout_branch( state: State<'_, AppState>, request: GitCheckoutBranchRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_checkout_branch( state: State<'_, AppState>, mut request: GitCheckoutBranchRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4030,7 +4058,7 @@
       "visibility": "documented",
       "rustPath": "git_cherry_pick",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_cherry_pick( state: State<'_, AppState>, request: GitCherryPickRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_cherry_pick( state: State<'_, AppState>, mut request: GitCherryPickRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4046,7 +4074,7 @@
       "visibility": "documented",
       "rustPath": "git_cherry_pick_abort",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_cherry_pick_abort( state: State<'_, AppState>, request: GitRepositoryRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_cherry_pick_abort( state: State<'_, AppState>, mut request: GitRepositoryRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4062,7 +4090,7 @@
       "visibility": "documented",
       "rustPath": "git_cherry_pick_continue",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_cherry_pick_continue( state: State<'_, AppState>, request: GitRepositoryRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_cherry_pick_continue( state: State<'_, AppState>, mut request: GitRepositoryRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4078,7 +4106,7 @@
       "visibility": "documented",
       "rustPath": "git_commit",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_commit( state: State<'_, AppState>, request: GitCommitRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_commit( state: State<'_, AppState>, mut request: GitCommitRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4094,7 +4122,7 @@
       "visibility": "documented",
       "rustPath": "git_create_branch",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_create_branch( state: State<'_, AppState>, request: GitCreateBranchRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_create_branch( state: State<'_, AppState>, mut request: GitCreateBranchRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4110,7 +4138,7 @@
       "visibility": "documented",
       "rustPath": "git_delete_branch",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_delete_branch( state: State<'_, AppState>, request: GitDeleteBranchRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_delete_branch( state: State<'_, AppState>, mut request: GitDeleteBranchRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4126,7 +4154,7 @@
       "visibility": "documented",
       "rustPath": "git_get_branches",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_branches( state: State<'_, AppState>, request: GitBranchesRequest, ) -> Result<Vec<GitBranch>, String>",
+      "signature": "fn git_get_branches( state: State<'_, AppState>, mut request: GitBranchesRequest, ) -> Result<Vec<GitBranch>, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4142,7 +4170,7 @@
       "visibility": "documented",
       "rustPath": "git_get_changed_files",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_changed_files( state: State<'_, AppState>, request: GitChangedFilesRequest, ) -> Result<Vec<GitChangedFile>, String>",
+      "signature": "fn git_get_changed_files( state: State<'_, AppState>, mut request: GitChangedFilesRequest, ) -> Result<Vec<GitChangedFile>, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4158,7 +4186,7 @@
       "visibility": "documented",
       "rustPath": "git_get_commits",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_commits( state: State<'_, AppState>, request: GitCommitsRequest, ) -> Result<Vec<GitCommit>, String>",
+      "signature": "fn git_get_commits( state: State<'_, AppState>, mut request: GitCommitsRequest, ) -> Result<Vec<GitCommit>, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4174,7 +4202,7 @@
       "visibility": "documented",
       "rustPath": "git_get_diff",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_diff( state: State<'_, AppState>, request: GitDiffRequest, ) -> Result<String, String>",
+      "signature": "fn git_get_diff( state: State<'_, AppState>, mut request: GitDiffRequest, ) -> Result<String, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4190,7 +4218,7 @@
       "visibility": "documented",
       "rustPath": "git_get_enhanced_branches",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_enhanced_branches( state: State<'_, AppState>, request: GitBranchesRequest, ) -> Result<Vec<GitBranch>, String>",
+      "signature": "fn git_get_enhanced_branches( state: State<'_, AppState>, mut request: GitBranchesRequest, ) -> Result<Vec<GitBranch>, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4206,7 +4234,7 @@
       "visibility": "documented",
       "rustPath": "git_get_file_content",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_file_content( state: State<'_, AppState>, request: GitGetFileContentRequest, ) -> Result<String, String>",
+      "signature": "fn git_get_file_content( state: State<'_, AppState>, mut request: GitGetFileContentRequest, ) -> Result<String, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4222,7 +4250,7 @@
       "visibility": "documented",
       "rustPath": "git_get_graph",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_graph( _state: State<'_, AppState>, repository_path: String, max_count: Option<usize>, branch_name: Option<String>, ) -> Result<openbitfun_core::service::git::GitGraph, String>",
+      "signature": "fn git_get_graph( _state: State<'_, AppState>, repository_path: Option<String>, mut workspace_id: Option<String>, max_count: Option<usize>, branch_name: Option<String>, ) -> Result<openbitfun_core::service::git::GitGraph, String>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -4238,7 +4266,7 @@
       "visibility": "documented",
       "rustPath": "git_get_repository",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_repository( state: State<'_, AppState>, request: GitRepositoryRequest, ) -> Result<GitRepository, String>",
+      "signature": "fn git_get_repository( state: State<'_, AppState>, mut request: GitRepositoryRequest, ) -> Result<GitRepository, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4254,7 +4282,7 @@
       "visibility": "documented",
       "rustPath": "git_get_repository_basic",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_repository_basic( state: State<'_, AppState>, startup_trace: State<'_, DesktopStartupTrace>, request: GitRepositoryRequest, ) -> Result<GitRepository, String>",
+      "signature": "fn git_get_repository_basic( state: State<'_, AppState>, startup_trace: State<'_, DesktopStartupTrace>, mut request: GitRepositoryRequest, ) -> Result<GitRepository, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4270,7 +4298,7 @@
       "visibility": "documented",
       "rustPath": "git_get_repository_trust",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_repository_trust( state: State<'_, AppState>, request: GitRepositoryRequest, ) -> Result<GitTrustReport, String>",
+      "signature": "fn git_get_repository_trust( state: State<'_, AppState>, mut request: GitRepositoryRequest, ) -> Result<GitTrustReport, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4286,7 +4314,7 @@
       "visibility": "documented",
       "rustPath": "git_get_status",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_get_status( state: State<'_, AppState>, request: GitRepositoryRequest, ) -> Result<GitStatus, String>",
+      "signature": "fn git_get_status( state: State<'_, AppState>, mut request: GitRepositoryRequest, ) -> Result<GitStatus, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4302,7 +4330,7 @@
       "visibility": "documented",
       "rustPath": "git_is_repository",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_is_repository( state: State<'_, AppState>, startup_trace: State<'_, DesktopStartupTrace>, request: GitRepositoryRequest, ) -> Result<bool, String>",
+      "signature": "fn git_is_repository( state: State<'_, AppState>, startup_trace: State<'_, DesktopStartupTrace>, mut request: GitRepositoryRequest, ) -> Result<bool, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4320,7 +4348,7 @@
       "visibility": "documented",
       "rustPath": "git_list_worktrees",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_list_worktrees( state: State<'_, AppState>, request: GitRepositoryRequest, ) -> Result<Vec<openbitfun_core::service::git::GitWorktreeInfo>, String>",
+      "signature": "fn git_list_worktrees( state: State<'_, AppState>, mut request: GitRepositoryRequest, ) -> Result<Vec<openbitfun_core::service::git::GitWorktreeInfo>, String>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -4336,7 +4364,7 @@
       "visibility": "documented",
       "rustPath": "git_pull",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_pull( state: State<'_, AppState>, request: GitPullRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_pull( state: State<'_, AppState>, mut request: GitPullRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4352,7 +4380,7 @@
       "visibility": "documented",
       "rustPath": "git_push",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_push( state: State<'_, AppState>, request: GitPushRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_push( state: State<'_, AppState>, mut request: GitPushRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4370,7 +4398,7 @@
       "visibility": "documented",
       "rustPath": "git_remove_worktree",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_remove_worktree( state: State<'_, AppState>, request: GitRemoveWorktreeRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_remove_worktree( state: State<'_, AppState>, mut request: GitRemoveWorktreeRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -4386,7 +4414,7 @@
       "visibility": "documented",
       "rustPath": "git_reset_files",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_reset_files( state: State<'_, AppState>, request: GitResetFilesRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_reset_files( state: State<'_, AppState>, mut request: GitResetFilesRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4402,7 +4430,7 @@
       "visibility": "documented",
       "rustPath": "git_reset_to_commit",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_reset_to_commit( state: State<'_, AppState>, request: GitResetToCommitRequest, ) -> Result<GitOperationResult, String>",
+      "signature": "fn git_reset_to_commit( state: State<'_, AppState>, mut request: GitResetToCommitRequest, ) -> Result<GitOperationResult, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4418,7 +4446,7 @@
       "visibility": "documented",
       "rustPath": "git_resolve_revision",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_resolve_revision( state: State<'_, AppState>, request: GitResolveRevisionRequest, ) -> Result<String, String>",
+      "signature": "fn git_resolve_revision( state: State<'_, AppState>, mut request: GitResolveRevisionRequest, ) -> Result<String, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -4434,7 +4462,7 @@
       "visibility": "documented",
       "rustPath": "git_trust_repository",
       "sourceFile": "src/apps/desktop/src/api/git_api.rs",
-      "signature": "fn git_trust_repository( state: State<'_, AppState>, request: GitRepositoryRequest, ) -> Result<GitTrustOutcome, String>",
+      "signature": "fn git_trust_repository( state: State<'_, AppState>, mut request: GitRepositoryRequest, ) -> Result<GitTrustOutcome, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -6765,6 +6793,20 @@
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
+      "id": "record_voice_exchange",
+      "moduleId": "agentic",
+      "capabilityId": "feature.ai-assistant",
+      "capabilityIds": [
+        "feature.ai-assistant"
+      ],
+      "documentedItemIds": [],
+      "visibility": "implementation",
+      "rustPath": "api::agentic_api::record_voice_exchange",
+      "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
+      "signature": "fn record_voice_exchange( coordinator: State<'_, Arc<ConversationCoordinator>>, request: openbitfun_core::agentic::coordination::VoiceExchangeRequest, ) -> Result<(), String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
+    },
+    {
       "id": "recover_interrupted_dialog_turn",
       "moduleId": "agentic",
       "capabilityId": "feature.ai-assistant",
@@ -6842,7 +6884,7 @@
       "visibility": "documented",
       "rustPath": "reject_file",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn reject_file( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, request: AcceptFileRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn reject_file( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, mut request: AcceptFileRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -6858,7 +6900,7 @@
       "visibility": "documented",
       "rustPath": "reject_operation",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn reject_operation( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, request: GetOperationSummaryRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn reject_operation( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, mut request: GetOperationSummaryRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -8040,7 +8082,7 @@
       "visibility": "documented",
       "rustPath": "rollback_session",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn rollback_session( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, request: RollbackSessionRequest, ) -> Result<Vec<String>, String>",
+      "signature": "fn rollback_session( app_handle: AppHandle, runtime: State<'_, DesktopRuntimeContext>, mut request: RollbackSessionRequest, ) -> Result<Vec<String>, String>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -8056,7 +8098,7 @@
       "visibility": "documented",
       "rustPath": "rollback_session_to_turn",
       "sourceFile": "src/apps/desktop/src/api/snapshot_service.rs",
-      "signature": "fn rollback_session_to_turn( runtime: State<'_, DesktopRuntimeContext>, request: openbitfun_runtime_ports::AgentSessionRollbackToTurnRequest, ) -> Result<openbitfun_runtime_ports::AgentSessionRollbackToTurnOutcome, String>",
+      "signature": "fn rollback_session_to_turn( runtime: State<'_, DesktopRuntimeContext>, mut request: openbitfun_runtime_ports::AgentSessionRollbackToTurnRequest, ) -> Result<openbitfun_runtime_ports::AgentSessionRollbackToTurnOutcome, String>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -8072,7 +8114,7 @@
       "visibility": "documented",
       "rustPath": "api::agentic_api::run_init_agents_md",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
-      "signature": "fn run_init_agents_md( coordinator: State<'_, Arc<ConversationCoordinator>>, scheduler: State<'_, Arc<DialogScheduler>>, app_state: State<'_, AppState>, request: RunInitAgentsMdRequest, ) -> Result<StartDialogTurnResponse, String>",
+      "signature": "fn run_init_agents_md( coordinator: State<'_, Arc<ConversationCoordinator>>, scheduler: State<'_, Arc<DialogScheduler>>, request: RunInitAgentsMdRequest, ) -> Result<StartDialogTurnResponse, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -8294,7 +8336,7 @@
       "visibility": "documented",
       "rustPath": "search_file_contents",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
-      "signature": "fn search_file_contents( state: State<'_, AppState>, request: SearchFileContentsRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn search_file_contents( state: State<'_, AppState>, mut request: SearchFileContentsRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -8310,7 +8352,7 @@
       "visibility": "documented",
       "rustPath": "search_filenames",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
-      "signature": "fn search_filenames( state: State<'_, AppState>, request: SearchFilenamesRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn search_filenames( state: State<'_, AppState>, mut request: SearchFilenamesRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -8326,7 +8368,7 @@
       "visibility": "documented",
       "rustPath": "search_files",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
-      "signature": "fn search_files( state: State<'_, AppState>, request: SearchFilesRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn search_files( state: State<'_, AppState>, mut request: SearchFilesRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -8806,7 +8848,7 @@
       "visibility": "documented",
       "rustPath": "set_mode_skill_disabled",
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
-      "signature": "fn set_mode_skill_disabled( state: State<'_, AppState>, mode_id: String, skill_key: String, disabled: bool, workspace_path: Option<String>, ) -> Result<String, String>",
+      "signature": "fn set_mode_skill_disabled( state: State<'_, AppState>, mode_id: String, skill_key: String, disabled: bool, workspace_id: Option<String>, workspace_path: Option<String>, ) -> Result<String, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -8870,7 +8912,7 @@
       "visibility": "documented",
       "rustPath": "api::agentic_api::set_session_memory_mode",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
-      "signature": "fn set_session_memory_mode( coordinator: State<'_, Arc<ConversationCoordinator>>, app_state: State<'_, AppState>, request: SetSessionMemoryModeRequest, ) -> Result<SetSessionMemoryModeResponse, String>",
+      "signature": "fn set_session_memory_mode( coordinator: State<'_, Arc<ConversationCoordinator>>, request: SetSessionMemoryModeRequest, ) -> Result<SetSessionMemoryModeResponse, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -8886,7 +8928,7 @@
       "visibility": "documented",
       "rustPath": "api::agentic_api::set_session_thread_goal_status",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
-      "signature": "fn set_session_thread_goal_status( coordinator: State<'_, Arc<ConversationCoordinator>>, app_state: State<'_, AppState>, request: SetSessionThreadGoalStatusRequest, ) -> Result<ThreadGoal, String>",
+      "signature": "fn set_session_thread_goal_status( coordinator: State<'_, Arc<ConversationCoordinator>>, request: SetSessionThreadGoalStatusRequest, ) -> Result<ThreadGoal, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -8916,7 +8958,7 @@
       "visibility": "implementation",
       "rustPath": "api::system_api::set_tray_unread_count",
       "sourceFile": "src/apps/desktop/src/api/system_api.rs",
-      "signature": "fn set_tray_unread_count(request: SetTrayUnreadCountRequest) -> Result<(), String>",
+      "signature": "fn set_tray_unread_count( app: tauri::AppHandle, request: SetTrayUnreadCountRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {
@@ -9579,7 +9621,7 @@
       "visibility": "documented",
       "rustPath": "start_file_watch",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
-      "signature": "fn start_file_watch(path: String, recursive: Option<bool>) -> Result<(), String>",
+      "signature": "fn start_file_watch( state: State<'_, AppState>, request: Option<WorkspaceFileWatchRequest>, path: Option<String>, recursive: Option<bool>, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -9627,7 +9669,7 @@
       "visibility": "documented",
       "rustPath": "start_search_file_contents_stream",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
-      "signature": "fn start_search_file_contents_stream( app_handle: AppHandle, state: State<'_, AppState>, request: SearchFileContentsRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn start_search_file_contents_stream( app_handle: AppHandle, state: State<'_, AppState>, mut request: SearchFileContentsRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -9643,7 +9685,7 @@
       "visibility": "documented",
       "rustPath": "start_search_filenames_stream",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
-      "signature": "fn start_search_filenames_stream( app_handle: AppHandle, state: State<'_, AppState>, request: SearchFilenamesRequest, ) -> Result<serde_json::Value, String>",
+      "signature": "fn start_search_filenames_stream( app_handle: AppHandle, state: State<'_, AppState>, mut request: SearchFilenamesRequest, ) -> Result<serde_json::Value, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -9737,7 +9779,7 @@
       "visibility": "documented",
       "rustPath": "stop_file_watch",
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
-      "signature": "fn stop_file_watch(path: String) -> Result<(), String>",
+      "signature": "fn stop_file_watch( state: State<'_, AppState>, request: Option<WorkspaceFileWatchRequest>, path: Option<String>, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
@@ -9867,7 +9909,7 @@
       "visibility": "documented",
       "rustPath": "api::terminal_api::terminal_create",
       "sourceFile": "src/apps/desktop/src/api/terminal_api.rs",
-      "signature": "fn terminal_create( _app: AppHandle, request: CreateSessionRequest, state: State<'_, TerminalState>, app_state: State<'_, AppState>, ) -> Result<SessionResponse, String>",
+      "signature": "fn terminal_create( _app: AppHandle, mut request: CreateSessionRequest, state: State<'_, TerminalState>, app_state: State<'_, AppState>, ) -> Result<SessionResponse, String>",
       "remoteWorkspacePolicy": "RemoteRouted"
     },
     {
@@ -10318,7 +10360,7 @@
       "visibility": "documented",
       "rustPath": "api::agentic_api::update_session_thread_goal_objective",
       "sourceFile": "src/apps/desktop/src/api/agentic_api.rs",
-      "signature": "fn update_session_thread_goal_objective( coordinator: State<'_, Arc<ConversationCoordinator>>, app_state: State<'_, AppState>, request: UpdateSessionThreadGoalObjectiveRequest, ) -> Result<ThreadGoal, String>",
+      "signature": "fn update_session_thread_goal_objective( coordinator: State<'_, Arc<ConversationCoordinator>>, request: UpdateSessionThreadGoalObjectiveRequest, ) -> Result<ThreadGoal, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -10430,7 +10472,7 @@
       "visibility": "documented",
       "rustPath": "validate_skill_path",
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
-      "signature": "fn validate_skill_path( path: String, source_key: Option<String>, workspace_path: Option<String>, ) -> Result<SkillValidationResult, String>",
+      "signature": "fn validate_skill_path( path: String, source_key: Option<String>, workspace_id: Option<String>, workspace_path: Option<String>, ) -> Result<SkillValidationResult, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -10504,7 +10546,7 @@
       "visibility": "documented",
       "rustPath": "api::worktree_api::worktree_create",
       "sourceFile": "src/apps/desktop/src/api/worktree_api.rs",
-      "signature": "fn worktree_create( request: WorktreeCreateRequest, ) -> Result<WorktreeCreateResult, WorktreeError>",
+      "signature": "fn worktree_create( mut request: WorktreeCreateRequest, ) -> Result<WorktreeCreateResult, WorktreeError>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -10520,7 +10562,7 @@
       "visibility": "documented",
       "rustPath": "api::worktree_api::worktree_create_branch",
       "sourceFile": "src/apps/desktop/src/api/worktree_api.rs",
-      "signature": "fn worktree_create_branch( request: WorktreeCreateBranchRequest, ) -> Result<WorktreeMutationResult, WorktreeError>",
+      "signature": "fn worktree_create_branch( mut request: WorktreeCreateBranchRequest, ) -> Result<WorktreeMutationResult, WorktreeError>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -10536,7 +10578,7 @@
       "visibility": "documented",
       "rustPath": "api::worktree_api::worktree_list",
       "sourceFile": "src/apps/desktop/src/api/worktree_api.rs",
-      "signature": "fn worktree_list( request: WorktreeListRequest, ) -> Result<Vec<WorktreeSummary>, WorktreeError>",
+      "signature": "fn worktree_list( mut request: WorktreeListRequest, ) -> Result<Vec<WorktreeSummary>, WorktreeError>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -10570,7 +10612,7 @@
       "visibility": "documented",
       "rustPath": "api::worktree_api::worktree_promote",
       "sourceFile": "src/apps/desktop/src/api/worktree_api.rs",
-      "signature": "fn worktree_promote( request: WorktreePromoteRequest, ) -> Result<WorktreeMutationResult, WorktreeError>",
+      "signature": "fn worktree_promote( mut request: WorktreePromoteRequest, ) -> Result<WorktreeMutationResult, WorktreeError>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -10586,7 +10628,7 @@
       "visibility": "documented",
       "rustPath": "api::worktree_api::worktree_recreate",
       "sourceFile": "src/apps/desktop/src/api/worktree_api.rs",
-      "signature": "fn worktree_recreate( request: WorktreeRecreateRequest, ) -> Result<WorktreeMutationResult, WorktreeError>",
+      "signature": "fn worktree_recreate( mut request: WorktreeRecreateRequest, ) -> Result<WorktreeMutationResult, WorktreeError>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {
@@ -10604,7 +10646,7 @@
       "visibility": "documented",
       "rustPath": "api::worktree_api::worktree_remove",
       "sourceFile": "src/apps/desktop/src/api/worktree_api.rs",
-      "signature": "fn worktree_remove( request: WorktreeRemoveRequest, ) -> Result<WorktreeRemoveResult, WorktreeError>",
+      "signature": "fn worktree_remove( mut request: WorktreeRemoveRequest, ) -> Result<WorktreeRemoveResult, WorktreeError>",
       "remoteWorkspacePolicy": "RemoteUnsupported"
     },
     {

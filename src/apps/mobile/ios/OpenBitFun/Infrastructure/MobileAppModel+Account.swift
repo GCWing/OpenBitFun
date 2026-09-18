@@ -196,7 +196,9 @@ extension MobileAppModel {
     }
 
     func apply(accountState state: AccountUiState, generation: UInt64) {
-        guard !accountLoginPreview, !localActionPreview, !remoteCreatePreview,
+        // The directory fixture describes a signed-in account with a chosen
+        // device; a signed-out core would otherwise wipe it on launch.
+        guard !accountLoginPreview, !localActionPreview, !remoteCreatePreview, !directoryFixturePreview,
               generation == accountGeneration else { return }
         accountGeneration = generation
         if let ready = state as? AccountUiStateReady, let failure = ready.refreshFailure {

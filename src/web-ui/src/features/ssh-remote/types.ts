@@ -93,6 +93,7 @@ export interface RemoteTreeNode {
 }
 
 export interface RemoteWorkspace {
+  workspaceId?: string;
   connectionId: string;
   connectionName: string;
   remotePath: string;

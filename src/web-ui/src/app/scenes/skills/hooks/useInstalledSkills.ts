@@ -54,7 +54,7 @@ export function useInstalledSkills({
   const loadRequestIdRef = useRef(0);
   const lastScanFeedbackKeyRef = useRef<string | null>(null);
   const validationRequestIdRef = useRef(0);
-  const capabilityKey = scope.key(scope.epoch, String(enabled), workspace?.id, workspacePath, workspace?.connectionId, String(isRemoteWorkspace));
+  const capabilityKey = scope.key(scope.epoch, String(enabled), workspace?.id, String(isRemoteWorkspace));
   const capabilityRef = useRef({ key: capabilityKey, epoch: 0, enabled });
   useLayoutEffect(() => {
     if (capabilityRef.current.key !== capabilityKey) {
@@ -88,9 +88,9 @@ export function useInstalledSkills({
       const [list, globalSettings] = await Promise.all([
         configAPI.getSkillScanReport({
           forceRefresh,
-          workspacePath: workspacePath || undefined,
+          workspaceId: workspace?.id,
         }),
-        configAPI.getGlobalSkillSettings(isRemoteWorkspace ? undefined : workspacePath || undefined),
+        configAPI.getGlobalSkillSettings(isRemoteWorkspace ? undefined : workspace?.id),
       ]);
       if (requestId !== loadRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) {
         return;
@@ -139,7 +139,15 @@ export function useInstalledSkills({
         setLoading(false);
       }
     }
-  }, [capabilityIsCurrent, currentCapabilityEpoch, isRemoteWorkspace, notifyScanInfo, notifyScanWarning, t, workspacePath]);
+  }, [
+    capabilityIsCurrent,
+    currentCapabilityEpoch,
+    isRemoteWorkspace,
+    notifyScanInfo,
+    notifyScanWarning,
+    t,
+    workspace?.id,
+  ]);
 
   useEffect(() => {
     const refresh = () => { void loadSkills(); };
@@ -262,7 +270,7 @@ export function useInstalledSkills({
       await configAPI.addSkill({
         sourcePath: formPath,
         level: formLevel,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
       if (!capabilityIsCurrent(capabilityEpoch)) {
         return false;
@@ -286,7 +294,20 @@ export function useInstalledSkills({
         setIsAdding(false);
       }
     }
-  }, [capabilityIsCurrent, currentCapabilityEpoch, formLevel, formPath, hasWorkspace, isRemoteWorkspace, loadSkills, notification, resetForm, t, validationResult, workspacePath]);
+  }, [
+    capabilityIsCurrent,
+    currentCapabilityEpoch,
+    formLevel,
+    formPath,
+    hasWorkspace,
+    isRemoteWorkspace,
+    loadSkills,
+    notification,
+    resetForm,
+    t,
+    validationResult,
+    workspace?.id,
+  ]);
 
   const handleDelete = useCallback(async (skill: SkillInfo) => {
     const capabilityEpoch = currentCapabilityEpoch();
@@ -299,7 +320,7 @@ export function useInstalledSkills({
     try {
       await configAPI.deleteSkill({
         skillKey: skill.key,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
       if (!capabilityIsCurrent(capabilityEpoch)) {
         return false;
@@ -318,7 +339,7 @@ export function useInstalledSkills({
       );
       return false;
     }
-  }, [capabilityIsCurrent, currentCapabilityEpoch, loadSkills, notification, t, workspacePath]);
+  }, [capabilityIsCurrent, currentCapabilityEpoch, loadSkills, notification, t, workspace?.id]);
 
   const canToggleSkill = useCallback((skill: SkillInfo) => (
     directManagementSupported || (skill.level === 'user' && isOpenBitFunManagedSkill(skill))
@@ -335,7 +356,7 @@ export function useInstalledSkills({
       const settings = await configAPI.setGlobalSkillDisabled({
         skillKey: skill.key,
         disabled: !enabled,
-        ...(directManagementSupported ? { workspacePath: workspacePath || undefined } : {}),
+        ...(directManagementSupported ? { workspaceId: workspace?.id } : {}),
       });
       if (!capabilityIsCurrent(capabilityEpoch)) {
         return false;
@@ -369,7 +390,15 @@ export function useInstalledSkills({
         setSavingGlobalSkillKey(null);
       }
     }
-  }, [canToggleSkill, capabilityIsCurrent, currentCapabilityEpoch, directManagementSupported, notification, t, workspacePath]);
+  }, [
+    canToggleSkill,
+    capabilityIsCurrent,
+    currentCapabilityEpoch,
+    directManagementSupported,
+    notification,
+    t,
+    workspace?.id,
+  ]);
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
 

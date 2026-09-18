@@ -1,4 +1,5 @@
 import { useEditorDocument } from '../services/EditorDocument';
+import { standaloneEditorFileAccess } from '../services/editorFileAccess';
 /**
  * Image Viewer Component
  * 
@@ -6,7 +7,7 @@ import { useEditorDocument } from '../services/EditorDocument';
  * @module components/ImageViewer
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { ZoomIn, ZoomOut, RotateCw, Maximize2 } from 'lucide-react';
 import { OverflowText, Button, Icon, IconButton, Toolbar, ToolbarGroup, ToolbarSeparator, Tooltip } from '@openbitfun/ui';
 import { createLogger } from '@/shared/utils/logger';
@@ -23,6 +24,8 @@ export interface ImageViewerProps {
   isActiveTab?: boolean;
   /** File name */
   fileName?: string;
+  /** Owning workspace ID for viewers rendered without an EditorDocument. */
+  workspaceId?: string;
   /** Workspace path (for relative path resolution) */
   workspacePath?: string;
   /** CSS class name */
@@ -35,10 +38,13 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   filePath,
   fileName,
   imageSource,
+  workspaceId,
   isActiveTab = true,
   className = ''
 }) => {
   const documentSession = useEditorDocument();
+  const standaloneFiles = useMemo(() => standaloneEditorFileAccess(workspaceId), [workspaceId]);
+  const documentFiles = documentSession?.files ?? standaloneFiles;
   const { t } = useI18n('tools');
   const [retryKey, setRetryKey] = useState(0);
   const [imageUrl, setImageUrl] = useState<string>('');
@@ -97,8 +103,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
         setLoading(true);
         setError(null);
 
-        const workspaceAPI = documentSession?.files ?? (await import('@/infrastructure/api')).workspaceAPI;
-        const result = await workspaceAPI.readFileContent(filePath);
+        const result = await documentFiles.readFileContent(filePath);
 
         if (cancelled) return;
         const mimeType = getMimeType(filePath);
@@ -119,7 +124,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
 
     void loadImage();
     return () => { cancelled = true; };
-  }, [filePath, getMimeType, imageSource, t, documentSession, retryKey]);
+  }, [filePath, getMimeType, imageSource, t, documentFiles, documentSession, retryKey]);
 
   const errorRef = useRef(error);
   errorRef.current = error;

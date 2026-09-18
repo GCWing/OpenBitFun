@@ -16,20 +16,42 @@ describe('AgentAPI', () => {
     invokeMock.mockResolvedValue(undefined);
   });
 
+  it('lists sessions by workspace ID without sending a filesystem identity', async () => {
+    invokeMock.mockResolvedValueOnce([]);
+    await agentAPI.listSessions('workspace-1');
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith('list_sessions', {
+      request: { workspaceId: 'workspace-1' },
+    });
+  });
+
+  it.each([
+    ['restoreSession', 'restore_session'],
+    ['restoreSessionWithTurns', 'restore_session_with_turns'],
+    ['restoreSessionView', 'restore_session_view'],
+  ] as const)('restores with an ID through %s', async (method, command) => {
+    await agentAPI[method]('session-1', 'workspace-1', 'trace-1', true);
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith(command, {
+      request: { sessionId: 'session-1', workspaceId: 'workspace-1', traceId: 'trace-1', includeInternal: true },
+    });
+  });
+
+  it('ensures a coordinator session using only its workspace ID', async () => {
+    await agentAPI.ensureCoordinatorSession({ sessionId: 'session-1', workspaceId: 'workspace-1' });
+    expect(invokeMock).toHaveBeenCalledExactlyOnceWith('ensure_coordinator_session', {
+      request: { sessionId: 'session-1', workspaceId: 'workspace-1' },
+    });
+  });
+
   it('preserves remote identity when querying the workspace mode catalog', async () => {
     invokeMock.mockResolvedValueOnce([]);
 
     await agentAPI.getAvailableModes({
-      workspacePath: 'D:/remote/repo',
-      remoteConnectionId: 'remote-1',
-      remoteSshHost: 'build-host',
+      workspaceId: 'remote-workspace-id',
     });
 
     expect(invokeMock).toHaveBeenCalledWith('get_available_modes', {
       request: {
-        workspacePath: 'D:/remote/repo',
-        remoteConnectionId: 'remote-1',
-        remoteSshHost: 'build-host',
+        workspaceId: 'remote-workspace-id',
       },
     });
   });
@@ -99,7 +121,7 @@ describe('AgentAPI', () => {
     });
 
     await expect(agentAPI.rollbackSessionToTurn({
-      workspacePath: 'D:/workspace/OpenBitFun',
+      workspaceId: 'workspace-id',
       sessionId: 'session-1',
       targetTurnId: 'turn-7',
     })).resolves.toMatchObject({
@@ -115,7 +137,7 @@ describe('AgentAPI', () => {
       reason: 'reconcile marker',
     });
     await expect(agentAPI.rollbackSessionToTurn({
-      workspacePath: 'D:/workspace/OpenBitFun',
+      workspaceId: 'workspace-id',
       sessionId: 'session-1',
       targetTurnId: 'turn-7',
     })).resolves.toMatchObject({

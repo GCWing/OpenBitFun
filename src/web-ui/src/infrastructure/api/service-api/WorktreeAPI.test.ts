@@ -23,10 +23,15 @@ describe('WorktreeAPI', () => {
   it('uses project-scoped commands and never enables force by default', async () => {
     invokeMock.mockResolvedValue({ worktreeId: 'wt-1', removed: true });
 
-    await api.remove('/repo', 'wt-1', 'request-1');
+    await api.remove(
+      { projectWorkspaceId: 'workspace-1', projectWorkspacePath: '/repo' },
+      'wt-1',
+      'request-1',
+    );
 
     expect(invokeMock).toHaveBeenCalledWith('worktree_remove', {
       request: {
+        projectWorkspaceId: 'workspace-1',
         projectWorkspacePath: '/repo',
         worktreeId: 'wt-1',
         requestId: 'request-1',
@@ -54,7 +59,9 @@ describe('WorktreeAPI', () => {
     });
     invokeMock.mockRejectedValue(transportError);
 
-    await expect(api.remove('/repo', 'wt-1', 'request-2')).rejects.toMatchObject({
+    await expect(
+      api.remove({ projectWorkspacePath: '/repo' }, 'wt-1', 'request-2'),
+    ).rejects.toMatchObject({
       name: 'WorktreeCommandError',
       code: 'dirty_worktree',
       message: 'The worktree contains local changes',
@@ -74,7 +81,9 @@ describe('WorktreeAPI', () => {
     invokeMock.mockRejectedValue(transportError);
 
     await expect(
-      api.bindSession('history-1', true, 'request-3', 'D:\\workspace\\OpenBitFun'),
+      api.bindSession('history-1', true, 'request-3', {
+        projectWorkspacePath: 'D:\\workspace\\OpenBitFun',
+      }),
     ).rejects.toMatchObject({
       name: 'WorktreeCommandError',
       code: 'worktree_not_found',
@@ -94,15 +103,29 @@ describe('WorktreeAPI', () => {
       },
     });
 
-    await api.bindSession('history-1', true, 'request-4', '/repo');
+    await api.bindSession('history-1', true, 'request-4', {
+      projectWorkspaceId: 'workspace-1',
+      projectWorkspacePath: '/repo',
+    });
 
     expect(invokeMock).toHaveBeenCalledWith('worktree_bind_session', {
       request: {
         sessionId: 'history-1',
         enabled: true,
         requestId: 'request-4',
+        projectWorkspaceId: 'workspace-1',
         projectWorkspacePath: '/repo',
       },
+    });
+  });
+
+  it('omits a blank project workspace ID from legacy path-only locators', async () => {
+    invokeMock.mockResolvedValue([]);
+
+    await api.list({ projectWorkspaceId: '  ', projectWorkspacePath: '/repo' });
+
+    expect(invokeMock).toHaveBeenCalledWith('worktree_list', {
+      request: { projectWorkspacePath: '/repo' },
     });
   });
 

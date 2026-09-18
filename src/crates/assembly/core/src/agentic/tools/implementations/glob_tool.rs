@@ -1,7 +1,7 @@
 use crate::agentic::tools::framework::{Tool, ToolResult, ToolUseContext};
 use crate::agentic::tools::implementations::grep_tool::annotate_workspace_probe_pending;
 use crate::service::search::{
-    get_global_workspace_search_service, remote_workspace_search_service_for_path,
+    get_global_workspace_search_service, remote_workspace_search_service_for_workspace,
     workspace_search_feature_enabled, workspace_search_runtime_available, GlobSearchRequest,
 };
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
@@ -275,18 +275,11 @@ impl Tool for GlobTool {
                     let resolved_path = PathBuf::from(&effective_glob.search_path);
                     let (_walk_root, effective_pattern) =
                         resolve_effective_glob_scope(&resolved_path, &effective_glob.pattern);
-                    let repo_root = workspace_root.to_string_lossy().to_string();
-                    let preferred_connection_id = context
-                        .workspace
-                        .as_ref()
-                        .and_then(|workspace| workspace.connection_id())
-                        .map(str::to_string);
-                    let search_service = remote_workspace_search_service_for_path(
-                        &repo_root,
-                        preferred_connection_id,
-                    )
-                    .await
-                    .map_err(OpenBitFunError::tool)?;
+                    let workspace_id = context.workspace.as_ref()
+                        .and_then(|workspace| workspace.workspace_id.as_deref())
+                        .ok_or_else(|| OpenBitFunError::tool("Remote search requires a workspace ID"))?;
+                    let search_service = remote_workspace_search_service_for_workspace(workspace_id)
+                        .await.map_err(OpenBitFunError::tool)?;
                     let glob_result = search_service
                         .glob(GlobSearchRequest {
                             repo_root: workspace_root.clone(),

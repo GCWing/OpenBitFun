@@ -22,6 +22,10 @@ const MAX_PREVIEW_BYTES: u64 = 64 * 1024 * 1024;
 #[serde(rename_all = "camelCase")]
 pub struct HtmlPreviewCreateRequest {
     pub file_path: String,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Temporary pre-ID wire field; normal clients send workspaceId.
+    #[serde(default)]
     pub workspace_path: String,
     #[serde(default)]
     pub remote_connection_id: Option<String>,
@@ -76,20 +80,36 @@ pub async fn html_preview_create(
     if request.peer_device_mode {
         return Err("HTML preview is not supported while controlling a peer device".to_string());
     }
-    let workspace = request.workspace_path.trim();
-    if workspace.is_empty() {
-        return Err("HTML preview requires a workspace path".to_string());
-    }
-
+    let record = match request.workspace_id.as_deref() {
+        Some(id) => app_state
+            .workspace_service
+            .require_workspace(id)
+            .await
+            .map_err(|e| e.to_string())?,
+        None => app_state
+            .workspace_service
+            .resolve_legacy_workspace_reference(
+                None,
+                &request.workspace_path,
+                request.remote_connection_id.as_deref(),
+                None,
+            )
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("HTML preview workspace is unavailable")?,
+    };
+    let workspace = record.root_path.to_string_lossy();
+    let connection = record.filesystem_connection_id()?;
     let target = resolve_desktop_path_target(
         &app_state,
         &request.file_path,
-        request.remote_connection_id.as_deref(),
+        Some(connection.unwrap_or("")),
+        Some(&record.id),
     )
     .await?;
     let (root, entry_relative_path) = match target {
         DesktopPathTarget::Local { resolved_path, .. } => {
-            let workspace_root = std::fs::canonicalize(workspace)
+            let workspace_root = std::fs::canonicalize(workspace.as_ref())
                 .map_err(|e| format!("Failed to resolve workspace root: {e}"))?;
             let entry = std::fs::canonicalize(&resolved_path)
                 .map_err(|e| format!("Failed to resolve HTML file: {e}"))?;
@@ -109,10 +129,7 @@ pub async fn html_preview_create(
             )
         }
         DesktopPathTarget::Remote { entry, .. } => {
-            if request.remote_connection_id.as_deref() != Some(entry.connection_id.as_str()) {
-                return Err("Remote HTML preview requires an explicit connection id".to_string());
-            }
-            let remote_root = normalize_remote_path(workspace);
+            let remote_root = normalize_remote_path(&workspace);
             let file_path = normalize_remote_path(&request.file_path);
             if !is_under_remote_root(&file_path, &remote_root) {
                 return Err("HTML file is outside the remote workspace".to_string());
@@ -494,6 +511,23 @@ fn response(status: StatusCode, body: &str, content_type: &'static str) -> Respo
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn current_and_100_preview_requests_have_distinct_identity_inputs() {
+        let current: HtmlPreviewCreateRequest = serde_json::from_value(serde_json::json!({
+            "workspaceId": "remote-id", "filePath": "/repo/index.html"
+        }))
+        .unwrap();
+        assert_eq!(current.workspace_id.as_deref(), Some("remote-id"));
+        assert!(current.workspace_path.is_empty());
+        assert!(current.remote_connection_id.is_none());
+        let legacy: HtmlPreviewCreateRequest = serde_json::from_value(serde_json::json!({
+            "workspacePath": "/repo", "filePath": "/repo/index.html", "remoteConnectionId": "ssh-1"
+        }))
+        .unwrap();
+        assert!(legacy.workspace_id.is_none());
+        assert_eq!(legacy.workspace_path, "/repo");
+        assert_eq!(legacy.remote_connection_id.as_deref(), Some("ssh-1"));
+    }
     #[test]
     fn rejects_traversal() {
         assert!(confined_remote_path("/workspace", "../secret").is_err());

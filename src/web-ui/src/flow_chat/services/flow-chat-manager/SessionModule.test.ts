@@ -96,8 +96,8 @@ vi.mock('@/infrastructure/i18n', () => ({
 vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
   workspaceManager: {
     getState: () => ({
-      currentWorkspace: null,
-      openedWorkspaces: new Map(),
+      currentWorkspace: { id: 'workspace-1', rootPath: '/home/wsp/projects/Test', workspaceKind: 'normal' },
+      openedWorkspaces: new Map([['workspace-1', { id: 'workspace-1', rootPath: '/home/wsp/projects/Test', workspaceKind: 'normal' }]]),
     }),
   },
 }));
@@ -134,6 +134,7 @@ function createDeferred<T>() {
 function createSession(overrides: Partial<Session> = {}): Session {
   return {
     sessionId: 'history-1',
+    workspaceId: 'workspace-1',
     title: 'Saved session',
     dialogTurns: [],
     status: 'idle',
@@ -355,6 +356,14 @@ describe('createChatSession', () => {
     vi.clearAllMocks();
   });
 
+  it('rejects an unknown explicit ID without selecting the active folder', async () => {
+    const { context } = createContext(createSession());
+    await expect(createChatSession(context, {
+      workspaceId: 'missing-workspace', workspacePath: '/home/wsp/projects/Test',
+    }, 'Standard')).rejects.toThrow('Workspace ID is unavailable');
+    expect(agentApiMocks.createSession).not.toHaveBeenCalled();
+  });
+
   it('dedupes concurrent creates before model config loading resolves', async () => {
     // This keeps the first create suspended in the model config path while the
     // second create enters with the same creation key.
@@ -550,7 +559,7 @@ describe('createChatSession', () => {
       expect.any(String),
       128128,
       'Standard',
-      '/source/repo',
+      '/home/wsp/projects/Test',
       undefined,
       undefined,
       expect.any(Object),
@@ -599,17 +608,14 @@ describe('forkChatSession', () => {
       .resolves.toBe('remote-fork');
 
     expect(sessionApiMocks.forkSession).toHaveBeenCalledWith(
-      'remote-source', 'turn-1', '/workspace/repo', 'ssh-source', 'source-host',
+      'remote-source', 'turn-1', 'workspace-1',
     );
     expect(flowChatStore.getState().sessions.get('remote-fork')).toMatchObject({
       workspacePath: '/workspace/repo',
       remoteConnectionId: 'ssh-source',
       remoteSshHost: 'source-host',
     });
-    expect(flowChatStore.loadSessionHistory).toHaveBeenCalledWith(
-      'remote-fork', '/workspace/repo', undefined, 'ssh-source', 'source-host',
-      { deferFullHistoryUntilActive: true },
-    );
+    expect(flowChatStore.loadSessionHistory).toHaveBeenCalledWith('remote-fork', { deferFullHistoryUntilActive: true });
   });
 });
 
@@ -640,9 +646,7 @@ describe('reloadSessionTitle', () => {
 
     expect(sessionApiMocks.loadSessionMetadata).toHaveBeenCalledWith(
       session.sessionId,
-      '/remote/project',
-      'connection-1',
-      'ssh.example.test',
+      'workspace-1',
     );
     const updated = flowChatStore.getState().sessions.get(session.sessionId);
     expect(updated?.title).toBe('Authoritative title');
@@ -759,9 +763,7 @@ describe('SessionModule historical session coordination', () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(persistenceMocks.touchSessionActivity).toHaveBeenCalledWith(
       'history-1',
-      'D:/workspace/OpenBitFun',
-      undefined,
-      undefined,
+      'workspace-1',
     );
   });
 
@@ -819,9 +821,7 @@ describe('SessionModule historical session coordination', () => {
     expect(persistenceMocks.touchSessionActivity).toHaveBeenCalledTimes(1);
     expect(persistenceMocks.touchSessionActivity).toHaveBeenCalledWith(
       'history-2',
-      'D:/workspace/OpenBitFun',
-      undefined,
-      undefined,
+      'workspace-1',
     );
   });
 
@@ -913,14 +913,7 @@ describe('SessionModule historical session coordination', () => {
     await Promise.resolve();
 
     expect(flowChatStore.loadSessionHistory).toHaveBeenCalledTimes(1);
-    expect(flowChatStore.loadSessionHistory).toHaveBeenCalledWith(
-      'history-1',
-      'D:/workspace/OpenBitFun',
-      undefined,
-      undefined,
-      undefined,
-      { includeInternal: true, deferFullHistoryUntilActive: false },
-    );
+    expect(flowChatStore.loadSessionHistory).toHaveBeenCalledWith('history-1', { includeInternal: true, deferFullHistoryUntilActive: false });
 
     load.resolve();
     await Promise.all([first, second]);
@@ -966,7 +959,7 @@ describe('SessionModule historical session coordination', () => {
     }
   });
 
-  it('uses the owning panel scope when a legacy child is missing its workspace location', async () => {
+  it('uses the session ID binding when its path projection is missing', async () => {
     const { context, flowChatStore } = createContext(createSession({
       workspacePath: undefined,
       remoteConnectionId: undefined,
@@ -974,23 +967,12 @@ describe('SessionModule historical session coordination', () => {
       sessionKind: 'subagent',
     }));
 
-    await hydrateSessionHistoryForDetail(context, 'history-1', {
-      workspacePath: 'D:/workspace/OpenBitFun',
-      remoteConnectionId: 'remote-current',
-      remoteSshHost: 'host-current',
-    });
+    await hydrateSessionHistoryForDetail(context, 'history-1');
 
-    expect(flowChatStore.loadSessionHistory).toHaveBeenCalledWith(
-      'history-1',
-      'D:/workspace/OpenBitFun',
-      undefined,
-      'remote-current',
-      'host-current',
-      { includeInternal: true, deferFullHistoryUntilActive: false },
-    );
+    expect(flowChatStore.loadSessionHistory).toHaveBeenCalledWith('history-1', { includeInternal: true, deferFullHistoryUntilActive: false });
   });
 
-  it('retries with a stronger location after a reused weak hydrate fails', async () => {
+  it('restores by session workspace ID even when location projections are missing', async () => {
     const { context, flowChatStore } = createContext(createSession({
       workspacePath: undefined,
       remoteConnectionId: undefined,
@@ -999,23 +981,12 @@ describe('SessionModule historical session coordination', () => {
     }));
 
     const weakHydrate = hydrateSessionHistoryForDetail(context, 'history-1');
-    const strongHydrate = hydrateSessionHistoryForDetail(context, 'history-1', {
-      workspacePath: 'D:/workspace/OpenBitFun',
-      remoteConnectionId: 'remote-current',
-      remoteSshHost: 'host-current',
-    });
+    const strongHydrate = hydrateSessionHistoryForDetail(context, 'history-1');
 
-    await expect(weakHydrate).rejects.toThrow('Workspace path is required');
+    await expect(weakHydrate).resolves.toBeUndefined();
     await expect(strongHydrate).resolves.toBeUndefined();
     expect(flowChatStore.loadSessionHistory).toHaveBeenCalledTimes(1);
-    expect(flowChatStore.loadSessionHistory).toHaveBeenCalledWith(
-      'history-1',
-      'D:/workspace/OpenBitFun',
-      undefined,
-      'remote-current',
-      'host-current',
-      { includeInternal: true, deferFullHistoryUntilActive: false },
-    );
+    expect(flowChatStore.loadSessionHistory).toHaveBeenCalledWith('history-1', { includeInternal: true, deferFullHistoryUntilActive: false });
   });
 
   it('upgrades a weaker in-flight preload before showing subagent details', async () => {
@@ -1038,15 +1009,7 @@ describe('SessionModule historical session coordination', () => {
     await detailHydrate;
 
     expect(flowChatStore.loadSessionHistory).toHaveBeenCalledTimes(2);
-    expect(flowChatStore.loadSessionHistory).toHaveBeenNthCalledWith(
-      2,
-      'history-1',
-      'D:/workspace/OpenBitFun',
-      undefined,
-      undefined,
-      undefined,
-      { includeInternal: true, deferFullHistoryUntilActive: false },
-    );
+    expect(flowChatStore.loadSessionHistory).toHaveBeenNthCalledWith(2, 'history-1', { includeInternal: true, deferFullHistoryUntilActive: false });
   });
 
   it('retries a reused preload that stale-skipped after explicit activation', async () => {
@@ -1411,9 +1374,7 @@ describe('SessionModule historical session coordination', () => {
 
     expect(sessionApiMocks.archiveSession).toHaveBeenCalledWith(
       'active-1',
-      'D:/workspace/OpenBitFun',
-      undefined,
-      undefined,
+      'workspace-1',
     );
     expect(flowChatStore.removeSession).toHaveBeenCalledWith(
       'active-1',

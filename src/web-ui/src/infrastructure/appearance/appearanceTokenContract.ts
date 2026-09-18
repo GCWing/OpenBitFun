@@ -85,6 +85,7 @@ const prismTokenSuffixes = [
 ] as const;
 
 const componentTokenSuffixes = [
+  'conversation-excerpt-accent',
   'config-page-section-background',
   'config-page-section-border',
   'config-page-section-border-width',

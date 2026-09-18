@@ -5,22 +5,28 @@ use serde_json::{json, Value};
 use crate::peer_host::args::{get_string, optional_string, request_value};
 use crate::peer_host::state::PeerHostState;
 
-// An explicit workspace without SSH identity denotes the runtime-local provider.
-// Keep omitted scope available for existing runtime callers which use path routing.
-fn remote_hint(request: &Value) -> Option<String> {
-    request
-        .get("remoteConnectionId")
-        .or_else(|| request.get("remote_connection_id"))
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .or_else(|| {
-            request
-                .get("workspacePath")
-                .or_else(|| request.get("workspace_path"))
-                .and_then(Value::as_str)
-                .filter(|path| !path.is_empty())
-                .map(|_| String::new())
-        })
+async fn file_connection(state: &PeerHostState, request: &Value) -> Result<Option<String>, String> {
+    if let Some(id) =
+        optional_string(request, "workspaceId").or_else(|| optional_string(request, "workspace_id"))
+    {
+        let record = state
+            .workspace_service
+            .require_workspace(&id)
+            .await
+            .map_err(|e| e.to_string())?;
+        return record
+            .filesystem_connection_id()
+            .map(|id| id.map(str::to_owned));
+    }
+    state
+        .workspace_service
+        .upgrade_legacy_file_connection(
+            &get_string(request, "path")?,
+            optional_string(request, "workspacePath").as_deref(),
+            optional_string(request, "remoteConnectionId").as_deref(),
+        )
+        .await
+        .map_err(|e| e.to_string())
 }
 
 fn directory_nodes_to_json(
@@ -47,10 +53,10 @@ pub(crate) async fn get_directory_children(
 ) -> Result<Value, String> {
     let request = request_value(args);
     let path = get_string(request, "path")?;
-    let preferred = remote_hint(request);
+    let preferred = file_connection(state, request).await?;
     let nodes = state
         .filesystem_service
-        .get_directory_contents_with_remote_hint(&path, preferred.as_deref())
+        .get_directory_contents_on_connection(&path, preferred.as_deref())
         .await
         .map_err(|e| format!("Failed to get directory children: {e}"))?;
     Ok(json!(directory_nodes_to_json(nodes)))
@@ -62,13 +68,13 @@ pub(crate) async fn get_directory_children_paginated(
 ) -> Result<Value, String> {
     let request = request_value(args);
     let path = get_string(request, "path")?;
-    let preferred = remote_hint(request);
+    let preferred = file_connection(state, request).await?;
     let offset = request.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
     let limit = request.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
 
     let mut nodes = state
         .filesystem_service
-        .get_directory_contents_with_remote_hint(&path, preferred.as_deref())
+        .get_directory_contents_on_connection(&path, preferred.as_deref())
         .await
         .map_err(|e| format!("Failed to get paginated directory children: {e}"))?;
     openbitfun_services_core::filesystem::sort_directory_nodes(
@@ -95,7 +101,7 @@ pub(crate) async fn check_path_exists(
 ) -> Result<Value, String> {
     let request = request_value(args);
     let path = get_string(request, "path")?;
-    let hint = remote_hint(request);
+    let hint = file_connection(state, request).await?;
     openbitfun_core::service::filesystem::path_operations::exists(
         &state.filesystem_service,
         &path,
@@ -108,7 +114,7 @@ pub(crate) async fn check_path_exists(
 pub(crate) async fn create_directory(state: &PeerHostState, args: &Value) -> Result<Value, String> {
     let request = request_value(args);
     let path = get_string(request, "path")?;
-    let hint = remote_hint(request);
+    let hint = file_connection(state, request).await?;
     openbitfun_core::service::filesystem::path_operations::create_directory(
         &state.filesystem_service,
         &path,
@@ -124,7 +130,7 @@ pub(crate) async fn read_file_content(
 ) -> Result<Value, String> {
     let request = request_value(args);
     let path = get_string(request, "filePath")?;
-    let hint = remote_hint(request);
+    let hint = file_connection(state, request).await?;
     if let Some(encoding) = optional_string(request, "encoding") {
         if !encoding.eq_ignore_ascii_case("utf-8") && !encoding.eq_ignore_ascii_case("utf8") {
             return Err(format!("Unsupported text encoding: {encoding}"));
@@ -146,7 +152,7 @@ pub(crate) async fn write_file_content(
     let request = request_value(args);
     let path = get_string(request, "filePath")?;
     let content = get_string(request, "content")?;
-    let hint = remote_hint(request);
+    let hint = file_connection(state, request).await?;
     openbitfun_core::service::filesystem::path_operations::write_text_checked(
         &state.filesystem_service,
         &path,
@@ -165,7 +171,7 @@ pub(crate) async fn rename_file(state: &PeerHostState, args: &Value) -> Result<V
     let request = request_value(args);
     let from = get_string(request, "oldPath")?;
     let to = get_string(request, "newPath")?;
-    let hint = remote_hint(request);
+    let hint = file_connection(state, request).await?;
     openbitfun_core::service::filesystem::path_operations::rename(
         &state.filesystem_service,
         &from,
@@ -183,7 +189,7 @@ pub(crate) async fn delete_path(
 ) -> Result<Value, String> {
     let request = request_value(args);
     let path = get_string(request, "path")?;
-    let hint = remote_hint(request);
+    let hint = file_connection(state, request).await?;
     let recursive = request
         .get("recursive")
         .and_then(Value::as_bool)
@@ -205,11 +211,11 @@ pub(crate) async fn list_directory_files(
 ) -> Result<Value, String> {
     let request = request_value(args);
     let path = get_string(request, "path")?;
-    let hint = remote_hint(request);
+    let hint = file_connection(state, request).await?;
     let extensions = request.get("extensions").and_then(Value::as_array);
     let nodes = state
         .filesystem_service
-        .get_directory_contents_with_remote_hint(&path, hint.as_deref())
+        .get_directory_contents_on_connection(&path, hint.as_deref())
         .await
         .map_err(|e| e.to_string())?;
     let mut files: Vec<_> = nodes

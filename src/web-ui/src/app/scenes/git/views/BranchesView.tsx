@@ -17,9 +17,10 @@ import './BranchesView.scss';
 
 interface BranchesViewProps {
   workspacePath?: string;
+  workspaceId?: string;
 }
 
-const BranchesView: React.FC<BranchesViewProps> = ({ workspacePath }) => {
+const BranchesView: React.FC<BranchesViewProps> = ({ workspacePath, workspaceId }) => {
   const { t } = useTranslation('panels/git');
   const { t: tComponents } = useI18n('components');
   const notification = useNotification();
@@ -38,7 +39,7 @@ const BranchesView: React.FC<BranchesViewProps> = ({ workspacePath }) => {
   const [isResetting, setIsResetting] = useState(false);
 
   const { isOperating, checkoutBranch, createBranch, deleteBranch } = useGitOperations({
-    repositoryPath: workspacePath ?? '',
+    repositoryPath: { workspaceId: workspaceId ?? '', repositoryPath: workspacePath },
     autoRefresh: false,
   });
 
@@ -46,7 +47,7 @@ const BranchesView: React.FC<BranchesViewProps> = ({ workspacePath }) => {
     if (!workspacePath) return;
     setBranchLoading(true);
     try {
-      const result = await gitService.getBranches(workspacePath, true);
+      const result = await gitService.getBranches({ workspaceId: workspaceId ?? '', repositoryPath: workspacePath }, true);
       const list = Array.isArray(result) ? result : [];
       setBranches(list);
       if (list.length > 0 && !selectedBranchName) {
@@ -58,7 +59,7 @@ const BranchesView: React.FC<BranchesViewProps> = ({ workspacePath }) => {
     } finally {
       setBranchLoading(false);
     }
-  }, [selectedBranchName, workspacePath]);
+  }, [selectedBranchName, workspacePath, workspaceId]);
 
   const loadCommits = useCallback(
     async (branchRef: string | null) => {
@@ -68,7 +69,7 @@ const BranchesView: React.FC<BranchesViewProps> = ({ workspacePath }) => {
       }
       setCommitLoading(true);
       try {
-        const result = await gitService.getCommits(workspacePath, { maxCount: 50 });
+        const result = await gitService.getCommits({ workspaceId: workspaceId ?? '', repositoryPath: workspacePath }, { maxCount: 50 });
         const list = Array.isArray(result) ? result : [];
         setCommits([...list].reverse());
       } catch {
@@ -77,7 +78,7 @@ const BranchesView: React.FC<BranchesViewProps> = ({ workspacePath }) => {
         setCommitLoading(false);
       }
     },
-    [workspacePath]
+    [workspacePath, workspaceId]
   );
 
   useEffect(() => {
@@ -180,7 +181,7 @@ const BranchesView: React.FC<BranchesViewProps> = ({ workspacePath }) => {
       if (!confirm(t('confirm.resetToCommit', { hash: hash.substring(0, 7) }))) return;
       setIsResetting(true);
       try {
-        const result = await gitService.resetToCommit(workspacePath, hash, 'mixed');
+        const result = await gitService.resetToCommit({ workspaceId: workspaceId ?? '', repositoryPath: workspacePath }, hash, 'mixed');
         if (result.success) {
           notification.success(t('notifications.resetSuccess', { hash: hash.substring(0, 7) }));
           loadBranches();
@@ -190,7 +191,7 @@ const BranchesView: React.FC<BranchesViewProps> = ({ workspacePath }) => {
         setIsResetting(false);
       }
     },
-    [workspacePath, notification, t, selectedBranchName, loadBranches, loadCommits]
+    [workspacePath, notification, t, selectedBranchName, loadBranches, loadCommits, workspaceId]
   );
 
   if (!workspacePath) {

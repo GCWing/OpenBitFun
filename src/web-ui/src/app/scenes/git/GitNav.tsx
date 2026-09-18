@@ -46,7 +46,7 @@ const GitNav: React.FC = () => {
     untracked,
     refresh,
   } = useGitState({
-    repositoryPath: workspacePath,
+    repositoryPath: { workspaceId: workspace?.id ?? '', repositoryPath: workspacePath },
     isActive: true,
     refreshOnMount: true,
     layers: ['basic', 'status'],

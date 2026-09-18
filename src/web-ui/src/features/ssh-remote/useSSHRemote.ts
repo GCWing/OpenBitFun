@@ -7,6 +7,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { sshApi } from './sshApi';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import type { SSHConnectionConfig, RemoteWorkspace } from './types';
+import { isRemoteWorkspace } from '@/shared/types/global-state';
 
 export interface SSHState {
   isConnected: boolean;
@@ -88,9 +89,8 @@ export function useSSHRemote() {
     // Switch back to the most recent local workspace if we had a remote connection
     if (hadRemoteConnection) {
       try {
-        const localWorkspaces = recentWorkspaces.filter(
-          (w) => !w.rootPath.startsWith('ssh://')
-        );
+        // workspaceKind is the remote predicate; a path prefix is not.
+        const localWorkspaces = recentWorkspaces.filter((w) => !isRemoteWorkspace(w));
         if (localWorkspaces.length > 0) {
           await switchWorkspace(localWorkspaces[0]);
         }
@@ -144,7 +144,7 @@ export function useSSHRemote() {
     if (prevWorkspaceId) {
       try {
         const targetWorkspace = recentWorkspaces.find((w) => w.id === prevWorkspaceId);
-        if (targetWorkspace && !targetWorkspace.rootPath.startsWith('ssh://')) {
+        if (targetWorkspace && !isRemoteWorkspace(targetWorkspace)) {
           await switchWorkspace(targetWorkspace);
         }
       } catch (_error) {

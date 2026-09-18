@@ -4,7 +4,7 @@
   },
   "strip": {
     "toggleLabel": "worktree",
-    "newWorktree": "New Worktree",
+    "newWorktree": "新增工作樹",
     "toggleOffDescription": "讓這個工作階段在獨立的 Git worktree 中執行，多個智能體並行執行任務時互不干擾。",
     "toggleOnDescription": "正在隔離的 worktree 中執行：{{path}}。關閉後會回到專案目錄。",
     "togglePendingOnDescription": "已開啟 worktree 隔離；傳送第一則訊息後才會建立 worktree。",

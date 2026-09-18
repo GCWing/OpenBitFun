@@ -6,7 +6,7 @@ use crate::agentic::tools::miniapp_context_runtime::{
 use crate::agentic::tools::parse_u64_value;
 use crate::agentic::tools::ToolPathOperation;
 use crate::service::search::{
-    get_global_workspace_search_service, remote_workspace_search_service_for_path,
+    get_global_workspace_search_service, remote_workspace_search_service_for_workspace,
     workspace_search_feature_enabled, workspace_search_runtime_available, ContentSearchOutputMode,
     ContentSearchRequest, WorkspaceSearchHit, WorkspaceSearchLine,
 };
@@ -666,16 +666,11 @@ Usage:
                         .as_ref()
                         .map(|path| path.to_string_lossy().to_string())
                         .unwrap_or_else(|| request.repo_root.to_string_lossy().to_string());
-                    let repo_root = request.repo_root.to_string_lossy().to_string();
-                    let preferred_connection_id = context
-                        .workspace
-                        .as_ref()
-                        .and_then(|workspace| workspace.connection_id())
-                        .map(str::to_string);
-                    let search_service =
-                        remote_workspace_search_service_for_path(&repo_root, preferred_connection_id)
-                            .await
-                            .map_err(OpenBitFunError::tool)?;
+                    let workspace_id = context.workspace.as_ref()
+                        .and_then(|workspace| workspace.workspace_id.as_deref())
+                        .ok_or_else(|| OpenBitFunError::tool("Remote search requires a workspace ID"))?;
+                    let search_service = remote_workspace_search_service_for_workspace(workspace_id)
+                        .await.map_err(OpenBitFunError::tool)?;
                     let search_started_at = Instant::now();
                     let search_result = search_service
                         .search_content(request)

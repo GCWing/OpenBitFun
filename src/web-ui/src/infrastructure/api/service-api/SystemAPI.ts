@@ -30,6 +30,9 @@ export interface ToggleMainWindowFullscreenResponse {
 }
 
 /** Close-button behavior values (matches `app.close_button_behavior` config key). */
+/** Emitted by the tray menu; the web UI owns the actual read receipts. */
+const TRAY_MARK_ALL_READ_EVENT = 'tray://mark-all-read';
+
 export type CloseBehavior = 'quit' | 'minimize_to_tray' | 'ask';
 
 export interface SystemInfo {
@@ -314,6 +317,11 @@ export class SystemAPI {
   /** Controller-local menu bar presentation, including when viewing a peer. */
   async setTrayUnreadCount(count: number): Promise<void> {
     await api.invoke('set_tray_unread_count', { request: { count } });
+  }
+
+  /** Desktop only: the tray menu's "Mark all as read" entry was picked. */
+  onTrayMarkAllRead(callback: () => void): () => void {
+    return api.listen(TRAY_MARK_ALL_READ_EVENT, () => callback());
   }
 
   /** Desktop only: initialize the system tray after the startup shell is visible. */

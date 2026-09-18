@@ -138,7 +138,7 @@ impl MCPServerManager {
     pub async fn server_available_for_context(
         &self,
         server_id: &str,
-        workspace_root: Option<&Path>,
+        workspace_id: Option<&str>,
         remote: bool,
     ) -> bool {
         let external_workspace_scope = self
@@ -147,11 +147,11 @@ impl MCPServerManager {
             .await
             .get(server_id)
             .cloned();
-        let workspace_key = crate::agentic::workspace::workspace_route_key(workspace_root);
+        let workspace_key = crate::agentic::workspace::workspace_route_key(workspace_id);
         self.tool_context_policy.server_available_for_route(
             server_id,
             external_workspace_scope.as_deref(),
-            workspace_root.map(|_| workspace_key.as_str()),
+            workspace_id.map(|_| workspace_key.as_str()),
             remote,
         )
     }

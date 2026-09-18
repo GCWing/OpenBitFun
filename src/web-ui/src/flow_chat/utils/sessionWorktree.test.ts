@@ -70,6 +70,46 @@ describe('session worktree control', () => {
     });
   });
 
+  it('locates the owning project by workspace ID when the session carries one', () => {
+    const inWorktree = session({
+      workspaceId: 'worktree-ws',
+      projectWorkspaceId: 'project-ws',
+      workspacePath: '/worktrees/wt-1',
+      projectWorkspacePath: '/repo',
+      config: {
+        workspaceId: 'worktree-ws',
+        projectWorkspacePath: '/repo',
+        executionTarget: {
+          kind: 'local',
+          rootPath: '/worktrees/wt-1',
+        },
+        worktreeIsolationRequested: true,
+      },
+    });
+    expect(sessionWorktreeMaterializationPlan(inWorktree)).toEqual({
+      enabled: true,
+      projectWorkspaceId: 'project-ws',
+      projectWorkspacePath: '/repo',
+    });
+
+    const local = session({
+      workspaceId: 'workspace-1',
+      workspacePath: '/repo',
+      projectWorkspacePath: '/repo',
+      config: {
+        workspaceId: 'workspace-1',
+        projectWorkspacePath: '/repo',
+        executionTarget: { kind: 'local', rootPath: '/repo' },
+        worktreeIsolationRequested: true,
+      },
+    });
+    expect(sessionWorktreeMaterializationPlan(local)).toEqual({
+      enabled: true,
+      projectWorkspaceId: 'workspace-1',
+      projectWorkspacePath: '/repo',
+    });
+  });
+
   it('does not materialize when no preference change is pending', () => {
     expect(sessionWorktreeMaterializationPlan(session())).toBeUndefined();
     expect(sessionWorktreeMaterializationPlan(session({

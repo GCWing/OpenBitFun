@@ -8,6 +8,13 @@ const mocks = vi.hoisted(() => ({
   getConfig: vi.fn(),
 }));
 
+vi.mock('@/infrastructure/services/business/workspaceManager', () => ({ workspaceManager: { getState: () => ({
+  openedWorkspaces: new Map([
+    ['workspace-main', { id: 'workspace-main', workspaceKind: 'normal', connectionId: 'dirty-legacy-hint' }],
+    ['workspace-remote', { id: 'workspace-remote', workspaceKind: 'remote', connectionId: 'ssh-1' }],
+  ]), recentWorkspaces: [],
+}) } }));
+
 vi.mock('@/tools/terminal/services/TerminalService', () => ({
   getTerminalService: () => ({
     connect: mocks.connect,
@@ -45,14 +52,14 @@ describe('createManualTerminalSession', () => {
   });
 
   it('creates the selected Git Bash terminal directly for the active workspace', async () => {
-    await expect(createManualTerminalSession({
+    await expect(createManualTerminalSession({ workspaceId: 'workspace-main',
       workspacePath: '/workspace/project',
     })).resolves.toEqual({ id: 'manual-2', name: 'Shell 2' });
 
     expect(mocks.connect).toHaveBeenCalledOnce();
     expect(mocks.createSession).toHaveBeenCalledWith({
+      workspaceId: 'workspace-main',
       workingDirectory: '/workspace/project',
-      connectionId: undefined,
       name: 'Shell 2',
       shellId: 'bash:c:/program files/git/bin/bash.exe',
       shellType: 'Bash',
@@ -60,14 +67,14 @@ describe('createManualTerminalSession', () => {
     });
   });
 
-  it('forwards an explicit remote connection to terminal creation', async () => {
+  it('sends only the workspace ID for remote terminal creation', async () => {
     mocks.getConfig.mockResolvedValue({ default_shell: '' });
 
-    await createManualTerminalSession({ connectionId: 'ssh-1' });
+    await createManualTerminalSession({ workspaceId: 'workspace-remote' });
 
     expect(mocks.createSession).toHaveBeenCalledWith({
+      workspaceId: 'workspace-remote',
       workingDirectory: undefined,
-      connectionId: 'ssh-1',
       name: 'Shell 2',
       source: 'manual',
     });
@@ -76,12 +83,12 @@ describe('createManualTerminalSession', () => {
   it('uses automatic shell selection when no default shell is configured', async () => {
     mocks.getConfig.mockResolvedValue({ default_shell: '' });
 
-    await createManualTerminalSession({ workspacePath: '/workspace/project' });
+    await createManualTerminalSession({ workspaceId: 'workspace-main', workspacePath: '/workspace/project' });
 
     expect(mocks.getAvailableShells).not.toHaveBeenCalled();
     expect(mocks.createSession).toHaveBeenCalledWith({
+      workspaceId: 'workspace-main',
       workingDirectory: '/workspace/project',
-      connectionId: undefined,
       name: 'Shell 2',
       source: 'manual',
     });
@@ -90,11 +97,11 @@ describe('createManualTerminalSession', () => {
   it('falls back to automatic shell selection when the configured path is unavailable', async () => {
     mocks.getConfig.mockResolvedValue({ default_shell: 'C:\\missing\\bash.exe' });
 
-    await createManualTerminalSession({ workspacePath: '/workspace/project' });
+    await createManualTerminalSession({ workspaceId: 'workspace-main', workspacePath: '/workspace/project' });
 
     expect(mocks.createSession).toHaveBeenCalledWith({
+      workspaceId: 'workspace-main',
       workingDirectory: '/workspace/project',
-      connectionId: undefined,
       name: 'Shell 2',
       source: 'manual',
     });

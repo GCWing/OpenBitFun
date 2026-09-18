@@ -472,16 +472,19 @@ impl ChatMode {
                 }
                 let workspace =
                     std::path::PathBuf::from(self.agent.project_workspace_path_string());
+                let workspace_id = self.agent.workspace_id();
                 self.spawn_hook_management(
                     async move {
                         let imports =
                             openbitfun_core::external_hook_import::external_hook_import_snapshot(
-                                Some(&workspace),
+                                workspace_id.as_deref(),
                                 refresh,
                             )
                             .await?;
                         let native = project_native_hook_overview(
-                            openbitfun_core::native_hooks::overview(Some(&workspace)).await,
+                            openbitfun_core::native_hooks::overview(workspace_id.as_deref())
+                                .await
+                                .map_err(ExternalSourceOperationError::invalid_request)?,
                             &workspace,
                         );
                         Ok(HookManagementResult::Snapshot(HookManagementSnapshot {
@@ -584,12 +587,12 @@ impl ChatMode {
             );
             return;
         }
-        let workspace = std::path::PathBuf::from(self.agent.project_workspace_path_string());
+        let workspace_id = self.agent.workspace_id();
         if !confirm {
             self.spawn_hook_management(
                 async move {
                     openbitfun_core::external_hook_import::plan_external_hook_import(
-                        Some(&workspace),
+                        workspace_id.as_deref(),
                         source,
                     )
                     .await
@@ -614,10 +617,11 @@ impl ChatMode {
             return;
         };
         let workspace = std::path::PathBuf::from(self.agent.project_workspace_path_string());
+        let workspace_id = self.agent.workspace_id();
         self.spawn_hook_management(
             async move {
                 let result = openbitfun_core::external_hook_import::apply_external_hook_import(
-                    Some(&workspace),
+                    workspace_id.as_deref(),
                     ExternalHookImportApplyRequestV1 {
                         schema_version: EXTERNAL_HOOK_IMPORT_SCHEMA_V1,
                         source: source.clone(),
@@ -636,7 +640,9 @@ impl ChatMode {
                     crate::hook_import::completed_import_status(&snapshot, &source, applied)
                         .to_string();
                 let native = project_native_hook_overview(
-                    openbitfun_core::native_hooks::overview(Some(&workspace)).await,
+                    openbitfun_core::native_hooks::overview(workspace_id.as_deref())
+                        .await
+                        .map_err(ExternalSourceOperationError::invalid_request)?,
                     &workspace,
                 );
                 Ok(HookManagementResult::Changed {
@@ -707,10 +713,11 @@ impl ChatMode {
             return;
         }
         let workspace = std::path::PathBuf::from(self.agent.project_workspace_path_string());
+        let workspace_id = self.agent.workspace_id();
         self.spawn_hook_management(
             async move {
                 let imports = openbitfun_core::external_hook_import::mutate_external_hook_import(
-                    Some(&workspace),
+                    workspace_id.as_deref(),
                     ExternalHookImportMutationRequestV1 {
                         schema_version: EXTERNAL_HOOK_IMPORT_SCHEMA_V1,
                         expected_revision,
@@ -719,7 +726,7 @@ impl ChatMode {
                 )
                 .await?;
                 let native = project_native_hook_overview(
-                    openbitfun_core::native_hooks::overview(Some(&workspace)).await,
+                    openbitfun_core::native_hooks::overview(workspace_id.as_deref()).await.map_err(ExternalSourceOperationError::invalid_request)?,
                     &workspace,
                 );
                 let status = if remove {
@@ -782,10 +789,11 @@ impl ChatMode {
             return;
         }
         let workspace = std::path::PathBuf::from(self.agent.project_workspace_path_string());
+        let workspace_id = self.agent.workspace_id();
         self.spawn_hook_management(
             async move {
                 let imports = openbitfun_core::external_hook_import::mutate_external_hook_import(
-                    Some(&workspace),
+                    workspace_id.as_deref(),
                     ExternalHookImportMutationRequestV1 {
                         schema_version: EXTERNAL_HOOK_IMPORT_SCHEMA_V1,
                         expected_revision,
@@ -794,7 +802,7 @@ impl ChatMode {
                 )
                 .await?;
                 let native = project_native_hook_overview(
-                    openbitfun_core::native_hooks::overview(Some(&workspace)).await,
+                    openbitfun_core::native_hooks::overview(workspace_id.as_deref()).await.map_err(ExternalSourceOperationError::invalid_request)?,
                     &workspace,
                 );
                 Ok(HookManagementResult::Changed {

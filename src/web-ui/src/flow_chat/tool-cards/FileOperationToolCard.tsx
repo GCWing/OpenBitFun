@@ -30,7 +30,7 @@ import { useReportTypewriterReveal } from '../hooks/typewriterRevealGateContext'
 import { hasNonFileUriScheme } from '@/shared/utils/pathUtils';
 import {
   displayFileToolGuidanceMessage,
-  isFileToolGuidanceMessage,
+  isFileToolGuidanceResult,
 } from './fileToolGuidance';
 import { extractFilePathFromJsonBuffer, splitFilePathAndContent } from '@/shared/utils/partialJsonParser';
 import { i18nService } from '@/infrastructure/i18n';
@@ -301,7 +301,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   })();
   const isFileGuidanceBlocked =
     (toolItem.toolName === 'Write' || toolItem.toolName === 'Edit')
-    && isFileToolGuidanceMessage(rawErrorMessage);
+    && isFileToolGuidanceResult(rawErrorMessage, toolResult?.result);
   const showConfirmationActions = Boolean(
     requiresConfirmation &&
     !userConfirmed &&
@@ -800,7 +800,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
         : undefined
     );
   const showChangeSummary =
-    !isDeleteTool && !isParamsStreaming && !isLoading && hasDiffStats;
+    !isDeleteTool && !isFailed && !isParamsStreaming && !isLoading && hasDiffStats;
   const formattedAdditions = i18nService.formatNumber(currentFileDiffStats.additions);
   const formattedDeletions = i18nService.formatNumber(currentFileDiffStats.deletions);
   const actionLabel = isDeleteTool
@@ -861,7 +861,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
         pathTestId="chat-file-change-path"
         preview={expandedContent}
         requiresConfirmation={showConfirmationActions}
-        status={status}
+        status={isFailed ? 'error' : status}
         statusDetail={headerStatusText}
       />
     </div>
@@ -882,6 +882,7 @@ export const FileOperationToolCard: React.FC<FileOperationToolCardProps> = (prop
         toolItem={props.toolItem}
         planFilePath={planFilePath}
         initialContent={writeOperationContent(props.toolItem)}
+        workspaceId={currentWorkspace?.id}
         workspacePath={currentWorkspace?.rootPath}
         remoteConnectionId={currentWorkspace?.connectionId}
       />

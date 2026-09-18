@@ -57,6 +57,8 @@ export interface SessionContextUsage {
 }
 
 export interface SessionMetadata {
+  workspaceId?: string;
+  projectWorkspaceId?: string;
   sessionId: string;
   sessionName: string;
   /**

@@ -255,6 +255,10 @@ pub struct MiniAppAgentEnsureSessionRequest {
 #[serde(rename_all = "camelCase")]
 pub struct MiniAppAgentEnsureSessionResponse {
     pub session_id: String,
+    /// Owning workspace ID of the hidden MiniApp agent session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// MiniApp appdata workspace root as an IO operand.
     pub workspace_path: String,
     pub created: bool,
 }
@@ -295,11 +299,13 @@ pub struct MiniAppAgentCancelStaleRunsResponse {
 
 // ============== Commands ==============
 
+/// Creates the hidden MiniApp agent session and returns the created session.
+/// Callers read `session_id` and the owning `config.workspace_id` from it.
 async fn create_miniapp_agent_session(
     coordinator: &ConversationCoordinator,
     submission_plan: &MiniAppAgentSubmissionPlan,
     requested_model: Option<String>,
-) -> Result<String, String> {
+) -> Result<Session, String> {
     let config = SessionConfig {
         enable_tools: submission_plan.enable_tools,
         safe_mode: true,
@@ -319,7 +325,7 @@ async fn create_miniapp_agent_session(
         )
         .await
         .map_err(|e| format!("Failed to create MiniApp agent session: {}", e))?;
-    Ok(session.session_id)
+    Ok(session)
 }
 
 async fn load_and_validate_miniapp_agent_session(
@@ -415,17 +421,16 @@ pub async fn miniapp_agent_ensure_session(
         .filter(|value| !value.is_empty())
         .map(str::to_string);
 
-    let (session_id, created) = if let Some(existing_session_id) =
+    let (session_id, workspace_id, created) = if let Some(existing_session_id) =
         submission_plan.requested_session_id.clone()
     {
-        if load_and_validate_miniapp_agent_session(
+        if let Some(existing_session) = load_and_validate_miniapp_agent_session(
             coordinator.inner().as_ref(),
             &existing_session_id,
             &request.app_id,
             &submission_plan.workspace_path,
         )
         .await?
-        .is_some()
         {
             if let Some(model_id) = requested_model.as_deref() {
                 coordinator
@@ -439,40 +444,41 @@ pub async fn miniapp_agent_ensure_session(
                 &submission_plan,
             )
             .await?;
-            (existing_session_id, false)
+            (
+                existing_session_id,
+                existing_session.config.workspace_id.clone(),
+                false,
+            )
         } else {
             check_agent_rate_limit(
                 &request.app_id,
                 agent_perms.rate_limit_per_minute.unwrap_or(0),
             )?;
-            (
-                create_miniapp_agent_session(
-                    coordinator.inner().as_ref(),
-                    &submission_plan,
-                    requested_model,
-                )
-                .await?,
-                true,
+            let session = create_miniapp_agent_session(
+                coordinator.inner().as_ref(),
+                &submission_plan,
+                requested_model,
             )
+            .await?;
+            (session.session_id, session.config.workspace_id, true)
         }
     } else {
         check_agent_rate_limit(
             &request.app_id,
             agent_perms.rate_limit_per_minute.unwrap_or(0),
         )?;
-        (
-            create_miniapp_agent_session(
-                coordinator.inner().as_ref(),
-                &submission_plan,
-                requested_model,
-            )
-            .await?,
-            true,
+        let session = create_miniapp_agent_session(
+            coordinator.inner().as_ref(),
+            &submission_plan,
+            requested_model,
         )
+        .await?;
+        (session.session_id, session.config.workspace_id, true)
     };
 
     Ok(MiniAppAgentEnsureSessionResponse {
         session_id,
+        workspace_id,
         workspace_path: workspace_plan.workspace_path,
         created,
     })
@@ -598,7 +604,8 @@ pub async fn miniapp_agent_run(
             &submission_plan,
             requested_model.clone(),
         )
-        .await?;
+        .await?
+        .session_id;
         if let Some(lease) = context_lease.as_ref() {
             lease.bind_session(&session_id)?;
         }

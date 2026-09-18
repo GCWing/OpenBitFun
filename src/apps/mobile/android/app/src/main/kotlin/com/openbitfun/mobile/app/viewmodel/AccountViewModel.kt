@@ -16,6 +16,7 @@ import com.openbitfun.mobile.core.feature.connection.ConnectionPhase
 import com.openbitfun.mobile.core.feature.session.RemoteSessionIntent
 import com.openbitfun.mobile.core.feature.session.RemoteSessionStore
 import com.openbitfun.mobile.core.feature.session.RemoteSessionUiState
+import com.openbitfun.mobile.core.feature.session.WorkspaceSessionDirectoryUiState
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceIntent
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceStore
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceUiState
@@ -50,10 +51,15 @@ internal class AccountViewModel(application: Application) : AndroidViewModel(app
     val connectionPhase: StateFlow<ConnectionPhase> = _connectionPhase.asStateFlow()
     private val _workspaceState = MutableStateFlow<RemoteWorkspaceUiState>(RemoteWorkspaceUiState.Idle)
     val workspaceState: StateFlow<RemoteWorkspaceUiState> = _workspaceState.asStateFlow()
+    private val _workspaceDirectory = MutableStateFlow(WorkspaceSessionDirectoryUiState(emptyList()))
+
+    /** Per-workspace session lists, filled in as the sidebar discloses each branch. */
+    val workspaceDirectory: StateFlow<WorkspaceSessionDirectoryUiState> = _workspaceDirectory.asStateFlow()
     private var remoteStore: RemoteSessionStore? = null
     private var workspaceStore: RemoteWorkspaceStore? = null
     private var remoteJob: Job? = null
     private var connectionJob: Job? = null
+    private var directoryJob: Job? = null
     private var workspaceJob: Job? = null
     private var activeTarget: String? = null
 
@@ -104,6 +110,8 @@ internal class AccountViewModel(application: Application) : AndroidViewModel(app
             remoteJob?.cancel()
             workspaceJob?.cancel()
             connectionJob?.cancel()
+            directoryJob?.cancel()
+            _workspaceDirectory.value = WorkspaceSessionDirectoryUiState(emptyList())
             _remoteState.value = RemoteSessionUiState.Loading
             _workspaceState.value = RemoteWorkspaceUiState.Loading
             _connectionPhase.value = ConnectionPhase.IDLE
@@ -119,6 +127,7 @@ internal class AccountViewModel(application: Application) : AndroidViewModel(app
         remoteJob?.cancel()
         connectionJob?.cancel()
         workspaceJob?.cancel()
+        directoryJob?.cancel()
         remoteStore?.dispatch(RemoteSessionIntent.Stop)
         workspaceStore?.dispatch(RemoteWorkspaceIntent.Stop)
         remoteStore = null
@@ -126,6 +135,7 @@ internal class AccountViewModel(application: Application) : AndroidViewModel(app
         _remoteState.value = RemoteSessionUiState.Idle
         _connectionPhase.value = ConnectionPhase.IDLE
         _workspaceState.value = RemoteWorkspaceUiState.Idle
+        _workspaceDirectory.value = WorkspaceSessionDirectoryUiState(emptyList())
         completionNotifier.reset()
         activeTarget = target
         if (target == null) return
@@ -137,6 +147,9 @@ internal class AccountViewModel(application: Application) : AndroidViewModel(app
             } }
             connectionJob = viewModelScope.launch {
                 created.connectionPhase.collect { _connectionPhase.value = it }
+            }
+            directoryJob = viewModelScope.launch {
+                created.workspaceDirectory.collect { _workspaceDirectory.value = it }
             }
             created.dispatch(RemoteSessionIntent.Load)
             created.dispatch(RemoteSessionIntent.SetForeground(foreground))

@@ -14,11 +14,16 @@ function load(relative, dependencies = {}) {
   new Function('require', 'exports', js)(name => dependencies[name] || {}, exports);
   return exports;
 }
-const stateModule = load('pages/state/DeviceDirectoryState');
+const identityModule = load('services/RemoteSessionIdentity', {
+  './LegacyWorkspaceCompatibility': load('services/LegacyWorkspaceCompatibility')
+});
+const stateModule = load('pages/state/DeviceDirectoryState', {
+  '../../services/RemoteSessionIdentity': identityModule
+});
 const { DeviceDirectoryViewModel } = load('pages/viewmodel/DeviceDirectoryViewModel', {
   '../state/DeviceDirectoryState': stateModule,
   '../../services/RemoteLogger': { RemoteLogger: { info() {}, warn() {} } },
-  '../../services/RemoteSessionIdentity': load('services/RemoteSessionIdentity'),
+  '../../services/RemoteSessionIdentity': identityModule,
   '../../services/DeviceDirectoryCoordinator': { DeviceDirectoryCoordinator: class {
     constructor(source) { this.source = source; }
     loadWorkspaceCatalog(id) { return this.source.listWorkspaceCatalog(id); }

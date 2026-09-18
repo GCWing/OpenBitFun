@@ -260,6 +260,9 @@
     <string name="model_catalog_stale_warning">模型列表刷新失败，正在显示之前加载的列表。</string>
     <string name="workspace_title">工作区</string>
     <string name="workspace_failed">工作区信息加载失败。</string>
+    <string name="workspace_reference_unsupported">桌面端不支持按 ID 选择工作区，请升级桌面端的 OpenBitFun。</string>
+    <string name="workspace_reference_unknown">桌面端已没有这个工作区。</string>
+    <string name="workspace_reference_ambiguous">多个已打开的工作区使用同一路径，请从列表中选择。</string>
     <string name="assistants_title">助手</string>
     <string name="file_reference_label">远程文件路径</string>
     <string name="file_reference_desktop">在电脑端</string>
@@ -322,6 +325,8 @@
     <string name="sidebar_connect_desktop">连接电脑</string>
     <string name="sidebar_add_connection">添加连接</string>
     <string name="sidebar_empty_workspaces">这台电脑还没有工作区</string>
+    <string name="sidebar_workspace_empty_sessions">此工作区暂无会话</string>
+    <string name="sidebar_workspace_load_failed">这个工作区暂时无法读取</string>
     <string name="sidebar_more_workspaces">还有 %1$d 个工作区</string>
     <string name="sidebar_more_devices">还有 %1$d 台设备</string>
     <string name="sidebar_new_in_workspace">在此工作区新建</string>
@@ -354,6 +359,8 @@
     <string name="sessions_failed_rate_limited">请求过于频繁，请稍后重试。</string>
     <string name="sessions_failed_protocol_mismatch">桌面端返回了本应用无法识别的格式，请升级桌面端的 OpenBitFun。</string>
     <string name="sessions_failed_session_not_found">该会话已不在桌面端。</string>
+    <string name="sessions_failed_workspace_id_unsupported">桌面端不支持按 ID 选择工作区，请升级桌面端的 OpenBitFun。</string>
+    <string name="sessions_failed_workspace_id_unknown">桌面端已没有这个工作区。</string>
     <!-- 8.3 会话界面 -->
     <string name="conversation_back">返回会话列表</string>
     <string name="conversation_settings">会话设置</string>

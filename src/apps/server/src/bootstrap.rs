@@ -22,7 +22,11 @@ use tokio::sync::RwLock;
 pub(crate) struct ServerAppState {
     pub ai_client_factory: Arc<AIClientFactory>,
     pub workspace_service: Arc<workspace::WorkspaceService>,
-    pub workspace_path: Arc<RwLock<Option<std::path::PathBuf>>>,
+    /// Workspace record this Host activated at startup (opened from
+    /// `--workspace` or restored). Identity is the record ID; `root_path` is
+    /// only an IO operand.
+    pub initial_workspace: Option<workspace::WorkspaceInfo>,
+    pub workspace_id: Arc<RwLock<Option<String>>>,
     pub config_service: Arc<config::ConfigService>,
     pub filesystem_service: Arc<filesystem::FileSystemService>,
     pub agent_registry: Arc<agents::AgentRegistry>,
@@ -132,16 +136,10 @@ pub(crate) async fn initialize(workspace: Option<String>) -> anyhow::Result<Arc<
     };
 
     // 5. Open workspace if specified
-    let initial_workspace_path = if let Some(ws_path) = workspace {
+    let initial_workspace = if let Some(ws_path) = workspace {
         let path = std::path::PathBuf::from(&ws_path);
         let info = coordinator
-            .open_workspace_with_runtime_ownership(
-                workspace_service.as_ref(),
-                path,
-                None,
-                None,
-                "server bootstrap",
-            )
+            .create_local_workspace_with_runtime_ownership(workspace_service.as_ref(), path)
             .await
             .map_err(|error| {
                 anyhow::anyhow!("Failed to open workspace '{}': {}", ws_path, error)
@@ -151,13 +149,10 @@ pub(crate) async fn initialize(workspace: Option<String>) -> anyhow::Result<Arc<
             info.name,
             info.root_path.display()
         );
-        Some(info.root_path)
+        Some(info)
     } else {
         // Try to restore last workspace
-        workspace_service
-            .get_current_workspace()
-            .await
-            .map(|w| w.root_path)
+        workspace_service.get_current_workspace().await
     };
 
     if let Err(error) = openbitfun_core::plugin_host::initialize_configured_plugin_host(
@@ -167,33 +162,35 @@ pub(crate) async fn initialize(workspace: Option<String>) -> anyhow::Result<Arc<
     {
         openbitfun_core::plugin_host::report_configured_plugin_activation_failure(
             "server startup",
-            initial_workspace_path.as_deref(),
+            initial_workspace.as_ref().map(|record| record.id.as_str()),
             error,
         )
         .await;
     }
-    if let Some(workspace_path) = initial_workspace_path.as_ref() {
+    if let Some(workspace) = initial_workspace.as_ref() {
         if let Err(error) = openbitfun_core::plugin_host::ensure_configured_plugin_instance(
             openbitfun_core::plugin_host::PluginHostLaunchPolicy::Enabled,
-            workspace_path.clone(),
-            workspace_path.clone(),
-            None,
+            &workspace.id,
         )
         .await
         {
             openbitfun_core::plugin_host::report_configured_plugin_activation_failure(
                 "server workspace activation",
-                Some(workspace_path),
+                Some(workspace.id.as_str()),
                 error,
             )
             .await;
         }
     }
+    let initial_workspace_id = initial_workspace
+        .as_ref()
+        .map(|workspace| workspace.id.clone());
 
     let state = Arc::new(ServerAppState {
         ai_client_factory,
         workspace_service,
-        workspace_path: Arc::new(RwLock::new(initial_workspace_path)),
+        initial_workspace,
+        workspace_id: Arc::new(RwLock::new(initial_workspace_id)),
         config_service,
         filesystem_service,
         agent_registry,

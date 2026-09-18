@@ -712,10 +712,10 @@ impl ChatMode {
             .unwrap_or(0);
         let persisted = tokio::task::block_in_place(|| {
             rt_handle.block_on(async {
-                let workspace = std::path::PathBuf::from(self.agent.workspace_path_string());
+                let workspace = self.agent.workspace_id();
                 let conflicts =
                     openbitfun_core::external_sources::set_native_prompt_command_conflict_choice(
-                        Some(&workspace),
+                        workspace.as_deref(),
                         native_commands,
                         candidate_id,
                         expected_preference_revision,
@@ -779,9 +779,9 @@ impl ChatMode {
                 .unwrap_or(0);
             let snapshot = tokio::task::block_in_place(|| {
                 rt_handle.block_on(async {
-                    let workspace = std::path::PathBuf::from(self.agent.workspace_path_string());
+                    let workspace = self.agent.workspace_id();
                     openbitfun_core::external_sources::set_external_prompt_command_conflict_choice(
-                        Some(&workspace),
+                        workspace.as_deref(),
                         provider_conflict_key,
                         &projection.candidate_id,
                         expected_preference_revision,
@@ -900,9 +900,9 @@ impl ChatMode {
     ) -> Result<Option<ChatExitReason>> {
         let expanded = tokio::task::block_in_place(|| {
             rt_handle.block_on(async {
-                let workspace = std::path::PathBuf::from(self.agent.workspace_path_string());
+                let workspace = self.agent.workspace_id();
                 openbitfun_core::external_sources::expand_external_prompt_command(
-                    Some(&workspace),
+                    workspace.as_deref(),
                     &invocation.command_name,
                     &invocation.arguments,
                     invocation.native_commands.clone(),

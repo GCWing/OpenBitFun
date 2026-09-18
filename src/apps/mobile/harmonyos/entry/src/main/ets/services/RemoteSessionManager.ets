@@ -2,7 +2,7 @@ import { WorkspaceCatalog, projectWorkspaceCatalog } from './WorkspaceCatalog';
 import { RuntimeFileLocation } from '../model/RemoteModels';
 import { DurableSessionCallbacks, DurableSessionStream } from './DurableSessionStream';
 import { SavedRuntimeConnection, SavedRuntimeConnectionsResponse } from '../model/RemoteModels';
-import { AssistantEntry, AssistantListResponse, ChatMessageItemResponse, ChatMessageResponse, CommandStatusResponse, CreateSessionOptions, CreateSessionResponse, FileInfo, FileInfoResponse, InitialSyncResult, ModelCatalogResponse, PermissionModeResponse, PollSessionResponse, PollSessionResult, ReadFileChunkResponse, ReadFileChunkResult, ReadFileResult, RecentWorkspaceEntry, RecentWorkspaceListResponse, RemoteCommand, RemoteImageContext, RemoteModelCatalog, RemotePermissionMode, RemoteQuestionAnswerPayload, RemoteSession, SendMessageResponse, SessionListResponse, SessionListResult, SessionMessagesResponse, SessionMessagesResult, SessionSummary, SetAssistantResponse, SetSessionModelResponse, SetWorkspaceResponse, SteerTurnResponse, SteerTurnResult, WorkspaceInfo, WorkspaceInfoResponse } from '../model/RemoteModels';
+import { AssistantEntry, AssistantListResponse, ChatMessageItemResponse, ChatMessageResponse, CommandStatusResponse, CreateSessionOptions, CreateSessionResponse, FileInfo, FileInfoResponse, InitialSyncResult, ModelCatalogResponse, PermissionModeResponse, PollSessionResponse, PollSessionResult, ReadFileChunkResponse, ReadFileChunkResult, ReadFileResult, RecentWorkspaceEntry, RecentWorkspaceListResponse, RemoteCommand, RemoteImageContext, RemoteModelCatalog, RemotePermissionMode, RemoteQuestionAnswerPayload, RemoteSession, RemoteWorkspaceIdentity, REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1, SendMessageResponse, SessionListResponse, SessionListResult, SessionMessagesResponse, SessionMessagesResult, SessionSummary, SetAssistantResponse, SetSessionModelResponse, SetWorkspaceResponse, SteerTurnResponse, SteerTurnResult, WorkspaceInfo, WorkspaceInfoResponse } from '../model/RemoteModels';
 import { Encoding } from './Encoding';
 import { CloudAccountClient, CloudAccountRequestError, CloudAccountSession } from './CloudAccountClient';
 import { RemoteI18n } from '../i18n/RemoteI18n';
@@ -42,6 +42,8 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
   private transport?: RemoteCommandTransport;
   private transportGeneration: number = 0;
   private workspace?: WorkspaceInfo;
+  /** Capabilities the connected host advertised in its handshake response. */
+  private hostCapabilities: string[] = [];
 
   subscribeSession(logicalId: string, callbacks: DurableSessionCallbacks): DurableSessionStream {
     const transport = this.transport;
@@ -64,6 +66,7 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
     this.transport?.reset();
     this.transport = undefined;
     this.workspace = undefined;
+    this.hostCapabilities = [];
     return this.transportGeneration;
   }
 
@@ -95,21 +98,25 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
     }
     try {
       const workspace = RemoteResponseMapper.workspaceFromResponse(workspaceResponse);
+      const capabilities = workspaceResponse.capabilities || [];
+      const scope = RemoteSessionManager.workspaceScope(workspace);
+      RemoteSessionManager.requireWorkspaceIdReferences(scope, capabilities);
       const sessionResponse = await this.sendOnTransport<SessionListResponse>(
         transport,
         generation,
-        RemoteCommandFactory.listSessions(workspace.path, 50, 0, '', workspace.remoteConnectionId, workspace.remoteSshHost)
+        RemoteCommandFactory.listSessions(scope, 50, 0, '')
       );
-      const sessions = stampRemoteSessionsWorkspace(RemoteResponseMapper.sessions(sessionResponse.sessions || []), workspace.path, workspace.remoteConnectionId, workspace.remoteSshHost);
+      const sessions = stampRemoteSessionsWorkspace(RemoteResponseMapper.sessions(sessionResponse.sessions || []), scope);
       this.requireCurrentGeneration(generation);
       this.transport = transport;
       this.workspace = workspace;
+      this.hostCapabilities = capabilities.slice();
       return {
         workspace,
         sessions,
         hasMoreSessions: sessionResponse.has_more || false,
         authenticatedUserId: session.userId,
-        capabilities: workspaceResponse.capabilities || []
+        capabilities
       };
     } catch (err) {
       transport.reset();
@@ -139,10 +146,52 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
     return response.value || [];
   }
 
-  async setWorkspace(path: string, connectionId?: string, sshHost?: string): Promise<void> {
-    const command = RemoteCommandFactory.setWorkspace(path);
-    command.remote_connection_id = connectionId;
-    command.remote_ssh_host = sshHost;
+  /**
+   * Whether the connected host resolves `workspace_id` in commands.
+   *
+   * Read from the `capabilities` array of the handshake response. Absent on
+   * pre-ID hosts, where only references that never had an ID may be sent.
+   */
+  supportsWorkspaceIdReferences(): boolean {
+    return (this.hostCapabilities || []).indexOf(REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1) >= 0;
+  }
+
+  /**
+   * Guards every command that would carry a `workspace_id`.
+   *
+   * A reference with an ID must never be downgraded to its display path: an
+   * ID-aware host could then open a different workspace under the same path,
+   * and a pre-ID host would silently do so. Surfacing the unsupported state is
+   * the only correct degradation.
+   */
+  private static requireWorkspaceIdReferences(scope: RemoteWorkspaceIdentity, capabilities: string[]): void {
+    if (!scope.workspaceId) return;
+    if (capabilities.indexOf(REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1) >= 0) return;
+    throw new Error(RemoteI18n.t('errors.workspaceIdUnsupported'));
+  }
+
+  private requireWorkspaceIdReference(scope: RemoteWorkspaceIdentity): void {
+    RemoteSessionManager.requireWorkspaceIdReferences(scope, this.hostCapabilities || []);
+  }
+
+  private static workspaceScope(workspace: WorkspaceInfo | undefined): RemoteWorkspaceIdentity {
+    return {
+      workspaceId: workspace?.workspaceId || undefined,
+      path: workspace?.path || '',
+      remoteConnectionId: workspace?.remoteConnectionId,
+      remoteSshHost: workspace?.remoteSshHost
+    };
+  }
+
+  async setWorkspace(path: string, connectionId?: string, sshHost?: string, workspaceId?: string): Promise<void> {
+    const scope: RemoteWorkspaceIdentity = {
+      workspaceId: workspaceId || undefined,
+      path,
+      remoteConnectionId: connectionId,
+      remoteSshHost: sshHost
+    };
+    this.requireWorkspaceIdReference(scope);
+    const command = RemoteCommandFactory.setWorkspace(path, scope.workspaceId, connectionId, sshHost);
     const response = await this.send<SetWorkspaceResponse>(command);
     if (response.success !== true) {
       throw new Error(response.error || 'Failed to set workspace.');
@@ -155,8 +204,10 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
     return response.assistants || [];
   }
 
-  async setAssistant(path: string): Promise<void> {
-    const response = await this.send<SetAssistantResponse>(RemoteCommandFactory.setAssistant(path));
+  async setAssistant(path: string, workspaceId?: string): Promise<void> {
+    const scope: RemoteWorkspaceIdentity = { workspaceId: workspaceId || undefined, path };
+    this.requireWorkspaceIdReference(scope);
+    const response = await this.send<SetAssistantResponse>(RemoteCommandFactory.setAssistant(path, scope.workspaceId));
     if (response.success !== true) {
       throw new Error(response.error || 'Failed to set assistant workspace.');
     }
@@ -168,29 +219,34 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
     return result.sessions;
   }
 
-  async listSessionsForWorkspace(workspacePath: string, limit: number = 50, remoteConnectionId?: string, remoteSshHost?: string): Promise<RemoteSession[]> {
-    return (await this.listSessionPageForWorkspace(workspacePath, limit, remoteConnectionId, remoteSshHost)).sessions;
+  async listSessionsForWorkspace(workspace: RemoteWorkspaceIdentity, limit: number = 50): Promise<RemoteSession[]> {
+    return (await this.listSessionPageForWorkspace(workspace, limit)).sessions;
   }
 
-  async listSessionPageForWorkspace(workspacePath: string, limit: number = 50, remoteConnectionId?: string, remoteSshHost?: string): Promise<SessionListResult> {
-    const path = workspacePath.trim();
-    if (path.length === 0) {
+  async listSessionPageForWorkspace(workspace: RemoteWorkspaceIdentity, limit: number = 50): Promise<SessionListResult> {
+    const scope: RemoteWorkspaceIdentity = {
+      workspaceId: workspace.workspaceId || undefined,
+      path: workspace.path.trim(),
+      remoteConnectionId: workspace.remoteConnectionId,
+      remoteSshHost: workspace.remoteSshHost
+    };
+    if (!scope.workspaceId && scope.path.length === 0) {
       return { sessions: [], hasMore: false };
     }
+    this.requireWorkspaceIdReference(scope);
     const response = await this.send<SessionListResponse>(
-      RemoteCommandFactory.listSessions(path, limit, 0, '', remoteConnectionId, remoteSshHost),
+      RemoteCommandFactory.listSessions(scope, limit, 0, ''),
       INTERACTIVE_DIRECTORY_TIMEOUT_MS
     );
     return {
-      sessions: stampRemoteSessionsWorkspace(RemoteResponseMapper.sessions(response.sessions || []), path, remoteConnectionId, remoteSshHost),
+      sessions: stampRemoteSessionsWorkspace(RemoteResponseMapper.sessions(response.sessions || []), scope),
       hasMore: response.has_more || false
     };
   }
 
   async listSessions(limit: number, offset: number, query: string, agentType: string): Promise<SessionListResult> {
-    const workspacePath = this.workspace?.path || '';
-    const connectionId = this.workspace?.remoteConnectionId;
-    const sshHost = this.workspace?.remoteSshHost;
+    const scope = RemoteSessionManager.workspaceScope(this.workspace);
+    this.requireWorkspaceIdReference(scope);
     const normalizedAgentType = RemoteSessionManager.normalizedSessionFilter(agentType);
     const trimmedQuery = query.trim();
     const pageSize = normalizedAgentType ? Math.max(100, limit) : Math.max(1, limit);
@@ -199,9 +255,9 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
     let pageOffset = 0;
     let hasMore = true;
     while (hasMore && filteredSessions.length < targetCount) {
-      const command = RemoteCommandFactory.listSessions(workspacePath, pageSize, pageOffset, trimmedQuery, connectionId, sshHost);
+      const command = RemoteCommandFactory.listSessions(scope, pageSize, pageOffset, trimmedQuery);
       const response = await this.send<SessionListResponse>(command);
-      const sessions = stampRemoteSessionsWorkspace(RemoteResponseMapper.allSessions(response.sessions || []), workspacePath, connectionId, sshHost);
+      const sessions = stampRemoteSessionsWorkspace(RemoteResponseMapper.allSessions(response.sessions || []), scope);
       for (const session of sessions) {
         if (RemoteResponseMapper.isVisibleSession(session) &&
           (!normalizedAgentType || RemoteSessionManager.agentMatchesFilter(session.agentType, normalizedAgentType))) {
@@ -225,11 +281,16 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
     onAllocated?: (session: SessionSummary) => Promise<void>
   ): Promise<SessionSummary> {
     const requestedPath = options.workspacePath?.trim() || '';
+    const requestedWorkspaceId = options.workspaceId?.trim() || '';
     const workspacePath = requestedPath;
+    this.requireWorkspaceIdReference({ workspaceId: requestedWorkspaceId || undefined, path: workspacePath });
     const command = RemoteCommandFactory.createSession(options, workspacePath);
     const response = await this.send<CreateSessionResponse>(command);
     const sessionId = response.session_id || response.id || '';
     if (!sessionId) throw new Error('Session creation returned no session identity');
+    // The host answers with the record it actually created the session in; its
+    // ID wins over whatever the caller asked for.
+    const workspaceId = (response.workspace_id || '').trim() || (requestedWorkspaceId || undefined);
     const resolvedPath = response.workspace_path ?? workspacePath;
     const remoteConnectionId = response.workspace_path !== undefined ? response.remote_connection_id :
       (requestedPath ? options.remoteConnectionId : undefined);
@@ -243,6 +304,7 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
       await onAllocated({
         sessionId,
         title,
+        workspaceId,
         workspacePath: resolvedPath,
         remoteConnectionId,
         remoteSshHost,
@@ -260,6 +322,7 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
     return {
       sessionId,
       title,
+      workspaceId,
       workspacePath: resolvedPath,
       remoteConnectionId,
       remoteSshHost,

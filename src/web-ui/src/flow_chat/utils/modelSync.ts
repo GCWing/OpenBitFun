@@ -11,7 +11,7 @@ import type { AIModelConfig, AgentModelDefaultsConfig, DefaultModelsConfig } fro
 import { createLogger } from '@/shared/utils/logger';
 import type { FlowChatContext } from '../services/flow-chat-manager/types';
 import { getModelMaxTokens, resolveModelReference } from './modelResolution';
-import { sessionProjectWorkspacePath } from './sessionWorkspace';
+import { sessionProjectWorkspacePath, sessionWorkspaceId } from './sessionWorkspace';
 import {
   getActiveSurfaceScope,
   type SurfaceScope,
@@ -79,6 +79,7 @@ export async function syncSessionModelSelection(
     sessionId,
     modelName: desiredModelId,
     reasoningPreset: session.config.reasoningPreset ?? null,
+    workspaceId: sessionWorkspaceId(session),
     workspacePath: sessionProjectWorkspacePath(session),
     remoteConnectionId: session.remoteConnectionId,
     remoteSshHost: session.remoteSshHost,

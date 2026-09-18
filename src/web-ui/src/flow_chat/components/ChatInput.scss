@@ -23,6 +23,16 @@
   padding: 0 var(--openbitfun-space-2);
   pointer-events: auto !important;
 
+  // Reserve the composer's actual height so the transcript ends above it.
+  &.openbitfun-chat-input-drop-zone--conversation {
+    position: relative;
+    inset: auto;
+    transform: none;
+    max-width: none;
+    z-index: auto;
+    padding: var(--openbitfun-space-2) var(--openbitfun-space-3) var(--openbitfun-space-3);
+  }
+
   &.openbitfun-context-drop-zone--can-accept {
     .openbitfun-chat-input__composer {
       outline: var(--openbitfun-border-width-default) solid var(--openbitfun-color-field-border-hover);

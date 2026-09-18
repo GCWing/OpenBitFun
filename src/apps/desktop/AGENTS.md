@@ -136,6 +136,10 @@ For side-question request compatibility, initial model selection, and optional
 message metadata, use
 `cargo test -p openbitfun-desktop --no-default-features --lib api::btw_api::tests`.
 
+For snapshot workspace identity and remote rollback admission, use
+`cargo test --locked -p openbitfun-desktop --lib api::snapshot_service::tests` and
+`pnpm --dir src/web-ui run test:run src/infrastructure/api/service-api/SnapshotAPI.test.ts`.
+
 For skill discovery response compatibility and timeouts, use
 `cargo test -p openbitfun-desktop --lib api::skill_api::tests`.
 For companion pet manifest versions and package metadata, use

@@ -230,13 +230,22 @@ impl SessionMessageTool {
         }
     }
 
+    /// Two targets share a workspace only when their owning workspace IDs
+    /// match. Targets that predate IDs fall back to the legacy path + SSH
+    /// projection; a target with an ID never matches one without.
     fn same_workspace_identity(
         left: &SessionMessageWorkspaceTarget,
         right: &SessionMessageWorkspaceTarget,
     ) -> bool {
-        left.workspace_path == right.workspace_path
-            && left.remote_connection_id == right.remote_connection_id
-            && left.remote_ssh_host == right.remote_ssh_host
+        match (left.workspace_id.as_deref(), right.workspace_id.as_deref()) {
+            (Some(left_id), Some(right_id)) => left_id == right_id,
+            (None, None) => {
+                left.workspace_path == right.workspace_path
+                    && left.remote_connection_id == right.remote_connection_id
+                    && left.remote_ssh_host == right.remote_ssh_host
+            }
+            _ => false,
+        }
     }
 
     fn target_agent_type_from_resolution(agent_type: Option<String>) -> Option<String> {
@@ -598,9 +607,10 @@ Allowed agent types when creating a session:
 
                 let visible_sessions = runtime
                     .list_sessions(AgentSessionListRequest {
-                        workspace_path: workspace_target.project_workspace_path.clone(),
-                        remote_connection_id: workspace_target.remote_connection_id.clone(),
-                        remote_ssh_host: workspace_target.remote_ssh_host.clone(),
+                        workspace_id: workspace_target.workspace_id.clone(),
+                        workspace_path: String::new(),
+                        remote_connection_id: None,
+                        remote_ssh_host: None,
                     })
                     .await
                     .map_err(|error| {
@@ -705,6 +715,7 @@ Allowed agent types when creating a session:
                 execution: Default::default(),
                 agent_type: target_agent_type.clone(),
                 workspace_path: Some(workspace_target.workspace_path.clone()),
+                workspace_id: workspace_target.workspace_id.clone(),
                 remote_connection_id: workspace_target.remote_connection_id.clone(),
                 remote_ssh_host: workspace_target.remote_ssh_host.clone(),
                 policy: DialogSubmissionPolicy::for_source(DialogTriggerSource::AgentSession),
@@ -873,6 +884,37 @@ mod tests {
 
         assert!(!SessionMessageTool::same_workspace_identity(
             &requested, &target
+        ));
+    }
+
+    #[test]
+    fn workspace_identity_compares_ids_before_paths() {
+        let mut same_path_a = workspace_target("/root/repo", None, None);
+        same_path_a.workspace_id = Some("ws-a".to_string());
+        let mut same_path_b = workspace_target("/root/repo", None, None);
+        same_path_b.workspace_id = Some("ws-b".to_string());
+        assert!(!SessionMessageTool::same_workspace_identity(
+            &same_path_a,
+            &same_path_b
+        ));
+
+        let mut moved_root = workspace_target("/root/elsewhere", None, None);
+        moved_root.workspace_id = Some("ws-a".to_string());
+        assert!(SessionMessageTool::same_workspace_identity(
+            &same_path_a,
+            &moved_root
+        ));
+    }
+
+    #[test]
+    fn workspace_identity_never_matches_id_against_legacy_projection() {
+        let mut identified = workspace_target("/root/repo", None, None);
+        identified.workspace_id = Some("ws-a".to_string());
+        let legacy = workspace_target("/root/repo", None, None);
+
+        assert!(!SessionMessageTool::same_workspace_identity(
+            &identified,
+            &legacy
         ));
     }
 

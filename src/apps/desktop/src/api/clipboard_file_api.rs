@@ -1,17 +1,27 @@
 //! Clipboard File API
 
-use openbitfun_core::service::remote_ssh::workspace_state::is_remote_path;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 /// Returns the first path in `paths` that belongs to a registered remote workspace.
-async fn first_remote_path<'a>(paths: impl Iterator<Item = &'a str>) -> Option<String> {
+async fn first_remote_path<'a>(
+    workspace_id: Option<&str>,
+    controller_local: bool,
+    paths: impl Iterator<Item = &'a str>,
+) -> Result<Option<String>, String> {
     for path in paths {
-        if is_remote_path(path.trim()).await {
-            return Some(path.to_string());
+        if openbitfun_core::service::workspace::remote_io_for_legacy_or_id(
+            workspace_id,
+            controller_local,
+            path.trim(),
+        )
+        .await
+        .map_err(|e| e.to_string())?
+        {
+            return Ok(Some(path.to_string()));
         }
     }
-    None
+    Ok(None)
 }
 
 #[derive(Debug, Serialize)]
@@ -23,6 +33,10 @@ pub struct ClipboardFilesResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PasteFilesRequest {
+    #[serde(default)]
+    pub controller_local: bool,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub source_paths: Vec<String>,
     pub target_directory: String,
     pub is_cut: bool,
@@ -317,10 +331,12 @@ pub async fn get_clipboard_files() -> Result<ClipboardFilesResponse, String> {
 #[tauri::command]
 pub async fn paste_files(request: PasteFilesRequest) -> Result<PasteFilesResponse, String> {
     if let Some(remote_path) = first_remote_path(
+        request.workspace_id.as_deref(),
+        request.controller_local,
         std::iter::once(request.target_directory.as_str())
             .chain(request.source_paths.iter().map(String::as_str)),
     )
-    .await
+    .await?
     {
         return Err(format!(
             "paste_files cannot copy remote workspace path '{}': the remote file provider has no copy primitive; local filesystem fallback was not attempted",
@@ -602,6 +618,8 @@ mod remote_guard_tests {
         let _ = std::fs::remove_file(&sentinel);
 
         let error = paste_files(PasteFilesRequest {
+            controller_local: false,
+            workspace_id: None,
             source_paths: vec![source.to_string_lossy().to_string()],
             target_directory: format!("{REMOTE_ROOT}/src"),
             is_cut: true,

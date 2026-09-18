@@ -2,12 +2,20 @@
 @use '@/shared/styles/overlay-layout' as overlay-layout;
 @use '@/shared/styles/surface-recipes' as surfaces;
 
-.branch-quick-switch {
-  @include surfaces.floating;
+.branch-quick-switch__layer {
   @include overlay-layout.anchored-picker-inline-size;
-
   position: fixed;
   z-index: var(--openbitfun-layer-popover);
+
+  &[aria-hidden='true'] {
+    pointer-events: none;
+  }
+}
+
+.branch-quick-switch {
+  @include surfaces.floating;
+
+  inline-size: 100%;
   box-sizing: border-box;
   overflow: hidden;
   color: var(--openbitfun-color-content-primary);
@@ -17,6 +25,26 @@
   line-height: var(--openbitfun-type-label-md-line-height);
   letter-spacing: var(--openbitfun-type-label-md-letter-spacing);
   user-select: none;
+  // Keep the measured layer stationary while its surface enters and exits.
+  opacity: 0;
+  transform: translateY(4px);
+  transition:
+    opacity 150ms var(--openbitfun-motion-easing-enter),
+    transform 150ms var(--openbitfun-motion-easing-enter);
+}
+
+.branch-quick-switch__layer[data-openbitfun-placement='bottom'] .branch-quick-switch {
+  transform: translateY(-4px);
+}
+
+.branch-quick-switch__layer[data-state='entered'] .branch-quick-switch {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.branch-quick-switch__layer[data-state='exiting'] .branch-quick-switch {
+  // Keep in sync with usePresence's exit duration.
+  transition-duration: 100ms;
 }
 
 .branch-quick-switch__search {
@@ -166,6 +194,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .branch-quick-switch {
+    transform: none !important;
+    transition: none;
+  }
+
   .branch-quick-switch__spinner {
     animation: none;
   }

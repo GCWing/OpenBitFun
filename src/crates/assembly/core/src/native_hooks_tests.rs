@@ -177,6 +177,7 @@ async fn remote_workspaces_skip_hook_dispatch() {
     // silent.
     let decision = dispatch_pre_tool_use(
         NativeHookSessionFacts {
+            workspace_id: Some("remote-workspace"),
             session_id: "session-remote",
             turn_id: Some("turn-1"),
             workspace_root: Some(Path::new("/remote/workspace")),
@@ -196,14 +197,19 @@ async fn remote_workspaces_skip_hook_dispatch() {
 
     // The read-only view carries the same fact, and it never derives a
     // controller-local project path from the remote root.
-    let remote = overview_with_facts(Some(Path::new("/remote/workspace")), true).await;
+    let remote = overview_with_facts(
+        Some("remote-workspace"),
+        Some(Path::new("/remote/workspace")),
+        true,
+    )
+    .await;
     assert!(remote.remote_workspace_unsupported);
     assert!(remote
         .files
         .iter()
         .all(|file| !file.path.starts_with("/remote/workspace")));
 
-    let local = overview(Some(Path::new("/remote/workspace"))).await;
+    let local = overview(None).await.unwrap();
     assert!(!local.remote_workspace_unsupported);
 }
 

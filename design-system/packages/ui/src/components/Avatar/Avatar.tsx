@@ -13,7 +13,7 @@ export function Avatar({ alt = "", children, className, icon, onError, shape = "
       {src && !imageFailed
         ? <img alt={alt} className={styles.image} data-openbitfun-part="image" onError={() => { setImageFailed(true); onError?.(); }} src={src} />
         : icon !== undefined
-          ? <span className={styles.content} data-openbitfun-part="icon">{icon}</span>
+          ? <span className={styles.content} data-openbitfun-icon-slot="true" data-openbitfun-part="icon">{icon}</span>
           : <span className={styles.content} data-openbitfun-part="text">{children}</span>}
     </span>
   );

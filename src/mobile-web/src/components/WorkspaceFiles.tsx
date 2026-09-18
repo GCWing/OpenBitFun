@@ -17,8 +17,12 @@ const basename = (path: string) => path.replace(/\/$/, '').split('/').slice(-1)[
 const parentPath = (path: string) => path.replace(/\/$/, '').replace(/\/[^/]*$/, '') || '/';
 const joinPath = (directory: string, name: string) => name.startsWith('/') ? name : `${directory.replace(/\/$/, '')}/${name}`;
 
-/** Paths and mutations belong to the selected runtime and its captured SSH connection. */
-export function WorkspaceFiles({ manager, workspace }: { manager: RemoteSessionManager; workspace: Pick<WorkspaceInfo, 'path' | 'remote_connection_id'> }) {
+/**
+ * Paths and mutations belong to the selected runtime workspace. A runtime
+ * workspace is addressed by `workspace_id`; a bare device location (no
+ * workspace) is addressed by its captured SSH connection and directory.
+ */
+export function WorkspaceFiles({ manager, workspace }: { manager: RemoteSessionManager; workspace: Pick<WorkspaceInfo, 'workspace_id' | 'path' | 'remote_connection_id'> }) {
   const { t, formatDate } = useI18n();
   const [directory, setDirectory] = useState(workspace.path ?? '');
   const [editingPath, setEditingPath] = useState(false);
@@ -40,7 +44,11 @@ export function WorkspaceFiles({ manager, workspace }: { manager: RemoteSessionM
   const generation = useRef(0);
   const originalHash = useRef<string>();
   const dirty = file !== null && content !== savedContent;
-  const args = { remoteConnectionId: workspace.remote_connection_id ?? '', workspacePath: directory };
+  const args = {
+    ...(workspace.workspace_id ? { workspaceId: workspace.workspace_id } : {}),
+    remoteConnectionId: workspace.remote_connection_id ?? '',
+    workspacePath: directory,
+  };
   const digest = (text: string) => Array.from(sha256(new TextEncoder().encode(text)), byte => byte.toString(16).padStart(2, '0')).join('');
   async function perform(operation: (ticket: number) => Promise<void>) {
     const ticket = ++generation.current;
@@ -80,7 +88,7 @@ export function WorkspaceFiles({ manager, workspace }: { manager: RemoteSessionM
     setUpload(null); setAction(null); setFile(null); transfer.current = undefined; setUploaded(0);
     void perform(() => list(workspace.path ?? ''));
     return () => { generation.current++; };
-  }, [manager, workspace.path, workspace.remote_connection_id]);
+  }, [manager, workspace.workspace_id, workspace.path, workspace.remote_connection_id]);
   const crumbs = directory.split('/').filter(Boolean).map((label, index, all) => ({ label, path: `${directory.startsWith('/') ? '/' : ''}${all.slice(0, index + 1).join('/')}` }));
   const actionLabel = action?.kind === 'file' ? t('workspace.createFile') : action?.kind === 'folder' ? t('workspace.createFolder') : action?.kind === 'rename' ? t('workspace.renameEntry') : t('workspace.deleteEntry');
   const sortOptions: { value: SortOrder; label: string }[] = [
@@ -153,7 +161,7 @@ export function WorkspaceFiles({ manager, workspace }: { manager: RemoteSessionM
             });
           }}><span className="runtime-files__name">{entry.name}</span>{entry.lastModified && <span className="runtime-files__modified">{modifiedLabel(entry.lastModified)}</span>}</MobileButton>
           <div className="runtime-files__row-actions">
-            {!entry.isDirectory && <MobileButton className="runtime-files__icon" size="sm" appearance="plain" aria-label={`${t('chat.clickToDownload')} ${entry.name}`} disabled={busy} onClick={() => void perform(ticket => downloadRuntimeFile(manager, entry.path, { isCurrent: () => ticket === generation.current, workspace: { path: directory, remoteConnectionId: workspace.remote_connection_id } }))}><Download size={16} /></MobileButton>}
+            {!entry.isDirectory && <MobileButton className="runtime-files__icon" size="sm" appearance="plain" aria-label={`${t('chat.clickToDownload')} ${entry.name}`} disabled={busy} onClick={() => void perform(ticket => downloadRuntimeFile(manager, entry.path, { isCurrent: () => ticket === generation.current, workspace: { workspaceId: workspace.workspace_id, path: directory, remoteConnectionId: workspace.remote_connection_id } }))}><Download size={16} /></MobileButton>}
             <MobileButton className="runtime-files__icon" size="sm" appearance="plain" aria-label={`${t('workspace.renameEntry')} ${entry.name}`} disabled={busy} onClick={() => beginAction({ kind: 'rename', entry })}><Pencil size={15} /></MobileButton>
             <MobileButton className="runtime-files__icon" size="sm" appearance="plain" aria-label={`${t('workspace.deleteEntry')} ${entry.name}`} disabled={busy} onClick={() => beginAction({ kind: 'delete', entry })}><Trash2 size={15} /></MobileButton>
           </div>

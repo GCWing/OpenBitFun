@@ -1,5 +1,14 @@
 # FlowChat Virtualization
 
+## Measured row spacing
+
+`VirtualItemRenderer` establishes a `flow-root` on the measured wrapper so
+descendant block margins remain inside its border box. A row replaced by virtual
+padding must retain its full occupied height, including trailing item spacing.
+Do not substitute clipping overflow: user-message decorations and controls can
+extend outside the reading column. The rhythm test protects this stylesheet
+contract; it does not prove browser layout or end-to-end scroll stability.
+
 ## Interrupted turn continuity
 
 Cancelled rounds remain in the ordinary transcript. The display projection removes
@@ -179,10 +188,12 @@ embedded transcripts without a rail keep their own layout. The scroller remains
 full width.
 The shared content-padding token defaults to 0.75rem on wide and narrow surfaces,
 keeping the reading column compact while leaving room for decoration and targets.
-The bubble extends into that gutter by its corner radius. Its horizontal border
-tangent points define the same leading and trailing edges as user text, timestamps,
-reply prose, and completion metadata. Inner padding is the radius minus the border
-width; borderless failed messages keep the same tangent points and content axis.
+The borderless bubble extends into that gutter by its corner radius, and its inner
+padding matches that radius so user text, timestamps, reply prose, and completion
+metadata keep the same content axis. Content-fit bubbles have an 8rem minimum that
+is capped by the 72% message-width limit on narrow surfaces. Content below that
+minimum stays shrink-wrapped and centered; content that reaches the available line
+width retains leading text alignment and wraps normally.
 Both metadata rows align the last icon frame with the content's trailing edge,
 retaining 28px hit targets and the same compact action gap. Each action cluster
 wraps as a whole when space is limited. A half-space-1 gap groups user metadata
@@ -271,14 +282,22 @@ numbers. The number is additive presentation metadata, never annotation identity
 legacy excerpts without it remain readable. New numbers follow the loaded session
 family's saved, queued and pending annotations, not a cross-controller global counter.
 
-`ConversationExcerptMarkers` paints numbered superscripts at each selected text
-fragment's trailing caret in a row-local overlay. Selections in the same block keep
-separate anchors, and wrapping follows the caret's current line. It validates the
-frozen text anchor, omits hidden/clipped endpoints, observes only
+`ConversationExcerptMarkers` paints numbered superscripts above the top-right
+of each selected fragment's full text bounds in a row-local overlay. It measures
+the badge group and overlaps the selection's upper-right corner by 6px on both axes,
+leaving the marker body above the selected text. The marker may cover surrounding
+text or another marker so a dense layout never hides the annotation.
+Selection bounds use selected text runs, excluding full-width block rectangles.
+Selections with different starts keep separate anchors even when
+their ends match. It validates the frozen text anchor, clips partially visible anchors
+to the row's visible bounds, omits fully hidden anchors, observes only
 mounted rows and releases observers on unmount. It changes neither transcript text
-nor row keys, row height, or scroll position. Images and individual annotation tiles
-share the composer attachment strip. Source superscripts and composer attachments
-open `ConversationExcerptDialog`; creation shares its compact editor content.
+nor row keys, row height, or scroll position. Persistent CSS highlights follow the
+draft, queued and sent annotation inventory and release their row-owned ranges on
+unmount. Images and an annotation-count capsule share the composer attachment strip.
+The capsule opens a hover/focus/click detail list with individual edit/remove actions.
+Source superscripts and detail edit actions open `ConversationExcerptDialog`;
+creation shares its compact editor content.
 Both modes show one ellipsized, quoted source line, with both quote marks outside
 the clipped text so the closing quote remains visible. Pending annotations use an
 unlabelled textarea with an accessible name. Sent-message entries always view

@@ -13,19 +13,20 @@ const logger = createLogger('ExternalAppAwareness');
  * an error toast for a background awareness check.
  */
 export function useExternalAppAwareness(active: boolean): boolean {
-  const { workspace, workspacePath } = useOptionalCurrentWorkspace();
+  const { workspace } = useOptionalCurrentWorkspace();
+  const workspaceId = workspace?.id;
   const remoteWorkspace = isRemoteWorkspace(workspace);
   const [hasUnseen, setHasUnseen] = useState(false);
-  const acknowledgedScopeRef = useRef<string | null>(null);
-  const currentScopeRef = useRef(workspacePath);
+  const acknowledgedScopeRef = useRef<string | undefined | null>(null);
+  const currentScopeRef = useRef(workspaceId);
   const activeRef = useRef(active);
-  currentScopeRef.current = workspacePath;
+  currentScopeRef.current = workspaceId;
   activeRef.current = active;
 
   useEffect(() => {
     setHasUnseen(false);
     if (remoteWorkspace) return undefined;
-    const scope = workspacePath;
+    const scope = workspaceId;
     let cancelled = false;
     void externalSourcesAPI
       .getEcosystemAwareness(scope)
@@ -44,13 +45,13 @@ export function useExternalAppAwareness(active: boolean): boolean {
     return () => {
       cancelled = true;
     };
-  }, [remoteWorkspace, workspacePath]);
+  }, [remoteWorkspace, workspaceId]);
 
   useEffect(() => {
     if (remoteWorkspace
       || !active
-      || acknowledgedScopeRef.current === workspacePath) return;
-    const scope = workspacePath;
+      || acknowledgedScopeRef.current === workspaceId) return;
+    const scope = workspaceId;
     // Clear the dot immediately while allowing a failed host write to retry.
     setHasUnseen(false);
     void externalSourcesAPI
@@ -67,7 +68,7 @@ export function useExternalAppAwareness(active: boolean): boolean {
         if (currentScopeRef.current === scope) setHasUnseen(true);
         logger.debug('Could not record external application awareness', { error });
       });
-  }, [active, remoteWorkspace, workspacePath]);
+  }, [active, remoteWorkspace, workspaceId]);
 
   return hasUnseen;
 }

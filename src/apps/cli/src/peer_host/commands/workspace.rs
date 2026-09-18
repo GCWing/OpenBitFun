@@ -69,6 +69,16 @@ pub(crate) async fn set_active_workspace(
 
 pub(crate) async fn open_workspace(state: &PeerHostState, args: &Value) -> Result<Value, String> {
     let request = request_value(args);
+    if let Some(id) = crate::peer_host::args::optional_string(request, "workspaceId") {
+        let coordinator = openbitfun_core::agentic::coordination::get_global_coordinator()
+            .ok_or("Conversation coordinator is unavailable")?;
+        let info = coordinator
+            .select_workspace_with_runtime_ownership(&state.workspace_service, &id)
+            .await
+            .map_err(|error| error.to_string())?;
+        return Ok(workspace_info_to_json(&info));
+    }
+    // Explicit new-folder/old-protocol ingress. Existing-workspace selection uses ID.
     let path = get_string(request, "path")?;
     state
         .compatibility
@@ -87,7 +97,7 @@ pub(crate) async fn open_workspace(state: &PeerHostState, args: &Value) -> Resul
     // Best-effort snapshot init for agent tools (mirrors server bootstrap).
     if let Err(error) = state
         .local_workspace_snapshot
-        .prepare_local_workspace(info.root_path.clone())
+        .prepare_local_workspace(info.id.clone())
         .await
     {
         tracing::warn!("Failed to initialize snapshot system: {}", error.message);
@@ -107,12 +117,11 @@ pub(crate) async fn open_remote_workspace(
     let coordinator = openbitfun_core::agentic::coordination::get_global_coordinator()
         .ok_or("Conversation coordinator is unavailable")?;
     let info = coordinator
-        .open_workspace_with_runtime_ownership(
+        .create_remote_workspace_with_runtime_ownership(
             &state.workspace_service,
-            PathBuf::from(path),
-            Some(&connection_id),
+            &path,
+            &connection_id,
             host.as_deref(),
-            "peer workspace open",
         )
         .await
         .map_err(|e| e.to_string())?;

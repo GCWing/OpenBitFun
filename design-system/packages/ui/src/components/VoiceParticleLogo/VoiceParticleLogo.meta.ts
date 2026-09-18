@@ -8,6 +8,7 @@ export const voiceParticleLogoMeta = {
   props: [
     { name: "readAudio", type: "VoiceParticleAudioReader" },
     { name: "active", type: "boolean", defaultValue: "true" },
+    { name: "formation", type: "number (0 = solid, 1 = particles)", defaultValue: "1" },
   ],
   states: ["idle", "paused", "reduced-motion"],
   tokens: ["color.content.onDark", "color.content.onLight"],

@@ -42,7 +42,15 @@ describe.each(SURFACES)('$name session surface', ({ path }) => {
     expect(source).not.toContain('sendMessage');
   });
 
-  it('takes its session affordances from the shared SessionMenu', () => {
+  it('uses the owning session menu or conversation dock for selection', () => {
+    if (path.endsWith('FloatingMiniChat.tsx')) {
+      expect(source).toContain('useConversationDockStore');
+      expect(source).toContain('<TabGroup');
+      expect(source).toContain('dropConversationInDock');
+      expect(source).toContain('returnConversationToWorkbench');
+      expect(source).not.toContain('flowChatStore.setActiveSession');
+      return;
+    }
     expect(source).toContain('<SessionMenu');
     expect(source).toContain('useFlowChatSessions');
     // The "+" must open the shared menu rather than creating a session
@@ -72,13 +80,13 @@ describe('session surface composition', () => {
     const bubbleSource = readSource('../../../app/layout/FloatingMiniChat.tsx');
 
     const voiceSource = readSource('../voice/RealtimeVoiceCallPanel.tsx');
-    expect(communicationSource).toContain('<RealtimeVoiceCallPanel onClose={onCloseVoice} />');
+    expect(communicationSource).toMatch(/<RealtimeVoiceCallPanel\b[^>]*onClose=\{onCloseVoice\}/);
     expect(communicationSource).toContain('onClick={handleModeSwitch}');
     expect(communicationSource).toContain("'voiceCall.call.switchToVoice'");
     expect(voiceSource).toContain('<VoiceCallPanel');
     expect(voiceSource).toContain("'voiceCall.call.switchToChat'");
-    expect(communicationSource).toContain('enabled && !isVoiceMode');
-    expect(bubbleSource).toContain('onCloseVoice={handleClose}');
+    expect(communicationSource).toContain('(enabled || ownsCall) && !isVoiceMode');
+    expect(bubbleSource).toContain('onCloseVoice={onCollapse}');
     expect(toolbarSource).toContain('onCloseVoice={handleToggleExpanded}');
     expect(toolbarSource).toContain('switchTestId="toolbar-realtime-voice-mode-switch"');
     expect(bubbleSource).toContain('switchTestId="hello-realtime-voice-mode-switch"');
@@ -91,7 +99,7 @@ describe('floating mini chat bubble MiniApp registration', () => {
 
   it('keeps the full shared composer while a MiniApp holds a registration', () => {
     expect(source).toContain('showChatInput');
-    expect(source).toContain('chatInputRegistration={chatInputRegistration}');
+    expect(source).toContain('chatInputRegistration={registration}');
     expect(source).not.toContain('showChatInput={!activeComposerClaim}');
     expect(source).not.toContain('const MiniAppComposer');
     expect(source).not.toContain('<MiniAppComposer');
@@ -105,82 +113,69 @@ describe('floating mini chat bubble MiniApp registration', () => {
     expect(source).toContain('postMiniAppComposerMessage');
     // Routing is keyed by claim token, never by app id: one app can have two
     // live runners (installed app + draft preview) and only one owns the input.
-    expect(source).toContain('token: activeComposerToken');
-    expect(source).toContain('text: submission.text');
-    expect(source).toContain('contexts: submission.contexts');
-    expect(source).toContain('registrationId: activeComposerClaim.token');
-    expect(source).toContain('onSubmit: handleMiniAppSubmit');
+    expect(source).toContain('registrationId: entry.claimToken!');
+    expect(source).toContain('live?.token !== entry.claimToken');
+    expect(source).toContain('live.sessionId !== entry.sessionId');
+    expect(source).toContain('postMiniAppComposerMessage({ ...submission, token: entry.claimToken!, sessionId: entry.sessionId })');
   });
 
   it('routes realtime voice through the claimed MiniApp conversation', () => {
-    expect(source).toContain('miniAppVoiceTarget');
+    expect(source).toContain('useMemo<VoiceCallTarget | undefined>');
     expect(source).toContain("kind: 'miniapp'");
-    expect(source).toContain('claimToken: activeComposerToken');
-    expect(source).toContain('sessionId: activeComposerSessionId');
-    expect(source).toContain('voiceTarget={miniAppVoiceTarget}');
+    expect(source).toContain('claimToken: entry.claimToken!');
+    expect(source).toContain('sessionId: entry.sessionId');
+    expect(source).toContain('voiceTarget={voiceTarget}');
   });
 
   it('prefills without sending when a MiniApp offers an example prompt', () => {
     expect(source).toContain('MINIAPP_COMPOSER_DRAFT_EVENT');
-    expect(source).toContain('setMiniAppComposerDraft');
-    expect(source).toContain('onDraftConsumed: handleMiniAppDraftConsumed');
+    expect(source).toContain('state.setDraft(dockConversationKey(entry), detail.text)');
+    expect(source).toContain('onSuggestion={setDraft}');
+    expect(source).toContain('onDraftConsumed: id => useConversationDockStore.getState().consumeDraft(key, id)');
   });
 
-  it('activates the freshly bound topic before opening a MiniApp draft', () => {
-    expect(source).toContain('const liveClaim = useMiniAppStore.getState().composerClaims');
-    expect(source).toContain('const sessionId = liveClaim.sessionId || detail.sessionId');
-
-    const rememberIndex = source.indexOf('rememberPreviousHostSession(detail.token);');
-    const activateIndex = source.indexOf('activateMiniAppSession(draftClaim);');
-    const draftIndex = source.indexOf(
-      'setMiniAppComposerDraft(detail.text, detail.token, sessionId);',
-    );
-    const openIndex = source.indexOf('handleOpen();', draftIndex);
-    expect(rememberIndex).toBeGreaterThan(-1);
-    expect(activateIndex).toBeGreaterThan(rememberIndex);
-    expect(draftIndex).toBeGreaterThan(activateIndex);
+  it('resolves the claimed conversation before storing and revealing a MiniApp draft', () => {
+    const listenerIndex = source.indexOf('const listener = (event: Event)');
+    const resolveIndex = source.indexOf('resolveMiniAppConversation(appId, surfaceId)', listenerIndex);
+    const guardIndex = source.indexOf('entry.claimToken !== value.token', resolveIndex);
+    const draftIndex = source.indexOf('state.setDraft(dockConversationKey(entry), detail.text)', guardIndex);
+    const openIndex = source.indexOf('openMiniAppConversation(appId, surfaceId)', draftIndex);
+    expect(listenerIndex).toBeGreaterThan(-1);
+    expect(resolveIndex).toBeGreaterThan(listenerIndex);
+    expect(guardIndex).toBeGreaterThan(resolveIndex);
+    expect(draftIndex).toBeGreaterThan(guardIndex);
     expect(openIndex).toBeGreaterThan(draftIndex);
   });
 
-  it('does not clear a draft that already belongs to the newly focused session', () => {
-    expect(source).toContain('claimToken: string');
-    expect(source).toContain('sessionId?: string');
-    expect(source).toContain('current.claimToken !== activeComposerToken');
-    expect(source).toContain('current.sessionId !== activeComposerSessionId');
+  it('consumes drafts through their conversation key and acknowledgement id', () => {
+    expect(source).toContain('const key = dockConversationKey(entry)');
+    expect(source).toContain('state.drafts[key]');
+    expect(source).toContain('consumeDraft(key, id)');
   });
 
   it('fails closed around an Agentic MiniApp and shows only its exact topic session', () => {
-    expect(source).toContain('activeComposerClaim?.sessionId');
-    expect(source).toContain('isFloatingMiniChatIsolated({');
-    expect(source).toContain('canRenderFloatingMiniChatSession({');
-    expect(source).toContain('surfaceMounted && isMiniAppSessionReady');
-    expect(source).toContain(
-      'surfaceMounted && isMiniAppBubbleIsolated && !isMiniAppSessionReady'
-    );
-    expect(source).toContain('previousHostSessionRef');
-    expect(source).toContain('restorePreviousHostSession(activeComposerToken)');
-    expect(source).toContain('restorePreviousHostSession();');
-    expect(source).toContain(
-      'if (isVoiceMode || !isOpen || !activeComposerToken || !activeComposerSessionId) return;'
-    );
+    expect(source).toContain('claim?.surfaceId === entry.surfaceId');
+    expect(source).toContain('claim?.token === entry.claimToken');
+    expect(source).toContain('claim?.sessionId === entry.sessionId');
+    expect(source).toContain('!session || !claimValid ? unavailable');
+    expect(source).toContain('<ChatPane sessionRef={entry}');
+    expect(source).toContain('voiceStartDisabled={!voiceTarget || !claimValid}');
+    expect(source).not.toContain('flowChatStore.setActiveSession');
   });
 
   it('renders the MiniApp entry model against the topic session workspace', () => {
     const welcomeSource = readSource('../../../app/layout/MiniAppBubbleWelcome.tsx');
     expect(source).toContain('<MiniAppBubbleWelcome');
-    expect(source).toContain('customization={bubbleCustomization}');
-    expect(source).toContain('workspacePath={displayedSession?.workspacePath}');
-    expect(source).toContain('emptyState={activeComposerClaim ? (');
-    expect(source).toContain('renderMiniAppIcon');
+    expect(source).toContain('customization={claim?.customization}');
+    expect(source).toContain('workspacePath={session.workspacePath}');
+    expect(source).toContain('emptyState={<MiniAppBubbleWelcome');
+    expect(source).toContain("showIcon={entry.kind === 'miniapp'}");
     expect(source).not.toContain('getMiniAppIconGradient');
     expect(welcomeSource).toContain('computeFlowChatInputStackFooterPx(inputHeight)');
     expect(welcomeSource).toContain('openbitfun-fmc__miniapp-welcome-content');
     expect(welcomeSource).toContain('WELCOME_CONTENT_BLOCK_PADDING_PX + inputClearance');
     expect(styles).toContain('overflow-y: auto;');
-    // The ordinary project workspace remains valid only for the host session.
-    expect(source).toMatch(
-      /workspacePath=\{\s*isMiniAppBubbleIsolated\s*\?\s*displayedSession\?\.workspacePath\s*:\s*workspacePath\s*\}/
-    );
+    expect(source).toContain('state.sessions.get(entry.sessionId)');
   });
 
   it('hydrates a restored hidden topic session instead of substituting the latest chat', () => {

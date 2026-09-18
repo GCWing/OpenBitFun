@@ -47,6 +47,8 @@ pub enum ToolExecutionState {
     /// Execution failed
     Failed {
         error: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        error_detail: Option<openbitfun_core_types::errors::ToolErrorDetail>,
         is_retryable: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         duration_ms: Option<u64>,

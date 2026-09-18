@@ -34,6 +34,7 @@ const log = createLogger('ArchivedSessionsConfig');
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface ArchivedEntry {
+  workspaceId: string;
   session: SessionMetadata;
   workspacePath: string;
   workspaceName: string;
@@ -81,13 +82,7 @@ interface ArchivedRowProps {
   t: (key: string, options?: Record<string, unknown>) => string;
 }
 
-function workspaceIdentityKey(
-  workspacePath: string,
-  remoteConnectionId?: string,
-  remoteSshHost?: string,
-): string {
-  return JSON.stringify([remoteConnectionId ?? '', remoteSshHost ?? '', workspacePath]);
-}
+function workspaceIdentityKey(workspaceId: string): string { return workspaceId; }
 
 function workspaceScopeLabel(
   workspaceName: string,
@@ -102,11 +97,7 @@ function workspaceScopeLabel(
 
 function archivedEntryIdentityKey(entry: ArchivedEntry): string {
   return JSON.stringify([
-    workspaceIdentityKey(
-      entry.workspacePath,
-      entry.remoteConnectionId,
-      entry.remoteSshHost,
-    ),
+    workspaceIdentityKey(entry.workspaceId),
     entry.session.sessionId,
   ]);
 }
@@ -189,11 +180,7 @@ const ArchivedSessionsConfig: React.FC = () => {
 
     const results = await Promise.all(openedWorkspacesList.map(async ws => {
       try {
-        const archived = await sessionAPI.listArchivedSessions(
-          ws.rootPath,
-          ws.connectionId,
-          ws.sshHost,
-        );
+        const archived = await sessionAPI.listArchivedSessions(ws.id);
         return { ws, archived };
       } catch (err) {
         log.error('Failed to load archived sessions for workspace', {
@@ -209,7 +196,7 @@ const ArchivedSessionsConfig: React.FC = () => {
     for (const { ws, archived } of results) {
       if (!archived) {
         failures.push({
-          workspaceKey: workspaceIdentityKey(ws.rootPath, ws.connectionId, ws.sshHost),
+          workspaceKey: workspaceIdentityKey(ws.id),
           workspacePath: ws.rootPath,
           workspaceName: workspaceScopeLabel(ws.name, ws.connectionId, ws.sshHost),
         });
@@ -218,6 +205,7 @@ const ArchivedSessionsConfig: React.FC = () => {
       for (const session of archived) {
         collected.push({
           session,
+          workspaceId: ws.id,
           workspacePath: ws.rootPath,
           workspaceName: ws.name,
           remoteConnectionId: ws.connectionId,
@@ -232,11 +220,7 @@ const ArchivedSessionsConfig: React.FC = () => {
       const failedWorkspaceKeys = new Set(failures.map(failure => failure.workspaceKey));
       setEntries(previous => [
         ...collected,
-        ...previous.filter(entry => failedWorkspaceKeys.has(workspaceIdentityKey(
-          entry.workspacePath,
-          entry.remoteConnectionId,
-          entry.remoteSshHost,
-        ))),
+        ...previous.filter(entry => failedWorkspaceKeys.has(workspaceIdentityKey(entry.workspaceId))),
       ].sort((a, b) => b.session.lastActiveAt - a.session.lastActiveAt));
     } else {
       setEntries(collected);
@@ -269,11 +253,7 @@ const ArchivedSessionsConfig: React.FC = () => {
   const grouped = useMemo(() => {
     const map = new Map<string, { label: string; entries: ArchivedEntry[] }>();
     for (const entry of entries) {
-      const key = workspaceIdentityKey(
-        entry.workspacePath,
-        entry.remoteConnectionId,
-        entry.remoteSshHost,
-      );
+      const key = workspaceIdentityKey(entry.workspaceId);
       let group = map.get(key);
       if (!group) {
         const scopeLabel = workspaceScopeLabel(
@@ -328,12 +308,7 @@ const ArchivedSessionsConfig: React.FC = () => {
     setPendingAction({ entryKey: archivedEntryIdentityKey(entry), type: 'restore' });
 
     try {
-      await sessionAPI.unarchiveSession(
-        entry.session.sessionId,
-        entry.workspacePath,
-        entry.remoteConnectionId,
-        entry.remoteSshHost
-      );
+      await sessionAPI.unarchiveSession(entry.session.sessionId, entry.workspaceId);
       removeEntry(entry);
       notificationService.success(t('nav.sessions.restoreSucceeded', {
         name: entry.session.sessionName || t('nav.sessions.untitled'),
@@ -346,9 +321,7 @@ const ArchivedSessionsConfig: React.FC = () => {
       try {
         // Refresh the workspace sessions so the restored session appears in the sidebar immediately.
         await flowChatManager.refreshWorkspaceSessions({
-          rootPath: entry.workspacePath,
-          connectionId: entry.remoteConnectionId,
-          sshHost: entry.remoteSshHost,
+          id: entry.workspaceId,
         });
       } catch (err) {
         log.error('Restored session but failed to refresh workspace sessions', err);
@@ -386,12 +359,7 @@ const ArchivedSessionsConfig: React.FC = () => {
 
     setPendingAction({ entryKey: archivedEntryIdentityKey(entry), type: 'delete' });
     try {
-      await sessionAPI.deleteSession(
-        entry.session.sessionId,
-        entry.workspacePath,
-        entry.remoteConnectionId,
-        entry.remoteSshHost
-      );
+      await sessionAPI.deleteSession(entry.session.sessionId, entry.workspaceId);
       removeEntry(entry);
       notificationService.success(t('nav.sessions.deleteArchivedSucceeded', {
         name: entry.session.sessionName || t('nav.sessions.untitled'),
@@ -416,11 +384,7 @@ const ArchivedSessionsConfig: React.FC = () => {
 
   const handleDeleteAll = useCallback(async () => {
     if (pendingAction || bulkDeleting || entries.length === 0) return;
-    const workspaceCount = new Set(entries.map(entry => workspaceIdentityKey(
-      entry.workspacePath,
-      entry.remoteConnectionId,
-      entry.remoteSshHost,
-    ))).size;
+    const workspaceCount = new Set(entries.map(entry => workspaceIdentityKey(entry.workspaceId))).size;
     const confirmed = await confirmDanger(
       t('nav.sessions.deleteAllArchivedConfirmTitle'),
       t('nav.sessions.deleteAllArchivedConfirmMessage', {
@@ -433,19 +397,11 @@ const ArchivedSessionsConfig: React.FC = () => {
     setBulkDeleting(true);
     try {
       const targets = Array.from(new Map(
-        entries.map(entry => [workspaceIdentityKey(
-          entry.workspacePath,
-          entry.remoteConnectionId,
-          entry.remoteSshHost,
-        ), entry]),
+        entries.map(entry => [workspaceIdentityKey(entry.workspaceId), entry]),
       ).values());
       const results = await Promise.all(targets.map(async entry => {
         try {
-          await sessionAPI.deleteAllArchivedSessions(
-            entry.workspacePath,
-            entry.remoteConnectionId,
-            entry.remoteSshHost,
-          );
+          await sessionAPI.deleteAllArchivedSessions(entry.workspaceId);
           return { entry, succeeded: true } as const;
         } catch (err) {
           log.error('Failed to delete archived sessions for workspace', {
@@ -456,26 +412,14 @@ const ArchivedSessionsConfig: React.FC = () => {
         }
       }));
       const deletedWorkspaceKeys = new Set(
-        results.filter(result => result.succeeded).map(result => workspaceIdentityKey(
-          result.entry.workspacePath,
-          result.entry.remoteConnectionId,
-          result.entry.remoteSshHost,
-        )),
+        results.filter(result => result.succeeded).map(result => workspaceIdentityKey(result.entry.workspaceId)),
       );
       const failedWorkspaceCount = results.filter(result => !result.succeeded).length;
-      const deletedCount = entries.filter(entry => deletedWorkspaceKeys.has(workspaceIdentityKey(
-        entry.workspacePath,
-        entry.remoteConnectionId,
-        entry.remoteSshHost,
-      ))).length;
+      const deletedCount = entries.filter(entry => deletedWorkspaceKeys.has(workspaceIdentityKey(entry.workspaceId))).length;
 
       if (deletedWorkspaceKeys.size > 0) {
         setEntries(previous => previous.filter(entry => !deletedWorkspaceKeys.has(
-          workspaceIdentityKey(
-            entry.workspacePath,
-            entry.remoteConnectionId,
-            entry.remoteSshHost,
-          ),
+          workspaceIdentityKey(entry.workspaceId),
         )));
       }
       if (failedWorkspaceCount === 0) {

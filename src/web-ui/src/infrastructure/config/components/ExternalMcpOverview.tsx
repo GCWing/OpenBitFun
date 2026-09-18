@@ -147,7 +147,7 @@ const ExternalMcpOverview: React.FC = () => {
     setLoading(true);
     setLoadFailed(false);
     try {
-      const nextSnapshot = await externalSourcesAPI.getSnapshot(workspacePath || undefined);
+      const nextSnapshot = await externalSourcesAPI.getSnapshot(workspace?.id);
       if (requestId === requestIdRef.current) {
         setSnapshotState({ scope: requestScope, snapshot: nextSnapshot });
       }
@@ -166,7 +166,7 @@ const ExternalMcpOverview: React.FC = () => {
         setLoading(false);
       }
     }
-  }, [requestScope, workspacePath]);
+  }, [requestScope, workspace?.id]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -257,7 +257,7 @@ const ExternalMcpOverview: React.FC = () => {
     setImportBusy(true);
     setImportNotice(null);
     try {
-      const plan = await externalSourcesAPI.planMcpImport(workspacePath || undefined);
+      const plan = await externalSourcesAPI.planMcpImport(workspace?.id);
       if (requestId !== importRequestIdRef.current) return;
       const hasEligible = plan.items.some((item) => (
         item.disposition === 'eligible' || item.disposition === 'automatic_rename'
@@ -287,7 +287,7 @@ const ExternalMcpOverview: React.FC = () => {
     setImportNotice(null);
     try {
       const result = await externalSourcesAPI.applyMcpImport(
-        workspacePath || undefined,
+        workspace?.id,
         importPlan,
         selectedImportItems.map((item) => ({ candidateId: item.candidateId })),
       );

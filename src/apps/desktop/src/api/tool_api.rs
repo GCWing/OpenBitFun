@@ -15,9 +15,7 @@ use openbitfun_core::agentic::{
     WorkspaceBinding,
 };
 use openbitfun_core::product_runtime::CoreRuntimeServicesProvider;
-use openbitfun_core::service::remote_ssh::workspace_state::{
-    get_remote_workspace_manager, lookup_remote_connection, workspace_session_identity,
-};
+use openbitfun_core::service::remote_ssh::workspace_state::get_remote_workspace_manager;
 use openbitfun_core::util::elapsed_ms_u64;
 
 use crate::runtime::DesktopRuntimeContext;
@@ -40,6 +38,10 @@ pub async fn get_chat_mcp_catalog(
 pub struct ToolExecutionRequest {
     pub tool_name: String,
     pub input: serde_json::Value,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only old-client payload; converted once before tool execution.
+    #[serde(default)]
     pub workspace_path: Option<String>,
     pub context: Option<HashMap<String, String>>,
     pub safe_mode: Option<bool>,
@@ -72,6 +74,10 @@ pub struct ToolExecutionResponse {
 pub struct ToolValidationRequest {
     pub tool_name: String,
     pub input: serde_json::Value,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only old-client payload; converted once before tool execution.
+    #[serde(default)]
     pub workspace_path: Option<String>,
 }
 
@@ -87,37 +93,30 @@ pub struct ToolValidationResponse {
 /// Builds the tool context for a direct tool call. A remote workspace whose
 /// SSH provider cannot be built is an error: a context without workspace
 /// services would otherwise resolve remote paths against this machine.
-async fn build_tool_context(workspace_path: Option<&str>) -> Result<ToolUseContext, String> {
-    let normalized_workspace_path = workspace_path
-        .map(str::trim)
-        .filter(|path| !path.is_empty());
-
-    let workspace = match normalized_workspace_path {
-        Some(path) => {
-            if let Some(entry) = lookup_remote_connection(path).await {
-                let identity = workspace_session_identity(
-                    path,
-                    Some(&entry.connection_id),
-                    Some(&entry.ssh_host),
-                )
-                .unwrap_or_else(|| {
-                    openbitfun_core::service::remote_ssh::workspace_state::WorkspaceSessionIdentity {
-                        hostname: entry.ssh_host.clone(),
-                        logical_workspace_path: entry.remote_root.clone(),
-                        remote_connection_id: Some(entry.connection_id.clone()),
-                    }
-                });
-                Some(WorkspaceBinding::new_remote(
-                    None,
-                    PathBuf::from(path),
-                    entry.connection_id,
-                    entry.connection_name,
-                    identity,
-                ))
-            } else {
-                Some(WorkspaceBinding::new(None, PathBuf::from(path)))
-            }
-        }
+async fn build_tool_context(
+    workspace_id: Option<&str>,
+    legacy_path: Option<&str>,
+) -> Result<ToolUseContext, String> {
+    let id = if let Some(id) = workspace_id {
+        Some(id.to_owned())
+    } else if let Some(path) = legacy_path.filter(|path| !path.trim().is_empty()) {
+        let service = openbitfun_core::service::workspace::get_global_workspace_service()
+            .ok_or_else(|| "Workspace service is unavailable".to_string())?;
+        let record = service
+            .resolve_legacy_workspace_reference(None, path, None, None)
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "Legacy workspace reference is unavailable".to_string())?;
+        Some(record.id)
+    } else {
+        None
+    };
+    let workspace = match id {
+        Some(id) => Some(
+            WorkspaceBinding::resolve(&id)
+                .await
+                .map_err(|error| error.to_string())?,
+        ),
         None => None,
     };
 
@@ -268,10 +267,17 @@ pub async fn validate_tool_input(
             ensure_workspace_requirement(
                 &request.tool_name,
                 &request.input,
-                request.workspace_path.as_deref(),
+                request
+                    .workspace_id
+                    .as_deref()
+                    .or(request.workspace_path.as_deref()),
             )?;
 
-            let context = build_tool_context(request.workspace_path.as_deref()).await?;
+            let context = build_tool_context(
+                request.workspace_id.as_deref(),
+                request.workspace_path.as_deref(),
+            )
+            .await?;
 
             let validation_result = tool.validate_input(&request.input, Some(&context)).await;
 
@@ -299,10 +305,17 @@ pub async fn execute_tool(request: ToolExecutionRequest) -> Result<ToolExecution
             ensure_workspace_requirement(
                 &request.tool_name,
                 &request.input,
-                request.workspace_path.as_deref(),
+                request
+                    .workspace_id
+                    .as_deref()
+                    .or(request.workspace_path.as_deref()),
             )?;
 
-            let context = build_tool_context(request.workspace_path.as_deref()).await?;
+            let context = build_tool_context(
+                request.workspace_id.as_deref(),
+                request.workspace_path.as_deref(),
+            )
+            .await?;
 
             let validation_result = tool.validate_input(&request.input, Some(&context)).await;
             if !validation_result.result {

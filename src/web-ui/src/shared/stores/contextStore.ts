@@ -1,6 +1,7 @@
  
 
-import { create } from 'zustand';
+import { create, useStore, type StateCreator } from 'zustand';
+import { createContext, useContext } from 'react';
 import { devtools, persist } from 'zustand/middleware';
 import { ContextItem, ValidationResult } from '../types/context';
 import { createLogger } from '@/shared/utils/logger';
@@ -9,7 +10,7 @@ const log = createLogger('ContextStore');
 
 
 
-interface ContextState {
+export interface ContextState {
   
   contexts: ContextItem[];
   
@@ -32,10 +33,7 @@ interface ContextState {
 
 
 
-export const useContextStore = create<ContextState>()(
-  devtools(
-    persist(
-      (set, _get) => ({
+const contextStateCreator: StateCreator<ContextState, [['zustand/devtools', never]]> = (set, _get) => ({
         
         contexts: [],
         validationStates: new Map(),
@@ -141,7 +139,12 @@ export const useContextStore = create<ContextState>()(
             return { contexts };
           }, false, 'updateContext');
         }
-      }),
+      });
+
+const defaultContextStore = create<ContextState>()(
+  devtools(
+    persist<ContextState, [['zustand/devtools', never]]>(
+      contextStateCreator,
       {
         name: 'openbitfun-context-storage',
         
@@ -178,6 +181,16 @@ export const useContextStore = create<ContextState>()(
 );
 
 
+
+export const createConversationContextStore = () => create<ContextState>()(devtools(contextStateCreator, { enabled: false }));
+export const ConversationContextStoreContext = createContext<ReturnType<typeof createConversationContextStore> | null>(null);
+export const useContextStoreApi = () => useContext(ConversationContextStoreContext) ?? defaultContextStore;
+export const useContextStore = Object.assign(
+  function useScopedContextStore<T>(selector: (state: ContextState) => T): T {
+    return useStore(useContextStoreApi(), selector);
+  },
+  defaultContextStore,
+);
 
 export const selectContexts = (state: ContextState) => state.contexts;
 export const selectContextCount = (state: ContextState) => state.contexts.length;

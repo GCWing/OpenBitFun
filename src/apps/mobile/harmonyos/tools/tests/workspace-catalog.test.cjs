@@ -48,8 +48,7 @@ test('session ownership distinguishes same paths on local and SSH hosts', () => 
   const local = { path: '/project' };
   const a = { path: '/project', remoteConnectionId: 'a', remoteSshHost: 'host-a' };
   const b = { path: '/project', remoteConnectionId: 'b', remoteSshHost: 'host-b' };
-  const session = stampRemoteSessionDevice(stampRemoteSessionWorkspace({ id: '1' }, a.path,
-    a.remoteConnectionId, a.remoteSshHost), 'desktop');
+  const session = stampRemoteSessionDevice(stampRemoteSessionWorkspace({ id: '1' }, a), 'desktop');
   for (const scope of [local, a, b]) {
     assert.equal(remoteSessionBelongsToWorkspace(session, scope, [local, a, b]), scope === a);
   }
@@ -75,20 +74,39 @@ test('workspace identity normalizes trailing separators without aliasing missing
 });
 
 test('publishing an already scoped session preserves its owning SSH workspace', () => {
-  const original = stampRemoteSessionWorkspace({ id: 'a' }, '/project', 'ssh-a', 'host-a');
-  assert.equal(stampRemoteSessionWorkspace(original, '/project', 'ssh-b', 'host-b'), original);
-  assert.equal(stampRemoteSessionWorkspace(original, '/local'), original);
+  const original = stampRemoteSessionWorkspace({ id: 'a' }, { path: '/project', remoteConnectionId: 'ssh-a', remoteSshHost: 'host-a' });
+  assert.equal(stampRemoteSessionWorkspace(original, { path: '/project', remoteConnectionId: 'ssh-b', remoteSshHost: 'host-b' }), original);
+  assert.equal(stampRemoteSessionWorkspace(original, { path: '/local' }), original);
+  // A host-pinned ID is never overwritten by a listing scope naming another workspace.
+  const pinned = stampRemoteSessionWorkspace({ id: 'b' }, { workspaceId: 'ws-a', path: '/project' });
+  assert.equal(stampRemoteSessionWorkspace(pinned, { workspaceId: 'ws-b', path: '/project' }), pinned);
 });
 
 const { RemoteCommandFactory } = load('RemoteCommandFactory');
 test('workspace list and creation commands preserve SSH scope without changing legacy omission', () => {
-  const listing = RemoteCommandFactory.listSessions('/repo', 50, 0, '', 'saved', 'host');
+  // Pre-ID references: the legacy (path, connection, ssh host) projection is the only thing the host can resolve.
+  const listing = RemoteCommandFactory.listSessions({ path: '/repo', remoteConnectionId: 'saved', remoteSshHost: 'host' }, 50, 0, '');
+  assert.equal(listing.workspace_path, '/repo');
   assert.equal(listing.remote_connection_id, 'saved');
   assert.equal(listing.remote_ssh_host, 'host');
+  assert.equal(listing.workspace_id, undefined);
   const created = RemoteCommandFactory.createSession({ agentType: 'code', title: '', remoteConnectionId: 'saved', remoteSshHost: 'host' }, '/repo');
   assert.equal(created.remote_connection_id, 'saved');
   assert.equal(created.remote_ssh_host, 'host');
-  const legacy = RemoteCommandFactory.listSessions('/repo', 50, 0, '');
+  const legacy = RemoteCommandFactory.listSessions({ path: '/repo' }, 50, 0, '');
   assert.equal(JSON.stringify(legacy).includes('remote_connection_id'), false);
   assert.equal(JSON.stringify(legacy).includes('remote_ssh_host'), false);
+  // Identified references: the ID alone, so an ID-aware host can never fall back to the path.
+  const identified = RemoteCommandFactory.listSessions({ workspaceId: 'ws-1', path: '/repo', remoteConnectionId: 'saved', remoteSshHost: 'host' }, 50, 0, '');
+  assert.deepEqual(identified, { cmd: 'list_sessions', workspace_id: 'ws-1', limit: 50, offset: 0 });
+});
+
+test('1.0.0 localhost markers follow workspace kind without losing real SSH identity', () => {
+  const catalog = projectWorkspaceCatalog({ workspaces: [
+    { path: '/local', workspace_kind: 'normal', remote_ssh_host: 'localhost' },
+    { path: '/remote', workspace_kind: 'remote', remote_connection_id: 'saved', remote_ssh_host: 'localhost' },
+  ] }, []);
+  assert.equal(catalog.workspaces[0].remoteSshHost, undefined);
+  assert.equal(catalog.workspaces[1].remoteSshHost, 'localhost');
+  assert.equal(catalog.workspaces[1].remoteConnectionId, 'saved');
 });

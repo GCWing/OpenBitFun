@@ -16,6 +16,8 @@ export type AnchoredPopoverAlignment = 'start' | 'end';
 export interface AnchoredPopoverLayout {
   top: number;
   left: number;
+  /** Prefer this edge for top placement so content can grow away from the anchor. */
+  bottom?: number;
   width?: number;
   placement: FixedPopoverPlacement;
 }
@@ -39,6 +41,7 @@ const sameLayout = (
 ): boolean => current !== null
   && current.top === next.top
   && current.left === next.left
+  && current.bottom === next.bottom
   && current.width === next.width
   && current.placement === next.placement;
 
@@ -109,15 +112,17 @@ export function useAnchoredPopoverPosition({
       { width: window.innerWidth, height: window.innerHeight },
       { gap, padding, preferredPlacement },
     );
+    const placement = resolvePlacement(
+      position.top,
+      popoverHeight,
+      anchorRect,
+      preferredPlacement,
+    );
     const nextLayout: AnchoredPopoverLayout = {
       ...position,
+      bottom: placement === 'top' ? window.innerHeight - position.top - popoverHeight : undefined,
       width: matchedWidth,
-      placement: resolvePlacement(
-        position.top,
-        popoverHeight,
-        anchorRect,
-        preferredPlacement,
-      ),
+      placement,
     };
 
     setLayout(current => sameLayout(current, nextLayout) ? current : nextLayout);

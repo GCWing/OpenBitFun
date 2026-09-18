@@ -63,6 +63,7 @@ function createContext(dialogTurn: DialogTurn): any {
   const session = {
     sessionId: SESSION_ID,
     dialogTurns: [dialogTurn],
+    workspaceId: 'workspace-local',
     workspacePath: 'D:/workspace/OpenBitFun',
     createdAt: 1,
     lastActiveAt: 2,
@@ -114,7 +115,7 @@ describe('PersistenceModule', () => {
     expect(mockSaveSessionMetadata).toHaveBeenCalledWith(expect.objectContaining({
       unreadCompletion: undefined,
       lastTurn: expect.objectContaining({ turnId: TURN_ID, status: 'completed', executionGeneration: 2 }),
-    }), 'D:/workspace/OpenBitFun', ['unreadCompletion', 'needsUserAttention'], undefined, undefined);
+    }), 'workspace-local', ['unreadCompletion', 'needsUserAttention']);
   });
 
   it('never writes old notification metadata to a device selected during its read', async () => {
@@ -404,9 +405,7 @@ describe('PersistenceModule', () => {
     await saveDialogTurnToDisk(context, SESSION_ID, TURN_ID);
     expect(mockSaveSessionTurn).toHaveBeenCalledWith(
       expect.objectContaining({ turnIndex: 140 }),
-      expect.any(String),
-      undefined,
-      undefined,
+      'workspace-local',
     );
   });
 
@@ -424,9 +423,7 @@ describe('PersistenceModule', () => {
 
     expect(mockSaveSessionTurn).toHaveBeenCalledWith(
       expect.objectContaining({ turnIndex: 140 }),
-      expect.any(String),
-      undefined,
-      undefined,
+      'workspace-local',
     );
   });
 });

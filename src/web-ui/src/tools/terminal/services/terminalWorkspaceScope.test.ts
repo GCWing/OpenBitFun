@@ -1,38 +1,39 @@
+import { resolveLegacyTerminalWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { describe, expect, it } from 'vitest';
 import type { SessionResponse } from '../types/session';
 import { isSessionRunning } from '@/app/scenes/shell/hooks/shellEntryTypes';
 import { TerminalOriginCache, isTerminalPathInside, terminalBelongsToWorkspace } from './terminalWorkspaceScope';
 
 const terminal = (overrides: Partial<SessionResponse> = {}): SessionResponse => ({
-  id: 'terminal-1', name: 'Development', shellType: 'Bash', cwd: '/repo/src', initialCwd: '/repo',
+  workspaceId: 'workspace-local', id: 'terminal-1', name: 'Development', shellType: 'Bash', cwd: '/repo/src', initialCwd: '/repo',
   source: 'manual', status: 'Running', cols: 80, rows: 24, ...overrides,
 });
 
 describe('workspace terminal projection', () => {
-  it('keeps a terminal in its creation workspace after cd', () => {
-    expect(terminalBelongsToWorkspace(terminal({ cwd: '/another-project' }), { rootPath: '/repo', isRemote: false })).toBe(true);
-    expect(terminalBelongsToWorkspace(terminal({ cwd: '/another-project' }), { rootPath: '/another-project', isRemote: false })).toBe(false);
+  it('keeps explicit ownership after cd or when another workspace has the same path', () => {
+    const local = { workspaceId: 'workspace-local', rootPath: '/repo', isRemote: false };
+    const other = { ...local, workspaceId: 'workspace-other' };
+    const moved = terminal({ cwd: '/another-project', initialCwd: '/unrelated' });
+    expect(terminalBelongsToWorkspace(moved, local)).toBe(true);
+    expect(terminalBelongsToWorkspace(moved, other)).toBe(false);
+    expect(terminalBelongsToWorkspace(terminal({ workspaceId: undefined }), local)).toBe(false);
   });
-  it('uses path boundaries and the closest opened project', () => {
-    expect(isTerminalPathInside('/repository/src', '/repo')).toBe(false);
-    const parent = { rootPath: '/repo', isRemote: false };
-    const child = { rootPath: '/repo/packages/app', isRemote: false };
-    const session = terminal({ initialCwd: '/repo/packages/app/src' });
-    expect(terminalBelongsToWorkspace(session, parent, [parent, child])).toBe(false);
-    expect(terminalBelongsToWorkspace(session, child, [parent, child])).toBe(true);
+  it('converts old payloads only at the compatibility boundary and refuses ambiguity', () => {
+    const old = terminal({ workspaceId: undefined });
+    const records = [
+      { id: 'local', rootPath: '/repo', workspaceKind: 'normal' },
+      { id: 'remote', rootPath: '/repo', workspaceKind: 'remote', connectionId: 'ssh-a' },
+    ];
+    expect(resolveLegacyTerminalWorkspace(old, records)).toBe('local');
+    expect(resolveLegacyTerminalWorkspace({ ...old, shellType: 'Remote', connectionId: 'ssh-a' }, records)).toBe('remote');
+    expect(resolveLegacyTerminalWorkspace(old, [...records, { ...records[0], id: 'duplicate' }])).toBeUndefined();
+    expect(resolveLegacyTerminalWorkspace({ ...old, workspaceId: 'stale' }, records)).toBe('stale');
   });
   it('uses the target path semantics on every controller OS', () => {
     expect(isTerminalPathInside('C:\\Repo\\src', 'c:/repo/')).toBe(true);
     expect(isTerminalPathInside('/Repo/src', '/repo', true)).toBe(false);
     expect(isTerminalPathInside('/repo/a\\b', '/repo/a', true)).toBe(false);
     expect(isTerminalPathInside('/repo/src', '/', true)).toBe(true);
-  });
-  it('isolates local workspaces and two SSH connections with identical paths', () => {
-    const remote = terminal({ shellType: 'Remote', connectionId: 'ssh-a' });
-    expect(terminalBelongsToWorkspace(remote, { rootPath: '/repo', isRemote: false })).toBe(false);
-    expect(terminalBelongsToWorkspace(remote, { rootPath: '/repo', isRemote: true, connectionId: 'ssh-b' })).toBe(false);
-    expect(terminalBelongsToWorkspace(remote, { rootPath: '/repo', isRemote: true, connectionId: 'ssh-a' })).toBe(true);
-    expect(terminalBelongsToWorkspace(remote, { rootPath: '/repo', isRemote: true })).toBe(false);
   });
   it('accepts old host payloads and anchors their first observation per device', () => {
     const origins = new TerminalOriginCache();

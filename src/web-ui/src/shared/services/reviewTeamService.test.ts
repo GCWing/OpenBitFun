@@ -301,20 +301,20 @@ describe('reviewTeamService', () => {
       subagent('ExtraDisabled', false, 'project', 'fast', true, true),
     ]);
 
-    await prepareDefaultReviewTeamForLaunch(WORKSPACE_PATH);
+    await prepareDefaultReviewTeamForLaunch('workspace-1');
 
     expect(SubagentAPI.updateSubagentConfig).toHaveBeenCalledTimes(2);
     expect(SubagentAPI.updateSubagentConfig).toHaveBeenCalledWith({
       parentAgentType: 'DeepReview',
       subagentId: 'ReviewWorker',
       enabled: true,
-      workspacePath: WORKSPACE_PATH,
+      workspaceId: 'workspace-1',
     });
     expect(SubagentAPI.updateSubagentConfig).toHaveBeenCalledWith({
       parentAgentType: 'DeepReview',
       subagentId: 'ReviewJudge',
       enabled: true,
-      workspacePath: WORKSPACE_PATH,
+      workspaceId: 'workspace-1',
     });
     expect(SubagentAPI.updateSubagentConfig).not.toHaveBeenCalledWith(
       expect.objectContaining({ subagentId: 'ExtraEnabled' }),

@@ -28,6 +28,12 @@ export function normalizeResourceLayout(input: Partial<WorkspaceResourceLayout> 
 interface ResourceState {
   layouts: Record<string, WorkspaceResourceLayout>;
   updateLayout: (key: string, update: Partial<WorkspaceResourceLayout>) => void;
+  /**
+   * One-time upgrade of a layout persisted under a pre-ID key (surface,
+   * connection, workspace ID, root path) to the ID-only key. No-op when the
+   * new key already has a layout or the legacy key has none.
+   */
+  migrateLayout: (legacyKey: string, key: string) => void;
 }
 
 /** Presentation preferences only. Files and PTYs retain their existing owners. */
@@ -36,6 +42,11 @@ export const useWorkspaceResourceState = create<ResourceState>()(persist((set) =
   updateLayout: (key, update) => set(state => ({
     layouts: { ...state.layouts, [key]: normalizeResourceLayout({ ...state.layouts[key], ...update }) },
   })),
+  migrateLayout: (legacyKey, key) => set(state => {
+    if (legacyKey === key || state.layouts[key] || !state.layouts[legacyKey]) return state;
+    const { [legacyKey]: legacy, ...rest } = state.layouts;
+    return { layouts: { ...rest, [key]: legacy } };
+  }),
 }), {
   name: 'openbitfun-workspace-resource-layouts',
   version: 1,

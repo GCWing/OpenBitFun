@@ -47,7 +47,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       type={type}
     >
       <span aria-hidden="true" className={styles.progress} data-openbitfun-part="progress" />
-      <span aria-hidden="true" className={styles.icon} data-openbitfun-part="icon">{icon}</span>
+      <span aria-hidden="true" className={styles.icon} data-openbitfun-icon-slot="true" data-openbitfun-part="icon">{icon}</span>
     </button>
   );
 });

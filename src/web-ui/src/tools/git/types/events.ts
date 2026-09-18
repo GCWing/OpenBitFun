@@ -1,3 +1,4 @@
+import type { GitWorkspaceScope } from '@/infrastructure/api/service-api/GitAPI';
 /**
  * Git event types
  */
@@ -31,7 +32,7 @@ export type GitEventType =
   | 'state:error';
 
 export interface GitEventData {
-  repositoryPath: string;
+  repositoryPath: GitWorkspaceScope;
   timestamp: Date;
   source?: string;
 }
@@ -164,5 +165,5 @@ export interface IGitEventEmitter {
 export interface GitEventSubscriptionOptions {
   once?: boolean;
   filter?: (data: any) => boolean;
-  repositoryPath?: string;
+  repositoryPath?: GitWorkspaceScope;
 }

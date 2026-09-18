@@ -12,8 +12,8 @@ struct RemoteCreateSessionView: View {
     @State private var instruction = ""
     @State private var harnessProfile = HarnessProfile.standard
     @Environment(\.scenePhase) private var scenePhase
-    @State private var selectedWorkspacePath = ""
-    @State private var selectedWorkspaceConnectionId: String?
+    /// The workspace the draft targets, ID-first; nil is the plain chat (assistant) draft.
+    @State private var selectedWorkspace: MobileWorkspaceScope?
     @State private var newWorkspacePath = ""
     @State private var directoryVisible = false
     @State private var directoryConnectionId: String?
@@ -110,7 +110,7 @@ struct RemoteCreateSessionView: View {
         .onChange(of: scenePhase) { if $0 != .active { speech.stop() } }
         .onChange(of: model.remoteTargetEpoch) { _ in
             speech.stop()
-            selectedWorkspacePath = ""
+            selectedWorkspace = nil
         }
         .onChange(of: model.remoteWorkspaces) { _ in
             reconcileSelectedWorkspace()
@@ -129,10 +129,12 @@ struct RemoteCreateSessionView: View {
         return model.accountDeviceName ?? model.localized("选择桌面设备")
     }
 
+    private var selectedWorkspacePath: String { selectedWorkspace?.path ?? "" }
+
     private var selectedWorkspaceName: String {
-        guard !selectedWorkspacePath.isEmpty else { return model.localized("对话") }
-        return model.remoteWorkspaces.first(where: { $0.path == selectedWorkspacePath })?.name
-            ?? selectedWorkspacePath
+        guard let selectedWorkspace else { return model.localized("对话") }
+        return model.remoteWorkspaces.first(where: { $0.scope.refersTo(selectedWorkspace) })?.name
+            ?? selectedWorkspace.path
     }
 
     private var selectedModel: ComposerModelOption? {
@@ -314,8 +316,10 @@ struct RemoteCreateSessionView: View {
                 title: "",
                 instruction: instruction,
                 modelID: selectedModelID,
-                workspacePath: selectedWorkspacePath.isEmpty ? nil : selectedWorkspacePath,
-                remoteConnectionId: selectedWorkspaceConnectionId
+                workspacePath: selectedWorkspace?.path,
+                remoteConnectionId: selectedWorkspace?.remoteConnectionId,
+                remoteSshHost: selectedWorkspace?.remoteSshHost,
+                workspaceId: selectedWorkspace?.workspaceId
             )
         } else if model.workspaceLoadFailed {
             model.retryRemoteWorkspaces()
@@ -338,8 +342,10 @@ struct RemoteCreateSessionView: View {
                 title: "",
                 instruction: value,
                 modelID: selectedModelID,
-                workspacePath: selectedWorkspacePath.isEmpty ? nil : selectedWorkspacePath,
-                remoteConnectionId: selectedWorkspaceConnectionId
+                workspacePath: selectedWorkspace?.path,
+                remoteConnectionId: selectedWorkspace?.remoteConnectionId,
+                remoteSshHost: selectedWorkspace?.remoteSshHost,
+                workspaceId: selectedWorkspace?.workspaceId
             )
             return
         }
@@ -374,8 +380,7 @@ struct RemoteCreateSessionView: View {
                                 enabled: device.online || device.selected
                             ) {
                                 pickerKind = nil
-                                selectedWorkspacePath = ""
-                                selectedWorkspaceConnectionId = nil
+                                selectedWorkspace = nil
                                 model.selectRemoteDevice(device)
                             }
                         }
@@ -405,11 +410,10 @@ struct RemoteCreateSessionView: View {
                                 icon: "message",
                                 title: model.localized("对话"),
                                 subtitle: "",
-                                selected: selectedWorkspacePath.isEmpty,
+                                selected: selectedWorkspace == nil,
                                 enabled: model.remoteCreateInteraction.canSelectWorkspace
                             ) {
-                                selectedWorkspacePath = ""
-                                selectedWorkspaceConnectionId = nil
+                                selectedWorkspace = nil
                                 pickerKind = nil
                             }
                             VStack {
@@ -441,11 +445,10 @@ struct RemoteCreateSessionView: View {
                                     icon: "folder",
                                     title: workspace.name,
                                     subtitle: workspace.path,
-                                    selected: workspace.path == selectedWorkspacePath,
+                                    selected: selectedWorkspace.map { workspace.scope.refersTo($0) } ?? false,
                                     enabled: model.remoteCreateInteraction.canSelectWorkspace
                                 ) {
-                                    selectedWorkspacePath = workspace.path
-                                    selectedWorkspaceConnectionId = workspace.remoteConnectionId
+                                    selectedWorkspace = workspace.scope
                                     pickerKind = nil
                                 }
                             }
@@ -586,10 +589,10 @@ struct RemoteCreateSessionView: View {
 
     private func reconcileSelectedWorkspace() {
         if let selected = model.remoteWorkspaces.first(where: \.selected) {
-            selectedWorkspacePath = selected.path
-        } else if !selectedWorkspacePath.isEmpty,
-                  !model.remoteWorkspaces.contains(where: { $0.path == selectedWorkspacePath }) {
-            selectedWorkspacePath = ""
+            selectedWorkspace = selected.scope
+        } else if let current = selectedWorkspace,
+                  !model.remoteWorkspaces.contains(where: { $0.scope.refersTo(current) }) {
+            selectedWorkspace = nil
         }
     }
 

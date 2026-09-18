@@ -192,6 +192,7 @@ export interface McpUiUpdateModelContextParams {
 
 /** Event payload for mcp-app:message event with requestId for response. */
 export interface McpAppMessageEvent {
+  sessionId?: string;
   /** Unique request ID for correlating response. */
   requestId: string;
   /** Message params from MCP App. */

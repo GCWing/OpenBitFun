@@ -369,6 +369,8 @@ pub enum BotDisplayModeRecord {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BotWorkspaceRefRecord {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
@@ -392,6 +394,7 @@ where
         None => Ok(None),
         Some(Raw::Path(path)) if path.trim().is_empty() => Ok(None),
         Some(Raw::Path(path)) => Ok(Some(BotWorkspaceRefRecord {
+            workspace_id: None,
             path,
             remote_connection_id: None,
             remote_ssh_host: None,
@@ -411,7 +414,10 @@ pub struct BotChatStateRecord {
         skip_serializing_if = "Option::is_none"
     )]
     pub current_workspace: Option<BotWorkspaceRefRecord>,
+    /// Legacy path retained for old readers; selection uses current_assistant_id.
     pub current_assistant: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_assistant_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_assistant_name: Option<String>,
     pub current_session_id: Option<String>,

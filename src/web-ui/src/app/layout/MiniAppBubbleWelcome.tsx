@@ -10,6 +10,7 @@ interface MiniAppBubbleWelcomeProps {
   appName: string;
   appDescription?: string;
   appIcon?: string;
+  showIcon?: boolean;
   customization?: MiniAppBubbleCustomization;
   workspacePath?: string;
   onSuggestion: (prompt: string) => void;
@@ -27,6 +28,7 @@ export const MiniAppBubbleWelcome: React.FC<MiniAppBubbleWelcomeProps> = ({
   appName,
   appDescription,
   appIcon = 'Box',
+  showIcon = true,
   customization,
   workspacePath,
   onSuggestion,
@@ -47,14 +49,14 @@ export const MiniAppBubbleWelcome: React.FC<MiniAppBubbleWelcomeProps> = ({
           paddingBottom: `${WELCOME_CONTENT_BLOCK_PADDING_PX + inputClearance}px`,
         }}
       >
-        <div
+        {showIcon && <div
           className="openbitfun-fmc__miniapp-welcome-icon"
           data-openbitfun-component="miniapp-bubble-welcome"
           data-openbitfun-part="icon"
           aria-hidden="true"
         >
           {renderMiniAppIcon(appIcon, 28)}
-        </div>
+        </div>}
 
         {title !== appName && (
           <div className="openbitfun-fmc__miniapp-welcome-eyebrow" data-openbitfun-component="miniapp-bubble-welcome" data-openbitfun-part="eyebrow">{appName}</div>

@@ -59,6 +59,7 @@ function createSession(
     parentToolCallId: parentSessionId ? 'tool-1' : undefined,
     title: sessionId === 'root' ? 'Root session' : 'Running child',
     createdAt: sessionId === 'root' ? 1 : 2,
+    workspaceId: 'workspace-main',
     workspacePath: '/workspace',
     mode: 'code',
     config: { agentType: 'worker' },
@@ -147,7 +148,7 @@ describe('SessionTreePopover', () => {
       root.render(
         <SessionTreePopover
           sessionId="root"
-          fallbackWorkspacePath="/workspace"
+          fallbackWorkspaceId="workspace-main"
           onCancelSession={onCancelSession}
           t={t}
         />,
@@ -211,7 +212,7 @@ describe('SessionTreePopover', () => {
       root.render(
         <SessionTreePopover
           sessionId="root"
-          fallbackWorkspacePath="/workspace"
+          fallbackWorkspaceId="workspace-main"
           t={t}
         />,
       );
@@ -248,7 +249,7 @@ describe('SessionTreePopover', () => {
       root.render(
         <SessionTreePopover
           sessionId="root"
-          fallbackWorkspacePath="/workspace"
+          fallbackWorkspaceId="workspace-main"
           onCancelSession={vi.fn().mockResolvedValue(true)}
           t={t}
         />,
@@ -302,7 +303,7 @@ describe('SessionTreePopover', () => {
       root.render(
         <SessionTreePopover
           sessionId="root"
-          fallbackWorkspacePath="/workspace"
+          fallbackWorkspaceId="workspace-main"
           onSelectSession={onSelectSession}
           embedded
           open

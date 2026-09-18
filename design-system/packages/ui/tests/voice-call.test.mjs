@@ -4,14 +4,45 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
-import { VoiceCallPanel, VoiceParticleLogo } from "../dist/index.js";
+import { VoiceCallPanel, VoiceParticleLogo, VoiceCallIdentity, VoiceCallTranscript } from "../dist/index.js";
 
 const motionSource = await readFile(new URL("../src/components/VoiceParticleLogo/voiceParticleDynamics.ts", import.meta.url), "utf8");
 const motionModule = ts.transpileModule(motionSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { VoiceParticleAudioState, particleForce, SILENT_VOICE_AUDIO } = await import(`data:text/javascript;base64,${Buffer.from(motionModule).toString("base64")}`);
+const formationSource = await readFile(new URL("../src/components/VoiceParticleLogo/voiceParticleFormation.ts", import.meta.url), "utf8");
+const formationModule = ts.transpileModule(formationSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const { VoiceParticleFormation } = await import(`data:text/javascript;base64,${Buffer.from(formationModule).toString("base64")}`);
 
 const labels = { back: "Back to chat", close: "Close window", mute: "Mute", unmute: "Unmute", settings: "Settings", end: "End call" };
 const props = { title: "Live Call", labels, onBack() {}, onClose() {}, onToggleMute() {}, onOpenSettings() {}, onEnd() {} };
+
+test("formation reverses from its current pose and reduced motion settles immediately", () => {
+  const formation = new VoiceParticleFormation(0);
+  formation.setTarget(1, 100);
+  const midpoint = formation.sample(350);
+  assert.ok(midpoint > 0 && midpoint < 1);
+  formation.setTarget(0, 350);
+  assert.equal(formation.sample(350), midpoint);
+  assert.ok(formation.sample(450) < midpoint);
+  assert.equal(formation.sample(830), 0);
+  assert.equal(formation.moving, false);
+  formation.setTarget(1, 900);
+  assert.equal(formation.sample(901, true), 1);
+  assert.equal(formation.moving, false);
+  assert.equal(formation.sample(902), 1);
+});
+
+test("shared identity is an explicit keyboard action and transcript preserves authored entry identities", () => {
+  const identity = renderToStaticMarkup(createElement(VoiceCallIdentity, { expanded: false, active: false, label: "Live voice", onClick() {} }));
+  assert.match(identity, /aria-label="Live voice"/);
+  assert.match(identity, /aria-expanded="false"/);
+  const transcript = renderToStaticMarkup(createElement(VoiceCallTranscript, { entries: [
+    { id: 'first:user', role: 'user', content: 'Hello' }, { id: 'first:assistant', role: 'assistant', content: 'Hi' },
+  ] }));
+  assert.match(transcript, /data-transcript-id="first:user"/);
+  assert.match(transcript, /data-transcript-id="first:assistant"/);
+  assert.doesNotMatch(transcript, /role="status"/);
+});
 
 test("call presentation exposes one title, full transcripts and five labeled controls without accessing media", () => {
   const markup = renderToStaticMarkup(createElement(VoiceCallPanel, { ...props, muted: true, userTranscript: "A <portfolio>", assistantTranscript: "Let's build it." }));

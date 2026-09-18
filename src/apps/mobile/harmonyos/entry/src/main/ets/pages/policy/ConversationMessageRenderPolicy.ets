@@ -1,6 +1,14 @@
-import { ConversationUiMessage, ConversationUiMessageItem } from '../state/ConversationUiModels';
+import { ConversationUiImage, ConversationUiMessage, ConversationUiMessageItem } from '../state/ConversationUiModels';
 
 export class ConversationMessageRenderPolicy {
+  /**
+   * Desktop attachments reach this device as pixels, never as a readable path,
+   * so an image the host could not inline has nothing to draw.
+   */
+  static hasRenderableImagePixels(image: ConversationUiImage): boolean {
+    return (image.data_url || '').trim().length > 0;
+  }
+
   static visibleText(text?: string): string {
     const value = (text || '').trim();
     if (value === '(空消息)' || value === '(empty message)') {

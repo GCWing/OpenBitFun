@@ -220,8 +220,8 @@ internal fun ComposerBar(
         modifier = modifier
             .fillMaxWidth()
             .padding(
-                start = MobileDesignGeometry.ContentGutter,
-                end = MobileDesignGeometry.ContentGutter,
+                start = MobileDesignGeometry.ConversationOverlaySideInset,
+                end = MobileDesignGeometry.ConversationOverlaySideInset,
                 top = 8.dp,
                 bottom = 14.dp,
             )

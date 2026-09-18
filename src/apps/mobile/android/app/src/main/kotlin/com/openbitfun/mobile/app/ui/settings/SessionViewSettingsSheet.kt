@@ -109,8 +109,10 @@ internal fun SessionViewSettingsSheet(
                     HorizontalDivider()
                     ChoiceRow(
                         label = option.name,
-                        selected = settings.workspaceFilter == option.path,
-                        onSelect = { onChange(settings.copy(workspaceFilter = option.path)) },
+                        // Filters store the identity key (workspace ID first). A filter
+                        // persisted as a bare path before IDs still highlights its row.
+                        selected = settings.workspaceFilter == option.key || settings.workspaceFilter == option.path,
+                        onSelect = { onChange(settings.copy(workspaceFilter = option.key)) },
                     )
                 }
             }

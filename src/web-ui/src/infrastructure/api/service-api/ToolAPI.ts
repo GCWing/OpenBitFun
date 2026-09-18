@@ -52,7 +52,7 @@ export class ToolAPI {
         request: {
           toolName: request.toolName,
           input: request.parameters,
-          workspacePath: request.workspacePath,
+          workspaceId: request.workspaceId,
         }
       });
     } catch (error) {

@@ -4,7 +4,8 @@
  * Preserves original concept: Session → DialogTurn → ModelRound → FlowItem
  */
 
-import { create } from 'zustand';
+import { create, useStore } from 'zustand';
+import { createContext, useContext } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { immer } from 'zustand/middleware/immer';
 import type { Session, DialogTurn, ModelRound, ModelRoundAttempt, FlowItem, FlowThinkingItem, FlowToolItem, FlowUserSteeringItem, AnyFlowItem, TokenUsage } from '../types/flow-chat';
@@ -109,7 +110,7 @@ export interface VisibleTurnInfo {
   visibleTurnIds: string[];
 }
 
-interface ModernFlowChatState {
+export interface ModernFlowChatState {
   activeSession: Session | null;
   virtualItems: VirtualItem[];
   visibleTurnInfo: VisibleTurnInfo | null;
@@ -636,9 +637,13 @@ function getInitialModernState(): Pick<
   };
 }
 
-export const useModernFlowChatStore = create<ModernFlowChatState>()(
+export const createModernFlowChatStore = (initialSession?: Session | null) => create<ModernFlowChatState>()(
   immer((set, get) => ({
-    ...getInitialModernState(),
+    ...(initialSession === undefined ? getInitialModernState() : {
+      activeSession: initialSession,
+      virtualItems: sessionToVirtualItems(initialSession),
+      visibleTurnInfo: null,
+    }),
 
     setActiveSession: (session) => {
       const items = sessionToVirtualItems(session);
@@ -682,6 +687,16 @@ export const useModernFlowChatStore = create<ModernFlowChatState>()(
       });
     },
   }))
+);
+
+const defaultModernFlowChatStore = createModernFlowChatStore();
+export const ModernFlowChatStoreContext = createContext<ReturnType<typeof createModernFlowChatStore> | null>(null);
+export const useModernFlowChatStoreApi = () => useContext(ModernFlowChatStoreContext) ?? defaultModernFlowChatStore;
+export const useModernFlowChatStore = Object.assign(
+  function useScopedModernFlowChatStore<T>(selector: (state: ModernFlowChatState) => T): T {
+    return useStore(useModernFlowChatStoreApi(), selector);
+  },
+  defaultModernFlowChatStore,
 );
 
 export const useVirtualItems = () =>

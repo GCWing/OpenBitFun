@@ -63,6 +63,16 @@ describe('workspace session titles', () => {
     expect(sessionTitleNumbers([a, worktree]).size).toBe(2);
   });
 
+  it('groups by workspace ID before paths and never joins different IDs on a shared path', () => {
+    const a = session('a', '/same', 1, { workspaceId: 'ws-a' });
+    const b = session('b', '/same', 2, { workspaceId: 'ws-b' });
+    expect(sessionTitleNumbers([a, b]).size).toBe(0);
+    const worktree = session('worktree', '/worktrees/task', 2, {
+      workspaceId: 'ws-worktree', projectWorkspaceId: 'ws-a', projectWorkspacePath: '/elsewhere',
+    });
+    expect([...sessionTitleNumbers([a, worktree])]).toEqual([['a', 1], ['worktree', 2]]);
+  });
+
   it('isolates SSH hosts and case-sensitive remote roots', () => {
     const a = session('a', '/repo', 1, { remoteSshHost: 'host-a', remoteConnectionId: 'ssh-user@host-a' });
     const b = session('b', '/repo', 1, { remoteSshHost: 'host-b', remoteConnectionId: 'ssh-user@host-b' });

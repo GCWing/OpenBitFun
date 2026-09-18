@@ -24,6 +24,7 @@ import { useAgentCanvasStore } from '../panels/content-canvas/stores';
 import { onSurfaceActivated } from '@/infrastructure/peer-device/deviceSurface';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import type { SceneTabId } from './types';
+import { beginConversationTransfer, endConversationTransfer, isConversationTransfer, dropConversationInWorkbench } from '../../services/conversationDockTransfer';
 import './SceneBar.scss';
 
 function getSceneIdFromTabTarget(target: EventTarget | null): SceneTabId | undefined {
@@ -228,6 +229,7 @@ const SceneBar: React.FC<SceneBarProps> = ({
       data-canvas-drop-state={canAcceptCanvasTab ? (activeCanvasDrop ? 'active' : 'available') : undefined}
       data-canvas-drop-target={activeCanvasDrop ? 'true' : undefined}
       onDragOver={event => {
+        if (isConversationTransfer(event.dataTransfer)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; return; }
         if (!isSessionTabDrag(event.dataTransfer)) return;
         event.preventDefault();
         event.stopPropagation();
@@ -242,6 +244,7 @@ const SceneBar: React.FC<SceneBarProps> = ({
         if (!(event.relatedTarget instanceof Node) || !event.currentTarget.contains(event.relatedTarget)) setCanvasDrop(null);
       }}
       onDrop={event => {
+        if (isConversationTransfer(event.dataTransfer)) { event.preventDefault(); dropConversationInWorkbench(event.dataTransfer); return; }
         if (!isSessionTabDrag(event.dataTransfer)) return;
         event.preventDefault();
         event.stopPropagation();
@@ -285,8 +288,8 @@ const SceneBar: React.FC<SceneBarProps> = ({
               data-scene-tab-id={tabId}
               data-canvas-drop-position={activeCanvasDrop?.target?.tabId === tabId ? activeCanvasDrop.target.placement : undefined}
               onContextMenu={event => handleContextMenu(event, tabId)}
-              onDragStart={event => { draggingTab.current = tabId; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-openbitfun-scene', tabId); }}
-              onDragEnd={() => { draggingTab.current = null; }}
+              onDragStart={event => { draggingTab.current = tabId; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('application/x-openbitfun-scene', tabId); if (tab?.session) beginConversationTransfer(event.dataTransfer, tab.session, tabId); }}
+              onDragEnd={() => { draggingTab.current = null; endConversationTransfer(); }}
               onDragOver={event => { if (draggingTab.current && draggingTab.current !== tabId) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; } }}
               onDrop={event => { if (!draggingTab.current) return; event.preventDefault(); useSceneStore.getState().reorderScene(draggingTab.current, tabId, event.clientX >= event.currentTarget.getBoundingClientRect().x + event.currentTarget.getBoundingClientRect().width / 2 ? 'after' : 'before'); draggingTab.current = null; }}
             >{node}</div>;

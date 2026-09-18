@@ -344,6 +344,8 @@ export function buildSessionMetadata(
     | 'mode'
     | 'config'
     | 'createdAt'
+    | 'workspaceId'
+    | 'projectWorkspaceId'
     | 'workspacePath'
     | 'projectWorkspacePath'
     | 'remoteConnectionId'
@@ -434,6 +436,8 @@ export function buildSessionMetadata(
       existingMetadata?.relationship
     ),
     todos: session.todos || existingMetadata?.todos || [],
+    workspaceId: session.workspaceId || session.config?.workspaceId || existingMetadata?.workspaceId,
+    projectWorkspaceId: session.projectWorkspaceId || session.config?.projectWorkspaceId || existingMetadata?.projectWorkspaceId,
     workspacePath: session.workspacePath || existingMetadata?.workspacePath,
     projectWorkspacePath:
       session.projectWorkspacePath

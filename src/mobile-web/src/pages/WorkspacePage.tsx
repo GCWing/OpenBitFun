@@ -12,6 +12,8 @@ import {
   WorkspaceInfo,
   RecentWorkspaceEntry,
 } from '../services/RemoteSessionManager';
+import { describeRemoteError } from '../services/remoteErrorPresentation';
+import { sameWorkspace, workspaceIdentityKey } from '../services/workspaceIdentity';
 
 interface WorkspacePageProps {
   sessionMgr: RemoteSessionManager;
@@ -40,18 +42,18 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ sessionMgr, onReady, onBa
       const info = await sessionMgr.getWorkspaceInfo();
       setWorkspaceInfo(info);
     } catch (e: any) {
-      setError(e.message);
+      setError(describeRemoteError(e, t));
     }
-  }, [sessionMgr]);
+  }, [sessionMgr, t]);
 
   const loadRecentWorkspaces = useCallback(async () => {
     try {
       const list = await sessionMgr.listRecentWorkspaces();
       setRecentWorkspaces(list);
     } catch (e: any) {
-      setError(e.message);
+      setError(describeRemoteError(e, t));
     }
-  }, [sessionMgr]);
+  }, [sessionMgr, t]);
 
   useEffect(() => {
     if (tool) {
@@ -69,10 +71,7 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ sessionMgr, onReady, onBa
     setSwitching(true);
     setError(null);
     try {
-      const result = await sessionMgr.setWorkspace(workspace.path, {
-        remoteConnectionId: workspace.remote_connection_id,
-        remoteSshHost: workspace.remote_ssh_host,
-      });
+      const result = await sessionMgr.setWorkspace(workspace);
       if (result.success) {
         await loadWorkspaceInfo();
         onReady();
@@ -80,7 +79,7 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ sessionMgr, onReady, onBa
         setError(result.error || t('workspace.failedToSetWorkspace'));
       }
     } catch (e: any) {
-      setError(e.message);
+      setError(describeRemoteError(e, t));
     } finally {
       setSwitching(false);
     }
@@ -149,10 +148,12 @@ const WorkspacePage: React.FC<WorkspacePageProps> = ({ sessionMgr, onReady, onBa
           ) : (
             <div className="workspace-page__recent-list">
               {recentWorkspaces.map((ws) => {
-                const selected = workspaceInfo?.path === ws.path && workspaceInfo?.remote_connection_id === ws.remote_connection_id && workspaceInfo?.remote_ssh_host === ws.remote_ssh_host;
+                // Identity comparison: IDs when both sides carry one, the legacy
+                // triple only for rows from pre-ID hosts.
+                const selected = workspaceInfo?.has_workspace ? sameWorkspace(workspaceInfo, ws) : false;
                 return (
                   <MobileListRow
-                    key={`${ws.remote_connection_id ?? 'local'}:${ws.path}`}
+                    key={workspaceIdentityKey(ws)}
                     appearance="plain"
                     className={`workspace-page__recent-item${selected ? ' is-selected' : ''}`}
                     onClick={() => handleSelectWorkspace(ws)}

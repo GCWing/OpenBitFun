@@ -110,6 +110,7 @@ fn dialog_turn_request(session: &AcpSessionState, prompt: ParsedPrompt) -> Agent
         execution: Default::default(),
         agent_type: session.mode_id.clone(),
         workspace_path: Some(session.cwd.clone()),
+        workspace_id: Some(session.workspace_id.clone()),
         remote_connection_id: None,
         remote_ssh_host: None,
         policy: DialogSubmissionPolicy::for_source(AgentSubmissionSource::Cli),
@@ -433,6 +434,7 @@ mod tests {
         AcpSessionState {
             acp_session_id: "acp-session".to_string(),
             openbitfun_session_id: "openbitfun-session".to_string(),
+            workspace_id: "workspace-1".to_string(),
             cwd: "/workspace".to_string(),
             mode_id: "Standard".to_string(),
             model_id: "primary".to_string(),

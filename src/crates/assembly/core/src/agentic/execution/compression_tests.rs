@@ -11,6 +11,9 @@ fn engine() -> (tempfile::TempDir, ExecutionEngine) {
         .prefix("compression-")
         .tempdir()
         .unwrap();
+    // The temp root doubles as the session workspace; sessions only exist
+    // inside registered workspaces, so register it like a host-opened folder.
+    crate::service::workspace::legacy_compat::register_local_fixture_blocking(temp.path());
     let manager = SessionManager::new(
         Arc::new(SessionContextStore::new()),
         Arc::new(

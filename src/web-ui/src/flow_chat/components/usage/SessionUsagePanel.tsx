@@ -40,6 +40,7 @@ import {
   getDisplayTurnIndex,
 } from './usageReportUtils';
 import type { SessionUsagePanelTab } from './sessionUsagePanelTypes';
+import { sessionWorkspaceId } from '../../session-drivers/sessionFileNavigation';
 import './SessionUsagePanel.scss';
 import { IconButton, Icon } from '@openbitfun/ui';
 
@@ -825,7 +826,6 @@ function UsageFiles({
         sessionId,
         resolvedPath,
         operationId,
-        workspacePath,
       );
       const diffPath = diff.filePath || resolvedPath;
       createDiffEditorTab(
@@ -841,6 +841,7 @@ function UsageFiles({
         {
           titleKind: 'diff',
           duplicateKeyPrefix: 'diff',
+          workspaceId: sessionWorkspaceId(sessionId),
         },
       );
     } catch (error) {

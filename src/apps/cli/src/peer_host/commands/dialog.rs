@@ -156,6 +156,11 @@ async fn submit_dialog_turn(state: &PeerHostState, args: &Value) -> Result<Value
     let user_input = get_string(request, "userInput")?;
     let original_user_input = optional_string(request, "originalUserInput");
     let agent_type = get_string(request, "agentType")?;
+    // The session's workspace ID is authoritative; the project/workspace paths
+    // are the legacy storage projection for pre-ID controllers.
+    let workspace_id = optional_string(request, "workspaceId")
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty());
     let workspace_path = optional_string(request, "projectWorkspacePath")
         .or_else(|| optional_string(request, "workspacePath"));
     let remote_connection_id = optional_string(request, "remoteConnectionId");
@@ -192,6 +197,7 @@ async fn submit_dialog_turn(state: &PeerHostState, args: &Value) -> Result<Value
             execution: Default::default(),
             agent_type,
             workspace_path,
+            workspace_id,
             remote_connection_id,
             remote_ssh_host,
             policy,

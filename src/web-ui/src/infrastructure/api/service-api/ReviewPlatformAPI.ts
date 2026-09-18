@@ -240,21 +240,28 @@ export interface ReviewPlatformWorkspaceSnapshot {
   authChallenge?: ReviewPlatformAuthChallenge | null;
 }
 
-export interface ReviewPlatformWorkspaceSnapshotRequest {
+/**
+ * Identifies the repository a review-platform request runs against.
+ * `workspaceId` is the authoritative identity (local vs. remote routing);
+ * `repositoryPath` is only the IO operand inside that workspace.
+ */
+export interface ReviewRepositoryLocator {
+  workspaceId: string;
   repositoryPath: string;
+}
+
+export interface ReviewPlatformWorkspaceSnapshotRequest extends ReviewRepositoryLocator {
   remoteId?: string | null;
   page?: number;
   perPage?: number;
   state?: ReviewPlatformListState;
 }
 
-export interface ReviewPlatformWorkspaceContextRequest {
-  repositoryPath: string;
+export interface ReviewPlatformWorkspaceContextRequest extends ReviewRepositoryLocator {
   remoteId?: string | null;
 }
 
-export interface ReviewPlatformPullRequestDetailRequest {
-  repositoryPath: string;
+export interface ReviewPlatformPullRequestDetailRequest extends ReviewRepositoryLocator {
   remoteId: string;
   pullRequestId: string;
 }
@@ -266,6 +273,7 @@ export interface ReviewPlatformIssueRequest {
   issueId: string;
   page?: number;
   perPage?: number;
+  workspaceId?: string | null;
   repositoryPath?: string | null;
 }
 
@@ -274,6 +282,7 @@ export interface ReviewPlatformPullRequestIdentityRequest {
   host: string;
   projectPath: string;
   pullRequestId: string;
+  workspaceId?: string | null;
   repositoryPath?: string | null;
 }
 
@@ -301,15 +310,16 @@ export interface ReviewPlatformClearAuthTokenRequest {
 
 export class ReviewPlatformAPI {
   async getWorkspaceSnapshot(
-    repositoryPath: string,
+    repository: ReviewRepositoryLocator,
     remoteId?: string | null,
     page?: number,
     perPage?: number,
     state?: ReviewPlatformListState,
   ): Promise<ReviewPlatformWorkspaceSnapshot> {
+    const { workspaceId, repositoryPath } = repository;
     try {
       const snapshot = await api.invoke<ReviewPlatformWorkspaceSnapshot>('review_platform_get_workspace_snapshot', {
-        request: { repositoryPath, remoteId, page, perPage, ...(state && state !== 'all' ? { state } : {}) },
+        request: { workspaceId, repositoryPath, remoteId, page, perPage, ...(state && state !== 'all' ? { state } : {}) },
       });
       // Older hosts may ignore a new optional request field. Require their
       // advertised capability before accepting the returned page as filtered.
@@ -318,8 +328,9 @@ export class ReviewPlatformAPI {
       }
       return snapshot;
     } catch (error) {
-      log.error('Failed to load review platform snapshot', { repositoryPath, remoteId, page, perPage, error });
+      log.error('Failed to load review platform snapshot', { workspaceId, repositoryPath, remoteId, page, perPage, error });
       throw createTauriCommandError('review_platform_get_workspace_snapshot', error, {
+        workspaceId,
         repositoryPath,
         remoteId,
         page,
@@ -329,16 +340,18 @@ export class ReviewPlatformAPI {
   }
 
   async getWorkspaceContext(
-    repositoryPath: string,
+    repository: ReviewRepositoryLocator,
     remoteId?: string | null,
   ): Promise<ReviewPlatformWorkspaceSnapshot> {
+    const { workspaceId, repositoryPath } = repository;
     try {
       return await api.invoke('review_platform_get_workspace_context', {
-        request: { repositoryPath, remoteId },
+        request: { workspaceId, repositoryPath, remoteId },
       });
     } catch (error) {
-      log.error('Failed to load review platform workspace context', { repositoryPath, remoteId, error });
+      log.error('Failed to load review platform workspace context', { workspaceId, repositoryPath, remoteId, error });
       throw createTauriCommandError('review_platform_get_workspace_context', error, {
+        workspaceId,
         repositoryPath,
         remoteId,
       });
@@ -346,13 +359,14 @@ export class ReviewPlatformAPI {
   }
 
   async getPullRequestDetail(
-    repositoryPath: string,
+    repository: ReviewRepositoryLocator,
     remoteId: string,
     pullRequestId: string,
   ): Promise<ReviewPlatformPullRequestDetail> {
+    const { workspaceId, repositoryPath } = repository;
     try {
       return await api.invoke('review_platform_get_pull_request_detail', {
-        request: { repositoryPath, remoteId, pullRequestId },
+        request: { workspaceId, repositoryPath, remoteId, pullRequestId },
       });
     } catch (error) {
       log.error('Failed to load review platform pull request detail', {
@@ -370,13 +384,14 @@ export class ReviewPlatformAPI {
   }
 
   async getPullRequestReviewTarget(
-    repositoryPath: string,
+    repository: ReviewRepositoryLocator,
     remoteId: string,
     pullRequestId: string,
   ): Promise<ReviewPlatformPullRequestReviewTarget> {
+    const { workspaceId, repositoryPath } = repository;
     try {
       return await api.invoke('review_platform_get_pull_request_review_target', {
-        request: { repositoryPath, remoteId, pullRequestId },
+        request: { workspaceId, repositoryPath, remoteId, pullRequestId },
       });
     } catch (error) {
       log.error('Failed to prepare review platform pull request target', {

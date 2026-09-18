@@ -1,6 +1,13 @@
 //! Thin desktop adapter for product-owned managed worktrees.
+//!
+//! The owning project workspace is identified by its workspace ID. The
+//! adapter resolves that ID to the authoritative workspace record, rejects
+//! remote workspaces from `workspace_kind`, and only then hands the record's
+//! local root path to the worktree service as a Git IO operand. A path-only
+//! request is a legacy shape and is resolved through the workspace
+//! legacy-compat boundary.
 
-use openbitfun_core::service::remote_ssh::lookup_remote_connection;
+use openbitfun_core::service::workspace::{get_global_workspace_service, WorkspaceKind};
 use openbitfun_core::service::worktree::{
     WorktreeCreateBranchRequest, WorktreeCreateRequest, WorktreeCreateResult, WorktreeListRequest,
     WorktreeMutationResult, WorktreeProjectListRequest, WorktreeProjectSummary,
@@ -17,22 +24,78 @@ fn remote_unsupported() -> WorktreeError {
     }
 }
 
-async fn ensure_local(project_workspace_path: &str) -> Result<(), WorktreeError> {
-    if lookup_remote_connection(project_workspace_path)
-        .await
-        .is_some()
-    {
-        Err(remote_unsupported())
-    } else {
-        Ok(())
+fn invalid_project(message: impl Into<String>) -> WorktreeError {
+    WorktreeError {
+        code: WorktreeErrorCode::InvalidPath,
+        message: message.into(),
+        recovery_path: None,
+    }
+}
+
+/// Resolve the local project root that owns a managed-worktree request.
+///
+/// Returns the authoritative root path from the workspace record when an ID is
+/// supplied. Without an ID the legacy path is accepted only if it does not
+/// resolve to a remote workspace record; an ambiguous legacy path fails loudly.
+async fn resolve_local_project(
+    project_workspace_id: Option<&str>,
+    project_workspace_path: &str,
+) -> Result<String, WorktreeError> {
+    let project_workspace_id = project_workspace_id
+        .map(str::trim)
+        .filter(|id| !id.is_empty());
+    let Some(service) = get_global_workspace_service() else {
+        if project_workspace_id.is_some() {
+            return Err(invalid_project(
+                "Workspace service is not initialized; cannot resolve the project workspace",
+            ));
+        }
+        return Ok(project_workspace_path.to_string());
+    };
+    match project_workspace_id {
+        Some(id) => {
+            let workspace = service
+                .require_workspace(id)
+                .await
+                .map_err(|error| invalid_project(error.to_string()))?;
+            if workspace.workspace_kind == WorkspaceKind::Remote {
+                return Err(remote_unsupported());
+            }
+            Ok(workspace.root_path.to_string_lossy().into_owned())
+        }
+        None => {
+            let trimmed = project_workspace_path.trim();
+            if trimmed.is_empty() {
+                return Err(invalid_project(
+                    "A project workspace ID is required for managed worktrees",
+                ));
+            }
+            match service
+                .resolve_legacy_workspace_reference(None, trimmed, None, None)
+                .await
+                .map_err(|error| invalid_project(error.to_string()))?
+            {
+                Some(workspace) if workspace.workspace_kind == WorkspaceKind::Remote => {
+                    Err(remote_unsupported())
+                }
+                Some(workspace) => Ok(workspace.root_path.to_string_lossy().into_owned()),
+                // Not an open workspace: a plain local repository path handed
+                // in by a pre-ID client. Remote paths always have a record.
+                None => Ok(trimmed.to_string()),
+            }
+        }
     }
 }
 
 #[tauri::command]
 pub async fn worktree_list(
-    request: WorktreeListRequest,
+    mut request: WorktreeListRequest,
 ) -> Result<Vec<WorktreeSummary>, WorktreeError> {
-    ensure_local(&request.project_workspace_path).await?;
+    request.project_workspace_path = resolve_local_project(
+        request.project_workspace_id.as_deref(),
+        &request.project_workspace_path,
+    )
+    .await?;
     WorktreeService::list(request).await
 }
 
@@ -45,39 +108,55 @@ pub async fn worktree_list_projects(
 
 #[tauri::command]
 pub async fn worktree_create(
-    request: WorktreeCreateRequest,
+    mut request: WorktreeCreateRequest,
 ) -> Result<WorktreeCreateResult, WorktreeError> {
-    ensure_local(&request.project_workspace_path).await?;
+    request.project_workspace_path = resolve_local_project(
+        request.project_workspace_id.as_deref(),
+        &request.project_workspace_path,
+    )
+    .await?;
     WorktreeService::create(request).await
 }
 
 #[tauri::command]
 pub async fn worktree_create_branch(
-    request: WorktreeCreateBranchRequest,
+    mut request: WorktreeCreateBranchRequest,
 ) -> Result<WorktreeMutationResult, WorktreeError> {
-    ensure_local(&request.project_workspace_path).await?;
+    request.project_workspace_path = resolve_local_project(
+        request.project_workspace_id.as_deref(),
+        &request.project_workspace_path,
+    )
+    .await?;
     WorktreeService::create_branch(request).await
 }
 
 #[tauri::command]
 pub async fn worktree_promote(
-    request: WorktreePromoteRequest,
+    mut request: WorktreePromoteRequest,
 ) -> Result<WorktreeMutationResult, WorktreeError> {
-    ensure_local(&request.project_workspace_path).await?;
+    request.project_workspace_path = resolve_local_project(
+        request.project_workspace_id.as_deref(),
+        &request.project_workspace_path,
+    )
+    .await?;
     WorktreeService::promote(request).await
 }
 
 #[tauri::command]
 pub async fn worktree_remove(
-    request: WorktreeRemoveRequest,
+    mut request: WorktreeRemoveRequest,
 ) -> Result<WorktreeRemoveResult, WorktreeError> {
-    ensure_local(&request.project_workspace_path).await?;
+    request.project_workspace_path = resolve_local_project(
+        request.project_workspace_id.as_deref(),
+        &request.project_workspace_path,
+    )
+    .await?;
     WorktreeService::remove(request).await
 }
 
-/// Toggle worktree isolation for a single session. The optional project path
-/// lets the product layer locate view-only persisted sessions; remote checks
-/// and repository resolution remain in that shared layer.
+/// Toggle worktree isolation for a single session. The optional project
+/// workspace ID lets the product layer locate view-only persisted sessions;
+/// remote checks and repository resolution remain in that shared layer.
 #[tauri::command]
 pub async fn worktree_bind_session(
     request: WorktreeSessionBindingRequest,
@@ -87,8 +166,12 @@ pub async fn worktree_bind_session(
 
 #[tauri::command]
 pub async fn worktree_recreate(
-    request: WorktreeRecreateRequest,
+    mut request: WorktreeRecreateRequest,
 ) -> Result<WorktreeMutationResult, WorktreeError> {
-    ensure_local(&request.project_workspace_path).await?;
+    request.project_workspace_path = resolve_local_project(
+        request.project_workspace_id.as_deref(),
+        &request.project_workspace_path,
+    )
+    .await?;
     WorktreeService::recreate(request).await
 }

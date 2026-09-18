@@ -1908,7 +1908,10 @@ impl ExecutionEngine {
 
         let agent_registry = get_agent_registry();
         let fallback_model_id = agent_registry
-            .get_model_id_for_agent(agent_type, workspace.map(|binding| binding.root_path()))
+            .get_model_id_for_agent(
+                agent_type,
+                workspace.and_then(|binding| binding.workspace_id.as_deref()),
+            )
             .await
             .map_err(|e| OpenBitFunError::AIClient(format!("Failed to get model ID: {}", e)))?;
         let configured_model_id = session
@@ -2319,7 +2322,7 @@ impl ExecutionEngine {
                 context
                     .workspace
                     .as_ref()
-                    .map(|workspace| workspace.root_path()),
+                    .and_then(|workspace| workspace.workspace_id.as_deref()),
             )
             .await;
 
@@ -2329,7 +2332,7 @@ impl ExecutionEngine {
                 context
                     .workspace
                     .as_ref()
-                    .map(|workspace| workspace.root_path()),
+                    .and_then(|workspace| workspace.workspace_id.as_deref()),
             )
             .ok_or_else(|| {
                 OpenBitFunError::NotFound(format!("Agent not found: {}", context.agent_type))
@@ -2445,7 +2448,7 @@ impl ExecutionEngine {
                 context
                     .workspace
                     .as_ref()
-                    .map(|workspace| workspace.root_path()),
+                    .and_then(|workspace| workspace.workspace_id.as_deref()),
             )
             .await;
         let allowed_tools = tool_policy.allowed_tools.clone();
@@ -2538,6 +2541,7 @@ impl ExecutionEngine {
         model: &'a str,
     ) -> NativeHookSessionFacts<'a> {
         NativeHookSessionFacts {
+            workspace_id: workspace.and_then(|workspace| workspace.workspace_id.as_deref()),
             session_id,
             turn_id: Some(dialog_turn_id),
             workspace_root: workspace.map(|workspace| workspace.root_path()),
@@ -2939,7 +2943,7 @@ impl ExecutionEngine {
                 context
                     .workspace
                     .as_ref()
-                    .map(|workspace| workspace.root_path()),
+                    .and_then(|workspace| workspace.workspace_id.as_deref()),
             )
             .await;
         let current_agent = agent_registry
@@ -2948,7 +2952,7 @@ impl ExecutionEngine {
                 context
                     .workspace
                     .as_ref()
-                    .map(|workspace| workspace.root_path()),
+                    .and_then(|workspace| workspace.workspace_id.as_deref()),
             )
             .ok_or_else(|| OpenBitFunError::NotFound(format!("Agent not found: {}", agent_type)))?;
         info!(
@@ -3148,7 +3152,7 @@ impl ExecutionEngine {
                 context
                     .workspace
                     .as_ref()
-                    .map(|workspace| workspace.root_path()),
+                    .and_then(|workspace| workspace.workspace_id.as_deref()),
             )
             .await;
         let allowed_tools = tool_policy.allowed_tools.clone();

@@ -12,7 +12,8 @@ import { useCanvasStore } from './stores';
 import { useTabLifecycle, useKeyboardShortcuts } from './hooks';
 import type { AnchorPosition } from './types';
 import type { CanvasStoreMode } from './stores/canvasStore';
-import { selectActiveBtwSessionTab } from '@/flow_chat/services/btwSessionPane';
+import { selectActiveBtwSessionTab, type BtwSessionPanelData } from '@/flow_chat/services/btwSessionPane';
+import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { isSamePath } from '@/shared/utils/pathUtils';
 import './ContentCanvas.scss';
@@ -68,9 +69,9 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
   const closeMissionControl = useCanvasStore(state => state.closeMissionControl);
   const openMissionControl = useCanvasStore(state => state.openMissionControl);
   const activeBtwSessionTab = useCanvasStore(state => selectActiveBtwSessionTab(state as any));
-  const activeBtwSessionData = activeBtwSessionTab?.content.data as
-    | { childSessionId: string; parentSessionId: string; workspacePath?: string }
-    | undefined;
+  const activeBtwSessionData = activeBtwSessionTab?.content.data as BtwSessionPanelData | undefined;
+  const { workspace: currentWorkspace } = useCurrentWorkspace();
+  const currentWorkspaceId = currentWorkspace?.id;
   const lastSyncedBtwTabIdRef = useRef<string | null>(null);
   // Initialize hooks
   const { handleCloseWithDirtyCheck, handleCloseAllWithDirtyCheck } = useTabLifecycle({
@@ -97,15 +98,33 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
 
     // Only sync when the BTW session belongs to the current workspace,
     // preventing the wrong session from opening when switching workspaces.
+    // Workspace ID is the identity; the path check only serves tabs restored
+    // from a canvas snapshot written before tabs recorded a workspace ID.
+    const btwWorkspaceId = activeBtwSessionData.workspaceId;
+    const btwProjectWorkspaceId = activeBtwSessionData.projectWorkspaceId;
     const btwWorkspacePath = activeBtwSessionData.workspacePath;
-    if (workspacePath && btwWorkspacePath && !isSamePath(workspacePath, btwWorkspacePath)) {
+    const belongsToCurrentWorkspace = btwWorkspaceId
+      ? !currentWorkspaceId
+        || btwWorkspaceId === currentWorkspaceId
+        || btwProjectWorkspaceId === currentWorkspaceId
+      : !(workspacePath && btwWorkspacePath && !isSamePath(workspacePath, btwWorkspacePath));
+    if (!belongsToCurrentWorkspace) {
       lastSyncedBtwTabIdRef.current = activeBtwSessionTab.id;
       return;
     }
 
     lastSyncedBtwTabIdRef.current = activeBtwSessionTab.id;
     void openMainSession(activeBtwSessionData.parentSessionId);
-  }, [activeBtwSessionData?.parentSessionId, activeBtwSessionData?.workspacePath, activeBtwSessionTab?.id, mode, workspacePath]);
+  }, [
+    activeBtwSessionData?.parentSessionId,
+    activeBtwSessionData?.projectWorkspaceId,
+    activeBtwSessionData?.workspaceId,
+    activeBtwSessionData?.workspacePath,
+    activeBtwSessionTab?.id,
+    currentWorkspaceId,
+    mode,
+    workspacePath,
+  ]);
 
   // Keep the editor area mounted for legacy hidden terminal tabs restored from
   // an older canvas snapshot. New terminal closes destroy and remove the tab.

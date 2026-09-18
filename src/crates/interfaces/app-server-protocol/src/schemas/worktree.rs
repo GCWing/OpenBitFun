@@ -52,6 +52,9 @@ pub struct WorktreeRepositoryStatusResponse {
 pub struct WorktreeBindSessionRequest {
     pub operation_id: String,
     pub session_id: String,
+    /// Owning project workspace ID; authoritative when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_workspace_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -85,6 +88,9 @@ impl WorktreeBindSessionRequest {
 pub struct WorktreeReleaseSessionRequest {
     pub operation_id: String,
     pub session_id: String,
+    /// Owning project workspace ID; authoritative when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub project_workspace_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -191,6 +197,7 @@ mod tests {
         let bind = WorktreeBindSessionRequest {
             operation_id: "worktree-1".to_string(),
             session_id: "session-1".to_string(),
+            project_workspace_id: Some("workspace-1".to_string()),
             project_workspace_path: Some(path.to_string()),
             remote_connection_id: None,
             remote_ssh_host: None,
@@ -198,6 +205,7 @@ mod tests {
         let release = WorktreeReleaseSessionRequest {
             operation_id: "worktree-2".to_string(),
             session_id: "session-1".to_string(),
+            project_workspace_id: Some("workspace-1".to_string()),
             project_workspace_path: Some(path.to_string()),
             remote_connection_id: None,
             remote_ssh_host: None,

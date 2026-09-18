@@ -8,7 +8,7 @@ use openbitfun_product_domains::external_subagents::ExternalSubagentMode;
 use openbitfun_product_domains::plugin_capabilities::{PluginCapabilityProjection, PluginToolRef};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, RwLock};
 
 pub(crate) fn is_agent_runtime_key_for_namespace(
@@ -51,14 +51,14 @@ struct PublishedSkillGeneration {
     workspace_roots: Vec<PluginSkillRootContribution>,
 }
 
-fn skill_generations() -> &'static RwLock<HashMap<(PathBuf, String), PublishedSkillGeneration>> {
-    static GENERATIONS: OnceLock<RwLock<HashMap<(PathBuf, String), PublishedSkillGeneration>>> =
+fn skill_generations() -> &'static RwLock<HashMap<(String, String), PublishedSkillGeneration>> {
+    static GENERATIONS: OnceLock<RwLock<HashMap<(String, String), PublishedSkillGeneration>>> =
         OnceLock::new();
     GENERATIONS.get_or_init(|| RwLock::new(HashMap::new()))
 }
 
 pub(crate) struct PluginCapabilityPublicationPlan {
-    workspace_root: PathBuf,
+    workspace_id: String,
     generation_key: String,
     publication: PluginPublicationIdentity,
     registrations: Vec<ExternalSubagentRegistration>,
@@ -70,14 +70,12 @@ pub(crate) struct PluginCapabilityPublicationPlan {
 
 impl PluginCapabilityPublicationPlan {
     pub(crate) fn empty(
-        workspace_root: &Path,
+        workspace_id: &str,
         generation_key: &str,
         publication: PluginPublicationIdentity,
     ) -> Self {
         Self {
-            workspace_root: crate::agentic::workspace::canonical_local_workspace_path(
-                workspace_root,
-            ),
+            workspace_id: workspace_id.to_owned(),
             generation_key: generation_key.to_string(),
             publication,
             registrations: Vec::new(),
@@ -104,7 +102,7 @@ impl PluginCapabilityPublicationPlan {
 
     pub(crate) fn commit(self) {
         get_agent_registry().replace_external_subagent_route_overlay(
-            &self.workspace_root,
+            &self.workspace_id,
             &self.publication.route_owner,
             self.registrations,
             self.routes,
@@ -113,7 +111,7 @@ impl PluginCapabilityPublicationPlan {
             .write()
             .expect("plugin skill generation lock poisoned");
         generations.insert(
-            (self.workspace_root, self.publication.route_owner),
+            (self.workspace_id, self.publication.route_owner),
             PublishedSkillGeneration {
                 generation_key: self.generation_key,
                 workspace_roots: self.workspace_skill_roots,
@@ -122,49 +120,49 @@ impl PluginCapabilityPublicationPlan {
     }
 }
 
-pub(crate) fn release_workspace(workspace_root: &Path, route_owner: &str) {
-    let workspace_root = crate::agentic::workspace::canonical_local_workspace_path(workspace_root);
-    get_agent_registry().release_external_subagent_route_overlay(&workspace_root, route_owner);
+pub(crate) fn release_workspace(workspace_id: &str, route_owner: &str) {
+    let workspace_id = workspace_id.to_owned();
+    get_agent_registry().release_external_subagent_route_overlay(&workspace_id, route_owner);
     skill_generations()
         .write()
         .expect("plugin skill generation lock poisoned")
-        .remove(&(workspace_root, route_owner.to_string()));
+        .remove(&(workspace_id, route_owner.to_string()));
 }
 
 pub(crate) fn release_workspace_generation(
-    workspace_root: &Path,
+    workspace_id: &str,
     route_owner: &str,
     expected_generation_key: &str,
 ) -> bool {
-    let workspace_root = crate::agentic::workspace::canonical_local_workspace_path(workspace_root);
+    let workspace_id = workspace_id.to_owned();
     let mut generations = skill_generations()
         .write()
         .expect("plugin skill generation lock poisoned");
     if generations
-        .get(&(workspace_root.clone(), route_owner.to_string()))
+        .get(&(workspace_id.clone(), route_owner.to_string()))
         .is_none_or(|generation| generation.generation_key != expected_generation_key)
     {
         return false;
     }
-    get_agent_registry().release_external_subagent_route_overlay(&workspace_root, route_owner);
-    generations.remove(&(workspace_root, route_owner.to_string()));
+    get_agent_registry().release_external_subagent_route_overlay(&workspace_id, route_owner);
+    generations.remove(&(workspace_id, route_owner.to_string()));
     true
 }
 
 pub(crate) fn skill_roots_for_agent(
-    workspace_root: Option<&Path>,
+    workspace_id: Option<&str>,
     _runtime_agent_key: Option<&str>,
 ) -> Vec<PluginSkillRootContribution> {
-    let Some(workspace_root) = workspace_root else {
+    let Some(workspace_id) = workspace_id else {
         return Vec::new();
     };
-    let workspace_root = crate::agentic::workspace::canonical_local_workspace_path(workspace_root);
+    let workspace_id = workspace_id.to_owned();
     let generations = skill_generations()
         .read()
         .expect("plugin skill generation lock poisoned");
     let mut publications = generations
         .iter()
-        .filter(|((root, _), _)| root == &workspace_root)
+        .filter(|((root, _), _)| root == &workspace_id)
         .collect::<Vec<_>>();
     publications.sort_by(|((_, left), _), ((_, right), _)| left.cmp(right));
     publications
@@ -179,15 +177,15 @@ pub(crate) fn skill_roots_for_agent(
 }
 
 pub(crate) fn prepare(
-    workspace_root: &Path,
+    workspace_id: &str,
     generation_key: &str,
     publication: PluginPublicationIdentity,
     projection: PluginCapabilityProjection,
 ) -> crate::OpenBitFunResult<PluginCapabilityPublicationPlan> {
-    let workspace_root = crate::agentic::workspace::canonical_local_workspace_path(workspace_root);
+    let workspace_id = workspace_id.to_owned();
     if projection.agents.is_empty() && projection.skill_roots.is_empty() {
         return Ok(PluginCapabilityPublicationPlan::empty(
-            &workspace_root,
+            &workspace_id,
             generation_key,
             publication,
         ));
@@ -205,8 +203,7 @@ pub(crate) fn prepare(
     let mut runtime_agent_keys = BTreeSet::new();
     let mut tool_runtime_agent_keys = BTreeMap::<PluginToolRef, BTreeSet<String>>::new();
     for projected in projection.agents {
-        let mut tools =
-            native_tool_baseline(&projected.logical_id, projected.mode, &workspace_root);
+        let mut tools = native_tool_baseline(&projected.logical_id, projected.mode, &workspace_id);
         let permitted_plugin_tools = projected
             .plugin_tools
             .iter()
@@ -292,7 +289,7 @@ pub(crate) fn prepare(
         .collect::<Vec<_>>();
     workspace_skill_roots.sort_by_key(|root| root.precedence);
     Ok(PluginCapabilityPublicationPlan {
-        workspace_root,
+        workspace_id,
         generation_key: generation_key.to_string(),
         publication,
         registrations,
@@ -306,10 +303,9 @@ pub(crate) fn prepare(
 fn native_tool_baseline(
     logical_id: &str,
     mode: ExternalSubagentMode,
-    workspace_root: &Path,
+    workspace_id: &str,
 ) -> Vec<String> {
-    if let Some(local_agent) =
-        get_agent_registry().get_local_agent(logical_id, Some(workspace_root))
+    if let Some(local_agent) = get_agent_registry().get_local_agent(logical_id, Some(workspace_id))
     {
         return local_agent.default_tools();
     }
@@ -321,8 +317,8 @@ fn native_tool_baseline(
     }
 }
 
-pub(crate) fn active_generation_key(workspace_root: &Path, route_owner: &str) -> Option<String> {
-    let root = crate::agentic::workspace::canonical_local_workspace_path(workspace_root);
+pub(crate) fn active_generation_key(workspace_id: &str, route_owner: &str) -> Option<String> {
+    let root = workspace_id.to_owned();
     skill_generations()
         .read()
         .ok()?
@@ -357,42 +353,42 @@ mod tests {
 
     #[test]
     fn generation_scoped_release_never_withdraws_a_replacement() {
-        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace = uuid::Uuid::new_v4().to_string();
         PluginCapabilityPublicationPlan::empty(
-            workspace.path(),
+            workspace.as_str(),
             "generation-a",
             publication("opencode"),
         )
         .commit();
 
         assert!(!release_workspace_generation(
-            workspace.path(),
+            workspace.as_str(),
             OPENCODE_ROUTE_OWNER,
             "generation-b"
         ));
         assert_eq!(
-            active_generation_key(workspace.path(), OPENCODE_ROUTE_OWNER).as_deref(),
+            active_generation_key(workspace.as_str(), OPENCODE_ROUTE_OWNER).as_deref(),
             Some("generation-a")
         );
         assert!(release_workspace_generation(
-            workspace.path(),
+            workspace.as_str(),
             OPENCODE_ROUTE_OWNER,
             "generation-a"
         ));
         assert_eq!(
-            active_generation_key(workspace.path(), OPENCODE_ROUTE_OWNER),
+            active_generation_key(workspace.as_str(), OPENCODE_ROUTE_OWNER),
             None
         );
     }
 
     #[test]
     fn keeps_skill_generations_isolated_by_publication_owner() {
-        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace = uuid::Uuid::new_v4().to_string();
         let first_root = tempfile::tempdir().expect("first skill root");
         let second_root = tempfile::tempdir().expect("second skill root");
         for (ecosystem, root) in [("ecosystem-a", &first_root), ("ecosystem-b", &second_root)] {
             prepare(
-                workspace.path(),
+                workspace.as_str(),
                 &format!("{ecosystem}-generation"),
                 publication(ecosystem),
                 PluginCapabilityProjection {
@@ -407,13 +403,13 @@ mod tests {
             .commit();
         }
 
-        let roots = skill_roots_for_agent(Some(workspace.path()), None);
+        let roots = skill_roots_for_agent(Some(workspace.as_str()), None);
         assert_eq!(roots.len(), 2);
-        release_workspace(workspace.path(), "ecosystem-a-plugin-config");
-        let roots = skill_roots_for_agent(Some(workspace.path()), None);
+        release_workspace(workspace.as_str(), "ecosystem-a-plugin-config");
+        let roots = skill_roots_for_agent(Some(workspace.as_str()), None);
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].path, second_root.path());
-        release_workspace(workspace.path(), "ecosystem-b-plugin-config");
+        release_workspace(workspace.as_str(), "ecosystem-b-plugin-config");
     }
 
     #[test]
@@ -435,7 +431,7 @@ mod tests {
             skill_roots: Vec::new(),
         };
         let plan = prepare(
-            Path::new("C:/workspace"),
+            "workspace-publication",
             "generation-1",
             publication("opencode"),
             projection,
@@ -479,7 +475,7 @@ mod tests {
             native_tool_baseline(
                 "cowork",
                 ExternalSubagentMode::Primary,
-                Path::new("C:/workspace")
+                "workspace-publication"
             ),
             CoworkMode::new().default_tools()
         );

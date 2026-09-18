@@ -16,6 +16,7 @@ import { getMonacoPath, getMonacoWorkerPath, logMonacoResourceCheck } from '../u
 import { setMonacoRuntime } from './monacoRuntime';
 import { createLogger } from '@/shared/utils/logger';
 import { monacoAppearanceAdapter } from '@/infrastructure/appearance/adapters/MonacoAppearanceAdapter';
+import type { ContentResourceScope } from '@/shared/types/contentResource';
 
 const log = createLogger('MonacoInitManager');
 
@@ -200,6 +201,34 @@ class MonacoInitManager {
   }
   
   /**
+   * Resolve the content scope that owns a file already open on this surface.
+   * A cross-file jump stays inside the workspace of the document it starts
+   * from; the target path is only an IO operand on that workspace's host and
+   * must never be turned into a workspace by its parent directory.
+   */
+  private async resolveOpenFileScope(filePath?: string): Promise<ContentResourceScope | undefined> {
+    if (!filePath) return undefined;
+    const [{ useContentResourceStore }, { resourcePathKey }, { getActiveSurfaceId }] = await Promise.all([
+      import('@/app/workbench/contentResourceStore'),
+      import('@/shared/utils/resourcePath'),
+      import('@/infrastructure/peer-device/deviceSurface'),
+    ]);
+    const surfaceId = getActiveSurfaceId();
+    for (const resource of Object.values(useContentResourceStore.getState().resources)) {
+      if (resource.scope.surfaceId !== surfaceId || resource.target.kind !== 'file') continue;
+      if (resourcePathKey(resource.target.path, resource.scope) === resourcePathKey(filePath, resource.scope)) {
+        return resource.scope;
+      }
+    }
+    return undefined;
+  }
+
+  private static sourceEditorFilePath(source: unknown): string | undefined {
+    const model = (source as { getModel?: () => { uri?: Monaco.Uri } | null } | null)?.getModel?.();
+    return model?.uri ? model.uri.toString() : undefined;
+  }
+
+  /**
    * Register EditorOpener for cross-file navigation from Peek References views.
    */
   private registerEditorOpener(monaco: typeof Monaco): void {
@@ -215,7 +244,7 @@ class MonacoInitManager {
       
       monaco.editor.registerEditorOpener({
         openCodeEditor: async (
-          _source: unknown,
+          source: unknown,
           resource: Monaco.Uri,
           selectionOrPosition?: Monaco.IRange | Monaco.IPosition
         ) => {
@@ -241,13 +270,15 @@ class MonacoInitManager {
           
           try {
             const { fileTabManager } = await import('@/shared/services/FileTabManager');
-            const workspacePath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
+            const sourcePath = MonacoInitManager.sourceEditorFilePath(source);
+            const scope = await this.resolveOpenFileScope(sourcePath ? normalizePath(sourcePath) : undefined)
+              ?? await this.resolveOpenFileScope(normalizedPath);
             
             fileTabManager.openFileAndJump(
               normalizedPath,
               targetLine,
               targetColumn,
-              { workspacePath }
+              scope ? { scope } : {}
             );
           } catch (error) {
             log.error('Failed to open file', { normalizedPath, targetLine, targetColumn, error });
@@ -345,9 +376,9 @@ class MonacoInitManager {
           const normalizedPath = normalizePath(filePath);
           
           const { fileTabManager } = await import('@/shared/services/FileTabManager');
-          const workspacePath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
+          const scope = await this.resolveOpenFileScope(normalizedPath);
           
-          fileTabManager.openFileAndJump(normalizedPath, lineNumber, 1, { workspacePath });
+          fileTabManager.openFileAndJump(normalizedPath, lineNumber, 1, scope ? { scope } : {});
         } catch (error) {
           log.error('Cross-file jump failed', { filePath, lineNumber, error });
         }

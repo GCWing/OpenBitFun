@@ -4448,7 +4448,7 @@ export function runManifestParserSelfTest({
     },
     {
       path: 'src/crates/assembly/core/src/service/search/remote.rs',
-      contracts: ['ServiceRemoteWorkspaceSearchService', 'impl RemoteWorkspaceSearchProvider for CoreRemoteWorkspaceSearchProvider', 'lookup_remote_connection_with_hint', 'open_workspace_stdio', 'RemoteWorkspaceSearchStdioProtocol'],
+      contracts: ['ServiceRemoteWorkspaceSearchService', 'impl RemoteWorkspaceSearchProvider for CoreRemoteWorkspaceSearchProvider', 'require_workspace(workspace_id)', 'open_workspace_stdio', 'RemoteWorkspaceSearchStdioProtocol'],
     },
     {
       path: 'src/crates/services/services-integrations/src/remote_ssh/workspace_search/mod.rs',
@@ -4475,11 +4475,11 @@ export function runManifestParserSelfTest({
     },
     {
       path: 'src/crates/assembly/core/src/service/search/remote_disabled.rs',
-      contracts: ['Remote SSH search is disabled', 'remote_workspace_search_service_for_path'],
+      contracts: ['Remote SSH search is disabled', 'remote_workspace_search_service_for_workspace'],
     },
     {
       path: 'src/crates/services/services-integrations/src/remote_ssh/workspace_search/disabled.rs',
-      contracts: ['Remote SSH search is disabled', 'RemoteWorkspaceSearchService', 'remote_workspace_search_service_for_path'],
+      contracts: ['Remote SSH search is disabled', 'RemoteWorkspaceSearchService', 'pub async fn search_content'],
     },
     {
       path: 'src/crates/assembly/core/Cargo.toml',

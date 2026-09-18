@@ -63,6 +63,17 @@ fn coordinator() -> Result<Arc<crate::agentic::coordination::ConversationCoordin
         .ok_or_else(|| Failure::unavailable("Session coordinator is not initialized"))
 }
 
+/// Session storage is owned by the plugin instance's workspace ID; the instance
+/// directory is only the execution root handed to file and git routes.
+async fn session_storage_root(context: &PluginHostInstance) -> Result<PathBuf, Failure> {
+    use openbitfun_runtime_ports::SessionStorePort;
+    crate::agentic::session::session_store_port::CoreSessionStorePort::default()
+        .resolve_workspace_storage(&context.workspace_id)
+        .await
+        .map(|resolution| resolution.effective_storage_path)
+        .map_err(|error| Failure::backend(error.to_string()))
+}
+
 async fn session_metadata(
     context: &PluginHostInstance,
     session_id: &str,
@@ -72,7 +83,7 @@ async fn session_metadata(
     let coordinator = coordinator()?;
     coordinator
         .get_session_manager()
-        .load_session_metadata(&context.directory, session_id)
+        .load_session_metadata(&session_storage_root(context).await?, session_id)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?
         .ok_or_else(|| Failure::not_found("Session was not found in this workspace"))
@@ -81,12 +92,12 @@ async fn session_metadata(
 async fn session_list(context: &PluginHostInstance) -> RouteResult {
     let coordinator = coordinator()?;
     let summaries = coordinator
-        .list_sessions(&context.directory)
+        .list_sessions(&session_storage_root(context).await?)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?;
     let persistence = coordinator.get_session_manager().persistence_manager();
     let metadata = persistence
-        .list_session_metadata(&context.directory)
+        .list_session_metadata(&session_storage_root(context).await?)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?;
     let values = metadata
@@ -124,6 +135,7 @@ async fn session_create(context: &PluginHostInstance, body: &[u8]) -> RouteResul
                 .unwrap_or_else(|| "OpenCode Plugin Session".to_string()),
             "Standard".to_string(),
             crate::agentic::core::SessionConfig {
+                workspace_id: Some(context.workspace_id.clone()),
                 workspace_path: Some(context.directory.to_string_lossy().into_owned()),
                 project_workspace_path: Some(context.directory.to_string_lossy().into_owned()),
                 ..Default::default()
@@ -134,7 +146,7 @@ async fn session_create(context: &PluginHostInstance, body: &[u8]) -> RouteResul
         .map_err(|error| Failure::backend(error.to_string()))?;
     let metadata = coordinator
         .get_session_manager()
-        .load_session_metadata(&context.directory, &session.session_id)
+        .load_session_metadata(&session_storage_root(context).await?, &session.session_id)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?
         .ok_or_else(|| Failure::backend("Created session metadata is unavailable"))?;
@@ -144,7 +156,7 @@ async fn session_create(context: &PluginHostInstance, body: &[u8]) -> RouteResul
 async fn session_status(context: &PluginHostInstance) -> RouteResult {
     let coordinator = coordinator()?;
     let sessions = coordinator
-        .list_sessions(&context.directory)
+        .list_sessions(&session_storage_root(context).await?)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?;
     let statuses = sessions
@@ -177,7 +189,7 @@ async fn session_delete(context: &PluginHostInstance, session_id: &str) -> Route
         .cancel_active_turn_for_session(session_id, std::time::Duration::from_secs(2))
         .await;
     coordinator
-        .delete_session(&context.directory, session_id)
+        .delete_session(&session_storage_root(context).await?, session_id)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?;
     Ok(json!(true))
@@ -211,7 +223,7 @@ async fn session_children(context: &PluginHostInstance, session_id: &str) -> Rou
     session_metadata(context, session_id).await?;
     let persistence = coordinator()?.get_session_manager().persistence_manager();
     let metadata = persistence
-        .list_session_metadata_including_internal(&context.directory)
+        .list_session_metadata_including_internal(&session_storage_root(context).await?)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?;
     Ok(Value::Array(
@@ -244,7 +256,7 @@ struct SessionForkBody {
 async fn session_fork(context: &PluginHostInstance, session_id: &str, body: &[u8]) -> RouteResult {
     let input: SessionForkBody = body_as(body)?;
     let result = crate::product_runtime::fork_session_for_plugin(
-        context.directory.clone(),
+        context.workspace_id.clone(),
         session_id.to_string(),
         input.message_id,
     )
@@ -272,11 +284,11 @@ async fn session_diff(
     let Some(message_id) = query_first(query, "messageID") else {
         return Ok(json!([]));
     };
-    let manager = crate::service::snapshot::open_snapshot_manager_for_view(&context.directory)
+    let manager = crate::service::snapshot::open_snapshot_manager_for_view(&context.workspace_id)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?;
     let turns = coordinator()?
-        .load_visible_persisted_session_turns(&context.directory, session_id)
+        .load_visible_persisted_session_turns(&session_storage_root(context).await?, session_id)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?;
     let turn = turns
@@ -578,7 +590,7 @@ async fn session_messages(
         .unwrap_or(100)
         .clamp(1, 1000);
     let turns = coordinator()?
-        .load_visible_persisted_session_turns(&context.directory, session_id)
+        .load_visible_persisted_session_turns(&session_storage_root(context).await?, session_id)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?;
     let (models, _, catalog) = load_models().await?;
@@ -611,7 +623,7 @@ async fn session_message(
 ) -> RouteResult {
     let metadata = session_metadata(context, session_id).await?;
     let turns = coordinator()?
-        .load_visible_persisted_session_turns(&context.directory, session_id)
+        .load_visible_persisted_session_turns(&session_storage_root(context).await?, session_id)
         .await
         .map_err(|error| Failure::backend(error.to_string()))?;
     let (models, _, catalog) = load_models().await?;

@@ -29,15 +29,7 @@ pub enum WorkspaceStatus {
     Archived,
 }
 
-/// Workspace lifecycle kind.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "lowercase")]
-pub enum WorkspaceKind {
-    #[default]
-    Normal,
-    Assistant,
-    Remote,
-}
+pub use openbitfun_core_types::WorkspaceKind;
 
 /// Stable identity of the assistant workspace that owns the primary role.
 ///
@@ -95,6 +87,9 @@ pub struct WorkspaceIdentity {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceWorktreeInfo {
+    /// Authoritative project relationship. `main_repo_path` remains an IO projection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_workspace_id: Option<String>,
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch: Option<String>,
@@ -138,6 +133,39 @@ pub struct WorkspaceInfo {
 }
 
 impl WorkspaceInfo {
+    /// Workspace owning this execution workspace's sessions.
+    pub fn project_workspace_id(&self) -> Result<&str, String> {
+        if self.workspace_kind != WorkspaceKind::Remote {
+            if let Some(tree) = self.worktree.as_ref().filter(|tree| !tree.is_main) {
+                return tree
+                    .main_workspace_id
+                    .as_deref()
+                    .filter(|id| !id.is_empty())
+                    .ok_or_else(|| {
+                        format!(
+                            "Workspace '{}' has an unresolved project workspace ID",
+                            self.id
+                        )
+                    });
+            }
+        }
+        Ok(&self.id)
+    }
+
+    /// Select the filesystem provider from the authoritative workspace kind.
+    /// Paths and stale SSH metadata never change a local workspace into a remote one.
+    pub fn filesystem_connection_id(&self) -> Result<Option<&str>, String> {
+        if self.workspace_kind != WorkspaceKind::Remote {
+            return Ok(None);
+        }
+        self.remote_ssh_connection_id().map(Some).ok_or_else(|| {
+            format!(
+                "Remote workspace '{}' has no saved SSH connection ID",
+                self.id
+            )
+        })
+    }
+
     /// SSH connection id persisted in [`WorkspaceInfo::metadata`] for remote workspaces.
     pub fn remote_ssh_connection_id(&self) -> Option<&str> {
         self.metadata

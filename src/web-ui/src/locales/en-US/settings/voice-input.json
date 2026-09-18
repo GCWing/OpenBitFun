@@ -86,6 +86,12 @@
       "launcherLabel": "Hello",
       "switchToVoice": "Switch to realtime voice",
       "switchToChat": "Return to text chat",
+      "identity": {
+        "start": "Live voice",
+        "ongoing": "Call in progress",
+        "connecting": "Connecting",
+        "retry": "Reconnect"
+      },
       "empty": "Just start talking. When you ask for work, I will start a new OpenBitFun session.",
       "mute": "Mute microphone",
       "unmute": "Unmute microphone",
@@ -110,26 +116,27 @@
         "connecting": "Connecting to Volcengine…",
         "connected": "Connected, creating the conversation…",
         "listening": "Listening",
-      "thinking": "Thinking",
-      "readingClientContext": "Reading client state…",
-      "switchingWorkspace": "Switching workspace…",
-      "speaking": "Speaking",
-      "ending": "Ending the call…",
-      "error": "The realtime voice connection failed",
-      "disconnected": "The realtime voice connection was interrupted",
+        "thinking": "Thinking",
+        "readingClientContext": "Reading client state…",
+        "switchingWorkspace": "Switching workspace…",
+        "speaking": "Speaking",
+        "ending": "Ending the call…",
+        "error": "The realtime voice connection failed",
+        "disconnected": "The realtime voice connection was interrupted",
         "microphoneDisconnected": "The microphone was disconnected",
         "retryingAudio": "Retrying voice playback…",
         "audioPlaybackFailed": "Voice playback failed. Check the system audio output."
       },
       "taskPhases": {
-        "starting": "Creating a new OpenBitFun session.",
+        "starting": "Starting the task.",
         "working": "OpenBitFun is still working on the task. I will keep following it.",
         "using_tools": "OpenBitFun is using tools to move the task forward.",
         "waiting_approval": "The task is waiting for your approval in OpenBitFun.",
         "needs_input": "OpenBitFun needs more information in the task session.",
         "finishing": "The main work is done and OpenBitFun is preparing the final result.",
         "stopping": "Stopping the current OpenBitFun task."
-      }
+      },
+      "historySaveFailed": "Voice history could not be saved. The transcript is retained for retry."
     }
   },
   "diagnostics": {

@@ -273,6 +273,7 @@ async fn handle_connection(
                 instance_identity: config.instance_identity.clone(),
                 server_version: config.server_version.clone(),
                 capabilities: RuntimeIpcCapabilities {
+                    workspace_id_references: true,
                     health: true,
                     interactive_tui,
                 },

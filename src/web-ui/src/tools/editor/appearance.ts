@@ -9,8 +9,6 @@ export const editorToolAppearanceDescriptor: AppearanceSurfaceDescriptor = {
     { id: 'error' },
     { id: 'saving' },
     { id: 'readOnlyCodeBlock' },
-    { id: 'meditorPreview' },
-    { id: 'meditorFrontmatter' },
     { id: 'meditorEditArea' },
   ],
   states: [

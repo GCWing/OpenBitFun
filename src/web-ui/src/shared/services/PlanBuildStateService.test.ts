@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   readFileContent: vi.fn(),
   writeFileContent: vi.fn(),
+  readWorkspaceFile: vi.fn(),
+  writeWorkspaceFile: vi.fn(),
   onDialogTurnCompleted: vi.fn(),
   onDialogTurnFailed: vi.fn(),
   onDialogTurnCancelled: vi.fn(),
@@ -40,6 +42,8 @@ vi.mock('@/infrastructure/api/service-api/WorkspaceAPI', () => ({
   workspaceAPI: {
     readFileContent: mocks.readFileContent,
     writeFileContent: mocks.writeFileContent,
+    readWorkspaceFile: mocks.readWorkspaceFile,
+    writeWorkspaceFile: mocks.writeWorkspaceFile,
   },
 }));
 
@@ -75,6 +79,8 @@ describe('PlanBuildStateService', () => {
     vi.clearAllMocks();
     mocks.readFileContent.mockResolvedValue(PLAN_CONTENT);
     mocks.writeFileContent.mockResolvedValue(undefined);
+    mocks.readWorkspaceFile.mockResolvedValue(PLAN_CONTENT);
+    mocks.writeWorkspaceFile.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -148,6 +154,45 @@ describe('PlanBuildStateService', () => {
     );
     expect(planBuildStateService.isBuildActive(first)).toBe(false);
     expect(planBuildStateService.isBuildActive(second)).toBe(true);
+  });
+
+  it('keys build state by workspace ID and routes file IO through the workspace', async () => {
+    const planFilePath = '/workspace/.openbitfun/plans/shared-path.plan.md';
+    const inWorkspaceA: PlanFileRef = { planFilePath, workspaceId: 'workspace-a', workspacePath: '/workspace' };
+    const inWorkspaceB: PlanFileRef = { planFilePath, workspaceId: 'workspace-b', workspacePath: '/workspace' };
+    trackedTargets.push(inWorkspaceA, inWorkspaceB);
+
+    const turnId = planBuildStateService.startBuild({
+      ...inWorkspaceA,
+      sessionId: 'session-a',
+      todoIds: ['shared-todo'],
+    });
+
+    expect(planBuildStateService.isBuildActive(inWorkspaceA)).toBe(true);
+    expect(planBuildStateService.isBuildActive(inWorkspaceB)).toBe(false);
+    // A pre-ID locator for the same file does not alias the ID-keyed build.
+    expect(planBuildStateService.isBuildActive({ planFilePath, workspacePath: '/workspace' })).toBe(false);
+
+    window.dispatchEvent(new CustomEvent('openbitfun:todowrite-update', {
+      detail: {
+        sessionId: 'session-a',
+        turnId,
+        todos: [{ id: 'shared-todo', content: 'Update the implementation', status: 'completed' }],
+        merge: false,
+      },
+    }));
+
+    await vi.waitFor(() => {
+      expect(mocks.writeWorkspaceFile).toHaveBeenCalledOnce();
+    });
+    expect(mocks.readWorkspaceFile).toHaveBeenCalledWith('workspace-a', planFilePath);
+    expect(mocks.writeWorkspaceFile).toHaveBeenCalledWith(
+      'workspace-a',
+      planFilePath,
+      expect.stringContaining('status: completed'),
+    );
+    expect(mocks.readFileContent).not.toHaveBeenCalled();
+    expect(mocks.writeFileContent).not.toHaveBeenCalled();
   });
 
   it('does not register a build without valid todo IDs', () => {

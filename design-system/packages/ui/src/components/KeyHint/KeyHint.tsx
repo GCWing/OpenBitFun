@@ -24,7 +24,7 @@ export const KeyHint = forwardRef<HTMLElement, KeyHintProps>(function KeyHint({
       ref={ref}
     >
       {icon !== undefined && icon !== null && (
-        <span aria-hidden="true" className={styles.icon} data-openbitfun-part="icon">
+        <span aria-hidden="true" className={styles.icon} data-openbitfun-icon-slot="true" data-openbitfun-part="icon">
           {icon}
         </span>
       )}

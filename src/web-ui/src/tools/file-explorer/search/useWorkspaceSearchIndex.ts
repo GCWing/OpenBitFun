@@ -41,7 +41,7 @@ function workspaceSearchUnsupportedReason(
 }
 
 export interface UseWorkspaceSearchIndexOptions {
-  workspacePath?: string;
+  workspaceId?: string;
   enabled?: boolean;
   isRemote?: boolean;
 }
@@ -68,7 +68,7 @@ function isTaskActive(status: WorkspaceSearchIndexStatus | null): boolean {
 export function useWorkspaceSearchIndex(
   options: UseWorkspaceSearchIndexOptions = {}
 ): UseWorkspaceSearchIndexResult {
-  const { workspacePath, enabled: requestedEnabled = true, isRemote = false } = options;
+  const { workspaceId, enabled: requestedEnabled = true, isRemote = false } = options;
   const enabled = WORKSPACE_SEARCH_AVAILABLE && !isRemote && requestedEnabled;
 
   const [indexStatus, setIndexStatus] = useState<WorkspaceSearchIndexStatus | null>(null);
@@ -78,7 +78,7 @@ export function useWorkspaceSearchIndex(
   const [error, setError] = useState<string | null>(null);
   const [unsupportedReason, setUnsupportedReason] =
     useState<WorkspaceSearchUnsupportedReason | null>(null);
-  const supported = Boolean(workspacePath && enabled && unsupportedReason === null);
+  const supported = Boolean(workspaceId && enabled && unsupportedReason === null);
 
   const mountedRef = useRef(true);
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -92,7 +92,7 @@ export function useWorkspaceSearchIndex(
 
   const refreshStatus = useCallback(
     async (silent: boolean = false): Promise<WorkspaceSearchIndexStatus | null> => {
-      if (!workspacePath || !enabled) {
+      if (!workspaceId || !enabled) {
         if (mountedRef.current) {
           setIndexStatus(null);
           setError(null);
@@ -109,7 +109,7 @@ export function useWorkspaceSearchIndex(
       }
 
       try {
-        const status = await workspaceAPI.getSearchRepoStatus(workspacePath);
+        const status = await workspaceAPI.getSearchRepoStatus(workspaceId);
         if (!mountedRef.current) {
           return status;
         }
@@ -129,7 +129,7 @@ export function useWorkspaceSearchIndex(
           return null;
         }
         log.warn('Failed to refresh workspace search index status', {
-          workspacePath,
+          workspaceId,
           error: err,
         });
         setError(message);
@@ -141,14 +141,14 @@ export function useWorkspaceSearchIndex(
         }
       }
     },
-    [enabled, workspacePath]
+    [enabled, workspaceId]
   );
 
   const runIndexAction = useCallback(
     async (
       action: 'build' | 'rebuild'
     ): Promise<WorkspaceSearchIndexTaskHandle | null> => {
-      if (!workspacePath || !enabled) {
+      if (!workspaceId || !enabled) {
         return null;
       }
 
@@ -156,8 +156,8 @@ export function useWorkspaceSearchIndex(
       try {
         const result =
           action === 'build'
-            ? await workspaceAPI.buildSearchIndex(workspacePath)
-            : await workspaceAPI.rebuildSearchIndex(workspacePath);
+            ? await workspaceAPI.buildSearchIndex(workspaceId)
+            : await workspaceAPI.rebuildSearchIndex(workspaceId);
         if (mountedRef.current) {
           // The task handle carries no auto-index decision, but a manual build does not change
           // one either, so the last known decision is kept until the next status refresh.
@@ -188,7 +188,7 @@ export function useWorkspaceSearchIndex(
         }
       }
     },
-    [enabled, workspacePath]
+    [enabled, workspaceId]
   );
 
   const buildIndex = useCallback(async () => runIndexAction('build'), [runIndexAction]);
@@ -204,7 +204,7 @@ export function useWorkspaceSearchIndex(
 
   useEffect(() => {
     setUnsupportedReason(null);
-  }, [enabled, workspacePath]);
+  }, [enabled, workspaceId]);
 
   useEffect(() => {
     clearPollTimer();
@@ -244,7 +244,7 @@ export function useWorkspaceSearchIndex(
       cancelled = true;
       clearPollTimer();
     };
-  }, [clearPollTimer, refreshStatus, supported, workspacePath]);
+  }, [clearPollTimer, refreshStatus, supported, workspaceId]);
 
   return useMemo(
     () => ({

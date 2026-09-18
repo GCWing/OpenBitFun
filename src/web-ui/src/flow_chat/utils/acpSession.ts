@@ -33,6 +33,8 @@ export function isAcpFlowSession(
 export interface AcpSessionRef {
   sessionId: string;
   clientId: string;
+  /** Workspace identity; the path and SSH fields are IO projections. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -42,7 +44,13 @@ export function acpSessionRef(
   session:
     | Pick<
         Session,
-        'sessionId' | 'config' | 'mode' | 'workspacePath' | 'remoteConnectionId' | 'remoteSshHost'
+        | 'sessionId'
+        | 'config'
+        | 'mode'
+        | 'workspaceId'
+        | 'workspacePath'
+        | 'remoteConnectionId'
+        | 'remoteSshHost'
       >
     | null
     | undefined,
@@ -57,6 +65,7 @@ export function acpSessionRef(
   return {
     sessionId: session.sessionId,
     clientId,
+    workspaceId: session.workspaceId ?? session.config?.workspaceId,
     workspacePath: session.workspacePath ?? session.config?.workspacePath,
     remoteConnectionId: session.remoteConnectionId ?? session.config?.remoteConnectionId,
     remoteSshHost: session.remoteSshHost,

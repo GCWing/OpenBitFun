@@ -37,6 +37,7 @@ const createSession = (overrides: Partial<Session> = {}): Session => ({
   todos: [],
   maxContextTokens: 128128,
   mode: 'Standard',
+  workspaceId: 'workspace-1',
   workspacePath: 'D:/workspace/OpenBitFun',
   isTransient: false,
   ...overrides,
@@ -163,9 +164,7 @@ describe('runUsageReportCommand', () => {
     expect(state.markdown).not.toContain('Cached | unavailable');
     expect(sessionApiMocks.getSessionUsageReport).toHaveBeenCalledWith({
       sessionId: 'session-1',
-      workspacePath: 'D:/workspace/OpenBitFun',
-      remoteConnectionId: undefined,
-      remoteSshHost: undefined,
+      workspaceId: 'workspace-1',
       includeHiddenSubagents: true,
     });
   });
@@ -201,7 +200,7 @@ describe('runUsageReportCommand', () => {
     const { runUsageReportCommand } = await import('./usageReportService');
 
     const result = await runUsageReportCommand({
-      session: createSession({ workspacePath: undefined }),
+      session: createSession({ workspaceId: undefined }),
       ...uiParams,
     });
 

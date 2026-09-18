@@ -170,6 +170,7 @@ vi.mock('../../store/modernFlowChatStore', () => {
     useVirtualItems: () => mocks.items,
     useActiveSession: () => mocks.activeSession,
     useModernFlowChatStore,
+    useModernFlowChatStoreApi: () => useModernFlowChatStore,
   };
 });
 

@@ -13,6 +13,7 @@ pub(crate) async fn record_successful_tool_call(
     context: &ToolUseContext,
 ) {
     crate::native_hooks::dispatch_successful_tool_post_call(
+        context.workspace_id(),
         context.workspace_root(),
         context.is_remote(),
         tool_name,

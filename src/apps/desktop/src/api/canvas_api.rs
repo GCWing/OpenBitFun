@@ -1,11 +1,11 @@
 //! Canvas artifact Tauri commands.
 
 use crate::api::app_state::AppState;
-use crate::api::session_storage_path::desktop_effective_session_storage_path;
 use openbitfun_product_domains::canvas::{
     parse_canvas_artifact_ref, CanvasDiagnostic, CanvasDiagnosticCategory,
     CanvasDiagnosticSeverity, CanvasRevision, CanvasSnapshot, CanvasState, CanvasStoragePort,
 };
+use openbitfun_runtime_ports::SessionStorePort;
 use openbitfun_services_integrations::canvas::CanvasService;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -18,6 +18,8 @@ pub struct CanvasStateRequest {
     pub artifact_reference: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -37,6 +39,8 @@ pub struct SaveCanvasStateRequest {
     pub updated_at: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,6 +69,8 @@ pub struct ReportCanvasRuntimeErrorRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_ssh_host: Option<String>,
@@ -79,6 +85,8 @@ pub struct ReportCanvasRuntimeReadyRequest {
     pub sdk_version: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -228,6 +236,7 @@ pub async fn report_canvas_runtime_ready(
         .map_err(|error| format!("Invalid Canvas artifact reference: {:?}", error))?;
     let service = canvas_service_for_workspace(
         &state,
+        request.workspace_id.as_deref(),
         request.workspace_path.as_deref(),
         request.remote_connection_id.as_deref(),
         request.remote_ssh_host.as_deref(),
@@ -259,6 +268,7 @@ async fn canvas_service_for_runtime_error_request(
 ) -> Result<CanvasService, String> {
     canvas_service_for_workspace(
         state,
+        request.workspace_id.as_deref(),
         request.workspace_path.as_deref(),
         request.remote_connection_id.as_deref(),
         request.remote_ssh_host.as_deref(),
@@ -272,6 +282,7 @@ async fn canvas_service_for_save_request(
 ) -> Result<CanvasService, String> {
     canvas_service_for_workspace(
         state,
+        request.workspace_id.as_deref(),
         request.workspace_path.as_deref(),
         request.remote_connection_id.as_deref(),
         request.remote_ssh_host.as_deref(),
@@ -286,6 +297,7 @@ async fn canvas_service_for_request(
 ) -> Result<CanvasService, String> {
     canvas_service_for_workspace(
         state,
+        request.workspace_id.as_deref(),
         workspace_path,
         request.remote_connection_id.as_deref(),
         request.remote_ssh_host.as_deref(),
@@ -295,26 +307,35 @@ async fn canvas_service_for_request(
 
 async fn canvas_service_for_workspace(
     state: &AppState,
-    workspace_path: Option<&str>,
+    workspace_id: Option<&str>,
+    legacy_workspace_path: Option<&str>,
     remote_connection_id: Option<&str>,
     remote_ssh_host: Option<&str>,
 ) -> Result<CanvasService, String> {
-    let workspace = match workspace_path {
-        Some(path) if !path.trim().is_empty() => path.trim().to_string(),
-        _ => state
-            .workspace_path
-            .read()
+    let workspace = if let Some(id) = workspace_id {
+        state
+            .workspace_service
+            .require_workspace(id)
             .await
-            .as_ref()
-            .map(|path| path.to_string_lossy().to_string())
-            .ok_or_else(|| "No active workspace is available for Canvas state".to_string())?,
+            .map_err(|e| e.to_string())?
+    } else if let Some(path) = legacy_workspace_path.filter(|path| !path.is_empty()) {
+        state
+            .workspace_service
+            .resolve_legacy_workspace_reference(None, path, remote_connection_id, remote_ssh_host)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Legacy Canvas workspace cannot be resolved")?
+    } else {
+        // Canvas state is keyed by the owning workspace. Falling through to the
+        // active workspace would silently store a session's Canvas under the
+        // wrong workspace, so reject requests that carry neither an ID nor a
+        // legacy path.
+        return Err("Canvas requests must identify the owning workspace".to_string());
     };
-    let sessions_dir = desktop_effective_session_storage_path(
-        state,
-        &workspace,
-        remote_connection_id,
-        remote_ssh_host,
-    )
-    .await;
+    let sessions_dir = openbitfun_core::agentic::session::CoreSessionStorePort::default()
+        .resolve_workspace_storage(&workspace.id)
+        .await
+        .map_err(|e| e.to_string())?
+        .effective_storage_path;
     Ok(CanvasService::persistent(sessions_dir))
 }

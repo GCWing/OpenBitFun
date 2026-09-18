@@ -36,8 +36,19 @@ export function contentResourceIdentity(content: PanelContent, scope: ContentRes
   const identity = target.kind === 'file'
     ? resourcePathKey(target.path, scope)
     : target.kind === 'terminal' ? target.sessionId : target.key;
-  return { target, key: JSON.stringify([scope.surfaceId, scope.remoteConnectionId ?? '', target.kind,
-    target.kind === 'content' ? [content.type, scope.workspaceId ?? scope.workspacePath ?? ''] : '', identity]) };
+  // Ownership is (surface, workspace ID). The SSH connection is an IO detail of
+  // a remote record and changes on reconnect; it only separates resources of
+  // legacy scopes that never learned their workspace ID.
+  const owner = scope.workspaceId ? ['workspace', scope.workspaceId] : ['legacy', scope.remoteConnectionId ?? ''];
+  return { target, key: JSON.stringify([scope.surfaceId, owner, target.kind,
+    target.kind === 'content' ? [content.type, scope.workspaceId ?? ''] : '', identity]) };
+}
+
+/** Two scopes own the same files when they name the same workspace on one surface. */
+export function sameContentResourceOwner(left: ContentResourceScope, right: ContentResourceScope): boolean {
+  if (left.surfaceId !== right.surfaceId) return false;
+  if (left.workspaceId || right.workspaceId) return left.workspaceId === right.workspaceId;
+  return left.remoteConnectionId === right.remoteConnectionId;
 }
 
 interface ResourceState {
@@ -61,7 +72,7 @@ export const useContentResourceStore = create<ResourceState>((set, get) => ({
     const id = `resource-${++sequence}`;
     const content = { ...input, data: input.data !== null && typeof input.data === 'object' ? { ...input.data,
       ...(target.kind === 'file' ? { filePath: target.path } : {}),
-      workspacePath: scope.workspacePath, remoteConnectionId: scope.remoteConnectionId } : input.data };
+      workspaceId: scope.workspaceId, workspacePath: scope.workspacePath, remoteConnectionId: scope.remoteConnectionId } : input.data };
     set(state => ({ resources: { ...state.resources,
       [id]: { id, key, scope, target, content, documentId: documentId ?? id, isDirty: false, fileMissing: false } } }));
     return id;
@@ -80,8 +91,7 @@ export const useContentResourceStore = create<ResourceState>((set, get) => ({
     const resources = { ...state.resources };
     const oldRoot = resourceFilePath(oldPath, scope);
     for (const resource of Object.values(resources)) {
-      if (resource.scope.surfaceId !== scope.surfaceId || resource.scope.remoteConnectionId !== scope.remoteConnectionId
-        || resource.target.kind !== 'file') continue;
+      if (!sameContentResourceOwner(resource.scope, scope) || resource.target.kind !== 'file') continue;
       const path = resource.target.path;
       const pathKey = resourcePathKey(path, scope);
       const rootKey = resourcePathKey(oldRoot, scope);

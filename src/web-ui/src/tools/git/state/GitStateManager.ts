@@ -1,3 +1,4 @@
+import { GitWorkspaceScope, gitWorkspaceKey } from '@/infrastructure/api/service-api/GitAPI';
 /**
  * Git state manager - central state management for Git repositories
  * 
@@ -99,7 +100,7 @@ export class GitStateManager {
    * @returns Unsubscribe function.
    */
   subscribe(
-    repositoryPath: string,
+    repositoryPath: GitWorkspaceScope,
     callback: GitStateSubscriber,
     options: SubscribeOptions = {}
   ): () => void {
@@ -127,7 +128,7 @@ export class GitStateManager {
   /**
    * Get current state synchronously (cached).
    */
-  getState(repositoryPath: string): GitState | null {
+  getState(repositoryPath: GitWorkspaceScope): GitState | null {
     const normalizedPath = this.normalizePath(repositoryPath);
     return this.states.get(normalizedPath) || null;
   }
@@ -135,7 +136,7 @@ export class GitStateManager {
   /**
    * Get state or create an initial one.
    */
-  getOrCreateState(repositoryPath: string): GitState {
+  getOrCreateState(repositoryPath: GitWorkspaceScope): GitState {
     const normalizedPath = this.normalizePath(repositoryPath);
     let state = this.states.get(normalizedPath);
 
@@ -151,7 +152,7 @@ export class GitStateManager {
    * Request a refresh.
    */
   async refresh(
-    repositoryPath: string,
+    repositoryPath: GitWorkspaceScope,
     options: RefreshOptions = {}
   ): Promise<void> {
     const normalizedPath = this.normalizePath(repositoryPath);
@@ -167,7 +168,7 @@ export class GitStateManager {
   }
 
   cancelPendingRefresh(
-    repositoryPath: string,
+    repositoryPath: GitWorkspaceScope,
     options: {
       reason?: RefreshReason;
       source?: string;
@@ -204,7 +205,7 @@ export class GitStateManager {
    * Register a consumer that wants automatic refresh on window focus.
    * Multiple concurrent consumers for the same repository are reference-counted.
    */
-  registerWindowFocusRefresh(repositoryPath: string): () => void {
+  registerWindowFocusRefresh(repositoryPath: GitWorkspaceScope): () => void {
     const normalizedPath = this.normalizePath(repositoryPath);
     const nextCount = (this.windowFocusRefreshCounts.get(normalizedPath) ?? 0) + 1;
     this.windowFocusRefreshCounts.set(normalizedPath, nextCount);
@@ -223,7 +224,7 @@ export class GitStateManager {
    * Invalidate cache by resetting last refresh timestamps.
    */
   invalidateCache(
-    repositoryPath: string,
+    repositoryPath: GitWorkspaceScope,
     layers: GitStateLayer[] = ['basic', 'status', 'detailed']
   ): void {
     const normalizedPath = this.normalizePath(repositoryPath);
@@ -263,6 +264,7 @@ export class GitStateManager {
 
 
     this.states.clear();
+    this.workspaceScopes.clear();
 
     this.windowFocusRefreshCounts.clear();
 
@@ -411,7 +413,7 @@ export class GitStateManager {
     let probeError: string | null = null;
     let probeOutcome = 'completed';
 
-    let state = this.getOrCreateState(repositoryPath);
+    let state = this.getOrCreateState(this.scopeForKey(repositoryPath));
     const prevState = { ...state };
 
 
@@ -462,7 +464,7 @@ export class GitStateManager {
         }
 
 
-        state = this.getOrCreateState(repositoryPath);
+        state = this.getOrCreateState(this.scopeForKey(repositoryPath));
         const newLastRefreshTime = { ...state.lastRefreshTime };
         for (const layer of layersToRefresh) {
           newLastRefreshTime[layer] = now;
@@ -476,7 +478,7 @@ export class GitStateManager {
         });
 
 
-        const finalState = this.getState(repositoryPath)!;
+        const finalState = this.getState(this.scopeForKey(repositoryPath))!;
         const comparison = compareStates(prevState, finalState);
         if (comparison.hasChanges) {
           this.notifySubscribers(repositoryPath, finalState, prevState, comparison.changedLayers);
@@ -593,7 +595,7 @@ export class GitStateManager {
     repositoryPath: string
   ): Promise<{ trustRequired: boolean; path?: string } | undefined> {
     try {
-      const report = await gitAPI.getRepositoryTrust(repositoryPath);
+      const report = await gitAPI.getRepositoryTrust(this.scopeForKey(repositoryPath));
       if (report.state !== 'trust_required') {
         return { trustRequired: false };
       }
@@ -612,7 +614,7 @@ export class GitStateManager {
     layersToRefresh: GitStateLayer[]
   ): Promise<void> {
     try {
-      const isRepo = await gitAPI.isGitRepository(repositoryPath);
+      const isRepo = await gitAPI.isGitRepository(this.scopeForKey(repositoryPath));
 
       // The probe answers `true` for a repository Git refuses on ownership
       // grounds — local and remote alike — so `false` here really is "no
@@ -637,8 +639,8 @@ export class GitStateManager {
 
       const shouldRefreshStatus = layersToRefresh.includes('status');
       if (!shouldRefreshStatus) {
-        const repository = await gitAPI.getRepositoryBasic(repositoryPath);
-        const currentState = this.getOrCreateState(repositoryPath);
+        const repository = await gitAPI.getRepositoryBasic(this.scopeForKey(repositoryPath));
+        const currentState = this.getOrCreateState(this.scopeForKey(repositoryPath));
         this.updateState(repositoryPath, {
           isRepository: true,
           currentBranch: repository.current_branch || repository.branch || null,
@@ -647,7 +649,7 @@ export class GitStateManager {
         return;
       }
 
-      const status = await gitAPI.getStatus(repositoryPath, 'git_state_manager');
+      const status = await gitAPI.getStatus(this.scopeForKey(repositoryPath), 'git_state_manager');
 
       const hasChanges =
         (status.staged?.length || 0) > 0 ||
@@ -676,14 +678,14 @@ export class GitStateManager {
    * Refresh detailed layer (branches/commits).
    */
   private async refreshDetailed(repositoryPath: string): Promise<void> {
-    const state = this.getState(repositoryPath);
+    const state = this.getState(this.scopeForKey(repositoryPath));
     if (!state?.isRepository) return;
 
     try {
 
       const [branches, commits] = await Promise.all([
-        gitAPI.getBranches(repositoryPath, true).catch(() => []),
-        gitAPI.getCommits(repositoryPath, { maxCount: 20 }).catch(() => []),
+        gitAPI.getBranches(this.scopeForKey(repositoryPath), true).catch(() => []),
+        gitAPI.getCommits(this.scopeForKey(repositoryPath), { maxCount: 20 }).catch(() => []),
       ]);
 
       this.updateState(repositoryPath, {
@@ -725,7 +727,7 @@ export class GitStateManager {
     repositoryPath: string,
     partial: Partial<GitState>
   ): GitState {
-    const currentState = this.getOrCreateState(repositoryPath);
+    const currentState = this.getOrCreateState(this.scopeForKey(repositoryPath));
     const newState: GitState = {
       ...currentState,
       ...partial,
@@ -781,7 +783,7 @@ export class GitStateManager {
     reason: RefreshReason
   ): void {
     const eventData: GitStateChangedEventData = {
-      repositoryPath,
+      repositoryPath: this.scopeForKey(repositoryPath),
       state,
       changedLayers,
       reason,
@@ -793,7 +795,7 @@ export class GitStateManager {
 
 
     gitEventService.emit('status:changed', {
-      repositoryPath,
+      repositoryPath: this.scopeForKey(repositoryPath),
       status: {
         current_branch: state.currentBranch || '',
         staged: state.staged,
@@ -869,7 +871,7 @@ export class GitStateManager {
       repositories,
     });
     for (const repoPath of repositories) {
-      this.refresh(repoPath, {
+      this.refresh(this.scopeForKey(repoPath), {
         layers: ['basic', 'status'],
         reason: 'window-focus',
         silent: true,
@@ -914,8 +916,17 @@ export class GitStateManager {
   /**
    * Normalize path separators for stable map keys.
    */
-  private normalizePath(path: string): string {
-    return path.replace(/\\/g, '/');
+  private normalizePath(scope: GitWorkspaceScope): string {
+    const key = gitWorkspaceKey(scope);
+    this.workspaceScopes.set(key, scope);
+    return key;
+  }
+
+  private workspaceScopes = new Map<string, GitWorkspaceScope>();
+  private scopeForKey(key: string): GitWorkspaceScope {
+    const scope = this.workspaceScopes.get(key);
+    if (!scope) throw new Error('Git workspace ID is unavailable');
+    return scope;
   }
 }
 

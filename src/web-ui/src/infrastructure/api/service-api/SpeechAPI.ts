@@ -87,6 +87,7 @@ export type SpeechRealtimeEventKind =
   | 'user_transcript_completed'
   | 'assistant_text_delta'
   | 'assistant_text_completed'
+  | 'assistant_response_completed'
   | 'assistant_audio_started'
   | 'assistant_audio_delta'
   | 'assistant_audio_completed'

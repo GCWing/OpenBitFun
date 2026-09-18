@@ -9,10 +9,8 @@ use openbitfun_runtime_ports::{
 use crate::agentic::core::SessionConfig;
 use crate::infrastructure::{get_path_manager_arc, PathManager};
 use crate::service::WorkspaceRuntimeService;
-#[cfg(not(feature = "remote-workspace"))]
-use openbitfun_services_core::workspace_identity::workspace_session_identity;
 use openbitfun_services_core::workspace_identity::{
-    unresolved_remote_session_storage_dir, WorkspaceSessionIdentity, LOCAL_WORKSPACE_SSH_HOST,
+    unresolved_remote_session_storage_dir, WorkspaceSessionIdentity,
 };
 
 async fn resolve_workspace_session_identity(
@@ -20,18 +18,20 @@ async fn resolve_workspace_session_identity(
     remote_connection_id: Option<&str>,
     remote_ssh_host: Option<&str>,
 ) -> Option<WorkspaceSessionIdentity> {
-    #[cfg(feature = "remote-workspace")]
-    {
-        return crate::service::remote_ssh::workspace_state::resolve_workspace_session_identity(
-            workspace_path,
-            remote_connection_id,
-            remote_ssh_host,
-        )
-        .await;
-    }
-
-    #[cfg(not(feature = "remote-workspace"))]
-    workspace_session_identity(workspace_path, remote_connection_id, remote_ssh_host)
+    let mut config = SessionConfig {
+        workspace_path: Some(workspace_path.to_owned()),
+        remote_connection_id: remote_connection_id.map(str::to_owned),
+        remote_ssh_host: remote_ssh_host.map(str::to_owned),
+        ..Default::default()
+    };
+    crate::agentic::workspace::normalize_session_workspace(&mut config)
+        .await
+        .ok()?;
+    openbitfun_services_core::workspace_identity::workspace_session_identity(
+        workspace_path,
+        config.remote_connection_id.as_deref(),
+        config.remote_ssh_host.as_deref(),
+    )
 }
 
 #[derive(Debug, Clone, Default)]
@@ -60,6 +60,9 @@ impl CoreSessionStorePort {
     pub async fn resolve_storage_path_for_config(
         config: &SessionConfig,
     ) -> Option<SessionStoragePathResolution> {
+        if let Some(id) = config.workspace_id.as_deref() {
+            return Self::default().resolve_workspace_storage(id).await.ok();
+        }
         let workspace_path = config.workspace_path.as_ref()?;
         let request = SessionStoragePathRequest {
             workspace_path: PathBuf::from(workspace_path),
@@ -70,6 +73,34 @@ impl CoreSessionStorePort {
             .resolve_session_storage_path(request)
             .await
             .ok()
+    }
+
+    /// ID-first storage resolution for request DTOs that still carry a
+    /// pre-ID `(path, connection, ssh)` selector. The ID is authoritative
+    /// whenever present; the legacy selector is only consulted for producers
+    /// that predate workspace IDs.
+    pub(crate) async fn resolve_storage_for_reference(
+        &self,
+        workspace_id: Option<&str>,
+        workspace_path: &str,
+        remote_connection_id: Option<String>,
+        remote_ssh_host: Option<String>,
+    ) -> PortResult<SessionStoragePathResolution> {
+        if let Some(id) = workspace_id.map(str::trim).filter(|id| !id.is_empty()) {
+            return self.resolve_workspace_storage(id).await;
+        }
+        if workspace_path.trim().is_empty() {
+            return Err(PortError::new(
+                PortErrorKind::InvalidRequest,
+                "Session request must carry a workspace_id or a legacy workspace_path",
+            ));
+        }
+        self.resolve_session_storage_path(SessionStoragePathRequest {
+            workspace_path: PathBuf::from(workspace_path),
+            remote_connection_id,
+            remote_ssh_host,
+        })
+        .await
     }
 
     fn has_parent_traversal(path: &Path) -> bool {
@@ -167,6 +198,75 @@ impl RuntimeServicePort for CoreSessionStorePort {
 
 #[async_trait::async_trait]
 impl SessionStorePort for CoreSessionStorePort {
+    async fn resolve_workspace_storage(
+        &self,
+        workspace_id: &str,
+    ) -> PortResult<SessionStoragePathResolution> {
+        use crate::service::workspace::{get_global_workspace_service, WorkspaceKind};
+        let service = get_global_workspace_service().ok_or_else(|| {
+            PortError::new(
+                PortErrorKind::InvalidRequest,
+                "Workspace service is unavailable",
+            )
+        })?;
+        let workspace = service
+            .require_workspace(workspace_id)
+            .await
+            .map_err(|error| PortError::new(PortErrorKind::InvalidRequest, error.to_string()))?;
+        let project_id = workspace
+            .project_workspace_id()
+            .map_err(|error| PortError::new(PortErrorKind::InvalidRequest, error))?;
+        let project = service
+            .require_workspace(project_id)
+            .await
+            .map_err(|error| PortError::new(PortErrorKind::InvalidRequest, error.to_string()))?;
+        let runtime = WorkspaceRuntimeService::new(self.path_manager());
+        let (storage, kind, connection_id, host) = match workspace.workspace_kind {
+            WorkspaceKind::Normal | WorkspaceKind::Assistant => (
+                runtime
+                    .context_for_local_workspace(&project.root_path)
+                    .sessions_dir,
+                SessionStorageKind::Local,
+                None,
+                None,
+            ),
+            WorkspaceKind::Remote => {
+                let connection_id = workspace.remote_ssh_connection_id().ok_or_else(|| {
+                    PortError::new(
+                        PortErrorKind::InvalidRequest,
+                        "Remote workspace record is missing its saved SSH connection ID",
+                    )
+                })?;
+                let host = workspace
+                    .metadata
+                    .get("sshHost")
+                    .and_then(|value| value.as_str())
+                    .filter(|host| !host.trim().is_empty())
+                    .ok_or_else(|| {
+                        PortError::new(
+                            PortErrorKind::InvalidRequest,
+                            "Remote workspace record is missing its SSH host",
+                        )
+                    })?;
+                (
+                    runtime
+                        .context_for_remote_workspace(host, &workspace.root_path.to_string_lossy())
+                        .sessions_dir,
+                    SessionStorageKind::Remote,
+                    Some(connection_id.to_owned()),
+                    Some(host.to_owned()),
+                )
+            }
+        };
+        Ok(SessionStoragePathResolution::new(
+            workspace.root_path,
+            storage,
+            kind,
+            connection_id,
+            host,
+        ))
+    }
+
     async fn resolve_session_storage_path(
         &self,
         request: SessionStoragePathRequest,
@@ -215,37 +315,36 @@ impl SessionStorePort for CoreSessionStorePort {
 
         let requested_workspace_path = request.workspace_path;
         let runtime_service = WorkspaceRuntimeService::new(path_manager.clone());
-        let (effective_storage_path, storage_kind, remote_ssh_host) =
-            if identity.hostname == LOCAL_WORKSPACE_SSH_HOST {
-                (
-                    runtime_service
-                        .context_for_local_workspace(Path::new(identity.logical_workspace_path()))
-                        .sessions_dir,
-                    SessionStorageKind::Local,
-                    None,
-                )
-            } else if identity.hostname == "_unresolved" {
-                (
-                    unresolved_remote_session_storage_dir(
-                        path_manager.remote_ssh_mirror_root_dir(),
-                        identity.remote_connection_id.as_deref().unwrap_or_default(),
+        let (effective_storage_path, storage_kind, remote_ssh_host) = if !identity.is_remote() {
+            (
+                runtime_service
+                    .context_for_local_workspace(Path::new(identity.logical_workspace_path()))
+                    .sessions_dir,
+                SessionStorageKind::Local,
+                None,
+            )
+        } else if identity.hostname == "_unresolved" {
+            (
+                unresolved_remote_session_storage_dir(
+                    path_manager.remote_ssh_mirror_root_dir(),
+                    identity.remote_connection_id.as_deref().unwrap_or_default(),
+                    identity.logical_workspace_path(),
+                ),
+                SessionStorageKind::UnresolvedRemote,
+                None,
+            )
+        } else {
+            (
+                runtime_service
+                    .context_for_remote_workspace(
+                        &identity.hostname,
                         identity.logical_workspace_path(),
-                    ),
-                    SessionStorageKind::UnresolvedRemote,
-                    None,
-                )
-            } else {
-                (
-                    runtime_service
-                        .context_for_remote_workspace(
-                            &identity.hostname,
-                            identity.logical_workspace_path(),
-                        )
-                        .sessions_dir,
-                    SessionStorageKind::Remote,
-                    Some(identity.hostname.clone()),
-                )
-            };
+                    )
+                    .sessions_dir,
+                SessionStorageKind::Remote,
+                Some(identity.hostname.clone()),
+            )
+        };
 
         Ok(SessionStoragePathResolution::new(
             requested_workspace_path,

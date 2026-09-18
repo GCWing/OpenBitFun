@@ -121,6 +121,12 @@ describe('isWorkspaceBackedSessionGroupActive', () => {
     expect(isWorkspaceBackedSessionGroupActive(secondRemote, firstRemote)).toBe(false);
   });
 
+  it('does not select another local workspace with the same path', () => {
+    const first = createWorkspace('local-first', WorkspaceKind.Normal, { rootPath: '/same' });
+    const second = createWorkspace('local-second', WorkspaceKind.Normal, { rootPath: '/same' });
+    expect(isWorkspaceBackedSessionGroupActive(first, second)).toBe(false);
+  });
+
   it('marks only the selected worktree workspace as active', () => {
     const canonicalProject = createWorkspace('canonical-project', WorkspaceKind.Normal, {
       rootPath: '/repo',

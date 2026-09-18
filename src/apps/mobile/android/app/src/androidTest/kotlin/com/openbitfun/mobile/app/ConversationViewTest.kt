@@ -25,6 +25,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openbitfun.mobile.app.ui.chat.CONVERSATION_LIST_TEST_TAG
@@ -288,6 +289,21 @@ class ConversationViewTest {
         composeRule.onNodeWithTag(CHAT_STATUS_BAR_TEST_TAG).assertDoesNotExist()
     }
 
+    /**
+     * A placeholder that outlives its subject reads as a hang, so the skeleton
+     * gives up on a transcript that never lands and lets the pane speak for
+     * itself. Matches HarmonyOS's `DeferredLoadingGate` cap.
+     */
+    @Test
+    fun loadingSkeletonStopsStandingForATranscriptThatNeverArrives() {
+        composeRule.mainClock.autoAdvance = false
+        setConversationContent(state = { readyState(sessionId = "pending") })
+        composeRule.mainClock.advanceTimeBy(200)
+        composeRule.onNodeWithTag(CONVERSATION_LOADING_TEST_TAG).assertIsDisplayed()
+        composeRule.mainClock.advanceTimeBy(20_000)
+        composeRule.onNodeWithTag(CONVERSATION_LOADING_TEST_TAG).assertDoesNotExist()
+    }
+
     @Test
     fun composerShowsTheStoreDraftAndTypingDispatchesUpdateDraft() {
         val intents = mutableListOf<RemoteSessionIntent>()
@@ -375,6 +391,44 @@ class ConversationViewTest {
         composeRule.onNodeWithTag(COMPOSER_SEND_TEST_TAG).assertIsNotEnabled()
     }
 
+    /**
+     * The composer and the header float over the transcript rather than sitting
+     * above and below it in a column, so the list runs the full height of the
+     * pane and these insets are the only thing keeping the first and last
+     * message out from under them. The insets are measured from the live
+     * overlays, so growing one — a composer going multiline, an image strip
+     * appearing — has to push the transcript rather than cover it.
+     */
+    @Test
+    fun insetsKeepTheEndsOfTheTranscriptClearOfTheFloatingOverlays() {
+        val bottomInset = mutableStateOf(96.dp)
+        composeRule.setContent {
+            OpenBitFunTheme(dark = false) {
+                TimelineForTest(
+                    rows = listOf(assistantRow("inset-marker")),
+                    topInset = 72.dp,
+                    bottomInset = bottomInset.value,
+                )
+            }
+        }
+        composeRule.waitForIdle()
+
+        val listBounds = composeRule.onNodeWithTag(CONVERSATION_LIST_TEST_TAG)
+            .getUnclippedBoundsInRoot()
+        val resting = composeRule.onNodeWithText("inset-marker", substring = true)
+            .getUnclippedBoundsInRoot()
+        assertTrue(resting.bottom <= listBounds.bottom - 96.dp + 1.dp)
+        assertTrue(resting.top >= listBounds.top)
+
+        composeRule.runOnIdle { bottomInset.value = 180.dp }
+        composeRule.waitForIdle()
+
+        val lifted = composeRule.onNodeWithText("inset-marker", substring = true)
+            .getUnclippedBoundsInRoot()
+        assertTrue(lifted.bottom <= listBounds.bottom - 180.dp + 1.dp)
+        assertTrue(lifted.bottom < resting.bottom)
+    }
+
     private fun setConversationContent(
         state: () -> RemoteSessionUiState.Ready,
         phase: ConnectionPhase = ConnectionPhase.CONNECTED,
@@ -428,10 +482,17 @@ class ConversationViewTest {
     )
 
     @Composable
-    private fun TimelineForTest(rows: List<ConversationRow>, hasMoreMessages: Boolean = false) {
+    private fun TimelineForTest(
+        rows: List<ConversationRow>,
+        hasMoreMessages: Boolean = false,
+        topInset: Dp = 0.dp,
+        bottomInset: Dp = 0.dp,
+    ) {
         ConversationTimelineView(
             rows = rows,
             hasMoreMessages = hasMoreMessages,
+            topInset = topInset,
+            bottomInset = bottomInset,
             onLoadOlder = {},
             enabled = true,
             onApproveTool = { _, _ -> },

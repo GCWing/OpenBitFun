@@ -14,7 +14,7 @@ interface Props {
 /** Controls catalog discovery without changing runtime or import authorization. */
 export default function ExternalDiscoveryToggle({ snapshot, onSnapshotChange, controlRef }: Props) {
   const { t } = useI18n('scenes/ecosystem-compatibility');
-  const { workspacePath } = useCurrentWorkspace();
+  const { workspace } = useCurrentWorkspace();
   const labelId = useId();
   const descriptionId = useId();
   const errorId = useId();
@@ -31,7 +31,8 @@ export default function ExternalDiscoveryToggle({ snapshot, onSnapshotChange, co
     ? t('discovery.loadingDescription')
     : !canChange
       ? t('discovery.readOnlyDescription')
-      : `${t(enabled ? 'discovery.enabledDescription' : 'discovery.disabledDescription')} ${t(workspacePath ? 'discovery.workspaceScope' : 'discovery.userScope')}`;
+      // The mutation scopes by workspace ID, so the description must agree with it.
+      : `${t(enabled ? 'discovery.enabledDescription' : 'discovery.disabledDescription')} ${t(workspace?.id ? 'discovery.workspaceScope' : 'discovery.userScope')}`;
 
   async function change(enabled: boolean) {
     if (!canChange || !snapshot || pending.current) return;
@@ -42,14 +43,14 @@ export default function ExternalDiscoveryToggle({ snapshot, onSnapshotChange, co
     setError(false);
     try {
       const next = await externalSourcesAPI.setAutomaticDiscovery(
-        workspacePath || undefined, enabled, discovery!.preferenceRevision,
+        workspace?.id, enabled, discovery!.preferenceRevision,
       );
       if (isCurrent()) onSnapshotChange(next);
     } catch {
       if (!isCurrent()) return;
       setError(true);
       try {
-        const current = await externalSourcesAPI.getDiscoverySnapshot(workspacePath || undefined, false);
+        const current = await externalSourcesAPI.getDiscoverySnapshot(workspace?.id, false);
         if (isCurrent()) onSnapshotChange(current);
       } catch { /* Preserve the last confirmed state and keep the error visible. */ }
     } finally {

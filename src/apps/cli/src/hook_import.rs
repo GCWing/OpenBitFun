@@ -77,7 +77,11 @@ pub(crate) enum HookAction {
 }
 
 pub(crate) async fn run(action: Option<HookAction>) -> Result<()> {
-    let workspace = std::env::current_dir().ok();
+    let workspace = Some(
+        crate::create_cli_local_workspace(&std::env::current_dir()?)
+            .await?
+            .id,
+    );
     match action.unwrap_or(HookAction::List {
         refresh: false,
         format: HookImportOutputFormat::Text,
@@ -181,7 +185,7 @@ pub(crate) async fn run(action: Option<HookAction>) -> Result<()> {
 }
 
 async fn preview_or_apply(
-    workspace: Option<&std::path::Path>,
+    workspace: Option<&str>,
     source: SourceKey,
     confirm: Option<String>,
     format: HookImportOutputFormat,
@@ -244,7 +248,7 @@ pub(crate) fn completed_import_status(
 }
 
 pub(crate) async fn mutate(
-    workspace: Option<&std::path::Path>,
+    workspace: Option<&str>,
     action: ExternalHookImportMutationV1,
 ) -> std::result::Result<ExternalHookImportSnapshotV1, ExternalSourceOperationError> {
     let snapshot =

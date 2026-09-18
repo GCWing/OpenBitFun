@@ -43,7 +43,7 @@ export const StatusPill = forwardRef<HTMLSpanElement, StatusPillProps>(
         ref={ref}
       >
         {leading !== undefined && leading !== null && (
-          <span aria-hidden="true" className={styles.leading} data-openbitfun-part="leading">
+          <span aria-hidden="true" className={styles.leading} data-openbitfun-icon-slot="true" data-openbitfun-part="leading">
             {leading}
           </span>
         )}

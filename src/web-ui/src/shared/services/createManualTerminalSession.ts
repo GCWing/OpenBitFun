@@ -1,3 +1,4 @@
+import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import type { TerminalConfig } from '@/infrastructure/config/types';
 import { getTerminalService } from '@/tools/terminal/services/TerminalService';
@@ -5,8 +6,8 @@ import type { CreateSessionRequest, SessionResponse } from '@/tools/terminal/typ
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 
 export interface CreateManualTerminalSessionOptions {
+  workspaceId: string;
   workspacePath?: string;
-  connectionId?: string | null;
   shellType?: string;
   shellId?: string;
   name?: string;
@@ -44,6 +45,10 @@ async function resolveDefaultShellSelection(
 export async function createManualTerminalSession(
   options: CreateManualTerminalSessionOptions,
 ): Promise<SessionResponse> {
+  const state = workspaceManager.getState();
+  const workspace = state.openedWorkspaces.get(options.workspaceId)
+    || state.recentWorkspaces.find(record => record.id === options.workspaceId);
+  if (!workspace) throw new Error('Terminal workspace ID is unavailable');
   const service = getTerminalService();
   const scope = getActiveSurfaceScope();
   await service.connect();
@@ -51,14 +56,14 @@ export async function createManualTerminalSession(
 
   const [sessions, shellSelection] = await Promise.all([
     service.listSessions(),
-    options.connectionId ? Promise.resolve({}) : resolveDefaultShellSelection(service),
+    workspace.workspaceKind === 'remote' ? Promise.resolve({}) : resolveDefaultShellSelection(service),
   ]);
   scope.assertCurrent('create manual terminal');
   const manualCount = sessions.filter((session) => session.source === 'manual').length;
 
   return service.createSession({
+    workspaceId: options.workspaceId,
     workingDirectory: options.workspacePath,
-    connectionId: options.connectionId ?? undefined,
     name: options.name ?? `Shell ${manualCount + 1}`,
     sessionId: options.sessionId,
     ...(options.shellId ? { shellId: options.shellId, shellType: options.shellType }

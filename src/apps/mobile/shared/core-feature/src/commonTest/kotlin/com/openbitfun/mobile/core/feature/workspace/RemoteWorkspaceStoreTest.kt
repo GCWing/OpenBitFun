@@ -900,6 +900,180 @@ private class DelayedPreviewTransport : RemoteCommandTransport {
     }
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
+class RemoteWorkspaceStoreIdentityTest {
+    private val idHost = "workspace_id_references_v1"
+
+    /** Catalog rows carry IDs; the connected host advertises [capabilities]. */
+    private fun idAwareTransport(
+        base: FakeWorkspaceTransport,
+        capabilities: List<String> = listOf(idHost),
+        workspaces: String = """[{"path":"/repo","name":"Local","workspace_id":"ws-local","workspace_kind":"normal"},{"path":"/repo","name":"SSH","workspace_id":"ws-ssh","workspace_kind":"remote","remote_connection_id":"saved-1","remote_ssh_host":"host"}]""",
+        assistants: String = """[{"path":"/assistant","name":"Assistant","assistant_id":"a1","workspace_id":"ws-assistant"}]""",
+    ) = object : RemoteCommandTransport {
+        override suspend fun <T : CommandStatus> send(deserializer: DeserializationStrategy<T>, command: RemoteCommand, timeoutMs: Long): T {
+            val wire = when (command.cmd) {
+                "list_recent_workspaces" -> """{"resp":"ok","workspaces":$workspaces}"""
+                "list_assistants" -> """{"resp":"ok","assistants":$assistants}"""
+                "get_workspace_info" -> {
+                    base.commands += command
+                    """{"resp":"ok","has_workspace":true,"path":"/repo","project_name":"Local","git_branch":"main","workspace_kind":"normal","workspace_id":"ws-local","capabilities":${capabilities.joinToString(",", "[", "]") { "\"$it\"" }}}"""
+                }
+                else -> null
+            }
+            return if (wire == null) base.send(deserializer, command, timeoutMs) else RelayJson.decodeFromString(deserializer, wire)
+        }
+    }
+
+    @Test
+    fun aPathThatResolvesToACatalogRowWithAnIdIsSelectedByIdOnly() = runTest {
+        val base = FakeWorkspaceTransport()
+        val store = RemoteWorkspaceStore.create(this, idAwareTransport(base), StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        assertEquals(true, store.supportsWorkspaceIdReferences)
+        // The saved connection narrows two same-path rows to the SSH one; its ID is what gets sent.
+        store.dispatch(RemoteWorkspaceIntent.SelectWorkspace("/repo", "saved-1", null)); advanceUntilIdle()
+        val byId = base.commands.last { it.cmd == "set_workspace" }
+        assertEquals("ws-ssh", byId.workspaceId)
+        assertEquals(null, byId.path)
+        assertEquals(null, byId.remoteConnectionId)
+        assertEquals(null, byId.remoteSshHost)
+        // An explicit picker row with an ID is addressed by that ID.
+        store.dispatch(RemoteWorkspaceIntent.SelectWorkspace("/repo", null, null, false, "ws-local")); advanceUntilIdle()
+        assertEquals("ws-local", base.commands.last { it.cmd == "set_workspace" }.workspaceId)
+        // A hand-typed location the catalog does not know has no ID and sends the legacy projection only.
+        store.dispatch(RemoteWorkspaceIntent.SelectWorkspace("/elsewhere", "saved-1", null)); advanceUntilIdle()
+        val legacy = base.commands.last { it.cmd == "set_workspace" }
+        assertEquals(null, legacy.workspaceId)
+        assertEquals("/elsewhere", legacy.path)
+        assertEquals("saved-1", legacy.remoteConnectionId)
+        assertEquals(null, assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).workspaceReferenceFailure)
+        store.stop()
+    }
+
+    @Test
+    fun anAmbiguousPreIdPathIsRefusedInsteadOfPickingARow() = runTest {
+        val base = FakeWorkspaceTransport()
+        val store = RemoteWorkspaceStore.create(this, idAwareTransport(base), StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        base.commands.clear()
+        store.dispatch(RemoteWorkspaceIntent.SelectWorkspace("/repo")); advanceUntilIdle()
+        assertTrue(base.commands.none { it.cmd == "set_workspace" })
+        val ready = assertIs<RemoteWorkspaceUiState.Ready>(store.state.value)
+        assertEquals(WorkspaceReferenceFailure.AMBIGUOUS_PATH, ready.workspaceReferenceFailure)
+        assertFalse(ready.loadFailure)
+        assertEquals(2, ready.workspaces.size, "the catalog is retained")
+        store.stop()
+    }
+
+    @Test
+    fun anIdOnAHostWithoutIdReferencesIsRefusedNotDowngradedToAPath() = runTest {
+        val base = FakeWorkspaceTransport()
+        val store = RemoteWorkspaceStore.create(this, idAwareTransport(base, capabilities = emptyList()), StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        assertEquals(false, store.supportsWorkspaceIdReferences)
+        base.commands.clear()
+        store.dispatch(RemoteWorkspaceIntent.SelectWorkspace("/repo", null, null, false, "ws-local")); advanceUntilIdle()
+        assertTrue(base.commands.none { it.cmd == "set_workspace" }, "no path fallback is sent for a known ID")
+        val ready = assertIs<RemoteWorkspaceUiState.Ready>(store.state.value)
+        assertEquals(WorkspaceReferenceFailure.ID_REFERENCES_UNSUPPORTED, ready.workspaceReferenceFailure)
+        assertFalse(ready.busy)
+        assertFalse(ready.loadFailure)
+        store.dispatch(RemoteWorkspaceIntent.SelectAssistant("/assistant", "ws-assistant")); advanceUntilIdle()
+        assertTrue(base.commands.none { it.cmd == "set_assistant" })
+        assertEquals(WorkspaceReferenceFailure.ID_REFERENCES_UNSUPPORTED, assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).workspaceReferenceFailure)
+        store.stop()
+    }
+
+    @Test
+    fun anIdTheHostRejectsAndTheCatalogLacksIsReportedAsUnknown() = runTest {
+        val base = FakeWorkspaceTransport()
+        val store = RemoteWorkspaceStore.create(this, idAwareTransport(base), StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        base.selectionAccepted = false
+        store.dispatch(RemoteWorkspaceIntent.SelectWorkspace("/gone", null, null, false, "ws-gone")); advanceUntilIdle()
+        assertEquals("ws-gone", base.commands.last { it.cmd == "set_workspace" }.workspaceId)
+        val ready = assertIs<RemoteWorkspaceUiState.Ready>(store.state.value)
+        assertEquals(WorkspaceReferenceFailure.UNKNOWN_ID, ready.workspaceReferenceFailure)
+        assertEquals("/repo", ready.selected?.path, "the previous selection and catalog stay")
+        // A rejected ID the catalog does list is an ordinary failed request, not an unknown ID.
+        store.dispatch(RemoteWorkspaceIntent.SelectWorkspace("/repo", null, null, false, "ws-local")); advanceUntilIdle()
+        val retained = assertIs<RemoteWorkspaceUiState.Ready>(store.state.value)
+        assertEquals(null, retained.workspaceReferenceFailure)
+        assertTrue(retained.loadFailure)
+        store.stop()
+    }
+
+    @Test
+    fun assistantsAreSelectedByIdAndNeverMatchedByPathOnceIdsExist() = runTest {
+        val base = FakeWorkspaceTransport()
+        val store = RemoteWorkspaceStore.create(this, idAwareTransport(base), StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        store.dispatch(RemoteWorkspaceIntent.SelectAssistant("/assistant")); advanceUntilIdle()
+        val resolved = base.commands.last { it.cmd == "set_assistant" }
+        assertEquals("ws-assistant", resolved.workspaceId, "a pre-ID path is upgraded to the row's ID")
+        assertEquals(null, resolved.path)
+        base.commands.clear()
+        store.dispatch(RemoteWorkspaceIntent.SelectAssistant("/assistant/", "ws-assistant")); advanceUntilIdle()
+        assertEquals("ws-assistant", base.commands.last { it.cmd == "set_assistant" }.workspaceId)
+        base.commands.clear()
+        // A path the assistant catalog does not know is refused rather than guessed.
+        store.dispatch(RemoteWorkspaceIntent.SelectAssistant("/not-an-assistant")); advanceUntilIdle()
+        assertTrue(base.commands.none { it.cmd == "set_assistant" })
+        assertTrue(assertIs<RemoteWorkspaceUiState.Ready>(store.state.value).loadFailure)
+        store.stop()
+    }
+
+    @Test
+    fun theCacheKeepsAnAssistantThatSharesItsPathWithAProjectAndWritesIds() = runTest {
+        val base = FakeWorkspaceTransport()
+        val persistence = MemoryWorkspaceListStore()
+        val transport = idAwareTransport(
+            base,
+            workspaces = """[{"path":"/shared","name":"Project","workspace_id":"ws-project","workspace_kind":"normal"}]""",
+            assistants = """[{"path":"/shared","name":"Helper","assistant_id":"a1","workspace_id":"ws-helper"},{"path":"/shared","name":"Twin","assistant_id":"a2","workspace_id":"ws-project"}]""",
+        )
+        val store = RemoteWorkspaceStore.create(this, transport, StandardTestDispatcher(testScheduler), "device-a", persistence)
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        val rows = persistence.rows.getValue("device-a")
+        assertEquals(listOf("ws-project", "ws-helper"), rows.map { it.workspaceId }, "dedupe is by ID, not by path")
+        assertEquals(listOf("normal", "assistant"), rows.map { it.workspaceKind })
+        store.stop()
+        // The cached catalog restores both rows with their IDs.
+        val restored = RemoteWorkspaceStore.create(this, transport, StandardTestDispatcher(testScheduler), "device-a", persistence)
+        assertEquals(setOf("ws-project", "ws-helper"), restored.cachedCatalog().map { it.workspaceId }.toSet())
+        restored.stop()
+    }
+
+    @Test
+    fun deviceToolTerminalsAreKeyedByWorkspaceIdentityNotPath() = runTest {
+        val base = FakeWorkspaceTransport()
+        var terminalCount = 0
+        val transport = object : RemoteCommandTransport {
+            override suspend fun <T : CommandStatus> send(deserializer: DeserializationStrategy<T>, command: RemoteCommand, timeoutMs: Long): T {
+                val wire = when (command.command) {
+                    "get_directory_children_paginated" -> """{"resp":"host_invoke_result","ok":true,"value":{"children":[],"hasMore":false}}"""
+                    "terminal_create" -> { terminalCount++; """{"resp":"host_invoke_result","ok":true,"value":{"id":"terminal-$terminalCount"}}""" }
+                    else -> null
+                }
+                return if (wire == null) base.send(deserializer, command, timeoutMs) else RelayJson.decodeFromString(deserializer, wire)
+            }
+        }
+        val store = RemoteWorkspaceStore.create(this, transport, StandardTestDispatcher(testScheduler))
+        store.dispatch(RemoteWorkspaceIntent.Load); advanceUntilIdle()
+        // Two workspaces sharing a path on the same provider get separate terminals when addressed by ID.
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceTerminal("/repo", null, "ws-a")); advanceUntilIdle()
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceTerminal("/repo", null, "ws-b")); advanceUntilIdle()
+        assertEquals(2, terminalCount)
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceTerminal("/repo", null, "ws-a")); advanceUntilIdle()
+        assertEquals(2, terminalCount, "returning to a workspace ID reuses its PTY")
+        // A location without an ID keys by the legacy triple and is its own scope.
+        store.dispatch(RemoteWorkspaceIntent.OpenDeviceTerminal("/repo", null)); advanceUntilIdle()
+        assertEquals(3, terminalCount)
+        store.stop()
+    }
+}
+
 private class FakeWorkspaceTransport(
     private val downloadChunks: Boolean = false,
     private val readFileUnsupported: Boolean = false,

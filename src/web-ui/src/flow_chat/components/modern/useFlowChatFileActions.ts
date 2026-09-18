@@ -9,7 +9,7 @@ import { notificationService } from '@/shared/notification-system';
 import { fileTabManager } from '@/shared/services/FileTabManager';
 import { type LineRange } from '@/shared/editor/LineRange';
 import { hasNonFileUriScheme } from '@/shared/utils/pathUtils';
-import { openFileThroughSession } from '../../session-drivers/sessionFileNavigation';
+import { openFileThroughSession, sessionWorkspaceId } from '../../session-drivers/sessionFileNavigation';
 
 const log = createLogger('useFlowChatFileActions');
 
@@ -60,6 +60,7 @@ export function useFlowChatFileActions({
       fileTabManager.openFile({
         filePath: absoluteFilePath,
         fileName,
+        workspaceId: sessionWorkspaceId(sessionId),
         workspacePath,
         jumpToRange: lineRange,
         mode: 'agent',

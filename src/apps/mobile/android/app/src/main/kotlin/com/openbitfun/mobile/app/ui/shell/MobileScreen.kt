@@ -70,6 +70,7 @@ import com.openbitfun.mobile.core.feature.layout.SettingsPlacementPolicy
 import com.openbitfun.mobile.core.feature.layout.SettingsSheetKind
 import com.openbitfun.mobile.core.feature.session.RemoteSessionUiState
 import com.openbitfun.mobile.core.feature.session.RemoteSessionIntent
+import com.openbitfun.mobile.core.feature.session.WorkspaceSessionDirectoryUiState
 import com.openbitfun.mobile.core.feature.workspace.RemoteFilePreviewUiState
 import com.openbitfun.mobile.core.feature.workspace.RemoteFileDownloadUiState
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceIntent
@@ -133,6 +134,7 @@ internal fun MobileScreen() {
     val accountState by accountViewModel.state.collectAsStateWithLifecycle()
     val accountRemoteState by accountViewModel.remoteState.collectAsStateWithLifecycle()
     val accountPhase by accountViewModel.connectionPhase.collectAsStateWithLifecycle()
+    val accountWorkspaceDirectory by accountViewModel.workspaceDirectory.collectAsStateWithLifecycle()
     val readyAccount = accountState as? AccountUiState.Ready
     val linkContext = androidx.compose.ui.platform.LocalContext.current
     var pendingDeviceLink by rememberSaveable { mutableStateOf<String?>(null) }
@@ -179,6 +181,10 @@ internal fun MobileScreen() {
     val activeRemoteState = when (controlSummary.source) {
         RemoteControlSource.ACCOUNT_DEVICE -> accountRemoteState
         RemoteControlSource.NONE -> RemoteSessionUiState.Idle
+    }
+    val activeWorkspaceDirectory = when (controlSummary.source) {
+        RemoteControlSource.ACCOUNT_DEVICE -> accountWorkspaceDirectory
+        RemoteControlSource.NONE -> WorkspaceSessionDirectoryUiState(emptyList())
     }
 
     fun dispatchActiveWorkspace(intent: RemoteWorkspaceIntent) {
@@ -316,6 +322,7 @@ internal fun MobileScreen() {
             remoteDeviceName = controlSummary.desktopName,
             remoteState = activeRemoteState,
             workspaceState = activeWorkspaceState,
+            workspaceDirectory = activeWorkspaceDirectory,
             remoteActive = shell.surface == MobileSurface.REMOTE,
             remoteSelectedSessionId = shell.remoteSessionId,
             query = shell.sidebarQuery,
@@ -347,16 +354,18 @@ internal fun MobileScreen() {
                 closeDrawer()
                 dispatchActiveSession(RemoteSessionIntent.Open(sessionId))
             },
-            onCreateRemoteInWorkspace = { path, connectionId, sshHost, agentType ->
+            onCreateRemoteInWorkspace = { workspace, agentType ->
+                // With an ID the create carries only the ID; the legacy triple is for pre-ID rows.
                 dispatchActiveSession(
                     RemoteSessionIntent.CreateSession(
                         agentType = agentType,
                         title = "",
                         instruction = "",
                         modelId = null,
-                        workspacePath = path,
-                        remoteConnectionId = connectionId,
-                        remoteSshHost = sshHost,
+                        workspacePath = workspace.path,
+                        remoteConnectionId = workspace.remoteConnectionId,
+                        remoteSshHost = workspace.remoteSshHost,
+                        workspaceId = workspace.workspaceId,
                     ),
                 )
                 shell.show(MobileSurface.REMOTE)
@@ -368,11 +377,26 @@ internal fun MobileScreen() {
                 closeDrawer()
             },
             onAddRemoteWorkspace = { workspacePickerOpen = true },
-            onOpenRemoteWorkspace = { path ->
-                dispatchActiveWorkspace(RemoteWorkspaceIntent.SelectWorkspace(path))
+            onOpenRemoteWorkspace = { workspace ->
+                dispatchActiveWorkspace(RemoteWorkspaceIntent.SelectWorkspace(workspace.path, workspace.remoteConnectionId, workspace.remoteSshHost, false, workspace.workspaceId))
                 shell.show(MobileSurface.REMOTE)
                 shell.closeRemoteSession()
                 closeDrawer()
+            },
+            onExpandRemoteWorkspace = { workspace ->
+                // The branch is loaded by workspace ID; the legacy triple only serves pre-ID rows.
+                dispatchActiveSession(
+                    RemoteSessionIntent.LoadWorkspaceSessions(
+                        workspace.path, workspace.remoteConnectionId, workspace.remoteSshHost, workspace.workspaceId,
+                    ),
+                )
+            },
+            onRetryRemoteWorkspaceSessions = { workspace ->
+                dispatchActiveSession(
+                    RemoteSessionIntent.RetryWorkspaceSessions(
+                        workspace.path, workspace.remoteConnectionId, workspace.remoteSshHost, workspace.workspaceId,
+                    ),
+                )
             },
             onDeleteRemoteSession = { id -> dispatchActiveSession(RemoteSessionIntent.DeleteSession(id)) },
             onOpenSettings = {

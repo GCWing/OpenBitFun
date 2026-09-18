@@ -14,7 +14,7 @@ export interface MiniAppActivity {
 export interface StopMiniAppActivityPorts {
   stopWorker: (appId: string) => Promise<void>;
   markWorkerStopped: (appId: string) => void;
-  closeScene: (sceneId: SceneTabId) => void;
+  closeScene: (sceneId: SceneTabId) => void | Promise<void>;
 }
 
 export function getMiniAppSceneId(appId: string): SceneTabId {
@@ -68,20 +68,20 @@ export function projectMiniAppActivity(
 }
 
 /**
- * Stops every active part owned by one installed MiniApp. A worker is stopped
- * first so transport/runtime failure cannot be presented as a successful Stop
- * by prematurely clearing state or closing the Runner scene.
+ * Mounted apps use the scene's shared shutdown gate. Worker-only apps still
+ * stop through the runtime without requiring a view to be opened first.
  */
 export async function stopMiniAppActivity(
   activity: MiniAppActivity,
   ports: StopMiniAppActivityPorts,
 ): Promise<void> {
   const appId = activity.app.id;
+  if (activity.runnerMounted) {
+    await ports.closeScene(getMiniAppSceneId(appId));
+    return;
+  }
   if (activity.workerRunning) {
     await ports.stopWorker(appId);
     ports.markWorkerStopped(appId);
-  }
-  if (activity.runnerMounted) {
-    ports.closeScene(getMiniAppSceneId(appId));
   }
 }

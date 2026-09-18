@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { activateSurface } from '@/infrastructure/peer-device/deviceSurface';
 
 import { shouldOpenMiniAppAgentRunInMainScene } from './miniAppAgentVisibility';
 
 describe('shouldOpenMiniAppAgentRunInMainScene', () => {
+  beforeEach(() => { activateSurface('local'); });
   it('keeps compatibility-profile sessions on their existing surface', () => {
     expect(
       shouldOpenMiniAppAgentRunInMainScene(
@@ -10,7 +12,6 @@ describe('shouldOpenMiniAppAgentRunInMainScene', () => {
         undefined,
         'app#1',
         'session-1',
-        false,
       ),
     ).toBe(false);
   });
@@ -22,7 +23,6 @@ describe('shouldOpenMiniAppAgentRunInMainScene', () => {
         undefined,
         'app#1',
         'session-1',
-        true,
       ),
     ).toBe(true);
     expect(
@@ -31,20 +31,18 @@ describe('shouldOpenMiniAppAgentRunInMainScene', () => {
         { token: 'app#2', sessionId: 'session-1' },
         'app#1',
         'session-1',
-        true,
       ),
     ).toBe(true);
   });
 
   it('keeps a strict run in the bubble only after that session is bound', () => {
-    const claim = { token: 'app#1', sessionId: 'session-1' };
+    const claim = { surfaceId: 'local', token: 'app#1', sessionId: 'session-1' };
     expect(
       shouldOpenMiniAppAgentRunInMainScene(
         true,
         claim,
         'app#1',
         'session-1',
-        true,
       ),
     ).toBe(false);
     expect(
@@ -53,7 +51,6 @@ describe('shouldOpenMiniAppAgentRunInMainScene', () => {
         claim,
         'app#1',
         'session-2',
-        true,
       ),
     ).toBe(true);
     expect(
@@ -62,20 +59,24 @@ describe('shouldOpenMiniAppAgentRunInMainScene', () => {
         { token: 'app#1' },
         'app#1',
         'session-1',
-        true,
       ),
     ).toBe(true);
   });
 
-  it('opens a background MiniApp run in the main scene', () => {
+  it('keeps a bound background or hidden conversation recoverable through its app', () => {
     expect(
       shouldOpenMiniAppAgentRunInMainScene(
         true,
-        { token: 'app#1', sessionId: 'session-1' },
+        { surfaceId: 'local', token: 'app#1', sessionId: 'session-1' },
         'app#1',
         'session-1',
-        false,
       ),
-    ).toBe(true);
+    ).toBe(false);
+  });
+
+  it('does not reuse a claim from another device with the same session id', () => {
+    activateSurface('peer');
+    expect(shouldOpenMiniAppAgentRunInMainScene(true,
+      { surfaceId: 'local', token: 'app#1', sessionId: 'session-1' }, 'app#1', 'session-1')).toBe(true);
   });
 });

@@ -25,6 +25,7 @@ use crate::{TerminalError, TerminalResult};
 /// Options for creating a terminal session when binding
 #[derive(Debug, Clone, Default)]
 pub struct TerminalBindingOptions {
+    pub owner: Option<super::SessionOwner>,
     /// Working directory for the terminal
     pub working_directory: Option<String>,
     /// Session ID
@@ -121,6 +122,12 @@ impl TerminalSessionBinding {
                 options.source,
             )
             .await?;
+
+        if let Some(owner) = options.owner {
+            session_manager
+                .set_owner(&terminal_session_id, owner)
+                .await?;
+        }
 
         // Establish the binding
         self.bindings

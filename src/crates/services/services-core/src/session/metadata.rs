@@ -25,6 +25,8 @@ pub struct SessionMetadataBuildFacts<'a> {
     pub project_workspace_path: Option<&'a str>,
     pub execution_target: Option<&'a SessionExecutionTarget>,
     pub workspace_hostname: Option<&'a str>,
+    pub workspace_id: Option<&'a str>,
+    pub project_workspace_id: Option<&'a str>,
     pub new_session_memory_mode: SessionMemoryMode,
     pub existing: Option<&'a SessionMetadata>,
 }
@@ -89,6 +91,14 @@ pub fn build_session_metadata(facts: SessionMetadataBuildFacts<'_>) -> SessionMe
             .cloned()
             .or_else(|| existing.and_then(|value| value.execution_target.clone())),
         workspace_hostname: facts.workspace_hostname.map(str::to_string),
+        project_workspace_id: facts
+            .project_workspace_id
+            .map(str::to_owned)
+            .or_else(|| existing.and_then(|value| value.project_workspace_id.clone())),
+        workspace_id: facts
+            .workspace_id
+            .map(str::to_owned)
+            .or_else(|| existing.and_then(|value| value.workspace_id.clone())),
         unread_completion: existing.and_then(|value| value.unread_completion.clone()),
         needs_user_attention: existing.and_then(|value| value.needs_user_attention.clone()),
     }
@@ -694,6 +704,8 @@ mod tests {
             project_workspace_path: None,
             execution_target: None,
             workspace_hostname: Some("host"),
+            workspace_id: Some("workspace-1"),
+            project_workspace_id: Some("workspace-1"),
             new_session_memory_mode: crate::session::SessionMemoryMode::Enabled,
             existing: Some(&existing),
         });
@@ -751,6 +763,8 @@ mod tests {
             project_workspace_path: None,
             execution_target: None,
             workspace_hostname: None,
+            workspace_id: None,
+            project_workspace_id: None,
             new_session_memory_mode: crate::session::SessionMemoryMode::Disabled,
             existing: None,
         });
@@ -789,6 +803,8 @@ mod tests {
             project_workspace_path: Some("/repo"),
             execution_target: Some(&execution_target),
             workspace_hostname: None,
+            workspace_id: None,
+            project_workspace_id: None,
             new_session_memory_mode: crate::session::SessionMemoryMode::Enabled,
             existing: None,
         });

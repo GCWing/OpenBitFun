@@ -39,6 +39,10 @@ public data class SessionItemResponse(
     val messageCount: Int? = null,
     val workspacePath: String? = null,
     val workspaceName: String? = null,
+    val workspaceId: String? = null,
+    /** Set when the session hangs off another one (btw/review/miniapp/subagent). */
+    val parentSessionId: String? = null,
+    val relationshipKind: String? = null,
 )
 
 public object SessionItemResponseSerializer : KSerializer<SessionItemResponse> {
@@ -56,6 +60,9 @@ public object SessionItemResponseSerializer : KSerializer<SessionItemResponse> {
             messageCount = json.wireInt("message_count"),
             workspacePath = json.wireString("workspace_path"),
             workspaceName = json.wireString("workspace_name"),
+            workspaceId = json.wireString("workspace_id"),
+            parentSessionId = json.wireString("parent_session_id"),
+            relationshipKind = json.wireString("relationship_kind"),
         )
     }
 
@@ -77,6 +84,9 @@ public object SessionItemResponseSerializer : KSerializer<SessionItemResponse> {
                 value.messageCount?.let { put("message_count", it) }
                 value.workspacePath?.let { put("workspace_path", it) }
                 value.workspaceName?.let { put("workspace_name", it) }
+                value.workspaceId?.let { put("workspace_id", it) }
+                value.parentSessionId?.let { put("parent_session_id", it) }
+                value.relationshipKind?.let { put("relationship_kind", it) }
             },
         )
     }
@@ -92,6 +102,7 @@ public data class SessionListResponse(
 
 @Serializable
 public data class InitialSyncResponse(
+    @SerialName("workspace_id") val workspaceId: String? = null,
     @SerialName("resp") override val resp: String? = null,
     @SerialName("message") override val message: String? = null,
     @SerialName("has_workspace") val hasWorkspace: Boolean? = null,
@@ -100,6 +111,10 @@ public data class InitialSyncResponse(
     @SerialName("git_branch") val gitBranch: String? = null,
     @SerialName("workspace_kind") val workspaceKind: String? = null,
     @SerialName("assistant_id") val assistantId: String? = null,
+    @SerialName("remote_connection_id") val remoteConnectionId: String? = null,
+    @SerialName("remote_ssh_host") val remoteSshHost: String? = null,
+    /** Host feature list; `workspace_id_references_v1` is what allows ID-only workspace commands. */
+    @SerialName("capabilities") val capabilities: List<String> = emptyList(),
     @SerialName("sessions") val sessions: List<SessionItemResponse> = emptyList(),
     @SerialName("has_more_sessions") val hasMoreSessions: Boolean = false,
     @SerialName("authenticated_user_id") val authenticatedUserId: String? = null,
@@ -112,6 +127,8 @@ public data class CreateSessionResponse(
     @SerialName("session_id") val sessionId: String? = null,
     @SerialName("id") val id: String? = null,
     @SerialName("title") val title: String? = null,
+    /** Set by ID-aware hosts; the created session's workspace identity is this ID. */
+    @SerialName("workspace_id") val workspaceId: String? = null,
     @SerialName("workspace_path") val workspacePath: String? = null,
     @SerialName("remote_connection_id") val remoteConnectionId: String? = null,
     @SerialName("remote_ssh_host") val remoteSshHost: String? = null,

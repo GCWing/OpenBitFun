@@ -11,14 +11,14 @@ const mocks = vi.hoisted(() => ({
   getSkillSettings: vi.fn(), setSkillDisabled: vi.fn(), petSettingsListener: vi.fn(), getAccounts: vi.fn(), getPets: vi.fn(), importPet: vi.fn(), getPetSettings: vi.fn(), savePetSettings: vi.fn(), getInstructions: vi.fn(), openScene: vi.fn(), openDestination: vi.fn(), openNativeSkills: vi.fn(),
   deleteSkill: vi.fn(), loadMcp: vi.fn(), saveMcp: vi.fn(), mutateHook: vi.fn(), getSkills: vi.fn(), validateSkill: vi.fn(), addSkill: vi.fn(), getHooks: vi.fn(), getHookCatalog: vi.fn(),
   planHook: vi.fn(), applyHook: vi.fn(), planMcp: vi.fn(), applyMcp: vi.fn(), refresh: vi.fn(),
-  workspacePath: '/project', remote: false, peer: false, skillImportVersion: 0,
+  workspacePath: '/project', workspaceId: 'workspace-id', remote: false, peer: false, skillImportVersion: 0,
 }));
 vi.mock('@/app/stores/sceneStore', () => ({ useSceneStore: { getState: () => ({ openScene: mocks.openScene }) } }));
 vi.mock('@/app/scenes/settings/settingsStore', () => ({ useSettingsStore: { getState: () => ({ openDestination: mocks.openDestination }) } }));
 vi.mock('@/app/scenes/skills/skillsSceneStore', () => ({ useSkillsSceneStore: { getState: () => ({ openNativeSkills: mocks.openNativeSkills }) } }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key, formatNumber: String }) }));
 vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({ useCurrentWorkspace: () => ({
-  workspacePath: mocks.workspacePath, workspace: { workspaceKind: mocks.remote ? 'remote' : 'normal' },
+  workspacePath: mocks.workspacePath, workspace: { id: mocks.workspaceId, workspaceKind: mocks.remote ? 'remote' : 'normal' },
 }) }));
 vi.mock('@/infrastructure/peer-device/peerDeviceContextState', () => ({ usePeerDeviceModeOptional: () => ({ peerMode: { active: mocks.peer } }) }));
 vi.mock('@/infrastructure/runtime', () => ({ isTauriRuntime: () => true }));
@@ -109,7 +109,7 @@ describe('external agent content and explicit import boundary', () => {
     vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     vi.resetAllMocks();
     localStorage.clear();
-    mocks.remote = false; mocks.peer = false; mocks.workspacePath = '/project'; mocks.skillImportVersion = 0;
+    mocks.remote = false; mocks.peer = false; mocks.workspacePath = '/project'; mocks.workspaceId = 'workspace-id'; mocks.skillImportVersion = 0;
     data = fixture();
     mocks.getSkillSettings.mockResolvedValue({ directSkillManagementVersion: 1, globallyDisabledUserSkillKeys: [], globallyDisabledProjectSkillKeys: [] });
     mocks.setSkillDisabled.mockResolvedValue({ directSkillManagementVersion: 1, globallyDisabledUserSkillKeys: [], globallyDisabledProjectSkillKeys: [] });
@@ -554,7 +554,7 @@ describe('external agent content and explicit import boundary', () => {
     mocks.setSkillDisabled.mockResolvedValue(disabled);
     await render(); await expand('skill');
     await act(async () => container.querySelector<HTMLInputElement>('[role="switch"]')!.click());
-    expect(mocks.setSkillDisabled).toHaveBeenCalledWith({ skillKey: data.skills[0].key, disabled: true, workspacePath: '/project' });
+    expect(mocks.setSkillDisabled).toHaveBeenCalledWith({ skillKey: data.skills[0].key, disabled: true, workspaceId: 'workspace-id' });
     expect(container.querySelector<HTMLInputElement>('[role="switch"]')!.checked).toBe(false);
     expect(container.querySelector('[data-import-kind="skill"]')?.getAttribute('data-import-state')).toBe('disabled');
     mocks.getSkillSettings.mockResolvedValue(disabled);
@@ -617,7 +617,7 @@ describe('external agent content and explicit import boundary', () => {
     mocks.setSkillDisabled.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
     await render(); await expand('skill');
     await act(async () => container.querySelector<HTMLInputElement>('[role="switch"]')!.click());
-    mocks.workspacePath = '/other-project';
+    mocks.workspacePath = '/other-project'; mocks.workspaceId = 'other-workspace-id';
     await render(); await expand('skill');
     await act(async () => finish({ directSkillManagementVersion: 1, globallyDisabledUserSkillKeys: [], globallyDisabledProjectSkillKeys: [data.skills[0].key] }));
     expect(container.querySelector<HTMLInputElement>('[role="switch"]')!.checked).toBe(true);
@@ -704,7 +704,7 @@ describe('external agent content and explicit import boundary', () => {
     await render(); await click('content.prepareImport', 'mcp');
     expect(mocks.applyMcp).not.toHaveBeenCalled();
     await click('content.confirm');
-    expect(mocks.applyMcp).toHaveBeenCalledWith('/project', data.plan, [{ candidateId: 'codex' }]);
+    expect(mocks.applyMcp).toHaveBeenCalledWith('workspace-id', data.plan, [{ candidateId: 'codex' }]);
     expect(container.querySelector('[data-import-kind="mcp"]')?.getAttribute('data-import-state')).toBe('imported');
   });
 
@@ -794,9 +794,9 @@ describe('external agent content and explicit import boundary', () => {
 
   it('shows the exact Hook commands and applies only the reviewed external source', async () => {
     await render(); await click('content.prepareImport', 'hook');
-    expect(mocks.planHook).toHaveBeenCalledWith('/project', data.hookPlan.source.key);
+    expect(mocks.planHook).toHaveBeenCalledWith('workspace-id', data.hookPlan.source.key);
     expect(container.textContent).toContain('echo reviewed-command'); expect(mocks.applyHook).not.toHaveBeenCalled();
-    await click('content.confirm'); expect(mocks.applyHook).toHaveBeenCalledWith('/project', data.hookPlan);
+    await click('content.confirm'); expect(mocks.applyHook).toHaveBeenCalledWith('workspace-id', data.hookPlan);
   });
 
   it('rejects a Hook preview for a different agent instead of showing or applying it', async () => {
@@ -891,9 +891,9 @@ describe('external agent content and explicit import boundary', () => {
       await render();
       await expand('hook');
       await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="content.refresh"]')!.click());
-      expect(mocks.getHooks).toHaveBeenCalledWith('/project', true);
+      expect(mocks.getHooks).toHaveBeenCalledWith('workspace-id', true);
       await act(async () => vi.advanceTimersByTimeAsync(1000));
-      expect(mocks.getHooks).toHaveBeenLastCalledWith('/project', false);
+      expect(mocks.getHooks).toHaveBeenLastCalledWith('workspace-id', false);
       await expand('hook');
       expect(container.textContent).toContain('codex-Hooks');
       await act(async () => vi.advanceTimersByTimeAsync(5000));
@@ -920,7 +920,7 @@ describe('external agent content and explicit import boundary', () => {
     expect(container.textContent).not.toContain('content.manageNative');
     expect(mocks.validateSkill).not.toHaveBeenCalled();
     expect(mocks.planMcp).not.toHaveBeenCalled(); expect(mocks.getHooks).not.toHaveBeenCalled();
-    expect(mocks.getHookCatalog).toHaveBeenCalledWith('/project', false);
+    expect(mocks.getHookCatalog).toHaveBeenCalledWith('workspace-id', false);
     expect(mocks.addSkill).not.toHaveBeenCalled(); expect(mocks.applyMcp).not.toHaveBeenCalled();
   });
 
@@ -968,7 +968,7 @@ describe('external agent content and explicit import boundary', () => {
     await render(); await click('content.undo', 'hook');
     expect(mocks.mutateHook).not.toHaveBeenCalled();
     await click('content.confirmUndo');
-    expect(mocks.mutateHook).toHaveBeenCalledWith('/project', 'r1', { kind: 'remove', importId: 'codex-hook-copy' });
+    expect(mocks.mutateHook).toHaveBeenCalledWith('workspace-id', 'r1', { kind: 'remove', importId: 'codex-hook-copy' });
   });
 
 });

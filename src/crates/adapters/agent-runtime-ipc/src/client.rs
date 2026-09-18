@@ -101,7 +101,9 @@ impl RuntimeIpcClient {
         if connect_timeout.is_zero() || request_timeout.is_zero() {
             return Err(RuntimeIpcClientError::InvalidTimeout);
         }
-        if discovery.protocol_version != PROTOCOL_VERSION {
+        if discovery.protocol_version != PROTOCOL_VERSION
+            && discovery.protocol_version != crate::protocol::LEGACY_WORKSPACE_PATH_PROTOCOL_VERSION
+        {
             return Err(RuntimeIpcClientError::IncompatibleProtocol {
                 expected: PROTOCOL_VERSION,
                 observed: discovery.protocol_version,
@@ -123,7 +125,7 @@ impl RuntimeIpcClient {
                 &RuntimeIpcFrame::Initialize {
                     request_id,
                     request: InitializeRequest {
-                        protocol_version: PROTOCOL_VERSION,
+                        protocol_version: discovery.protocol_version,
                         instance_identity: discovery.instance_identity.as_str().to_string(),
                         token: discovery.token.clone(),
                         client_id: client_id.to_string(),
@@ -143,7 +145,7 @@ impl RuntimeIpcClient {
                 request_id: response_id,
                 result,
             } if response_id == request_id
-                && result.protocol_version == PROTOCOL_VERSION
+                && result.protocol_version == discovery.protocol_version
                 && result.instance_identity == discovery.instance_identity.as_str()
                 && result.capabilities.health =>
             {

@@ -10,6 +10,8 @@ export interface BackgroundSubagentActivityItem {
   title: string;
   agentType?: string;
   status: BackgroundSubagentActivityStatus;
+  /** Owning workspace ID; the path and SSH facts below are display projections. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -159,6 +161,7 @@ function buildBackgroundSubagentActivityItem(
     title: session.title?.trim() || input.description || 'Background subagent',
     agentType: session.subagentType || input.subagent_type || input.subagentType,
     status,
+    workspaceId: session.workspaceId || session.config?.workspaceId,
     workspacePath: session.workspacePath,
     remoteConnectionId: session.remoteConnectionId,
     remoteSshHost: session.remoteSshHost,

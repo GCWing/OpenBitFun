@@ -48,6 +48,8 @@ interface MiniAppCustomizePanelProps {
   app: MiniApp;
   appName: string;
   appearanceMode?: string;
+  /** Owning workspace ID; authoritative for the customization session. */
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -62,6 +64,7 @@ export const MiniAppCustomizePanel: React.FC<MiniAppCustomizePanelProps> = ({
   app,
   appName,
   appearanceMode,
+  workspaceId,
   workspacePath,
   remoteConnectionId,
   remoteSshHost,
@@ -165,6 +168,7 @@ export const MiniAppCustomizePanel: React.FC<MiniAppCustomizePanelProps> = ({
     const created = await launchMiniAppCustomizationSession({
       appId: app.id,
       appName,
+      workspaceId,
       workspacePath: workspace,
       remoteConnectionId,
       remoteSshHost,
@@ -179,7 +183,7 @@ export const MiniAppCustomizePanel: React.FC<MiniAppCustomizePanelProps> = ({
       customizationSessionId: created.sessionId,
       error: null,
     }));
-  }, [app.id, appName, ensureWorkspace, remoteConnectionId, remoteSshHost, t]);
+  }, [app.id, appName, ensureWorkspace, remoteConnectionId, remoteSshHost, t, workspaceId]);
 
   const handleStart = useCallback(async () => {
     if (!trimmedRequest || busy) {
@@ -534,6 +538,7 @@ export const MiniAppCustomizePanel: React.FC<MiniAppCustomizePanelProps> = ({
           >
             <BtwSessionPanel
               childSessionId={state.customizationSessionId}
+              workspaceId={workspaceId}
               workspacePath={workspacePath}
             />
           </React.Suspense>

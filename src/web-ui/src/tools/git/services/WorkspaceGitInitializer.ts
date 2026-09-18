@@ -16,7 +16,7 @@ const log = createLogger('WorkspaceGitInitializer');
 class WorkspaceGitInitializer {
   private static instance: WorkspaceGitInitializer | null = null;
   private removeListener: (() => void) | null = null;
-  private currentWorkspacePath: string | null = null;
+  private currentWorkspaceId: string | null = null;
 
   private constructor() {}
 
@@ -35,7 +35,7 @@ class WorkspaceGitInitializer {
     this.removeListener = workspaceManager.addEventListener(async (event) => {
       switch (event.type) {
         case 'workspace:opened':
-          await this.handleWorkspaceOpened(event.workspace.rootPath);
+          await this.handleWorkspaceOpened(event.workspace.id);
           break;
 
         case 'workspace:closed':
@@ -43,14 +43,14 @@ class WorkspaceGitInitializer {
           break;
 
         case 'workspace:switched':
-          await this.handleWorkspaceSwitched(event.workspace.rootPath);
+          await this.handleWorkspaceSwitched(event.workspace.id);
           break;
       }
     });
 
     const currentState = workspaceManager.getState();
     if (currentState.currentWorkspace) {
-      this.handleWorkspaceOpened(currentState.currentWorkspace.rootPath);
+      this.handleWorkspaceOpened(currentState.currentWorkspace.id);
     }
   }
 
@@ -61,45 +61,45 @@ class WorkspaceGitInitializer {
     }
   }
 
-  private async handleWorkspaceOpened(workspacePath: string): Promise<void> {
+  private async handleWorkspaceOpened(workspaceId: string): Promise<void> {
     try {
-      this.currentWorkspacePath = workspacePath;
-      await gitStateManager.refresh(workspacePath, {
+      this.currentWorkspaceId = workspaceId;
+      await gitStateManager.refresh({ workspaceId }, {
         layers: ['basic'],
         reason: 'mount',
         force: true,
         source: 'workspace_git_initializer',
       });
     } catch (error) {
-      log.error('Failed to initialize Git state', { workspacePath, error });
+      log.error('Failed to initialize Git state', { workspaceId, error });
     }
   }
 
   private async handleWorkspaceClosed(workspaceId: string): Promise<void> {
     try {
-      if (this.currentWorkspacePath) {
-        gitStateManager.invalidateCache(this.currentWorkspacePath, ['basic', 'status', 'detailed']);
+      if (this.currentWorkspaceId) {
+        gitStateManager.invalidateCache({ workspaceId: this.currentWorkspaceId }, ['basic', 'status', 'detailed']);
       }
-      this.currentWorkspacePath = null;
+      this.currentWorkspaceId = null;
     } catch (error) {
       log.error('Failed to cleanup Git state', { workspaceId, error });
     }
   }
 
-  private async handleWorkspaceSwitched(workspacePath: string): Promise<void> {
+  private async handleWorkspaceSwitched(workspaceId: string): Promise<void> {
     try {
-      if (this.currentWorkspacePath && this.currentWorkspacePath !== workspacePath) {
-        gitStateManager.invalidateCache(this.currentWorkspacePath, ['basic', 'status', 'detailed']);
+      if (this.currentWorkspaceId && this.currentWorkspaceId !== workspaceId) {
+        gitStateManager.invalidateCache({ workspaceId: this.currentWorkspaceId }, ['basic', 'status', 'detailed']);
       }
-      this.currentWorkspacePath = workspacePath;
-      await gitStateManager.refresh(workspacePath, {
+      this.currentWorkspaceId = workspaceId;
+      await gitStateManager.refresh({ workspaceId }, {
         layers: ['basic'],
         reason: 'mount',
         force: true,
         source: 'workspace_git_initializer',
       });
     } catch (error) {
-      log.error('Failed to initialize Git state for switched workspace', { workspacePath, error });
+      log.error('Failed to initialize Git state for switched workspace', { workspaceId, error });
     }
   }
 }

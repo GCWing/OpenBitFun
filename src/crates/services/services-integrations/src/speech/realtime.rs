@@ -33,9 +33,9 @@ const MAX_TOOL_RESULT_BYTES: usize = 16 * 1024;
 const MAX_SPOKEN_PROGRESS_CHARS: usize = 600;
 const MAX_CLIENT_CONTEXT_CHARS: usize = 16 * 1024;
 
-const OPENBITFUN_VOICE_INSTRUCTIONS: &str = r#"You are OpenBitFun's client-level realtime voice assistant. Reply naturally and concisely in the user's language. Your voice call normally belongs to the whole OpenBitFun client. When voice_call_target.kind is miniapp, the call started inside that MiniApp's floating conversation and MiniApp-related tasks should stay in that conversation.
+const OPENBITFUN_VOICE_INSTRUCTIONS: &str = r#"You are the voice interface of the OpenBitFun conversation identified by voice_call_target. Reply naturally and concisely in the user's language. Text and voice share that conversation's persistent public history. The call stays bound to this conversation even when the user switches tabs. kind=control is the product-control Agent; kind=session uses the existing session's Agent; kind=miniapp uses that MiniApp's domain workflow.
 
-Use get_openbitfun_client_context whenever the user asks about the current client, open workspaces/projects, visible sessions, running tasks, or names a workspace whose exact id is not already known from a fresh context result. Never guess a workspace id. Use switch_openbitfun_workspace for navigation-only requests. When the user asks you to inspect, create, change, run, debug, research, or otherwise complete work, call run_openbitfun_task with a complete standalone task description. If voice_call_target.kind is miniapp and the request belongs to that MiniApp, omit workspace_id so OpenBitFun routes the task through the MiniApp's existing conversation and domain workflow. An explicitly supplied workspace_id overrides MiniApp routing and starts a normal workspace Agent task. Outside a MiniApp call, include the intended workspace_id, or omit it only when the user clearly means the active workspace. Set activate_workspace to true when the user asks to enter, switch to, or visibly work in a workspace; use false only for an explicit background request.
+Use get_openbitfun_client_context before answering references to earlier conversation, new text messages, client state, open workspaces, visible sessions or running tasks. Its history is a bounded snapshot of public user and assistant text, not the complete history; when history_truncated is true, ask the bound Agent to inspect earlier context instead of guessing. Never guess a resource id. Use switch_openbitfun_workspace for navigation-only requests. For work or product actions, call run_openbitfun_task. With kind=control or kind=session this continues the bound Agent using the user's final transcript and its full canonical context; workspace_id does not retarget that conversation. With kind=miniapp, omit workspace_id for MiniApp work. An explicit workspace_id overrides only MiniApp routing and starts a normal workspace task. Without a bound target, select the intended opened workspace. Set activate_workspace=true for a requested foreground workspace task and false for explicit background work. Keep acknowledgements brief; do not invent results.
 
 If the user asks to stop, cancel, abort, or interrupt the OpenBitFun task currently running through this client voice assistant, call stop_openbitfun_task immediately. A stop request is a control operation, not a new task: never pass it to run_openbitfun_task and never claim the task stopped before the stop_openbitfun_task result confirms it. Do not claim that work is complete before the tool result arrives. OpenBitFun will speak brief public progress summaries while the Agent task is running; do not expose private reasoning, raw logs, or tool payloads. OpenBitFun also speaks a concise final outcome itself. When a task tool result contains outcome_spoken=true, do not repeat that outcome; wait for the user's next request. If outcome_spoken is false or absent, summarize the outcome clearly and mention any user action still required. Never invent client state or task results."#;
 
@@ -630,7 +630,7 @@ fn session_create_payload(
                 {
                     "type": "function",
                     "name": "get_openbitfun_client_context",
-                    "description": "Return a fresh snapshot of the OpenBitFun client: active scene, active and opened workspaces, visible sessions, running Agent tasks, and the task owned by this voice assistant. Call this before resolving a workspace name or answering questions about current client state.",
+                    "description": "Return fresh client state and recent public text/voice history of the bound conversation. Call before answering references to earlier conversation, new text messages, changing client state, or workspace names.",
                     "parameters": {
                         "type": "object",
                         "additionalProperties": false,
@@ -656,7 +656,7 @@ fn session_create_payload(
                 {
                     "type": "function",
                     "name": "run_openbitfun_task",
-                    "description": "Complete one task through OpenBitFun and return the final result. When voice_call_target.kind is miniapp, omit workspace_id for work that belongs to that MiniApp so OpenBitFun reuses its conversation and domain workflow. Otherwise start a normal Agent session in the intended opened workspace; use get_openbitfun_client_context first when the user names a workspace or project.",
+                    "description": "Continue the Agent in the bound control/session conversation and return its result. For a MiniApp, omit workspace_id to use its domain workflow; only an explicit MiniApp workspace override creates a workspace task. Without a target, run in the intended opened workspace.",
                     "parameters": {
                         "type": "object",
                         "additionalProperties": false,
@@ -667,7 +667,7 @@ fn session_create_payload(
                             },
                             "workspace_id": {
                                 "type": "string",
-                                "description": "Exact opened workspace id from get_openbitfun_client_context. When voice_call_target.kind is miniapp, omit this for work that belongs to the MiniApp; supplying it explicitly overrides MiniApp routing. Outside a MiniApp call, omit only when the user clearly means the active workspace."
+                                "description": "Exact opened workspace id. Only overrides MiniApp routing or selects an unbound workspace task; a bound control/session Agent keeps its conversation."
                             },
                             "activate_workspace": {
                                 "type": "boolean",
@@ -791,6 +791,9 @@ fn parse_provider_event(session_id: &str, payload: &Value) -> Option<SpeechRealt
         "response.output_text.done" => {
             event.kind = SpeechRealtimeEventKind::AssistantTextCompleted;
             event.text = event_text(payload);
+        }
+        "response.done" => {
+            event.kind = SpeechRealtimeEventKind::AssistantResponseCompleted;
         }
         "response.output_audio.started" => {
             event.kind = SpeechRealtimeEventKind::AssistantAudioStarted;
@@ -946,13 +949,16 @@ mod tests {
             .unwrap();
         assert!(instructions.contains("never claim the task stopped"));
         assert!(instructions.contains("outcome_spoken=true"));
-        assert!(instructions.contains("voice_call_target.kind is miniapp"));
+        assert!(instructions.contains("kind=control is the product-control Agent"));
+        assert!(instructions.contains("kind=session uses the existing session's Agent"));
+        assert!(instructions.contains("kind=miniapp, omit workspace_id for MiniApp work"));
+        assert!(instructions.contains("workspace_id does not retarget that conversation"));
         assert!(instructions.contains("workspace-1"));
         assert!(payload
             .pointer("/session/tools/2/parameters/properties/workspace_id/description")
             .and_then(Value::as_str)
             .is_some_and(|description| description
-                .contains("supplying it explicitly overrides MiniApp routing")));
+                .contains("Only overrides MiniApp routing or selects an unbound workspace task")));
         assert_eq!(
             payload.pointer("/extension/extra/enable_proactive_speak"),
             Some(&json!(true))
@@ -1004,6 +1010,22 @@ mod tests {
         assert_eq!(
             single_item_event.function_calls[0].arguments,
             "{\"task\":\"inspect the workspace\"}"
+        );
+    }
+
+    #[test]
+    fn response_completion_is_distinct_from_text_completion() {
+        let text = parse_provider_event(
+            "local-session",
+            &json!({"type": "response.output_text.done", "text": "Ready"}),
+        )
+        .unwrap();
+        let response =
+            parse_provider_event("local-session", &json!({"type": "response.done"})).unwrap();
+        assert_eq!(text.kind, SpeechRealtimeEventKind::AssistantTextCompleted);
+        assert_eq!(
+            response.kind,
+            SpeechRealtimeEventKind::AssistantResponseCompleted
         );
     }
 

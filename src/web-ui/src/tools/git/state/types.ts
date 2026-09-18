@@ -1,3 +1,4 @@
+import type { GitWorkspaceScope } from '@/infrastructure/api/service-api/GitAPI';
 /**
  * Git state management types
  * 
@@ -115,7 +116,7 @@ export interface SubscribeOptions {
 /** Options for the `useGitState` hook. */
 export interface UseGitStateOptions {
   /** Repository path */
-  repositoryPath: string;
+  repositoryPath: GitWorkspaceScope;
   
   /** Whether the component is active/visible */
   isActive?: boolean;
@@ -179,7 +180,7 @@ export interface UseGitStateReturn {
 }
 
 export interface GitStateChangedEventData {
-  repositoryPath: string;
+  repositoryPath: GitWorkspaceScope;
   state: GitState;
   changedLayers: GitStateLayer[];
   reason: RefreshReason;

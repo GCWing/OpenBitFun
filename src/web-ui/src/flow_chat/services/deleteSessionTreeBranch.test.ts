@@ -12,7 +12,7 @@ vi.mock('../store/FlowChatStore', () => ({ flowChatStore: { getState: () => ({ s
 vi.mock('./FlowChatManager', () => ({ FlowChatManager: { getInstance: () => ({ discardLocalSession: mocks.discard }) } }));
 vi.mock('./sessionOpenIntent', () => ({ clearRecentHistorySessionOpenIntent: mocks.clearIntent, clearHistorySessionOpenTransition: mocks.clearTransition }));
 
-const location = { sessionId: 'child', workspacePath: '/remote/project', remoteConnectionId: 'ssh-1', remoteSshHost: 'host' };
+const location = { sessionId: 'child', workspaceId: 'workspace-remote' };
 describe('deleteSessionTreeBranch', () => {
   beforeEach(() => {
     vi.resetAllMocks();
@@ -28,8 +28,8 @@ describe('deleteSessionTreeBranch', () => {
     await deleteSessionTreeBranch(location);
     expect(mocks.lineage).toHaveBeenCalledWith(location);
     expect(mocks.deleteSession.mock.calls).toEqual([
-      ['grandchild', '/remote/project', 'ssh-1', 'host'],
-      ['child', '/remote/project', 'ssh-1', 'host'],
+      ['grandchild', 'workspace-remote'],
+      ['child', 'workspace-remote'],
     ]);
     expect(mocks.discard.mock.calls).toEqual([['grandchild'], ['child']]);
     expect(mocks.clearIntent.mock.calls).toEqual([['grandchild'], ['child']]);

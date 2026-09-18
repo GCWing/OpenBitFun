@@ -88,7 +88,12 @@ export const Tab: React.FC<TabProps> = ({
   const tabData = tab.content.data as { filePath?: string; workspacePath?: string } | undefined;
   const filePath = typeof tabData?.filePath === 'string' ? tabData.filePath : undefined;
   const workspacePath = typeof tabData?.workspacePath === 'string' ? tabData.workspacePath : undefined;
-  const isRemote = isRemoteWorkspace(workspaceManager.getState().currentWorkspace);
+  // The tab's resource scope names the owning workspace by ID; the path is only its IO projection.
+  const resourceScope = tab.content.metadata?.resourceScope;
+  const owningWorkspace = resourceScope?.workspaceId
+    ? workspaceManager.getState().openedWorkspaces.get(resourceScope.workspaceId) ?? workspaceManager.getState().currentWorkspace
+    : workspaceManager.getState().currentWorkspace;
+  const isRemote = isRemoteWorkspace(owningWorkspace);
   const canUseLocalFileActions = Boolean(filePath) && !isRemote && !hasNonFileUriScheme(filePath || '');
   const isPinned = tab.state === 'pinned';
 
@@ -151,6 +156,7 @@ export const Tab: React.FC<TabProps> = ({
       tabType: tab.content.type,
       filePath,
       workspacePath,
+      resourceScope,
       isActive,
       isClosable: true,
     };
@@ -236,6 +242,7 @@ export const Tab: React.FC<TabProps> = ({
             filePath,
             fileName: tab.title,
             workspacePath,
+            scope: resourceScope,
             editorType: 'code-editor',
           }),
         });
@@ -248,6 +255,7 @@ export const Tab: React.FC<TabProps> = ({
             filePath,
             fileName: tab.title,
             workspacePath,
+            scope: resourceScope,
             editorType: 'html-preview',
           }),
         });
@@ -273,6 +281,7 @@ export const Tab: React.FC<TabProps> = ({
     onCloseOthers,
     onPin,
     onPopOut,
+    resourceScope,
     runCommand,
     showMenu,
     t,

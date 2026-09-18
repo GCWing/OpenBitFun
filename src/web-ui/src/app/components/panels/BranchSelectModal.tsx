@@ -33,6 +33,7 @@ export interface BranchSelectModalProps {
   onClose: () => void;
   onSelect: (result: BranchSelectResult) => void;
   repositoryPath: string;
+  workspaceId: string;
   title?: string;
   currentBranch?: string;
   existingWorktreeBranches?: string[];
@@ -45,6 +46,7 @@ export const BranchSelectModal: React.FC<BranchSelectModalProps> = ({
   onClose,
   onSelect,
   repositoryPath,
+  workspaceId,
   title,
   currentBranch,
   existingWorktreeBranches = [],
@@ -112,7 +114,7 @@ export const BranchSelectModal: React.FC<BranchSelectModalProps> = ({
     setIsLoading(true);
     setError(null);
     try {
-      const branchList = await gitAPI.getBranches(repositoryPath, false);
+      const branchList = await gitAPI.getBranches({ workspaceId, repositoryPath }, false);
       setBranches(branchList);
     } catch (err) {
       log.error('Failed to load branches', err);
@@ -120,7 +122,7 @@ export const BranchSelectModal: React.FC<BranchSelectModalProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [repositoryPath, t]);
+  }, [repositoryPath, t, workspaceId]);
 
   useEffect(() => {
     if (isOpen && repositoryPath) {

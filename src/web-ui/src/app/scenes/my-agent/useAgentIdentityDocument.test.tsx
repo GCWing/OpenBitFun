@@ -11,15 +11,15 @@ import {
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const apiMocks = vi.hoisted(() => ({
-  readFileContent: vi.fn(),
-  writeFileContent: vi.fn(),
+  readWorkspaceFile: vi.fn(),
+  writeWorkspaceFile: vi.fn(),
 }));
 const watchFileChangesMock = vi.hoisted(() => vi.fn(() => vi.fn()));
 
 vi.mock('@/infrastructure/api/service-api/WorkspaceAPI', () => ({
   workspaceAPI: {
-    readFileContent: apiMocks.readFileContent,
-    writeFileContent: apiMocks.writeFileContent,
+    readWorkspaceFile: apiMocks.readWorkspaceFile,
+    writeWorkspaceFile: apiMocks.writeWorkspaceFile,
   },
 }));
 
@@ -59,17 +59,17 @@ describe('useAgentIdentityDocument autosave', () => {
   let latestResult: UseAgentIdentityDocumentResult | null;
 
   const Harness = () => {
-    latestResult = useAgentIdentityDocument('/tmp/assistant');
+    latestResult = useAgentIdentityDocument({ id: 'assistant-1', rootPath: '/tmp/assistant' });
     return null;
   };
 
   beforeEach(async () => {
     vi.useFakeTimers();
-    apiMocks.readFileContent.mockReset();
-    apiMocks.writeFileContent.mockReset();
+    apiMocks.readWorkspaceFile.mockReset();
+    apiMocks.writeWorkspaceFile.mockReset();
     watchFileChangesMock.mockClear();
-    apiMocks.readFileContent.mockResolvedValue(INITIAL_IDENTITY);
-    apiMocks.writeFileContent
+    apiMocks.readWorkspaceFile.mockResolvedValue(INITIAL_IDENTITY);
+    apiMocks.writeWorkspaceFile
       .mockRejectedValueOnce(new Error('write failed'))
       .mockResolvedValue(undefined);
 
@@ -97,13 +97,18 @@ describe('useAgentIdentityDocument autosave', () => {
       await vi.advanceTimersByTimeAsync(800);
     });
 
-    expect(apiMocks.writeFileContent).toHaveBeenCalledTimes(1);
+    expect(apiMocks.writeWorkspaceFile).toHaveBeenCalledTimes(1);
+    expect(apiMocks.writeWorkspaceFile).toHaveBeenCalledWith(
+      'assistant-1',
+      '/tmp/assistant/IDENTITY.md',
+      expect.any(String),
+    );
     expect(latestResult?.saveStatus).toBe('error');
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4000);
     });
-    expect(apiMocks.writeFileContent).toHaveBeenCalledTimes(1);
+    expect(apiMocks.writeWorkspaceFile).toHaveBeenCalledTimes(1);
 
     act(() => latestResult?.updateField('emoji', '🧭'));
     expect(latestResult?.saveStatus).toBe('idle');
@@ -111,7 +116,7 @@ describe('useAgentIdentityDocument autosave', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(800);
     });
-    expect(apiMocks.writeFileContent).toHaveBeenCalledTimes(2);
+    expect(apiMocks.writeWorkspaceFile).toHaveBeenCalledTimes(2);
     expect(latestResult?.saveStatus).toBe('saved');
   });
 });

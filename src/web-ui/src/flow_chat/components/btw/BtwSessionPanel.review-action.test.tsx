@@ -285,7 +285,8 @@ function createReviewSession(): Session {
       startTime: 1,
     }],
     status: 'idle',
-    config: {},
+    workspaceId: 'workspace-id',
+    config: { workspaceId: 'workspace-id' },
     createdAt: 1,
     lastActiveAt: 1,
     error: null,
@@ -301,7 +302,8 @@ function createEmptyReviewCheckSession(overrides: Partial<Session> = {}): Sessio
     title: 'Internal reviewer title',
     dialogTurns: [],
     status: 'idle',
-    config: {},
+    workspaceId: 'workspace-id',
+    config: { workspaceId: 'workspace-id' },
     createdAt: 1,
     lastActiveAt: 1,
     error: null,
@@ -421,7 +423,8 @@ function createRunningBtwSession(): Session {
       startTime: 1,
     }],
     status: 'running',
-    config: {},
+    workspaceId: 'workspace-id',
+    config: { workspaceId: 'workspace-id' },
     createdAt: 1,
     lastActiveAt: 1,
     error: null,
@@ -437,7 +440,8 @@ function createParentSessionWithId(sessionId: string): Session {
     title: sessionId,
     dialogTurns: [],
     status: 'idle',
-    config: {},
+    workspaceId: 'workspace-id',
+    config: { workspaceId: 'workspace-id' },
     createdAt: 1,
     lastActiveAt: 1,
     error: null,
@@ -581,7 +585,8 @@ describe('BtwSessionPanel review action bar integration', () => {
           title: 'Parent',
           dialogTurns: [],
           status: 'idle',
-          config: {},
+          workspaceId: 'workspace-id',
+    config: { workspaceId: 'workspace-id' },
           createdAt: 1,
           lastActiveAt: 1,
           error: null,
@@ -907,7 +912,7 @@ describe('BtwSessionPanel review action bar integration', () => {
     expect(panelMocks.cancelSession).not.toHaveBeenCalled();
   });
 
-  it('uses the parent workspace when retrying a legacy child without saved location', async () => {
+  it('uses the child workspace ID when retrying without a path projection', async () => {
     flowChatState = {
       ...flowChatState,
       sessions: new Map([
@@ -943,14 +948,7 @@ describe('BtwSessionPanel review action bar integration', () => {
       retryButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    expect(panelMocks.hydrateSessionHistoryForDetail).toHaveBeenCalledWith(
-      'review-check-child',
-      {
-        workspacePath: 'D:/workspace/parent',
-        remoteConnectionId: 'remote-current',
-        remoteSshHost: 'host-current',
-      },
-    );
+    expect(panelMocks.hydrateSessionHistoryForDetail).toHaveBeenCalledWith('review-check-child');
   });
 
   it('offers a load-only retry when legacy Review-check details are unavailable', async () => {

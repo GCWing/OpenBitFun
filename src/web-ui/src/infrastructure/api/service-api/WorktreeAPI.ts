@@ -26,6 +26,7 @@ export interface SessionExecutionTarget {
 }
 
 export interface WorktreeSessionSummary {
+  workspaceId?: string;
   sessionId: string;
   sessionName: string;
   status: string;
@@ -33,6 +34,7 @@ export interface WorktreeSessionSummary {
 }
 
 export interface WorktreeSummary {
+  workspaceId?: string;
   worktreeId: string;
   projectWorkspacePath: string;
   path: string;
@@ -50,8 +52,20 @@ export interface WorktreeSummary {
 }
 
 export interface WorktreeProjectSummary {
+  /** Workspace ID of the open workspace rooted at the project's main worktree. */
+  projectWorkspaceId?: string;
   projectWorkspacePath: string;
   worktrees: WorktreeSummary[];
+}
+
+/**
+ * Locates the project that owns a managed worktree. The workspace ID is the
+ * identity; the path is the Git IO operand and the only locator a pre-ID
+ * client or an unopened project can supply.
+ */
+export interface WorktreeProjectLocator {
+  projectWorkspaceId?: string;
+  projectWorkspacePath: string;
 }
 
 export type WorktreeErrorCode =
@@ -92,6 +106,7 @@ export class WorktreeCommandError extends Error {
 
 export interface WorktreeCreateRequest {
   requestId: string;
+  projectWorkspaceId?: string;
   projectWorkspacePath: string;
   sourceWorkspacePath?: string;
   baseRef?: string;
@@ -113,6 +128,7 @@ export interface WorktreeChangedEvent {
 }
 
 export interface WorktreeSessionBindingResult {
+  projectWorkspaceId?: string;
   sessionId: string;
   workspacePath: string;
   projectWorkspacePath: string;
@@ -200,6 +216,14 @@ export function toWorktreeCommandError(error: unknown): WorktreeCommandError {
   return new WorktreeCommandError('git_failed', fallbackErrorMessage(error));
 }
 
+function projectLocatorRequest(project: WorktreeProjectLocator): WorktreeProjectLocator {
+  const projectWorkspaceId = project.projectWorkspaceId?.trim();
+  return {
+    ...(projectWorkspaceId ? { projectWorkspaceId } : {}),
+    projectWorkspacePath: project.projectWorkspacePath,
+  };
+}
+
 async function invokeWorktree<T>(command: string, request: unknown): Promise<T> {
   try {
     return await api.invoke<T>(command, { request });
@@ -209,8 +233,8 @@ async function invokeWorktree<T>(command: string, request: unknown): Promise<T> 
 }
 
 export class WorktreeAPI {
-  list(projectWorkspacePath: string): Promise<WorktreeSummary[]> {
-    return invokeWorktree('worktree_list', { projectWorkspacePath });
+  list(project: WorktreeProjectLocator): Promise<WorktreeSummary[]> {
+    return invokeWorktree('worktree_list', projectLocatorRequest(project));
   }
 
   listProjects(): Promise<WorktreeProjectSummary[]> {
@@ -222,13 +246,13 @@ export class WorktreeAPI {
   }
 
   createBranch(
-    projectWorkspacePath: string,
+    project: WorktreeProjectLocator,
     worktreeId: string,
     branch: string,
     requestId: string,
   ): Promise<WorktreeMutationResult> {
     return invokeWorktree('worktree_create_branch', {
-      projectWorkspacePath,
+      ...projectLocatorRequest(project),
       worktreeId,
       branch,
       requestId,
@@ -236,25 +260,25 @@ export class WorktreeAPI {
   }
 
   promote(
-    projectWorkspacePath: string,
+    project: WorktreeProjectLocator,
     worktreeId: string,
     requestId: string,
   ): Promise<WorktreeMutationResult> {
     return invokeWorktree('worktree_promote', {
-      projectWorkspacePath,
+      ...projectLocatorRequest(project),
       worktreeId,
       requestId,
     });
   }
 
   remove(
-    projectWorkspacePath: string,
+    project: WorktreeProjectLocator,
     worktreeId: string,
     requestId: string,
     force = false,
   ): Promise<{ worktreeId: string; removed: boolean }> {
     return invokeWorktree('worktree_remove', {
-      projectWorkspacePath,
+      ...projectLocatorRequest(project),
       worktreeId,
       requestId,
       force,
@@ -262,12 +286,12 @@ export class WorktreeAPI {
   }
 
   recreate(
-    projectWorkspacePath: string,
+    project: WorktreeProjectLocator,
     worktreeId: string,
     requestId: string,
   ): Promise<WorktreeMutationResult> {
     return invokeWorktree('worktree_recreate', {
-      projectWorkspacePath,
+      ...projectLocatorRequest(project),
       worktreeId,
       requestId,
     });
@@ -281,13 +305,13 @@ export class WorktreeAPI {
     sessionId: string,
     enabled: boolean,
     requestId: string,
-    projectWorkspacePath: string,
+    project: WorktreeProjectLocator,
   ): Promise<WorktreeSessionBindingResult> {
     return invokeWorktree('worktree_bind_session', {
       sessionId,
       enabled,
       requestId,
-      projectWorkspacePath,
+      ...projectLocatorRequest(project),
     });
   }
 

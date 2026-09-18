@@ -29,6 +29,7 @@ import { ChatMessageStructurePolicy } from '../main/ets/pages/policy/ChatMessage
 import { ToolStatusPresentationPolicy } from '../main/ets/pages/policy/ToolStatusPresentationPolicy';
 import { PlanToolPolicy } from '../main/ets/pages/policy/PlanToolPolicy';
 import {
+  ConversationUiImage,
   ConversationUiMessage,
   ConversationUiMessageItem,
   ConversationUiToolStatus
@@ -215,6 +216,16 @@ export default function conversationPresentationUnitTest() {
   });
 
   describe('ConversationMessageRenderPolicy', () => {
+    it('names an attachment the host could not inline instead of drawing a blank frame', 0, () => {
+      const inlined: ConversationUiImage = { name: 'chart.png', data_url: 'data:image/png;base64,YQ==' };
+      const pathOnly: ConversationUiImage = { name: 'dropped-on-the-desktop.png', data_url: '' };
+
+      expect(ConversationMessageRenderPolicy.hasRenderableImagePixels(inlined)).assertTrue();
+      expect(ConversationMessageRenderPolicy.hasRenderableImagePixels(pathOnly)).assertFalse();
+      expect(ConversationMessageRenderPolicy.hasRenderableImagePixels({ name: 'blank.png', data_url: '   ' }))
+        .assertFalse();
+    });
+
     it('does not throw when assistant text is missing and still shows structured content', 0, () => {
       expect(ConversationMessageRenderPolicy.visibleText(undefined)).assertEqual('');
       expect(ConversationMessageRenderPolicy.visibleText('(空消息)')).assertEqual('');

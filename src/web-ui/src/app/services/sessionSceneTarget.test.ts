@@ -27,11 +27,11 @@ describe('workspace session tab identity', () => {
     expect(tabId(value, 'peer-a')).not.toBe(tabId(value, 'peer-b'));
   });
 
-  it('distinguishes SSH hosts, remote root case, and local roots', () => {
-    const remote = session({ workspacePath: '/Project', remoteSshHost: 'server-a' });
-    expect(tabId(remote)).not.toBe(tabId(session({ ...remote, remoteSshHost: 'server-b' })));
-    expect(tabId(remote)).not.toBe(tabId(session({ ...remote, workspacePath: '/project' })));
-    expect(tabId(remote)).not.toBe(tabId(session({ workspacePath: '/Project' })));
+  it('distinguishes workspace IDs even when their paths are identical', () => {
+    const remote = session({ workspaceId: 'remote-a', workspacePath: '/Project' });
+    expect(tabId(remote)).not.toBe(tabId(session({ ...remote, workspaceId: 'remote-b' })));
+    expect(tabId(remote)).not.toBe(tabId(session({ workspaceId: 'local', workspacePath: '/Project' })));
+    expect(tabId(remote)).toBe(tabId(session({ ...remote, workspacePath: '/moved' })));
   });
 
   it('resolves old session metadata to the live workspace id', () => {

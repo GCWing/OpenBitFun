@@ -12,17 +12,17 @@ export type InitialSessionMetadataLoadMode =
   | 'after-startup-paint';
 
 export function getInitialSessionMetadataLoadMode({
-  hasWorkspacePath,
+  hasWorkspace,
   isActiveWorkspace,
   isVisible,
   startupOverlayHandedOff,
 }: {
-  hasWorkspacePath: boolean;
+  hasWorkspace: boolean;
   isActiveWorkspace: boolean;
   isVisible: boolean;
   startupOverlayHandedOff: boolean;
 }): InitialSessionMetadataLoadMode {
-  if (!hasWorkspacePath || !isVisible) {
+  if (!hasWorkspace || !isVisible) {
     return 'skip';
   }
 

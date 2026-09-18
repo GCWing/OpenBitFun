@@ -73,6 +73,7 @@ pub(super) async fn prepare_baseline(
 
     let created = WorktreeService::create(WorktreeCreateRequest {
         request_id: job_id.to_string(),
+        project_workspace_id: None,
         project_workspace_path: project.to_string(),
         source_workspace_path: Some(project.to_string()),
         base_ref: base_ref
@@ -99,6 +100,7 @@ pub(super) async fn prepare_baseline(
         if created.worktree.branch.as_deref() != Some(branch.as_str()) {
             WorktreeService::create_branch(WorktreeCreateBranchRequest {
                 request_id: format!("{job_id}::branch"),
+                project_workspace_id: None,
                 project_workspace_path: project_workspace_path.clone(),
                 worktree_id: worktree_id.clone(),
                 branch: branch.clone(),

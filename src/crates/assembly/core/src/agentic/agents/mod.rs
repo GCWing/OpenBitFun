@@ -14,7 +14,9 @@ use async_trait::async_trait;
 pub use definitions::custom::{CustomMode, CustomSubagent, CustomSubagentKind};
 #[cfg(feature = "external-sources")]
 pub(crate) use definitions::external::ExternalProvidedAgent;
-pub use definitions::hidden::{CodeReviewAgent, DeepReviewAgent, GenerateDocAgent};
+pub use definitions::hidden::{
+    CodeReviewAgent, DeepReviewAgent, GenerateDocAgent, OpenBitFunAgent,
+};
 pub use definitions::modes::{
     ClawMode, CoworkMode, CreativeHarness, DeepResearchMode, MinimalHarness, StandardHarness,
     UltimateHarness,

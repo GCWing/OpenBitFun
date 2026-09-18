@@ -1,5 +1,20 @@
-import { CreateSessionOptions, RemoteCommand, RemoteImageContext, RemotePermissionMode, RemoteQuestionAnswerPayload } from '../model/RemoteModels';
+import {
+  CreateSessionOptions,
+  RemoteCommand,
+  RemoteImageContext,
+  RemotePermissionMode,
+  RemoteQuestionAnswerPayload,
+  RemoteWorkspaceIdentity
+} from '../model/RemoteModels';
 
+/**
+ * Builds the RemoteCommand wire shapes.
+ *
+ * Workspace references follow one rule: when the caller knows the
+ * `workspaceId`, the command carries only `workspace_id`, so an ID-aware host
+ * can never silently fall back to a path. The legacy `(path, connection,
+ * ssh host)` projection is sent only for references that never had an ID.
+ */
 export class RemoteCommandFactory {
   static getWorkspaceInfo(): RemoteCommand {
     return { cmd: 'get_workspace_info' };
@@ -9,37 +24,59 @@ export class RemoteCommandFactory {
     return { cmd: 'list_recent_workspaces' };
   }
 
-  static setWorkspace(path: string): RemoteCommand {
-    return {
+  static setWorkspace(path: string, workspaceId?: string, remoteConnectionId?: string, remoteSshHost?: string): RemoteCommand {
+    if (workspaceId) {
+      return { cmd: 'set_workspace', workspace_id: workspaceId };
+    }
+    // Upgrade-only command for pre-ID references: the host resolves the path
+    // through its legacy resolver and rejects unknown or ambiguous roots.
+    const command: RemoteCommand = {
       cmd: 'set_workspace',
       path
     };
+    if (remoteConnectionId !== undefined) {
+      command.remote_connection_id = remoteConnectionId;
+    }
+    if (remoteSshHost !== undefined) {
+      command.remote_ssh_host = remoteSshHost;
+    }
+    return command;
   }
 
   static listAssistants(): RemoteCommand {
     return { cmd: 'list_assistants' };
   }
 
-  static setAssistant(path: string): RemoteCommand {
+  static setAssistant(path: string, workspaceId?: string): RemoteCommand {
+    if (workspaceId) {
+      return { cmd: 'set_assistant', workspace_id: workspaceId };
+    }
     return {
       cmd: 'set_assistant',
       path
     };
   }
 
-  static listSessions(workspacePath: string, limit: number, offset: number, query: string,
-    remoteConnectionId?: string, remoteSshHost?: string): RemoteCommand {
-    const command: RemoteCommand = {
-      cmd: 'list_sessions',
-      workspace_path: workspacePath,
-      limit,
-      offset
-    };
+  static listSessions(workspace: RemoteWorkspaceIdentity, limit: number, offset: number, query: string): RemoteCommand {
+    const command: RemoteCommand = { cmd: 'list_sessions' };
+    if (workspace.workspaceId) {
+      command.workspace_id = workspace.workspaceId;
+    } else {
+      command.workspace_path = workspace.path;
+    }
+    command.limit = limit;
+    command.offset = offset;
     if (query.trim().length > 0) {
       command.query = query.trim();
     }
-    if (remoteConnectionId !== undefined) command.remote_connection_id = remoteConnectionId;
-    if (remoteSshHost !== undefined) command.remote_ssh_host = remoteSshHost;
+    if (!workspace.workspaceId) {
+      if (workspace.remoteConnectionId !== undefined) {
+        command.remote_connection_id = workspace.remoteConnectionId;
+      }
+      if (workspace.remoteSshHost !== undefined) {
+        command.remote_ssh_host = workspace.remoteSshHost;
+      }
+    }
     return command;
   }
 
@@ -47,14 +84,21 @@ export class RemoteCommandFactory {
     const normalizedAgentType = (options.agentType || '').toLowerCase();
     const defaultTitle = normalizedAgentType === 'claw' || normalizedAgentType === 'assistant' || normalizedAgentType === 'chat' ?
       'Remote Assistant Session' : normalizedAgentType === 'cowork' ? 'Remote Cowork Session' : 'Remote Code Session';
-    return {
+    const command: RemoteCommand = {
       cmd: 'create_session',
       agent_type: options.agentType,
-      session_name: options.title.trim() || defaultTitle,
-      workspace_path: workspacePath || undefined,
-      remote_connection_id: workspacePath ? options.remoteConnectionId || '' : undefined,
-      remote_ssh_host: workspacePath ? options.remoteSshHost : undefined
+      session_name: options.title.trim() || defaultTitle
     };
+    if (options.workspaceId) {
+      command.workspace_id = options.workspaceId;
+      return command;
+    }
+    if (workspacePath) {
+      command.workspace_path = workspacePath;
+      command.remote_connection_id = options.remoteConnectionId || '';
+      command.remote_ssh_host = options.remoteSshHost;
+    }
+    return command;
   }
 
   static sendMessage(

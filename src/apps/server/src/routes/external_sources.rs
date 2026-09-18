@@ -59,7 +59,7 @@ pub(crate) async fn dispatch(
     let request = params
         .get("request")
         .ok_or_else(|| ExternalSourceOperationError::invalid_request("missing request"))?;
-    let workspace = external_workspace_root(state, request)?;
+    let workspace = external_workspace_id(state, request)?;
     let workspace = workspace.as_deref();
     match method {
         "get_external_source_snapshot" => {
@@ -92,11 +92,42 @@ pub(crate) async fn dispatch(
     })
 }
 
+/// Resolve the workspace an external-source request is scoped to.
+///
+/// `workspaceId` is authoritative and must name the workspace this Server
+/// Host owns. `workspacePath` is accepted only as an upgrade path for pre-ID
+/// callers: it is matched against the owned workspace root and then replaced
+/// by the owned workspace ID, so paths never act as identity downstream.
 #[allow(dead_code)]
-fn external_workspace_root(
+fn external_workspace_id(
     state: &AppState,
     request: &serde_json::Value,
-) -> ExternalSourceOperationResult<Option<PathBuf>> {
+) -> ExternalSourceOperationResult<Option<String>> {
+    let requested_id = match request.get("workspaceId") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(id)) if !id.trim().is_empty() => Some(id.trim()),
+        _ => {
+            return Err(ExternalSourceOperationError::invalid_request(
+                "workspaceId must be a non-empty string when provided",
+            ))
+        }
+    };
+    if let Some(requested_id) = requested_id {
+        let owned = state.external_workspace_id.as_deref().ok_or_else(|| {
+            ExternalSourceOperationError::new(
+                openbitfun_core::external_sources::ExternalSourceOperationErrorCode::HostUnavailable,
+                "The Server Host has no project workspace",
+                false,
+            )
+        })?;
+        if requested_id != owned {
+            return Err(ExternalSourceOperationError::invalid_request(
+                "External compatibility is limited to the Server Host workspace",
+            ));
+        }
+        return Ok(Some(owned.to_string()));
+    }
+
     let workspace = match request.get("workspacePath") {
         None | Some(serde_json::Value::Null) => None,
         Some(serde_json::Value::String(path)) if !path.trim().is_empty() => {
@@ -116,24 +147,28 @@ fn external_workspace_root(
     let Some(requested) = workspace else {
         return Ok(None);
     };
-    let owned = state.external_workspace_root.as_ref().ok_or_else(|| {
-        ExternalSourceOperationError::new(
-            openbitfun_core::external_sources::ExternalSourceOperationErrorCode::HostUnavailable,
-            "The Server Host has no project workspace",
-            false,
-        )
-    })?;
+    let (owned_id, owned_root) = state
+        .external_workspace_id
+        .as_deref()
+        .zip(state.external_workspace_root.as_ref())
+        .ok_or_else(|| {
+            ExternalSourceOperationError::new(
+                openbitfun_core::external_sources::ExternalSourceOperationErrorCode::HostUnavailable,
+                "The Server Host has no project workspace",
+                false,
+            )
+        })?;
     let requested = requested.canonicalize().map_err(|_| {
         ExternalSourceOperationError::invalid_request(
             "Workspace path is not available on this Host",
         )
     })?;
-    if &requested != owned {
+    if &requested != owned_root {
         return Err(ExternalSourceOperationError::invalid_request(
             "External compatibility is limited to the Server Host workspace",
         ));
     }
-    Ok(Some(requested))
+    Ok(Some(owned_id.to_string()))
 }
 
 #[allow(dead_code)]
@@ -156,6 +191,9 @@ mod tests {
 
     fn app_state(external_workspace_root: Option<PathBuf>) -> AppState {
         AppState {
+            external_workspace_id: external_workspace_root
+                .as_ref()
+                .map(|_| "server-workspace".to_string()),
             external_workspace_root,
             allowed_browser_origins: Default::default(),
             dispatch_host: None,
@@ -176,7 +214,7 @@ mod tests {
     fn workspace_paths_must_be_absolute() {
         let state = app_state(None);
         let request = serde_json::json!({ "workspacePath": "relative/project" });
-        let error = external_workspace_root(&state, &request).unwrap_err();
+        let error = external_workspace_id(&state, &request).unwrap_err();
         assert_eq!(error.code.as_str(), "invalid_request");
     }
 
@@ -185,7 +223,7 @@ mod tests {
         let state = app_state(None);
         let workspace = std::env::current_dir().expect("current directory is available");
         let request = serde_json::json!({ "workspacePath": workspace });
-        let error = external_workspace_root(&state, &request).unwrap_err();
+        let error = external_workspace_id(&state, &request).unwrap_err();
         assert_eq!(error.code.as_str(), "host_unavailable");
     }
 
@@ -198,9 +236,36 @@ mod tests {
         let state = app_state(Some(workspace.clone()));
         let request = serde_json::json!({ "workspacePath": workspace });
         assert_eq!(
-            external_workspace_root(&state, &request).unwrap(),
-            Some(workspace)
+            external_workspace_id(&state, &request).unwrap(),
+            Some("server-workspace".to_string())
         );
+    }
+
+    #[test]
+    fn workspace_ids_are_authoritative_and_must_match_the_owned_workspace() {
+        let workspace = std::env::current_dir().expect("current directory is available");
+        let state = app_state(Some(workspace));
+        let request = serde_json::json!({ "workspaceId": "server-workspace" });
+        assert_eq!(
+            external_workspace_id(&state, &request).unwrap(),
+            Some("server-workspace".to_string())
+        );
+
+        let request = serde_json::json!({
+            "workspaceId": "other-workspace",
+            "workspacePath": std::env::current_dir().expect("current directory is available"),
+        });
+        let error = external_workspace_id(&state, &request).unwrap_err();
+        assert_eq!(error.code.as_str(), "invalid_request");
+
+        let request = serde_json::json!({ "workspaceId": "" });
+        let error = external_workspace_id(&state, &request).unwrap_err();
+        assert_eq!(error.code.as_str(), "invalid_request");
+
+        let state = app_state(None);
+        let request = serde_json::json!({ "workspaceId": "server-workspace" });
+        let error = external_workspace_id(&state, &request).unwrap_err();
+        assert_eq!(error.code.as_str(), "host_unavailable");
     }
 
     #[test]
@@ -211,7 +276,7 @@ mod tests {
 
         let state = app_state(None);
         let request = serde_json::json!({ "workspacePath": false });
-        let error = external_workspace_root(&state, &request).unwrap_err();
+        let error = external_workspace_id(&state, &request).unwrap_err();
         assert_eq!(error.code.as_str(), "invalid_request");
     }
 

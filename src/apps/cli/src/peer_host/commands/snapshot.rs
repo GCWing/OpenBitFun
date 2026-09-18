@@ -4,9 +4,9 @@ use std::path::PathBuf;
 
 use serde_json::{json, Value};
 
-use openbitfun_core::service::remote_ssh::workspace_state::is_remote_path;
+use openbitfun_core::service::workspace::{WorkspaceInfo, WorkspaceKind};
 use openbitfun_runtime_ports::{
-    AgentSessionRollbackToTurnRequest, AgentSessionWorkspaceLocation, LocalWorkspaceSnapshotPort,
+    AgentSessionRollbackToTurnRequest, LocalWorkspaceSnapshotPort,
     LocalWorkspaceSnapshotSessionRequest, LocalWorkspaceSnapshotStats, PortError, PortErrorKind,
 };
 
@@ -15,34 +15,44 @@ use crate::peer_host::state::PeerHostState;
 
 use super::session::{ensure_session_workspace_runtime_ownership, resolved_session_storage_scope};
 
-pub(super) async fn require_local_snapshot_workspace(
+pub(super) async fn resolve_snapshot_workspace(
+    state: &PeerHostState,
     request: &Value,
-    workspace_path: &str,
-) -> Result<(), String> {
-    let is_remote = optional_string(request, "remoteConnectionId").is_some()
-        || optional_string(request, "remoteSshHost").is_some()
-        || is_remote_path(workspace_path).await;
-    if is_remote {
+) -> Result<WorkspaceInfo, String> {
+    if let Some(id) = optional_string(request, "workspaceId") {
+        return state
+            .workspace_service
+            .require_workspace(&id)
+            .await
+            .map_err(|e| e.to_string());
+    }
+    // Temporary pre-ID protocol adapter; all downstream owners receive IDs.
+    state
+        .workspace_service
+        .resolve_legacy_workspace_reference(
+            None,
+            &get_string(request, "workspacePath")?,
+            optional_string(request, "remoteConnectionId").as_deref(),
+            optional_string(request, "remoteSshHost").as_deref(),
+        )
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Legacy snapshot workspace cannot be resolved".into())
+}
+
+pub(super) fn require_local_snapshot_workspace(workspace: &WorkspaceInfo) -> Result<(), String> {
+    if workspace.workspace_kind == WorkspaceKind::Remote {
         return Err(format!(
-            "Snapshot system not supported for remote workspace: {workspace_path}"
+            "Snapshot system not supported for remote workspace: {}",
+            workspace.id
         ));
     }
     Ok(())
 }
 
-async fn require_complete_rollback_workspace(
-    request: &Value,
-    workspace_path: &str,
-    explicit_location: Option<AgentSessionWorkspaceLocation>,
-) -> Result<(), String> {
-    let is_remote = optional_string(request, "remoteConnectionId").is_some()
-        || optional_string(request, "remoteSshHost").is_some()
-        || explicit_location == Some(AgentSessionWorkspaceLocation::Remote)
-        || (explicit_location.is_none() && is_remote_path(workspace_path).await);
-    if is_remote {
-        return Err(format!(
-            "Complete rollback is not supported for remote workspaces because remote file snapshots are not recorded. No workspace files or session messages were changed: {workspace_path}"
-        ));
+fn require_complete_rollback_workspace(workspace: &WorkspaceInfo) -> Result<(), String> {
+    if workspace.workspace_kind == WorkspaceKind::Remote {
+        return Err(format!("Complete rollback is not supported for remote workspaces because remote file snapshots are not recorded. No workspace files or session messages were changed: {}", workspace.id));
     }
     Ok(())
 }
@@ -57,12 +67,12 @@ pub(super) fn snapshot_compatibility_error(error: PortError) -> String {
 
 pub(super) async fn local_snapshot_session_files(
     port: &dyn LocalWorkspaceSnapshotPort,
-    workspace_path: PathBuf,
+    workspace_id: String,
     session_id: String,
     max_turn_exclusive: Option<usize>,
 ) -> Result<Vec<PathBuf>, String> {
     port.get_session_files(LocalWorkspaceSnapshotSessionRequest {
-        workspace_path,
+        workspace_id,
         session_id,
         max_turn_exclusive,
     })
@@ -77,12 +87,12 @@ pub(super) async fn local_snapshot_session_files(
 
 pub(super) async fn local_snapshot_session_stats(
     port: &dyn LocalWorkspaceSnapshotPort,
-    workspace_path: PathBuf,
+    workspace_id: String,
     session_id: String,
     max_turn_exclusive: Option<usize>,
 ) -> Result<LocalWorkspaceSnapshotStats, String> {
     port.get_session_stats(LocalWorkspaceSnapshotSessionRequest {
-        workspace_path,
+        workspace_id,
         session_id,
         max_turn_exclusive,
     })
@@ -101,11 +111,11 @@ pub(crate) async fn get_session_files(
 ) -> Result<Value, String> {
     let request = request_value(args);
     let session_id = get_string(request, "sessionId")?;
-    let workspace_path = get_string(request, "workspacePath")?;
+    let workspace = resolve_snapshot_workspace(state, request).await?;
 
     openbitfun_agent_runtime::session_control::validate_session_id(&session_id)?;
-    require_local_snapshot_workspace(request, &workspace_path).await?;
-    let scope = ensure_session_workspace_runtime_ownership(state, request)?;
+    require_local_snapshot_workspace(&workspace)?;
+    let scope = ensure_session_workspace_runtime_ownership(state, request).await?;
     let storage_path = resolved_session_storage_scope(state, scope).await?;
     let read = state
         .compatibility
@@ -114,7 +124,7 @@ pub(crate) async fn get_session_files(
         .map_err(|error| format!("Failed to open a consistent snapshot view: {error}"))?;
     let files = local_snapshot_session_files(
         state.local_workspace_snapshot.as_ref(),
-        PathBuf::from(&workspace_path),
+        workspace.id,
         session_id,
         read.visible_turn_end(),
     )
@@ -131,18 +141,38 @@ pub(crate) async fn rollback_session_to_turn(
     args: &Value,
 ) -> Result<Value, String> {
     let request = request_value(args);
-    let rollback_request: AgentSessionRollbackToTurnRequest =
+    let mut rollback_request: AgentSessionRollbackToTurnRequest =
         serde_json::from_value(request.clone())
             .map_err(|error| format!("Invalid targeted Session rollback request: {error}"))?;
 
     openbitfun_agent_runtime::session_control::validate_session_id(&rollback_request.session_id)?;
-    require_complete_rollback_workspace(
-        request,
-        &rollback_request.workspace_path,
-        rollback_request.explicit_workspace_location(),
-    )
-    .await?;
-    ensure_session_workspace_runtime_ownership(state, request)?;
+    let workspace = if let Some(id) = rollback_request.workspace_id.as_deref() {
+        state
+            .workspace_service
+            .require_workspace(id)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        state
+            .workspace_service
+            .resolve_legacy_workspace_reference(
+                None,
+                &rollback_request.workspace_path,
+                rollback_request.remote_connection_id.as_deref(),
+                rollback_request.remote_ssh_host.as_deref(),
+            )
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Legacy rollback workspace cannot be resolved")?
+    };
+    require_complete_rollback_workspace(&workspace)?;
+    rollback_request.remote_connection_id = None;
+    rollback_request.remote_ssh_host = None;
+    rollback_request.workspace_id = Some(workspace.id);
+    rollback_request.workspace_path = workspace.root_path.to_string_lossy().into_owned();
+    let resolved_request = serde_json::to_value(&rollback_request).map_err(|e| e.to_string())?;
+    let request = &resolved_request;
+    ensure_session_workspace_runtime_ownership(state, request).await?;
     let outcome = state
         .agent_runtime
         .rollback_session_to_turn(rollback_request)
@@ -180,7 +210,7 @@ mod tests {
 
     #[async_trait::async_trait]
     impl LocalWorkspaceSnapshotPort for RecordingSnapshotPort {
-        async fn prepare_local_workspace(&self, _workspace_path: PathBuf) -> PortResult<()> {
+        async fn prepare_local_workspace(&self, _workspace_id: String) -> PortResult<()> {
             Ok(())
         }
 
@@ -217,77 +247,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn explicit_remote_snapshot_identity_returns_an_honest_unsupported_error() {
-        for request in [
-            json!({ "remoteConnectionId": "remote-1" }),
-            json!({ "remoteSshHost": "host-1" }),
-        ] {
-            let error = require_local_snapshot_workspace(&request, "local-looking-path")
-                .await
-                .expect_err("remote snapshot requests must not report no-op success");
-            assert_eq!(
-                error,
-                "Snapshot system not supported for remote workspace: local-looking-path"
-            );
-        }
-
-        let rollback_error = require_complete_rollback_workspace(
-            &json!({ "remoteConnectionId": "remote-1" }),
-            "/root/repos",
-            None,
-        )
-        .await
-        .expect_err("complete remote rollback must report missing snapshot coverage");
-        assert_eq!(
-            rollback_error,
-            "Complete rollback is not supported for remote workspaces because remote file snapshots are not recorded. No workspace files or session messages were changed: /root/repos"
-        );
-
-        let source = include_str!("snapshot.rs");
-        let rollback_source = &source[source
-            .find("pub(crate) async fn rollback_session_to_turn")
-            .expect("rollback handler must exist")..];
-        let remote_guard = rollback_source
-            .find("require_complete_rollback_workspace(")
-            .expect("rollback must have an explicit remote guard");
-        let runtime_call = rollback_source
-            .find(".rollback_session_to_turn(")
-            .expect("rollback must delegate to the Agent Session runtime");
-        assert!(remote_guard < runtime_call);
-    }
-
-    #[tokio::test]
-    async fn explicit_local_rollback_identity_wins_over_a_remote_path_collision() {
-        let workspace = tempfile::tempdir().expect("create local workspace");
-        let workspace_path = workspace.path().to_string_lossy().to_string();
-        let remote =
-            openbitfun_core::service::remote_ssh::workspace_state::init_remote_workspace_manager();
-        remote
-            .register_remote_workspace(
-                workspace_path.clone(),
-                "peer-rollback-path-collision".to_string(),
-                "Peer rollback collision test".to_string(),
-                "remote.example".to_string(),
+    async fn snapshot_kind_is_authoritative_without_transport_inference() {
+        use openbitfun_core::service::workspace::WorkspaceInfoRuntimeExt;
+        let directory = tempfile::tempdir().unwrap();
+        let mut workspace =
+            openbitfun_core::service::workspace::WorkspaceInfo::new_without_worktree(
+                directory.path().to_path_buf(),
+                Default::default(),
             )
-            .await;
-
-        require_complete_rollback_workspace(
-            &json!({ "workspaceId": "local_workspace-1" }),
-            &workspace_path,
-            Some(openbitfun_runtime_ports::AgentSessionWorkspaceLocation::Local),
-        )
-        .await
-        .expect("explicit local identity must disambiguate the registered remote path");
-
-        remote
-            .unregister_remote_workspace("peer-rollback-path-collision", &workspace_path)
-            .await;
+            .await
+            .unwrap();
+        workspace
+            .metadata
+            .insert("connectionId".into(), json!("stale-ssh"));
+        require_local_snapshot_workspace(&workspace).unwrap();
+        require_complete_rollback_workspace(&workspace).unwrap();
+        workspace.workspace_kind = super::WorkspaceKind::Remote;
+        workspace.metadata.clear();
+        assert!(require_local_snapshot_workspace(&workspace)
+            .unwrap_err()
+            .contains("not supported"));
+        assert!(require_complete_rollback_workspace(&workspace)
+            .unwrap_err()
+            .contains("remote file snapshots"));
     }
 
     #[tokio::test]
     async fn local_snapshot_adapter_calls_each_port_operation_once_with_typed_requests() {
         let port = RecordingSnapshotPort::default();
-        let workspace = PathBuf::from("workspace");
+        let workspace = "workspace-id".to_string();
 
         let files = local_snapshot_session_files(
             &port,
@@ -315,7 +303,7 @@ mod tests {
                 .expect("file request lock")
                 .as_ref()
                 .expect("file request")
-                .workspace_path,
+                .workspace_id,
             workspace
         );
         assert_eq!(

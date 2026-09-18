@@ -79,9 +79,12 @@ vi.mock('./common', () => ({
   }) => <section><h2>{title}</h2>{description}{extra}{children}</section>,
 }));
 
+// Hook import requests carry the workspace ID; the path is only displayed.
+const WORKSPACE_ID = 'workspace-1';
+
 vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({
   useCurrentWorkspace: () => ({
-    workspace: { workspaceKind: 'normal' },
+    workspace: { id: 'workspace-1', workspaceKind: 'normal', rootPath: 'D:/workspace/project' },
     workspacePath: 'D:/workspace/project',
   }),
 }));
@@ -192,7 +195,7 @@ describe('HooksConfig imported Hook management', () => {
     await flush();
 
     expect(getConfigMock).toHaveBeenCalledWith('app.hooks');
-    expect(getSnapshotMock).toHaveBeenCalledWith('D:/workspace/project', false);
+    expect(getSnapshotMock).toHaveBeenCalledWith(WORKSPACE_ID, false);
     expect(container.querySelector('h1')).toBeNull();
     expect(container.textContent).toContain('activation.title');
   });
@@ -248,7 +251,7 @@ describe('HooksConfig imported Hook management', () => {
     await flush();
 
     expect(getConfigMock).toHaveBeenCalledTimes(1);
-    expect(getSnapshotMock).toHaveBeenCalledWith('D:/workspace/project', false);
+    expect(getSnapshotMock).toHaveBeenCalledWith(WORKSPACE_ID, false);
     const review = Array.from(container.querySelectorAll('button'))
       .find((button) => button.textContent === 'imports.update')!;
     await act(async () => review.click());
@@ -263,7 +266,7 @@ describe('HooksConfig imported Hook management', () => {
       .find((button) => button.textContent === 'imports.confirmUpdate')!;
     await act(async () => confirm.click());
     await flush();
-    expect(applyImportMock).toHaveBeenCalledWith('D:/workspace/project', plan);
+    expect(applyImportMock).toHaveBeenCalledWith(WORKSPACE_ID, plan);
   });
 
   it('keeps a stale replacement plan open and never applies it implicitly', async () => {
@@ -319,7 +322,7 @@ describe('HooksConfig imported Hook management', () => {
     });
     await flush();
     expect(mutateImportMock).toHaveBeenCalledWith(
-      'D:/workspace/project',
+      WORKSPACE_ID,
       'sha256:revision-1',
       { kind: 'remove', importId: 'managed-1' },
     );

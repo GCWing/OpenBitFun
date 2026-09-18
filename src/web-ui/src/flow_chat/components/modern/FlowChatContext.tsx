@@ -29,6 +29,8 @@ export interface FlowChatContextValue {
   // Session info (scalars only — never put the whole session object here from
   // providers that update on every streaming flush).
   sessionId?: string;
+  /** Effective workspace ID of the session (session.workspaceId || session.config.workspaceId). */
+  workspaceId?: string;
   /** Effective workspace path of the session (session.workspacePath || session.config.workspacePath). */
   workspacePath?: string;
   /** Effective remote connection id of the session. */

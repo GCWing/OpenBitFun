@@ -10,8 +10,8 @@ describe('application-level activity batching', () => {
     const read = vi.fn().mockResolvedValue(undefined);
     const sync = new SessionActivitySync(read);
     for (let i = 0; i < 20; i++) sync.request(target(1));
-    sync.request({ ...target(2), remoteConnectionId: 'ssh-a', remoteSshHost: 'a' });
-    sync.request({ ...target(3), remoteConnectionId: 'ssh-b', remoteSshHost: 'b' });
+    sync.request({ ...target(2), workspaceId: 'remote-a' });
+    sync.request({ ...target(3), workspaceId: 'remote-b' });
     await vi.advanceTimersByTimeAsync(100);
     expect(read).toHaveBeenCalledTimes(3);
     expect(read.mock.calls.map(([batch]) => batch.length)).toEqual([1, 1, 1]);

@@ -2,7 +2,7 @@
 
 use crate::agentic::session::session_store_port::CoreSessionStorePort;
 use crate::service::workspace::{get_global_workspace_service, WorkspaceInfo, WorkspaceKind};
-use openbitfun_runtime_ports::{SessionStoragePathRequest, SessionStorePort};
+use openbitfun_runtime_ports::SessionStorePort;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -30,7 +30,16 @@ pub(super) async fn collect_local_session_storage_roots() -> Vec<LocalSessionSto
             continue;
         }
 
-        let session_storage_path = local_session_storage_dir_for_workspace(&ws).await;
+        // Storage is owned by the workspace ID. A workspace whose storage cannot
+        // be resolved is skipped instead of falling back to its execution root,
+        // which is never a session directory.
+        let Some(session_storage_path) = local_session_storage_dir_for_workspace(&ws).await else {
+            log::warn!(
+                "Skipping memory session root: storage is unavailable for workspace {}",
+                ws.id
+            );
+            continue;
+        };
         if session_storage_path.exists() && seen.insert(session_storage_path.clone()) {
             paths.push(LocalSessionStorageRoot {
                 workspace_path: ws.root_path.clone(),
@@ -46,17 +55,12 @@ fn workspace_is_local_memory_source(ws: &WorkspaceInfo) -> bool {
     ws.workspace_kind != WorkspaceKind::Remote
 }
 
-async fn local_session_storage_dir_for_workspace(ws: &WorkspaceInfo) -> PathBuf {
-    let path_str = ws.root_path.to_string_lossy().to_string();
+async fn local_session_storage_dir_for_workspace(ws: &WorkspaceInfo) -> Option<PathBuf> {
     CoreSessionStorePort::default()
-        .resolve_session_storage_path(SessionStoragePathRequest {
-            workspace_path: ws.root_path.clone(),
-            remote_connection_id: None,
-            remote_ssh_host: None,
-        })
+        .resolve_workspace_storage(&ws.id)
         .await
         .map(|resolution| resolution.effective_storage_path)
-        .unwrap_or_else(|_| PathBuf::from(path_str))
+        .ok()
 }
 
 #[cfg(test)]

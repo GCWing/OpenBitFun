@@ -4,19 +4,19 @@ use openbitfun_core::service::search::{
     workspace_search_runtime_available, WorkspaceSearchAutoIndexPriority,
 };
 use openbitfun_core::service::workspace::{WorkspaceInfo, WorkspaceKind};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
 
 pub fn spawn_workspace_background_warmup(state: &AppState, workspace_info: WorkspaceInfo) {
-    let workspace_path = state.workspace_path.clone();
+    let workspace_id = state.workspace_id.clone();
     let agent_registry = state.agent_registry.clone();
     let workspace_search_service = state.workspace_search_service.clone();
 
     tokio::spawn(async move {
         warm_workspace_background_services(
-            workspace_path,
+            workspace_id,
             agent_registry,
             workspace_search_service,
             workspace_info,
@@ -30,24 +30,21 @@ pub fn spawn_restored_workspace_auto_index(
     workspaces: Vec<WorkspaceInfo>,
     budget_roots: Vec<PathBuf>,
 ) {
-    let workspace_path = state.workspace_path.clone();
+    let workspace_id = state.workspace_id.clone();
     let workspace_search_service = state.workspace_search_service.clone();
     tokio::spawn(async move {
         if !workspace_search_runtime_available().await {
             return;
         }
 
-        let focused_path = workspace_path.read().await.clone();
-        let protected_roots = focused_path
-            .as_ref()
-            .filter(|path| {
-                workspaces.iter().any(|workspace| {
-                    workspace.workspace_kind != WorkspaceKind::Remote
-                        && workspace.root_path == **path
-                })
+        let focused_id = workspace_id.read().await.clone();
+        let protected_roots = workspaces
+            .iter()
+            .filter(|workspace| {
+                workspace.workspace_kind != WorkspaceKind::Remote
+                    && focused_id.as_deref() == Some(workspace.id.as_str())
             })
-            .cloned()
-            .into_iter()
+            .map(|workspace| workspace.root_path.clone())
             .collect();
         workspace_search_service
             .enforce_index_disk_budget(budget_roots, protected_roots)
@@ -55,7 +52,7 @@ pub fn spawn_restored_workspace_auto_index(
 
         if let Some(focused) = workspaces.iter().find(|workspace| {
             workspace.workspace_kind != WorkspaceKind::Remote
-                && focused_path.as_ref() == Some(&workspace.root_path)
+                && focused_id.as_deref() == Some(workspace.id.as_str())
         }) {
             workspace_search_service
                 .schedule_auto_index(
@@ -67,7 +64,7 @@ pub fn spawn_restored_workspace_auto_index(
 
         for workspace in workspaces {
             if workspace.workspace_kind == WorkspaceKind::Remote
-                || focused_path.as_ref() == Some(&workspace.root_path)
+                || focused_id.as_deref() == Some(workspace.id.as_str())
             {
                 continue;
             }
@@ -82,7 +79,7 @@ pub fn spawn_restored_workspace_auto_index(
 }
 
 async fn warm_workspace_background_services(
-    workspace_path: Arc<RwLock<Option<PathBuf>>>,
+    workspace_id: Arc<RwLock<Option<String>>>,
     agent_registry: Arc<openbitfun_core::agentic::agents::AgentRegistry>,
     workspace_search_service: Arc<openbitfun_core::service::search::WorkspaceSearchService>,
     workspace_info: WorkspaceInfo,
@@ -90,9 +87,11 @@ async fn warm_workspace_background_services(
     let started_at = Instant::now();
     let target_path = workspace_info.root_path.clone();
 
-    if is_workspace_active(&workspace_path, &target_path).await {
+    if is_workspace_active(&workspace_id, &workspace_info.id).await {
         let subagents_started_at = Instant::now();
-        agent_registry.load_custom_agents(Some(&target_path)).await;
+        agent_registry
+            .load_custom_agents(Some(&workspace_info.id))
+            .await;
         debug!(
             "Workspace custom agent warmup completed: path={}, elapsed_ms={}",
             target_path.display(),
@@ -101,13 +100,13 @@ async fn warm_workspace_background_services(
     }
 
     if workspace_info.workspace_kind != WorkspaceKind::Remote
-        && is_workspace_active(&workspace_path, &target_path).await
+        && is_workspace_active(&workspace_id, &workspace_info.id).await
         && workspace_search_runtime_available().await
     {
         let search_started_at = Instant::now();
         match workspace_search_service.open_repo(&target_path).await {
             Ok(_) => {
-                let still_active = is_workspace_active(&workspace_path, &target_path).await;
+                let still_active = is_workspace_active(&workspace_id, &workspace_info.id).await;
                 workspace_search_service
                     .schedule_auto_index(
                         target_path.clone(),
@@ -149,13 +148,10 @@ async fn warm_workspace_background_services(
     );
 }
 
-async fn is_workspace_active(
-    workspace_path: &Arc<RwLock<Option<PathBuf>>>,
-    target_path: &Path,
-) -> bool {
-    workspace_path
+async fn is_workspace_active(workspace_id: &Arc<RwLock<Option<String>>>, target_id: &str) -> bool {
+    workspace_id
         .read()
         .await
         .as_ref()
-        .is_some_and(|current| current == target_path)
+        .is_some_and(|current| current == target_id)
 }

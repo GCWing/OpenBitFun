@@ -1,5 +1,5 @@
 import { useSceneStore } from '@/app/stores/sceneStore';
-import { useContentResourceStore, contentResourceIdentity, mergeContentOpenIntent, resourceFilePath } from '@/app/workbench/contentResourceStore';
+import { useContentResourceStore, contentResourceIdentity, mergeContentOpenIntent } from '@/app/workbench/contentResourceStore';
 import { switchAgentCanvasWorkspace, useAgentCanvasStore, useGitCanvasStore } from '@/app/components/panels/content-canvas/stores';
 import type { EditorGroupId } from '@/app/components/panels/content-canvas/types';
 import type { SessionSceneTarget } from '@/app/components/SceneBar/types';
@@ -7,29 +7,28 @@ import { resolveSessionSceneWorkspace } from '@/app/services/sessionSceneTarget'
 import { expandSessionAuxPane } from '@/app/scenes/session/sessionPanelLayout';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import type { Session } from '@/flow_chat/types/flow-chat';
-import { sessionMatchesWorkspace } from '@/flow_chat/utils/workspaceScope';
-import { sessionProjectWorkspacePath } from '@/flow_chat/utils/sessionWorkspace';
+import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { getActiveSurfaceId, getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { PanelContent } from '@/app/components/panels/base/types';
 import type { ContentResourceScope, OpenContentOptions } from '@/shared/types/contentResource';
 
-export function captureContentScope(data?: { workspacePath?: string; remoteConnectionId?: string }): ContentResourceScope {
+export function captureContentScope(data?: { workspaceId?: string; workspacePath?: string; remoteConnectionId?: string }): ContentResourceScope {
   const state = workspaceManager.getState();
-  const current = state.currentWorkspace;
-  const candidates = [...state.openedWorkspaces.values()].filter(workspace =>
-    (!data?.workspacePath || resourceFilePath(workspace.rootPath, { surfaceId: '', remoteConnectionId: workspace.connectionId })
-      === resourceFilePath(data.workspacePath, { surfaceId: '', remoteConnectionId: workspace.connectionId }))
-    && (!data?.remoteConnectionId || workspace.connectionId === data.remoteConnectionId));
-  const workspace = candidates.find(candidate => candidate.id === current?.id)
-    ?? (candidates.length === 1 ? candidates[0] : undefined);
-  if (data?.workspacePath && candidates.length > 1 && !workspace) {
-    throw new Error('The file origin is ambiguous; specify its remote connection.');
+  const records = [...state.openedWorkspaces.values(), ...state.recentWorkspaces];
+  const workspace = data?.workspaceId
+    ? records.find(record => record.id === data.workspaceId)
+    : data?.workspacePath
+      // Temporary ingress for old tab data. Never prefer the active record when paths collide.
+      ? resolveLegacySessionWorkspace(data, records.filter((record, index) => records.findIndex(candidate => candidate.id === record.id) === index))
+      : state.currentWorkspace;
+  if ((data?.workspaceId || data?.workspacePath) && !workspace) {
+    throw new Error('Workspace identity is unavailable or ambiguous; select its workspace ID.');
   }
   return {
     surfaceId: getActiveSurfaceId(), workspaceId: workspace?.id,
-    workspacePath: data?.workspacePath ?? workspace?.rootPath,
-    remoteConnectionId: data?.remoteConnectionId ?? workspace?.connectionId,
+    workspacePath: workspace?.rootPath,
+    remoteConnectionId: workspace?.workspaceKind === 'remote' ? workspace.connectionId : undefined,
   };
 }
 
@@ -57,7 +56,7 @@ export function openCanvasContent(mode: 'agent' | 'git', input: PanelContent, op
   const content = { ...input,
     data: input.data !== null && typeof input.data === 'object' ? { ...input.data,
       ...(target.kind === 'file' ? { filePath: target.path } : {}),
-      workspacePath: scope.workspacePath, remoteConnectionId: scope.remoteConnectionId } : input.data,
+      workspaceId: scope.workspaceId, workspacePath: scope.workspacePath, remoteConnectionId: scope.remoteConnectionId } : input.data,
     metadata: { ...input.metadata, resourceScope: scope, contentResourceKey: key },
   };
   const store = (mode === 'git' ? useGitCanvasStore : useAgentCanvasStore).getState();
@@ -81,17 +80,9 @@ export function openCanvasContent(mode: 'agent' | 'git', input: PanelContent, op
 
 function sessionMatchesContentScope(session: Session, scope: ContentResourceScope): boolean {
   if (session.isTransient || session.sessionKind === 'subagent' || session.persistedStatus === 'archived') return false;
-  const workspaces = workspaceManager.getState().openedWorkspaces;
-  if (scope.workspaceId) {
-    const workspace = resolveSessionSceneWorkspace(session, workspaces.values());
-    return workspace?.id === scope.workspaceId
-      && (workspace.connectionId ?? '') === (scope.remoteConnectionId ?? '');
-  }
-  if (!scope.workspacePath) return !sessionProjectWorkspacePath(session);
-  return sessionMatchesWorkspace({ ...session,
-    remoteConnectionId: session.remoteConnectionId || session.config?.remoteConnectionId,
-    remoteSshHost: session.remoteSshHost || session.config?.remoteSshHost,
-  }, { id: '', rootPath: scope.workspacePath, connectionId: scope.remoteConnectionId });
+  if (!scope.workspaceId) return false;
+  return session.workspaceId === scope.workspaceId || session.config?.workspaceId === scope.workspaceId
+    || session.projectWorkspaceId === scope.workspaceId || session.config?.projectWorkspaceId === scope.workspaceId;
 }
 
 function preferredOpenSessionTarget(scope: ContentResourceScope): SessionSceneTarget | undefined {

@@ -86,24 +86,24 @@ export function resolveWorkspaceDisplayName(workspace: WorkspaceInfo): string {
 /**
  * Names the workspace a job runs in.
  *
- * Jobs outlive the workspace list — a workspace can be closed while its jobs
- * keep running — so this falls back to the stored path instead of implying the
- * job is gone.
+ * The job's `workspaceId` is the only identity that may select a workspace
+ * record (`CronAPI` upgrades pre-ID jobs before they reach this layer). Jobs
+ * outlive the workspace list — a workspace can be closed while its jobs keep
+ * running — so an unmatched job is labelled from its stored path instead of
+ * implying the job is gone; the path never picks another workspace.
  */
 export function resolveJobWorkspaceLabel(
   job: CronJob,
   workspaces: WorkspaceInfo[],
 ): string {
   const ref = job.target.workspace;
-  const normalizedJobPath = normalizePath(ref.workspacePath);
-
-  const matched = workspaces.find((workspace) => {
-    if (ref.workspaceId && workspace.id === ref.workspaceId) return true;
-    return normalizePath(workspace.rootPath) === normalizedJobPath;
-  });
+  const matched = ref.workspaceId
+    ? workspaces.find((workspace) => workspace.id === ref.workspaceId)
+    : undefined;
 
   if (matched) return resolveWorkspaceDisplayName(matched);
 
+  const normalizedJobPath = normalizePath(ref.workspacePath);
   const segments = normalizedJobPath.split('/').filter(Boolean);
   return segments[segments.length - 1] || ref.workspacePath;
 }

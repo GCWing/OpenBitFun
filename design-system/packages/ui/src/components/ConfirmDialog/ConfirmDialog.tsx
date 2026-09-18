@@ -157,6 +157,7 @@ export const ConfirmDialog = forwardRef<HTMLDivElement, ConfirmDialogProps>(
                       aria-hidden="true"
                       className={styles.icon}
                       data-openbitfun-component="confirm-dialog"
+                      data-openbitfun-icon-slot="true"
                       data-openbitfun-part="icon"
                       data-openbitfun-status={type === "error" ? "danger" : type}
                     >

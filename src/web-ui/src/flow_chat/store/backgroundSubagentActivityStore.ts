@@ -31,6 +31,7 @@ function isSameActivity(
     left.title === right.title &&
     left.agentType === right.agentType &&
     left.status === right.status &&
+    left.workspaceId === right.workspaceId &&
     left.workspacePath === right.workspacePath &&
     left.remoteConnectionId === right.remoteConnectionId &&
     left.remoteSshHost === right.remoteSshHost &&

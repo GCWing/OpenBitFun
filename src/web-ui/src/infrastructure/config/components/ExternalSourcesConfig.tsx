@@ -387,7 +387,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
   const [expandedEcosystems, setExpandedEcosystems] = useState<Set<string>>(() => new Set());
   const [resetPolicyConfirmation, setResetPolicyConfirmation] = useState<{
     requestScope: string;
-    workspacePath?: string;
+    workspaceId?: string;
     preferenceRevision: number;
   } | null>(null);
   const [agentChangeNotice, setAgentChangeNotice] = useState<AgentChangeNotice | null>(null);
@@ -530,7 +530,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       setRefreshing(true);
     }
     try {
-      const next = await externalSourcesAPI.getSnapshot(workspacePath, forceRefresh);
+      const next = await externalSourcesAPI.getSnapshot(workspace?.id, forceRefresh);
       if (!acceptReadSnapshot(next, scope, sequence)) return { status: 'ignored' };
       setError(null);
       return { status: 'accepted', snapshot: next };
@@ -552,7 +552,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
         }
       }
     }
-  }, [acceptReadSnapshot, requestScope, workspacePath]);
+  }, [acceptReadSnapshot, requestScope, workspace?.id]);
 
   useEffect(() => {
     setSnapshotState(null);
@@ -582,7 +582,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       window.removeEventListener('focus', refreshWhenActive);
       document.removeEventListener('visibilitychange', refreshWhenActive);
     };
-  }, [loadSnapshot, requestScope, workspacePath]);
+  }, [loadSnapshot, requestScope, workspacePath, workspace?.id]);
 
   useEffect(() => {
     if (!snapshot?.discoveryPending) return undefined;
@@ -806,13 +806,13 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     await runMutation(
       sourceKey,
       () => externalSourcesAPI.setSourceEnabled(
-        workspacePath,
+        workspace?.id,
         sourceKey,
         enabled,
         currentSnapshot.preferenceRevision ?? 0,
       ),
     );
-  }, [runMutation, workspacePath]);
+  }, [runMutation, workspace?.id]);
 
   const setSafeMode = useCallback(async (enabled: boolean) => {
     const currentSnapshot = snapshotRef.current;
@@ -820,7 +820,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     await runMutation(
       'external-safe-mode',
       () => externalSourcesAPI.setSafeMode(
-        workspacePath,
+        workspace?.id,
         enabled,
         currentSnapshot.control?.preferenceRevision ?? 0,
       ),
@@ -830,14 +830,14 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       'canSetSafeMode',
       'none',
     );
-  }, [runMutation, t, workspacePath]);
+  }, [runMutation, t, workspace?.id]);
 
   const chooseConflict = useCallback(async (conflictKey: string, candidateId: string) => {
     if (!snapshot) return;
     await runMutation(
       conflictKey,
       () => externalSourcesAPI.setConflictChoice(
-        workspacePath,
+        workspace?.id,
         conflictKey,
         candidateId,
         snapshot.preferenceRevision ?? 0,
@@ -847,7 +847,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       undefined,
       'canApproveRuntime',
     );
-  }, [runMutation, snapshot, workspacePath]);
+  }, [runMutation, snapshot, workspace?.id]);
 
   const decideToolTarget = useCallback(async (
     approvalKey: string,
@@ -858,7 +858,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     return runMutation(
       decisionKey,
       () => externalSourcesAPI.setToolTargetDecision(
-        workspacePath,
+        workspace?.id,
         approvalKey,
         decisionKey,
         approved,
@@ -869,14 +869,14 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       undefined,
       'canApproveRuntime',
     );
-  }, [runMutation, snapshot, workspacePath]);
+  }, [runMutation, snapshot, workspace?.id]);
 
   const chooseToolConflict = useCallback(async (conflictKey: string, candidateId: string) => {
     if (!snapshot) return;
     await runMutation(
       conflictKey,
       () => externalSourcesAPI.setToolConflictChoice(
-        workspacePath,
+        workspace?.id,
         conflictKey,
         candidateId,
         snapshot.preferenceRevision ?? 0,
@@ -886,7 +886,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       undefined,
       'canApproveRuntime',
     );
-  }, [runMutation, snapshot, workspacePath]);
+  }, [runMutation, snapshot, workspace?.id]);
 
   const decideAgent = useCallback(async (candidateId: string, decisionKey: string, approved: boolean) => {
     if (!snapshot) return false;
@@ -895,7 +895,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     const accepted = await runMutation(
       decisionKey,
       () => externalSourcesAPI.setSubagentActivation(
-        workspacePath,
+        workspace?.id,
         candidateId,
         approved,
         snapshot.subagentGeneration ?? 0,
@@ -909,7 +909,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     );
     if (accepted) await loadSnapshot(true, false);
     return accepted;
-  }, [loadSnapshot, runMutation, snapshot, t, workspacePath]);
+  }, [loadSnapshot, runMutation, snapshot, t, workspace?.id]);
 
   const setAgentModelBinding = useCallback(async (
     group: ExternalSubagentModelBindingGroup,
@@ -920,7 +920,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     const accepted = await runMutation(
       group.bindingKey,
       () => externalSourcesAPI.setSubagentModelBinding(
-        workspacePath,
+        workspace?.id,
         group.bindingKey,
         target,
         current.subagentGeneration ?? 0,
@@ -932,7 +932,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       'canApproveRuntime',
     );
     if (accepted) await loadSnapshot(true, false);
-  }, [loadSnapshot, runMutation, t, workspacePath]);
+  }, [loadSnapshot, runMutation, t, workspace?.id]);
 
   const chooseAgentConflict = useCallback(async (
     conflictKey: string,
@@ -945,7 +945,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     const accepted = await runMutation(
       conflictKey,
       () => externalSourcesAPI.chooseSubagentConflict(
-        workspacePath,
+        workspace?.id,
         conflictKey,
         candidateId,
         approveExternal,
@@ -958,7 +958,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       'canApproveRuntime',
     );
     if (accepted) await loadSnapshot(true, false);
-  }, [loadSnapshot, runMutation, snapshot, t, workspacePath]);
+  }, [loadSnapshot, runMutation, snapshot, t, workspace?.id]);
 
   const decideMcpServer = useCallback(async (
     candidateId: string,
@@ -969,7 +969,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     const accepted = await runMutation(
       decisionKey,
       () => externalSourcesAPI.setMcpServerDecision(
-        workspacePath,
+        workspace?.id,
         candidateId,
         decisionKey,
         approved,
@@ -983,7 +983,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     );
     if (accepted) await loadSnapshot(true, false);
     return accepted;
-  }, [loadSnapshot, runMutation, snapshot, t, workspacePath]);
+  }, [loadSnapshot, runMutation, snapshot, t, workspace?.id]);
 
   const chooseMcpConflict = useCallback(async (
     conflictKey: string,
@@ -994,7 +994,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     const accepted = await runMutation(
       conflictKey,
       () => externalSourcesAPI.chooseMcpConflict(
-        workspacePath,
+        workspace?.id,
         conflictKey,
         candidateId,
         approveExternal,
@@ -1008,7 +1008,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     );
     if (accepted) await loadSnapshot(true, false);
     return accepted;
-  }, [loadSnapshot, runMutation, snapshot, t, workspacePath]);
+  }, [loadSnapshot, runMutation, snapshot, t, workspace?.id]);
 
   const setToolTargetsEnabled = useCallback(async (enabled: boolean) => {
     const current = snapshotRef.current;
@@ -1025,7 +1025,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     await runMutation(
       'bulk-tools',
       () => externalSourcesAPI.setToolTargetsEnabled(
-        workspacePath,
+        workspace?.id,
         decisions,
         enabled,
         current.generation,
@@ -1036,7 +1036,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       t(enabled ? 'bulkActions.enabled' : 'bulkActions.disabled'),
       'canApproveRuntime',
     );
-  }, [runMutation, t, workspacePath]);
+  }, [runMutation, t, workspace?.id]);
 
   const setSubagentsEnabled = useCallback(async (enabled: boolean) => {
     const current = snapshotRef.current;
@@ -1047,7 +1047,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     const accepted = await runMutation(
       'bulk-subagents',
       () => externalSourcesAPI.setSubagentsEnabled(
-        workspacePath,
+        workspace?.id,
         decisions,
         enabled,
         current.subagentGeneration ?? 0,
@@ -1059,7 +1059,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       'canApproveRuntime',
     );
     if (accepted) await loadSnapshot(true, false);
-  }, [loadSnapshot, runMutation, t, workspacePath]);
+  }, [loadSnapshot, runMutation, t, workspace?.id]);
 
   const setMcpServersEnabled = useCallback(async (enabled: boolean) => {
     const current = snapshotRef.current;
@@ -1073,7 +1073,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     const accepted = await runMutation(
       'bulk-mcp',
       () => externalSourcesAPI.setMcpServersEnabled(
-        workspacePath,
+        workspace?.id,
         decisions,
         enabled,
         current.mcpGeneration ?? 0,
@@ -1085,7 +1085,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       'canApproveRuntime',
     );
     if (accepted) await loadSnapshot(true, false);
-  }, [loadSnapshot, runMutation, t, workspacePath]);
+  }, [loadSnapshot, runMutation, t, workspace?.id]);
 
   const isRemote = workspace?.workspaceKind === WorkspaceKind.Remote
     || Boolean(workspace?.connectionId);
@@ -1187,7 +1187,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     if (!snapshot) return false;
     return runMutation(
       `integration-policy:${policyScope}`,
-      () => externalSourcesAPI.updateIntegrationPolicy(workspacePath, {
+      () => externalSourcesAPI.updateIntegrationPolicy(workspace?.id, {
         expectedPreferenceRevision: snapshot.preferenceRevision ?? 0,
         scope: policyScope,
         change,
@@ -1200,7 +1200,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
         ? 'compatible_or_incompatible'
         : 'compatible',
     );
-  }, [policyScope, runMutation, snapshot, t, workspacePath]);
+  }, [policyScope, runMutation, snapshot, t, workspace?.id]);
 
   const toggleApplication = useCallback(async (
     application: ExternalApplicationView,
@@ -1240,13 +1240,13 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
 
   const resetIncompatiblePolicy = useCallback((confirmation: {
     requestScope: string;
-    workspacePath?: string;
+    workspaceId?: string;
     preferenceRevision: number;
   }) => {
     if (requestScope !== confirmation.requestScope) return Promise.resolve(false);
     return runMutation(
       'integration-policy:recovery',
-      () => externalSourcesAPI.updateIntegrationPolicy(confirmation.workspacePath, {
+      () => externalSourcesAPI.updateIntegrationPolicy(confirmation.workspaceId, {
         expectedPreferenceRevision: confirmation.preferenceRevision,
         scope: 'user',
         change: { operation: 'reset_incompatible_policy' },
@@ -1316,7 +1316,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
     setOperationStatus(null);
     setError(null);
     try {
-      await externalSourcesAPI.revealSourceLocation(workspacePath, sourceKey);
+      await externalSourcesAPI.revealSourceLocation(workspace?.id, sourceKey);
       if (requestScopeRef.current === scope) lastFailedMutationRef.current = null;
       return true;
     } catch (revealError) {
@@ -1335,7 +1335,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
       }
       return false;
     }
-  }, [requestScope, t, workspacePath]);
+  }, [requestScope, t, workspace?.id]);
 
   const renderPathLink = useCallback((location: string, sourceKey?: string) => {
     const display = abbreviatedLocation(location);
@@ -1768,7 +1768,7 @@ const ExternalSourcesConfig: React.FC<ExternalSourcesConfigProps> = ({
                       disabled={busyKey !== null || !hostCapabilities.canMutatePolicy}
                       onClick={() => setResetPolicyConfirmation({
                         requestScope,
-                        workspacePath,
+                        workspaceId: workspace?.id,
                         preferenceRevision: snapshot.preferenceRevision ?? 0,
                       })}
                     >

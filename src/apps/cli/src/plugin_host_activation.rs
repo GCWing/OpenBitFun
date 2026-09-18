@@ -1,28 +1,11 @@
-use std::path::PathBuf;
-
 use openbitfun_core::OpenBitFunResult;
 use openbitfun_runtime_ports::AgentSessionWorkspaceBinding;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PluginWorkspaceActivationTarget {
-    directory: PathBuf,
-    worktree: PathBuf,
-    project_id: Option<String>,
-}
-
-fn activation_target(
-    binding: &AgentSessionWorkspaceBinding,
-) -> Option<PluginWorkspaceActivationTarget> {
-    if binding.remote_connection_id.is_some() || binding.remote_ssh_host.is_some() {
-        return None;
+fn activation_target(binding: &AgentSessionWorkspaceBinding) -> Option<&str> {
+    match binding.workspace_kind.as_ref()? {
+        openbitfun_core::service::workspace::WorkspaceKind::Remote => None,
+        _ => binding.workspace_id.as_deref(),
     }
-
-    let workspace = PathBuf::from(&binding.workspace_path);
-    Some(PluginWorkspaceActivationTarget {
-        directory: workspace.clone(),
-        worktree: workspace,
-        project_id: binding.workspace_id.clone(),
-    })
 }
 
 pub(crate) async fn ensure_configured_plugin_execution_supported() -> OpenBitFunResult<bool> {
@@ -49,7 +32,7 @@ pub(crate) async fn ensure_plugin_workspace_ready(
     if let Err(error) = try_ensure_plugin_workspace_ready(binding).await {
         openbitfun_core::plugin_host::report_configured_plugin_activation_failure(
             "CLI workspace activation",
-            Some(std::path::Path::new(&binding.workspace_path)),
+            binding.workspace_id.as_deref(),
             error,
         )
         .await;
@@ -73,9 +56,7 @@ async fn try_ensure_plugin_workspace_ready(
 
     openbitfun_core::plugin_host::ensure_configured_plugin_instance(
         crate::PLUGIN_HOST_LAUNCH_POLICY,
-        target.directory,
-        target.worktree,
-        target.project_id,
+        target,
     )
     .await
     .map(|_| ())
@@ -83,12 +64,12 @@ async fn try_ensure_plugin_workspace_ready(
 
 #[cfg(test)]
 mod tests {
-    use super::{activation_target, PluginWorkspaceActivationTarget};
+    use super::activation_target;
     use openbitfun_runtime_ports::{AgentSessionWorkspaceBinding, SessionExecutionTarget};
-    use std::path::PathBuf;
-
     fn binding() -> AgentSessionWorkspaceBinding {
         AgentSessionWorkspaceBinding {
+            workspace_kind: Some(openbitfun_core::service::workspace::WorkspaceKind::Normal),
+            project_workspace_id: None,
             workspace_id: Some("workspace-1".to_string()),
             workspace_path: "C:/workspace/project".to_string(),
             project_workspace_path: Some("C:/workspace/project".to_string()),
@@ -100,21 +81,28 @@ mod tests {
 
     #[test]
     fn local_binding_maps_to_plugin_workspace_target() {
-        assert_eq!(
-            activation_target(&binding()),
-            Some(PluginWorkspaceActivationTarget {
-                directory: PathBuf::from("C:/workspace/project"),
-                worktree: PathBuf::from("C:/workspace/project"),
-                project_id: Some("workspace-1".to_string()),
-            })
-        );
+        assert_eq!(activation_target(&binding()), Some("workspace-1"));
     }
 
     #[test]
     fn remote_binding_skips_local_plugin_host() {
         let mut binding = binding();
-        binding.remote_connection_id = Some("remote-1".to_string());
+        binding.workspace_kind = Some(openbitfun_core::service::workspace::WorkspaceKind::Remote);
 
+        assert_eq!(activation_target(&binding), None);
+    }
+
+    #[test]
+    fn local_kind_ignores_stale_ssh_fields() {
+        let mut binding = binding();
+        binding.remote_connection_id = Some("stale-ssh-id".into());
+        assert_eq!(activation_target(&binding), Some("workspace-1"));
+    }
+
+    #[test]
+    fn unresolved_binding_cannot_activate_plugins() {
+        let mut binding = binding();
+        binding.workspace_kind = None;
         assert_eq!(activation_target(&binding), None);
     }
 

@@ -52,3 +52,6 @@ pub use worktree::{
     WorktreeError, WorktreeErrorCode, WorktreeLifecycle, WorktreeSessionSummary, WorktreeSettings,
     WorktreeSummary,
 };
+
+pub mod workspace;
+pub use workspace::WorkspaceKind;

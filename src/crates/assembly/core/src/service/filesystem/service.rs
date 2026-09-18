@@ -1,12 +1,11 @@
 use crate::infrastructure::{
     FileInfo, FileOperationOptions, FileReadResult, FileSearchOutcome, FileSearchProgressSink,
-    FileSearchResult, FileTreeNode, FileTreeStatistics, FileWriteResult,
+    FileSearchResult, FileTreeNode, FileWriteResult,
 };
 use crate::util::elapsed_ms_u64;
 use crate::util::errors::*;
 use log::debug;
 use openbitfun_services_core::filesystem::FileSystemService as BaseFileSystemService;
-use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -34,49 +33,27 @@ async fn read_remote_directory_contents(
     if let Some(connection_id) = explicit_connection_id {
         return Some(read_saved_directory_contents(path, connection_id).await);
     }
-    let remote_entry = if let Some(connection_id) = explicit_connection_id {
-        crate::service::remote_ssh::workspace_state::lookup_remote_connection_scoped(
-            path,
-            connection_id,
-        )
-        .await
-    } else {
-        crate::service::remote_ssh::workspace_state::lookup_remote_connection_with_hint(path, None)
-            .await
-    };
-    let entry = match remote_entry {
-        Some(entry) => entry,
-        None if explicit_connection_id.is_some() => {
-            return Some(Err(OpenBitFunError::service(format!(
-                "Remote workspace connection '{}' is unavailable or does not own path '{}'; local filesystem fallback was not attempted",
-                explicit_connection_id.unwrap_or_default(),
-                path
-            ))));
-        }
-        None => return None,
-    };
+    let connection_id = explicit_connection_id?;
 
     let Some(manager) = crate::service::remote_ssh::workspace_state::get_remote_workspace_manager()
     else {
-        return Some(Err(OpenBitFunError::service(
-            "Remote workspace manager is unavailable",
-        )));
+        return Some(Err(OpenBitFunError::service(format!(
+            "Remote workspace manager is unavailable for connection '{connection_id}'; local filesystem fallback was not attempted"
+        ))));
     };
     let Some(file_service) = manager.get_file_service().await else {
-        return Some(Err(OpenBitFunError::service(
-            "Remote file service is unavailable",
-        )));
+        return Some(Err(OpenBitFunError::service(format!(
+            "Remote file service is unavailable for connection '{connection_id}'; local filesystem fallback was not attempted"
+        ))));
     };
 
-    Some(
-        match file_service.read_dir(&entry.connection_id, path).await {
-            Ok(entries) => Ok(remote_directory_nodes(entries)),
-            Err(error) => Err(OpenBitFunError::service(format!(
-                "Failed to read remote directory: {}",
-                error
-            ))),
-        },
-    )
+    Some(match file_service.read_dir(connection_id, path).await {
+        Ok(entries) => Ok(remote_directory_nodes(entries)),
+        Err(error) => Err(OpenBitFunError::service(format!(
+            "Failed to read remote directory: {}",
+            error
+        ))),
+    })
 }
 
 #[cfg(feature = "remote-workspace")]
@@ -156,9 +133,7 @@ async fn read_saved_directory_with_provider(
 }
 
 /// Without the `remote-workspace` feature there is no SSH provider to route
-/// to. A request that carries a remote marker (an explicit connection id or a
-/// path owned by an opened workspace of kind `Remote`) is refused here so it
-/// never reaches the controller filesystem scanner below.
+/// to. An explicit remote target is refused before reaching the local scanner.
 #[cfg(not(feature = "remote-workspace"))]
 async fn read_remote_directory_contents(
     path: &str,
@@ -168,23 +143,15 @@ async fn read_remote_directory_contents(
     if preferred_remote_connection_id.is_some_and(|id| id.is_empty()) {
         return None;
     }
-    use crate::service::remote_ssh::workspace_state::{
-        is_remote_path, remote_workspace_not_compiled_message,
-    };
-
     let explicit_connection_id = preferred_remote_connection_id
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    if explicit_connection_id.is_some() || is_remote_path(path).await {
+    if explicit_connection_id.is_some() {
         return Some(Err(OpenBitFunError::NotImplemented(
-            remote_workspace_not_compiled_message(path),
+            format!("Remote workspaces are not compiled into this OpenBitFun host; refusing remote directory IO: {path}"),
         )));
     }
     None
-}
-
-async fn is_remote_path(path: &str) -> bool {
-    crate::service::remote_ssh::workspace_state::is_remote_path(path).await
 }
 
 /// Unified file system service
@@ -208,11 +175,12 @@ impl FileSystemService {
 
     /// Builds a file tree.
     pub async fn build_file_tree(&self, root_path: &str) -> OpenBitFunResult<Vec<FileTreeNode>> {
-        self.build_file_tree_with_remote_hint(root_path, None).await
+        self.build_file_tree_on_connection(root_path, None).await
     }
 
-    /// Same as [`Self::build_file_tree`], but disambiguates remote roots when `preferred_remote_connection_id` is set.
-    pub async fn build_file_tree_with_remote_hint(
+    /// Explicit provider IO. Workspace callers must first resolve their ID and use
+    /// the object kind to select local IO or its saved SSH connection. No path lookup.
+    pub async fn build_file_tree_on_connection(
         &self,
         root_path: &str,
         preferred_remote_connection_id: Option<&str>,
@@ -225,8 +193,8 @@ impl FileSystemService {
         let explicit_remote_scope = preferred_remote_connection_id
             .map(str::trim)
             .is_some_and(|value| !value.is_empty());
-        let tree = if explicit_remote_scope || is_remote_path(root_path).await {
-            self.get_directory_contents_with_remote_hint(root_path, preferred_remote_connection_id)
+        let tree = if explicit_remote_scope {
+            self.get_directory_contents_on_connection(root_path, preferred_remote_connection_id)
                 .await?
         } else {
             self.inner
@@ -253,29 +221,12 @@ impl FileSystemService {
     pub async fn scan_directory(&self, root_path: &str) -> OpenBitFunResult<DirectoryScanResult> {
         let start_time = std::time::Instant::now();
 
-        let (files, statistics) = if is_remote_path(root_path).await {
-            let nodes = self
-                .get_directory_contents_with_remote_hint(root_path, None)
-                .await?;
-            let stats = FileTreeStatistics {
-                total_files: nodes.iter().filter(|node| !node.is_directory).count(),
-                total_directories: nodes.iter().filter(|node| node.is_directory).count(),
-                total_size_bytes: 0,
-                max_depth_reached: 0,
-                file_type_counts: HashMap::new(),
-                large_files: Vec::new(),
-                symlinks_count: 0,
-                hidden_files_count: 0,
-            };
-            (nodes, stats)
-        } else {
-            let scan_result = self
-                .inner
-                .scan_directory(root_path)
-                .await
-                .map_err(map_filesystem_error)?;
-            (scan_result.files, scan_result.statistics)
-        };
+        let scan_result = self
+            .inner
+            .scan_directory(root_path)
+            .await
+            .map_err(map_filesystem_error)?;
+        let (files, statistics) = (scan_result.files, scan_result.statistics);
 
         let scan_time_ms = elapsed_ms_u64(start_time);
 
@@ -299,11 +250,10 @@ impl FileSystemService {
 
     /// Gets directory contents (shallow).
     pub async fn get_directory_contents(&self, path: &str) -> OpenBitFunResult<Vec<FileTreeNode>> {
-        self.get_directory_contents_with_remote_hint(path, None)
-            .await
+        self.get_directory_contents_on_connection(path, None).await
     }
 
-    pub async fn get_directory_contents_with_remote_hint(
+    pub async fn get_directory_contents_on_connection(
         &self,
         path: &str,
         preferred_remote_connection_id: Option<&str>,
@@ -632,10 +582,10 @@ mod remote_marker_tests {
 
         for result in [
             service
-                .get_directory_contents_with_remote_hint(&root, Some("ssh-remote-1"))
+                .get_directory_contents_on_connection(&root, Some("ssh-remote-1"))
                 .await,
             service
-                .build_file_tree_with_remote_hint(&root, Some("ssh-remote-1"))
+                .build_file_tree_on_connection(&root, Some("ssh-remote-1"))
                 .await,
         ] {
             let error = result.expect_err("remote-marked requests must fail closed");
@@ -676,7 +626,7 @@ mod remote_marker_tests {
         let root = temp.path().to_string_lossy().to_string();
 
         let entries = FileSystemService::default()
-            .get_directory_contents_with_remote_hint(&root, None)
+            .get_directory_contents_on_connection(&root, None)
             .await
             .expect("local directories stay readable");
         assert!(entries.iter().any(|entry| entry.name == local_name));
@@ -689,7 +639,7 @@ mod tests {
     use crate::service::remote_ssh::workspace_state::init_remote_workspace_manager;
 
     #[tokio::test]
-    async fn explicit_local_scope_does_not_follow_a_same_path_remote_workspace() {
+    async fn local_io_does_not_follow_a_same_path_remote_workspace() {
         let temp = tempfile::tempdir().expect("tempdir");
         let root = temp.path().to_string_lossy().to_string();
         openbitfun_services_core::filesystem::FileSystemService::default()
@@ -710,13 +660,43 @@ mod tests {
             .await;
         let service = FileSystemService::default();
         let nodes = service
-            .get_directory_contents_with_remote_hint(&root, Some(""))
+            .get_directory_contents_on_connection(&root, None)
             .await
             .unwrap();
         assert!(nodes.iter().any(|node| node.name == "local.txt"));
         manager
             .unregister_remote_workspace("same-path-other-runtime", &root)
             .await;
+    }
+
+    #[tokio::test]
+    async fn workspace_kind_selects_provider_despite_identical_paths_and_stale_metadata() {
+        use crate::service::workspace::{
+            WorkspaceInfo, WorkspaceInfoRuntimeExt, WorkspaceKind, WorkspaceOpenOptions,
+        };
+        let temp = tempfile::tempdir().unwrap();
+        let mut local = WorkspaceInfo::new_without_worktree(
+            temp.path().to_path_buf(),
+            WorkspaceOpenOptions::default(),
+        )
+        .await
+        .unwrap();
+        local.metadata.insert(
+            "connectionId".into(),
+            serde_json::json!("stale-ssh-profile"),
+        );
+        let mut remote = local.clone();
+        remote.id = "remote-workspace-id".into();
+        remote.workspace_kind = WorkspaceKind::Remote;
+        assert_eq!(local.root_path, remote.root_path);
+        assert_eq!(local.filesystem_connection_id().unwrap(), None);
+        assert_eq!(
+            remote.filesystem_connection_id().unwrap(),
+            Some("stale-ssh-profile")
+        );
+        remote.metadata.remove("connectionId");
+        assert!(remote.filesystem_connection_id().is_err());
+        assert_eq!(remote.workspace_kind, WorkspaceKind::Remote);
     }
 
     #[tokio::test]
@@ -735,7 +715,7 @@ mod tests {
             .await;
 
         let error = FileSystemService::default()
-            .get_directory_contents_with_remote_hint(&remote_root, Some(connection_id))
+            .get_directory_contents_on_connection(&remote_root, Some(connection_id))
             .await
             .expect_err("registered remote paths must not fall back to the local filesystem");
 
@@ -767,7 +747,7 @@ mod tests {
             .await;
 
         let error = FileSystemService::default()
-            .get_directory_contents_with_remote_hint(&remote_root, Some(requested_connection_id))
+            .get_directory_contents_on_connection(&remote_root, Some(requested_connection_id))
             .await
             .expect_err("an explicit remote scope must not read the controller filesystem");
 

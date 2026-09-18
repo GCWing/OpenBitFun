@@ -67,7 +67,11 @@ describe('numbered composer attachments', () => {
   });
   const dialog = () => document.querySelector<HTMLDivElement>('[role="dialog"][data-state="open"]');
   const click = (node: HTMLElement) => { act(() => node.click()); flushFrames(); };
-  const trigger = (number: number) => container.querySelector<HTMLButtonElement>(`button[aria-label="Annotation ${number}"]`)!;
+  const chip = () => container.querySelector<HTMLButtonElement>('[data-openbitfun-product-part="attachment"]')!;
+  const trigger = (number: number) => {
+    if (!document.querySelector('[data-openbitfun-product-part="details"]')) click(chip());
+    return document.querySelector<HTMLButtonElement>(`[data-openbitfun-product-part="details"] button[aria-label="Annotation ${number}"]`)!;
+  };
   const action = (key: string) => [...dialog()!.querySelectorAll('button')].find(button => button.textContent === key)!;
   const typeComment = (value: string) => act(() => {
     const textarea = dialog()!.querySelector('textarea')!;
@@ -92,18 +96,22 @@ describe('numbered composer attachments', () => {
     vi.unstubAllGlobals();
   });
 
-  it('shows images and individual annotations in one strip and removes only the chosen attachment', () => {
+  it('groups annotations in a capsule, previews on hover, and removes only the chosen detail', () => {
     act(() => root.render(<Composer />));
     const strip = container.querySelector('[data-openbitfun-part="imageStrip"]')!;
     expect(strip.querySelector('img')?.alt).toBe('Photo.png');
-    expect(strip.contains(trigger(1))).toBe(true);
-    expect(strip.contains(trigger(2))).toBe(true);
-    click(container.querySelector<HTMLButtonElement>('[aria-label="Remove Annotation 1"]')!);
+    expect(strip.contains(chip())).toBe(true);
+    expect(document.querySelector('[data-openbitfun-product-part="details"]')).toBeNull();
+    act(() => chip().dispatchEvent(new MouseEvent('mouseover', { bubbles: true })));
+    flushFrames();
+    expect(document.querySelector('[data-openbitfun-product-part="details"]')?.textContent).toContain(excerpt.fragments[0].text);
+    expect(document.querySelector('[data-openbitfun-product-part="details"]')?.textContent).toContain('First comment');
+    click(document.querySelector<HTMLButtonElement>('[aria-label="Remove Annotation 1"]')!);
     expect(callbacks.remove).toHaveBeenCalledWith('annotation-1');
     expect(trigger(1)).toBeNull();
-    expect(trigger(2).textContent).toBe('#2');
+    expect(trigger(2)).not.toBeNull();
     expect(strip.querySelector('img')).not.toBeNull();
-    expect(dialog()).toBeNull();
+    expect(document.querySelector('textarea')).toBeNull();
   });
 
   it('edits only the selected comment, keeps the number, and contains composer keyboard shortcuts', () => {
@@ -131,11 +139,27 @@ describe('numbered composer attachments', () => {
     act(() => textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })));
     expect(callbacks.update).toHaveBeenCalledExactlyOnceWith(excerpt.id, 'Revised');
     expect(dialog()).toBeNull();
-    expect(trigger(1).textContent).toBe('#1');
+    expect(trigger(1)).not.toBeNull();
     click(trigger(2));
     expect(dialog()!.querySelector('textarea')!.value).toBe('Second comment');
     click([...dialog()!.querySelectorAll('button')].find(button => button.textContent === 'selection.cancel')!);
     expect(callbacks.update).toHaveBeenCalledOnce();
+  });
+
+  it('opens details from keyboard focus, dismisses with Escape, and clears annotations without removing images', () => {
+    act(() => root.render(<Composer />));
+    act(() => chip().focus());
+    flushFrames();
+    expect(chip().getAttribute('aria-expanded')).toBe('true');
+    act(() => chip().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Annotation 1');
+    act(() => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(document.activeElement).toBe(chip());
+    expect(document.querySelector('[data-openbitfun-product-part="details"]')).toBeNull();
+    click(container.querySelector<HTMLButtonElement>('[aria-label="selection.remove"]')!);
+    expect(callbacks.remove.mock.calls).toEqual([['annotation-1'], ['annotation-2']]);
+    expect(chip()).toBeNull();
+    expect(container.querySelector('img')?.alt).toBe('Photo.png');
   });
 
   it('views sent source markers and message annotations without editor controls or write shortcuts', () => {
@@ -172,13 +196,14 @@ describe('numbered composer attachments', () => {
       <ChatInputAttachments contexts={[draft]} surfaceEpoch={getActiveSurfaceScope().epoch}
         onUpdate={callbacks.update} onRemove={callbacks.remove} />
     </>));
-    click(trigger(1));
+    click(container.querySelector<HTMLButtonElement>('button[aria-label="Annotation 1"]')!);
     expect(dialog()!.querySelector('[data-openbitfun-product-part="comment"]')!.textContent).toBe('First comment');
     expect(dialog()!.querySelector('textarea')).toBeNull();
     click(action('selection.locate'));
     expect(callbacks.locate).toHaveBeenCalledExactlyOnceWith(excerpt, expect.any(Function));
     expect(useContextStore.getState().contexts).toEqual([draft]);
     click(container.querySelector<HTMLButtonElement>('[data-openbitfun-product-part="attachment"]')!);
+    click(trigger(1));
     expect(dialog()!.querySelector('textarea')!.value).toBe('Unsent draft revision');
     typeComment('Continue editing draft');
     click(action('selection.save'));
@@ -187,7 +212,7 @@ describe('numbered composer attachments', () => {
 
   it('shows only the source quote and locate action for a sent annotation without a comment', () => {
     act(() => root.render(<ConversationExcerptPreview excerpt={{ ...excerpt, comment: undefined }} />));
-    click(trigger(1));
+    click(container.querySelector<HTMLButtonElement>('button[aria-label="Annotation 1"]')!);
     expect(dialog()!.querySelector('textarea, input, [data-openbitfun-product-part="comment"]')).toBeNull();
     expect(dialog()!.querySelector('[data-openbitfun-product-part="quote"]')!.textContent).toBe(excerpt.fragments[0].text);
     expect(action('selection.locate')).toBeDefined();
@@ -207,6 +232,7 @@ describe('numbered composer attachments', () => {
     expect(useContextStore.getState().contexts).toEqual([{ ...excerpt, comment: 'From the source' }]);
     expect(sessionComposerStore.getState().getDraft('main').contexts).toEqual([{ ...excerpt, comment: 'From the source' }]);
     click(attachment());
+    click(trigger(1));
     expect(dialog()!.querySelector('textarea')!.value).toBe('From the source');
     expect([...dialog()!.querySelectorAll('button')].map(button => button.textContent)).toEqual(actions);
     typeComment('From the attachment');

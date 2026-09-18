@@ -709,6 +709,7 @@ impl StreamProcessor {
                 ToolEventData::Failed {
                     params: None,
                     identity,
+                    error_detail: None,
                     error: reason.clone(),
                     duration_ms: None,
                     queue_wait_ms: None,

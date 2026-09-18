@@ -7,9 +7,7 @@ use crate::agentic::tools::ToolPathOperation;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
 use serde_json::{json, Value};
-use tool_runtime::fs::edit_file::{
-    apply_edit_to_content, edit_success_message, is_edit_content_guardrail_error,
-};
+use tool_runtime::fs::edit_file::{apply_edit_to_content, edit_success_message, EditContentError};
 
 pub struct FileEditTool;
 
@@ -39,12 +37,18 @@ impl FileEditTool {
         Self
     }
 
-    fn guidance_failure(message: String) -> ValidationResult {
+    fn content_failure(error: EditContentError) -> ValidationResult {
+        let detail = error.detail();
         ValidationResult {
             result: false,
-            message: Some(file_tool_guidance_message(message)),
+            message: Some(if detail.is_some() {
+                file_tool_guidance_message(error.to_string())
+            } else {
+                error.to_string()
+            }),
             error_code: Some(400),
-            meta: Some(json!({ "failure_kind": "guidance" })),
+            meta: detail
+                .map(|detail| json!({ "failure_kind": "guidance", "error_detail": detail })),
         }
     }
 
@@ -188,12 +192,7 @@ impl Tool for FileEditTool {
             };
         }
         if old_string == new_string {
-            return ValidationResult {
-                result: false,
-                message: Some("new_string must be different from old_string".to_string()),
-                error_code: Some(400),
-                meta: None,
-            };
+            return Self::content_failure(EditContentError::no_change());
         }
 
         if let Some(ctx) = context {
@@ -236,16 +235,7 @@ impl Tool for FileEditTool {
             if let Err(error) =
                 apply_edit_to_content(&file_content, old_string, new_string, replace_all)
             {
-                if is_edit_content_guardrail_error(&error) {
-                    return Self::guidance_failure(error);
-                }
-
-                return ValidationResult {
-                    result: false,
-                    message: Some(error),
-                    error_code: Some(400),
-                    meta: None,
-                };
+                return Self::content_failure(error);
             }
         }
 
@@ -315,10 +305,13 @@ impl Tool for FileEditTool {
         let content = Self::read_current_file_content(context, &resolved).await?;
         let edit_result = apply_edit_to_content(&content, old_string, new_string, replace_all)
             .map_err(|error| {
-                if is_edit_content_guardrail_error(&error) {
-                    OpenBitFunError::tool(file_tool_guidance_message(error))
+                if let Some(detail) = error.detail() {
+                    OpenBitFunError::ClassifiedTool {
+                        message: file_tool_guidance_message(error.to_string()),
+                        detail,
+                    }
                 } else {
-                    OpenBitFunError::tool(error)
+                    OpenBitFunError::tool(error.to_string())
                 }
             })?;
         file_system
@@ -363,6 +356,28 @@ mod tests {
     use super::{FileEditTool, EDIT_TOOL_PROMPT};
     use crate::agentic::tools::framework::Tool;
     use serde_json::{json, Value};
+
+    #[tokio::test]
+    async fn equal_strings_are_guidance_but_missing_inputs_remain_errors() {
+        let tool = FileEditTool::new();
+        let result = tool
+            .validate_input(
+                &json!({"file_path":"a.txt", "old_string":"same", "new_string":"same"}),
+                None,
+            )
+            .await;
+        assert!(!result.result);
+        assert_eq!(
+            result.meta.unwrap()["error_detail"]["code"],
+            "edit_no_change"
+        );
+        assert!(result.message.unwrap().starts_with("[guidance] "));
+        let result = tool
+            .validate_input(&json!({"file_path":"a.txt", "old_string":"same"}), None)
+            .await;
+        assert!(!result.result);
+        assert!(result.meta.is_none());
+    }
 
     #[test]
     fn edit_tool_schema_describes_exact_copy_from_read() {

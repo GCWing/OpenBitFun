@@ -92,7 +92,11 @@ describe('SessionList target initialization ownership', () => {
       sessions: [],
       has_more: false,
     });
-    const createSession = vi.fn().mockResolvedValue('session-b');
+    const createSession = vi.fn().mockResolvedValue({
+      session_id: 'session-b',
+      workspace_id: 'assistant-b',
+      workspace_path: '/assistant-b',
+    });
     const manager = {
       get controlTargetEpoch() { return epoch; },
       onControlTargetChange: (listener: () => void) => {
@@ -142,6 +146,7 @@ describe('SessionList target initialization ownership', () => {
       resp: 'workspace_info',
       has_workspace: true,
       workspace_kind: 'assistant',
+      workspace_id: 'assistant-b',
       path: '/assistant-b',
       project_name: 'Assistant B',
     });
@@ -155,11 +160,12 @@ describe('SessionList target initialization ownership', () => {
     await act(async () => { createClaw?.click(); });
     await flushPromises();
 
+    // The assistant workspace ID scopes the command; the path is the legacy projection.
     expect(createSession).toHaveBeenCalledWith(
       'claw',
       undefined,
       '/assistant-b',
-      undefined,
+      { workspaceId: 'assistant-b' },
     );
     expect(onSelectSession).toHaveBeenCalledWith(
       'session-b',

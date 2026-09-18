@@ -13,6 +13,7 @@ import { monacoInitManager } from '../services/MonacoInitManager';
 import { getMonacoRuntime, monacoApi } from '../services/monacoRuntime';
 import { monacoModelManager } from '../services/MonacoModelManager';
 import { useEditorDocument } from '../services/EditorDocument';
+import { standaloneEditorFileAccess, type EditorFileAccess } from '../services/editorFileAccess';
 import { applyModelIndentation, readModelIndentation, setModelIndentation, type Indentation } from '../services/ModelIndentation';
 import { activeEditTargetService, createMonacoEditTarget } from '../services/ActiveEditTargetService';
 import { monacoAppearanceAdapter } from '@/infrastructure/appearance/adapters/MonacoAppearanceAdapter';
@@ -74,7 +75,9 @@ export interface CodeEditorProps {
   initialContent?: string;
   /** Show the editor breadcrumb header. */
   showBreadcrumb?: boolean;
-  /** Workspace path */
+  /** Owning workspace ID for editors rendered without an EditorDocument. */
+  workspaceId?: string;
+  /** Workspace root (IO projection only; never identity). */
   workspacePath?: string;
   /** File name */
   fileName?: string;
@@ -169,6 +172,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   filePath: rawFilePath,
   initialContent,
   showBreadcrumb = true,
+  workspaceId,
   workspacePath,
   fileName,
   language = 'plaintext',
@@ -201,7 +205,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     return rawFilePath;
   }, [rawFilePath, documentSession]);
   const modelKey = documentSession?.modelKey ?? filePath;
-  const documentFiles = documentSession?.files;
+  const standaloneFiles = useMemo(() => standaloneEditorFileAccess(workspaceId), [workspaceId]);
+  const documentFiles: EditorFileAccess = documentSession?.files ?? standaloneFiles;
   const documentInvoke = documentSession?.invoke;
 
   const { t } = useI18n('tools');
@@ -1385,7 +1390,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
 
   const fetchFileMetadata = useCallback(async () => {
     if (isMemoryContent) return null;
-    const workspaceAPI = documentFiles ?? (await import('@/infrastructure/api')).workspaceAPI;
+    const workspaceAPI = documentFiles;
     return workspaceAPI.getFileMetadata(filePath);
   }, [documentFiles, filePath, isMemoryContent]);
 
@@ -1394,7 +1399,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     setEncoding(newEncoding);
     if (!filePath) return;
     try {
-      const workspaceAPI = documentFiles ?? (await import('@/infrastructure/api')).workspaceAPI;
+      const workspaceAPI = documentFiles;
       const content = await workspaceAPI.readFileContent(filePath, newEncoding);
       updateLargeFileMode(content);
       setContent(content);
@@ -1517,7 +1522,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     isLoadingContentRef.current = true;
 
     try {
-      const workspaceAPI = documentFiles ?? (await import('@/infrastructure/api')).workspaceAPI;
+      const workspaceAPI = documentFiles;
 
       const fileContent = await workspaceAPI.readFileContent(filePath);
       reportFileMissingFromDisk(false);
@@ -1620,7 +1625,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     setError(null);
 
     try {
-      const workspaceAPI = documentFiles ?? (await import('@/infrastructure/api')).workspaceAPI;
+      const workspaceAPI = documentFiles;
 
       const fileInfoPre = await fetchFileMetadata();
       if (isFileMissingFromMetadata(fileInfoPre)) {
@@ -1834,7 +1839,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         });
       }
 
-      const workspaceAPI = documentFiles ?? (await import('@/infrastructure/api')).workspaceAPI;
+      const workspaceAPI = documentFiles;
       const editorBuffer = modelRef.current?.getValue();
       if (
         bufferBeforeRead !== undefined &&
@@ -2068,7 +2073,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       }
 
       try {
-        const workspaceAPI = documentSession?.files ?? (await import('@/infrastructure/api')).workspaceAPI;
+        const workspaceAPI = documentFiles;
         const bufferBeforeRead = modelRef.current?.getValue();
         try {
           const hashRes: any = await (documentSession?.invoke ?? api.invoke.bind(api))('get_file_editor_sync_hash', {
@@ -2174,7 +2179,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
-  }, [applyDiskSnapshotToEditor, fetchFileMetadata, monacoReady, filePath, isMemoryContent, isActiveTab, documentSession, t, workspacePath]);
+  }, [applyDiskSnapshotToEditor, documentFiles, fetchFileMetadata, monacoReady, filePath, isMemoryContent, isActiveTab, documentSession, t, workspacePath]);
 
   useEffect(() => {
     userLanguageOverrideRef.current = false;

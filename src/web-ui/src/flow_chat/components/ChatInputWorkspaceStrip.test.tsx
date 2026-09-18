@@ -161,7 +161,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('uses cached git state without passive refresh while historical restore is pending', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="D:/workspace/OpenBitFun"
           workspaceLabel="OpenBitFun"
           deferPassiveGitRefresh
@@ -170,7 +170,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     });
 
     expect(mocks.useGitState).toHaveBeenCalledWith(expect.objectContaining({
-      repositoryPath: 'D:/workspace/OpenBitFun',
+      repositoryPath: { workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/OpenBitFun' },
       layers: ['basic'],
       isActive: false,
       refreshOnMount: false,
@@ -182,7 +182,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('keeps passive git refresh enabled for normal sessions', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="D:/workspace/OpenBitFun"
           workspaceLabel="OpenBitFun"
         />
@@ -190,7 +190,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     });
 
     expect(mocks.useGitState).toHaveBeenCalledWith(expect.objectContaining({
-      repositoryPath: 'D:/workspace/OpenBitFun',
+      repositoryPath: { workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/OpenBitFun' },
       isActive: true,
       refreshOnMount: true,
       refreshOnActive: false,
@@ -200,7 +200,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('keeps the workspace an inert fact when there is nothing to switch to', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="D:/workspace/OpenBitFun"
           workspaceLabel="OpenBitFun"
         />
@@ -217,7 +217,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('opens the branch picker from the ordinary workspace branch chip', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="D:/workspace/OpenBitFun"
           workspaceLabel="OpenBitFun"
         />
@@ -228,7 +228,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
       '[data-testid="chat-input-branch-trigger"]',
     );
     expect(trigger).not.toBeNull();
-    expect(trigger?.getAttribute('aria-haspopup')).toBe('listbox');
+    expect(trigger?.getAttribute('aria-haspopup')).toBe('dialog');
     expect(trigger?.getAttribute('aria-expanded')).toBe('false');
 
     await act(async () => {
@@ -283,7 +283,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
 
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="D:/workspace/OpenBitFun"
           workspaceLabel="OpenBitFun"
         />
@@ -334,7 +334,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('splits the situation from the contract for the next turn', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="D:/workspace/OpenBitFun"
           workspaceLabel="OpenBitFun"
           worktreeControl={{ enabled: false, locked: false, onChange: vi.fn() }}
@@ -378,7 +378,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChange = vi.fn();
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{ mode: 'ask', onChange }}
@@ -416,7 +416,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChangeForNextTurn = vi.fn();
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{
@@ -471,7 +471,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChangeForNextTurn = vi.fn();
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{
@@ -522,7 +522,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChangeForNextTurn = vi.fn();
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{
@@ -562,7 +562,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('opens the one-off level on click or Right Arrow, never on hover', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{
@@ -612,7 +612,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('keeps the mode descriptions out of the row and in the accessible name', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{ mode: 'ask', onChange: vi.fn(), onChangeForNextTurn: vi.fn() }}
@@ -638,7 +638,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('marks the armed one-off mode and omits the affordance without a handler', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{
@@ -682,7 +682,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     // Surfaces without a one-off handler (dispatch, ACP) keep the plain rows.
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{ mode: 'ask', onChange: vi.fn() }}
@@ -702,7 +702,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('separates the session checkmark from an armed one-off override', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{
@@ -753,7 +753,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onResetToDefault = vi.fn();
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{
@@ -794,7 +794,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onOpenDefaultSettings = vi.fn();
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{
@@ -835,7 +835,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('hides the override affordances when the session follows the default', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath=""
           workspaceLabel=""
           permissionControl={{
@@ -867,7 +867,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('shows ACP ownership without exposing native permission choices', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="D:/workspace/OpenBitFun"
           workspaceLabel="OpenBitFun"
           permissionControl={{ mode: 'acp' }}
@@ -887,7 +887,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     // remaining controls cannot drift sideways between sessions.
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="D:/workspace/OpenBitFun"
           workspaceLabel="OpenBitFun"
           permissionControl={{ mode: 'acp' }}
@@ -904,7 +904,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
 
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="D:/workspace/OpenBitFun"
           workspaceLabel="OpenBitFun"
           permissionControl={{ mode: 'acp' }}
@@ -924,7 +924,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChange = vi.fn();
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/repo"
           workspaceLabel="repo"
           permissionControl={{
@@ -961,7 +961,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChange = vi.fn(async () => undefined);
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/repo"
           workspaceLabel="repo"
           worktreeControl={{ enabled: false, locked: false, onChange }}
@@ -984,7 +984,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChange = vi.fn();
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/repo"
           workspaceLabel="repo"
           worktreeControl={{ enabled: false, locked: false, onChange }}
@@ -1005,7 +1005,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('shows an armed worktree as checked before it is materialized', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/repo"
           workspaceLabel="repo"
           worktreeControl={{ enabled: true, locked: false, onChange: vi.fn() }}
@@ -1022,7 +1022,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChange = vi.fn(async () => undefined);
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/worktrees/wt-1"
           workspaceLabel="wt-1"
           executionTarget={{
@@ -1053,7 +1053,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChange = vi.fn(async () => undefined);
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/repo"
           workspaceLabel="repo"
           worktreeControl={{ enabled: false, locked: true, onChange }}
@@ -1074,7 +1074,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChange = vi.fn(async () => undefined);
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/repo"
           workspaceLabel="repo"
           worktreeControl={{ enabled: false, locked: false, onChange }}
@@ -1085,7 +1085,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
 
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/worktrees/wt-1"
           workspaceLabel="repo"
           executionTarget={{
@@ -1105,7 +1105,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('omits the toggle when the session cannot host a worktree', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/repo"
           workspaceLabel="repo"
         />
@@ -1119,7 +1119,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
     const onChange = vi.fn();
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/repo"
           workspaceLabel="repo"
           worktreeControl={{ enabled: false, locked: false, onChange }}
@@ -1155,7 +1155,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
   it('shows the dispatched branch instead of the source branch once dispatch is locked', async () => {
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/repo"
           workspaceLabel="repo"
           worktreeControl={{
@@ -1193,7 +1193,7 @@ describe('ChatInputWorkspaceStrip git refresh behavior', () => {
 
     await act(async () => {
       root.render(
-        <ChatInputWorkspaceStrip
+        <ChatInputWorkspaceStrip workspaceId="workspace-1"
           repositoryPath="/plain-folder"
           workspaceLabel="plain-folder"
           worktreeControl={{ enabled: false, locked: false, onChange: vi.fn() }}

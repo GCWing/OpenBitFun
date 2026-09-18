@@ -34,6 +34,7 @@ export interface ExplorerSnapshot {
 }
 
 export interface ExplorerControllerConfig extends FileSystemOptions {
+  workspaceId?: string;
   rootPath?: string;
   remoteConnectionId?: string;
   autoLoad?: boolean;
@@ -41,12 +42,14 @@ export interface ExplorerControllerConfig extends FileSystemOptions {
 }
 
 export interface ExplorerChildrenRequest {
+  workspaceId?: string;
   path: string;
   remoteConnectionId?: string;
   options?: FileSystemOptions;
 }
 
 export interface ExplorerWatchOptions {
+  workspaceId?: string;
   recursive?: boolean;
 }
 

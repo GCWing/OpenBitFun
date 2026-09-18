@@ -64,7 +64,7 @@ export const PeerDirectoryBrowser: React.FC<PeerDirectoryBrowserProps> = ({
       const path = requestedPath || (await systemAPI.getSystemInfo()).homeDir;
       if (seq !== loadSeqRef.current) return;
       if (!path) throw new Error(t('peerDirectoryPicker.homeUnavailable'));
-      const children = await workspaceAPI.getDirectoryChildren(path);
+      const children = await workspaceAPI.getDirectoryChildren(path, '');
       if (seq !== loadSeqRef.current) {
         return;
       }

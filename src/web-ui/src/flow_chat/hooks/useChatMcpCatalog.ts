@@ -18,8 +18,8 @@ export function useChatMcpCatalog({ enabled, surfaceEpoch, ...request }: ChatMcp
   enabled: boolean;
   surfaceEpoch: number;
 }) {
-  const { modeId, workspacePath, remoteConnectionId } = request;
-  const key = JSON.stringify([surfaceEpoch, modeId, workspacePath ?? null, remoteConnectionId ?? null]);
+  const { modeId, workspaceId, workspaceKind } = request;
+  const key = JSON.stringify([surfaceEpoch, modeId, workspaceId ?? null, workspaceKind ?? null]);
   const [snapshot, setSnapshot] = useState<Snapshot>();
   const [revision, setRevision] = useState(0);
   const requestId = useRef(0);
@@ -29,7 +29,7 @@ export function useChatMcpCatalog({ enabled, surfaceEpoch, ...request }: ChatMcp
     const id = ++requestId.current;
     let cancelled = false;
     setSnapshot({ key, loading: true, failed: false });
-    void getChatMcpCatalog({ modeId, workspacePath, remoteConnectionId })
+    void getChatMcpCatalog({ modeId, workspaceId, workspaceKind })
       .then(catalog => {
         if (!cancelled && id === requestId.current) setSnapshot({ key, catalog, loading: false, failed: false });
       })
@@ -43,7 +43,7 @@ export function useChatMcpCatalog({ enabled, surfaceEpoch, ...request }: ChatMcp
         }
       });
     return () => { cancelled = true; };
-  }, [enabled, key, modeId, workspacePath, remoteConnectionId, revision]);
+  }, [enabled, key, modeId, workspaceId, workspaceKind, revision]);
 
   const current = snapshot?.key === key && enabled ? snapshot : undefined;
   return {

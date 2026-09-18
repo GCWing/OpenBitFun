@@ -85,14 +85,14 @@ describe('requestGitRepositoryTrust', () => {
     confirmWarningMock.mockResolvedValue(true);
     trustRepositoryMock.mockResolvedValue(grantedOutcome());
 
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(true);
-    expect(trustRepositoryMock).toHaveBeenCalledWith(REPOSITORY_PATH);
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(true);
+    expect(trustRepositoryMock).toHaveBeenCalledWith({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH });
   });
 
   it('writes nothing when the user declines', async () => {
     confirmWarningMock.mockResolvedValue(false);
 
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(false);
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(false);
     expect(trustRepositoryMock).not.toHaveBeenCalled();
   });
 
@@ -105,8 +105,8 @@ describe('requestGitRepositoryTrust', () => {
     );
     trustRepositoryMock.mockResolvedValue(grantedOutcome());
 
-    const first = requestGitRepositoryTrust(REPOSITORY_PATH);
-    const second = requestGitRepositoryTrust(REPOSITORY_PATH);
+    const first = requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH });
+    const second = requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH });
     resolveConfirm(true);
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
@@ -117,8 +117,8 @@ describe('requestGitRepositoryTrust', () => {
   it('does not ask again in the quiet period after a decline', async () => {
     confirmWarningMock.mockResolvedValue(false);
 
-    await requestGitRepositoryTrust(REPOSITORY_PATH);
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(false);
+    await requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH });
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(false);
 
     expect(confirmWarningMock).toHaveBeenCalledTimes(1);
   });
@@ -127,8 +127,8 @@ describe('requestGitRepositoryTrust', () => {
     confirmWarningMock.mockResolvedValue(true);
     trustRepositoryMock.mockRejectedValue(new Error('config is read-only'));
 
-    await requestGitRepositoryTrust(REPOSITORY_PATH);
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(false);
+    await requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH });
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(false);
 
     expect(confirmWarningMock).toHaveBeenCalledTimes(1);
     expect(trustRepositoryMock).toHaveBeenCalledTimes(1);
@@ -141,12 +141,12 @@ describe('requestGitRepositoryTrust', () => {
     confirmWarningMock.mockResolvedValue(true);
     trustRepositoryMock.mockRejectedValueOnce(new Error('config is read-only'));
 
-    await requestGitRepositoryTrust(REPOSITORY_PATH);
+    await requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH });
     expect(confirmWarningMock).toHaveBeenCalledTimes(1);
 
     trustRepositoryMock.mockResolvedValueOnce(grantedOutcome());
     await expect(
-      requestGitRepositoryTrust(REPOSITORY_PATH, { userInitiated: true }),
+      requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH }, { userInitiated: true }),
     ).resolves.toBe(true);
     expect(confirmWarningMock).toHaveBeenCalledTimes(2);
   });
@@ -154,8 +154,8 @@ describe('requestGitRepositoryTrust', () => {
   it('still absorbs the automatic burst that follows a user request', async () => {
     confirmWarningMock.mockResolvedValue(false);
 
-    await requestGitRepositoryTrust(REPOSITORY_PATH, { userInitiated: true });
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(false);
+    await requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH }, { userInitiated: true });
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(false);
 
     expect(confirmWarningMock).toHaveBeenCalledTimes(1);
   });
@@ -169,8 +169,8 @@ describe('requestGitRepositoryTrust', () => {
     );
     trustRepositoryMock.mockResolvedValue(grantedOutcome());
 
-    const first = requestGitRepositoryTrust('D:/workspace/project/OpenBitFun');
-    const second = requestGitRepositoryTrust('d:\\workspace\\project\\OpenBitFun');
+    const first = requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: 'D:/workspace/project/OpenBitFun' });
+    const second = requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: 'd:\\workspace\\project\\OpenBitFun' });
     resolveConfirm(true);
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
@@ -189,8 +189,8 @@ describe('requestGitRepositoryTrust', () => {
     );
     trustRepositoryMock.mockResolvedValue(grantedOutcome());
 
-    const first = requestGitRepositoryTrust('D:/Workspace/Project/OpenBitFun');
-    const second = requestGitRepositoryTrust('d:/workspace/project/openbitfun');
+    const first = requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: 'D:/Workspace/Project/OpenBitFun' });
+    const second = requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: 'd:/workspace/project/openbitfun' });
     resolveConfirm(true);
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
@@ -208,8 +208,8 @@ describe('requestGitRepositoryTrust', () => {
     );
     trustRepositoryMock.mockResolvedValue(grantedOutcome());
 
-    const first = requestGitRepositoryTrust('\\\\Build01\\Shared\\OpenBitFun');
-    const second = requestGitRepositoryTrust('//build01/shared/openbitfun');
+    const first = requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: '\\\\Build01\\Shared\\OpenBitFun' });
+    const second = requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: '//build01/shared/openbitfun' });
     resolveConfirm(true);
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
@@ -227,8 +227,8 @@ describe('requestGitRepositoryTrust', () => {
     );
     trustRepositoryMock.mockResolvedValue(grantedOutcome());
 
-    const first = requestGitRepositoryTrust('/srv/shared/repo');
-    const second = requestGitRepositoryTrust('/srv/shared/repo/');
+    const first = requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: '/srv/shared/repo' });
+    const second = requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: '/srv/shared/repo/' });
     resolveConfirm(true);
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
@@ -238,8 +238,8 @@ describe('requestGitRepositoryTrust', () => {
   it('keeps case-sensitive POSIX paths apart', async () => {
     confirmWarningMock.mockResolvedValue(false);
 
-    await requestGitRepositoryTrust('/srv/Repo');
-    await requestGitRepositoryTrust('/srv/repo');
+    await requestGitRepositoryTrust({ workspaceId: '/srv/Repo', repositoryPath: '/srv/Repo' });
+    await requestGitRepositoryTrust({ workspaceId: '/srv/repo', repositoryPath: '/srv/repo' });
 
     expect(confirmWarningMock).toHaveBeenCalledTimes(2);
   });
@@ -255,7 +255,7 @@ describe('requestGitRepositoryTrust', () => {
       manualCommand: `git config --global --add safe.directory "${REPOSITORY_PATH}"`,
     });
 
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(false);
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(false);
     expect(warningMock).toHaveBeenCalledTimes(1);
     expect(warningMock.mock.calls[0][0]).toContain('trust.unavailableWithCommand');
     expect(warningMock.mock.calls[0][0]).toContain('safe.directory');
@@ -265,7 +265,7 @@ describe('requestGitRepositoryTrust', () => {
     confirmWarningMock.mockResolvedValue(true);
     trustRepositoryMock.mockRejectedValue(new Error('config is read-only'));
 
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(false);
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(false);
     expect(warningMock).toHaveBeenCalledTimes(1);
   });
 
@@ -284,8 +284,8 @@ describe('requestGitRepositoryTrust', () => {
       manualCommand: `git config --global --add safe.directory "${REPOSITORY_PATH}"`,
     });
 
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(false);
-    expect(getRepositoryTrustMock).toHaveBeenCalledWith(REPOSITORY_PATH);
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(false);
+    expect(getRepositoryTrustMock).toHaveBeenCalledWith({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH });
     expect(warningMock.mock.calls[0][0]).toContain('trust.unavailableWithCommand');
     expect(warningMock.mock.calls[0][0]).toContain('safe.directory');
   });
@@ -305,7 +305,7 @@ describe('requestGitRepositoryTrust', () => {
       manualCommand: null,
     });
 
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(true);
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(true);
     expect(warningMock).not.toHaveBeenCalled();
     expect(successMock).toHaveBeenCalledTimes(1);
     expect(successMock.mock.calls[0][0]).toContain('trust.alreadyTrusted');
@@ -323,10 +323,10 @@ describe('requestGitRepositoryTrust', () => {
       manualCommand: null,
     });
 
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(true);
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(true);
 
     trustRepositoryMock.mockResolvedValueOnce(grantedOutcome());
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(true);
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(true);
     expect(confirmWarningMock).toHaveBeenCalledTimes(2);
   });
 
@@ -335,7 +335,7 @@ describe('requestGitRepositoryTrust', () => {
     trustRepositoryMock.mockRejectedValue(new Error('unknown command'));
     getRepositoryTrustMock.mockRejectedValue(new Error('unknown command'));
 
-    await expect(requestGitRepositoryTrust(REPOSITORY_PATH)).resolves.toBe(false);
+    await expect(requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe(false);
     expect(warningMock).toHaveBeenCalledTimes(1);
     expect(warningMock.mock.calls[0][0]).toContain('trust.unavailable');
   });
@@ -350,7 +350,7 @@ describe('withGitRepositoryTrustRecovery', () => {
       .mockRejectedValueOnce(untrustedError())
       .mockResolvedValueOnce('status');
 
-    await expect(withGitRepositoryTrustRecovery(operation)).resolves.toBe('status');
+    await expect(withGitRepositoryTrustRecovery(operation, { workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe('status');
     expect(operation).toHaveBeenCalledTimes(2);
   });
 
@@ -359,7 +359,7 @@ describe('withGitRepositoryTrustRecovery', () => {
     const error = untrustedError();
     const operation = vi.fn().mockRejectedValue(error);
 
-    await expect(withGitRepositoryTrustRecovery(operation)).rejects.toBe(error);
+    await expect(withGitRepositoryTrustRecovery(operation, { workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).rejects.toBe(error);
     expect(operation).toHaveBeenCalledTimes(1);
   });
 
@@ -369,7 +369,7 @@ describe('withGitRepositoryTrustRecovery', () => {
     const error = untrustedError();
     const operation = vi.fn().mockRejectedValue(error);
 
-    await expect(withGitRepositoryTrustRecovery(operation)).rejects.toBe(error);
+    await expect(withGitRepositoryTrustRecovery(operation, { workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).rejects.toBe(error);
     expect(operation).toHaveBeenCalledTimes(2);
   });
 
@@ -378,7 +378,7 @@ describe('withGitRepositoryTrustRecovery', () => {
   // trust the folder "when prompted".
   it('still prompts a user-initiated recovery during the quiet period', async () => {
     confirmWarningMock.mockResolvedValue(false);
-    await requestGitRepositoryTrust(REPOSITORY_PATH);
+    await requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH });
     expect(confirmWarningMock).toHaveBeenCalledTimes(1);
 
     confirmWarningMock.mockResolvedValue(true);
@@ -389,19 +389,19 @@ describe('withGitRepositoryTrustRecovery', () => {
       .mockResolvedValueOnce('status');
 
     await expect(
-      withGitRepositoryTrustRecovery(operation, { userInitiated: true }),
+      withGitRepositoryTrustRecovery(operation, { workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH }, { userInitiated: true }),
     ).resolves.toBe('status');
     expect(confirmWarningMock).toHaveBeenCalledTimes(2);
   });
 
   it('stays quiet for an automatic recovery during the quiet period', async () => {
     confirmWarningMock.mockResolvedValue(false);
-    await requestGitRepositoryTrust(REPOSITORY_PATH);
+    await requestGitRepositoryTrust({ workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH });
 
     const error = untrustedError();
     const operation = vi.fn().mockRejectedValue(error);
 
-    await expect(withGitRepositoryTrustRecovery(operation)).rejects.toBe(error);
+    await expect(withGitRepositoryTrustRecovery(operation, { workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).rejects.toBe(error);
     expect(confirmWarningMock).toHaveBeenCalledTimes(1);
   });
 
@@ -421,7 +421,7 @@ describe('withGitRepositoryTrustRecovery', () => {
       .mockRejectedValueOnce(untrustedError())
       .mockResolvedValueOnce('status');
 
-    await expect(withGitRepositoryTrustRecovery(operation)).resolves.toBe('status');
+    await expect(withGitRepositoryTrustRecovery(operation, { workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).resolves.toBe('status');
     expect(operation).toHaveBeenCalledTimes(2);
   });
 
@@ -429,7 +429,7 @@ describe('withGitRepositoryTrustRecovery', () => {
     const error = new Error('not a git repository');
     const operation = vi.fn().mockRejectedValue(error);
 
-    await expect(withGitRepositoryTrustRecovery(operation)).rejects.toBe(error);
+    await expect(withGitRepositoryTrustRecovery(operation, { workspaceId: 'workspace-1', repositoryPath: REPOSITORY_PATH })).rejects.toBe(error);
     expect(operation).toHaveBeenCalledTimes(1);
     expect(confirmWarningMock).not.toHaveBeenCalled();
   });

@@ -203,10 +203,8 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     setIsDirectoryLoading(true);
     setDirectoryLoadError(false);
     try {
-      const children = await workspaceAPI.getDirectoryChildren(
-        dirPath || workspacePath,
-        remoteConnectionId,
-      );
+      if (!workspaceId) throw new Error('Workspace ID is required to browse context files');
+      const children = await workspaceAPI.explorerGetChildren(workspaceId, dirPath || workspacePath);
       const items: FileItem[] = children
         .filter((entry: ExplorerNodeDto) => {
           const name = entry.name || '';
@@ -238,7 +236,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     } finally {
       if (requestId === directoryLoadRequestIdRef.current) setIsDirectoryLoading(false);
     }
-  }, [workspacePath, remoteConnectionId, getRelativePath]);
+  }, [workspaceId, workspacePath, getRelativePath]);
 
   const enterDirectory = useCallback((item: FileItem) => {
     if (!item.isDirectory) return;
@@ -295,14 +293,14 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   }, [isOpen, view]);
 
   useEffect(() => {
-    if (!isOpen || !workspacePath) {
+    if (!isOpen || !workspaceId) {
       workspaceReferenceRequestIdRef.current += 1;
       setWorkspaceReferences([]);
       return;
     }
     const requestId = ++workspaceReferenceRequestIdRef.current;
     void externalSourcesAPI
-      .getWorkspaceReferences(workspacePath, workspaceId)
+      .getWorkspaceReferences(workspaceId)
       .then(snapshot => {
         if (requestId === workspaceReferenceRequestIdRef.current) {
           setWorkspaceReferences(snapshot.references);
@@ -331,14 +329,14 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     controller: AbortController,
     requestId: number,
   ) => {
-    if (!workspacePath) {
+    if (!workspaceId) {
       setResults([]);
       setIsFileSearchLoading(false);
       return;
     }
     try {
       await workspaceAPI.searchFilenamesOnlyStreamDetailed(
-        workspacePath,
+        workspaceId,
         query,
         false,
         false,
@@ -357,7 +355,6 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
           },
         },
         controller.signal,
-        remoteConnectionId,
       );
     } catch (error) {
       if (!(error instanceof DOMException && error.name === 'AbortError')) {
@@ -370,7 +367,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
         setIsFileSearchLoading(false);
       }
     }
-  }, [workspacePath, remoteConnectionId, getRelativePath]);
+  }, [workspaceId, getRelativePath]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -642,6 +639,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
         type: 'session-reference',
         sessionId: session.sessionId,
         sessionName: session.sessionName,
+        workspaceId: session.workspaceId,
         workspacePath: session.workspacePath,
         remoteConnectionId: session.remoteConnectionId,
         remoteSshHost: session.remoteSshHost,

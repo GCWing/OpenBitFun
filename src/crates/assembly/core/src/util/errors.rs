@@ -34,6 +34,12 @@ pub enum OpenBitFunError {
     #[error("Tool error: {0}")]
     Tool(String),
 
+    #[error("{message}")]
+    ClassifiedTool {
+        message: String,
+        detail: openbitfun_core_types::errors::ToolErrorDetail,
+    },
+
     #[error("AI client error: {0}")]
     AIClient(String),
 
@@ -138,6 +144,12 @@ where
 }
 
 impl OpenBitFunError {
+    pub fn tool_error_detail(&self) -> Option<&openbitfun_core_types::errors::ToolErrorDetail> {
+        match self {
+            Self::ClassifiedTool { detail, .. } => Some(detail),
+            _ => None,
+        }
+    }
     pub fn service<T: Into<String>>(msg: T) -> Self {
         Self::Service(msg.into())
     }

@@ -1,5 +1,5 @@
 import { WorkspaceCatalog, mergeLegacyWorkspaces } from './WorkspaceCatalog';
-import { AssistantEntry, RecentWorkspaceEntry, RemoteSession } from '../model/RemoteModels';
+import { AssistantEntry, RecentWorkspaceEntry, RemoteSession, RemoteWorkspaceIdentity } from '../model/RemoteModels';
 import { AccountDeviceDirectorySource } from './AccountDeviceDirectory';
 import {
   CONCURRENT_WORKSPACE_LISTINGS,
@@ -55,7 +55,7 @@ export class DeviceDirectoryCoordinator {
     const groups = await mapInConcurrentBatches(
       workspaces,
       (entry: RecentWorkspaceEntry): Promise<RemoteSession[]> => {
-        return this.safeSessionsForWorkspace(deviceId, entry.path, entry.remoteConnectionId, entry.remoteSshHost);
+        return this.safeSessionsForWorkspace(deviceId, entry);
       },
       this.concurrency
     );
@@ -63,16 +63,16 @@ export class DeviceDirectoryCoordinator {
   }
 
   /** One explicit workspace listing; used by the lazy sidebar disclosure. */
-  async loadWorkspaceSessions(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<RemoteSession[]> {
-    return stampRemoteSessionsWorkspace(await this.directory.listSessions(deviceId, path, remoteConnectionId, remoteSshHost), path, remoteConnectionId, remoteSshHost);
+  async loadWorkspaceSessions(deviceId: string, workspace: RemoteWorkspaceIdentity): Promise<RemoteSession[]> {
+    return stampRemoteSessionsWorkspace(await this.directory.listSessions(deviceId, workspace), workspace);
   }
 
-  private async safeSessionsForWorkspace(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<RemoteSession[]> {
+  private async safeSessionsForWorkspace(deviceId: string, workspace: RemoteWorkspaceIdentity): Promise<RemoteSession[]> {
     try {
-      return await this.loadWorkspaceSessions(deviceId, path, remoteConnectionId, remoteSshHost);
+      return await this.loadWorkspaceSessions(deviceId, workspace);
     } catch (err) {
       // One unreadable workspace is not a reason to lose the other twenty.
-      RemoteLogger.warn(`load workspace sessions failed device=${deviceId} path=${path}: ${String(err)}`);
+      RemoteLogger.warn(`load workspace sessions failed device=${deviceId} workspace=${workspace.workspaceId || ''} path=${workspace.path}: ${String(err)}`);
       return [];
     }
   }

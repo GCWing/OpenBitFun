@@ -48,6 +48,8 @@ pub struct WorkspaceIdentityDto {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceWorktreeInfoDto {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_workspace_id: Option<String>,
     pub path: String,
     pub branch: Option<String>,
     pub main_repo_path: String,
@@ -181,6 +183,7 @@ impl WorkspaceWorktreeInfoDto {
             path: info.path.clone(),
             branch: info.branch.clone(),
             main_repo_path: info.main_repo_path.clone(),
+            main_workspace_id: info.main_workspace_id.clone(),
             is_main: info.is_main,
         }
     }

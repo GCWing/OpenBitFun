@@ -166,7 +166,7 @@ export const TabGroup = forwardRef<HTMLDivElement, TabGroupProps>(function TabGr
               type="button"
             >
               {hasIcon && (
-                <span aria-hidden="true" className={styles.icon} data-openbitfun-part="icon">
+                <span aria-hidden="true" className={styles.icon} data-openbitfun-icon-slot="true" data-openbitfun-part="icon">
                   {item.icon}
                 </span>
               )}

@@ -35,3 +35,15 @@
     }
   }
 }
+
+@layer openbitfun.components {
+  /*
+   * Public icon slots own the visual weight of default Lucide glyphs as well
+   * as their size and color. Match only Lucide's default stroke attribute so
+   * reviewed fill icons and intentionally custom line artwork remain intact.
+   */
+  [data-openbitfun-icon-slot="true"] > :where(svg.lucide[stroke-width="2"]) {
+    color: inherit;
+    stroke-width: 1.6;
+  }
+}

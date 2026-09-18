@@ -16,35 +16,35 @@ describe('session metadata startup scheduling', () => {
 
   it('chooses the startup gate for each initial metadata load path', () => {
     expect(getInitialSessionMetadataLoadMode({
-      hasWorkspacePath: false,
+      hasWorkspace: false,
       isActiveWorkspace: true,
       isVisible: true,
       startupOverlayHandedOff: false,
     })).toBe('skip');
 
     expect(getInitialSessionMetadataLoadMode({
-      hasWorkspacePath: true,
+      hasWorkspace: true,
       isActiveWorkspace: true,
       isVisible: true,
       startupOverlayHandedOff: false,
     })).toBe('immediate');
 
     expect(getInitialSessionMetadataLoadMode({
-      hasWorkspacePath: true,
+      hasWorkspace: true,
       isActiveWorkspace: false,
       isVisible: true,
       startupOverlayHandedOff: false,
     })).toBe('after-startup-signal');
 
     expect(getInitialSessionMetadataLoadMode({
-      hasWorkspacePath: true,
+      hasWorkspace: true,
       isActiveWorkspace: false,
       isVisible: true,
       startupOverlayHandedOff: true,
     })).toBe('after-startup-paint');
 
     expect(getInitialSessionMetadataLoadMode({
-      hasWorkspacePath: true,
+      hasWorkspace: true,
       isActiveWorkspace: false,
       isVisible: false,
       startupOverlayHandedOff: true,

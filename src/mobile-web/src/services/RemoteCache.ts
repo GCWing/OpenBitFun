@@ -174,10 +174,14 @@ export const remoteCache = {
         key: scope.key,
         accountId: scope.accountId,
         deviceId: scope.deviceId,
+        // The stored identity carries the workspace ID when the listing had
+        // one; older records without it stay readable and resolve through the
+        // legacy compatibility helper on read.
         sessions: sortSessions(mergeWorkspaceSessions(
           existing?.sessions ?? [],
           sessions,
-          options.workspacePath ? {
+          options.workspacePath || options.workspaceIdentity?.workspaceId ? {
+            workspace_id: options.workspaceIdentity?.workspaceId,
             path: options.workspacePath,
             remote_connection_id: options.workspaceIdentity?.remoteConnectionId,
             remote_ssh_host: options.workspaceIdentity?.remoteSshHost,

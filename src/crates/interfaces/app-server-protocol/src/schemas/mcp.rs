@@ -24,6 +24,10 @@ macro_rules! unit_response {
 #[cfg_attr(feature = "rpc", request(method = "mcp/list", response = ListMcpServersResponse))]
 #[serde(rename_all = "camelCase")]
 pub struct ListMcpServersRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only reference.
+    #[serde(default)]
     pub workspace_path: String,
 }
 
@@ -78,6 +82,10 @@ unit_response!(DeleteMcpServerResponse);
 #[cfg_attr(feature = "rpc", request(method = "mcp/externalDecision", response = ExternalMcpDecisionResponse))]
 #[serde(rename_all = "camelCase")]
 pub struct ExternalMcpDecisionRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only reference.
+    #[serde(default)]
     pub workspace_path: String,
     pub candidate_id: String,
     pub decision_key: String,
@@ -93,6 +101,10 @@ unit_response!(ExternalMcpDecisionResponse);
 #[cfg_attr(feature = "rpc", request(method = "mcp/conflictChoice", response = McpConflictChoiceResponse))]
 #[serde(rename_all = "camelCase")]
 pub struct McpConflictChoiceRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only reference.
+    #[serde(default)]
     pub workspace_path: String,
     pub conflict_key: String,
     pub candidate_id: String,

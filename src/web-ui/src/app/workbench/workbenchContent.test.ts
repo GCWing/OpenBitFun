@@ -23,7 +23,7 @@ import { workspaceManager } from '@/infrastructure/services/business/workspaceMa
 import type { WorkspaceInfo } from '@/shared/types';
 
 vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
-  workspaceManager: { getState: vi.fn(() => ({ currentWorkspace: { id: 'project', rootPath: '/project' },
+  workspaceManager: { getState: vi.fn(() => ({ currentWorkspace: { id: 'project', rootPath: '/project' }, recentWorkspaces: [],
     openedWorkspaces: new Map([['project', { id: 'project', rootPath: '/project' }]]) })) },
 }));
 
@@ -176,7 +176,7 @@ describe('workbench content navigation', () => {
   it.each(['local', 'peer'])('uses the matching SSH workspace tab on the %s surface', surfaceId => {
     activateSurface(surfaceId);
     const workspaces = workspaceManager.getState();
-    const sshWorkspace = { id: 'ssh-project', rootPath: '/srv/project', connectionId: 'ssh-a' } as WorkspaceInfo;
+    const sshWorkspace = { id: 'ssh-project', rootPath: '/srv/project', connectionId: 'ssh-a', workspaceKind: 'remote' } as WorkspaceInfo;
     vi.mocked(workspaceManager.getState).mockReturnValue({ ...workspaces,
       currentWorkspace: sshWorkspace, openedWorkspaces: new Map([[sshWorkspace.id, sshWorkspace]]) });
     try {
@@ -189,14 +189,14 @@ describe('workbench content navigation', () => {
       expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content.metadata?.resourceScope).toEqual({
         surfaceId, workspaceId: sshWorkspace.id, workspacePath: sshWorkspace.rootPath, remoteConnectionId: 'ssh-a',
       });
-      fileTabManager.openFile({ filePath: 'b.ts', workspacePath: sshWorkspace.rootPath, remoteConnectionId: 'ssh-b' });
-      expect(useSceneStore.getState().activeTabId).toMatch(/^content:/);
+      expect(() => fileTabManager.openFile({ filePath: 'b.ts', workspacePath: sshWorkspace.rootPath, remoteConnectionId: 'ssh-b' })).toThrow('Workspace identity');
+      expect(useSceneStore.getState().activeTabId).toBe(getSessionSceneTabId(target));
       expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
     } finally { vi.mocked(workspaceManager.getState).mockReturnValue(workspaces); }
   });
 
-  it('resolves a legacy worktree session through its owning project before routing', () => {
-    const target = openSession('worktree-session', { workspaceId: undefined, workspacePath: '/worktrees/a',
+  it('routes an upgraded worktree session through its owning project ID', () => {
+    const target = openSession('worktree-session', { workspaceId: 'worktree-id', projectWorkspaceId: 'project', workspacePath: '/worktrees/a',
       projectWorkspacePath: '/project' });
     fileTabManager.openFile({ filePath: '/project/a.ts', workspacePath: '/project' });
     expect(useSceneStore.getState().activeTabId).toBe(getSessionSceneTabId(target));
@@ -265,9 +265,10 @@ describe('workbench content navigation', () => {
     { workspacePath: '/project', remoteConnectionId: 'ssh-other' },
   ])('does not route a different workspace or filesystem into the selected session: %j', origin => {
     openSession();
-    fileTabManager.openFile({ filePath: 'a.ts', ...origin });
+    const selected = useSceneStore.getState().activeTabId;
+    expect(() => fileTabManager.openFile({ filePath: 'a.ts', ...origin })).toThrow('Workspace identity');
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(0);
-    expect(useSceneStore.getState().activeTabId).toMatch(/^content:/);
+    expect(useSceneStore.getState().activeTabId).toBe(selected);
     expect(appManager.getState().layout.rightPanelCollapsed).toBe(true);
   });
 
@@ -471,7 +472,7 @@ describe('workbench content navigation', () => {
     fileTabManager.openFile({ filePath: '/project/a.ts' });
     const tab = useSceneStore.getState().openTabs[0];
     activateSurface('peer');
-    globalEventBus.emit('workspace:file-renamed', { surfaceId: 'local', oldPath: '/project/a.ts', newPath: '/project/b.ts' });
+    globalEventBus.emit('workspace:file-renamed', { surfaceId: 'local', workspaceId: 'project', oldPath: '/project/a.ts', newPath: '/project/b.ts' });
     expect(useContentResourceStore.getState().resources[tab.contentId!].target).toEqual({ kind: 'file', path: '/project/b.ts' });
   });
   it('detaches regular terminals on tab close and reconciles explicit renames and destruction', async () => {

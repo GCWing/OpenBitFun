@@ -7,7 +7,7 @@ import {
   showSessionUsageModalReport,
 } from '../components/usage/sessionUsageModalState';
 import type { Session } from '../types/flow-chat';
-import { sessionProjectWorkspacePath } from '../utils/sessionWorkspace';
+import { requireSessionWorkspaceId } from '../utils/sessionWorkspace';
 import { i18nService } from '@/infrastructure/i18n';
 import {
   formatCacheHitRate,
@@ -60,8 +60,8 @@ export async function runUsageReportCommand(
     return { shown: false, reason: 'missing_workspace' };
   }
 
-  const projectWorkspacePath = sessionProjectWorkspacePath(params.session);
-  if (!projectWorkspacePath) {
+  const workspaceId = params.session.workspaceId || params.session.config.workspaceId;
+  if (!workspaceId) {
     notificationService.error(params.noWorkspaceMessage);
     return { shown: false, reason: 'missing_workspace' };
   }
@@ -75,9 +75,7 @@ export async function runUsageReportCommand(
       ? await params.fetchReport()
       : await sessionAPI.getSessionUsageReport({
         sessionId: params.session.sessionId,
-        workspacePath: projectWorkspacePath,
-        remoteConnectionId: params.session.remoteConnectionId,
-        remoteSshHost: params.session.remoteSshHost,
+        workspaceId: requireSessionWorkspaceId(params.session),
         includeHiddenSubagents: true,
       });
     const report = enrichUsageReportModelIdentity(rawReport, params.session);

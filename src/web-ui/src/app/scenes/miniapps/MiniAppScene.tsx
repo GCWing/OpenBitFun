@@ -1,6 +1,6 @@
 /**
  * MiniAppScene — standalone scene tab for a single MiniApp.
- * Mounts MiniAppRunner; close via SceneBar × (does not stop worker).
+ * Mounts MiniAppRunner; closing its scene stops the app through the shared lifecycle.
  */
 import { OverflowText, Button, Icon, IconButton, Tooltip } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useState } from 'react';
@@ -11,10 +11,12 @@ import type { MiniApp, MiniAppDraft } from '@/infrastructure/api/service-api/Min
 import { useAppearance } from '@/infrastructure/appearance';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import { createLogger } from '@/shared/utils/logger';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 
 import { useSceneManager } from '@/app/hooks/useSceneManager';
 import type { SceneTabId } from '@/app/components/SceneBar/types';
 import { useMiniAppStore } from './miniAppStore';
+import { openMiniAppConversation } from './miniAppConversation';
 import { useI18n } from '@/infrastructure/i18n';
 import { pickLocalizedString } from './utils/pickLocalizedString';
 import MiniAppCustomizeEntry from './customization/MiniAppCustomizeEntry';
@@ -39,6 +41,7 @@ interface MiniAppSceneProps {
 const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
   const markCustomizationActive = useMiniAppStore((state) => state.markCustomizationActive);
   const markCustomizationIdle = useMiniAppStore((state) => state.markCustomizationIdle);
+  const composerClaim = useMiniAppStore((state) => state.composerClaims[appId]);
   const { current: appearance } = useAppearance();
   const appearanceMode = appearance?.mode ?? 'dark';
   const { workspace, workspacePath } = useCurrentWorkspace();
@@ -75,10 +78,15 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
   }, [appId, customizeOpen, markCustomizationActive, markCustomizationIdle]);
 
   const load = useCallback(async (id: string) => {
+    const scope = getActiveSurfaceScope();
     setLoading(true);
     setError(null);
     try {
       const loaded = await miniAppAPI.getMiniApp(id, appearanceMode, workspacePath || undefined);
+      if (!scope.isCurrent()) return;
+      // An app opened directly may finish loading before the catalog. Shutdown
+      // still needs its actual permissions and worker policy.
+      useMiniAppStore.getState().upsertApp(loaded);
       if (!loaded.compiled_html?.trim()) {
         log.error('MiniApp loaded without compiled_html', { appId: id });
         setError('MiniApp compiled_html is empty');
@@ -118,6 +126,8 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
     );
     const unlistenDeleted = api.listen<{ id?: string }>('miniapp-deleted', (payload) => {
       if (shouldHandle(payload)) {
+        const store = useMiniAppStore.getState();
+        store.setApps(store.apps.filter(candidate => candidate.id !== appId));
         closeScene(tabId);
       }
     });
@@ -146,6 +156,8 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
   });
 
   const appName = app ? pickLocalizedString(app, currentLanguage, 'name') : 'Mini App';
+  const hasConversation = Boolean(composerClaim || app?.permissions?.agent?.enabled
+    && (!strictRuntime || app.permissions.host?.chat_composer));
 
   return (
     <div
@@ -164,6 +176,10 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
           )}
         </div>
         <div className="miniapp-scene__header-actions">
+          {hasConversation && <Button variant="text" size="sm" disabled={!composerClaim?.sessionId}
+            onClick={() => openMiniAppConversation(appId)}>
+            {t('scene.conversation')}
+          </Button>}
           <MiniAppCustomizeEntry
             disabled={!app || loading}
             onOpen={handleOpenCustomize}
@@ -250,6 +266,7 @@ const MiniAppScene: React.FC<MiniAppSceneProps> = ({ appId }) => {
             app={app}
             appName={appName}
             appearanceMode={appearanceMode}
+            workspaceId={workspace?.id}
             workspacePath={workspacePath || undefined}
             remoteConnectionId={workspace?.connectionId}
             remoteSshHost={workspace?.sshHost}

@@ -266,7 +266,10 @@ export function encodeRequestBody(action: string, body: any): any {
       return encodePermissionResponseBody(body);
     case 'fork_session':
       return {
-        workspacePath: body.workspace_path,
+        // The workspace ID selects the session's owner; the path and SSH
+        // fields are the upgrade-only projection for pre-ID hosts.
+        ...(body.workspace_id !== undefined ? { workspaceId: body.workspace_id } : {}),
+        ...(body.workspace_path !== undefined ? { workspacePath: body.workspace_path } : {}),
         sourceSessionId: body.source_session_id,
         sourceTurnId: body.source_turn_id,
         ...(body.remote_connection_id !== undefined
@@ -279,7 +282,8 @@ export function encodeRequestBody(action: string, body: any): any {
     case 'archive_session':
     case 'unarchive_session':
       return {
-        workspacePath: body.workspace_path,
+        ...(body.workspace_id !== undefined ? { workspaceId: body.workspace_id } : {}),
+        ...(body.workspace_path !== undefined ? { workspacePath: body.workspace_path } : {}),
         sessionId: body.session_id,
         archived: action === 'archive_session',
         ...(body.remote_connection_id !== undefined

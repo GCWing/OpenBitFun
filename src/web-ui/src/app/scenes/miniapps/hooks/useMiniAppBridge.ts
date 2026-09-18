@@ -26,6 +26,7 @@ import {
   useMiniAppStore,
   MINIAPP_COMPOSER_MESSAGE_EVENT,
   MINIAPP_COMPOSER_DRAFT_EVENT,
+  MINIAPP_COMPOSER_FOCUS_EVENT,
   normalizeMiniAppBubbleCustomization,
   type MiniAppComposerMessageDetail,
 } from '../miniAppStore';
@@ -33,7 +34,6 @@ import {
   completeMiniAppComposerMessage,
   rejectPendingMiniAppComposerMessages,
 } from '../miniAppComposerMessages';
-import { useSceneStore } from '@/app/stores/sceneStore';
 import { shouldOpenMiniAppAgentRunInMainScene } from './miniAppAgentVisibility';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
@@ -45,6 +45,8 @@ import {
   LOOPX_BUILTIN_APP_ID,
   parseLoopxBridgeCall,
 } from './loopxBridgeProtocol';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { beginMiniAppOperation, isMiniAppClosing, trackMiniAppStream } from '../miniAppLifecycle';
 
 interface JSONRPC {
   jsonrpc?: string;
@@ -112,6 +114,7 @@ export function useMiniAppBridge(
   const { workspace, workspacePath } = useCurrentWorkspace();
   const peerModeActive = isPeerDeviceModeActive();
   const remoteWorkspaceActive = workspace?.workspaceKind === 'remote';
+  const surfaceScope = useRef(getActiveSurfaceScope()).current;
   const { current: currentAppearance } = useAppearance();
   const { currentLanguage } = useI18n('scenes/miniapp');
   const appearanceRef = useRef(currentAppearance);
@@ -219,6 +222,11 @@ export function useMiniAppBridge(
           '*',
         );
 
+      if (!surfaceScope.isCurrent() || isMiniAppClosing(appId, surfaceScope)) {
+        replyError('MiniApp is closing or its device surface is no longer active.');
+        return;
+      }
+
       if (method === 'openbitfun/request-appearance') {
         const payload = buildMiniAppAppearancePayload(appearanceRef.current);
         if (payload && iframeRef.current?.contentWindow) {
@@ -243,6 +251,8 @@ export function useMiniAppBridge(
         return;
       }
 
+      const finishOperation = ['worker.call', 'agent.ensureSession', 'agent.run', 'ai.complete', 'ai.chat'].includes(method)
+        ? beginMiniAppOperation(appId, surfaceScope) : undefined;
       try {
         if (isLoopxBridgeMethod(method)) {
           if (
@@ -489,6 +499,7 @@ export function useMiniAppBridge(
             replyError(`MiniApp '${appId}' does not have AI permission.`);
             return;
           }
+          trackMiniAppStream(appId, String(params.streamId ?? ''), surfaceScope, true);
           const result = await miniAppAPI.aiChat(
             appId,
             (params.messages as { role: 'user' | 'assistant'; content: string }[]) ?? [],
@@ -532,6 +543,7 @@ export function useMiniAppBridge(
               enableTools: params.enableTools as boolean | undefined,
               model: typeof params.model === 'string' ? params.model : undefined,
             });
+            surfaceScope.assertCurrent('bind MiniApp session');
             agentSessionIdsRef.current.add(result.sessionId);
             const sessionWasRegistered = flowChatStore
               .getState()
@@ -549,18 +561,12 @@ export function useMiniAppBridge(
                   sessionKind: 'miniapp',
                   isTransient: true,
                   agentBackedTransient: true,
+                  workspaceId: result.workspaceId,
                 },
               );
               if (!result.created) {
                 try {
-                  await flowChatStore.loadSessionHistory(
-                    result.sessionId,
-                    result.workspacePath,
-                    undefined,
-                    undefined,
-                    undefined,
-                    { includeInternal: true },
-                  );
+                  await flowChatStore.loadSessionHistory(result.sessionId, { includeInternal: true });
                 } catch (error) {
                   // The binding is still valid even if UI history hydration
                   // fails; keep the bubble on the exact topic session.
@@ -599,10 +605,10 @@ export function useMiniAppBridge(
               useMiniAppStore.getState().composerClaims[appId],
               composerTokenRef.current,
               requestedSessionId,
-              useSceneStore.getState().activeTabId === `miniapp:${appId}`,
             )) {
               await openMainSession(requestedSessionId);
             }
+            surfaceScope.assertCurrent('run MiniApp Agent');
             const result = await miniAppAPI.agentRun(
               appId,
               (params.prompt as string) ?? '',
@@ -668,6 +674,7 @@ export function useMiniAppBridge(
           if (method === 'chat.claimComposer') {
             const customization = normalizeMiniAppBubbleCustomization(params);
             useMiniAppStore.getState().claimComposer(appId, {
+              surfaceId: surfaceScope.surfaceId,
               token: composerTokenRef.current,
               // Keep the flat placeholder for older bubble consumers while the
               // richer host-rendered presentation lives under customization.
@@ -724,14 +731,16 @@ export function useMiniAppBridge(
               replyError('chat.focusSession: this MiniApp does not hold the bubble composer.');
               return;
             }
-            // Bind the validated session to this runner's composer claim.
-            // FloatingMiniChat owns the temporary global-store switch while its
-            // panel is open, then restores the user's normal session on close.
+            // Binding and revealing are separate: focusing the same session must
+            // still restore a conversation the user previously hid.
             useMiniAppStore.getState().setComposerSession(
               appId,
               composerTokenRef.current,
               sessionId,
             );
+            window.dispatchEvent(new CustomEvent(MINIAPP_COMPOSER_FOCUS_EVENT, {
+              detail: { appId, token: composerTokenRef.current, sessionId, surfaceId: surfaceScope.surfaceId },
+            }));
             reply(null);
             return;
           }
@@ -853,7 +862,10 @@ export function useMiniAppBridge(
             error,
           });
         }
+        if (method === 'ai.chat') trackMiniAppStream(appId, String(params.streamId ?? ''), surfaceScope, false);
         replyError(typeof error === 'string' ? error : String(error));
+      } finally {
+        finishOperation?.();
       }
     };
     window.addEventListener('message', handler);
@@ -861,7 +873,7 @@ export function useMiniAppBridge(
     return () => {
       window.removeEventListener('message', handler);
     };
-  }, [iframeRef]);
+  }, [iframeRef, surfaceScope]);
 
   useEffect(() => {
     const payload = buildMiniAppAppearancePayload(currentAppearance);
@@ -893,6 +905,10 @@ export function useMiniAppBridge(
       // Match on the claim token, not the app ID: the installed app and its
       // draft preview share an ID, and both listen here.
       if (!detail || detail.token !== composerTokenRef.current) return;
+      if (!surfaceScope.isCurrent() || isMiniAppClosing(app.id, surfaceScope)) {
+        rejectPendingMiniAppComposerMessages(composerTokenRef.current, 'MiniApp is closing or its device surface is no longer active');
+        return;
+      }
       if (typeof detail.text !== 'string') return;
       const payload = {
         text: detail.text,
@@ -915,7 +931,7 @@ export function useMiniAppBridge(
     return () => {
       window.removeEventListener(MINIAPP_COMPOSER_MESSAGE_EVENT, handler);
     };
-  }, [iframeRef]);
+  }, [app.id, iframeRef, surfaceScope]);
 
   // A composer claim may not outlive the iframe.
   useEffect(() => {
@@ -934,6 +950,9 @@ export function useMiniAppBridge(
   useEffect(() => {
     const currentAppId = app.id;
     const unlisten = api.listen<AiStreamPayload>('miniapp://ai-stream', (payload) => {
+      if (payload.appId === app.id && (payload.type === 'done' || payload.type === 'error')) {
+        trackMiniAppStream(app.id, payload.streamId, surfaceScope, false);
+      }
       if (!iframeRef.current?.contentWindow) return;
       if (payload.appId !== currentAppId) return;
       iframeRef.current.contentWindow.postMessage(
@@ -953,7 +972,7 @@ export function useMiniAppBridge(
     return () => {
       unlisten();
     };
-  }, [app.id, iframeRef]);
+  }, [app.id, iframeRef, surfaceScope]);
 
   // LoopX task execution belongs to the persistent host controller. This push
   // channel is only a latency optimization; the MiniApp repairs every cursor

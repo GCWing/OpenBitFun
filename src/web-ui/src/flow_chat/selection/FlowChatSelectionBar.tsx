@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { createPortal } from 'react-dom';
 import {
   Button, Card, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading,
-  DialogTitle, Icon, ToolbarGroup, useDismissibleLayer,
+  DialogTitle, Icon, ToolbarGroup, ToolbarSeparator, useDismissibleLayer,
 } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useI18n } from '@/infrastructure/i18n';
@@ -215,10 +215,15 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
           style={{ left: position?.left ?? 0, top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden' }}>
           <ToolbarGroup data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="toolbar" className="conversation-excerpt__toolbar"
             role="group" aria-label={t('selection.actions')}>
-            <Button size="sm" variant="outline" leadingIcon={<Icon name="edit" />} onClick={() => setEditing(true)} aria-haspopup="dialog">
+            <Button size="sm" variant="text" className="conversation-excerpt__action"
+              data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="action"
+              leadingIcon={<Icon name="edit" />} onClick={() => setEditing(true)} aria-haspopup="dialog">
               {t('selection.annotate')}
             </Button>
-            <Button size="sm" variant="outline" leadingIcon={<Icon name="side-chat" />} disabled={!canAsk}
+            <ToolbarSeparator />
+            <Button size="sm" variant="text" className="conversation-excerpt__action"
+              data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="action"
+              leadingIcon={<Icon name="side-chat" />} disabled={!canAsk}
               title={!canAsk ? t('selection.sideUnsupported') : undefined} onClick={() => submit('ask')}>
               {t(child ? 'selection.askHere' : 'selection.askSide')}
             </Button>

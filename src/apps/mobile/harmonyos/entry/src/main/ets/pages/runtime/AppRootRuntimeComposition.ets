@@ -125,22 +125,22 @@ export abstract class AppRootRuntimeComposition {
   abstract hasRemoteBindingForResume(): boolean;
   abstract isRemoteConversationContext(sessionId: string): boolean;
   abstract mergeSessions(primary: RemoteSession[], extras: RemoteSession[]): RemoteSession[];
-  abstract loadWorkspaceSessionsOnDevice(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<void>;
+  abstract loadWorkspaceSessionsOnDevice(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string): Promise<void>;
   abstract openAddConnectionFromSettings(): void;
   abstract openAppSidebar(): void;
   abstract openRemoteControlSettings(): void;
   abstract openWorkspacePickerOnDevice(deviceId: string): Promise<void>;
   abstract pickImages(): Promise<void>;
   abstract publishRemoteSessions(sessions: RemoteSession[], hasMore: boolean): void;
-  abstract publishWorkspaceSessionPage(path: string, result: SessionListResult, remoteConnectionId?: string, remoteSshHost?: string): void;
+  abstract publishWorkspaceSessionPage(path: string, result: SessionListResult, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string): void;
   abstract reconcileCreatedRemoteSession(session: SessionSummary): Promise<void>;
   abstract reconnect(): Promise<void>;
   abstract reconnectActiveRemote(): Promise<void>;
   abstract retryDirectoryDevice(deviceId: string): Promise<void>;
   abstract selectDirectoryDevice(deviceId: string): Promise<void>;
-  abstract selectAssistant(path: string): Promise<void>;
-  abstract selectWorkspace(path: string, connectionId?: string, sshHost?: string): Promise<void>;
-  abstract selectWorkspaceOnDevice(path: string, deviceId?: string, connectionId?: string, sshHost?: string): Promise<void>;
+  abstract selectAssistant(path: string, workspaceId?: string): Promise<void>;
+  abstract selectWorkspace(path: string, connectionId?: string, sshHost?: string, workspaceId?: string): Promise<void>;
+  abstract selectWorkspaceOnDevice(path: string, deviceId?: string, connectionId?: string, sshHost?: string, workspaceId?: string): Promise<void>;
   abstract showVoiceInputError(message: string): void;
   abstract stopVoiceInput(showStatus: boolean): Promise<void>;
   abstract toggleVoiceInput(): Promise<void>;
@@ -398,7 +398,7 @@ export abstract class AppRootRuntimeComposition {
           this.conversationController.updateKnownMessageCount(pollVersion, knownMessageCount);
         },
         onTimelineReady: () => {
-          this.remotePageState.setConversationLoading(false);
+          this.remoteSessionViewModel.settleTranscriptLoading();
         },
         onComposerSubmitted: (sessionId: string, text: string, images: SelectedImageAttachment[]) => {
           if (this.remotePageState.activeSession.sessionId !== sessionId) {
@@ -528,6 +528,10 @@ export abstract class AppRootRuntimeComposition {
           }
         },
         onSnapshot: (snapshot: RemoteChatPollingSnapshot) => {
+          // A snapshot is the transcript on screen, which is what an open was
+          // waiting for. Snapshots are already fenced to the active session by
+          // the poller's canPoll guard, so this cannot end another tap's wait.
+          this.remoteSessionViewModel.settleTranscriptLoading();
           this.remotePageState.setConversationLoading(false);
           if (snapshot.hasMoreMessages !== undefined) this.remotePageState.setHasMoreMessages(snapshot.hasMoreMessages);
           this.remotePageState.setHistoryLoadState(snapshot.historyLoading === true, snapshot.historyFailed === true);
@@ -553,6 +557,7 @@ export abstract class AppRootRuntimeComposition {
           }
         },
         onError: (error: Object) => {
+          this.remoteSessionViewModel.settleTranscriptLoading();
           this.remotePageState.setConversationLoading(false);
           this.remotePageState.setStatusText(ConnectionErrorPolicy.errorText(error));
         }
@@ -612,8 +617,8 @@ export abstract class AppRootRuntimeComposition {
             (this.remotePageState.connectionState as ConnectionState) === ConnectionState.Connected
           );
         },
-        onSelectWorkspace: async (path: string): Promise<void> => {
-          await this.selectWorkspace(path);
+        onSelectWorkspace: async (path: string, workspaceId?: string): Promise<void> => {
+          await this.selectWorkspace(path, undefined, undefined, workspaceId);
         }
       }
     );
@@ -710,10 +715,15 @@ export abstract class AppRootRuntimeComposition {
         },
         activeDeviceConnected: (): boolean =>
           (this.remotePageState.connectionState as ConnectionState) === ConnectionState.Connected,
-        loadActiveWorkspaceSessions: (path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<SessionListResult> =>
-          this.sessionManager.listSessionPageForWorkspace(path, 50, remoteConnectionId, remoteSshHost),
-        onActiveWorkspaceSessions: (path: string, result: SessionListResult, remoteConnectionId?: string, remoteSshHost?: string): void =>
-          this.publishWorkspaceSessionPage(path, result, remoteConnectionId, remoteSshHost)
+        loadActiveWorkspaceSessions: (path: string, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string): Promise<SessionListResult> =>
+          this.sessionManager.listSessionPageForWorkspace({
+            workspaceId: workspaceId || undefined,
+            path,
+            remoteConnectionId,
+            remoteSshHost
+          }, 50),
+        onActiveWorkspaceSessions: (path: string, result: SessionListResult, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string): void =>
+          this.publishWorkspaceSessionPage(path, result, remoteConnectionId, remoteSshHost, workspaceId)
       },
       this.remoteSessionListStore
     );
@@ -744,8 +754,8 @@ export abstract class AppRootRuntimeComposition {
           isFilePreviewVisible: (): boolean => this.filePreviewState.visible,
           stopVoiceInput: async (): Promise<void> => this.stopVoiceInput(false),
           showToast: (message: string): boolean => this.host.showToast(message, 2600),
-          selectAssistantWorkspace: async (path: string): Promise<void> => {
-            await this.selectAssistant(path);
+          selectAssistantWorkspace: async (path: string, workspaceId?: string): Promise<void> => {
+            await this.selectAssistant(path, workspaceId);
           }
         }
       }
@@ -805,10 +815,10 @@ export abstract class AppRootRuntimeComposition {
       refresh: (): void => { this.remoteSessionViewModel.refreshSessions(); },
       showWorkspaces: (): void => { this.remoteWorkspaceViewModel.toggleRecentWorkspaces(); },
       showAssistants: (): void => { this.remoteWorkspaceViewModel.toggleAssistants(); },
-      selectWorkspace: (path: string, deviceId?: string, connectionId?: string, sshHost?: string): void => {
-        void this.selectWorkspaceOnDevice(path, deviceId, connectionId, sshHost);
+      selectWorkspace: (path: string, deviceId?: string, connectionId?: string, sshHost?: string, workspaceId?: string): void => {
+        void this.selectWorkspaceOnDevice(path, deviceId, connectionId, sshHost, workspaceId);
       },
-      selectAssistant: (path: string): void => { this.selectAssistant(path); },
+      selectAssistant: (path: string, workspaceId?: string): void => { this.selectAssistant(path, workspaceId); },
       cancelWorkspace: (): void => this.remotePageState.setWorkspacePickerVisible(false),
       cancelAssistant: (): void => this.remotePageState.setAssistantPickerVisible(false),
       queryChanged: (query: string): void => this.remotePageState.setQuery(query),
@@ -821,11 +831,11 @@ export abstract class AppRootRuntimeComposition {
       createInPlace: (agentType: string): void => {
         this.conversationController.createRemoteSession(agentType, true);
       },
-      createInWorkspace: (path: string, agentType: string, deviceId?: string, connectionId?: string, sshHost?: string): void => {
-        this.conversationController.createRemoteSessionInWorkspace(path, agentType, false, deviceId, connectionId, sshHost);
+      createInWorkspace: (path: string, agentType: string, deviceId?: string, connectionId?: string, sshHost?: string, workspaceId?: string): void => {
+        this.conversationController.createRemoteSessionInWorkspace(path, agentType, false, deviceId, connectionId, sshHost, workspaceId);
       },
-      createInWorkspaceInPlace: (path: string, agentType: string, deviceId?: string, connectionId?: string, sshHost?: string): void => {
-        this.conversationController.createRemoteSessionInWorkspace(path, agentType, true, deviceId, connectionId, sshHost);
+      createInWorkspaceInPlace: (path: string, agentType: string, deviceId?: string, connectionId?: string, sshHost?: string, workspaceId?: string): void => {
+        this.conversationController.createRemoteSessionInWorkspace(path, agentType, true, deviceId, connectionId, sshHost, workspaceId);
       },
       selectDirectoryDevice: (deviceId: string): void => {
         void this.selectDirectoryDevice(deviceId);
@@ -836,8 +846,8 @@ export abstract class AppRootRuntimeComposition {
       retryDirectoryDevice: (deviceId: string): void => {
         void this.retryDirectoryDevice(deviceId);
       },
-      loadWorkspaceSessions: async (deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<void> => {
-        await this.loadWorkspaceSessionsOnDevice(deviceId, path, remoteConnectionId, remoteSshHost);
+      loadWorkspaceSessions: async (deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string): Promise<void> => {
+        await this.loadWorkspaceSessionsOnDevice(deviceId, path, remoteConnectionId, remoteSshHost, workspaceId);
       },
       openSession: (session: RemoteSession): void => this.conversationController.openHomeSession(session),
       openSessionInPlace: (session: RemoteSession): void => this.conversationController.openHomeSession(session, true),
@@ -1008,7 +1018,8 @@ export abstract class AppRootRuntimeComposition {
       this.remotePageState.workspaceBranch,
       this.remotePageState.workspaceKind,
       this.remotePageState.workspaceConnectionId,
-      this.remotePageState.workspaceSshHost
+      this.remotePageState.workspaceSshHost,
+      this.remotePageState.workspaceId
     );
     this.remotePageState.setDownloadStatus(
       this.remotePageState.downloadingFilePath,

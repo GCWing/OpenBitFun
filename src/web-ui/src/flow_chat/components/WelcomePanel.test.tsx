@@ -103,7 +103,7 @@ describe('WelcomePanel Git summary loading', () => {
       root.render(<WelcomePanel sessionMode='Standard' />);
     });
 
-    expect(gitApiMock.isGitRepository).toHaveBeenCalledWith('D:/workspace/OpenBitFun');
+    expect(gitApiMock.isGitRepository).toHaveBeenCalledWith({ workspaceId: 'workspace-1' });
 
     act(() => {
       root.unmount();
@@ -124,7 +124,7 @@ describe('WelcomePanel Git summary loading', () => {
       root.render(<WelcomePanel sessionMode='Standard' />);
     });
 
-    expect(gitApiMock.getStatus).toHaveBeenCalledWith('D:/workspace/OpenBitFun', 'welcome_panel');
+    expect(gitApiMock.getStatus).toHaveBeenCalledWith({ workspaceId: 'workspace-1' }, 'welcome_panel');
     expect(container.querySelector('[data-openbitfun-product-part="workspaceAction"]')).not.toBeNull();
     expect(container.querySelector('[data-openbitfun-product-part="gitAction"]')).not.toBeNull();
   });

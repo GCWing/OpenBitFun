@@ -48,12 +48,22 @@ export interface UseAgentIdentityDocumentResult {
   resetPersonaFiles: () => Promise<void>;
 }
 
+/// The assistant workspace that owns IDENTITY.md. The ID selects the
+/// workspace for every file command; the root path only builds the file path
+/// and scopes the change watcher.
+export interface AgentIdentityWorkspaceRef {
+  id: string;
+  rootPath: string;
+}
+
 export function useAgentIdentityDocument(
-  workspacePath: string
+  workspace: AgentIdentityWorkspaceRef | null
 ): UseAgentIdentityDocumentResult {
+  const workspaceId = workspace?.id ?? '';
+  const workspacePath = workspace?.rootPath ?? '';
   const identityFilePath = useMemo(
-    () => (workspacePath ? getIdentityFilePath(workspacePath) : ''),
-    [workspacePath]
+    () => (workspaceId && workspacePath ? getIdentityFilePath(workspacePath) : ''),
+    [workspaceId, workspacePath]
   );
 
   const [document, setDocument] = useState<IdentityDocument>(EMPTY_IDENTITY_DOCUMENT);
@@ -93,7 +103,7 @@ export function useAgentIdentityDocument(
   }, []);
 
   const loadDocument = useCallback(async () => {
-    if (!workspacePath || !identityFilePath) {
+    if (!workspaceId || !identityFilePath) {
       if (!mountedRef.current) return;
       setDocument(EMPTY_IDENTITY_DOCUMENT);
       setOriginalDocument(EMPTY_IDENTITY_DOCUMENT);
@@ -110,7 +120,7 @@ export function useAgentIdentityDocument(
     }
 
     try {
-      const content = await workspaceAPI.readFileContent(identityFilePath);
+      const content = await workspaceAPI.readWorkspaceFile(workspaceId, identityFilePath);
       const parsed = parseIdentityDocument(content);
 
       if (!mountedRef.current) {
@@ -142,21 +152,21 @@ export function useAgentIdentityDocument(
         setLoading(false);
       }
     }
-  }, [identityFilePath, workspacePath]);
+  }, [identityFilePath, workspacePath, workspaceId]);
 
   useEffect(() => {
     void loadDocument();
   }, [loadDocument]);
 
   const saveDocument = useCallback(async () => {
-    if (!workspacePath || !identityFilePath || !hasUnsavedChangesRef.current) {
+    if (!workspaceId || !identityFilePath || !hasUnsavedChangesRef.current) {
       return;
     }
 
     setSaveStatus('saving');
 
     try {
-      await workspaceAPI.writeFileContent(workspacePath, identityFilePath, serializedDocument);
+      await workspaceAPI.writeWorkspaceFile(workspaceId, identityFilePath, serializedDocument);
       suppressWatcherUntilRef.current = Date.now() + SELF_WRITE_SUPPRESS_MS;
 
       if (!mountedRef.current) {
@@ -172,14 +182,14 @@ export function useAgentIdentityDocument(
         return;
       }
 
-      log.error('Failed to save identity document', { workspacePath, identityFilePath, error: saveError });
+      log.error('Failed to save identity document', { workspaceId, identityFilePath, error: saveError });
       setError(saveError instanceof Error ? saveError.message : String(saveError));
       setSaveStatus('error');
     }
-  }, [document, identityFilePath, serializedDocument, workspacePath]);
+  }, [document, identityFilePath, serializedDocument, workspaceId]);
 
   useEffect(() => {
-    if (!workspacePath || !identityFilePath || !hasUnsavedChanges) {
+    if (!workspaceId || !identityFilePath || !hasUnsavedChanges) {
       return;
     }
 
@@ -197,7 +207,7 @@ export function useAgentIdentityDocument(
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [hasUnsavedChanges, identityFilePath, saveDocument, workspacePath]);
+  }, [hasUnsavedChanges, identityFilePath, saveDocument, workspaceId]);
 
   useEffect(() => {
     if (saveStatus !== 'saved') {
@@ -277,7 +287,7 @@ export function useAgentIdentityDocument(
   }, [identityFilePath]);
 
   const resetPersonaFiles = useCallback(async () => {
-    if (!workspacePath) {
+    if (!workspaceId) {
       return;
     }
 
@@ -290,18 +300,18 @@ export function useAgentIdentityDocument(
     setError(null);
 
     try {
-      await workspaceAPI.resetWorkspacePersonaFiles(workspacePath);
+      await workspaceAPI.resetWorkspacePersonaFiles(workspaceId);
       suppressWatcherUntilRef.current = Date.now() + SELF_WRITE_SUPPRESS_MS;
       await loadDocument();
     } catch (resetError) {
-      log.error('Failed to reset workspace persona files', { workspacePath, error: resetError });
+      log.error('Failed to reset workspace persona files', { workspaceId, error: resetError });
       if (mountedRef.current) {
         setError(resetError instanceof Error ? resetError.message : String(resetError));
         setSaveStatus('error');
       }
       throw resetError;
     }
-  }, [loadDocument, workspacePath]);
+  }, [loadDocument, workspaceId]);
 
   return {
     identityFilePath,

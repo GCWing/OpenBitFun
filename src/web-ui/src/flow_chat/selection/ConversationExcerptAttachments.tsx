@@ -1,10 +1,12 @@
-import { useState } from 'react';
-import { Button } from '@openbitfun/ui';
+import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Button, Card, Icon, IconButton, useDismissibleLayer } from '@openbitfun/ui';
+import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { ContextItem, ConversationExcerptContext } from '@/shared/types/context';
-import { excerptNumber, isConversationExcerpt } from '@/shared/utils/conversationExcerpt';
-import { ChatInputAttachment } from '../components/ChatInputAttachment';
+import { excerptNumber, excerptText, isConversationExcerpt } from '@/shared/utils/conversationExcerpt';
+import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
 import { ConversationExcerptDialog } from './ConversationExcerptDialog';
 import { conversationExcerptDialogTarget, type ExcerptDialogTarget } from './conversationExcerptEditing';
 import './ConversationExcerpt.scss';
@@ -19,23 +21,46 @@ function useExcerptLabel(excerpt: ConversationExcerptContext) {
   const number = excerptNumber(excerpt);
   return {
     label: number ? t('selection.numbered', { number: formatNumber(number) }) : t('selection.annotation'),
-    mark: number ? `#${formatNumber(number)}` : t('selection.annotation'),
     numberLabel: number ? formatNumber(number) : undefined,
   };
 }
 
-function ExcerptAttachment({ excerpt, onUpdate, onRemove }: {
-  excerpt: ConversationExcerptContext;
+export function ConversationExcerptAttachments({ contexts, onUpdate, onRemove, inline = false }: {
+  contexts: ContextItem[];
   onUpdate: (id: string, comment: string) => void;
   onRemove: (id: string) => void;
+  inline?: boolean;
 }) {
-  const { t } = useI18n('flow-chat');
-  const { label, mark } = useExcerptLabel(excerpt);
-  const [dialog, setDialog] = useState<ExcerptDialogState | null>(null);
-  const openDialog = () => {
+  const { t, formatNumber } = useI18n('flow-chat');
+  const excerpts = contexts.filter(isConversationExcerpt);
+  const [open, setOpen] = useState(false);
+  const [dialog, setDialog] = useState<(ExcerptDialogState & { label: string }) | null>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const hideTimer = useRef<ReturnType<typeof setTimeout>>();
+  const id = useId();
+  const cancelHide = () => { clearTimeout(hideTimer.current); };
+  const close = () => { cancelHide(); setOpen(false); };
+  const show = () => { cancelHide(); if (!dialog?.open) setOpen(true); };
+  const contains = (node: Node | null) => !!node && Boolean(anchorRef.current?.contains(node) || popoverRef.current?.contains(node));
+  const scheduleHide = () => {
+    cancelHide();
+    hideTimer.current = setTimeout(() => {
+      if (!contains(document.activeElement)) setOpen(false);
+    }, 200);
+  };
+  useEffect(() => () => clearTimeout(hideTimer.current), []);
+  useEffect(() => { if (!excerpts.length) { setOpen(false); setDialog(null); } }, [excerpts.length]);
+  const layout = useAnchoredPopoverPosition({ open, anchorRef, popoverRef, preferredPlacement: 'top', layoutRevision: contexts });
+  useDismissibleLayer({ enabled: open, layerRef: popoverRef, branchRefs: [anchorRef], onDismiss: reason => {
+    if (reason === 'escape-key') triggerRef.current?.focus();
+    close();
+  } });
+  const edit = (excerpt: ConversationExcerptContext, label: string) => {
+    close();
     const scope = getActiveSurfaceScope();
-    // The owning composer supplies the write, including a sent-message edit draft.
-    setDialog({ open: true, target: {
+    setDialog({ open: true, label, target: {
       mode: 'edit', excerpt,
       isCurrent: () => scope.isCurrent() && scope.surfaceId === excerpt.source.surfaceId,
       save: comment => {
@@ -45,32 +70,59 @@ function ExcerptAttachment({ excerpt, onUpdate, onRemove }: {
       },
     } });
   };
-  return <>
-    <ChatInputAttachment kind="annotation" label={excerpt.comment ? `${label}: ${excerpt.comment}` : label}
-      removeLabel={t('selection.removeNumbered', { annotation: label })} onRemove={() => onRemove(excerpt.id)}>
-      <Button variant="text" size="sm" className="conversation-excerpt__attachment"
-        data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="attachment"
-        aria-label={label} aria-haspopup="dialog" onClick={openDialog}>
-        {mark}
-      </Button>
-    </ChatInputAttachment>
-    {dialog && <ConversationExcerptDialog target={dialog.target} label={label} open={dialog.open}
-      onOpenChange={open => setDialog(current => current && { ...current, open })} />}
-  </>;
-}
-
-export function ConversationExcerptAttachments({ contexts, onUpdate, onRemove, inline = false }: {
-  contexts: ContextItem[];
-  onUpdate: (id: string, comment: string) => void;
-  onRemove: (id: string) => void;
-  inline?: boolean;
-}) {
-  const excerpts = contexts.filter(isConversationExcerpt);
   if (!excerpts.length) return null;
+  const countLabel = t('selection.count', { count: formatNumber(excerpts.length) });
   return <div data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="attachments"
     className={`conversation-excerpt__attachments${inline ? ' conversation-excerpt__attachments--inline' : ''}`}
     data-flowchat-selection-ignore="true">
-    {excerpts.map(excerpt => <ExcerptAttachment key={excerpt.id} excerpt={excerpt} onUpdate={onUpdate} onRemove={onRemove} />)}
+    <div ref={anchorRef} className="conversation-excerpt__chip"
+      data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="chip"
+      onMouseEnter={show} onMouseLeave={scheduleHide}
+      onBlur={event => { if (!contains(event.relatedTarget)) close(); }}>
+      <Button ref={triggerRef} variant="text" size="sm" className="conversation-excerpt__attachment"
+        data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="attachment"
+        leadingIcon={<Icon name="session" />} aria-label={countLabel} aria-haspopup="dialog"
+        aria-expanded={open} aria-controls={open ? id : undefined} onFocus={show} onClick={show}
+        onKeyDown={event => {
+          if (event.key === 'ArrowDown' && open) {
+            event.preventDefault(); event.stopPropagation(); popoverRef.current?.querySelector('button')?.focus();
+          }
+        }}>{countLabel}</Button>
+      <IconButton size="xs" shape="circle" aria-label={t('selection.remove')} icon={<Icon name="xmark" />}
+        onClick={() => { close(); excerpts.forEach(excerpt => onRemove(excerpt.id)); }} />
+    </div>
+    {open && createPortal(<Card ref={popoverRef} id={id} role="dialog" aria-label={countLabel}
+      className="conversation-excerpt__details" appearance="raised" radius="lg"
+      data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="details"
+      data-flowchat-selection-ignore="true" data-openbitfun-native-webview-occlusion
+      style={{ left: layout?.left ?? 0, top: layout?.top ?? 0, visibility: layout ? 'visible' : 'hidden' }}
+      onMouseEnter={cancelHide} onMouseLeave={scheduleHide}
+      onBlur={event => { if (!contains(event.relatedTarget)) close(); }}>
+      {excerpts.map(excerpt => {
+        const number = excerptNumber(excerpt);
+        const label = number ? t('selection.numbered', { number: formatNumber(number) }) : t('selection.annotation');
+        return <div key={excerpt.id} className="conversation-excerpt__detail"
+          data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="detail">
+          <span className="conversation-excerpt__detail-number"
+            data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="detailNumber">{number ? `${formatNumber(number)}.` : ''}</span>
+          <div className="conversation-excerpt__detail-text"
+            data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="detailText">
+            <span className="conversation-excerpt__detail-label"
+              data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="detailLabel">{t('context.selection')}</span>
+            <div>{excerptText(excerpt)}</div>
+            {excerpt.comment?.trim() && <><span className="conversation-excerpt__detail-label"
+              data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="detailLabel">{t('selection.annotation')}</span>
+              <div>{excerpt.comment}</div></>}
+          </div>
+          <IconButton size="sm" aria-label={label} title={t('selection.editAnnotation')} icon={<Icon name="edit" />}
+            onClick={() => edit(excerpt, label)} />
+          <IconButton size="sm" aria-label={t('selection.removeNumbered', { annotation: label })} icon={<Icon name="delete" />}
+            onClick={() => { triggerRef.current?.focus(); onRemove(excerpt.id); }} />
+        </div>;
+      })}
+    </Card>, getAppearanceOverlayHost())}
+    {dialog && <ConversationExcerptDialog target={dialog.target} label={dialog.label} open={dialog.open}
+      onOpenChange={value => setDialog(current => current && { ...current, open: value })} />}
   </div>;
 }
 

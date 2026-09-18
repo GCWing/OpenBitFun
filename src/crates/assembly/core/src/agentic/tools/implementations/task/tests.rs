@@ -553,6 +553,7 @@ async fn adaptive_review_delegation_is_hidden_for_remote_workspaces() {
         "connection-1".to_string(),
         "remote".to_string(),
         WorkspaceSessionIdentity {
+            workspace_kind: openbitfun_core_types::WorkspaceKind::Remote,
             hostname: "remote.example".to_string(),
             logical_workspace_path: "/workspace/project".to_string(),
             remote_connection_id: Some("connection-1".to_string()),

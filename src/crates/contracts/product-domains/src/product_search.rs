@@ -18,6 +18,10 @@ fn default_search_limit() -> usize {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 #[serde(rename_all = "camelCase")]
 pub struct SessionContentSearchRequest {
+    /// Owning workspace ID. Authoritative when present; `workspace_path` is
+    /// then only a legacy projection for older peers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub workspace_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
@@ -154,6 +158,7 @@ mod tests {
     #[test]
     fn request_limit_is_bounded_at_the_contract_boundary() {
         let request = SessionContentSearchRequest {
+            workspace_id: None,
             workspace_path: "/workspace".to_string(),
             remote_connection_id: None,
             remote_ssh_host: None,

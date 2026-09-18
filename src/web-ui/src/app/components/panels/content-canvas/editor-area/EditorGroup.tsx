@@ -32,14 +32,20 @@ import './EditorGroup.scss';
 
 function CanvasContentView({ documentId, ...props }: React.ComponentProps<typeof FlexiblePanel> & { documentId: string }) {
   const resourceScope = props.content?.metadata?.resourceScope;
+  // Tabs created through the workbench carry an ID-owned resource scope. Only
+  // tabs persisted before scopes existed fall through to the legacy ingress,
+  // which prefers the tab's own workspace ID over any path it recorded.
+  const resourceWorkspaceId = props.content?.data?.workspaceId;
   const resourceWorkspacePath = props.content?.data?.workspacePath ?? props.workspacePath;
   const remoteConnectionId = props.content?.data?.remoteConnectionId;
   const filePath = props.content?.data?.filePath;
   const documentSession = useMemo(() => getEditorDocument(
     documentId,
-    resourceScope ?? captureContentScope({ workspacePath: resourceWorkspacePath, remoteConnectionId }),
+    resourceScope ?? captureContentScope({
+      workspaceId: resourceWorkspaceId, workspacePath: resourceWorkspacePath, remoteConnectionId,
+    }),
     filePath,
-  ), [documentId, filePath, remoteConnectionId, resourceScope, resourceWorkspacePath]);
+  ), [documentId, filePath, remoteConnectionId, resourceScope, resourceWorkspaceId, resourceWorkspacePath]);
   useEffect(() => () => {
     if (!hasRetainedCanvasTab(documentId.slice('canvas:'.length))
       && !Object.values(useContentResourceStore.getState().resources).some(resource => resource.documentId === documentId)) {

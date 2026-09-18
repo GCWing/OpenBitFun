@@ -139,7 +139,7 @@ async fn initial_cache_only_request_starts_the_first_discovery() {
 
 #[tokio::test]
 async fn remote_execution_domain_fails_closed_before_local_discovery() {
-    let error = external_hook_catalog_snapshot(context("peer-machine"), true)
+    let error = external_hook_catalog_snapshot(None, context("peer-machine"), true)
         .await
         .unwrap_err();
     assert_eq!(error.code, ExternalSourceOperationErrorCode::Unsupported);

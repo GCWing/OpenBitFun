@@ -1,278 +1,51 @@
-/**
- * FloatingMiniChat — Hello launcher + origin-aware expanded panel.
- *
- * Button style follows the app's muted dark-UI language.
- * Panel opens from the button position (bottom-right) with a short ease-out.
- * Button hides while the panel is visible.
- */
+/** Modeless conversation host; transcript and composer reuse FlowChat. */
 @use '@/shared/styles/surface-recipes' as surfaces;
 
 $fmc-ease: cubic-bezier(0.23, 1, 0.32, 1);
+$fmc-close-ease: cubic-bezier(0.4, 0, 1, 1);
 $fmc-open-duration: 0.22s;
-$fmc-close-duration: 0.16s;
-
-$miniapp-button-size: 42px;
-$miniapp-button-offset: 20px;
-// Sized for the full session composer (workspace strip, model/permission
-// controls, action row) rather than the single-line input it replaced. The
-// portrait surface keeps a near-square-root-of-two long-side ratio (680:480).
+$fmc-close-duration: 0.18s;
+$fmc-collapsed-transform: translate(12px, 12px) scale(0.9);
 $panel-width: 480px;
 $panel-height: 680px;
 
-// ─── Root container ────────────────────────────────────────
-// Children opt into pointer events individually. A blanket `& > *` override
-// here used to decide, by source order alone, whether the collapsed panel or
-// the trigger under it received the press — too fragile for the one control
-// that has to work on the first try.
-//
-// Stacking inside this context, bottom to top: backdrop (0), panel (1),
-// trigger (2). The trigger therefore always sits above the collapsed panel
-// that overlaps it, and is removed from hit testing by `visibility` — not by
-// pointer-events alone — once the panel is open.
 .openbitfun-fmc {
   position: fixed;
   right: 0;
   bottom: 0;
   z-index: calc(var(--openbitfun-layer-overlay) + 1);
   pointer-events: none;
-  transition:
-    right 220ms cubic-bezier(0.77, 0, 0.175, 1),
-    bottom 220ms cubic-bezier(0.77, 0, 0.175, 1);
-
-  &--miniapp-customizing {
-    right: calc(clamp(380px, 38vw, 560px) + #{$miniapp-button-offset + 16px});
-  }
-
-  &[data-openbitfun-mode='miniapp'] {
-    right: $miniapp-button-offset;
-    bottom: $miniapp-button-offset;
-  }
-
-  &[data-openbitfun-mode='miniapp'].openbitfun-fmc--miniapp-customizing {
-    right: calc(clamp(380px, 38vw, 560px) + #{$miniapp-button-offset + 16px});
-  }
 }
 
-// ─── Fullscreen backdrop (catches outside clicks) ──────────
-.openbitfun-fmc__backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: auto;
-}
-
-// ─── Hello trigger button ──────────────────────────────────
 .openbitfun-fmc__button {
   position: relative;
   z-index: 2;
+  opacity: 1;
+  visibility: visible;
   pointer-events: auto;
+  // Crossfade with the panel on the same timeline, including quick reversals.
+  transition:
+    opacity $fmc-close-duration linear,
+    visibility 0s linear,
+    color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+    background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
 
-  // Hide when the panel is open. `visibility` (delayed until the fade-out
-  // finishes) is what actually removes it from hit testing; opacity alone
-  // would leave an invisible but clickable trigger under the panel.
   .openbitfun-fmc--open & {
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
     transition:
-      opacity $fmc-close-duration $fmc-ease,
-      visibility 0s linear $fmc-close-duration;
+      opacity $fmc-open-duration linear,
+      visibility 0s linear $fmc-open-duration,
+      color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 }
 
-// Keep the resting launcher no wider than a standard control so it does not
-// cover nearby composer actions on compact surfaces. Fine pointers replace
-// the compact greeting with the full greeting on deliberate hover; keyboard
-// focus reveals it immediately.
-.openbitfun-fmc__button--hello {
-  inline-size: var(--openbitfun-control-launcher-button-block-size);
-  min-inline-size: var(--openbitfun-control-launcher-button-block-size);
-  justify-content: center;
-  gap: 0;
-  padding-inline: 0;
-  overflow: hidden;
-  transform-origin: bottom right;
-  transition:
-    inline-size var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-    color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-    background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-    transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-  > [data-openbitfun-part='label'] {
-    display: grid;
-    inline-size: 100%;
-    place-items: center;
-  }
-
-  &:focus-visible {
-    inline-size: var(--openbitfun-control-launcher-button-min-inline-size);
-    transition-duration: 0s;
-
-    .openbitfun-fmc__button-label {
-      transition: none;
-    }
-
-    .openbitfun-fmc__button-label--compact {
-      opacity: 0;
-      transform: translateX(calc(var(--openbitfun-space-1) * -1));
-    }
-
-    .openbitfun-fmc__button-label--expanded {
-      opacity: 1;
-      transform: none;
-    }
-  }
-}
-
-.openbitfun-fmc__button-label {
-  grid-area: 1 / 1;
-  transition:
-    opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-    transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-}
-
-.openbitfun-fmc__button-label--compact {
-  opacity: 1;
-  transform: none;
-}
-
-.openbitfun-fmc__button-label--expanded {
-  opacity: 0;
-  transform: translateX(var(--openbitfun-space-1));
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .openbitfun-fmc__button--hello:hover {
-    inline-size: var(--openbitfun-control-launcher-button-min-inline-size);
-
-    .openbitfun-fmc__button-label--compact {
-      opacity: 0;
-      transform: translateX(calc(var(--openbitfun-space-1) * -1));
-    }
-
-    .openbitfun-fmc__button-label--expanded {
-      opacity: 1;
-      transform: none;
-    }
-  }
-}
-
-.openbitfun-fmc__button--miniapp {
-  display: inline-flex;
-  width: $miniapp-button-size;
-  height: $miniapp-button-size;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid var(--openbitfun-color-field-border-hover);
-  border-radius: 50%;
-  color: var(--openbitfun-color-content-primary);
-  background: var(--openbitfun-color-surface-raised);
-  box-shadow:
-    0 2px 8px color-mix(in srgb, var(--openbitfun-color-content-on-light) 35%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--openbitfun-color-content-on-dark) 4%, transparent);
-  opacity: 1;
-  cursor: pointer;
-  transition:
-    color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-    background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-    border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-
-  &:hover {
-    color: var(--openbitfun-color-content-primary);
-    background: var(--openbitfun-color-action-neutral-surface-hover);
-    border-color: var(--openbitfun-color-border-strong);
-  }
-}
-
-.openbitfun-fmc__button--processing {
-  border-color: var(--openbitfun-color-border-strong);
-}
-
-.openbitfun-fmc__miniapp-trigger-icon {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  color: inherit;
-}
-
-.openbitfun-fmc__button-activity {
-  position: absolute;
-  inset: -5px;
-  border-radius: 50%;
-  pointer-events: none;
-
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-  }
-
-  &::before {
-    border: 2px solid color-mix(in srgb, var(--openbitfun-color-content-muted) 24%, transparent);
-    border-top-color: var(--openbitfun-color-content-primary);
-    border-right-color: color-mix(in srgb, var(--openbitfun-color-content-primary) 62%, transparent);
-    filter: drop-shadow(
-      0 0 4px color-mix(in srgb, var(--openbitfun-color-content-primary) 38%, transparent)
-    );
-    animation: fmc-button-activity-spin 1.1s linear infinite;
-    will-change: transform;
-  }
-
-  &::after {
-    inset: 4px;
-    box-shadow:
-      0 0 10px color-mix(in srgb, var(--openbitfun-color-content-primary) 18%, transparent),
-      0 0 18px color-mix(in srgb, var(--openbitfun-color-content-muted) 12%, transparent);
-    animation: fmc-button-activity-glow 1.6s $fmc-ease infinite;
-    will-change: opacity, transform;
-  }
-}
-
-@keyframes fmc-button-activity-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@keyframes fmc-button-activity-glow {
-  0%,
-  100% {
-    opacity: 0.45;
-    transform: scale(0.94);
-  }
-
-  50% {
-    opacity: 1;
-    transform: scale(1.08);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .openbitfun-fmc__button-activity {
-    &::before,
-    &::after {
-      animation: none;
-    }
-
-    &::after {
-      opacity: 0.7;
-      transform: none;
-    }
-  }
-}
-
-// ─── Panel ─────────────────────────────────────────────────
 .openbitfun-fmc__panel {
   @include surfaces.floating;
 
+  container-type: inline-size;
   position: absolute;
   bottom: 0;
   right: 0;
@@ -282,7 +55,7 @@ $panel-height: 680px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 32px);
   overflow: hidden;
-  display: flex;
+  display: none;
   flex-direction: column;
   box-sizing: border-box;
 
@@ -293,93 +66,50 @@ $panel-height: 680px;
     bottom: 16px;
   }
 
-  // Pre-open state: collapsed into the button position. The collapsed panel
-  // still overlaps the trigger, so it is hidden outright once the close
-  // animation ends rather than relying on pointer-events alone.
+  // Keep transcript layout fixed; only the shell contracts toward the launcher.
+  // Accelerate out while fading linearly so there is no early stop followed by
+  // a second disappearance. Remove it from layout only after both finish.
   transform-origin: bottom right;
   opacity: 0;
-  transform: translateY(8px) scale(0.96);
+  transform: $fmc-collapsed-transform;
   visibility: hidden;
   pointer-events: none;
   transition:
-    opacity $fmc-close-duration $fmc-ease,
-    transform $fmc-close-duration $fmc-ease,
-    visibility 0s linear $fmc-close-duration;
+    display $fmc-close-duration,
+    opacity $fmc-close-duration linear,
+    transform $fmc-close-duration $fmc-close-ease,
+    visibility 0s linear $fmc-close-duration,
+    background-color 700ms $fmc-ease,
+    color 700ms $fmc-ease,
+    border-radius 700ms $fmc-ease;
+  // Finish the exit before removing the retained subtree from layout and paint.
+  // Browsers without discrete transitions hide it immediately.
+  transition-behavior: allow-discrete;
 
   &--open {
+    display: flex;
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: translate(0, 0) scale(1);
     visibility: visible;
     pointer-events: auto;
     transition:
-      opacity $fmc-open-duration $fmc-ease,
+      display $fmc-open-duration,
+      opacity $fmc-open-duration linear,
       transform $fmc-open-duration $fmc-ease,
-      visibility 0s linear 0s;
-  }
+      visibility 0s linear 0s,
+      background-color 700ms $fmc-ease,
+      color 700ms $fmc-ease,
+      border-radius 700ms $fmc-ease;
+    transition-behavior: allow-discrete;
 
-  // ── State borders ──
-  &--processing {
-    border-color: var(--openbitfun-color-action-secondary-pressed);
-
-    &::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 2px;
-      border-radius: var(--openbitfun-radius-lg) var(--openbitfun-radius-lg) 0 0;
-      background: linear-gradient(
-        90deg,
-        var(--openbitfun-color-accent-hover),
-        var(--openbitfun-color-accent-secondary),
-        var(--openbitfun-color-accent-hover)
-      );
-      background-size: 200% 100%;
-      animation: fmc-progress 2s linear infinite;
-      z-index: 10;
+    @starting-style {
+      opacity: 0;
+      transform: $fmc-collapsed-transform;
     }
   }
 
-  &--error {
-    border-color: var(--openbitfun-color-status-danger-border);
-  }
-
-  &--confirm {
-    border-color: var(--openbitfun-color-status-warning-border);
-    animation: fmc-pulse 1s ease-in-out infinite;
-  }
 }
 
-// VoiceCallPanel owns the one translucent surface and all call anatomy.
-.openbitfun-fmc[data-openbitfun-communication-mode='voice'] .openbitfun-fmc__panel {
-  border: 0;
-  border-radius: calc(var(--openbitfun-space-8) + var(--openbitfun-space-1));
-  background: transparent;
-  box-shadow: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-
-  &::before { content: none; }
-}
-
-@keyframes fmc-progress {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-
-@keyframes fmc-pulse {
-  0%, 100% {
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--openbitfun-color-content-on-light) 30%, transparent),
-      0 0 0 1px var(--openbitfun-color-status-warning-border);
-  }
-  50% {
-    box-shadow: 0 4px 12px color-mix(in srgb, var(--openbitfun-color-content-on-light) 30%, transparent),
-      0 0 0 2px var(--openbitfun-color-status-warning-emphasis);
-  }
-}
-
-// ─── Header ────────────────────────────────────────────────
 .openbitfun-fmc__header {
   flex: 0 0 auto;
   min-height: 40px;
@@ -391,64 +121,11 @@ $panel-height: 680px;
   border-bottom: 1px solid var(--openbitfun-color-border-subtle);
 }
 
-.openbitfun-fmc__miniapp-session-icon {
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--openbitfun-color-content-secondary);
-  border-radius: 7px;
-  border: 1px solid var(--openbitfun-color-border-subtle);
-  background: var(--openbitfun-color-surface-subtle);
-}
-
-// ─── Title ─────────────────────────────────────────────────
-// Plain display. Session switching lives in the shared SessionMenu ("+"),
-// matching floating window mode.
 .openbitfun-fmc__title-wrapper {
   flex: 1;
   min-width: 0;
 }
 
-.openbitfun-fmc__title-display {
-  width: 100%;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  padding: 4px 8px;
-  border: none;
-  background: transparent;
-  color: var(--openbitfun-color-content-primary);
-  font-size: var(--openbitfun-type-label-sm-font-size);
-  font-weight: var(--openbitfun-type-label-sm-font-weight);
-  cursor: pointer;
-  border-radius: 6px;
-  transition: background 0.15s ease;
-
-  &:hover {
-    background: var(--openbitfun-color-action-neutral-surface);
-  }
-
-  svg {
-    flex-shrink: 0;
-    color: var(--openbitfun-color-content-muted);
-  }
-}
-
-.openbitfun-fmc__title-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-align: left;
-}
-
-// ─── FlowChat body ─────────────────────────────────────────
-// Host for the reused main-window session surface (ChatPane: conversation +
-// ChatInput). Only sizing is adjusted here — the surface keeps the main
-// window's own look and behavior.
 .openbitfun-fmc__body {
   flex: 1;
   min-height: 0;
@@ -487,17 +164,6 @@ $panel-height: 680px;
   color: var(--openbitfun-color-content-muted);
   font-size: var(--openbitfun-type-flow-control-font-size);
   text-align: center;
-}
-
-.openbitfun-fmc__miniapp-session-pending-icon {
-  width: 44px;
-  height: 44px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--openbitfun-color-border-subtle);
-  background: var(--openbitfun-color-surface-subtle);
 }
 
 // MiniApps describe this empty state as bounded data through
@@ -647,34 +313,65 @@ $panel-height: 680px;
   }
 }
 
-@media (max-width: 900px) {
-  .openbitfun-fmc--miniapp-customizing {
-    right: $miniapp-button-offset;
-    bottom: calc(#{$miniapp-button-offset} + 64px);
-  }
-
-  .openbitfun-fmc__miniapp-welcome-content {
-    padding-top: 32px;
-    padding-inline: 24px;
-  }
+@container (max-width: 420px) {
+  .openbitfun-fmc__miniapp-welcome-content { padding-inline: 24px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .openbitfun-fmc,
   .openbitfun-fmc__button,
-  .openbitfun-fmc__button-label,
+  .openbitfun-fmc--open .openbitfun-fmc__button,
   .openbitfun-fmc__panel,
-  .openbitfun-fmc__header-btn,
   .openbitfun-fmc__miniapp-suggestion {
     transition: none;
-  }
-
-  .openbitfun-fmc__button,
-  .openbitfun-fmc__button-label,
-  .openbitfun-fmc__panel,
-  .openbitfun-fmc__header-btn,
-  .openbitfun-fmc__miniapp-suggestion {
     transform: none;
   }
+}
 
+.openbitfun-fmc__tabs { flex: 1; min-width: 0; overflow-x: auto; }
+.openbitfun-fmc__mode-switch { flex: 0 0 auto; display: flex; align-items: center; }
+.openbitfun-fmc__view { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.openbitfun-fmc__view[hidden] { display: none; }
+.openbitfun-fmc__call-status {
+  display: flex; align-items: center; gap: var(--openbitfun-space-2);
+  padding-inline: var(--openbitfun-space-3);
+  border-bottom: 1px solid var(--openbitfun-color-border-subtle);
+  > button:first-child { display: flex; align-items: center; gap: var(--openbitfun-space-2); flex: 1; min-width: 0;
+    background: transparent; border: 0; color: var(--openbitfun-color-content-secondary); cursor: pointer; }
+}
+.openbitfun-fmc__panel--drop { outline: 2px solid var(--openbitfun-color-border-strong); }
+
+// Preserve the original VoiceCallPanel surface, now painted once by the window.
+.openbitfun-fmc[data-openbitfun-communication-mode='voice'] .openbitfun-fmc__panel {
+  border: 0;
+  border-radius: calc(var(--openbitfun-space-8) + var(--openbitfun-space-1));
+  background: var(--openbitfun-color-content-on-light);
+  color: var(--openbitfun-color-content-on-dark);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    background: color-mix(in srgb, var(--openbitfun-color-content-on-light) 80%, transparent);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    background: var(--openbitfun-color-content-on-light);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+}
+
+.openbitfun-fmc__header--identity {
+  position: absolute;
+  top: var(--openbitfun-space-3);
+  right: var(--openbitfun-space-3);
+  z-index: 2;
+  min-height: 0;
+  border: 0;
+  padding: 0;
+  .openbitfun-fmc__mode-switch,
+  .openbitfun-fmc__title-wrapper { display: none; }
 }

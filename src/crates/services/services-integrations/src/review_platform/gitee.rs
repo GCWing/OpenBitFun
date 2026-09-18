@@ -842,6 +842,7 @@ impl ReviewProvider for GiteeProvider {
                 self.approve_pull_request(
                     ctx,
                     &ReviewPlatformApprovalRequest {
+                        workspace_id: request.workspace_id.clone(),
                         repository_path: request.repository_path.clone(),
                         remote_id: request.remote_id.clone(),
                         pull_request_id: request.pull_request_id.clone(),

@@ -429,6 +429,10 @@ pub struct CheckCommandResponse {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RunCommandRequest {
+    #[serde(default)]
+    pub controller_local: bool,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub command: String,
     #[serde(default)]
     pub args: Vec<String>,
@@ -495,8 +499,16 @@ pub async fn check_commands_exist(
 pub async fn run_system_command(
     request: RunCommandRequest,
 ) -> Result<CommandOutputResponse, String> {
-    if let Some(cwd) = request.cwd.as_deref() {
-        if openbitfun_core::service::remote_ssh::workspace_state::is_remote_path(cwd.trim()).await {
+    if request.workspace_id.is_some() || request.cwd.is_some() {
+        let cwd = request.cwd.as_deref().unwrap_or_default();
+        if openbitfun_core::service::workspace::remote_io_for_legacy_or_id(
+            request.workspace_id.as_deref(),
+            request.controller_local,
+            cwd.trim(),
+        )
+        .await
+        .map_err(|e| e.to_string())?
+        {
             return Err(format!(
                 "run_system_command cannot execute '{}' in remote workspace directory '{}': this command spawns controller-local processes only; local filesystem fallback was not attempted",
                 request.command, cwd
@@ -550,7 +562,7 @@ pub async fn set_macos_edit_menu_mode(
             .get_config::<String>(Some("app.language"))
             .await
             .unwrap_or_else(|_| "zh-CN".to_string());
-        let menubar_mode = if state.workspace_path.read().await.is_some() {
+        let menubar_mode = if state.workspace_id.read().await.is_some() {
             crate::macos_menubar::MenubarMode::Workspace
         } else {
             crate::macos_menubar::MenubarMode::Startup
@@ -721,8 +733,11 @@ pub struct SetTrayUnreadCountRequest {
 }
 
 #[tauri::command]
-pub async fn set_tray_unread_count(request: SetTrayUnreadCountRequest) -> Result<(), String> {
-    crate::tray::set_unread_count(request.count)
+pub async fn set_tray_unread_count(
+    app: tauri::AppHandle,
+    request: SetTrayUnreadCountRequest,
+) -> Result<(), String> {
+    crate::tray::set_unread_count(&app, request.count)
 }
 
 /// Initialize the desktop tray after the startup shell has become interactive.
@@ -1201,6 +1216,8 @@ mod remote_guard_tests {
             .await;
 
         let error = run_system_command(RunCommandRequest {
+            controller_local: false,
+            workspace_id: None,
             command: "git".to_string(),
             args: vec!["status".to_string()],
             cwd: Some(format!("{REMOTE_ROOT}/repo")),

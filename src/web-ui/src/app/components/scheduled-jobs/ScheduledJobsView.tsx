@@ -61,11 +61,8 @@ const log = createLogger('ScheduledJobsView');
 const NEW_JOB_ID = '__new__';
 
 export interface ScheduledJobsViewProps {
-  workspacePath?: string;
   workspaceId?: string;
   workspaceKind?: WorkspaceKind;
-  remoteConnectionId?: string | null;
-  remoteSshHost?: string | null;
   sessionId?: string;
   assistantName?: string;
   headerTitle?: string | null;
@@ -189,11 +186,8 @@ function buildWorkspaceAgentOptions(
 }
 
 const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
-  workspacePath,
   workspaceId,
   workspaceKind,
-  remoteConnectionId,
-  remoteSshHost,
   sessionId,
   headerTitle,
   targetLabel,
@@ -222,8 +216,8 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
     [assistantWorkspaceMode, targetKind, workspaceKind],
   );
   const workspaceRef = useMemo(
-    () => buildWorkspaceRef(workspacePath, workspaceId, remoteConnectionId, remoteSshHost),
-    [remoteConnectionId, remoteSshHost, workspaceId, workspacePath],
+    () => buildWorkspaceRef(workspaceId),
+    [workspaceId],
   );
 
   const [draft, setDraft] = useState<JobDraft>(() =>
@@ -269,18 +263,10 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
     return Array.from(flowChatState.sessions.values())
       .filter(s => {
         if (s.parentSessionId) return false;
-        if (workspaceId && s.workspaceId && s.workspaceId !== workspaceId) return false;
-        const trimmedWorkspacePath = workspacePath?.trim() ?? '';
-        if (!trimmedWorkspacePath) return !s.workspacePath;
-        return sessionBelongsToWorkspaceNavRow(
-          s,
-          trimmedWorkspacePath,
-          remoteConnectionId,
-          remoteSshHost,
-        );
+        return Boolean(workspaceId && sessionBelongsToWorkspaceNavRow(s, workspaceId));
       })
       .sort(compareSessionsForDisplay);
-  }, [flowChatState.sessions, remoteConnectionId, remoteSshHost, workspaceId, workspacePath]);
+  }, [flowChatState.sessions, workspaceId]);
 
   const defaultSessionIdForWorkspace = useMemo(
     () => sessionId || workspaceSessions[0]?.sessionId || '',
@@ -294,11 +280,10 @@ const ScheduledJobsView: React.FC<ScheduledJobsViewProps> = ({
   }), [jobs]);
 
   const loadJobs = useCallback(async () => {
+    if (!workspaceRef) { setJobs([]); return; }
     setLoading(true);
     const request = {
-      workspacePath: workspaceRef?.workspacePath,
       workspaceId: workspaceRef?.workspaceId ?? undefined,
-      remoteConnectionId: workspaceRef?.remoteConnectionId ?? undefined,
       sessionId: targetKind === 'session' && lockSessionId && !assistantWorkspaceMode ? sessionId || undefined : undefined,
       targetKind: assistantWorkspaceMode ? undefined : targetKind,
     };

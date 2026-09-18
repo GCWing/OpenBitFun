@@ -90,13 +90,13 @@ export interface GetToolInfoRequest {
 export interface ExecuteToolRequest {
   toolName: string;
   parameters: any;
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 export interface ValidateToolInputRequest {
   toolName: string;
   input: any;
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 
@@ -179,7 +179,7 @@ export interface CancelSearchRequest {
 }
 
 export interface SearchRepoIndexRequest {
-  rootPath: string;
+  workspaceId: string;
 }
 
 export type SearchMatchType = 'fileName' | 'content';

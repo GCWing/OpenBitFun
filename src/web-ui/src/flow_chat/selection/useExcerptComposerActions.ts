@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { isTauriRuntime } from '@/infrastructure/runtime';
-import { useContextStore } from '@/shared/stores/contextStore';
+import { useContextStoreApi } from '@/shared/stores/contextStore';
 import { appendConversationExcerpt, isConversationExcerpt, isValidConversationExcerpt, numberConversationExcerpt } from '@/shared/utils/conversationExcerpt';
 import { excerptSessionFamily, queuedConversationExcerpts, sessionConversationExcerpts } from './conversationExcerptInventory';
 import { pendingQueueManager } from '../services/flow-chat-manager/PendingQueueModule';
@@ -13,6 +13,8 @@ import { createBtwSessionPlaceholder } from '../services/BtwThreadService';
 import { openBtwSessionInAuxPane } from '../services/btwSessionPane';
 import { resolveSessionDriverId } from '../session-drivers/resolve';
 import { isAcpFlowSession } from '../utils/acpSession';
+import { useConversationViewScope } from '../contexts/conversationViewScope';
+import { openMainSession } from '../services/sessionActivation';
 import { FLOWCHAT_EXCERPT_ACTION, type ExcerptActionRequest } from './excerptActions';
 
 /** Only the visible primary composer may commit a selection action into a session draft. */
@@ -24,12 +26,14 @@ export function useExcerptComposerActions({ mainSessionId, targetSessionId, acti
   focus: () => void;
 }) {
   const peer = usePeerDeviceModeOptional();
+  const viewScope = useConversationViewScope();
+  const contextsStore = useContextStoreApi();
   const targetRef = useRef(targetSessionId);
   targetRef.current = targetSessionId;
   useEffect(() => {
     if (!active || !mainSessionId) return;
     let frame = 0;
-    const handle = (event: Event) => {
+    const handle = async (event: Event) => {
       const request = (event as CustomEvent<ExcerptActionRequest>).detail;
       const scope = getActiveSurfaceScope();
       if (!request || request.parentSessionId !== mainSessionId || request.surfaceEpoch !== scope.epoch
@@ -37,7 +41,7 @@ export function useExcerptComposerActions({ mainSessionId, targetSessionId, acti
       const state = flowChatStore.getState();
       const parent = state.sessions.get(mainSessionId);
       const source = state.sessions.get(request.excerpt.source.sessionId);
-      if (!parent || !source || state.activeSessionId !== mainSessionId
+      if (!parent || !source || (!viewScope && state.activeSessionId !== mainSessionId)
         || (source.sessionId !== mainSessionId && source.parentSessionId !== mainSessionId)) return;
       let destination = mainSessionId;
       if (request.action === 'ask') {
@@ -59,7 +63,7 @@ export function useExcerptComposerActions({ mainSessionId, targetSessionId, acti
       }
       const composer = sessionComposerStore.getState();
       const currentTargetSessionId = targetRef.current;
-      const visibleContexts = useContextStore.getState().contexts;
+      const visibleContexts = contextsStore.getState().contexts;
       if (currentTargetSessionId && currentTargetSessionId !== destination) composer.setContexts(currentTargetSessionId, visibleContexts);
       const contexts = destination === currentTargetSessionId ? visibleContexts : composer.getDraft(destination).contexts;
       const known = [
@@ -72,13 +76,14 @@ export function useExcerptComposerActions({ mainSessionId, targetSessionId, acti
       ].filter(excerpt => excerpt.source.surfaceId === scope.surfaceId);
       const next = appendConversationExcerpt(contexts, numberConversationExcerpt(request.excerpt, known));
       composer.setContexts(destination, next);
-      if (destination === currentTargetSessionId) useContextStore.getState().replaceContexts(next);
+      if (destination === currentTargetSessionId) contextsStore.getState().replaceContexts(next);
       if (destination !== mainSessionId) {
+        if (viewScope) { await openMainSession(mainSessionId); if (!scope.isCurrent()) return; }
         openBtwSessionInAuxPane({ childSessionId: destination, parentSessionId: mainSessionId,
           workspacePath: parent.workspacePath, expand: false });
         expandSessionAuxPane();
       }
-      setInputTarget(destination === mainSessionId ? 'main' : 'btw');
+      if (!viewScope || destination === mainSessionId) setInputTarget(destination === mainSessionId ? 'main' : 'btw');
       request.onAccepted?.();
       // The draft changes synchronously; focus follows React's target activation.
       cancelAnimationFrame(frame);
@@ -86,5 +91,5 @@ export function useExcerptComposerActions({ mainSessionId, targetSessionId, acti
     };
     window.addEventListener(FLOWCHAT_EXCERPT_ACTION, handle);
     return () => { cancelAnimationFrame(frame); window.removeEventListener(FLOWCHAT_EXCERPT_ACTION, handle); };
-  }, [active, mainSessionId, setInputTarget, focus, peer]);
+  }, [active, mainSessionId, setInputTarget, focus, peer, contextsStore, viewScope]);
 }

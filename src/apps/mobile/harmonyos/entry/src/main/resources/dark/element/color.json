@@ -17,6 +17,10 @@
       "value": "#00151514"
     },
     {
+      "name": "page_bg_overlay",
+      "value": "#B8151514"
+    },
+    {
       "name": "ink",
       "value": "#F4F3EF"
     },
@@ -35,6 +39,10 @@
     {
       "name": "card",
       "value": "#252522"
+    },
+    {
+      "name": "card_overlay",
+      "value": "#CC252522"
     },
     {
       "name": "accent",

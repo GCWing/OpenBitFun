@@ -484,11 +484,20 @@ async fn connection_scoped_managers_do_not_read_legacy_or_other_profile_snapshot
     let fs = Arc::new(RemoteMemoryFs::new(root));
     let path = "/remote/shared/file.txt";
     fs.write_file(path, b"first-user").await.unwrap();
-    let identity = |connection: &str| WorkspaceSessionIdentity {
-        hostname: "shared-server".into(),
-        logical_workspace_path: root.into(),
-        remote_connection_id: Some(connection.into()),
-    };
+    let alice = crate::service::workspace::legacy_compat::register_remote_fixture_with_id(
+        root,
+        "alice",
+        "shared-server",
+        Some(&uuid::Uuid::new_v4().to_string()),
+    )
+    .await;
+    let bob = crate::service::workspace::legacy_compat::register_remote_fixture_with_id(
+        root,
+        "bob",
+        "shared-server",
+        Some(&uuid::Uuid::new_v4().to_string()),
+    )
+    .await;
     // Legacy data has no connection owner. Its presence must not make a fresh
     // profile inherit a previous profile's baseline or operations.
     let mut legacy = open_core(&context, fs.clone()).await;
@@ -500,14 +509,10 @@ async fn connection_scoped_managers_do_not_read_legacy_or_other_profile_snapshot
         Some(b"legacy"),
     )
     .await;
-    let first = get_or_create_snapshot_manager_with_workspace(
-        &identity("alice"),
-        fs.clone(),
-        context.clone(),
-        None,
-    )
-    .await
-    .unwrap();
+    let first =
+        get_or_create_snapshot_manager_with_workspace(&alice.id, fs.clone(), context.clone(), None)
+            .await
+            .unwrap();
     assert!(first.get_session_files("session").await.unwrap().is_empty());
     let operation = first
         .record_file_change(
@@ -527,7 +532,7 @@ async fn connection_scoped_managers_do_not_read_legacy_or_other_profile_snapshot
         .complete_file_modification("session", &operation, 1)
         .await
         .unwrap();
-    let second = open_snapshot_manager_for_workspace_view(&identity("bob"), None, context.clone())
+    let second = open_snapshot_manager_for_workspace_view(&bob.id, None, context.clone())
         .await
         .unwrap();
     assert!(!Arc::ptr_eq(&first, &second));
@@ -536,15 +541,14 @@ async fn connection_scoped_managers_do_not_read_legacy_or_other_profile_snapshot
         .await
         .unwrap()
         .is_empty());
-    let same = open_snapshot_manager_for_workspace_view(&identity("alice"), None, context.clone())
+    let same = open_snapshot_manager_for_workspace_view(&alice.id, None, context.clone())
         .await
         .unwrap();
     assert!(Arc::ptr_eq(&first, &same));
-    clear_bound_snapshot_manager_for_test(&identity("alice"), &context.runtime_root).await;
-    let offline =
-        open_snapshot_manager_for_workspace_view(&identity("alice"), None, context.clone())
-            .await
-            .unwrap();
+    clear_bound_snapshot_manager_for_test(&alice.id).await;
+    let offline = open_snapshot_manager_for_workspace_view(&alice.id, None, context.clone())
+        .await
+        .unwrap();
     assert!(!Arc::ptr_eq(&first, &offline));
     assert_eq!(
         offline
@@ -565,10 +569,15 @@ async fn connection_scoped_managers_do_not_read_legacy_or_other_profile_snapshot
         .unwrap_err()
         .to_string()
         .contains("not explicitly bound"));
-    let mut mismatch = identity("alice");
-    mismatch.hostname = "different-server".into();
+    let mismatch = crate::service::workspace::legacy_compat::register_remote_fixture_with_id(
+        root,
+        "alice",
+        "different-server",
+        Some(&uuid::Uuid::new_v4().to_string()),
+    )
+    .await;
     assert!(
-        get_or_create_snapshot_manager_with_workspace(&mismatch, fs, context.clone(), None)
+        get_or_create_snapshot_manager_with_workspace(&mismatch.id, fs, context.clone(), None)
             .await
             .is_err()
     );
@@ -652,17 +661,25 @@ async fn wrapped_remote_write_and_delete_produce_recorded_history_without_a_remo
     let root = "/remote/real-tool";
     let fs = Arc::new(RemoteMemoryFs::new(root));
     let identity = WorkspaceSessionIdentity {
+        workspace_kind: openbitfun_core_types::WorkspaceKind::Remote,
         hostname: "shared-server".into(),
         logical_workspace_path: root.into(),
         remote_connection_id: Some("real-tool-connection".into()),
     };
+    let workspace = crate::service::workspace::legacy_compat::register_remote_fixture_with_id(
+        root,
+        "real-tool-connection",
+        "shared-server",
+        Some(&uuid::Uuid::new_v4().to_string()),
+    )
+    .await;
     let mut context = ToolUseContext {
         tool_call_id: Some("remote-write".into()),
         agent_type: None,
         session_id: Some("session".into()),
         dialog_turn_id: None,
         workspace: Some(WorkspaceBinding::new_remote(
-            None,
+            Some(workspace.id.clone()),
             PathBuf::from(root),
             "real-tool-connection".into(),
             "Shared server".into(),
@@ -715,10 +732,9 @@ async fn wrapped_remote_write_and_delete_produce_recorded_history_without_a_remo
         .await
         .unwrap());
 
-    let runtime_context = runtime.context_for_remote_workspace(&identity.hostname, root);
-    clear_bound_snapshot_manager_for_test(&identity, &runtime_context.runtime_root).await;
+    clear_bound_snapshot_manager_for_test(&workspace.id).await;
     fs.fail_metadata.store(true, Ordering::SeqCst);
-    let history = super::manager::open_snapshot_history_for_workspace(&identity)
+    let history = super::manager::open_snapshot_history_for_workspace(&workspace.id)
         .await
         .unwrap();
     let write_operation = history

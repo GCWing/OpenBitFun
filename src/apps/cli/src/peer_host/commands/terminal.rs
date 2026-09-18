@@ -19,7 +19,7 @@ fn decode<T: DeserializeOwned>(args: &Value) -> Result<T, String> {
     serde_json::from_value(request_value(args).clone()).map_err(|e| e.to_string())
 }
 fn response(session: openbitfun_core::service::remote_ssh::RemoteTerminalSession) -> Value {
-    json!({"id":session.id,"name":session.name,"cwd":session.cwd,"initialCwd":session.cwd,"shellType":"Remote","status":format!("{:?}",session.status),"cols":session.cols,"rows":session.rows,"connectionId":session.connection_id,"source":"user"})
+    json!({"workspaceId":session.workspace_id,"id":session.id,"name":session.name,"cwd":session.cwd,"initialCwd":session.cwd,"shellType":"Remote","status":format!("{:?}",session.status),"cols":session.cols,"rows":session.rows,"connectionId":session.connection_id,"source":"user"})
 }
 async fn remote_session(id: &str) -> Option<RemoteTerminalManager> {
     let manager = get_remote_workspace_manager()?
@@ -32,23 +32,38 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
     let request = request_value(args);
     let id =
         optional_string(request, "sessionId").unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let mut workspace_id = optional_string(request, "workspaceId");
     let explicit = optional_string(request, "connectionId");
-    let cwd = optional_string(request, "workingDirectory");
-    let explicit_local = request
-        .get("connectionId")
-        .or_else(|| request.get("connection_id"))
-        .and_then(Value::as_str)
-        == Some("");
-    let connection = if explicit_local {
-        None
-    } else if explicit.is_some() {
-        explicit
-    } else if let Some(path) = &cwd {
-        openbitfun_core::service::remote_ssh::lookup_remote_connection(path)
+    let mut cwd = optional_string(request, "workingDirectory");
+    let connection = if workspace_id.is_some() || explicit.is_none() {
+        let service = openbitfun_core::service::workspace::get_global_workspace_service()
+            .ok_or("Workspace service is unavailable")?;
+        // Old-protocol ingress is the only place a path can be converted.
+        let workspace = service
+            .resolve_legacy_workspace_reference(
+                workspace_id.as_deref(),
+                cwd.as_deref().unwrap_or_default(),
+                None,
+                None,
+            )
             .await
-            .map(|entry| entry.connection_id)
+            .map_err(|e| e.to_string())?
+            .ok_or("Terminal workspace ID is unavailable")?;
+        workspace_id = Some(workspace.id.clone());
+        cwd.get_or_insert_with(|| workspace.root_path.to_string_lossy().into_owned());
+        match workspace.workspace_kind {
+            openbitfun_core::service::workspace::WorkspaceKind::Remote => Some(
+                workspace
+                    .remote_ssh_connection_id()
+                    .ok_or("Remote workspace is missing its saved SSH connection ID")?
+                    .to_owned(),
+            ),
+            _ => None,
+        }
     } else {
-        None
+        // Explicit connection targets are used by the deployment wizard, which
+        // can open a terminal before any workspace has been registered.
+        explicit.filter(|id| !id.is_empty())
     };
     let publisher = state
         .account_routing
@@ -105,6 +120,11 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
             )
             .await
             .map_err(|e| e.to_string())?;
+        let mut created = created;
+        manager
+            .set_workspace_id(&created.session.id, workspace_id.clone())
+            .await;
+        created.session.workspace_id = workspace_id.clone();
         let result = response(created.session);
         let mut rx = created.output_rx;
         tokio::spawn(async move {
@@ -145,6 +165,7 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
     let terminal = api()?;
     let mut input = request.clone();
     input["sessionId"] = json!(id);
+    input["workingDirectory"] = json!(cwd);
     if input.get("source").and_then(Value::as_str) == Some("user") {
         input["source"] = json!("manual");
     }
@@ -154,6 +175,21 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
         .create_session(create)
         .await
         .map_err(|e| e.to_string())?;
+    let mut session = session;
+    if let Some(workspace_id) = workspace_id {
+        terminal
+            .session_manager()
+            .set_owner(
+                &session.id,
+                openbitfun_core::service::terminal::session::SessionOwner {
+                    id: workspace_id.clone(),
+                    owner_type: openbitfun_core::service::terminal::session::OwnerType::Workspace,
+                },
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        session.workspace_id = Some(workspace_id);
+    }
     publisher
         .append(
             format!("terminal-{id}"),

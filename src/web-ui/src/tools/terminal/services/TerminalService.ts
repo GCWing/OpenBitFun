@@ -1,3 +1,6 @@
+import { resolveLegacyTerminalWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
+import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
+import { workspaceIdRequest } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 /**
  * Terminal service that wraps Tauri backend calls.
  */
@@ -242,14 +245,32 @@ export class TerminalService {
     }
   }
 
+  private projectSession(surfaceId: string, session: SessionResponse): SessionResponse {
+    const projected = this.originCache.project(surfaceId, session);
+    if (projected.workspaceId) return projected;
+    const state = workspaceManager.getState();
+    return this.originCache.project(surfaceId, { ...projected,
+      workspaceId: resolveLegacyTerminalWorkspace(projected,
+        [...state.openedWorkspaces.values(), ...state.recentWorkspaces]),
+    });
+  }
+
   async createSession(request: CreateSessionRequest): Promise<SessionResponse> {
     const scope = getActiveSurfaceScope();
     try {
-      const session = await api.invoke<SessionResponse>('terminal_create', { request });
+      let payload = request;
+      if (request.workspaceId) {
+        const reference = await workspaceIdRequest(request.workspaceId, 'workspacePath');
+        if (!('workspaceId' in reference)) {
+          payload = { ...request, workspaceId: undefined, connectionId: reference.remoteConnectionId ?? '' };
+        }
+      }
+      scope.assertCurrent('resolve terminal workspace');
+      const session = await api.invoke<SessionResponse>('terminal_create', { request: payload });
       scope.assertCurrent('terminal_create');
       log.debug('Session created', { sessionId: session.id });
-      return this.originCache.project(scope.surfaceId, {
-        ...session, initialCwd: session.initialCwd || request.workingDirectory || session.cwd,
+      return this.projectSession(scope.surfaceId, {
+        ...session, workspaceId: session.workspaceId || request.workspaceId, initialCwd: session.initialCwd || request.workingDirectory || session.cwd,
       });
     } catch (error) {
       log.error('Failed to create session', error);
@@ -262,7 +283,7 @@ export class TerminalService {
     try {
       const session = await api.invoke<SessionResponse>('terminal_get', { sessionId });
       scope.assertCurrent('terminal_get');
-      return this.originCache.project(scope.surfaceId, session);
+      return this.projectSession(scope.surfaceId, session);
     } catch (error) {
       log.error('Failed to get session', { sessionId, error });
       throw error;
@@ -274,7 +295,7 @@ export class TerminalService {
     try {
       const sessions = await api.invoke<SessionResponse[]>('terminal_list');
       scope.assertCurrent('terminal_list');
-      return sessions.map(session => this.originCache.project(scope.surfaceId, session));
+      return sessions.map(session => this.projectSession(scope.surfaceId, session));
     } catch (error) {
       log.error('Failed to list sessions', error);
       throw error;

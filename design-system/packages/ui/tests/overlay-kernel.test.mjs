@@ -8,12 +8,14 @@ import {
   useDismissibleLayer,
   useHasOverlayLayers,
   useOverlayLayerActions,
+  usePresence,
 } from "../dist/index.js";
 
 test("the overlay kernel hooks are exported from the public package entry", () => {
   assert.equal(typeof useDismissibleLayer, "function");
   assert.equal(typeof useHasOverlayLayers, "function");
   assert.equal(typeof useOverlayLayerActions, "function");
+  assert.equal(typeof usePresence, "function");
 });
 
 test("DesignSystemProvider is the single locale, theme, portal and layer-stack host", () => {

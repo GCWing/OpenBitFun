@@ -41,7 +41,8 @@ describe('terminal creation from workspace resources', () => {
           workingDirectory: '/repo/src', workspacePath: '/repo', surfaceId: 'local', resourceScope: scope,
         } }));
       });
-      expect(terminal.create).toHaveBeenCalledExactlyOnceWith({ workspacePath: '/repo/src', connectionId: 'ssh-b' });
+      // The terminal is owned by the browsed workspace ID; the cwd is only the IO operand.
+      expect(terminal.create).toHaveBeenCalledExactlyOnceWith({ workspaceId: browsed.id, workspacePath: '/repo/src' });
       if (change === 'resource-navigation') useNavSceneStore.getState().openWorkspaceResources(active.id);
       if (change === 'active-workspace') {
         const other = { ...active, id: 'c', rootPath: 'D:/other' };

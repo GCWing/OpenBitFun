@@ -2,8 +2,7 @@ import { api } from './service-api/ApiClient';
 
 export interface HtmlPreviewCreateRequest {
   filePath: string;
-  workspacePath: string;
-  remoteConnectionId?: string;
+  workspaceId: string;
   peerDeviceMode: boolean;
 }
 
@@ -14,6 +13,7 @@ export interface HtmlPreviewCreateResponse {
 
 export const htmlPreviewApi = {
   create(request: HtmlPreviewCreateRequest): Promise<HtmlPreviewCreateResponse> {
+    if (!request.workspaceId) return Promise.reject(new Error('HTML preview workspace ID is required'));
     return api.invoke('html_preview_create', { request });
   },
   release(sessionId: string): Promise<void> {

@@ -22,7 +22,7 @@ import {
 import { i18nService } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
-import { repositoryPathKey } from '@/shared/utils/pathUtils';
+import { GitWorkspaceScope, gitWorkspaceKey } from '@/infrastructure/api/service-api/GitAPI';
 
 const log = createLogger('GitTrustService');
 
@@ -41,13 +41,8 @@ const PROMPT_QUIET_PERIOD_MS = 30_000;
 const inFlightRequests = new Map<string, Promise<boolean>>();
 const promptQuietUntil = new Map<string, number>();
 
-/**
- * Dedupe keys collapse the spellings one repository arrives under: Windows
- * callers hand the same folder in as `C:\work\repo`, `c:/work/repo`, or the
- * backend-normalized `C:/work/repo`. Shared with `GitAPI`'s probe cache so one
- * folder is one entry on both sides of the boundary.
- */
-const promptKey = repositoryPathKey;
+/** Trust decisions belong to the owning surface and workspace ID. */
+const promptKey = gitWorkspaceKey;
 
 /** Names an ownership rejection with localized, actionable copy. */
 export function describeGitTrustFailure(failure: unknown): string | undefined {
@@ -73,7 +68,7 @@ export function resetGitTrustDecisions(): void {
  * it returns `null`, which degrades to the generic message loudly rather than
  * silently.
  */
-async function readTrustReport(repositoryPath: string): Promise<GitTrustReport | null> {
+async function readTrustReport(repositoryPath: GitWorkspaceScope): Promise<GitTrustReport | null> {
   try {
     return await gitAPI.getRepositoryTrust(repositoryPath);
   } catch (error) {
@@ -98,7 +93,7 @@ async function readTrustReport(repositoryPath: string): Promise<GitTrustReport |
  * that could not answer at all, hands over the manual command.
  */
 async function settleUngrantedTrust(
-  repositoryPath: string,
+  repositoryPath: GitWorkspaceScope,
   reportedPath: string,
   manualCommand: string | null,
 ): Promise<boolean> {
@@ -110,7 +105,7 @@ async function settleUngrantedTrust(
     promptQuietUntil.delete(promptKey(repositoryPath));
     log.info('Git repository trust was resolved outside the product', { repositoryPath });
     notificationService.success(
-      i18nService.t('panels/git:trust.alreadyTrusted', { path: repositoryPath }),
+      i18nService.t('panels/git:trust.alreadyTrusted', { path: repositoryPath.repositoryPath ?? repositoryPath.workspaceId }),
     );
     return true;
   }
@@ -137,10 +132,10 @@ function reportManualPath(repositoryPath: string, manualCommand: string | null):
   });
 }
 
-async function promptAndTrust(repositoryPath: string): Promise<boolean> {
+async function promptAndTrust(repositoryPath: GitWorkspaceScope): Promise<boolean> {
   const confirmed = await confirmWarning(
     i18nService.t('panels/git:trust.title'),
-    i18nService.t('panels/git:trust.message', { path: repositoryPath }),
+    i18nService.t('panels/git:trust.message', { path: repositoryPath.repositoryPath ?? repositoryPath.workspaceId }),
     {
       confirmText: i18nService.t('panels/git:trust.confirm'),
       cancelText: i18nService.t('panels/git:trust.cancel'),
@@ -158,7 +153,7 @@ async function promptAndTrust(repositoryPath: string): Promise<boolean> {
     if (outcome.state === 'trusted') {
       promptQuietUntil.delete(promptKey(repositoryPath));
       notificationService.success(
-        i18nService.t('panels/git:trust.granted', { path: repositoryPath }),
+        i18nService.t('panels/git:trust.granted', { path: repositoryPath.repositoryPath ?? repositoryPath.workspaceId }),
       );
       return true;
     }
@@ -171,13 +166,13 @@ async function promptAndTrust(repositoryPath: string): Promise<boolean> {
       state: outcome.state,
       detail: outcome.detail,
     });
-    const reportedPath = outcome.repositoryPath ?? repositoryPath;
+    const reportedPath = outcome.repositoryPath ?? repositoryPath.repositoryPath ?? repositoryPath.workspaceId;
     return await settleUngrantedTrust(repositoryPath, reportedPath, outcome.manualCommand);
   } catch (error) {
     // Includes the hosts that refuse to grant at all: a peer host denies
     // `git_trust_repository` on purpose, and an older host does not know it.
     log.error('Failed to grant Git repository trust', { repositoryPath, error });
-    return await settleUngrantedTrust(repositoryPath, repositoryPath, null);
+    return await settleUngrantedTrust(repositoryPath, repositoryPath.repositoryPath ?? repositoryPath.workspaceId, null);
   }
 }
 
@@ -202,7 +197,7 @@ export interface GitRepositoryTrustRequestOptions {
  * now accepts the repository.
  */
 export function requestGitRepositoryTrust(
-  repositoryPath: string,
+  repositoryPath: GitWorkspaceScope,
   options: GitRepositoryTrustRequestOptions = {},
 ): Promise<boolean> {
   const key = promptKey(repositoryPath);
@@ -242,6 +237,7 @@ export function requestGitRepositoryTrust(
  */
 export async function withGitRepositoryTrustRecovery<T>(
   operation: () => Promise<T>,
+  workspace: GitWorkspaceScope,
   options: GitRepositoryTrustRequestOptions = {},
 ): Promise<T> {
   try {
@@ -256,7 +252,7 @@ export async function withGitRepositoryTrustRecovery<T>(
       throw error;
     }
 
-    const trusted = await requestGitRepositoryTrust(repositoryPath, options);
+    const trusted = await requestGitRepositoryTrust(workspace, options);
     if (!trusted) {
       throw error;
     }

@@ -15,29 +15,42 @@ export interface SkillImportReceipt {
 }
 
 const receipts = new Map<string, SkillImportReceipt>();
-const receiptKey = (sourcePath: string, workspacePath?: string) =>
-  `openbitfun:external-skill-import:${JSON.stringify([workspacePath ?? '', sourcePath])}`;
+const receiptKey = (sourcePath: string, workspaceId?: string) =>
+  `openbitfun:external-skill-import:v2:${JSON.stringify([getActiveSurfaceScope().surfaceId, workspaceId ?? '', sourcePath])}`;
 
 /** Only native copy identities are saved; external content and credentials never enter browser storage. */
-export function readSkillImportReceipt(sourcePath: string, workspacePath?: string): SkillImportReceipt | null {
-  const key = receiptKey(sourcePath, workspacePath);
-  try {
-    const value = JSON.parse(localStorage.getItem(key) ?? localStorage.getItem(receiptKey(sourcePath)) ?? 'null');
-    if (value?.schemaVersion === 1 && value.sourcePath === sourcePath
+export function readSkillImportReceipt(sourcePath: string, workspaceId?: string): SkillImportReceipt | null {
+  const readAt = (key: string, allowProject: boolean): SkillImportReceipt | null => {
+    const valid = (value: SkillImportReceipt | null | undefined): value is SkillImportReceipt =>
+      value?.schemaVersion === 1 && value.sourcePath === sourcePath
       && typeof value.nativeKey === 'string' && typeof value.nativePath === 'string'
-      && ['user', 'project'].includes(value.level)) return value;
-    return receipts.get(key) ?? receipts.get(receiptKey(sourcePath)) ?? null;
-  } catch { /* Preserve unreadable storage; the current session can still undo its own imports. */ }
-  return receipts.get(key) ?? receipts.get(receiptKey(sourcePath)) ?? null;
+      && (value.level === 'user' || (allowProject && value.level === 'project'));
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw === 'null') return null;
+      const value = raw ? JSON.parse(raw) : undefined;
+      if (valid(value)) return value;
+    } catch { /* Preserve unreadable storage; only the current session's own receipt may substitute. */ }
+    const memory = receipts.get(key);
+    return valid(memory) ? memory : null;
+  };
+  if (workspaceId) {
+    const scoped = readAt(receiptKey(sourcePath, workspaceId), true);
+    if (scoped) return scoped;
+  }
+  // User-level imports are shared. A malformed project receipt in the global
+  // slot must never become a receipt for every workspace.
+  return readAt(receiptKey(sourcePath), false);
 }
 
-export function rememberSkillImport(sourcePath: string, native: SkillInfo, workspacePath?: string) {
+export function rememberSkillImport(sourcePath: string, native: SkillInfo, workspaceId?: string) {
   if (!canDeleteSkill(native) || !['user', 'project'].includes(native.level)) return;
+  if (native.level === 'project' && !workspaceId?.trim()) throw new Error('Project Skill import requires a workspace ID');
   const receipt: SkillImportReceipt = {
     schemaVersion: 1, sourcePath, nativeKey: native.key, nativePath: native.path,
     level: native.level as 'user' | 'project',
   };
-  const key = receiptKey(sourcePath, native.level === 'project' ? workspacePath : undefined);
+  const key = receiptKey(sourcePath, native.level === 'project' ? workspaceId : undefined);
   receipts.set(key, receipt);
   try {
     // Do not overwrite an unknown version or an unreadable record.
@@ -80,9 +93,9 @@ export async function prepareMcpUndo(candidateId: string): Promise<ImportUndoRev
   return { kind: 'mcp', target, jsonConfig: JSON.stringify(config, null, 2), fingerprint: snapshot.fingerprint };
 }
 
-export async function prepareHookUndo(source: ExternalHookSource, workspacePath?: string): Promise<ImportUndoReview> {
+export async function prepareHookUndo(source: ExternalHookSource, workspaceId?: string): Promise<ImportUndoReview> {
   const scope = localScope();
-  const snapshot = await externalHooksAPI.getImportSnapshot(workspacePath, true);
+  const snapshot = await externalHooksAPI.getImportSnapshot(workspaceId, true);
   scope.assertCurrent('review Hook import removal');
   const entry = snapshot.imports.find((item) => item.source.key.providerId === source.key.providerId
     && item.source.key.sourceId === source.key.sourceId && item.source.ecosystemId === source.ecosystemId);
@@ -91,28 +104,29 @@ export async function prepareHookUndo(source: ExternalHookSource, workspacePath?
 }
 
 /** Called only after the user confirms removal of the displayed native copy, including its edits. */
-export async function applyImportUndo(review: ImportUndoReview, workspacePath?: string): Promise<{ runtimeApplied: boolean; revision?: string }> {
+export async function applyImportUndo(review: ImportUndoReview, workspaceId?: string): Promise<{ runtimeApplied: boolean; revision?: string }> {
   const scope = localScope();
   if (review.kind === 'mcp') return MCPAPI.saveMCPJsonConfig(review.jsonConfig, review.fingerprint);
   if (review.kind === 'hook') {
-    const snapshot = await externalHooksAPI.mutateImport(workspacePath, review.revision, { kind: 'remove', importId: review.importId });
+    const snapshot = await externalHooksAPI.mutateImport(workspaceId, review.revision, { kind: 'remove', importId: review.importId });
     scope.assertCurrent('confirm Hook import removal');
     return { runtimeApplied: true, revision: snapshot.revision };
   } else {
-    const report = await configAPI.getSkillScanReport({ workspacePath, forceRefresh: true });
+    if (review.receipt.level === 'project' && !workspaceId?.trim()) throw new Error('Project Skill removal requires a workspace ID');
+    const report = await configAPI.getSkillScanReport({ workspaceId, forceRefresh: true });
     scope.assertCurrent('remove imported Skill copy');
     if (!report.skills.some((skill) => matchesSkillReceipt(skill, review.receipt))) {
       throw new Error('Imported Skill copy changed or is no longer available');
     }
-    await configAPI.deleteSkill({ skillKey: review.receipt.nativeKey, workspacePath,
+    await configAPI.deleteSkill({ skillKey: review.receipt.nativeKey, workspaceId,
       ...(review.receipt.importId ? { expectedImportId: review.receipt.importId } : {}) });
     scope.assertCurrent('confirm Skill import removal');
-    const key = receiptKey(review.receipt.sourcePath, review.receipt.level === 'project' ? workspacePath : undefined);
+    const key = receiptKey(review.receipt.sourcePath, review.receipt.level === 'project' ? workspaceId : undefined);
     receipts.delete(key);
     try {
       const stored = JSON.parse(localStorage.getItem(key) ?? 'null');
       if (stored?.schemaVersion === 1 && stored.nativeKey === review.receipt.nativeKey
-        && stored.nativePath === review.receipt.nativePath) localStorage.removeItem(key);
+        && stored.nativePath === review.receipt.nativePath) localStorage.setItem(key, 'null'); // Keep an ID tombstone so the old receipt cannot remigrate.
     } catch { /* Preserve unreadable records; never reset data to recover from a parse failure. */ }
   }
   scope.assertCurrent('confirm external import removal');

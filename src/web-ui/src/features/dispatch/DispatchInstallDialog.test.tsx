@@ -246,6 +246,7 @@ describe('DispatchInstallDialog target preparation', () => {
             displayName: 'build-host',
           }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={onReady}
         />,
@@ -300,7 +301,10 @@ describe('DispatchInstallDialog target preparation', () => {
     expect(mocks.getFreshConfig).toHaveBeenCalledWith('app.worktrees', {
       skipRetryOnNotFound: true,
     });
-    expect(mocks.resolveRevision).toHaveBeenCalledWith('/home/me/project', 'HEAD');
+    expect(mocks.resolveRevision).toHaveBeenCalledWith(
+      { workspaceId: 'workspace-source', repositoryPath: '/home/me/project' },
+      'HEAD',
+    );
     expect(onReady).toHaveBeenCalledWith(expect.objectContaining({
       baseRef: 'HEAD',
       includeUncommitted: true,
@@ -355,6 +359,7 @@ describe('DispatchInstallDialog target preparation', () => {
           open
           target={{ kind: 'ssh', connectionId: 'ssh-1', displayName: 'build-host' }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={vi.fn()}
         />,
@@ -400,6 +405,7 @@ describe('DispatchInstallDialog target preparation', () => {
           open
           target={{ kind: 'ssh', connectionId: 'ssh-1', displayName: 'build-host' }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={vi.fn()}
         />,
@@ -453,6 +459,7 @@ describe('DispatchInstallDialog target preparation', () => {
           open
           target={{ kind: 'ssh', connectionId: 'ssh-1', displayName: 'build-host' }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={onReady}
         />,
@@ -483,7 +490,7 @@ describe('DispatchInstallDialog target preparation', () => {
     });
 
     expect(mocks.resolveRevision).toHaveBeenCalledWith(
-      '/home/me/project',
+      { workspaceId: 'workspace-source', repositoryPath: '/home/me/project' },
       'missing/ref',
     );
     expect(onReady).not.toHaveBeenCalled();
@@ -509,6 +516,7 @@ describe('DispatchInstallDialog target preparation', () => {
           open
           target={{ kind: 'ssh', connectionId: 'ssh-1', displayName: 'alpine-host' }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={vi.fn()}
         />,
@@ -557,6 +565,7 @@ describe('DispatchInstallDialog target preparation', () => {
           open
           target={{ kind: 'ssh', connectionId: 'ssh-1', displayName: 'build-host' }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={vi.fn()}
         />,
@@ -577,6 +586,7 @@ describe('DispatchInstallDialog target preparation', () => {
           open
           target={{ kind: 'ssh', connectionId: 'ssh-2', displayName: 'backup-host' }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={vi.fn()}
         />,
@@ -596,6 +606,7 @@ describe('DispatchInstallDialog target preparation', () => {
           open
           target={{ kind: 'ssh', connectionId: 'ssh-1', displayName: 'build-host' }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={vi.fn()}
         />,
@@ -638,6 +649,7 @@ describe('DispatchInstallDialog target preparation', () => {
           open
           target={{ kind: 'ssh', connectionId: 'ssh-1', displayName: 'build-host' }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={onReady}
         />,
@@ -700,6 +712,7 @@ describe('DispatchInstallDialog target preparation', () => {
           open
           target={{ kind: 'ssh', connectionId: 'ssh-1', displayName: 'build-host' }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={vi.fn()}
         />,
@@ -744,6 +757,7 @@ describe('DispatchInstallDialog target preparation', () => {
           open
           target={{ kind: 'ssh', connectionId: 'ssh-1', displayName: 'build-host' }}
           sourceWorkspacePath="/home/me/project"
+          sourceWorkspaceId="workspace-source"
           onClose={vi.fn()}
           onReady={onReady}
         />,

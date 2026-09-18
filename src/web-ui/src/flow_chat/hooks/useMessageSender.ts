@@ -187,6 +187,7 @@ export function useMessageSender(props: UseMessageSenderProps): UseMessageSender
         .filter((context): context is SessionReferenceContext => context.type === 'session-reference')
       const sessionReferences = sessionReferenceContexts.map((context) => ({
           sessionId: context.sessionId,
+          ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
           workspacePath: context.workspacePath,
           remoteConnectionId: context.remoteConnectionId,
           remoteSshHost: context.remoteSshHost,

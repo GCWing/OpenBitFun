@@ -272,9 +272,7 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
         ) : null}
         <MenuItem
           onClick={() => {
-            for (const session of flowChatStore.getState().sessions.values()) {
-              if (session.hasUnreadCompletion) flowChatStore.clearSessionUnreadCompletion(session.sessionId);
-            }
+            flowChatStore.clearAllSessionUnreadCompletions();
             close();
           }}
         >

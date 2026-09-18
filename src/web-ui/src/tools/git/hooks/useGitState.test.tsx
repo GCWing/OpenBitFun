@@ -33,7 +33,7 @@ function GitStateHarness({
   cancelPendingRefreshSources?: string[];
 }): null {
   useGitState({
-    repositoryPath: 'D:/workspace/OpenBitFun',
+    repositoryPath: { workspaceId: 'workspace-1' },
     isActive,
     refreshOnMount,
     refreshOnActive: true,
@@ -75,7 +75,7 @@ describe('useGitState visibility refresh', () => {
 
     expect(gitStateManagerMock.refresh).toHaveBeenCalledTimes(1);
     expect(gitStateManagerMock.refresh).toHaveBeenCalledWith(
-      'D:/workspace/OpenBitFun',
+      { workspaceId: 'workspace-1' },
       {
         layers: ['basic', 'status'],
         reason: 'visibility',
@@ -91,7 +91,7 @@ describe('useGitState visibility refresh', () => {
     });
 
     expect(gitStateManagerMock.refresh).toHaveBeenCalledWith(
-      'D:/workspace/OpenBitFun',
+      { workspaceId: 'workspace-1' },
       {
         layers: ['basic', 'status'],
         reason: 'mount',
@@ -114,7 +114,7 @@ describe('useGitState visibility refresh', () => {
     expect(gitStateManagerMock.cancelPendingRefresh).toHaveBeenCalledTimes(4);
     for (const reason of ['mount', 'visibility']) {
       expect(gitStateManagerMock.cancelPendingRefresh).toHaveBeenCalledWith(
-        'D:/workspace/OpenBitFun',
+        { workspaceId: 'workspace-1' },
         {
           layers: ['basic', 'status'],
           reason,
@@ -122,7 +122,7 @@ describe('useGitState visibility refresh', () => {
         },
       );
       expect(gitStateManagerMock.cancelPendingRefresh).toHaveBeenCalledWith(
-        'D:/workspace/OpenBitFun',
+        { workspaceId: 'workspace-1' },
         {
           layers: ['basic', 'status'],
           reason,
@@ -139,7 +139,7 @@ describe('useGitState visibility refresh', () => {
     });
 
     expect(gitStateManagerMock.refresh).toHaveBeenCalledWith(
-      'D:/workspace/OpenBitFun',
+      { workspaceId: 'workspace-1' },
       {
         layers: ['basic', 'status'],
         reason: 'visibility',

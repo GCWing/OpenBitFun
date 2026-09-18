@@ -129,6 +129,7 @@ shlex = { workspace = true }
 
 [dev-dependencies]
 hex = { workspace = true }
+openbitfun-core = { path = "../../crates/assembly/core", features = ["test-support"] }
 tokio = { workspace = true, features = ["io-util", "net"] }
 
 [target.'cfg(windows)'.dependencies]

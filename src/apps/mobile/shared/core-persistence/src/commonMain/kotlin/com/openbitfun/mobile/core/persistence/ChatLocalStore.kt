@@ -144,7 +144,22 @@ public data class PersistedWorkspaceIdentity(
     public val path: String = "",
     public val remoteConnectionId: String? = null,
     public val remoteSshHost: String? = null,
+    public val workspaceId: String? = null,
 )
+
+/**
+ * Cache row identity: the workspace ID when the host gave one, else the legacy
+ * `(connection, ssh host, path)` triple. Length-prefixed so embedded separators
+ * cannot make two different identities collide.
+ */
+public fun persistedWorkspaceKey(path: String, remoteConnectionId: String?, remoteSshHost: String?, workspaceId: String?): String {
+    workspaceId?.trim()?.takeIf { it.isNotEmpty() }?.let { return "workspace:${it.length}:$it" }
+    val root = path.trim().let { it.trimEnd('/').ifEmpty { it } }
+    return listOf(remoteConnectionId.orEmpty(), remoteSshHost.orEmpty(), root).joinToString("") { "${it.length}:$it" }
+}
+
+public val PersistedWorkspaceIdentity.key: String
+    get() = persistedWorkspaceKey(path, remoteConnectionId, remoteSshHost, workspaceId)
 
 @Serializable
 public data class PersistedRemoteSession public constructor(
@@ -191,7 +206,11 @@ public data class PersistedRemoteWorkspace public constructor(
     public val workspaceKind: String = "",
     public val remoteSshHost: String? = null,
     public val remoteConnectionId: String? = null,
-)
+    public val workspaceId: String? = null,
+) {
+    /** `workspaceId` when present, otherwise the legacy triple; see [persistedWorkspaceKey]. */
+    public val key: String get() = persistedWorkspaceKey(path, remoteConnectionId, remoteSshHost, workspaceId)
+}
 
 public interface RemoteSessionListStore {
     public fun load(deviceKey: String): List<PersistedRemoteSession>
@@ -221,9 +240,15 @@ public class SqlDelightRemoteSessionListStore public constructor(
 
     override fun load(deviceKey: String): List<PersistedRemoteSession> =
         queries.selectRemoteSessions(deviceKey).executeAsList().map { row ->
+            // Rows written before the identity columns existed have NULL in all of
+            // them and stay legacy: ownership is then attributed by the caller
+            // through LegacyWorkspaceCompatibility, never invented here.
+            val identity = row.workspace_identity_path?.let { path ->
+                PersistedWorkspaceIdentity(path, row.remote_connection_id, row.remote_ssh_host, row.workspace_id)
+            }
             PersistedRemoteSession(row.session_id, row.title, row.agent_type, row.status,
                 row.updated_at, row.created_at, row.message_count.toInt(), row.last_message_id,
-                row.workspace_path, row.workspace_name, row.pending_confirmed == 1L)
+                row.workspace_path, row.workspace_name, row.pending_confirmed == 1L, identity)
         }
 
     override fun hasMore(deviceKey: String): Boolean =
@@ -259,16 +284,30 @@ public class SqlDelightRemoteSessionListStore public constructor(
                 append(session.workspaceName.orEmpty())
                 append('\u0001')
                 append(session.pendingConfirmed)
+                session.workspaceIdentity?.let { identity ->
+                    append('\u0001')
+                    append(identity.path)
+                    append('\u0001')
+                    append(identity.workspaceId.orEmpty())
+                    append('\u0001')
+                    append(identity.remoteConnectionId.orEmpty())
+                    append('\u0001')
+                    append(identity.remoteSshHost.orEmpty())
+                }
             }
         }
         if (signature == lastSignature) return
         queries.transaction {
             queries.deleteRemoteSessionsForDevice(deviceKey)
-            kept.forEach { session -> queries.upsertRemoteSession(
-                deviceKey, session.sessionId, session.title, session.agentType, session.status,
-                session.updatedAt, session.createdAt, session.messageCount.toLong(), session.lastMessageId,
-                session.workspacePath, session.workspaceName, if (hasMore) 1L else 0L,
-                if (session.pendingConfirmed) 1L else 0L)
+            kept.forEach { session ->
+                val identity = session.workspaceIdentity
+                queries.upsertRemoteSession(
+                    deviceKey, session.sessionId, session.title, session.agentType, session.status,
+                    session.updatedAt, session.createdAt, session.messageCount.toLong(), session.lastMessageId,
+                    session.workspacePath, session.workspaceName, if (hasMore) 1L else 0L,
+                    if (session.pendingConfirmed) 1L else 0L,
+                    identity?.path, identity?.workspaceId, identity?.remoteConnectionId, identity?.remoteSshHost,
+                )
             }
         }
         lastSignature = signature
@@ -359,27 +398,41 @@ public class SqlDelightRemoteWorkspaceListStore public constructor(
 
     override fun load(deviceKey: String): List<PersistedRemoteWorkspace> =
         queries.selectRemoteWorkspaces(deviceKey).executeAsList().map { row ->
-            PersistedRemoteWorkspace(row.path, row.name, row.last_opened, row.workspace_kind)
+            PersistedRemoteWorkspace(
+                path = row.path,
+                name = row.name,
+                lastOpened = row.last_opened,
+                workspaceKind = row.workspace_kind,
+                remoteSshHost = row.remote_ssh_host,
+                remoteConnectionId = row.remote_connection_id,
+                workspaceId = row.workspace_id,
+            )
         }
 
     override fun save(deviceKey: String, workspaces: List<PersistedRemoteWorkspace>) {
         if (deviceKey.isBlank()) return
-        val kept = workspaces.distinctBy { it.path }.take(60)
+        // Identity, not path, decides duplicates: a local folder and an SSH folder
+        // at the same path are two workspaces and both rows are kept.
+        val kept = workspaces.distinctBy { it.key }.take(60)
         val signature = "$deviceKey|${kept.joinToString("\u0002") { workspace ->
-            listOf(workspace.path, workspace.name, workspace.lastOpened, workspace.workspaceKind)
+            listOf(workspace.path, workspace.name, workspace.lastOpened, workspace.workspaceKind,
+                workspace.workspaceId.orEmpty(), workspace.remoteConnectionId.orEmpty(), workspace.remoteSshHost.orEmpty())
                 .joinToString("\u0001")
         }}"
         if (signature == lastSignature) return
         queries.transaction {
             queries.deleteRemoteWorkspacesForDevice(deviceKey)
             kept.forEachIndexed { index, workspace ->
-                queries.upsertRemoteWorkspace(
+                queries.insertRemoteWorkspace(
                     deviceKey,
                     workspace.path,
                     workspace.name,
                     workspace.lastOpened,
                     workspace.workspaceKind,
                     index.toLong(),
+                    workspace.workspaceId,
+                    workspace.remoteConnectionId,
+                    workspace.remoteSshHost,
                 )
             }
         }

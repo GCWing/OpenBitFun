@@ -17,12 +17,12 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 describe('workspace search availability', () => {
   beforeEach(() => vi.clearAllMocks());
-  it.each(['/local/repo', '/remote/repo'])('ignores an existing enabled preference for %s', async (workspacePath) => {
+  it.each(['local-workspace-id', 'remote-workspace-id'])('ignores an existing enabled preference for %s', async (workspaceId) => {
     const host = document.createElement('div');
     const root = createRoot(host);
     let result: ReturnType<typeof useWorkspaceSearchIndex>;
     function Probe() {
-      result = useWorkspaceSearchIndex({ workspacePath, enabled: true, isRemote: true });
+      result = useWorkspaceSearchIndex({ workspaceId, enabled: true, isRemote: true });
       return null;
     }
     await act(async () => root.render(createElement(Probe)));
@@ -45,12 +45,12 @@ describe('workspace search availability', () => {
     const host = document.createElement('div');
     const root = createRoot(host);
     function Probe() {
-      useWorkspaceSearchIndex({ workspacePath: '/local/repo', enabled: true });
+      useWorkspaceSearchIndex({ workspaceId: 'local-workspace-id', enabled: true });
       return null;
     }
     await act(async () => root.render(createElement(Probe)));
     try {
-      expect(workspaceAPI.getSearchRepoStatus).toHaveBeenCalledWith('/local/repo');
+      expect(workspaceAPI.getSearchRepoStatus).toHaveBeenCalledWith('local-workspace-id');
     } finally {
       await act(async () => root.unmount());
     }

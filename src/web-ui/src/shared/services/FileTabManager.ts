@@ -15,7 +15,9 @@ export interface FileTabOptions {
   filePath: string;
    
   fileName?: string;
-   
+  /** Owning workspace ID; selects the scope when no explicit scope is given. */
+  workspaceId?: string;
+  /** Upgrade-only selector for callers that predate workspace IDs. */
   workspacePath?: string;
    
   jumpToLine?: number;
@@ -61,6 +63,7 @@ class FileTabManager {
     const {
       filePath,
       fileName: providedFileName,
+      workspaceId,
       workspacePath,
       jumpToLine,
       jumpToColumn,
@@ -71,7 +74,7 @@ class FileTabManager {
     } = options;
 
     
-    const scope = options.scope ?? captureContentScope({ workspacePath, remoteConnectionId });
+    const scope = options.scope ?? captureContentScope({ workspaceId, workspacePath, remoteConnectionId });
     const normalizedPath = resourceFilePath(filePath, scope);
     
     
@@ -87,6 +90,7 @@ class FileTabManager {
     const tabData = {
       filePath: normalizedPath,
       fileName,
+      workspaceId: scope.workspaceId,
       workspacePath: scope.workspacePath,
       remoteConnectionId: scope.remoteConnectionId,
       navigationToken: navigationToken ?? ++fileNavigationSequence,

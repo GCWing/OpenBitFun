@@ -131,7 +131,7 @@ const AssistantConfigPage: React.FC = () => {
     saveStatus: identitySaveStatus,
     updateField: updateIdentityField,
     reload: reloadIdentityDocument,
-  } = useAgentIdentityDocument(workspacePath);
+  } = useAgentIdentityDocument(workspace ? { id: workspace.id, rootPath: workspace.rootPath } : null);
 
   const displayIdentity = useMemo(() => {
     const api = workspace?.identity;
@@ -153,11 +153,13 @@ const AssistantConfigPage: React.FC = () => {
   const personaSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const personaPendingRef = useRef<{ file: PersonaDocFile; content: string } | null>(null);
 
+  const workspaceId = workspace?.id ?? '';
+
   const flushPersonaWrite = useCallback(async (file: PersonaDocFile, content: string) => {
-    if (!workspacePath) return;
+    if (!workspaceId || !workspacePath) return;
     const fullPath = personaDocFullPath(workspacePath, file);
     try {
-      await workspaceAPI.writeFileContent(workspacePath, fullPath, content);
+      await workspaceAPI.writeWorkspaceFile(workspaceId, fullPath, content);
       if (
         personaPendingRef.current?.file === file &&
         personaPendingRef.current?.content === content
@@ -172,7 +174,7 @@ const AssistantConfigPage: React.FC = () => {
       log.error('persona doc save', e);
       notificationService.error(t('nursery.assistant.personaDocSaveFailed'));
     }
-  }, [workspacePath, reloadIdentityDocument, t]);
+  }, [workspaceId, workspacePath, reloadIdentityDocument, t]);
 
   const flushPersonaWriteRef = useRef(flushPersonaWrite);
   flushPersonaWriteRef.current = flushPersonaWrite;
@@ -188,9 +190,9 @@ const AssistantConfigPage: React.FC = () => {
     setRightView('personaDoc');
     personaPendingRef.current = null;
 
-    if (!workspacePath) return;
+    if (!workspaceId || !workspacePath) return;
     const fullPath = personaDocFullPath(workspacePath, fileName);
-    workspaceAPI.readFileContent(fullPath)
+    workspaceAPI.readWorkspaceFile(workspaceId, fullPath)
       .then((content) => {
         setPersonaDoc((prev) => prev?.fileName === fileName ? {
           ...prev,
@@ -221,7 +223,7 @@ const AssistantConfigPage: React.FC = () => {
             : prev);
         }
       });
-  }, [personaDoc, workspacePath]);
+  }, [personaDoc, workspaceId, workspacePath]);
 
   const handlePersonaDocChange = useCallback((value: string) => {
     if (!personaDoc) return;
@@ -379,7 +381,7 @@ const AssistantConfigPage: React.FC = () => {
         {/* Scheduled tasks — title/toolbar live inside ScheduledJobsView */}
         <div className="acp-section acp-section--nested acp-section--schedule">
           <ScrollArea className="acp-section__schedule-body">
-            {!workspacePath ? (
+            {!workspace ? (
               <p className="acp-empty">{t('nursery.assistant.scheduledSessionsNoWorkspace')}</p>
             ) : (
               <Suspense
@@ -390,7 +392,6 @@ const AssistantConfigPage: React.FC = () => {
                 )}
               >
                 <ScheduledJobsView
-                  workspacePath={workspacePath}
                   workspaceId={workspace?.id}
                   workspaceKind={workspace?.workspaceKind}
                   assistantName={identityName}
@@ -624,7 +625,7 @@ const AssistantConfigPage: React.FC = () => {
               presentation={{
                 kind: 'assistant',
                 assistant: {
-                  id: workspace?.assistantId || workspace?.id || workspacePath,
+                  id: workspace?.assistantId || workspace?.id || '',
                   name: identityName,
                   avatar: displayIdentity.avatar,
                   emoji: displayIdentity.emoji,

@@ -18,6 +18,7 @@ import { i18nService } from '@/infrastructure/i18n';
 import { useAppearance } from '@/infrastructure/appearance';
 import { createLogger } from '@/shared/utils/logger';
 import { describeGitTrustFailure } from '../../services/GitService';
+import { useStableGitWorkspaceScope } from '../../hooks/useStableGitWorkspaceScope';
 import './GitGraphView.scss';
 
 const log = createLogger('GitGraphView');
@@ -36,12 +37,13 @@ const DEFAULT_CONFIG: GitGraphViewConfig = {
 const GIT_GRAPH_LANE_MIN_CONTRAST = 3;
 
 export const GitGraphView: React.FC<GitGraphViewProps> = ({
-  repositoryPath,
+  repositoryPath: workspaceReference,
   maxCount = 1000,
   config = {},
   onCommitSelect,
   className = ''
 }) => {
+  const repositoryPath = useStableGitWorkspaceScope(workspaceReference);
   const { t } = useTranslation('panels/git');
   const { t: tComponents } = useI18n('components');
   const { current: appearance } = useAppearance();

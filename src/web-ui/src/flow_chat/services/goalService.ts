@@ -5,7 +5,7 @@ import type { Session } from '../types/flow-chat';
 import { flowChatStore } from '../store/FlowChatStore';
 import { pendingQueueManager } from './flow-chat-manager/PendingQueueModule';
 import type { GoalCommandAction } from './goalCommandParser';
-import { sessionProjectWorkspacePath } from '../utils/sessionWorkspace';
+import { sessionProjectWorkspacePath, sessionWorkspaceId } from '../utils/sessionWorkspace';
 import { sessionWorktreeMaterializationPlan } from '../utils/sessionWorktree';
 
 export { isGoalSlashCommand, parseGoalCommand } from './goalCommandParser';
@@ -109,6 +109,7 @@ function syncGoalToStore(sessionId: string, goal: ThreadGoalSnapshot | null): vo
 async function sessionRequestBase(session: Session) {
   return {
     sessionId: session.sessionId,
+    workspaceId: sessionWorkspaceId(session),
     workspacePath: sessionProjectWorkspacePath(session),
     remoteConnectionId: session.remoteConnectionId,
     remoteSshHost: session.remoteSshHost,
@@ -134,7 +135,7 @@ async function prepareSessionForGoalTurn(session: Session): Promise<Session> {
       sessionId,
       materialization.enabled,
       globalThis.crypto?.randomUUID?.() ?? `goal-worktree-${Date.now()}`,
-      materialization.projectWorkspacePath,
+      materialization,
     );
     flowChatStore.updateSessionExecutionTarget(sessionId, {
       workspacePath: result.workspacePath,

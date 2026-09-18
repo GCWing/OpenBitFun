@@ -72,7 +72,10 @@ struct ComposerBar: View {
         .frame(minHeight: expanded
             ? MobileDesignGeometry.composerExpandedHeight
             : MobileDesignGeometry.composerCollapsedHeight)
-        .background(OpenBitFunTheme.card)
+        // The transcript now runs underneath the pill, so the fill is a material
+        // and the blur does the separating rather than an opaque card colour.
+        .background(MobileDesignColors.cardOverlay)
+        .background(.ultraThinMaterial)
         .overlay(
             RoundedRectangle(
                 cornerRadius: expanded || !model.composerImages.isEmpty
@@ -89,10 +92,9 @@ struct ComposerBar: View {
             )
         )
         .shadow(color: OpenBitFunTheme.shadowSubtle, radius: 10, y: 2)
-        .padding(.horizontal, MobileDesignGeometry.contentGutter)
+        .padding(.horizontal, MobileDesignGeometry.conversationOverlaySideInset)
         .padding(.top, 8)
         .padding(.bottom, 14)
-        .background(OpenBitFunTheme.page)
         .animation(.easeOut(duration: 0.22), value: expanded)
         .animation(.easeOut(duration: 0.18), value: model.composerImages.count)
         .onChange(of: model.composerSendGeneration) { _ in

@@ -4,9 +4,7 @@
     not(feature = "remote-ssh-concrete")
 ))]
 
-use openbitfun_services_integrations::remote_ssh::workspace_search::disabled::{
-    remote_workspace_search_service_for_path, RemoteWorkspaceSearchService,
-};
+use openbitfun_services_integrations::remote_ssh::workspace_search::disabled::RemoteWorkspaceSearchService;
 
 fn assert_disabled_error(error: String) {
     assert!(
@@ -28,10 +26,6 @@ async fn disabled_remote_workspace_search_returns_explicit_unsupported_errors() 
         .unwrap_err();
     assert_disabled_error(resolve_error);
 
-    let resolver_error = match remote_workspace_search_service_for_path("/remote/repo", None).await
-    {
-        Ok(_) => panic!("disabled remote search resolver should return an unsupported error"),
-        Err(error) => error,
-    };
-    assert_disabled_error(resolver_error);
+    assert_disabled_error(service.build_index("/remote/repo").await.unwrap_err());
+    assert_disabled_error(service.rebuild_index("/remote/repo").await.unwrap_err());
 }

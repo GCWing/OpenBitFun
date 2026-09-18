@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@ohos/hypium';
+import { DurableSessionReducer, SessionRecord } from '../main/ets/services/DurableSessionReducer';
 import { RemoteI18n } from '../main/ets/i18n/RemoteI18n';
 import { ChatSessionController, ChatSessionSnapshot } from '../main/ets/services/ChatSessionController';
 import { ChatComposerPolicy } from '../main/ets/services/ChatComposerPolicy';
@@ -113,6 +114,7 @@ import {
   RemoteModelCatalog,
   ReadFileResult,
   RemoteSession,
+  RemoteWorkspaceIdentity,
   SelectedImageAttachment,
   SessionListResult,
   SessionMessagesResult,
@@ -121,6 +123,7 @@ import {
 } from '../main/ets/model/RemoteModels';
 
 import {
+  durableRecord,
   ToolInputFixture,
   CryptoImageFixture,
   CryptoCommandFixture,
@@ -166,6 +169,8 @@ import {
   FakeGeneralChatCommandClient,
   FakeGeneralChatConfigStore
 } from './LocalTestFixtures';
+
+interface DurableUserMetadata { images: ImageAttachment[]; }
 
 export default function conversationStateUnitTest() {
   describe('ChatTimelineProjector', () => {
@@ -1522,6 +1527,26 @@ export default function conversationStateUnitTest() {
       expect(remote.activeSession.sessionId).assertEqual('remote-session');
       expect(remoteProjection.isLoadingConversation).assertTrue();
 
+      // A transcript still crossing the relay keeps the header: the pane knows
+      // which conversation it is showing, only not yet what is in it. The
+      // identity-unknown flag above is the one that blanks the title.
+      remote.setConversationLoading(false);
+      remote.setTranscriptLoading(true);
+      const loadingTranscript = ConversationViewState.project(AppRoute.RemoteChat, remote, general, '');
+      expect(loadingTranscript.isLoadingConversation).assertFalse();
+      expect(loadingTranscript.isLoadingTranscript).assertTrue();
+      expect(loadingTranscript.activeSession.sessionId).assertEqual('remote-session');
+
+      // A pane with no session left is not waiting for one.
+      remote.clearActiveSession();
+      remote.setTranscriptLoading(true);
+      expect(ConversationViewState.project(AppRoute.RemoteChat, remote, general, '').isLoadingTranscript).assertFalse();
+      remote.setTranscriptLoading(false);
+      remote.setActiveSession({
+        sessionId: 'remote-session', title: 'Remote', workspacePath: '/workspace/OpenBitFun', agentType: 'code'
+      });
+      remote.setConversationLoading(true);
+
       const generalProjection = ConversationViewState.project(AppRoute.ChatHome, remote, general, 'Configure model');
       expect(generalProjection.surface).assertEqual(ChatSurface.General);
       expect(generalProjection.chatInput).assertEqual('general draft');
@@ -1577,7 +1602,7 @@ export default function conversationStateUnitTest() {
       ]);
       const coordinator = new RemoteWorkspaceCoordinator(source);
 
-      const sessions = await coordinator.sessionsForWorkspaces(['/one', '/two']);
+      const sessions = await coordinator.sessionsForWorkspaces([{ path: '/one' }, { path: '/two' }]);
       expect(sessions.length).assertEqual(3);
       expect(sessions[0].id).assertEqual('shared-session');
       expect(sessions[1].id).assertEqual('one-session');
@@ -1588,15 +1613,15 @@ export default function conversationStateUnitTest() {
     // the order they happened to finish in.
     it('keeps results in path order across concurrency batches', 0, async () => {
       const source = new FakeRemoteWorkspaceDataSource();
-      const paths: string[] = [];
+      const workspaces: RemoteWorkspaceIdentity[] = [];
       for (let index = 0; index < 9; index++) {
         const path = `/workspace-${index}`;
-        paths.push(path);
+        workspaces.push({ path });
         source.sessionsByPath.set(path, [remoteSession(`session-${index}`, `Session ${index}`)]);
       }
       const coordinator = new RemoteWorkspaceCoordinator(source);
 
-      const sessions = await coordinator.sessionsForWorkspaces(paths);
+      const sessions = await coordinator.sessionsForWorkspaces(workspaces);
       expect(sessions.length).assertEqual(9);
       expect(sessions[0].id).assertEqual('session-0');
       expect(sessions[4].id).assertEqual('session-4');
@@ -1611,10 +1636,24 @@ export default function conversationStateUnitTest() {
       source.failingPaths = ['/two'];
       const coordinator = new RemoteWorkspaceCoordinator(source);
 
-      const sessions = await coordinator.sessionsForWorkspaces(['/one', '/two', '/three']);
+      const sessions = await coordinator.sessionsForWorkspaces([{ path: '/one' }, { path: '/two' }, { path: '/three' }]);
       expect(sessions.length).assertEqual(2);
       expect(sessions[0].id).assertEqual('one-session');
       expect(sessions[1].id).assertEqual('three-session');
+    });
+
+    it('lists identified workspaces by their ID rather than their display path', 0, async () => {
+      const source = new FakeRemoteWorkspaceDataSource();
+      source.sessionsByPath.set('ws-1', [remoteSession('by-id', 'By ID')]);
+      source.sessionsByPath.set('/renamed', [remoteSession('by-path', 'By path')]);
+      const coordinator = new RemoteWorkspaceCoordinator(source);
+
+      const sessions = await coordinator.sessionsForWorkspaces([{ workspaceId: 'ws-1', path: '/renamed' }]);
+      expect(sessions.length).assertEqual(1);
+      expect(sessions[0].id).assertEqual('by-id');
+      expect(source.listedPaths.join(',')).assertEqual('ws-1');
+      await coordinator.switchAssistant('', 'ws-2');
+      expect(source.lastSetAssistantId || '').assertEqual('ws-2');
     });
   });
 
@@ -1699,6 +1738,34 @@ export default function conversationStateUnitTest() {
       expect(remote.hasRunningActiveTurn()).assertTrue();
       expect(remote.activeTurnMessage.text).assertEqual('Remote partial');
       expect(remote.timelineItems.length).assertEqual(1);
+    });
+  });
+
+  describe('DurableSessionRecordReduction', () => {
+    it('keeps the turn record user message when a child repeats it as a header', 0, () => {
+      const reducer = new DurableSessionReducer();
+      const metadata: DurableUserMetadata = {
+        images: [{ name: 'shot.png', data_url: 'data:image/png;base64,AA' } as ImageAttachment]
+      };
+      const turnRecord: SessionRecord = {
+        sessionId: 'session', id: 'turn/turn', revision: 1,
+        turn: {
+          sessionId: 'session', turnId: 'turn', turnIndex: 0, timestamp: 1, status: 'inprogress',
+          userMessage: { id: 'user', content: 'look at this', timestamp: 1, metadata: metadata }
+        }
+      };
+      reducer.apply({ session_id: 'session', event: 'session-record', payload: turnRecord });
+      expect((reducer.messages()[0].images || []).length).assertEqual(1);
+
+      // The round and item records repeat the turn only as a parent header, and
+      // that copy carries the attachment as it was recorded rather than the
+      // pixels the turn record was given. It must not replace the turn.
+      reducer.apply(durableRecord('session', 5, 'on it'));
+      const reduced = reducer.messages();
+      expect(reduced[0].text).assertEqual('look at this');
+      expect((reduced[0].images || []).length).assertEqual(1);
+      expect((reduced[0].images || [])[0].data_url).assertEqual('data:image/png;base64,AA');
+      expect(reduced[1].text).assertEqual('on it');
     });
   });
 }

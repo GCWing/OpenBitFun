@@ -396,22 +396,7 @@ export const TaskToolDisplay: React.FC<ToolCardProps> = ({
     if (!linkedSubagentSessionId) {
       return;
     }
-    const sessions = flowChatStore.getState().sessions;
-    const latestChild = sessions.get(linkedSubagentSessionId);
-    const latestParent = sessionId ? sessions.get(sessionId) : undefined;
-    const fallbackWorkspacePath = latestChild?.workspacePath
-      ? undefined
-      : latestParent?.workspacePath;
-    await loadBtwSessionHistory({
-      childSessionId: linkedSubagentSessionId,
-      ...(fallbackWorkspacePath
-        ? {
-            workspacePath: fallbackWorkspacePath,
-            remoteConnectionId: latestParent?.remoteConnectionId,
-            remoteSshHost: latestParent?.remoteSshHost,
-          }
-        : {}),
-    });
+    await loadBtwSessionHistory({ childSessionId: linkedSubagentSessionId, parentSessionId: sessionId });
   }, [linkedSubagentSessionId, sessionId]);
 
   const getTaskInput = () => {

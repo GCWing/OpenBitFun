@@ -17,7 +17,9 @@ use chrono::{DateTime, Local, Utc};
 use log::{debug, warn};
 use openbitfun_agent_tools::ResolvedToolInvocation;
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const MAX_TRANSCRIPT_CHARS: usize = 16000;
@@ -54,12 +56,12 @@ impl InsightsCollector {
         let now_ms = system_time_to_unix_ms(now);
         let cutoff_ms = now_ms.saturating_sub(days as u64 * 86_400_000);
 
-        let workspace_targets = collect_effective_session_storage_targets().await;
+        let workspace_targets = collect_effective_session_storage_targets().await?;
 
         let mut transcripts = Vec::new();
         let mut base_stats = BaseStats::default();
-        let mut seen_sessions: HashSet<(PathBuf, String)> = HashSet::new();
-        let mut modified_files: HashSet<(PathBuf, String)> = HashSet::new();
+        let mut seen_sessions: HashSet<(String, String)> = HashSet::new();
+        let mut modified_files: HashSet<(String, String)> = HashSet::new();
 
         for target in &workspace_targets {
             let ws_path = &target.session_storage_path;
@@ -84,7 +86,7 @@ impl InsightsCollector {
                 {
                     continue;
                 }
-                let session_key = (ws_path.clone(), summary.session_id.clone());
+                let session_key = (target.workspace_id.clone(), summary.session_id.clone());
                 if !seen_sessions.insert(session_key) {
                     continue;
                 }
@@ -221,9 +223,10 @@ impl InsightsCollector {
                     duration_millis,
                 );
                 for path in
-                    accumulate_code_stats(&mut base_stats, workspace_path, &selected_turns).await
+                    accumulate_code_stats(&mut base_stats, &target.workspace_id, &selected_turns)
+                        .await
                 {
-                    modified_files.insert((workspace_path.clone(), path));
+                    modified_files.insert((target.workspace_id.clone(), path));
                 }
                 transcripts.push(transcript);
             }
@@ -614,6 +617,7 @@ fn compute_active_duration_millis(
     let report = build_session_usage_report_from_turns(
         SessionUsageReportRequest {
             session_id: session_id.to_string(),
+            workspace_id: None,
             workspace_path: Some(workspace_path.to_string_lossy().to_string()),
             remote_connection_id: None,
             remote_ssh_host: None,
@@ -887,10 +891,10 @@ fn compute_days_covered(range: &DateRange) -> u32 {
 /// according to [`language_name_for_path`].
 async fn accumulate_code_stats(
     base_stats: &mut BaseStats,
-    workspace_path: &Path,
+    workspace_id: &str,
     turns: &[DialogTurnData],
 ) -> HashSet<String> {
-    let Some(snapshot_manager) = get_snapshot_manager_for_workspace(workspace_path) else {
+    let Some(snapshot_manager) = get_snapshot_manager_for_workspace(workspace_id) else {
         return accumulate_code_stats_from_turns(base_stats, turns);
     };
 

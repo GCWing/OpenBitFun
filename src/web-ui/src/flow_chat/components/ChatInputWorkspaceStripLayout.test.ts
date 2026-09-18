@@ -419,7 +419,7 @@ describe('composer context track layout', () => {
     expect(component).not.toContain("cloneBoxEl.classList.add('openbitfun-chat-input__box--capsule')");
   });
 
-  it('keeps a new session expanded until its first submission starts the session', () => {
+  it('keeps new workbench sessions expanded while compact conversations start collapsed', () => {
     const component = readLocalFile('ChatInput.tsx');
 
     expect(component).toContain(
@@ -432,10 +432,13 @@ describe('composer context track layout', () => {
       'const isNewSessionComposer = !effectiveTargetSessionStarted;',
     );
     expect(component).toContain(
-      'const [isMultiLine, setIsMultiLine] = useState(isNewSessionComposer);',
+      "const compactComposer = conversationScope?.presentation === 'compact';",
+    );
+    expect(component).toContain(
+      'const [isMultiLine, setIsMultiLine] = useState(compactComposer ? false : isNewSessionComposer);',
     );
     expect(component).toMatch(
-      /const measureIsMultiLine = useCallback[\s\S]*?if \(isNewSessionComposer\) \{\s*setIsMultiLine\(true\);\s*return;/,
+      /const measureIsMultiLine = useCallback[\s\S]*?if \(isNewSessionComposer && !compactComposer\) \{\s*setIsMultiLine\(true\);\s*return;/,
     );
     expect(component).toContain(
       'const harnessProfileLocked = effectiveTargetSessionStarted;',

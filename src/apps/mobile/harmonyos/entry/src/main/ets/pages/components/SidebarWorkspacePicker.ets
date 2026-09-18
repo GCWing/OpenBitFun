@@ -1,6 +1,7 @@
 import { WorkspaceToolsState, WorkspaceToolsIntent, WorkspaceFileEntry } from '../state/WorkspaceToolsState';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
-import { SavedRuntimeConnection, RecentWorkspaceEntry } from '../../model/RemoteModels';
+import { SavedRuntimeConnection, RecentWorkspaceEntry, RemoteWorkspaceIdentity } from '../../model/RemoteModels';
+import { remoteWorkspaceIdentityMatches, remoteWorkspaceKey } from '../../services/RemoteSessionIdentity';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { CARD, INK, LINE, MUTED, PAGE_BG, SOFT } from './Theme';
 
@@ -16,9 +17,31 @@ export struct SidebarWorkspacePicker {
   @Param deviceName: string = '';
   @Param workspaces: RecentWorkspaceEntry[] = [];
   @Param selectedWorkspacePath: string = '';
+  /** Identity of the active workspace; the ID wins over the path when present. */
+  @Param selectedWorkspaceId: string = '';
+  @Param selectedWorkspaceConnectionId: string = '';
+  @Param selectedWorkspaceSshHost: string = '';
   @Param loading: boolean = false;
   @Event onClose: () => void = () => {};
-  @Event onSelectWorkspace: (path: string, connectionId?: string) => void = (_path: string, _connectionId?: string) => {};
+  /**
+   * Catalog rows report their stable `workspaceId`; the manual path entry has
+   * none, which is the only case where the host may resolve by path.
+   */
+  @Event onSelectWorkspace: (path: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void =
+    (_path: string, _connectionId?: string) => {};
+
+  private isSelected(workspace: RecentWorkspaceEntry): boolean {
+    if (this.selectedWorkspacePath.length === 0 && this.selectedWorkspaceId.length === 0) {
+      return false;
+    }
+    const selected: RemoteWorkspaceIdentity = {
+      workspaceId: this.selectedWorkspaceId.length > 0 ? this.selectedWorkspaceId : undefined,
+      path: this.selectedWorkspacePath,
+      remoteConnectionId: this.selectedWorkspaceConnectionId.length > 0 ? this.selectedWorkspaceConnectionId : undefined,
+      remoteSshHost: this.selectedWorkspaceSshHost.length > 0 ? this.selectedWorkspaceSshHost : undefined
+    };
+    return remoteWorkspaceIdentityMatches(workspace, selected, this.workspaces);
+  }
 
   private connectionOptions(): SelectOption[] {
     const options: SelectOption[] = [{ value: this.deviceName }];
@@ -51,7 +74,7 @@ export struct SidebarWorkspacePicker {
           Column({ space: 4 }) {
             ForEach(this.workspaces, (workspace: RecentWorkspaceEntry) => {
               this.WorkspaceRow(workspace)
-            }, (workspace: RecentWorkspaceEntry): string => `${workspace.remoteConnectionId || 'local'}:${workspace.path}`)
+            }, (workspace: RecentWorkspaceEntry): string => remoteWorkspaceKey(workspace))
           }
           .width('100%')
           .padding({ top: 10, bottom: 18 })
@@ -141,7 +164,7 @@ export struct SidebarWorkspacePicker {
         Text((workspace.name || this.basename(workspace.path)) + (workspace.remoteSshHost?.trim() ? ` · ${workspace.remoteSshHost.trim()}` : ''))
           .width('100%')
           .fontSize(MobileDesignTypography.bodyLarge.size)
-          .fontWeight(workspace.path === this.selectedWorkspacePath ? FontWeight.Medium : FontWeight.Regular)
+          .fontWeight(this.isSelected(workspace) ? FontWeight.Medium : FontWeight.Regular)
           .fontColor(INK)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -155,10 +178,10 @@ export struct SidebarWorkspacePicker {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
       Stack({ alignContent: Alignment.Center }) {
-        SymbolGlyph(workspace.path === this.selectedWorkspacePath ?
+        SymbolGlyph(this.isSelected(workspace) ?
           $r('sys.symbol.checkmark') : $r('sys.symbol.chevron_right'))
-          .fontSize(workspace.path === this.selectedWorkspacePath ? 17 : 15)
-          .fontColor([workspace.path === this.selectedWorkspacePath ? INK : MUTED])
+          .fontSize(this.isSelected(workspace) ? 17 : 15)
+          .fontColor([this.isSelected(workspace) ? INK : MUTED])
       }
       .width(40)
       .height(40)
@@ -167,8 +190,8 @@ export struct SidebarWorkspacePicker {
     .height(68)
     .padding({ left: 10, right: 8 })
     .borderRadius(14)
-    .backgroundColor(workspace.path === this.selectedWorkspacePath ? SOFT : PAGE_BG)
-    .onClick(() => this.onSelectWorkspace(workspace.path, workspace.remoteConnectionId))
+    .backgroundColor(this.isSelected(workspace) ? SOFT : PAGE_BG)
+    .onClick(() => this.onSelectWorkspace(workspace.path, workspace.remoteConnectionId, workspace.remoteSshHost, workspace.workspaceId))
   }
 
   @Builder

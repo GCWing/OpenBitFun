@@ -97,7 +97,9 @@ import {
   CloudAccountDevice,
   CloudProvisionedDevice,
   CloudAccountRequestError,
-  CloudAccountSession
+  CloudAccountSession,
+  CloudAccountTransportError,
+  retryableAuthorizationPollError
 } from '../main/ets/services/CloudAccountClient';
 import {
   CloudAccountSessionStore,
@@ -587,6 +589,22 @@ class AccountDeviceSwitchHarness {
 
 export default function transportAndGeneralChatUnitTest() {
   describe('Account device links', () => {
+    /**
+     * The sign-in poll runs for the minutes the user spends in a browser and a
+     * mail app, which is where a phone most reliably drops a connection. A
+     * single failure there used to end the sign-in and send them back to the
+     * start, so a transport failure or a relay that is briefly unwilling has to
+     * cost one interval, while a refusal the relay meant still stops the loop.
+     */
+    it('keeps polling for sign-in through transport failures but not refusals', 0, () => {
+      expect(retryableAuthorizationPollError(new CloudAccountTransportError(2300007))).assertTrue();
+      expect(retryableAuthorizationPollError(new CloudAccountRequestError('too many polls', 429))).assertTrue();
+      expect(retryableAuthorizationPollError(new CloudAccountRequestError('relay down', 503))).assertTrue();
+      expect(retryableAuthorizationPollError(new CloudAccountRequestError('denied', 401))).assertFalse();
+      expect(retryableAuthorizationPollError(new CloudAccountRequestError('bad request', 400))).assertFalse();
+      expect(retryableAuthorizationPollError(new Error('unparseable relay response'))).assertFalse();
+    });
+
     it('uses the same device selector for official and LAN endpoints', 0, () => {
       for (const endpoint of ['https://remote.openbitfun.com/v/1.0.1', 'http://192.168.1.10:9700']) {
         const parsed = accountDeviceLink(`${endpoint}/#/pair?did=desktop-1`);
@@ -1882,15 +1900,28 @@ export default function transportAndGeneralChatUnitTest() {
     it('builds workspace and assistant commands', 0, () => {
       expectCommandJson(RemoteCommandFactory.getWorkspaceInfo(), '{"cmd":"get_workspace_info"}');
       expectCommandJson(RemoteCommandFactory.listRecentWorkspaces(), '{"cmd":"list_recent_workspaces"}');
+      // Pre-ID references keep the legacy path projection.
       expectCommandJson(RemoteCommandFactory.setWorkspace('/repo'), '{"cmd":"set_workspace","path":"/repo"}');
+      expectCommandJson(
+        RemoteCommandFactory.setWorkspace('/repo', undefined, 'saved', 'host'),
+        '{"cmd":"set_workspace","path":"/repo","remote_connection_id":"saved","remote_ssh_host":"host"}'
+      );
       expectCommandJson(RemoteCommandFactory.listAssistants(), '{"cmd":"list_assistants"}');
       expectCommandJson(RemoteCommandFactory.setAssistant('/assistant'), '{"cmd":"set_assistant","path":"/assistant"}');
+      // An identified reference sends only its ID so the host cannot fall back to the path.
+      expectCommandJson(RemoteCommandFactory.setWorkspace('/repo', 'ws-1', 'saved', 'host'), '{"cmd":"set_workspace","workspace_id":"ws-1"}');
+      expectCommandJson(RemoteCommandFactory.setAssistant('/assistant', 'ws-2'), '{"cmd":"set_assistant","workspace_id":"ws-2"}');
     });
 
     it('builds session list and creation commands without unsupported fields', 0, () => {
-      const listCommand = RemoteCommandFactory.listSessions('/repo', 8, 16, '  auth  ');
+      const listCommand = RemoteCommandFactory.listSessions({ path: '/repo' }, 8, 16, '  auth  ');
       expectCommandJson(listCommand, '{"cmd":"list_sessions","workspace_path":"/repo","limit":8,"offset":16,"query":"auth"}');
       expect(JSON.stringify(listCommand).indexOf('agent_type')).assertEqual(-1);
+      const sshList = RemoteCommandFactory.listSessions({ path: '/repo', remoteConnectionId: 'saved', remoteSshHost: 'host' }, 8, 0, '');
+      expectCommandJson(sshList, '{"cmd":"list_sessions","workspace_path":"/repo","limit":8,"offset":0,"remote_connection_id":"saved","remote_ssh_host":"host"}');
+      const identifiedList = RemoteCommandFactory.listSessions(
+        { workspaceId: 'ws-1', path: '/repo', remoteConnectionId: 'saved', remoteSshHost: 'host' }, 8, 16, 'auth');
+      expectCommandJson(identifiedList, '{"cmd":"list_sessions","workspace_id":"ws-1","limit":8,"offset":16,"query":"auth"}');
 
       const createCommand = RemoteCommandFactory.createSession({
         agentType: 'cowork',
@@ -1908,6 +1939,11 @@ export default function transportAndGeneralChatUnitTest() {
       }, '/repo');
       expect(minimal.agent_type || '').assertEqual('minimal');
       expect(ultimate.agent_type || '').assertEqual('Ultra');
+
+      const identified = RemoteCommandFactory.createSession({
+        agentType: 'code', title: '', instruction: '', workspaceId: 'ws-1', remoteConnectionId: 'saved', remoteSshHost: 'host'
+      }, '/repo');
+      expectCommandJson(identified, '{"cmd":"create_session","agent_type":"code","session_name":"Remote Code Session","workspace_id":"ws-1"}');
     });
 
     it('builds message and polling commands', 0, () => {
@@ -2009,6 +2045,27 @@ export default function transportAndGeneralChatUnitTest() {
       expect(visible.length).assertEqual(1);
       expect(visible[0].id).assertEqual('native-session');
       expect(raw.length).assertEqual(3);
+    });
+
+    it('hides child sessions so Desktop side questions are not standalone rows', 0, () => {
+      const items: SessionItemResponse[] = [{
+        session_id: 'parent-session',
+        name: 'iOS sidebar spacing'
+      }, {
+        session_id: 'btw-session',
+        name: 'why did it grep with bash',
+        parent_session_id: 'parent-session',
+        relationship_kind: 'btw'
+      }];
+
+      const visible = RemoteResponseMapper.sessions(items);
+      const raw = RemoteResponseMapper.allSessions(items);
+
+      expect(visible.length).assertEqual(1);
+      expect(visible[0].id).assertEqual('parent-session');
+      expect(raw.length).assertEqual(2);
+      expect(raw[1].parentSessionId).assertEqual('parent-session');
+      expect(raw[1].relationshipKind).assertEqual('btw');
     });
 
     it('maps alternate session time fields', 0, () => {

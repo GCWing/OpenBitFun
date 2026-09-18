@@ -71,7 +71,7 @@ pub struct AppState {
     pub tool_registry: Arc<Vec<Arc<dyn tools::framework::Tool>>>,
     pub workspace_service: Arc<workspace::WorkspaceService>,
     pub workspace_identity_watch_service: Arc<workspace::WorkspaceIdentityWatchService>,
-    pub workspace_path: Arc<RwLock<Option<std::path::PathBuf>>>,
+    pub workspace_id: Arc<RwLock<Option<String>>>,
     pub config_service: Arc<config::ConfigService>,
     pub filesystem_service: Arc<filesystem::FileSystemService>,
     pub workspace_search_service: Arc<search::WorkspaceSearchService>,
@@ -246,9 +246,9 @@ impl AppState {
                 restored_workspaces.push(initial_workspace.clone());
             }
         }
-        let initial_workspace_path = initial_workspace
+        let initial_workspace_id = initial_workspace
             .as_ref()
-            .map(|workspace| workspace.root_path.clone());
+            .map(|workspace| workspace.id.clone());
         let mut index_budget_roots = workspace_service
             .get_recent_workspaces()
             .await
@@ -357,7 +357,7 @@ impl AppState {
             tool_registry,
             workspace_service,
             workspace_identity_watch_service,
-            workspace_path: Arc::new(RwLock::new(initial_workspace_path)),
+            workspace_id: Arc::new(RwLock::new(initial_workspace_id)),
             config_service,
             filesystem_service,
             workspace_search_service,

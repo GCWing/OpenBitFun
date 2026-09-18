@@ -49,6 +49,7 @@ impl CliProductRuntimeState {
 
 #[derive(Clone)]
 pub(crate) struct CliRuntimeContext {
+    workspace: openbitfun_core::service::workspace::WorkspaceInfo,
     workspace_root: PathBuf,
     agent_runtime: AgentRuntime,
     local_workspace_snapshot: Arc<dyn LocalWorkspaceSnapshotPort>,
@@ -65,12 +66,12 @@ pub(crate) struct CliRuntimeContext {
 impl CliRuntimeContext {
     pub(crate) fn build(
         agentic_system: AgenticSystem,
-        workspace_root: impl AsRef<Path>,
+        workspace: openbitfun_core::service::workspace::WorkspaceInfo,
         approval_policy: CliApprovalPolicy,
     ) -> Result<Self> {
         let scheduler = ensure_product_dialog_scheduler(&agentic_system);
         let (workspace_root, services) =
-            build_local_runtime_services(workspace_root, RUNTIME_EVENT_BUFFER)?;
+            build_local_runtime_services(&workspace.root_path, RUNTIME_EVENT_BUFFER)?;
         let parts = assemble_cli_runtime_parts(services)
             .context("Failed to assemble CLI product runtime")?;
 
@@ -99,6 +100,7 @@ impl CliRuntimeContext {
         let token_usage_service = agentic_system.token_usage_service.clone();
 
         Ok(Self {
+            workspace,
             workspace_root,
             _agent_event_queue_owner: agent_event_queue_owner,
             agent_runtime,
@@ -111,6 +113,10 @@ impl CliRuntimeContext {
             product,
             approval_policy,
         })
+    }
+
+    pub(crate) fn workspace(&self) -> &openbitfun_core::service::workspace::WorkspaceInfo {
+        &self.workspace
     }
 
     pub(crate) fn workspace_root(&self) -> &Path {

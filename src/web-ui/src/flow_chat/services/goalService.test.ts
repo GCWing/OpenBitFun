@@ -69,6 +69,7 @@ describe('/goal worktree preparation', () => {
       dialogTurns: [],
       status: 'active',
       config: {
+        workspaceId: 'workspace-1',
         workspacePath: '/repo',
         projectWorkspacePath: '/repo',
         executionTarget: {
@@ -77,6 +78,7 @@ describe('/goal worktree preparation', () => {
         },
         worktreeIsolationRequested: true,
       },
+      workspaceId: 'workspace-1',
       workspacePath: '/repo',
       projectWorkspacePath: '/repo',
       createdAt: 0,
@@ -163,10 +165,11 @@ describe('/goal worktree preparation', () => {
       'session-1',
       true,
       expect.any(String),
-      '/repo',
+      { enabled: true, projectWorkspaceId: 'workspace-1', projectWorkspacePath: '/repo' },
     );
     expect(mocks.activateSessionGoal).toHaveBeenCalledWith({
       sessionId: 'session-1',
+      workspaceId: 'workspace-1',
       workspacePath: '/repo',
       remoteConnectionId: undefined,
       remoteSshHost: undefined,

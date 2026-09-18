@@ -1,3 +1,4 @@
+import type { GitWorkspaceScope } from '@/infrastructure/api/service-api/GitAPI';
 import {
   gitRepositoryUntrustedPath,
   isGitRepositoryNotFoundError,
@@ -62,12 +63,13 @@ function reviewTargetError(
  * know a decision is waiting, not that Review is broken.
  */
 async function prepareWithRepositoryTrust(
+  workspace: GitWorkspaceScope,
   prepare: () => Promise<PreparedReviewLaunch>,
 ): Promise<PreparedReviewLaunch> {
   try {
     // Launching Review is one deliberate action, not a call inside a refresh
     // burst, so it is always worth a prompt — including right after a decline.
-    return await withGitRepositoryTrustRecovery(prepare, { userInitiated: true });
+    return await withGitRepositoryTrustRecovery(prepare, workspace, { userInitiated: true });
   } catch (error) {
     if (isGitRepositoryNotFoundError(error)) {
       throw reviewTargetError(
@@ -126,6 +128,7 @@ export type PreparedReviewLaunch =
 
 export interface PrepareReviewLaunchOptions {
   workspacePath?: string;
+  workspaceId?: string;
   remoteConnectionId?: string;
   extraContext?: string;
   changeStats?: ReviewTeamChangeStats;
@@ -191,6 +194,7 @@ async function prepareFromResolvedTarget(params: {
   targetEvidence: ReviewTargetEvidence;
   requestedFiles: string[];
   workspacePath?: string;
+  workspaceId?: string;
   extraContext?: string;
   commandText?: string;
   intent: 'review' | 'strict';
@@ -315,7 +319,7 @@ async function prepareFromResolvedTarget(params: {
       const launch = params.commandText
         ? await buildDeepReviewLaunchFromSlashCommand(
           params.commandText,
-          params.workspacePath,
+          { workspaceId: params.workspaceId ?? '', repositoryPath: params.workspacePath },
           {
             strategyOverride: 'deep',
             includeQualityGate: false,
@@ -333,7 +337,7 @@ async function prepareFromResolvedTarget(params: {
         : await buildDeepReviewLaunchFromSessionFiles(
           params.requestedFiles,
           params.extraContext,
-          params.workspacePath,
+          { workspaceId: params.workspaceId ?? '', repositoryPath: params.workspacePath },
           {
             strategyOverride: 'deep',
             includeQualityGate: false,
@@ -382,7 +386,7 @@ async function prepareFromResolvedTarget(params: {
   const launch = params.commandText
     ? await buildDeepReviewLaunchFromSlashCommand(
       params.commandText,
-      params.workspacePath,
+      { workspaceId: params.workspaceId ?? '', repositoryPath: params.workspacePath },
       {
         strategyOverride: 'deep',
         qualityDecision: { level: 'l3' },
@@ -399,7 +403,7 @@ async function prepareFromResolvedTarget(params: {
     : await buildDeepReviewLaunchFromSessionFiles(
       params.requestedFiles,
       params.extraContext,
-      params.workspacePath,
+      { workspaceId: params.workspaceId ?? '', repositoryPath: params.workspacePath },
       {
         strategyOverride: 'deep',
         qualityDecision: { level: 'l3' },
@@ -431,10 +435,10 @@ export async function prepareReviewLaunchFromSessionFiles(
   filePaths: string[],
   options: PrepareReviewLaunchOptions = {},
 ): Promise<PreparedReviewLaunch> {
-  return prepareWithRepositoryTrust(async () => {
+  return prepareWithRepositoryTrust({ workspaceId: options.workspaceId ?? '', repositoryPath: options.workspacePath }, async () => {
     const target = classifyReviewTargetFromFiles(filePaths, 'session_files');
     const snapshot = await resolveCurrentFileReviewSnapshot(
-      options.workspacePath,
+      { workspaceId: options.workspaceId ?? '', repositoryPath: options.workspacePath },
       target,
       options.remoteConnectionId,
     );
@@ -447,6 +451,7 @@ export async function prepareReviewLaunchFromSessionFiles(
       targetEvidence,
       requestedFiles: includedTargetFiles(resolvedTarget),
       workspacePath: options.workspacePath,
+      workspaceId: options.workspaceId,
       extraContext: options.extraContext,
       intent: options.intent === 'strict' ? 'strict' : 'review',
     });
@@ -457,12 +462,13 @@ export async function prepareReviewLaunchFromSlashCommand(
   commandText: string,
   workspacePath?: string,
   remoteConnectionId?: string,
+  workspaceId?: string,
 ): Promise<PreparedReviewLaunch> {
-  return prepareWithRepositoryTrust(async () => {
+  return prepareWithRepositoryTrust({ workspaceId: workspaceId ?? '', repositoryPath: workspacePath }, async () => {
     const extraContext = getDeepReviewCommandFocus(commandText);
     const { target, changeStats, targetEvidence } = await resolveSlashCommandReviewTarget(
       extraContext,
-      workspacePath,
+      { workspaceId: workspaceId ?? '', repositoryPath: workspacePath },
       remoteConnectionId,
     );
     return prepareFromResolvedTarget({
@@ -471,6 +477,7 @@ export async function prepareReviewLaunchFromSlashCommand(
       targetEvidence,
       requestedFiles: includedTargetFiles(target),
       workspacePath,
+      workspaceId,
       extraContext,
       commandText,
       intent: getReviewSlashCommandIntent(commandText) === 'strict' ? 'strict' : 'review',
@@ -480,6 +487,7 @@ export async function prepareReviewLaunchFromSlashCommand(
 
 export async function prepareReviewLaunchFromPullRequest(params: {
   workspacePath: string;
+  workspaceId: string;
   remote: ReviewPlatformRemote;
   repository: ReviewPlatformRepositoryRef;
   reviewTarget: ReviewPlatformPullRequestReviewTarget;
@@ -525,7 +533,7 @@ export async function prepareReviewLaunchFromPullRequest(params: {
   );
   // The provider supplied the evidence, but the manifest build still reads the
   // local workspace, so the same trust wall can appear here.
-  return prepareWithRepositoryTrust(() => prepareFromResolvedTarget({
+  return prepareWithRepositoryTrust({ workspaceId: params.workspaceId, repositoryPath: params.workspacePath }, () => prepareFromResolvedTarget({
     target,
     changeStats: {
       fileCount: params.reviewTarget.files.length,
@@ -535,6 +543,7 @@ export async function prepareReviewLaunchFromPullRequest(params: {
     targetEvidence,
     requestedFiles: includedTargetFiles(target),
     workspacePath: params.workspacePath,
+    workspaceId: params.workspaceId,
     intent: 'review',
   }));
 }
@@ -542,6 +551,7 @@ export async function prepareReviewLaunchFromPullRequest(params: {
 export async function launchPreparedReviewSession(params: {
   parentSessionId: string;
   workspacePath?: string;
+  workspaceId?: string;
   displayMessage: string;
   prepared: PreparedReviewLaunch;
   childSessionName?: string;

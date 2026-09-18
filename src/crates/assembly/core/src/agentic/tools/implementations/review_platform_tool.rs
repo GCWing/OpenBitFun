@@ -11,7 +11,7 @@ use crate::service::review_platform::{
     ReviewPlatformDetailSection, ReviewPlatformError, ReviewPlatformKind, ReviewPlatformListState,
     ReviewPlatformRemote, ReviewPlatformReplyToThreadRequest, ReviewPlatformRequestChangesRequest,
     ReviewPlatformResolveThreadRequest, ReviewPlatformService, ReviewPlatformSubmitReviewRequest,
-    ReviewSubmitEvent,
+    ReviewRepositoryLocator, ReviewSubmitEvent,
 };
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use async_trait::async_trait;
@@ -150,14 +150,15 @@ impl ReviewPlatformTool {
 
     async fn resolve_remote_id(
         action: &str,
-        repository_path: &str,
+        repository: &ReviewRepositoryLocator,
         input: &Value,
     ) -> OpenBitFunResult<Result<String, Value>> {
         if let Some(remote_id) = Self::optional_string_field(input, "remote_id") {
             return Ok(Ok(remote_id));
         }
 
-        let remotes = ReviewPlatformService::discover_remotes(repository_path)
+        let repository_path = repository.repository_path.as_str();
+        let remotes = ReviewPlatformService::discover_remotes(repository)
             .await
             .map_err(|error| OpenBitFunError::tool(error.to_string()))?;
         let supported = canonical_supported_remotes(&remotes);
@@ -760,8 +761,17 @@ When returning pull request results to the user, include the provider web URL so
             }
             _ => Self::repository_path(input, context)?,
         };
+        // The owning workspace ID routes Git probes (local vs. remote host);
+        // `repository_path` stays the IO operand inside that workspace.
+        let repository = ReviewRepositoryLocator::new(
+            context
+                .workspace
+                .as_ref()
+                .and_then(|workspace| workspace.workspace_id.clone()),
+            repository_path.clone(),
+        );
         let resolved_remote_id = if action_requires_remote(&action) {
-            match Self::resolve_remote_id(&action, &repository_path, input).await? {
+            match Self::resolve_remote_id(&action, &repository, input).await? {
                 Ok(remote_id) => Some(remote_id),
                 Err(selection_result) => {
                     let result_for_assistant = self.render_result_for_assistant(&selection_result);
@@ -778,7 +788,7 @@ When returning pull request results to the user, include the provider web URL so
 
         let data = match action.as_str() {
             ACTION_LIST_REMOTES => {
-                let remotes = ReviewPlatformService::discover_remotes(&repository_path)
+                let remotes = ReviewPlatformService::discover_remotes(&repository)
                     .await
                     .map_err(|error| OpenBitFunError::tool(error.to_string()))?;
                 json!({
@@ -798,7 +808,7 @@ When returning pull request results to the user, include the provider web URL so
                     .map(|value| value as u32);
                 let remote_id = Self::optional_string_field(input, "remote_id");
                 let snapshot = ReviewPlatformService::workspace_snapshot_with_state(
-                    &repository_path,
+                    &repository,
                     remote_id.as_deref(),
                     page,
                     per_page,
@@ -837,7 +847,7 @@ When returning pull request results to the user, include the provider web URL so
                     .clone()
                     .expect("remote-bound action should resolve a remote");
                 let snapshot = ReviewPlatformService::workspace_snapshot_with_state(
-                    &repository_path,
+                    &repository,
                     Some(remote_id.as_str()),
                     Some(1),
                     Some(1),
@@ -882,7 +892,7 @@ When returning pull request results to the user, include the provider web URL so
                     .clone()
                     .expect("remote-bound action should resolve a remote");
                 let snapshot = ReviewPlatformService::workspace_snapshot_with_state(
-                    &repository_path,
+                    &repository,
                     Some(remote_id.as_str()),
                     page,
                     per_page,
@@ -919,7 +929,7 @@ When returning pull request results to the user, include the provider web URL so
                     .clone()
                     .expect("remote-bound action should resolve a remote");
                 match ReviewPlatformService::pull_request_detail(
-                    &repository_path,
+                    &repository,
                     &remote_id,
                     &pull_request_id,
                 )
@@ -965,7 +975,7 @@ When returning pull request results to the user, include the provider web URL so
                     .and_then(Value::as_u64)
                     .map(|value| value as u32);
                 match ReviewPlatformService::pull_request_detail_page(
-                    &repository_path,
+                    &repository,
                     &remote_id,
                     &pull_request_id,
                     section,
@@ -1016,7 +1026,7 @@ When returning pull request results to the user, include the provider web URL so
                 let ci_item_id = Self::string_field(input, "ci_item_id")?;
                 let ci_item_name = Self::string_field(input, "ci_item_name")?;
                 match ReviewPlatformService::pull_request_ci_log(
-                    &repository_path,
+                    &repository,
                     &remote_id,
                     &pull_request_id,
                     &ci_item_id,
@@ -1053,6 +1063,7 @@ When returning pull request results to the user, include the provider web URL so
                     .clone()
                     .expect("remote-bound action should resolve a remote");
                 let request = ReviewPlatformCreatePullRequestRequest {
+                    workspace_id: repository.workspace_id.clone(),
                     repository_path: repository_path.clone(),
                     remote_id: Some(remote_id),
                     title: Self::string_field(input, "title")?,
@@ -1071,6 +1082,7 @@ When returning pull request results to the user, include the provider web URL so
                     .clone()
                     .expect("remote-bound action should resolve a remote");
                 let request = ReviewPlatformReplyToThreadRequest {
+                    workspace_id: repository.workspace_id.clone(),
                     repository_path: repository_path.clone(),
                     remote_id,
                     pull_request_id: Self::string_field(input, "pull_request_id")?,
@@ -1087,6 +1099,7 @@ When returning pull request results to the user, include the provider web URL so
                     .clone()
                     .expect("remote-bound action should resolve a remote");
                 let request = ReviewPlatformSubmitReviewRequest {
+                    workspace_id: repository.workspace_id.clone(),
                     repository_path: repository_path.clone(),
                     remote_id,
                     pull_request_id: Self::string_field(input, "pull_request_id")?,
@@ -1103,6 +1116,7 @@ When returning pull request results to the user, include the provider web URL so
                     .clone()
                     .expect("remote-bound action should resolve a remote");
                 let request = ReviewPlatformApprovalRequest {
+                    workspace_id: repository.workspace_id.clone(),
                     repository_path: repository_path.clone(),
                     remote_id,
                     pull_request_id: Self::string_field(input, "pull_request_id")?,
@@ -1118,6 +1132,7 @@ When returning pull request results to the user, include the provider web URL so
                     .clone()
                     .expect("remote-bound action should resolve a remote");
                 let request = ReviewPlatformApprovalRequest {
+                    workspace_id: repository.workspace_id.clone(),
                     repository_path: repository_path.clone(),
                     remote_id,
                     pull_request_id: Self::string_field(input, "pull_request_id")?,
@@ -1133,6 +1148,7 @@ When returning pull request results to the user, include the provider web URL so
                     .clone()
                     .expect("remote-bound action should resolve a remote");
                 let request = ReviewPlatformRequestChangesRequest {
+                    workspace_id: repository.workspace_id.clone(),
                     repository_path: repository_path.clone(),
                     remote_id,
                     pull_request_id: Self::string_field(input, "pull_request_id")?,
@@ -1148,6 +1164,7 @@ When returning pull request results to the user, include the provider web URL so
                     .clone()
                     .expect("remote-bound action should resolve a remote");
                 let request = ReviewPlatformResolveThreadRequest {
+                    workspace_id: repository.workspace_id.clone(),
                     repository_path: repository_path.clone(),
                     remote_id,
                     pull_request_id: Self::string_field(input, "pull_request_id")?,

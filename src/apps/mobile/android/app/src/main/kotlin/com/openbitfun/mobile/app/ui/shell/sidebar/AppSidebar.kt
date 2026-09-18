@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -43,8 +42,10 @@ import com.openbitfun.mobile.core.feature.connection.RemoteControlSource
 import com.openbitfun.mobile.core.feature.session.SessionActionPolicy
 import com.openbitfun.mobile.core.feature.session.SessionActionScope
 import com.openbitfun.mobile.core.feature.session.RemoteSessionUiState
+import com.openbitfun.mobile.core.feature.session.WorkspaceSessionDirectoryUiState
 import com.openbitfun.mobile.core.feature.layout.SettingsPlacement
 import com.openbitfun.mobile.core.feature.shell.RemoteSidebarSessionRow
+import com.openbitfun.mobile.core.feature.shell.RemoteSidebarWorkspaceRow
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceUiState
 
 internal const val SIDEBAR_TEST_TAG: String = "app-sidebar"
@@ -76,6 +77,7 @@ internal fun AppSidebar(
     remoteDeviceName: String,
     remoteState: RemoteSessionUiState,
     workspaceState: RemoteWorkspaceUiState,
+    workspaceDirectory: WorkspaceSessionDirectoryUiState,
     remoteActive: Boolean,
     remoteSelectedSessionId: String?,
     query: String,
@@ -89,8 +91,10 @@ internal fun AppSidebar(
     directoryRefreshError: String? = null,
     onSelectRemoteDevice: (String) -> Unit,
     onOpenRemoteSession: (String) -> Unit,
-    onCreateRemoteInWorkspace: (String, String?, String?, String) -> Unit,
-    onOpenRemoteWorkspace: (String) -> Unit,
+    onCreateRemoteInWorkspace: (RemoteSidebarWorkspaceRow, String) -> Unit,
+    onOpenRemoteWorkspace: (RemoteSidebarWorkspaceRow) -> Unit,
+    onExpandRemoteWorkspace: (RemoteSidebarWorkspaceRow) -> Unit,
+    onRetryRemoteWorkspaceSessions: (RemoteSidebarWorkspaceRow) -> Unit,
     onAddRemoteWorkspace: (() -> Unit)? = null,
     onWorkspaceTool: (String, String?, Boolean) -> Unit,
     onDeleteRemoteSession: (String) -> Unit,
@@ -104,11 +108,12 @@ internal fun AppSidebar(
     var remoteDetailsSessionId by rememberSaveable { mutableStateOf<String?>(null) }
 
     Box(modifier = modifier.fillMaxSize().testTag(SIDEBAR_TEST_TAG)) {
+        // No spacedBy: the MiniApps row carries its own 4dp/8dp rhythm, and a
+        // column-level gap on top of it would push the section header away.
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(start = 20.dp, end = 20.dp, top = 0.dp, bottom = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (signedIn) {
                 SidebarAuthenticatedHeader(searchOpen, query, onQueryChange, onToggleSearch)
@@ -127,6 +132,7 @@ internal fun AppSidebar(
                         deviceName = remoteDeviceName,
                         remoteState = remoteState,
                         workspaceState = workspaceState,
+                        workspaceDirectory = workspaceDirectory,
                         selectedSessionId = remoteSelectedSessionId.takeIf { remoteActive },
                         onConnect = onScanDesktop,
                         onRetryActive = onRetryRemoteDevice,
@@ -141,6 +147,8 @@ internal fun AppSidebar(
                         },
                         onCreateInWorkspace = onCreateRemoteInWorkspace,
                         onOpenWorkspace = onOpenRemoteWorkspace,
+                        onExpandWorkspace = onExpandRemoteWorkspace,
+                        onRetryWorkspaceSessions = onRetryRemoteWorkspaceSessions,
                         onAddWorkspace = onAddRemoteWorkspace,
                         onWorkspaceTool = onWorkspaceTool,
                     )

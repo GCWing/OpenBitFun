@@ -1,5 +1,7 @@
-import { RecentWorkspaceEntry, RemoteSession } from '../../model/RemoteModels';
+import { RecentWorkspaceEntry, RemoteSession, RemoteWorkspaceIdentity } from '../../model/RemoteModels';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
+import { LegacyWorkspaceCompatibility } from '../../services/LegacyWorkspaceCompatibility';
+import { remoteWorkspaceIdentityMatches, remoteWorkspaceKey } from '../../services/RemoteSessionIdentity';
 import { TimeFormat } from '../../services/TimeFormat';
 import { ConversationSessionFilterPolicy } from './ConversationSessionFilterPolicy';
 
@@ -10,6 +12,10 @@ export interface SessionListInputs {
   sortMode: string;
   workspaceName: string;
   workspacePath: string;
+  /** Stable record ID of the active workspace; absent on pre-ID hosts. */
+  workspaceId?: string;
+  workspaceConnectionId?: string;
+  workspaceSshHost?: string;
   workspaceKind: string;
   recentWorkspaces: RecentWorkspaceEntry[];
   workspaceFilter: string;
@@ -34,12 +40,23 @@ export interface SessionListProjection {
   yesterday: RemoteSession[];
   earlier: RemoteSession[];
   projects: RecentWorkspaceEntry[];
+  /** Keyed by `remoteWorkspaceKey` of the owning project entry. */
   projectSessions: Map<string, RemoteSession[]>;
   metadata: Map<string, string>;
   hasActiveFilter: boolean;
 }
 
 const EMPTY_SESSIONS: RemoteSession[] = [];
+
+/** The catalog rows and current workspace, resolved once per projection. */
+interface WorkspaceAttribution {
+  /** Every reference the legacy resolver may attribute an ID-less session to. */
+  catalog: RemoteWorkspaceIdentity[];
+  /** Section keys of assistant-kind rows. */
+  assistantKeys: Set<string>;
+  /** The active workspace as a catalog row, when the host has one open. */
+  current: RecentWorkspaceEntry | undefined;
+}
 
 /**
  * Turns the raw session list into the shape the sidebar renders, in one pass.
@@ -55,7 +72,7 @@ const EMPTY_SESSIONS: RemoteSession[] = [];
  */
 export class SessionListProjector {
   static project(inputs: SessionListInputs): SessionListProjection {
-    const assistantPaths: Set<string> = SessionListProjector.assistantWorkspacePaths(inputs.recentWorkspaces);
+    const attribution = SessionListProjector.workspaceAttribution(inputs);
     const hasActiveFilter = inputs.query.trim().length > 0 || inputs.workspaceFilter.length > 0 ||
       inputs.agentFilter.length > 0 || inputs.statusFilter.length > 0;
     const wantsMetadata = inputs.showWorkspaceMetadata || inputs.showUpdatedMetadata || inputs.showStatusMetadata;
@@ -65,12 +82,21 @@ export class SessionListProjector {
     const projectSessions: Map<string, RemoteSession[]> = new Map();
     const metadata: Map<string, string> = new Map();
     const nowMs = Date.now();
+    const projectEntries = SessionListProjector.projectEntries(inputs, attribution);
+    // Sessions pinned to a workspace ID land in their section by one map
+    // lookup; only ID-less sessions pay for the legacy resolver.
+    const keysByWorkspaceId: Map<string, string> = new Map();
+    projectEntries.forEach((entry: RecentWorkspaceEntry) => {
+      if (entry.workspaceId) {
+        keysByWorkspaceId.set(entry.workspaceId, remoteWorkspaceKey(entry));
+      }
+    });
 
     inputs.sessions.forEach((item: RemoteSession) => {
       // Decided once and carried through the rest of the pass. It is the
       // expensive predicate — it searches the recent-workspace list — and it
       // feeds the filter, the chat/project split and the agent grouping alike.
-      const assistant = SessionListProjector.isAssistantSession(item, inputs, assistantPaths);
+      const assistant = SessionListProjector.isAssistantSession(item, inputs, attribution);
       const matches = ConversationSessionFilterPolicy.matches(
         item,
         inputs.query,
@@ -87,8 +113,7 @@ export class SessionListProjector {
       if (assistant) {
         chats.push(item);
       } else {
-        const key = ConversationSessionFilterPolicy.normalizeWorkspacePath(
-          item.workspacePath ? item.workspacePath : inputs.workspacePath);
+        const key = SessionListProjector.sectionKey(item, inputs, attribution, projectEntries, keysByWorkspaceId);
         const bucket = projectSessions.get(key);
         if (bucket === undefined) {
           projectSessions.set(key, [item]);
@@ -101,7 +126,7 @@ export class SessionListProjector {
       }
     });
 
-    const projects = SessionListProjector.projectEntries(inputs, assistantPaths, hasActiveFilter, projectSessions);
+    const projects = SessionListProjector.visibleProjectEntries(projectEntries, hasActiveFilter, projectSessions);
     // Sorting by time parses two timestamps per session per comparison, so it
     // stays behind the mode that asks for it.
     const byTime = inputs.sortMode === 'time' ? SessionListProjector.sortByTime(filtered) : EMPTY_SESSIONS;
@@ -120,10 +145,30 @@ export class SessionListProjector {
     };
   }
 
-  /** The sessions filed under a workspace, or an empty list when there are none. */
-  static sessionsForProject(projection: SessionListProjection, path: string): RemoteSession[] {
-    const bucket = projection.projectSessions.get(ConversationSessionFilterPolicy.normalizeWorkspacePath(path));
+  /**
+   * The sessions filed under a workspace, or an empty list when there are none.
+   *
+   * A reference with an ID reads its section directly. A pre-ID reference is
+   * attributed to a project entry through the legacy resolver first, so a
+   * trailing slash or a missing connection id cannot hide a section.
+   */
+  static sessionsForProject(projection: SessionListProjection, workspace: RemoteWorkspaceIdentity): RemoteSession[] {
+    const direct = projection.projectSessions.get(remoteWorkspaceKey(workspace));
+    if (direct !== undefined) {
+      return direct;
+    }
+    if (workspace.workspaceId) {
+      return EMPTY_SESSIONS;
+    }
+    const owner = projection.projects.find((entry: RecentWorkspaceEntry): boolean =>
+      remoteWorkspaceIdentityMatches(workspace, entry, projection.projects));
+    const bucket = owner === undefined ? undefined : projection.projectSessions.get(remoteWorkspaceKey(owner));
     return bucket === undefined ? EMPTY_SESSIONS : bucket;
+  }
+
+  /** The key a project entry's section is filed under. */
+  static sectionKeyFor(entry: RemoteWorkspaceIdentity): string {
+    return remoteWorkspaceKey(entry);
   }
 
   static metadataFor(projection: SessionListProjection, sessionId: string): string {
@@ -146,77 +191,161 @@ export class SessionListProjector {
     };
   }
 
-  private static assistantWorkspacePaths(entries: RecentWorkspaceEntry[]): Set<string> {
-    const paths: Set<string> = new Set();
-    entries.forEach((item: RecentWorkspaceEntry) => {
-      if (item.workspaceKind.toLowerCase() === 'assistant') {
-        paths.add(item.path);
-      }
-    });
-    return paths;
+  /**
+   * The active workspace as a catalog row.
+   *
+   * The page state may carry less than the catalog does — an older cache
+   * without the connection id, or a host that has not sent the ID — so an
+   * ID-less current workspace is completed from its unique catalog match.
+   */
+  private static currentWorkspaceEntry(inputs: SessionListInputs): RecentWorkspaceEntry | undefined {
+    const workspaceId = inputs.workspaceId?.trim() || '';
+    if (inputs.workspacePath.length === 0 && workspaceId.length === 0) {
+      return undefined;
+    }
+    const reference: RemoteWorkspaceIdentity = {
+      workspaceId: workspaceId.length > 0 ? workspaceId : undefined,
+      path: inputs.workspacePath,
+      remoteConnectionId: inputs.workspaceConnectionId?.trim() || undefined,
+      remoteSshHost: inputs.workspaceSshHost?.trim() || undefined
+    };
+    const resolved = LegacyWorkspaceCompatibility.resolve(reference, inputs.recentWorkspaces);
+    return {
+      workspaceId: reference.workspaceId || resolved?.workspaceId,
+      path: inputs.workspacePath.length > 0 ? inputs.workspacePath : (resolved?.path || ''),
+      name: inputs.workspaceName,
+      remoteConnectionId: reference.remoteConnectionId !== undefined ? reference.remoteConnectionId : resolved?.remoteConnectionId,
+      remoteSshHost: reference.remoteSshHost !== undefined ? reference.remoteSshHost : resolved?.remoteSshHost,
+      lastOpened: '',
+      workspaceKind: inputs.workspaceKind.toLowerCase() === 'assistant' ? 'assistant' : 'normal'
+    };
   }
 
-  private static isAssistantWorkspace(
-    path: string,
-    inputs: SessionListInputs,
-    assistantPaths: Set<string>
-  ): boolean {
-    if (path.length === 0) {
-      return inputs.workspaceKind.toLowerCase() === 'assistant';
+  private static workspaceAttribution(inputs: SessionListInputs): WorkspaceAttribution {
+    const current = SessionListProjector.currentWorkspaceEntry(inputs);
+    const catalog: RemoteWorkspaceIdentity[] = [];
+    const assistantKeys: Set<string> = new Set();
+    inputs.recentWorkspaces.forEach((item: RecentWorkspaceEntry) => {
+      catalog.push(item);
+      if (item.workspaceKind.toLowerCase() === 'assistant') {
+        assistantKeys.add(remoteWorkspaceKey(item));
+      }
+    });
+    if (current !== undefined) {
+      // The current workspace joins the catalog only when no row already
+      // names it; a duplicate would make every path lookup ambiguous.
+      const known = inputs.recentWorkspaces.some((item: RecentWorkspaceEntry): boolean =>
+        remoteWorkspaceIdentityMatches(item, current, inputs.recentWorkspaces));
+      if (!known) {
+        catalog.push(current);
+      }
+      if (current.workspaceKind === 'assistant') {
+        assistantKeys.add(remoteWorkspaceKey(current));
+      }
     }
-    if (path === inputs.workspacePath && inputs.workspaceKind.toLowerCase() === 'assistant') {
-      return true;
+    return { catalog, assistantKeys, current };
+  }
+
+  /**
+   * Whether a reference names an assistant workspace.
+   *
+   * Kind is a fact of the catalog row, so the reference is attributed to its
+   * row first: by ID when it has one, otherwise through the legacy resolver.
+   * An unresolvable reference is not an assistant.
+   */
+  private static isAssistantWorkspace(reference: RemoteWorkspaceIdentity, attribution: WorkspaceAttribution): boolean {
+    if (attribution.assistantKeys.size === 0) {
+      return false;
     }
-    return assistantPaths.has(path);
+    if (reference.workspaceId) {
+      return attribution.assistantKeys.has(remoteWorkspaceKey(reference));
+    }
+    const resolved = LegacyWorkspaceCompatibility.resolve(reference, attribution.catalog);
+    return resolved !== undefined && attribution.assistantKeys.has(remoteWorkspaceKey(resolved));
   }
 
   private static isAssistantSession(
     item: RemoteSession,
     inputs: SessionListInputs,
-    assistantPaths: Set<string>
+    attribution: WorkspaceAttribution
   ): boolean {
     const agentType = (item.agentType ? item.agentType : '').toLowerCase();
     if (agentType === 'claw' || agentType === 'assistant' || agentType === 'chat') {
       return true;
     }
-    return SessionListProjector.isAssistantWorkspace(
-      item.workspacePath ? item.workspacePath : '', inputs, assistantPaths);
+    if (item.workspaceIdentity) {
+      return SessionListProjector.isAssistantWorkspace(item.workspaceIdentity, attribution);
+    }
+    const path = item.workspacePath ? item.workspacePath : '';
+    if (path.length === 0) {
+      return inputs.workspaceKind.toLowerCase() === 'assistant';
+    }
+    return SessionListProjector.isAssistantWorkspace({ path }, attribution);
   }
 
-  private static projectEntries(
+  /** The section a filtered, non-assistant session is filed under. */
+  private static sectionKey(
+    item: RemoteSession,
     inputs: SessionListInputs,
-    assistantPaths: Set<string>,
-    hasActiveFilter: boolean,
-    projectSessions: Map<string, RemoteSession[]>
-  ): RecentWorkspaceEntry[] {
+    attribution: WorkspaceAttribution,
+    projectEntries: RecentWorkspaceEntry[],
+    keysByWorkspaceId: Map<string, string>
+  ): string {
+    const identity = item.workspaceIdentity;
+    if (identity !== undefined && identity.workspaceId) {
+      const known = keysByWorkspaceId.get(identity.workspaceId);
+      // An ID the catalog does not list still keys its own section rather than
+      // being guessed onto a row by path.
+      return known === undefined ? remoteWorkspaceKey(identity) : known;
+    }
+    // Pre-ID sessions: a legacy reference, attributed to a row through the
+    // single compatibility resolver. Sessions that name no workspace at all
+    // belong to the workspace the list was fetched for.
+    const path = identity !== undefined ? identity.path : (item.workspacePath ? item.workspacePath : '');
+    if (path.length === 0 && identity === undefined) {
+      return attribution.current !== undefined ? remoteWorkspaceKey(attribution.current) :
+        remoteWorkspaceKey({ path: inputs.workspacePath });
+    }
+    const reference: RemoteWorkspaceIdentity = identity !== undefined ? identity : { path };
+    const owner = projectEntries.find((entry: RecentWorkspaceEntry): boolean =>
+      remoteWorkspaceIdentityMatches(reference, entry, attribution.catalog));
+    if (owner !== undefined) {
+      return remoteWorkspaceKey(owner);
+    }
+    const resolved = LegacyWorkspaceCompatibility.resolve(reference, attribution.catalog);
+    return remoteWorkspaceKey(resolved !== undefined ? resolved : reference);
+  }
+
+  private static projectEntries(inputs: SessionListInputs, attribution: WorkspaceAttribution): RecentWorkspaceEntry[] {
     const entries: RecentWorkspaceEntry[] = [];
-    const currentIsAssistant = SessionListProjector.isAssistantWorkspace(inputs.workspacePath, inputs, assistantPaths);
-    if (inputs.workspacePath.length > 0 && !currentIsAssistant) {
-      entries.push({
-        path: inputs.workspacePath,
-        name: inputs.workspaceName,
-        remoteSshHost: inputs.recentWorkspaces.find((item: RecentWorkspaceEntry) => item.path === inputs.workspacePath)?.remoteSshHost,
-        lastOpened: '',
-        workspaceKind: 'normal'
-      });
+    const current = attribution.current;
+    if (current !== undefined && current.workspaceKind !== 'assistant' && current.path.length > 0) {
+      entries.push(current);
     }
     inputs.recentWorkspaces.forEach((item: RecentWorkspaceEntry) => {
-      if (item.path.length === 0 ||
-        SessionListProjector.isAssistantWorkspace(item.path, inputs, assistantPaths)) {
+      if (item.path.length === 0 || SessionListProjector.isAssistantWorkspace(item, attribution)) {
         return;
       }
-      if (entries.some((entry: RecentWorkspaceEntry) => entry.path === item.path)) {
+      if (entries.some((entry: RecentWorkspaceEntry) => remoteWorkspaceIdentityMatches(entry, item, attribution.catalog))) {
         return;
       }
       entries.push(item);
     });
+    return entries;
+  }
+
+  private static visibleProjectEntries(
+    entries: RecentWorkspaceEntry[],
+    hasActiveFilter: boolean,
+    projectSessions: Map<string, RemoteSession[]>
+  ): RecentWorkspaceEntry[] {
     if (!hasActiveFilter) {
       return entries;
     }
     // A filter narrow enough to empty a project takes that project's header off
     // the list too, so the sidebar does not read as a wall of empty groups.
     return entries.filter((item: RecentWorkspaceEntry) => {
-      const bucket = projectSessions.get(ConversationSessionFilterPolicy.normalizeWorkspacePath(item.path));
+      const bucket = projectSessions.get(remoteWorkspaceKey(item));
       return bucket !== undefined && bucket.length > 0;
     });
   }
@@ -342,6 +471,7 @@ export class SessionListProjectionCache {
     // depends on. Off — which is the default — nothing here moves on its own.
     const minute = inputs.showUpdatedMetadata ? Math.floor(Date.now() / 60000) : 0;
     return `${inputs.query} ${inputs.sortMode} ${inputs.workspaceName} ${inputs.workspacePath}` +
+      ` ${inputs.workspaceId || ''} ${inputs.workspaceConnectionId || ''} ${inputs.workspaceSshHost || ''}` +
       ` ${inputs.workspaceKind} ${inputs.workspaceFilter} ${inputs.agentFilter}` +
       ` ${inputs.statusFilter} ${inputs.showWorkspaceMetadata ? 1 : 0}` +
       `${inputs.showUpdatedMetadata ? 1 : 0}${inputs.showStatusMetadata ? 1 : 0} ${minute}`;
@@ -349,14 +479,16 @@ export class SessionListProjectionCache {
 
   private static sessionFingerprint(sessions: RemoteSession[]): string[] {
     return sessions.map((item: RemoteSession): string => {
+      const identity = item.workspaceIdentity;
       return `${item.deviceId || ''}${item.id}${item.title}${item.status}${item.agentType}` +
-        `${item.workspacePath}${item.workspaceName}${item.updatedAt}${item.createdAt}`;
+        `${item.workspacePath}${item.workspaceName}${item.updatedAt}${item.createdAt}` +
+        `${identity === undefined ? '' : remoteWorkspaceKey(identity)}`;
     });
   }
 
   private static workspaceFingerprint(entries: RecentWorkspaceEntry[]): string[] {
     return entries.map((item: RecentWorkspaceEntry): string => {
-      return `${item.path}${item.name}${item.workspaceKind}\u0001${item.remoteSshHost || ''}`;
+      return `${remoteWorkspaceKey(item)}${item.name}${item.workspaceKind}${item.remoteSshHost || ''}`;
     });
   }
 

@@ -5,10 +5,12 @@ import { useRealtimeVoiceCall } from './RealtimeVoiceCallContext';
 interface RealtimeVoiceCallPanelProps {
   /** The compact host owns closing/collapsing its window. */
   onClose?: () => void;
+  onBack?: () => void;
+  embedded?: boolean;
 }
 
 /** Product binding only; the published design-system component owns the full call anatomy. */
-export function RealtimeVoiceCallPanel({ onClose }: RealtimeVoiceCallPanelProps) {
+export function RealtimeVoiceCallPanel({ onClose, onBack, embedded = false }: RealtimeVoiceCallPanelProps) {
   const { t } = useI18n('settings/voice-input');
   const controller = useRealtimeVoiceCall();
   const status = controller.notice || (controller.phase !== 'live'
@@ -18,6 +20,7 @@ export function RealtimeVoiceCallPanel({ onClose }: RealtimeVoiceCallPanelProps)
     : undefined);
 
   return <VoiceCallPanel
+    presentation={embedded ? 'embedded' : 'card'}
     data-openbitfun-product-component="realtime-voice-call"
     data-openbitfun-product-part="root"
     data-openbitfun-phase={controller.phase}
@@ -38,7 +41,7 @@ export function RealtimeVoiceCallPanel({ onClose }: RealtimeVoiceCallPanelProps)
     assistantTranscript={controller.assistantTranscript}
     status={status}
     readAudio={controller.readAudio}
-    onBack={controller.end}
+    onBack={onBack ?? controller.end}
     onClose={onClose ?? controller.end}
     onToggleMute={controller.toggleMute}
     onOpenSettings={controller.openSettings}

@@ -307,16 +307,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
             : explicitPreferredMode;
 
         const flowChatManager = FlowChatManager.getInstance();
-        const hasHistoricalSessions = await flowChatManager.initialize(
-          currentWorkspace.rootPath,
-          initializationPreferredMode,
-          currentWorkspace.workspaceKind === WorkspaceKind.Remote
-            ? currentWorkspace.connectionId
-            : undefined,
-          currentWorkspace.workspaceKind === WorkspaceKind.Remote
-            ? currentWorkspace.sshHost
-            : undefined
-        );
+        const hasHistoricalSessions = await flowChatManager.initialize(currentWorkspace, initializationPreferredMode);
         if (cancelled) {
           return;
         }
@@ -583,7 +574,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
   // Create one unified project session using the user's default Harness policy.
   const handleCreateFlowChatSession = React.useCallback(async () => {
     try {
-      if (!currentWorkspace?.rootPath) {
+      if (!currentWorkspace?.id) {
         log.warn('Cannot create FlowChat session without an active workspace');
         return;
       }
@@ -608,17 +599,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     const handler = (e: Event) => {
       const clientId = (e as CustomEvent<{ clientId?: string }>).detail?.clientId?.trim();
       if (!clientId) return;
-      const config = currentWorkspace
-        ? {
-            workspacePath: currentWorkspace.rootPath,
-            ...(currentWorkspace.workspaceKind === WorkspaceKind.Remote && currentWorkspace.connectionId
-              ? { remoteConnectionId: currentWorkspace.connectionId }
-              : {}),
-            ...(currentWorkspace.workspaceKind === WorkspaceKind.Remote && currentWorkspace.sshHost
-              ? { remoteSshHost: currentWorkspace.sshHost }
-              : {}),
-          }
-        : {};
+      const config = currentWorkspace ? flowChatSessionConfigForWorkspace(currentWorkspace) : {};
       void FlowChatManager.getInstance()
         .createAcpChatSession(clientId, config)
         .then(sessionId => openMainSession(sessionId))

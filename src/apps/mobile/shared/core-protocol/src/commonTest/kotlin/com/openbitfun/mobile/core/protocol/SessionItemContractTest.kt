@@ -27,7 +27,7 @@ class SessionItemContractTest {
     fun fixtureCoversMoreThanTheHappyPath() {
         // A fixture file that shrinks to one canonical case stops being a drift
         // guard, so the count is part of the contract.
-        assertTrue(cases.size >= 6, "expected the alias and fallthrough cases, got ${cases.size}")
+        assertTrue(cases.size >= 7, "expected the alias and fallthrough cases, got ${cases.size}")
     }
 
     @Test
@@ -55,6 +55,16 @@ class SessionItemContractTest {
                 expected.optionalString("workspaceName"),
                 decoded.workspaceName,
                 "$name: workspaceName",
+            )
+            assertEquals(
+                expected.optionalString("parentSessionId"),
+                decoded.parentSessionId,
+                "$name: parentSessionId",
+            )
+            assertEquals(
+                expected.optionalString("relationshipKind"),
+                decoded.relationshipKind,
+                "$name: relationshipKind",
             )
         }
     }

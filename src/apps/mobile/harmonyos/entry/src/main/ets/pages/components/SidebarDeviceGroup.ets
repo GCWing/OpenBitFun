@@ -1,7 +1,7 @@
-import { remoteWorkspaceKey, remoteSessionBelongsToWorkspace } from '../../services/RemoteSessionIdentity';
+import { remoteWorkspaceIdentityMatches, remoteWorkspaceKey, remoteSessionBelongsToWorkspace } from '../../services/RemoteSessionIdentity';
 import { WorkspaceToolsIntent } from '../state/WorkspaceToolsState';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
-import { RecentWorkspaceEntry, RemoteSession } from '../../model/RemoteModels';
+import { RecentWorkspaceEntry, RemoteSession, RemoteWorkspaceIdentity } from '../../model/RemoteModels';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import {
   DeviceDirectoryEntry,
@@ -34,6 +34,8 @@ import {
 struct SidebarWorkspaceGroup {
   @Param sshHost: string = '';
   @Param connectionId: string = '';
+  /** Stable record ID of this row; empty only for rows from pre-ID hosts. */
+  @Param workspaceId: string = '';
   @Event onWorkspaceTools: (intent: WorkspaceToolsIntent) => void = (_intent: WorkspaceToolsIntent) => {};
   @Param deviceId: string = '';
   @Param path: string = '';
@@ -48,16 +50,20 @@ struct SidebarWorkspaceGroup {
   @Param loadStatus: WorkspaceDirectoryStatus = 'idle';
   @Param hasLoadedSessions: boolean = false;
   @Param supportsHarnessProfiles: boolean = false;
-  @Event onOpenWorkspace: (path: string, connectionId?: string, sshHost?: string) => void = (_path: string) => {};
+  @Event onOpenWorkspace: (path: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void = (_path: string) => {};
   @Event onExpandWorkspace: (path: string) => Promise<void> = async (_path: string) => {};
   @Event onExpandedChange: (path: string, expanded: boolean) => void =
     (_path: string, _expanded: boolean) => {};
-  @Event onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string) => void =
+  @Event onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void =
     (_path: string, _agentType: string) => {};
   @Event onOpenSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
   @Event onSessionActions: (session: RemoteSession) => void = (_session: RemoteSession) => {};
   @Local visibleSessionCount: number = SidebarDirectoryPreviewPolicy.PREVIEW_COUNT;
   @Local showCreateMenu: boolean = false;
+
+  private workspaceIdOrUndefined(): string | undefined {
+    return this.workspaceId.length > 0 ? this.workspaceId : undefined;
+  }
 
   build() {
     Column() {
@@ -123,7 +129,7 @@ struct SidebarWorkspaceGroup {
         void this.toggleExpanded();
       })
       .gesture(LongPressGesture({ repeat: false }).onAction(() => {
-        this.onOpenWorkspace(this.path, this.connectionId, this.sshHost);
+        this.onOpenWorkspace(this.path, this.connectionId, this.sshHost, this.workspaceIdOrUndefined());
       }))
 
       Stack({ alignContent: Alignment.Center }) {
@@ -166,7 +172,7 @@ struct SidebarWorkspaceGroup {
   private CreateModeMenu() {
     HarnessProfileMenu({ showTitle: false, onSelect: (agentType: string) => {
       this.showCreateMenu = false;
-      this.onCreateInWorkspace(this.path, agentType, this.connectionId, this.sshHost);
+      this.onCreateInWorkspace(this.path, agentType, this.connectionId, this.sshHost, this.workspaceIdOrUndefined());
     } })
   }
 
@@ -333,6 +339,8 @@ export struct SidebarDeviceGroup {
   @Param workspacePath: string = '';
   @Param workspaceConnectionId: string = '';
   @Param workspaceSshHost: string = '';
+  /** Stable record ID of the desktop's active workspace; empty for pre-ID hosts. */
+  @Param workspaceId: string = '';
   @Param workspaceKind: string = 'normal';
   @Param selectedSessionId: string = '';
   @Param runningSessionId: string = '';
@@ -342,11 +350,11 @@ export struct SidebarDeviceGroup {
   @Event onRetry: () => void = () => {};
   @Event onOpenSession: (session: RemoteSession) => void = (_session: RemoteSession) => {};
   @Event onSessionActions: (session: RemoteSession) => void = (_session: RemoteSession) => {};
-  @Event onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string) => void =
+  @Event onCreateInWorkspace: (path: string, agentType: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void =
     (_path: string, _agentType: string) => {};
-  @Event onOpenWorkspace: (path: string, connectionId?: string, sshHost?: string) => void = (_path: string) => {};
-  @Event onExpandWorkspace: (path: string, remoteConnectionId?: string, remoteSshHost?: string) => Promise<void> = async (_path: string) => {};
-  @Event onWorkspaceExpandedChange: (path: string, expanded: boolean, remoteConnectionId?: string, remoteSshHost?: string) => void =
+  @Event onOpenWorkspace: (path: string, connectionId?: string, sshHost?: string, workspaceId?: string) => void = (_path: string) => {};
+  @Event onExpandWorkspace: (path: string, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string) => Promise<void> = async (_path: string) => {};
+  @Event onWorkspaceExpandedChange: (path: string, expanded: boolean, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string) => void =
     (_path: string, _expanded: boolean) => {};
   @Local visibleWorkspaceCount: number = SidebarDirectoryPreviewPolicy.PREVIEW_COUNT;
   private readonly projectionCache: SessionListProjectionCache = new SessionListProjectionCache();
@@ -368,6 +376,7 @@ export struct SidebarDeviceGroup {
           SidebarWorkspaceGroup({
             connectionId: entry.remoteConnectionId || '',
             sshHost: entry.remoteSshHost || '',
+            workspaceId: entry.workspaceId || '',
             onWorkspaceTools: this.onWorkspaceTools,
             deviceId: this.device.deviceId,
             path: entry.path,
@@ -379,12 +388,17 @@ export struct SidebarDeviceGroup {
             activeDevice: this.isActive,
             supportsHarnessProfiles: this.supportsHarnessProfiles,
             bodyIndent: 10,
-            expanded: this.directoryState.workspaceExpanded(this.device.deviceId, entry.path, entry.remoteConnectionId, entry.remoteSshHost),
-            loadStatus: this.directoryState.workspaceStatus(this.device.deviceId, entry.path, entry.remoteConnectionId, entry.remoteSshHost),
-            hasLoadedSessions: this.directoryState.workspaceHasLoadedSessions(this.device.deviceId, entry.path, entry.remoteConnectionId, entry.remoteSshHost),
+            expanded: this.directoryState.workspaceExpanded(
+              this.device.deviceId, entry.path, entry.remoteConnectionId, entry.remoteSshHost, entry.workspaceId),
+            loadStatus: this.directoryState.workspaceStatus(
+              this.device.deviceId, entry.path, entry.remoteConnectionId, entry.remoteSshHost, entry.workspaceId),
+            hasLoadedSessions: this.directoryState.workspaceHasLoadedSessions(
+              this.device.deviceId, entry.path, entry.remoteConnectionId, entry.remoteSshHost, entry.workspaceId),
             onOpenWorkspace: this.onOpenWorkspace,
-            onExpandWorkspace: (path: string): Promise<void> => this.onExpandWorkspace(path, entry.remoteConnectionId, entry.remoteSshHost),
-            onExpandedChange: (path: string, expanded: boolean): void => this.onWorkspaceExpandedChange(path, expanded, entry.remoteConnectionId, entry.remoteSshHost),
+            onExpandWorkspace: (path: string): Promise<void> =>
+              this.onExpandWorkspace(path, entry.remoteConnectionId, entry.remoteSshHost, entry.workspaceId),
+            onExpandedChange: (path: string, expanded: boolean): void =>
+              this.onWorkspaceExpandedChange(path, expanded, entry.remoteConnectionId, entry.remoteSshHost, entry.workspaceId),
             onCreateInWorkspace: this.onCreateInWorkspace,
             onOpenSession: this.onOpenSession,
             onSessionActions: this.onSessionActions
@@ -479,6 +493,9 @@ export struct SidebarDeviceGroup {
       sortMode: 'project',
       workspaceName: this.workspaceName,
       workspacePath: this.workspacePath,
+      workspaceId: this.workspaceId,
+      workspaceConnectionId: this.workspaceConnectionId,
+      workspaceSshHost: this.workspaceSshHost,
       workspaceKind: this.workspaceKind,
       recentWorkspaces: this.recentWorkspaces,
       workspaceFilter: '',
@@ -526,9 +543,16 @@ export struct SidebarDeviceGroup {
   }
 
   private isCurrentWorkspace(entry: RecentWorkspaceEntry): boolean {
-    return this.isActive && entry.path.length > 0 && remoteWorkspaceKey(entry) === remoteWorkspaceKey({
-      path: this.workspacePath, remoteConnectionId: this.workspaceConnectionId, remoteSshHost: this.workspaceSshHost
-    });
+    if (!this.isActive || entry.path.length === 0) {
+      return false;
+    }
+    const current: RemoteWorkspaceIdentity = {
+      workspaceId: this.workspaceId.length > 0 ? this.workspaceId : undefined,
+      path: this.workspacePath,
+      remoteConnectionId: this.workspaceConnectionId.length > 0 ? this.workspaceConnectionId : undefined,
+      remoteSshHost: this.workspaceSshHost.length > 0 ? this.workspaceSshHost : undefined
+    };
+    return remoteWorkspaceIdentityMatches(entry, current, this.recentWorkspaces);
   }
 
   private basename(path: string): string {

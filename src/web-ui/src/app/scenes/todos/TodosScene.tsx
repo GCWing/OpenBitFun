@@ -38,7 +38,6 @@ import { useI18n } from '@/infrastructure/i18n';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
 import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
-import { normalizePath } from '@/shared/utils/pathUtils';
 import { WorkspaceKind } from '@/shared/types';
 import {
   ASSISTANT_WORKSPACE_AGENT_TYPE,
@@ -236,20 +235,15 @@ const TodosScene: React.FC = () => {
       return;
     }
 
-    // Stored refs are normalized, so normalize both sides before comparing.
     const ref = job.target.workspace;
-    const normalizedJobPath = normalizePath(ref.workspacePath);
-    const matchedOption = workspaceOptions.find((option) => (
-      (ref.workspaceId && option.workspace.id === ref.workspaceId)
-      || normalizePath(option.workspace.rootPath) === normalizedJobPath
-    ));
+    const matchedOption = workspaceOptions.find(option => option.workspace.id === ref.workspaceId);
 
     setEditingJob(job);
     setValidationErrors(EMPTY_VALIDATION_ERRORS);
     setDraft(jobToDraft(job, DEFAULT_AGENT_TYPE));
-    setSelectedWorkspaceId(matchedOption?.value ?? defaultWorkspaceId);
+    setSelectedWorkspaceId(matchedOption?.value ?? '');
     setEditorOpen(true);
-  }, [defaultWorkspaceId, editingJob, editorOpen, resetEditor, workspaceOptions]);
+  }, [editingJob, editorOpen, resetEditor, workspaceOptions]);
 
   const handleToggleEnabled = useCallback(async (job: CronJob, enabled: boolean) => {
     try {
@@ -300,12 +294,7 @@ const TodosScene: React.FC = () => {
       return;
     }
 
-    const workspaceRef = buildWorkspaceRef(
-      option.workspace.rootPath,
-      option.workspace.id,
-      option.remoteConnectionId,
-      option.remoteSshHost,
-    );
+    const workspaceRef = buildWorkspaceRef(option.workspace.id);
     if (!workspaceRef) {
       notificationService.warning(t('messages.workspaceRequired'));
       return;

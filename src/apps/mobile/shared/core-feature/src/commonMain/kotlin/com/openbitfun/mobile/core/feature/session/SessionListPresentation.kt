@@ -1,9 +1,12 @@
 package com.openbitfun.mobile.core.feature.session
 
+import com.openbitfun.mobile.core.domain.LegacyWorkspaceCompatibility
 import com.openbitfun.mobile.core.domain.RecentWorkspace
 import com.openbitfun.mobile.core.domain.RemoteSession
+import com.openbitfun.mobile.core.domain.RemoteWorkspaceIdentity
 import com.openbitfun.mobile.core.domain.SessionAgentTypes
 import com.openbitfun.mobile.core.domain.SessionWorkspacePaths
+import com.openbitfun.mobile.core.domain.identity
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
@@ -32,11 +35,28 @@ public enum class SessionAgentGroup { CHAT, CODE, COWORK }
  */
 public enum class SessionStatusLabel { RUNNING, READY, ARCHIVED, RAW }
 
-/** A workspace the list can be filtered down to. */
+/**
+ * A workspace the list can be filtered down to.
+ *
+ * [key] is the value a filter stores: the workspace ID when the host gave one,
+ * otherwise the legacy `(connection, ssh host, path)` triple. [path] is display
+ * text and the upgrade fallback for filters persisted before IDs existed.
+ */
 public data class SessionWorkspaceOption public constructor(
     public val path: String,
     public val name: String,
-)
+    public val workspaceId: String?,
+    public val remoteConnectionId: String?,
+    public val remoteSshHost: String?,
+) {
+    public constructor(path: String, name: String) : this(path, name, null, null, null)
+
+    public val identity: RemoteWorkspaceIdentity
+        get() = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost, workspaceId)
+
+    /** Stable filter and section key: `workspaceId ?: legacy triple`. */
+    public val key: String get() = identity.key
+}
 
 /**
  * Where the list is being shown from.
@@ -44,14 +64,30 @@ public data class SessionWorkspaceOption public constructor(
  * The selected workspace is not just another entry: it is the fallback for
  * sessions the desktop sent no `workspacePath` for, so a session created before
  * the desktop started reporting paths still lands in the project the user is
- * looking at.
+ * looking at. Its identity fields let sessions that carry a workspace ID be
+ * matched by ID alone; pre-ID hosts leave them null.
  */
 public data class SessionWorkspaceContext public constructor(
     public val selectedPath: String,
     public val selectedName: String,
     public val selectedKind: String,
     public val recent: List<RecentWorkspace>,
-)
+    public val selectedWorkspaceId: String?,
+    public val selectedRemoteConnectionId: String?,
+    public val selectedRemoteSshHost: String?,
+) {
+    public constructor(
+        selectedPath: String,
+        selectedName: String,
+        selectedKind: String,
+        recent: List<RecentWorkspace>,
+    ) : this(selectedPath, selectedName, selectedKind, recent, null, null, null)
+
+    /** The selected workspace as a reference, or null when nothing is selected. */
+    public val selectedIdentity: RemoteWorkspaceIdentity?
+        get() = if (selectedPath.isEmpty() && selectedWorkspaceId.isNullOrEmpty()) null
+        else RemoteWorkspaceIdentity(selectedPath, selectedRemoteConnectionId, selectedRemoteSshHost, selectedWorkspaceId)
+}
 
 /**
  * The view settings, as one value.
@@ -76,11 +112,27 @@ public sealed interface SessionListSection {
         override val sessions: List<RemoteSession>,
     ) : SessionListSection
 
+    /**
+     * One project heading. [key] is `workspaceId ?: legacy triple` and is what
+     * the platforms should key collapse state and create menus by; [path] is
+     * display text, since two open workspaces may share a root.
+     */
     public data class Project public constructor(
         public val path: String,
         public val name: String,
         override val sessions: List<RemoteSession>,
-    ) : SessionListSection
+        public val workspaceId: String?,
+        public val remoteConnectionId: String?,
+        public val remoteSshHost: String?,
+    ) : SessionListSection {
+        public constructor(path: String, name: String, sessions: List<RemoteSession>) :
+            this(path, name, sessions, null, null, null)
+
+        public val identity: RemoteWorkspaceIdentity
+            get() = RemoteWorkspaceIdentity(path, remoteConnectionId, remoteSshHost, workspaceId)
+
+        public val key: String get() = identity.key
+    }
 
     public data class Today public constructor(
         override val sessions: List<RemoteSession>,
@@ -127,11 +179,13 @@ public data class SessionListBatch public constructor(
  *
  * Two deliberate deviations from the source:
  *
- * 1. Workspace identity is compared with [SessionWorkspacePaths.equal]
- *    everywhere, including when deciding whether a workspace is an assistant
- *    one. The ArkTS version compares those two raw, which means a desktop that
- *    reports the same assistant workspace with a trailing slash in one command
- *    and without it in another groups its sessions under the wrong heading.
+ * 1. Workspace identity is `workspaceId ?: (connection, ssh host, path)`, never
+ *    the path alone. Sections, options, filters, and the assistant decision all
+ *    resolve a reference through [LegacyWorkspaceCompatibility]: IDs compare by
+ *    ID, pre-ID references by normalised root plus saved-connection identity, and
+ *    an ambiguous root is filed nowhere. The ArkTS version compares raw paths,
+ *    which both mis-groups a trailing slash and merges two workspaces that share
+ *    a root. Filters persisted as bare paths keep matching by path.
  * 2. Sections are returned whole and [batch] applies the incremental disclosure
  *    separately. Group identity and filtering stay stable while each platform
  *    owns the transient count of how many batches the user has opened.
@@ -165,18 +219,27 @@ public object SessionListPresentation {
         sessions: List<RemoteSession>,
         workspace: SessionWorkspaceContext,
     ): List<SessionWorkspaceOption> {
+        val catalog = WorkspaceCatalog(workspace)
         val result = mutableListOf<SessionWorkspaceOption>()
-        fun add(path: String, name: String) {
-            if (path.isEmpty()) return
-            if (result.any { SessionWorkspacePaths.equal(it.path, path) }) return
+        fun add(identity: RemoteWorkspaceIdentity, name: String) {
+            if (identity.path.isEmpty()) return
+            if (result.any { it.key == identity.key }) return
             result += SessionWorkspaceOption(
-                path = path,
-                name = name.ifBlank { SessionWorkspacePaths.basename(path) },
+                path = identity.path,
+                name = name.ifBlank { SessionWorkspacePaths.basename(identity.path) },
+                workspaceId = identity.workspaceId,
+                remoteConnectionId = identity.remoteConnectionId,
+                remoteSshHost = identity.remoteSshHost,
             )
         }
-        add(workspace.selectedPath, workspace.selectedName)
-        workspace.recent.forEach { add(it.path, it.name) }
-        sessions.forEach { add(it.workspacePath.orEmpty(), it.workspaceName.orEmpty()) }
+        catalog.rows.forEach { add(it.identity, it.name) }
+        sessions.forEach { session ->
+            // A workspace only a session knows about is still offered; one the
+            // catalog already lists must not appear twice under a pre-ID reference.
+            val own = ownIdentity(session) ?: return@forEach
+            val known = catalog.resolve(own)
+            if (known != null) add(known.identity, known.name) else add(own, session.workspaceName.orEmpty())
+        }
         return result
     }
 
@@ -251,7 +314,7 @@ public object SessionListPresentation {
 
         val assistant = isAssistant(session, workspace)
         if (options.workspaceFilter.isNotEmpty() &&
-            !SessionWorkspacePaths.equal(sessionPath(session, workspace, assistant), options.workspaceFilter)
+            !matchesWorkspaceFilter(session, workspace, assistant, options.workspaceFilter)
         ) {
             return false
         }
@@ -265,31 +328,58 @@ public object SessionListPresentation {
     }
 
     /**
-     * A chat session has no project of its own, so it must not inherit the
-     * selected workspace the way a code session does.
+     * A filter stores a [SessionWorkspaceOption.key]. Settings persisted before
+     * workspace IDs hold a bare path; those keep matching by path so an upgrade
+     * does not silently clear the user's filter.
      */
-    private fun sessionPath(
+    private fun matchesWorkspaceFilter(
         session: RemoteSession,
         workspace: SessionWorkspaceContext,
         assistant: Boolean,
-    ): String {
-        val own = session.workspacePath.orEmpty()
-        if (own.isNotEmpty()) return own
-        return if (assistant) "" else workspace.selectedPath
+        filter: String,
+    ): Boolean {
+        val catalog = WorkspaceCatalog(workspace)
+        val identity = sessionIdentity(session, workspace, assistant)
+        val key = identity?.let { catalog.resolve(it)?.identity?.key ?: it.key }
+        if (key == filter) return true
+        return SessionWorkspacePaths.equal(identity?.path.orEmpty(), filter)
+    }
+
+    /** The reference the session itself carries: its identity, else its bare path. */
+    private fun ownIdentity(session: RemoteSession): RemoteWorkspaceIdentity? {
+        session.workspaceIdentity?.takeIf { it.path.isNotEmpty() || !it.workspaceId.isNullOrEmpty() }?.let { return it }
+        val path = session.workspacePath.orEmpty()
+        return if (path.isEmpty()) null else RemoteWorkspaceIdentity(path, null, null)
+    }
+
+    /**
+     * A chat session has no project of its own, so it must not inherit the
+     * selected workspace the way a code session does.
+     */
+    private fun sessionIdentity(
+        session: RemoteSession,
+        workspace: SessionWorkspaceContext,
+        assistant: Boolean,
+    ): RemoteWorkspaceIdentity? {
+        ownIdentity(session)?.let { return it }
+        return if (assistant) null else workspace.selectedIdentity
     }
 
     private fun isAssistant(session: RemoteSession, workspace: SessionWorkspaceContext): Boolean =
         SessionAgentTypes.isAssistant(session.agentType) ||
-            isAssistantWorkspace(session.workspacePath.orEmpty(), workspace)
+            isAssistantWorkspace(session, workspace)
 
-    private fun isAssistantWorkspace(path: String, workspace: SessionWorkspaceContext): Boolean {
+    /**
+     * Whether the session's workspace is an assistant one, decided by the
+     * catalog row's `workspaceKind` after resolving the reference by ID first
+     * and by the legacy triple only for pre-ID references. Paths alone never
+     * decide: an assistant and a project may share a root.
+     */
+    private fun isAssistantWorkspace(session: RemoteSession, workspace: SessionWorkspaceContext): Boolean {
         val selectedIsAssistant = workspace.selectedKind.lowercase() == ASSISTANT
-        // No path at all means "wherever we are", which is the selected one.
-        if (path.isEmpty()) return selectedIsAssistant
-        if (selectedIsAssistant && SessionWorkspacePaths.equal(path, workspace.selectedPath)) return true
-        return workspace.recent.any {
-            SessionWorkspacePaths.equal(it.path, path) && it.kind.lowercase() == ASSISTANT
-        }
+        // No reference at all means "wherever we are", which is the selected one.
+        val own = ownIdentity(session) ?: return selectedIsAssistant
+        return WorkspaceCatalog(workspace).resolve(own)?.kind?.lowercase() == ASSISTANT
     }
 
     private fun chatSections(chat: List<RemoteSession>): List<SessionListSection> =
@@ -300,39 +390,63 @@ public object SessionListPresentation {
         workspace: SessionWorkspaceContext,
         activeFilter: Boolean,
     ): List<SessionListSection> {
-        val entries = projectEntries(workspace)
+        val catalog = WorkspaceCatalog(workspace)
+        val entries = catalog.rows.filterNot { it.kind.lowercase() == ASSISTANT }
+        // Each session is filed once, under the row its reference resolves to.
+        // Ambiguous pre-ID paths resolve to nothing and stay out of every heading.
+        val filed = project.groupBy { session ->
+            val identity = sessionIdentity(session, workspace, assistant = false)
+            identity?.let { catalog.resolve(it)?.identity?.key }
+        }
         return entries.mapNotNull { entry ->
-            val rows = project.filter { session ->
-                SessionWorkspacePaths.equal(
-                    session.workspacePath.orEmpty().ifEmpty { workspace.selectedPath },
-                    entry.path,
-                )
-            }
+            val rows = filed[entry.identity.key].orEmpty()
             // With no filter on, an empty project still gets a heading: it is
             // how the user creates the first session in it. With one on, an
             // empty heading is just noise the filter was meant to remove.
             if (activeFilter && rows.isEmpty()) {
                 null
             } else {
-                SessionListSection.Project(path = entry.path, name = entry.name, sessions = rows)
+                SessionListSection.Project(
+                    path = entry.identity.path,
+                    name = entry.name,
+                    sessions = rows,
+                    workspaceId = entry.identity.workspaceId,
+                    remoteConnectionId = entry.identity.remoteConnectionId,
+                    remoteSshHost = entry.identity.remoteSshHost,
+                )
             }
         }
     }
 
-    private fun projectEntries(workspace: SessionWorkspaceContext): List<SessionWorkspaceOption> {
-        val result = mutableListOf<SessionWorkspaceOption>()
-        fun add(path: String, name: String, kind: String) {
-            if (kind.lowercase() == ASSISTANT) return
-            if (path.isEmpty() && name.isEmpty()) return
-            if (result.any { SessionWorkspacePaths.equal(it.path, path) }) return
-            result += SessionWorkspaceOption(
-                path = path,
-                name = name.ifBlank { SessionWorkspacePaths.basename(path) },
-            )
+    private class CatalogRow(val identity: RemoteWorkspaceIdentity, val name: String, val kind: String)
+
+    /**
+     * The selected workspace and the desktop's recents as one catalog keyed by
+     * `workspaceId ?: legacy triple`, with the single resolver every grouping
+     * decision goes through.
+     */
+    private class WorkspaceCatalog(workspace: SessionWorkspaceContext) {
+        val rows: List<CatalogRow>
+        private val identities: List<RemoteWorkspaceIdentity>
+
+        init {
+            val result = mutableListOf<CatalogRow>()
+            fun add(identity: RemoteWorkspaceIdentity, name: String, kind: String) {
+                if (identity.path.isEmpty() && name.isEmpty()) return
+                if (result.any { it.identity.key == identity.key }) return
+                result += CatalogRow(identity, name.ifBlank { SessionWorkspacePaths.basename(identity.path) }, kind)
+            }
+            workspace.selectedIdentity?.let { add(it, workspace.selectedName, workspace.selectedKind) }
+            workspace.recent.forEach { if (it.path.isNotEmpty()) add(it.identity(), it.name, it.kind) }
+            rows = result
+            identities = result.map { it.identity }
         }
-        add(workspace.selectedPath, workspace.selectedName, workspace.selectedKind)
-        workspace.recent.forEach { if (it.path.isNotEmpty()) add(it.path, it.name, it.kind) }
-        return result
+
+        /** ID first; an unknown ID is nothing, never a same-path row. */
+        fun resolve(reference: RemoteWorkspaceIdentity): CatalogRow? {
+            val resolved = LegacyWorkspaceCompatibility.resolve(reference, identities) ?: return null
+            return rows.firstOrNull { it.identity.key == resolved.key }
+        }
     }
 
     private fun timeSections(sessions: List<RemoteSession>, nowMs: Long): List<SessionListSection> {

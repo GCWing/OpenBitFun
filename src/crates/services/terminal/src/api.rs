@@ -60,6 +60,12 @@ pub struct CreateSessionRequest {
 /// Response for session creation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionResponse {
+    #[serde(
+        default,
+        rename = "workspaceId",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub workspace_id: Option<String>,
     /// Session ID
     pub id: String,
     /// Session name
@@ -90,6 +96,12 @@ pub struct SessionResponse {
 impl From<TerminalSession> for SessionResponse {
     fn from(session: TerminalSession) -> Self {
         Self {
+            workspace_id: session
+                .metadata
+                .owner
+                .as_ref()
+                .filter(|owner| owner.owner_type == crate::session::OwnerType::Workspace)
+                .map(|owner| owner.id.clone()),
             id: session.id,
             name: session.name,
             shell_type: session.shell_type,
@@ -119,6 +131,22 @@ mod workspace_origin_contract_tests {
         let response: SessionResponse = serde_json::from_value(legacy.clone()).unwrap();
         assert!(response.initial_cwd.is_none());
         assert_eq!(serde_json::to_value(response).unwrap(), legacy);
+    }
+
+    #[test]
+    fn workspace_identity_survives_directory_changes_and_round_trip() {
+        let mut response: SessionResponse = serde_json::from_value(json!({
+            "id": "terminal", "workspaceId": "workspace-remote", "name": "Development",
+            "shellType": "Bash", "cwd": "/repo", "pid": null,
+            "status": "Running", "cols": 80, "rows": 24, "source": "manual"
+        }))
+        .unwrap();
+        response.cwd = "/another-project".to_owned();
+        let json = serde_json::to_value(response).unwrap();
+        assert_eq!(json["workspaceId"], "workspace-remote");
+        assert_eq!(json["cwd"], "/another-project");
+        let restored: SessionResponse = serde_json::from_value(json).unwrap();
+        assert_eq!(restored.workspace_id.as_deref(), Some("workspace-remote"));
     }
 
     #[test]

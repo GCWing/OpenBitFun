@@ -7,6 +7,10 @@ pub mod factory;
 #[cfg(feature = "workspace-watch")]
 pub mod identity_watch;
 #[cfg(feature = "workspace-runtime")]
+pub(crate) mod legacy_compat;
+#[cfg(feature = "workspace-runtime")]
+pub use legacy_compat::remote_io_for_legacy_or_id;
+#[cfg(feature = "workspace-runtime")]
 pub mod manager;
 pub(crate) mod persistence;
 #[cfg(feature = "workspace-runtime")]

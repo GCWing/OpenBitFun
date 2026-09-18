@@ -1,4 +1,5 @@
 import { api } from './ApiClient';
+import { legacyWorkspacePayload } from './legacyWorkspaceCompatibility';
 import { getActiveSurfaceScope, isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
 import { peerConnectionManager } from '@/infrastructure/peer-device/PeerConnectionManager';
 
@@ -17,8 +18,8 @@ export interface ChatMcpCatalog {
 
 export interface ChatMcpCatalogRequest {
   modeId: string;
-  workspacePath?: string;
-  remoteConnectionId?: string;
+  workspaceId?: string;
+  workspaceKind?: string;
 }
 
 export class ChatMcpUnavailableError extends Error {
@@ -29,12 +30,17 @@ export class ChatMcpUnavailableError extends Error {
 
 export async function getChatMcpCatalog(request: ChatMcpCatalogRequest): Promise<ChatMcpCatalog> {
   const scope = getActiveSurfaceScope();
-  if (request.remoteConnectionId) throw new ChatMcpUnavailableError('remoteWorkspace');
+  if (request.workspaceKind === 'remote') throw new ChatMcpUnavailableError('remoteWorkspace');
   if (!isLocalSurface(scope.surfaceId)
     && peerConnectionManager.get(scope.surfaceId)?.getState().capabilities.chatMcpCatalogV1 !== true) {
     throw new ChatMcpUnavailableError('unsupportedHost');
   }
-  const catalog = await api.invoke<ChatMcpCatalog>('get_chat_mcp_catalog', { request });
+  const legacy = !isLocalSurface(scope.surfaceId)
+    && peerConnectionManager.get(scope.surfaceId)?.getState().capabilities.workspaceIdReferencesV1 !== true;
+  const payload = legacy && request.workspaceId
+    ? { ...request, ...await legacyWorkspacePayload(request.workspaceId, () => scope.assertCurrent('resolve legacy workspace')) }
+    : request;
+  const catalog = await api.invoke<ChatMcpCatalog>('get_chat_mcp_catalog', { request: payload });
   scope.assertCurrent('read MCP chat catalog');
   // An old or incompatible host must not look like an empty catalog.
   if (!catalog || !Array.isArray(catalog.tools) || typeof catalog.modeRestricted !== 'boolean') {

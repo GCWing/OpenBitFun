@@ -27,6 +27,7 @@ import './DispatchTargetPicker.scss';
 interface DispatchTargetPickerProps {
   target: DispatchTarget;
   sourceWorkspacePath?: string;
+  sourceWorkspaceId?: string;
   locked: boolean;
   disabled?: boolean;
   localWorktreeControl?: {
@@ -47,6 +48,7 @@ const RemoteConnectDialog = lazy(
 export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
   target,
   sourceWorkspacePath,
+  sourceWorkspaceId,
   locked,
   disabled = false,
   localWorktreeControl,
@@ -152,42 +154,47 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
       data-testid="dispatch-target-menu"
       autoFocusFirstItem
     >
-      <MenuSection title={t('chatInput.dispatch.localSection')}>
-        <MenuItem data-overflow-trigger
-          role="menuitemradio"
-          checked={localDirectorySelected}
-          className="dispatch-target-picker__option-row"
-          data-openbitfun-component="dispatch-target-picker"
-          data-openbitfun-part="option"
-          data-testid="dispatch-target-local-option"
-          disabled={localWorktreeControl?.locked}
-          leading={<Laptop size={15} aria-hidden />}
-          metadata={localDirectorySelected ? <Icon name="check-line" size="sm" aria-hidden /> : null}
-          onClick={() => selectLocalMode(false)}
-        >
-          <span className="dispatch-target-picker__option-copy">
-            <strong><OverflowText>{t('chatInput.dispatch.local')}</OverflowText></strong>
-            <small><OverflowText>{t('chatInput.dispatch.localDescription')}</OverflowText></small>
-          </span>
-        </MenuItem>
-        {localWorktreeControl ? (
+      <MenuSection
+        className="dispatch-target-picker__local-section"
+        title={t('chatInput.dispatch.localSection')}
+      >
+        <Tooltip content={t('chatInput.dispatch.localDescription')} placement="right">
           <MenuItem data-overflow-trigger
             role="menuitemradio"
-            checked={localWorktreeSelected}
+            checked={localDirectorySelected}
             className="dispatch-target-picker__option-row"
             data-openbitfun-component="dispatch-target-picker"
             data-openbitfun-part="option"
-            data-testid="dispatch-target-new-worktree-option"
-            disabled={localWorktreeControl.locked}
-            leading={<FolderGit2 size={15} aria-hidden />}
-            metadata={localWorktreeSelected ? <Icon name="check-line" size="sm" aria-hidden /> : null}
-            onClick={() => selectLocalMode(true)}
+            data-testid="dispatch-target-local-option"
+            disabled={localWorktreeControl?.locked}
+            leading={<Laptop size={15} aria-hidden />}
+            metadata={localDirectorySelected ? <Icon name="check-line" size="sm" aria-hidden /> : null}
+            onClick={() => selectLocalMode(false)}
           >
             <span className="dispatch-target-picker__option-copy">
-              <strong><OverflowText>{localWorktreeControl.label}</OverflowText></strong>
-              <small><OverflowText>{localWorktreeControl.description}</OverflowText></small>
+              <strong><OverflowText>{t('chatInput.dispatch.local')}</OverflowText></strong>
             </span>
           </MenuItem>
+        </Tooltip>
+        {localWorktreeControl ? (
+          <Tooltip content={localWorktreeControl.description} placement="right">
+            <MenuItem data-overflow-trigger
+              role="menuitemradio"
+              checked={localWorktreeSelected}
+              className="dispatch-target-picker__option-row"
+              data-openbitfun-component="dispatch-target-picker"
+              data-openbitfun-part="option"
+              data-testid="dispatch-target-new-worktree-option"
+              disabled={localWorktreeControl.locked}
+              leading={<FolderGit2 size={15} aria-hidden />}
+              metadata={localWorktreeSelected ? <Icon name="check-line" size="sm" aria-hidden /> : null}
+              onClick={() => selectLocalMode(true)}
+            >
+              <span className="dispatch-target-picker__option-copy">
+                <strong><OverflowText>{localWorktreeControl.label}</OverflowText></strong>
+              </span>
+            </MenuItem>
+          </Tooltip>
         ) : null}
       </MenuSection>
 
@@ -339,7 +346,7 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
       <DispatchInstallDialog
         open={!!configureTarget}
         target={configureTarget}
-        sourceWorkspacePath={sourceWorkspacePath}
+        sourceWorkspaceId={sourceWorkspaceId} sourceWorkspacePath={sourceWorkspacePath}
         onClose={() => setConfigureTarget(null)}
         onReady={selection => {
           setConfigureTarget(null);

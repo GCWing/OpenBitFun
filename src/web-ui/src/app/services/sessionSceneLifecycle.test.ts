@@ -8,7 +8,7 @@ import { activateSurface, LOCAL_SURFACE_ID } from '@/infrastructure/peer-device/
 import { selectActiveSceneId, useSceneStore } from '../stores/sceneStore';
 import { resolveSessionSceneTarget } from './sessionSceneTarget';
 import { workspaceManager, type WorkspaceEventListener } from '@/infrastructure/services/business/workspaceManager';
-import type { WorkspaceInfo } from '@/shared/types';
+import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 import { startSessionSceneLifecycle } from './sessionSceneLifecycle';
 
 function session(sessionId: string, overrides: Partial<Session> = {}): Session {
@@ -71,9 +71,9 @@ describe('Session scene resource lifetime with real stores', () => {
   });
 
   it('retains different workspaces and replaces only the selected workspace session', () => {
-    const first = session('a1', { workspacePath: '/projects/a' });
-    const second = session('a2', { workspacePath: '/projects/a' });
-    const other = session('b1', { workspacePath: '/projects/b' });
+    const first = session('a1', { workspaceId: 'workspace-a', workspacePath: '/projects/a' });
+    const second = session('a2', { workspaceId: 'workspace-a', workspacePath: '/projects/a' });
+    const other = session('b1', { workspaceId: 'workspace-b', workspacePath: '/projects/b' });
     select([first, second, other], first.sessionId);
     useSceneStore.getState().openScene('session');
     const firstTabId = useSceneStore.getState().activeTabId;
@@ -148,7 +148,9 @@ describe('Session scene resource lifetime with real stores', () => {
       stop?.();
       const workspace = {
         id: 'closing', rootPath: '/projects/a',
-        ...(kind === 'remote' ? { connectionId: 'ssh-a', sshHost: 'host-a' } : {}),
+        ...(kind === 'remote'
+          ? { workspaceKind: WorkspaceKind.Remote, connectionId: 'ssh-a', sshHost: 'host-a' }
+          : { workspaceKind: WorkspaceKind.Normal }),
       } as WorkspaceInfo;
       const first = session('a', {
         workspacePath: kind === 'worktree' ? '/worktrees/a' : workspace.rootPath,
@@ -212,11 +214,13 @@ describe('Session scene resource lifetime with real stores', () => {
   });
 
   it('retires a hidden session scene after workspace removal without changing the visible tab', () => {
-    select([session('active')], 'active');
+    select([session('active', { workspaceId: 'workspace-project' })], 'active');
     useSceneStore.getState().openScene('session');
     useSceneStore.getState().openScene('settings');
 
-    flowChatStore.removeSessionsForWorkspace({ rootPath: '/workspace/project' });
+    flowChatStore.removeSessionsForWorkspace({
+      id: 'workspace-project', rootPath: '/workspace/project', connectionId: undefined, sshHost: 'localhost',
+    });
 
     expect(useSceneStore.getState().activeTabId).toBe('settings');
     expect(useSceneStore.getState().openTabs.map(tab => tab.id)).toEqual(['settings']);

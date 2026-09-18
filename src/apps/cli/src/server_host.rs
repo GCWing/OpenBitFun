@@ -269,6 +269,7 @@ pub(crate) async fn serve() -> Result<()> {
         .await
         .context("Failed to initialize global config service")?;
     tracing::info!("Global config service initialized");
+    let workspace = crate::create_cli_local_workspace(&workspace_root).await?;
 
     use openbitfun_core::infrastructure::ai::AIClientFactory;
     AIClientFactory::initialize_global()
@@ -341,7 +342,7 @@ pub(crate) async fn serve() -> Result<()> {
         ))
         .await;
 
-    cancel_active_turns(&disconnect_runtime, policy.workspace_root()).await;
+    cancel_active_turns(&disconnect_runtime, &workspace.id).await;
 
     match served {
         Ok(()) => {
@@ -360,11 +361,12 @@ pub(crate) async fn serve() -> Result<()> {
 /// ends, so a client that disconnected mid-turn cannot leave work running.
 async fn cancel_active_turns(
     runtime: &openbitfun_agent_runtime::sdk::AgentRuntime,
-    workspace_root: &std::path::Path,
+    workspace_id: &str,
 ) {
     use openbitfun_agent_runtime::sdk::{AgentSessionListRequest, AgentTurnCancellationRequest};
     let request = AgentSessionListRequest {
-        workspace_path: workspace_root.to_string_lossy().into_owned(),
+        workspace_id: Some(workspace_id.to_owned()),
+        workspace_path: String::new(),
         remote_connection_id: None,
         remote_ssh_host: None,
     };

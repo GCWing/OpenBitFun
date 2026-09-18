@@ -22,6 +22,8 @@ impl RemoteWorkspaceKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteWorkspaceFacts {
+    /// Owning-host identity. Paths are presentation and IO data only.
+    pub workspace_id: String,
     pub path: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -37,6 +39,7 @@ pub struct RemoteWorkspaceFacts {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RemoteSessionWorkspaceIdentity {
+    pub workspace_id: Option<String>,
     pub remote_connection_id: Option<String>,
     pub remote_ssh_host: Option<String>,
 }
@@ -44,6 +47,7 @@ pub struct RemoteSessionWorkspaceIdentity {
 impl RemoteSessionWorkspaceIdentity {
     pub fn new(remote_connection_id: Option<String>, remote_ssh_host: Option<String>) -> Self {
         Self {
+            workspace_id: None,
             remote_connection_id,
             remote_ssh_host,
         }
@@ -54,16 +58,26 @@ impl RemoteSessionWorkspaceIdentity {
             workspace.remote_connection_id.clone(),
             workspace.remote_ssh_host.clone(),
         )
+        .with_workspace_id(Some(workspace.workspace_id.clone()))
+    }
+
+    pub fn with_workspace_id(mut self, workspace_id: Option<String>) -> Self {
+        self.workspace_id = workspace_id;
+        self
     }
 
     pub fn is_empty(&self) -> bool {
-        self.remote_connection_id.is_none() && self.remote_ssh_host.is_none()
+        self.workspace_id.is_none()
+            && self.remote_connection_id.is_none()
+            && self.remote_ssh_host.is_none()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteRecentWorkspaceFacts {
+    /// Owning-host identity. Paths are presentation and IO data only.
+    pub workspace_id: String,
     pub path: String,
     pub name: String,
     pub last_opened: String,
@@ -77,6 +91,8 @@ pub struct RemoteRecentWorkspaceFacts {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteAssistantWorkspaceFacts {
+    /// Owning-host identity. Paths are presentation and IO data only.
+    pub workspace_id: String,
     pub path: String,
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -86,6 +102,8 @@ pub struct RemoteAssistantWorkspaceFacts {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteWorkspaceUpdate {
+    /// Owning-host identity. Paths are presentation and IO data only.
+    pub workspace_id: String,
     pub path: String,
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -97,12 +115,28 @@ pub struct RemoteWorkspaceUpdate {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteSessionMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub session_id: String,
     pub name: String,
     pub agent_type: String,
     pub created_at_ms: u64,
     pub last_active_at_ms: u64,
     pub turn_count: usize,
+    /// Parent session id for child sessions (btw/review/miniapp/subagent).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
+    /// Relationship kind as the snake_case tag persisted by Services
+    /// (`btw`, `review`, `deep_review`, `miniapp`, `subagent`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relationship_kind: Option<String>,
+}
+
+impl RemoteSessionMetadata {
+    /// Child sessions belong under their parent, not in a flat session list.
+    pub fn is_child_session(&self) -> bool {
+        self.parent_session_id.is_some()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,12 +183,23 @@ pub trait RemoteWorkspaceRuntimeHost: Send + Sync {
     async fn opened_workspaces(&self) -> Result<Option<Vec<RemoteRecentWorkspaceFacts>>, String> {
         Ok(None)
     }
+    /// ID-based selection; legacy providers must advertise unsupported.
+    async fn select_workspace(&self, _workspace_id: &str) -> Result<RemoteWorkspaceUpdate, String> {
+        Err("Host does not support workspace ID selection".to_string())
+    }
+    /// Upgrade-only path ingress. New clients must use `select_workspace`.
     async fn open_workspace(
         &self,
         path: &str,
         remote_connection_id: Option<&str>,
         remote_ssh_host: Option<&str>,
     ) -> Result<RemoteWorkspaceUpdate, String>;
+    async fn select_assistant_workspace(
+        &self,
+        _workspace_id: &str,
+    ) -> Result<RemoteWorkspaceUpdate, String> {
+        Err("Host does not support assistant workspace ID selection".to_string())
+    }
     async fn assistant_workspaces(&self) -> Vec<RemoteAssistantWorkspaceFacts>;
     async fn open_assistant_workspace(&self, path: &str) -> Result<RemoteWorkspaceUpdate, String>;
 }
@@ -192,10 +237,14 @@ pub trait RemoteWorkspaceFileRuntimeHost: Send + Sync {
         Ok(None)
     }
 
+    /// Explicit file workspace identity is the workspace ID when the
+    /// controller supplies one; `workspace_path` + `remote_connection_id` is
+    /// the legacy projection for pre-ID controllers.
     async fn read_remote_file_chunk(
         &self,
         _path: &str,
         _session_id: Option<&str>,
+        _workspace_id: Option<&str>,
         _workspace_path: Option<&str>,
         _remote_connection_id: Option<&str>,
         _offset: u64,
@@ -208,6 +257,7 @@ pub trait RemoteWorkspaceFileRuntimeHost: Send + Sync {
         &self,
         _path: &str,
         _session_id: Option<&str>,
+        _workspace_id: Option<&str>,
         _workspace_path: Option<&str>,
         _remote_connection_id: Option<&str>,
     ) -> Result<Option<RemoteWorkspaceFileInfo>, String> {
@@ -230,6 +280,7 @@ mod tests {
     #[test]
     fn remote_workspace_contracts_preserve_workspace_and_session_facts() {
         let workspace = RemoteWorkspaceFacts {
+            workspace_id: "test-workspace".to_string(),
             path: "/workspace/project".to_string(),
             name: "project".to_string(),
             git_branch: Some("main".to_string()),
@@ -239,12 +290,15 @@ mod tests {
             remote_ssh_host: Some("host-1".to_string()),
         };
         let session = RemoteSessionMetadata {
+            workspace_id: None,
             session_id: "session_1".to_string(),
             name: "Research".to_string(),
             agent_type: "CodeAgent".to_string(),
             created_at_ms: 10,
             last_active_at_ms: 20,
             turn_count: 3,
+            parent_session_id: None,
+            relationship_kind: None,
         };
 
         assert_eq!(workspace.kind.as_wire_str(), "remote");

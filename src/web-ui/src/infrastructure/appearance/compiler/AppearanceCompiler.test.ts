@@ -1001,7 +1001,7 @@ describe('AppearanceCompiler', () => {
     expect(snapshot.cssText).toContain('[data-openbitfun-component="virtual-message-list"][data-openbitfun-part="boundaryStatus"][data-openbitfun-state~="unavailable"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="model-settings"][data-openbitfun-part="root"][data-openbitfun-view="selection"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-product-component="external-sources-config"][data-openbitfun-product-part="conflict"]');
-    expect(snapshot.cssText).toContain('[data-openbitfun-component="review-platform"][data-openbitfun-part="listItem"][data-openbitfun-state~="selected"]');
+    expect(snapshot.cssText).toContain('[data-openbitfun-product-component="review-platform"][data-openbitfun-product-part="listItem"][data-openbitfun-state~="selected"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="modern-flow-chat"][data-openbitfun-part="historyOpenIntent"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="runtime-settings"][data-openbitfun-part="petTrigger"][data-openbitfun-state~="expanded"]');
     expect(snapshot.cssText).toContain('[data-openbitfun-component="mcp-tools-config"][data-openbitfun-part="root"][data-openbitfun-view="json"]');

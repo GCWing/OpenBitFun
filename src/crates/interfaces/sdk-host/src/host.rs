@@ -171,6 +171,9 @@ enum QueryReservationError {
 
 #[derive(Clone)]
 struct SessionLease {
+    /// Owning workspace record ID as reported by the runtime. Authoritative for
+    /// every later runtime call; `workspace_path` stays the cwd operand.
+    workspace_id: Option<String>,
     workspace_path: String,
     remote_connection_id: Option<String>,
     remote_ssh_host: Option<String>,
@@ -208,6 +211,8 @@ fn release_session_task_reservation(
 #[derive(Clone)]
 struct SessionCleanup {
     session_id: String,
+    /// Known once the runtime has reported the owning workspace record.
+    workspace_id: Option<String>,
     workspace_path: String,
     release_kind: SessionReleaseKind,
 }
@@ -638,6 +643,7 @@ impl SdkHostConnection {
                         connection
                             .release_runtime_session(
                                 session_id.clone(),
+                                session.workspace_id,
                                 session.workspace_path,
                                 session.remote_connection_id,
                                 session.remote_ssh_host,
@@ -798,6 +804,7 @@ impl SdkHostConnection {
             cleanup_timeout,
             self.release_runtime_session(
                 cleanup.session_id.clone(),
+                cleanup.workspace_id,
                 cleanup.workspace_path,
                 None,
                 None,
@@ -833,6 +840,7 @@ impl SdkHostConnection {
     async fn release_runtime_session(
         &self,
         session_id: String,
+        workspace_id: Option<String>,
         workspace_path: String,
         remote_connection_id: Option<String>,
         remote_ssh_host: Option<String>,
@@ -844,6 +852,7 @@ impl SdkHostConnection {
                 self.inner
                     .runtime
                     .discard_transient_session(AgentSessionReleaseRequest {
+                        workspace_id: workspace_id.clone(),
                         workspace_path,
                         session_id,
                         remote_connection_id,
@@ -856,6 +865,7 @@ impl SdkHostConnection {
                 self.inner
                     .runtime
                     .unload_persisted_session(AgentSessionReleaseRequest {
+                        workspace_id: workspace_id.clone(),
                         workspace_path,
                         session_id,
                         remote_connection_id,
@@ -868,6 +878,7 @@ impl SdkHostConnection {
                 .inner
                 .runtime
                 .delete_session(AgentSessionDeleteRequest {
+                    workspace_id,
                     workspace_path,
                     session_id,
                     remote_connection_id,
@@ -1369,6 +1380,7 @@ impl SdkHostConnection {
                 execution: Default::default(),
                 agent_type,
                 workspace_path: Some(session.workspace_path.clone()),
+                workspace_id: session.workspace_id.clone(),
                 remote_connection_id: session.remote_connection_id.clone(),
                 remote_ssh_host: session.remote_ssh_host.clone(),
                 policy: DialogSubmissionPolicy::for_source(AgentSubmissionSource::SdkHost),
@@ -2051,6 +2063,7 @@ impl SdkHostConnection {
         let release_kind = session.release_kind();
         let operation = self.release_runtime_session(
             session_id,
+            session.workspace_id,
             session.workspace_path,
             session.remote_connection_id,
             session.remote_ssh_host,
@@ -2213,6 +2226,7 @@ impl SdkHostConnection {
                 task_state.lock().await.sessions.insert(
                     created.session_id.clone(),
                     SessionLease {
+                        workspace_id: created.workspace_id.clone(),
                         workspace_path,
                         remote_connection_id: None,
                         remote_ssh_host: None,
@@ -2233,6 +2247,7 @@ impl SdkHostConnection {
             .push(PendingSessionTask {
                 session_cleanup: Some(SessionCleanup {
                     session_id,
+                    workspace_id: None,
                     workspace_path: cleanup_workspace_path,
                     release_kind: match lifetime {
                         SessionLifetime::Connection => SessionReleaseKind::DiscardTransient,
@@ -2287,6 +2302,7 @@ impl SdkHostConnection {
         let restoration = tokio::spawn(async move {
             let restored = runtime
                 .restore_session(AgentSessionRestoreRequest {
+                    workspace_id: None,
                     workspace_path: task_workspace_path.clone(),
                     session_id: task_session_id.clone(),
                     include_internal: false,
@@ -2329,6 +2345,7 @@ impl SdkHostConnection {
                     if prepared.is_err() {
                         let release = runtime
                             .unload_persisted_session(AgentSessionReleaseRequest {
+                                workspace_id: None,
                                 workspace_path: task_workspace_path.clone(),
                                 session_id: task_session_id.clone(),
                                 remote_connection_id: None,
@@ -2341,6 +2358,7 @@ impl SdkHostConnection {
                                 task_session_id.clone(),
                                 SessionCleanup {
                                     session_id: task_session_id.clone(),
+                                    workspace_id: None,
                                     workspace_path: task_workspace_path.clone(),
                                     release_kind: SessionReleaseKind::UnloadPersisted,
                                 },
@@ -2363,6 +2381,7 @@ impl SdkHostConnection {
                 connection_state.sessions.insert(
                     restored.session_id.clone(),
                     SessionLease {
+                        workspace_id: restored.workspace_id.clone(),
                         workspace_path,
                         remote_connection_id: None,
                         remote_ssh_host: None,
@@ -2381,6 +2400,7 @@ impl SdkHostConnection {
             .push(PendingSessionTask {
                 session_cleanup: Some(SessionCleanup {
                     session_id: session_id.clone(),
+                    workspace_id: None,
                     workspace_path: cleanup_workspace_path,
                     release_kind: SessionReleaseKind::UnloadPersisted,
                 }),
@@ -2547,6 +2567,7 @@ impl SdkHostConnection {
             Duration::from_millis(5_000),
             self.release_runtime_session(
                 session_id.to_string(),
+                lease.workspace_id,
                 lease.workspace_path,
                 lease.remote_connection_id,
                 lease.remote_ssh_host,

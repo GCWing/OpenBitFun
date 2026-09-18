@@ -21,6 +21,7 @@
 import { create } from 'zustand';
 import { useContentResourceStore } from '../workbench/contentResourceStore';
 import { requestContentClose } from '../workbench/contentResourceLifecycle';
+import { requestMiniAppClose } from '../scenes/miniapps/miniAppLifecycle';
 import { getActiveSurfaceId, getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import {
   SCENE_TAB_REGISTRY,
@@ -282,7 +283,9 @@ export const useSceneStore = create<SceneState>((set, get) => ({
   }),
 
   closeScene: (id) => {
-    const performClose = () => {
+    const scope = getActiveSurfaceScope();
+    const performClose = (applicationStopped = false) => {
+      if (!scope.isCurrent()) return;
       const state = get();
       const { openTabs, activeTabId } = state;
       if (!openTabs.some(tab => tab.id === id) || !isClosableScene(id)) return;
@@ -313,9 +316,25 @@ export const useSceneStore = create<SceneState>((set, get) => ({
           ...removeFromHistory(current.navHistory, current.navCursor, id, newActiveId),
         });
         if (contentId) useContentResourceStore.getState().remove(contentId);
-      }).then(() => undefined);
+      }).then(activated => {
+        // Stopped apps retire even if fallback activation fails or is superseded.
+        if (!activated && applicationStopped && scope.isCurrent()) {
+          const current = get();
+          const activeTabId = current.activeTabId === id ? null : current.activeTabId;
+          const navHistory = current.navHistory.filter(tabId => tabId !== id);
+          set({
+            openTabs: current.openTabs.filter(tab => tab.id !== id),
+            activeTabId, navHistory,
+            navCursor: activeTabId ? navHistory.lastIndexOf(activeTabId) : -1,
+          });
+        }
+      });
     };
 
+    if (id.startsWith('miniapp:')) {
+      if (!get().openTabs.some(tab => tab.id === id)) return;
+      return requestMiniAppClose(id.slice('miniapp:'.length), () => performClose(true));
+    }
     const contentId = get().openTabs.find(tab => tab.id === id)?.contentId;
     if (contentId) {
       const pending = contentClosingRequests.get(id);

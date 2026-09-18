@@ -1,12 +1,21 @@
 export const PAGE_BG: ResourceColor = $r('app.color.page_bg');
 /** PAGE_BG at zero alpha, per theme — the transparent end of a fade-out. */
 export const PAGE_BG_FADE: ResourceColor = $r('app.color.page_bg_fade');
+/**
+ * PAGE_BG at partial alpha, for a surface the transcript scrolls underneath.
+ * It is the floor under `backgroundBlurStyle`, not a replacement for it: the
+ * blur carries the effect, this keeps the text on top readable on a build or a
+ * device where the blur does not land.
+ */
+export const PAGE_BG_OVERLAY: ResourceColor = $r('app.color.page_bg_overlay');
 export const TRANSPARENT: ResourceColor = $r('app.color.transparent');
 export const INK: ResourceColor = $r('app.color.ink');
 export const MUTED: ResourceColor = $r('app.color.muted');
 export const SUBTLE: ResourceColor = $r('app.color.subtle');
 export const LINE: ResourceColor = $r('app.color.line');
 export const CARD: ResourceColor = $r('app.color.card');
+/** CARD at partial alpha, for a card that floats over scrolling content. */
+export const CARD_OVERLAY: ResourceColor = $r('app.color.card_overlay');
 export const ACCENT: ResourceColor = $r('app.color.accent');
 export const FILE_LINK: ResourceColor = $r('app.color.file_link');
 export const PRIMARY_ACTION: ResourceColor = $r('app.color.primary_action');

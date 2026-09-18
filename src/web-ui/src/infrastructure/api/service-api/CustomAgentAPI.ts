@@ -1,4 +1,5 @@
 import { api } from './ApiClient';
+import { workspaceScopedRequest } from './legacyWorkspaceCompatibility';
 import { globalEventBus } from '@/infrastructure/event-bus';
 
 export type AgentSource = 'builtin' | 'project' | 'user' | 'external';
@@ -26,7 +27,7 @@ export interface CustomAgentDetail {
 
 export interface GetCustomAgentDetailPayload {
   agentId: string;
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 export interface CreateCustomAgentPayload {
@@ -41,7 +42,7 @@ export interface CreateCustomAgentPayload {
   review?: boolean;
   model?: string;
   userContextPolicy?: UserContextSection[];
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 export interface UpdateCustomAgentPayload {
@@ -54,13 +55,13 @@ export interface UpdateCustomAgentPayload {
   review?: boolean;
   model?: string;
   userContextPolicy?: UserContextSection[];
-  workspacePath?: string;
+  workspaceId?: string;
 }
 
 function emitCustomAgentCatalogUpdated(payload: {
   agentId?: string;
   kind?: CustomAgentKind;
-  workspacePath?: string;
+  workspaceId?: string;
 }) {
   globalEventBus.emit('custom-agent:updated', payload);
   globalEventBus.emit('mode:config:updated', {
@@ -74,42 +75,42 @@ export const CustomAgentAPI = {
     payload: GetCustomAgentDetailPayload,
   ): Promise<CustomAgentDetail> {
     return api.invoke<CustomAgentDetail>('get_custom_agent_detail', {
-      request: payload,
+      request: await workspaceScopedRequest(payload),
     });
   },
 
   async createCustomAgent(payload: CreateCustomAgentPayload): Promise<void> {
     await api.invoke('create_custom_agent', {
-      request: payload,
+      request: await workspaceScopedRequest(payload),
     });
     emitCustomAgentCatalogUpdated({
       agentId: payload.id,
       kind: payload.kind,
-      workspacePath: payload.workspacePath,
+      workspaceId: payload.workspaceId,
     });
   },
 
   async updateCustomAgent(payload: UpdateCustomAgentPayload): Promise<void> {
     await api.invoke('update_custom_agent', {
-      request: payload,
+      request: await workspaceScopedRequest(payload),
     });
     emitCustomAgentCatalogUpdated({
       agentId: payload.agentId,
-      workspacePath: payload.workspacePath,
+      workspaceId: payload.workspaceId,
     });
   },
 
-  async deleteCustomAgent(agentId: string, workspacePath?: string): Promise<void> {
+  async deleteCustomAgent(agentId: string, workspaceId?: string): Promise<void> {
     await api.invoke('delete_custom_agent', {
-      request: { agentId, workspacePath },
+      request: await workspaceScopedRequest({ agentId, workspaceId }),
     });
-    emitCustomAgentCatalogUpdated({ agentId, workspacePath });
+    emitCustomAgentCatalogUpdated({ agentId, workspaceId });
   },
 
-  async reloadCustomAgents(workspacePath?: string): Promise<void> {
+  async reloadCustomAgents(workspaceId?: string): Promise<void> {
     await api.invoke('reload_custom_agents', {
-      request: { workspacePath },
+      request: await workspaceScopedRequest({ workspaceId }),
     });
-    emitCustomAgentCatalogUpdated({ workspacePath });
+    emitCustomAgentCatalogUpdated({ workspaceId });
   },
 };

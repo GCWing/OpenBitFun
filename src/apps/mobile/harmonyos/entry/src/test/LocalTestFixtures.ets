@@ -124,6 +124,7 @@ import {
   ReadFileChunkResult,
   ReadFileResult,
   RemoteSession,
+  RemoteWorkspaceIdentity,
   SelectedImageAttachment,
   SteerTurnResult,
   SessionListResult,
@@ -179,8 +180,14 @@ export class FakeRemoteWorkspaceDataSource implements RemoteWorkspaceDataSource 
     return this.recent;
   }
 
-  async setWorkspace(_path: string): Promise<WorkspaceInfo> {
+  /** The last identified selection, so tests can assert IDs reach the data source. */
+  lastSetWorkspaceId: string | undefined = undefined;
+  lastSetAssistantId: string | undefined = undefined;
+
+  async setWorkspace(_path: string, _connectionId?: string, _sshHost?: string, workspaceId?: string): Promise<WorkspaceInfo> {
+    this.lastSetWorkspaceId = workspaceId;
     return {
+      workspaceId: workspaceId,
       name: 'workspace', path: '/workspace', hasWorkspace: true,
       gitBranch: 'main', workspaceKind: 'normal', assistantId: ''
     };
@@ -190,19 +197,23 @@ export class FakeRemoteWorkspaceDataSource implements RemoteWorkspaceDataSource 
     return [];
   }
 
-  async setAssistant(_path: string): Promise<WorkspaceInfo> {
+  async setAssistant(_path: string, workspaceId?: string): Promise<WorkspaceInfo> {
+    this.lastSetAssistantId = workspaceId;
     return {
+      workspaceId: workspaceId,
       name: 'assistant', path: '/assistant', hasWorkspace: true,
       gitBranch: '', workspaceKind: 'assistant', assistantId: 'assistant'
     };
   }
 
-  async listSessionsForWorkspace(path: string, _limit: number): Promise<RemoteSession[]> {
-    this.listedPaths.push(path);
-    if (this.failingPaths.includes(path)) {
-      throw new Error(`workspace unavailable: ${path}`);
+  /** Rows with an ID are looked up by ID; pre-ID rows by their path. */
+  async listSessionsForWorkspace(workspace: RemoteWorkspaceIdentity, _limit: number): Promise<RemoteSession[]> {
+    const key = workspace.workspaceId ? workspace.workspaceId : workspace.path;
+    this.listedPaths.push(key);
+    if (this.failingPaths.includes(key)) {
+      throw new Error(`workspace unavailable: ${key}`);
     }
-    return this.sessionsByPath.get(path) || [];
+    return this.sessionsByPath.get(key) || [];
   }
 
   async ping(): Promise<void> {

@@ -120,7 +120,7 @@ impl MCPToolWrapper {
 
     fn is_blocked_in_context(&self, context: Option<&ToolUseContext>) -> bool {
         let workspace_key = crate::agentic::workspace::workspace_route_key(
-            context.and_then(ToolUseContext::workspace_root),
+            context.and_then(ToolUseContext::workspace_id),
         );
         !self.context_policy.server_available_for_route(
             &self.server_id,

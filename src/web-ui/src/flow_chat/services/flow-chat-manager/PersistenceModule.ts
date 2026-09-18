@@ -1,3 +1,4 @@
+import { requireSessionWorkspaceId } from '../../utils/sessionWorkspace';
 /**
  * Persistence module
  * Handles persistence operations for dialog turn saving and metadata management
@@ -13,7 +14,6 @@ import {
   DEFERRED_TOOL_GATEWAY_NAME,
   effectiveToolInvocation,
 } from '../../utils/toolInvocationIdentity';
-import { requireSessionProjectWorkspacePath } from '../../utils/sessionWorkspace';
 import { resolveSessionDriverId } from '../../session-drivers/resolve';
 import { resolveStorageTurnIndex } from '../../utils/flowChatTurnIdentity';
 
@@ -35,13 +35,6 @@ function isObserverOnlyDispatchSession(
   session: Parameters<typeof resolveSessionDriverId>[1],
 ): boolean {
   return resolveSessionDriverId(sessionId, session) === 'dispatch';
-}
-
-function requireWorkspacePath(sessionId: string, workspacePath?: string): string {
-  if (!workspacePath) {
-    throw new Error(`Workspace path is required for session: ${sessionId}`);
-  }
-  return workspacePath;
 }
 
 function getDialogTurn(context: FlowChatContext, sessionId: string, turnId: string): DialogTurn | undefined {
@@ -304,7 +297,6 @@ async function performSaveDialogTurnToDisk(
       return;
     }
 
-    const workspacePath = requireSessionProjectWorkspacePath(session, sessionId);
     
     const dialogTurn = session.dialogTurns.find(turn => turn.id === turnId);
     if (!dialogTurn) {
@@ -333,10 +325,7 @@ async function performSaveDialogTurnToDisk(
     const turnData = convertDialogTurnToBackendFormat(dialogTurn, turnIndex);
     await sessionAPI.saveSessionTurn(
       turnData,
-      workspacePath,
-      session.remoteConnectionId,
-      session.remoteSshHost
-    );
+      requireSessionWorkspaceId(session));
     
     await updateSessionMetadata(context, sessionId);
     
@@ -567,17 +556,13 @@ export async function updateSessionMetadata(
     if (!session) return;
     if (isTransientSession(session) || isObserverOnlyDispatchSession(sessionId, session)) return;
 
-    const workspacePath = requireSessionProjectWorkspacePath(session, sessionId);
 
     let existingMetadata: any = null;
     try {
       if (!fields) {
         existingMetadata = await sessionAPI.loadSessionMetadata(
           sessionId,
-          workspacePath,
-          session.remoteConnectionId,
-          session.remoteSshHost
-        );
+          requireSessionWorkspaceId(session));
       }
     } catch {
       // ignore
@@ -588,7 +573,7 @@ export async function updateSessionMetadata(
 
     await sessionAPI.saveSessionMetadata(
       metadata,
-      workspacePath,
+      requireSessionWorkspaceId(session),
       fields ?? [
         'sessionName',
         'tags',
@@ -596,10 +581,7 @@ export async function updateSessionMetadata(
         'unreadCompletion',
         'needsUserAttention',
         'titleMetadata',
-      ],
-      session.remoteConnectionId,
-      session.remoteSshHost
-    );
+      ]);
   } catch (error) {
     log.warn('Failed to update session metadata', { sessionId, error });
   }
@@ -610,17 +592,13 @@ export async function updateSessionMetadata(
  */
 export async function touchSessionActivity(
   sessionId: string,
-  workspacePath?: string,
-  remoteConnectionId?: string,
-  remoteSshHost?: string
+  workspaceId: string
 ): Promise<void> {
   try {
     const { sessionAPI } = await import('@/infrastructure/api/service-api/SessionAPI');
     await sessionAPI.touchSessionActivity(
       sessionId,
-      requireWorkspacePath(sessionId, workspacePath),
-      remoteConnectionId,
-      remoteSshHost
+      workspaceId
     );
   } catch (error) {
     log.debug('Failed to touch session activity', { sessionId, error });

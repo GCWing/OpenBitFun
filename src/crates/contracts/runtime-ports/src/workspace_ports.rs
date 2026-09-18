@@ -120,6 +120,19 @@ pub struct SessionViewRestoreTiming {
 
 #[async_trait::async_trait]
 pub trait SessionStorePort: RuntimeServicePort {
+    /// Resolve storage from an owning-host workspace ID. An execution path is
+    /// never accepted as an identity or as an already-resolved storage directory.
+    async fn resolve_workspace_storage(
+        &self,
+        _workspace_id: &str,
+    ) -> PortResult<SessionStoragePathResolution> {
+        Err(PortError::new(
+            PortErrorKind::InvalidRequest,
+            "Workspace ID storage lookup is not supported",
+        ))
+    }
+
+    /// Legacy upgrade ingress. New product callers must use workspace IDs.
     async fn resolve_session_storage_path(
         &self,
         request: SessionStoragePathRequest,

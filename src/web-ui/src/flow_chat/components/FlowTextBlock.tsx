@@ -55,9 +55,13 @@ export const FlowTextBlock = React.memo<FlowTextBlockProps>(({
     onHttpLinkClick,
     onOpenVisualization,
     activeSessionOverride,
+    workspaceId: contextWorkspaceId,
     workspacePath: contextWorkspacePath,
     remoteConnectionId: contextRemoteConnectionId,
   } = useFlowChatContext();
+  const markdownWorkspaceId = activeSessionOverride?.workspaceId
+    || activeSessionOverride?.config?.workspaceId
+    || contextWorkspaceId;
   const markdownBasePath = activeSessionOverride?.workspacePath
     || activeSessionOverride?.config?.workspacePath
     || contextWorkspacePath;
@@ -160,6 +164,7 @@ export const FlowTextBlock = React.memo<FlowTextBlockProps>(({
     <MarkdownRenderer
       key={key}
       content={markdownContent}
+      workspaceId={markdownWorkspaceId}
       basePath={markdownBasePath}
       remoteConnectionId={markdownRemoteConnectionId}
       remoteSshHost={markdownRemoteSshHost}

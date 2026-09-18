@@ -86,6 +86,12 @@
       "launcherLabel": "Hello",
       "switchToVoice": "切换到实时语音",
       "switchToChat": "返回文字聊天",
+      "identity": {
+        "start": "实时通话",
+        "ongoing": "通话中",
+        "connecting": "连接中",
+        "retry": "重新连接"
+      },
       "empty": "直接说话即可。需要做事时，我会启动一个新的 OpenBitFun 会话。",
       "mute": "静音麦克风",
       "unmute": "取消静音",
@@ -110,26 +116,27 @@
         "connecting": "正在连接火山引擎…",
         "connected": "连接成功，正在建立会话…",
         "listening": "正在聆听",
-      "thinking": "正在思考",
-      "readingClientContext": "正在读取客户端状态…",
-      "switchingWorkspace": "正在切换工作区…",
-      "speaking": "正在回应",
-      "ending": "正在结束通话…",
-      "error": "实时语音连接发生错误",
-      "disconnected": "实时语音连接已中断",
-      "microphoneDisconnected": "麦克风已断开连接",
-      "retryingAudio": "正在重试语音播报…",
-      "audioPlaybackFailed": "语音播放失败，请检查系统输出设备"
+        "thinking": "正在思考",
+        "readingClientContext": "正在读取客户端状态…",
+        "switchingWorkspace": "正在切换工作区…",
+        "speaking": "正在回应",
+        "ending": "正在结束通话…",
+        "error": "实时语音连接发生错误",
+        "disconnected": "实时语音连接已中断",
+        "microphoneDisconnected": "麦克风已断开连接",
+        "retryingAudio": "正在重试语音播报…",
+        "audioPlaybackFailed": "语音播放失败，请检查系统输出设备"
       },
       "taskPhases": {
-        "starting": "正在创建新的 OpenBitFun 会话。",
+        "starting": "正在开始任务。",
         "working": "OpenBitFun 仍在处理任务，我会继续跟进。",
         "using_tools": "OpenBitFun 正在使用工具推进任务。",
         "waiting_approval": "任务正在等待你在 OpenBitFun 中确认权限。",
         "needs_input": "OpenBitFun 需要你在任务会话中补充信息。",
         "finishing": "任务主体已完成，OpenBitFun 正在整理最终结果。",
         "stopping": "正在停止当前 OpenBitFun 任务。"
-      }
+      },
+      "historySaveFailed": "语音记录暂未保存，转写内容已保留，稍后重试。"
     }
   },
   "diagnostics": {

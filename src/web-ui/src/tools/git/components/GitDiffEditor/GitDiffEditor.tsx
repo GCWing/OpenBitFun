@@ -21,7 +21,9 @@ export interface GitDiffEditorProps {
   modifiedContent: string;
   /** File path */
   filePath: string;
-  /** Repository path */
+  /** Owning workspace ID; saves are routed by it when present. */
+  workspaceId?: string;
+  /** Repository path (IO root; upgrade-only save selector when no workspace ID is known) */
   repositoryPath: string;
   /** Language */
   language?: string;
@@ -41,6 +43,7 @@ export const GitDiffEditor: React.FC<GitDiffEditorProps> = ({
   originalContent,
   modifiedContent,
   filePath,
+  workspaceId,
   repositoryPath,
   language,
   onContentChange,
@@ -93,7 +96,11 @@ export const GitDiffEditor: React.FC<GitDiffEditorProps> = ({
       const { workspaceAPI } = await import('@/infrastructure/api');
 
 
-      await workspaceAPI.writeFileContent(repositoryPath, filePath, contentToSave);
+      if (workspaceId) {
+        await workspaceAPI.writeWorkspaceFile(workspaceId, filePath, contentToSave);
+      } else {
+        await workspaceAPI.writeFileContent(repositoryPath, filePath, contentToSave);
+      }
 
       globalEventBus.emit('file-tree:refresh');
 
@@ -114,7 +121,7 @@ export const GitDiffEditor: React.FC<GitDiffEditorProps> = ({
     } finally {
       setSaving(false);
     }
-  }, [filePath, repositoryPath, onContentChange, onSave, t]);
+  }, [filePath, workspaceId, repositoryPath, onContentChange, onSave, t]);
   
 
   useEffect(() => {

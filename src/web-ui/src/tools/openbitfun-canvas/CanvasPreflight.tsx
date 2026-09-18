@@ -11,6 +11,7 @@ export type CanvasPreflightStatus = 'idle' | 'validating' | 'ready' | 'failed' |
 interface CanvasPreflightProps {
   artifactReference: string;
   title: string;
+  workspaceId?: string;
   workspacePath?: string;
   remoteConnectionId?: string;
   remoteSshHost?: string;
@@ -20,6 +21,7 @@ interface CanvasPreflightProps {
 export function CanvasPreflight({
   artifactReference,
   title,
+  workspaceId,
   workspacePath,
   remoteConnectionId,
   remoteSshHost,
@@ -30,7 +32,7 @@ export function CanvasPreflight({
     let iframe: HTMLIFrameElement | null = null;
     let timeout = 0;
     let terminal = false;
-    const context = { artifactReference, workspacePath, remoteConnectionId, remoteSshHost };
+    const context = { artifactReference, workspaceId: workspaceId ?? '' };
 
     const finish = (status: CanvasPreflightStatus) => {
       if (disposed || terminal) return;
@@ -156,7 +158,7 @@ export function CanvasPreflight({
       if (timeout) window.clearTimeout(timeout);
       iframe?.remove();
     };
-  }, [artifactReference, onStatusChange, remoteConnectionId, remoteSshHost, title, workspacePath]);
+  }, [artifactReference, onStatusChange, remoteConnectionId, remoteSshHost, title, workspacePath, workspaceId]);
 
   return null;
 }

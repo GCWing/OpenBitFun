@@ -343,7 +343,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   const renderTriggerContent = () => (
     <>
       {leading !== undefined && leading !== null && (
-        <span aria-hidden="true" className={styles.leading} data-openbitfun-part="leading">
+        <span aria-hidden="true" className={styles.leading} data-openbitfun-icon-slot="true" data-openbitfun-part="leading">
           {leading}
         </span>
       )}
@@ -353,7 +353,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       >
         {selectedOption?.label ?? placeholder}
       </OverflowText>
-      <span aria-hidden="true" className={styles.indicator} data-openbitfun-part="indicator">
+      <span aria-hidden="true" className={styles.indicator} data-openbitfun-icon-slot="true" data-openbitfun-part="indicator">
         <Icon name="chevron-down" size="sm" />
       </span>
     </>

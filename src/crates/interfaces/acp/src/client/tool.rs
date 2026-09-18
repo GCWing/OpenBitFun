@@ -88,6 +88,13 @@ impl Tool for AcpAgentTool {
         false
     }
 
+    /// ACP clients are spawned on the host that runs this process and
+    /// `call_impl` never forwards a remote connection id, so the tool cannot
+    /// serve a remote workspace session.
+    async fn is_available_in_context(&self, context: Option<&ToolUseContext>) -> bool {
+        context.is_none_or(|context| !context.is_remote())
+    }
+
     async fn validate_input(
         &self,
         input: &Value,

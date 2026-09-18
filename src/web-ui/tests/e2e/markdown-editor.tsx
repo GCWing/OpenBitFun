@@ -9,7 +9,7 @@ import { OpenBitFunDesignSystemProvider } from '../../src/infrastructure/design-
 import { appearanceRuntime, buildBuiltinAppearance, openBitFunDarkPalette } from '../../src/infrastructure/appearance';
 import { workspaceAPI } from '../../src/infrastructure/api';
 import MarkdownEditor from '../../src/tools/editor/components/MarkdownEditor';
-import { Preview } from '../../src/tools/editor/meditor/components/Preview';
+import { Preview } from './preview-reference';
 
 // Only the filesystem boundary is replaced. The production file editor, parser,
 // renderer, dirty tracking, disk polling and save/conflict flow all run normally.

@@ -117,7 +117,7 @@ fn plugin_after_presentation(
 #[cfg(feature = "opencode-plugin-host")]
 fn local_plugin_workspace_scope(workspace: &WorkspaceBinding) -> Option<String> {
     (!workspace.is_remote())
-        .then(|| crate::plugin_host::canonical_plugin_workspace_scope(workspace.root_path()))
+        .then(|| workspace.workspace_id.clone())
         .flatten()
 }
 
@@ -300,12 +300,15 @@ fn build_error_execution_result(
                 None,
             )
         };
-    let presentation = build_tool_execution_error_presentation(
+    let mut presentation = build_tool_execution_error_presentation(
         &effective_tool_name,
         category,
         &error_message,
         provided_arguments,
     );
+    if let Some(detail) = error.tool_error_detail() {
+        presentation.result_json["error_detail"] = serde_json::json!(detail);
+    }
     let persisted_effective_tool_name =
         persisted_effective_tool_name(&wire_tool_name, &effective_tool_name);
 
@@ -630,6 +633,10 @@ fn native_hook_session_facts<'a>(
     options: &ToolExecutionOptions,
 ) -> NativeHookSessionFacts<'a> {
     NativeHookSessionFacts {
+        workspace_id: context
+            .workspace
+            .as_ref()
+            .and_then(|workspace| workspace.workspace_id.as_deref()),
         session_id: &context.session_id,
         turn_id: Some(&context.dialog_turn_id),
         workspace_root: context
@@ -1867,6 +1874,7 @@ impl ToolPipeline {
                 .update_state(
                     &tool_id,
                     ToolExecutionState::Failed {
+                        error_detail: None,
                         error: error_msg.clone(),
                         is_retryable: false,
                         duration_ms: None,
@@ -1892,6 +1900,7 @@ impl ToolPipeline {
                 .update_state(
                     &tool_id,
                     ToolExecutionState::Failed {
+                        error_detail: None,
                         error: error_msg.clone(),
                         is_retryable: false,
                         duration_ms: None,
@@ -1950,6 +1959,7 @@ impl ToolPipeline {
                 .update_state(
                     &tool_id,
                     ToolExecutionState::Failed {
+                        error_detail: None,
                         error: error_msg,
                         is_retryable: false,
                         duration_ms: None,
@@ -2004,10 +2014,16 @@ impl ToolPipeline {
             let error_msg = validation
                 .message
                 .unwrap_or_else(|| format!("Invalid input for tool '{}'", tool_name));
+            let error_detail = validation
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("error_detail"))
+                .and_then(|detail| serde_json::from_value(detail.clone()).ok());
             self.state_manager
                 .update_state(
                     &tool_id,
                     ToolExecutionState::Failed {
+                        error_detail: error_detail.clone(),
                         error: error_msg.clone(),
                         is_retryable: false,
                         duration_ms: None,
@@ -2018,7 +2034,13 @@ impl ToolPipeline {
                     },
                 )
                 .await;
-            return Err(OpenBitFunError::Validation(error_msg));
+            return Err(match error_detail {
+                Some(detail) => OpenBitFunError::ClassifiedTool {
+                    message: error_msg,
+                    detail,
+                },
+                None => OpenBitFunError::Validation(error_msg),
+            });
         }
         if let Some(message) = validation
             .message
@@ -2356,6 +2378,7 @@ impl ToolPipeline {
                     .update_state(
                         &tool_id,
                         ToolExecutionState::Failed {
+                            error_detail: e.tool_error_detail().cloned(),
                             error: error_msg.clone(),
                             is_retryable,
                             duration_ms: Some(elapsed_ms_u64(start_time)),
@@ -2923,15 +2946,24 @@ mod tests {
     #[test]
     fn remote_workspace_never_resolves_a_local_plugin_hook_scope() {
         let workspace = tempfile::tempdir().expect("workspace");
-        let local = WorkspaceBinding::new(None, workspace.path().to_path_buf());
+        // The plugin scope is the workspace record ID, never the root path.
+        let local = WorkspaceBinding::new(
+            Some("workspace-local".to_string()),
+            workspace.path().to_path_buf(),
+        );
         let mut remote = local.clone();
         remote.backend = crate::agentic::workspace::WorkspaceBackend::Remote {
             connection_id: "remote-a".to_string(),
             connection_name: "Remote A".to_string(),
         };
+        let unregistered = WorkspaceBinding::new(None, workspace.path().to_path_buf());
 
-        assert!(local_plugin_workspace_scope(&local).is_some());
+        assert_eq!(
+            local_plugin_workspace_scope(&local).as_deref(),
+            Some("workspace-local")
+        );
         assert!(local_plugin_workspace_scope(&remote).is_none());
+        assert!(local_plugin_workspace_scope(&unregistered).is_none());
     }
 
     #[test]
@@ -3422,7 +3454,10 @@ mod tests {
         let root = std::env::current_dir().expect("absolute test workspace root");
 
         let mut local_task = test_tool_task("local-route", "Read");
-        local_task.context.workspace = Some(WorkspaceBinding::new(None, root.clone()));
+        local_task.context.workspace = Some(WorkspaceBinding::new(
+            Some("local-workspace".into()),
+            root.clone(),
+        ));
         let local = pipeline.build_tool_use_context(&local_task, CancellationToken::new());
 
         let session_identity =
@@ -3444,17 +3479,17 @@ mod tests {
 
         assert_eq!(
             crate::external_tools::external_tool_route_root(
-                local.workspace_root(),
+                local.workspace_id(),
                 local.is_remote(),
             ),
-            Some(root.as_path())
+            Some("local-workspace")
         );
         let remote_route_root = crate::external_tools::external_tool_route_root(
-            remote.workspace_root(),
+            remote.workspace_id(),
             remote.is_remote(),
         );
-        assert_eq!(remote_route_root, Some(std::path::Path::new("\0")));
-        assert!(dunce::canonicalize(remote_route_root.expect("remote sentinel")).is_err());
+        assert_eq!(remote_route_root, Some("<unsupported-remote>"));
+        assert_ne!(remote_route_root, local.workspace_id());
     }
 
     async fn register_static_test_tool(
@@ -5096,6 +5131,29 @@ mod tests {
             result.result.result_for_assistant.as_deref(),
             Some(USER_STEERING_INTERRUPTED_MESSAGE)
         );
+    }
+
+    #[test]
+    fn classified_edit_failure_preserves_model_error_and_persisted_detail() {
+        let error = OpenBitFunError::ClassifiedTool {
+            message: "[guidance] new_string must be different from old_string".into(),
+            detail: openbitfun_core_types::errors::ToolErrorDetail {
+                code: "edit_no_change".into(),
+                kind: "guidance".into(),
+            },
+        };
+        let result = build_error_execution_result("edit-1", None, &error);
+        assert!(result.result.is_error);
+        assert_eq!(
+            result.result.result["error_detail"]["code"],
+            "edit_no_change"
+        );
+        assert!(result
+            .result
+            .result_for_assistant
+            .unwrap()
+            .contains("new_string must be different"));
+        assert!(!should_retry_tool_error(&error));
     }
 
     #[test]

@@ -317,3 +317,102 @@ test('tab navigation preserves explicit disconnect and migrates only a matching 
     deviceId: 'desktop-a', disconnected: true, session: undefined,
   });
 });
+
+const encryptionStub = `data:text/javascript;base64,${Buffer.from(
+  'export const toB64 = (bytes) => Buffer.from(bytes).toString("base64");',
+).toString('base64')}`;
+const accountClient = await loadSource('../src/services/CloudAccountClient.ts', {
+  './E2EEncryption': encryptionStub,
+  './pairingLink': links.url,
+});
+const {
+  CloudAccountClient, CloudAccountRequestError, CloudAccountTransportError,
+  retryableAuthorizationPollError,
+} = await import(accountClient.url);
+
+test('a sign-in poll retries what the next tick can fix and stops at what the relay meant', () => {
+  for (const retryable of [
+    new CloudAccountTransportError('Account request timed out.'),
+    new CloudAccountRequestError('Slow down.', 429),
+    new CloudAccountRequestError('Relay is restarting.', 503),
+  ]) assert.equal(retryableAuthorizationPollError(retryable), true);
+  for (const fatal of [
+    new CloudAccountRequestError('Unknown transaction.', 404),
+    new CloudAccountRequestError('Bad secret.', 401),
+    new Error('Untrusted account authorization URL.'),
+  ]) assert.equal(retryableAuthorizationPollError(fatal), false);
+});
+
+/**
+ * Drives authorize() against a scripted relay on a virtual clock: every wait
+ * returns at once and advances the poll window by what it asked to sleep, so
+ * the whole five-minute window plays out inside the test. The last scripted
+ * answer repeats for as long as the window lasts.
+ */
+async function runAuthorization(pollAnswers) {
+  const realSetTimeout = globalThis.setTimeout;
+  const realNow = Date.now;
+  const previousWindow = globalThis.window;
+  const previousFetch = globalThis.fetch;
+  let clock = realNow();
+  const start = {
+    transactionId: 'tx-1', transactionSecret: 'secret-1',
+    authorizationUrl: 'https://github.com/login/oauth/authorize?client_id=x',
+    expiresAt: Math.floor(clock / 1000) + 300, pollIntervalSeconds: 5,
+  };
+  const polls = [];
+  Date.now = () => clock;
+  globalThis.setTimeout = (fn, ms) => { clock += ms ?? 0; return realSetTimeout(fn, 0); };
+  globalThis.window = { setTimeout: () => 0, clearTimeout: () => {} };
+  globalThis.fetch = async (url) => {
+    if (String(url).includes('/start')) {
+      return { ok: true, status: 200, text: async () => JSON.stringify(start) };
+    }
+    const answer = pollAnswers[Math.min(polls.length, pollAnswers.length - 1)];
+    polls.push(answer);
+    if (answer.throws) throw answer.throws;
+    return {
+      ok: (answer.httpStatus ?? 200) < 400,
+      status: answer.httpStatus ?? 200,
+      text: async () => JSON.stringify(answer.body ?? {}),
+    };
+  };
+  try {
+    const client = new CloudAccountClient('http://localhost:8787');
+    const outcome = await client
+      .authorize({ location: { href: '' } }, new AbortController().signal)
+      .then((token) => ({ token }), (error) => ({ error }));
+    return { ...outcome, polls };
+  } finally {
+    Date.now = realNow;
+    globalThis.setTimeout = realSetTimeout;
+    globalThis.window = previousWindow;
+    globalThis.fetch = previousFetch;
+  }
+}
+
+test('a dropped connection mid-sign-in is retried instead of ending the attempt', async () => {
+  const flaky = await runAuthorization([
+    { throws: new TypeError('Failed to fetch') },
+    { httpStatus: 503, body: { error: 'Relay is restarting.' } },
+    { body: { status: 'authorized', tokens: { accessToken: 'token-1' } } },
+  ]);
+  assert.equal(flaky.token, 'token-1');
+  assert.equal(flaky.polls.length, 3);
+
+  const refused = await runAuthorization([{ httpStatus: 401, body: { error: 'Bad secret.' } }]);
+  assert.equal(refused.token, undefined);
+  assert.equal(refused.error.status, 401);
+  assert.equal(refused.polls.length, 1);
+
+  const denied = await runAuthorization([{ body: { status: 'denied' } }]);
+  assert.match(denied.error.message, /Sign-in expired\. Try again\./);
+  assert.equal(denied.polls.length, 1);
+
+  // A window that ran out while every poll was failing is a network problem,
+  // and must not be reported as a sign-in the user let expire.
+  const offline = await runAuthorization([{ throws: new TypeError('Failed to fetch') }]);
+  assert.ok(offline.error instanceof CloudAccountTransportError);
+  assert.equal(offline.error.message, 'Could not reach the account service.');
+  assert.equal(offline.polls.length, 60);
+});

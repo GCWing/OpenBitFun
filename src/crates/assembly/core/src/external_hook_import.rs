@@ -1,7 +1,6 @@
 //! Explicit local plan/apply lifecycle for imported command Hooks.
 
 use crate::external_hooks::service_for;
-use crate::external_sources::normalize_workspace_root;
 use crate::infrastructure::{try_get_path_manager_arc, PathManager};
 use futures::future::join_all;
 use openbitfun_product_domains::external_hook_import::{
@@ -23,7 +22,7 @@ use openbitfun_services_integrations::hook_import::{
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 
@@ -99,14 +98,9 @@ async fn store_for(
     Ok(store)
 }
 
-async fn stores_for(workspace: Option<&Path>) -> ExternalSourceOperationResult<StoreSet> {
-    let workspace = normalize_workspace_root(workspace).map_err(|error| {
-        ExternalSourceOperationError::new(
-            ExternalSourceOperationErrorCode::InvalidRequest,
-            error,
-            false,
-        )
-    })?;
+async fn stores_for(workspace: Option<&str>) -> ExternalSourceOperationResult<StoreSet> {
+    let workspace_id = workspace;
+    let workspace = crate::external_hooks::local_workspace_root(workspace_id).await?;
     let path_manager = try_get_path_manager_arc().map_err(|error| {
         ExternalSourceOperationError::new(
             ExternalSourceOperationErrorCode::Internal,
@@ -135,14 +129,14 @@ async fn stores_for(workspace: Option<&Path>) -> ExternalSourceOperationResult<S
     Ok(StoreSet {
         user,
         workspace: workspace_store,
-        workspace_identity: workspace
-            .map(|path| path.to_string_lossy().replace('\\', "/"))
+        workspace_identity: workspace_id
+            .map(str::to_owned)
             .unwrap_or_else(|| "none".to_string()),
     })
 }
 
 pub async fn external_hook_import_snapshot(
-    workspace: Option<&Path>,
+    workspace: Option<&str>,
     refresh_updates: bool,
 ) -> ExternalSourceOperationResult<ExternalHookImportSnapshotV1> {
     let catalog_service = service_for(workspace).await?;
@@ -195,14 +189,14 @@ pub async fn external_hook_import_snapshot(
 }
 
 pub async fn plan_external_hook_import(
-    workspace: Option<&Path>,
+    workspace: Option<&str>,
     source: SourceKey,
 ) -> ExternalSourceOperationResult<ExternalHookImportPlanV1> {
     Ok(build_plan(workspace, source).await?.plan)
 }
 
 pub async fn apply_external_hook_import(
-    workspace: Option<&Path>,
+    workspace: Option<&str>,
     request: ExternalHookImportApplyRequestV1,
 ) -> ExternalSourceOperationResult<ExternalHookImportApplyResultV1> {
     if request.schema_version != EXTERNAL_HOOK_IMPORT_SCHEMA_V1 {
@@ -243,7 +237,7 @@ pub async fn apply_external_hook_import(
 }
 
 pub async fn mutate_external_hook_import(
-    workspace: Option<&Path>,
+    workspace: Option<&str>,
     request: ExternalHookImportMutationRequestV1,
 ) -> ExternalSourceOperationResult<ExternalHookImportSnapshotV1> {
     if request.schema_version != EXTERNAL_HOOK_IMPORT_SCHEMA_V1 {
@@ -302,7 +296,7 @@ pub async fn mutate_external_hook_import(
 }
 
 pub(crate) async fn imported_hook_generation(
-    workspace: Option<&Path>,
+    workspace: Option<&str>,
 ) -> ExternalSourceOperationResult<u64> {
     let stores = stores_for(workspace).await?;
     let user_snapshot = stores.user.snapshot().await.map_err(map_store_error)?;
@@ -318,7 +312,7 @@ pub(crate) async fn imported_hook_generation(
 }
 
 pub(crate) async fn enabled_imported_hook_layers(
-    workspace: Option<&Path>,
+    workspace: Option<&str>,
 ) -> ExternalSourceOperationResult<
     Vec<openbitfun_agent_runtime::native_hooks::AgentHookSettingsLayer>,
 > {
@@ -335,7 +329,7 @@ pub(crate) async fn enabled_imported_hook_layers(
 }
 
 async fn build_plan(
-    workspace: Option<&Path>,
+    workspace: Option<&str>,
     source_key: SourceKey,
 ) -> ExternalSourceOperationResult<PreparedPlan> {
     let catalog_service = service_for(workspace).await?;

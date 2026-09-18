@@ -22,6 +22,7 @@ const REMOTE_PWD_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone)]
 pub struct RemoteTerminalSession {
+    pub workspace_id: Option<String>,
     pub id: String,
     pub name: String,
     pub connection_id: String,
@@ -203,6 +204,7 @@ impl RemoteTerminalManager {
         let initial_cd = cwd.clone();
 
         let session = RemoteTerminalSession {
+            workspace_id: None,
             id: session_id.clone(),
             name,
             connection_id: connection_id.to_string(),
@@ -377,6 +379,7 @@ impl RemoteTerminalManager {
         let writer = spawned.writer;
         let controller = spawned.controller;
         let session = RemoteTerminalSession {
+            workspace_id: None,
             id: session_id.clone(),
             name,
             connection_id: connection_id.to_string(),
@@ -443,6 +446,12 @@ impl RemoteTerminalManager {
         });
 
         Ok(CreateSessionResult { session, output_rx })
+    }
+
+    pub async fn set_workspace_id(&self, session_id: &str, workspace_id: Option<String>) {
+        if let Some(session) = self.sessions.write().await.get_mut(session_id) {
+            session.workspace_id = workspace_id;
+        }
     }
 
     pub async fn get_session(&self, session_id: &str) -> Option<RemoteTerminalSession> {

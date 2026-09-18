@@ -97,7 +97,8 @@ function defaultSelectedTools(
 const CreateAgentPage: React.FC = () => {
   const { t } = useTranslation('scenes/agents');
   const notification = useNotification();
-  const { hasWorkspace, workspacePath } = useCurrentWorkspace();
+  const { hasWorkspace, workspace } = useCurrentWorkspace();
+  const workspaceId = workspace?.id;
   const { openHome, agentEditorMode, editingAgentId } = useAgentsStore();
   const {
     groups: userToolGroups,
@@ -201,7 +202,7 @@ const CreateAgentPage: React.FC = () => {
       try {
         const detail = await CustomAgentAPI.getCustomAgentDetail({
           agentId: editingAgentId,
-          workspacePath: workspacePath || undefined,
+          workspaceId: workspaceId || undefined,
         });
         if (cancelled) {
           return;
@@ -234,7 +235,7 @@ const CreateAgentPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [editingAgentId, isEdit, workspacePath]);
+  }, [editingAgentId, isEdit, workspaceId]);
 
   const validateAgentId = useCallback(
     (value: string) => {
@@ -384,7 +385,7 @@ const CreateAgentPage: React.FC = () => {
       notification.error(t('agentsOverview.form.promptRequired'));
       return;
     }
-    if (kind === 'subagent' && level === 'project' && !workspacePath) {
+    if (kind === 'subagent' && level === 'project' && !workspaceId) {
       notification.error(t('agentsOverview.form.noWorkspace'));
       return;
     }
@@ -411,7 +412,7 @@ const CreateAgentPage: React.FC = () => {
         review: kind === 'subagent' ? review : false,
         tools: selectedTools.size > 0 ? Array.from(selectedTools) : undefined,
         userContextPolicy: Array.from(userContextPolicy),
-        workspacePath: kind === 'subagent' && level === 'project' ? workspacePath : undefined,
+        workspaceId: kind === 'subagent' && level === 'project' ? workspaceId : undefined,
       } as const;
 
       if (isEdit && editingAgentId) {
@@ -424,7 +425,7 @@ const CreateAgentPage: React.FC = () => {
           review: payload.review,
           tools: payload.tools,
           userContextPolicy: payload.userContextPolicy,
-          workspacePath: payload.workspacePath,
+          workspaceId: payload.workspaceId,
         });
         notification.success(t('agentsOverview.form.updateSuccess', { name: payload.name }));
       } else {
@@ -460,7 +461,7 @@ const CreateAgentPage: React.FC = () => {
     t,
     userContextPolicy,
     validateAgentId,
-    workspacePath,
+    workspaceId,
   ]);
 
   const formTitle = isEdit

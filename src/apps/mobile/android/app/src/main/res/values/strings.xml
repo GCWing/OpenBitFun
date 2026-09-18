@@ -266,6 +266,9 @@
     <string name="model_catalog_stale_warning">The model list could not be refreshed. Showing the previously loaded list.</string>
     <string name="workspace_title">Workspace</string>
     <string name="workspace_failed">Could not load workspace information.</string>
+    <string name="workspace_reference_unsupported">The desktop does not support selecting workspaces by ID. Update OpenBitFun on the desktop.</string>
+    <string name="workspace_reference_unknown">The desktop no longer has this workspace.</string>
+    <string name="workspace_reference_ambiguous">Several open workspaces share this path. Choose one from the list.</string>
     <string name="assistants_title">Assistants</string>
     <string name="file_reference_label">Remote file path</string>
     <!-- The second line of a file card under an agent turn; see FileReferenceCards. -->
@@ -335,6 +338,8 @@
     <string name="sidebar_connect_desktop">Connect a computer</string>
     <string name="sidebar_add_connection">Add connection</string>
     <string name="sidebar_empty_workspaces">This computer has no workspaces yet</string>
+    <string name="sidebar_workspace_empty_sessions">No chats in this workspace</string>
+    <string name="sidebar_workspace_load_failed">This workspace cannot be read right now</string>
     <string name="sidebar_more_workspaces">%1$d more workspaces</string>
     <string name="sidebar_more_devices">%1$d more devices</string>
     <string name="sidebar_new_in_workspace">New in this workspace</string>
@@ -367,6 +372,8 @@
     <string name="sessions_failed_rate_limited">Too many requests; try again shortly.</string>
     <string name="sessions_failed_protocol_mismatch">The desktop answered in a format this app does not understand. Update OpenBitFun on the desktop.</string>
     <string name="sessions_failed_session_not_found">That session is no longer on the desktop.</string>
+    <string name="sessions_failed_workspace_id_unsupported">The desktop does not support selecting workspaces by ID. Update OpenBitFun on the desktop.</string>
+    <string name="sessions_failed_workspace_id_unknown">The desktop no longer has this workspace.</string>
     <!-- 8.3 conversation surface -->
     <string name="conversation_back">Back to sessions</string>
     <string name="conversation_settings">Session settings</string>

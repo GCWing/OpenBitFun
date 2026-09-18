@@ -30,6 +30,10 @@ macro_rules! unit_response {
 #[cfg_attr(feature = "rpc", request(method = "session/sync", response = SyncSessionResponse))]
 #[serde(rename_all = "camelCase")]
 pub struct SyncSessionRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only pre-ID wire field.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub workspace_path: String,
     pub session_id: String,
     #[serde(default)]
@@ -90,6 +94,10 @@ pub enum SessionProcessingPhase {
 #[cfg_attr(feature = "rpc", request(method = "session/restore", response = RestoreSessionResponse))]
 #[serde(rename_all = "camelCase")]
 pub struct RestoreSessionMessage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only pre-ID wire field.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub workspace_path: String,
     pub session_id: String,
     #[serde(default)]

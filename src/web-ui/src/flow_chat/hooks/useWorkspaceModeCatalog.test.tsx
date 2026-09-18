@@ -47,9 +47,9 @@ function mode(id: string): ModeInfo {
   };
 }
 
-function Probe({ workspacePath }: { workspacePath: string }) {
+function Probe({ workspaceId }: { workspaceId: string }) {
   const [modes, setModes] = useState<ModeInfo[]>([]);
-  const refresh = useWorkspaceModeCatalog({ workspacePath }, setModes);
+  const refresh = useWorkspaceModeCatalog({ workspaceId }, setModes);
   return (
     <>
       <button type="button" onClick={() => void refresh()}>Refresh</button>
@@ -78,16 +78,16 @@ describe('useWorkspaceModeCatalog', () => {
   it('never publishes a late catalog from the previous workspace', async () => {
     const workspaceA = deferred<ModeInfo[]>();
     const workspaceB = deferred<ModeInfo[]>();
-    mocks.getAvailableModes.mockImplementation((request?: { workspacePath?: string }) => (
-      request?.workspacePath === 'D:/workspace/A' ? workspaceA.promise : workspaceB.promise
+    mocks.getAvailableModes.mockImplementation((request?: { workspaceId?: string }) => (
+      request?.workspaceId === 'workspace-A' ? workspaceA.promise : workspaceB.promise
     ));
 
     await act(async () => {
-      root.render(<Probe workspacePath="D:/workspace/A" />);
+      root.render(<Probe workspaceId="workspace-A" />);
       await Promise.resolve();
     });
     await act(async () => {
-      root.render(<Probe workspacePath="D:/workspace/B" />);
+      root.render(<Probe workspaceId="workspace-B" />);
       await Promise.resolve();
     });
     expect(container.querySelector('[data-testid="catalog"]')?.textContent).toBe('');
@@ -113,7 +113,7 @@ describe('useWorkspaceModeCatalog', () => {
       .mockReturnValueOnce(refreshed.promise);
 
     await act(async () => {
-      root.render(<Probe workspacePath="D:/workspace/A" />);
+      root.render(<Probe workspaceId="workspace-A" />);
       await Promise.resolve();
     });
     await act(async () => {

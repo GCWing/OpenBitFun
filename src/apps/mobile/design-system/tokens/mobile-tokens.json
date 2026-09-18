@@ -21,6 +21,10 @@
       "light": "#00FFFFFF",
       "dark": "#00151514"
     },
+    "page_bg_overlay": {
+      "light": "#B8FFFFFF",
+      "dark": "#B8151514"
+    },
     "ink": {
       "light": "#171717",
       "dark": "#F4F3EF"
@@ -40,6 +44,10 @@
     "card": {
       "light": "#FFFFFF",
       "dark": "#252522"
+    },
+    "card_overlay": {
+      "light": "#CCFFFFFF",
+      "dark": "#CC252522"
     },
     "accent": {
       "light": "#111111",
@@ -296,6 +304,8 @@
     "content_gutter": 16,
     "connection_strip_height": 48,
     "timeline_top_padding": 22,
+    "conversation_overlay_side_inset": 16,
+    "conversation_edge_fade_height": 28,
     "message_spacing": 18,
     "message_bubble_max_width": 276,
     "message_bubble_horizontal_padding": 14,

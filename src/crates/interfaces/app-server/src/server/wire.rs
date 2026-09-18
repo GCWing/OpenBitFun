@@ -55,8 +55,10 @@ pub(super) fn run_request(request: &RunMessage) -> AgentRunRequest {
         RunSessionSpec::Create {
             session_name,
             agent_type,
+            workspace_id,
             workspace_path,
-        } => SessionSelector::create(session_name, agent_type, workspace_path.clone()),
+        } => SessionSelector::create(session_name, agent_type, workspace_path.clone())
+            .with_workspace_id(workspace_id.clone()),
     };
     let mut runtime_request = AgentRunRequest::new(session, &request.message);
     if let Some(turn_id) = &request.turn_id {
@@ -81,6 +83,7 @@ pub(super) fn restore_session_request(
     request: RestoreSessionMessage,
 ) -> AgentSessionRestoreRequest {
     AgentSessionRestoreRequest {
+        workspace_id: request.workspace_id,
         workspace_path: request.workspace_path,
         session_id: request.session_id,
         include_internal: request.include_internal,
@@ -288,6 +291,7 @@ mod tests {
             turn_id: None,
             execution: AgentDialogTurnExecution::Standard,
             agent_type: "general".to_string(),
+            workspace_id: None,
             workspace_path: None,
             remote_connection_id: None,
             remote_ssh_host: None,

@@ -43,7 +43,7 @@ describe('fileSearchProvider remote routing', () => {
     searchContentMock.mockReset().mockResolvedValue({ results: [], truncated: false });
   });
 
-  it('never sends an SSH workspace path to the legacy local-capable file commands', async () => {
+  it('only queries IDs whose workspace kind supports content search', async () => {
     const local = workspace('local', WorkspaceKind.Normal);
     const remote = workspace('remote', WorkspaceKind.Remote);
 
@@ -55,7 +55,7 @@ describe('fileSearchProvider remote routing', () => {
     expect(searchFilenamesMock).toHaveBeenCalledTimes(1);
     expect(searchContentMock).toHaveBeenCalledTimes(1);
     expect(searchFilenamesMock).toHaveBeenCalledWith(
-      local.rootPath,
+      local.id,
       'needle',
       false,
       false,
@@ -65,7 +65,7 @@ describe('fileSearchProvider remote routing', () => {
       false,
     );
     expect(searchFilenamesMock).not.toHaveBeenCalledWith(
-      remote.rootPath,
+      remote.id,
       expect.anything(),
       expect.anything(),
       expect.anything(),

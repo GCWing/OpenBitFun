@@ -39,7 +39,6 @@ use crate::service::config::{
     get_app_language_code, get_global_config_service, short_model_user_language_instruction,
     subscribe_config_updates, ConfigUpdateEvent,
 };
-use crate::service::remote_ssh::workspace_state::LOCAL_WORKSPACE_SSH_HOST;
 use crate::service::session::{
     DialogTurnData, DialogTurnKind, DialogTurnRecoveryData, DialogTurnRecoveryStatus,
     ModelRoundData, SessionContextUsage, SessionMemoryMode, SessionMetadata, SessionRelationship,
@@ -49,7 +48,7 @@ use crate::service::session::{
 use crate::service::snapshot::{
     ensure_snapshot_manager_for_workspace, get_or_create_snapshot_manager,
 };
-use crate::service::workspace::{get_global_workspace_service, WorkspaceInfo, WorkspaceKind};
+use crate::service::workspace::{get_global_workspace_service, WorkspaceInfo};
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use crate::util::sanitize_plain_model_output;
 use crate::util::timing::elapsed_ms_u64;
@@ -98,6 +97,11 @@ pub struct SessionManagerConfig {
 #[serde(rename_all = "camelCase")]
 pub struct SessionReferenceLocator {
     pub session_id: String,
+    /// Owning workspace ID; authoritative when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only pre-ID storage selector. New producers send workspace_id.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub workspace_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
@@ -1069,6 +1073,15 @@ impl SessionManager {
         persistence_manager: &PersistenceManager,
         config: &SessionConfig,
     ) -> Option<PathBuf> {
+        if let Some(id) = config.workspace_id.as_deref() {
+            return CoreSessionStorePort::with_path_manager(
+                persistence_manager.path_manager().clone(),
+            )
+            .resolve_workspace_storage(id)
+            .await
+            .ok()
+            .map(|resolution| resolution.effective_storage_path);
+        }
         let workspace_path = config.workspace_path.as_ref()?;
         let identity =
             crate::service::remote_ssh::workspace_state::resolve_workspace_session_identity(
@@ -1079,7 +1092,7 @@ impl SessionManager {
             .await?;
 
         let runtime_service = persistence_manager.runtime_service();
-        Some(if identity.hostname == LOCAL_WORKSPACE_SSH_HOST {
+        Some(if !identity.is_remote() {
             let project_workspace_path = config
                 .project_workspace_path
                 .as_deref()
@@ -1311,10 +1324,15 @@ impl SessionManager {
             .map_err(OpenBitFunError::Validation)?;
         openbitfun_core_types::validate_session_id(reference_artifact_stem)
             .map_err(OpenBitFunError::Validation)?;
+        let workspace_id = reference
+            .workspace_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty());
         let workspace_path = reference.workspace_path.trim();
-        if workspace_path.is_empty() {
+        if workspace_id.is_none() && workspace_path.is_empty() {
             return Err(OpenBitFunError::Validation(
-                "Referenced session workspace_path is required".to_string(),
+                "Referenced session workspace_id is required".to_string(),
             ));
         }
 
@@ -1332,13 +1350,18 @@ impl SessionManager {
                     source_session_id
                 ))
             })?;
-        let reference_storage_path = self
-            .resolve_storage_path_for_request(SessionStoragePathRequest {
-                workspace_path: PathBuf::from(workspace_path),
-                remote_connection_id: reference.remote_connection_id.clone(),
-                remote_ssh_host: reference.remote_ssh_host.clone(),
-            })
-            .await?;
+        let reference_storage_path = CoreSessionStorePort::with_path_manager(
+            self.persistence_manager.path_manager().clone(),
+        )
+        .resolve_storage_for_reference(
+            workspace_id,
+            workspace_path,
+            reference.remote_connection_id.clone(),
+            reference.remote_ssh_host.clone(),
+        )
+        .await
+        .map(|resolution| resolution.effective_storage_path)
+        .map_err(|error| OpenBitFunError::Session(error.to_string()))?;
 
         if source_session_id == reference.session_id
             && source_storage_path == reference_storage_path
@@ -1498,94 +1521,24 @@ impl SessionManager {
         metadata: &SessionMetadata,
         workspace_hint: Option<&WorkspaceInfo>,
     ) -> Option<SessionConfig> {
-        let workspace_path = metadata
-            .workspace_path
-            .as_deref()
-            .map(str::trim)
-            .filter(|path| !path.is_empty())
-            .map(str::to_string)
-            .or_else(|| {
-                workspace_hint.map(|workspace| workspace.root_path.to_string_lossy().to_string())
-            })?;
-
         let mut config = SessionConfig {
-            workspace_path: Some(workspace_path.clone()),
+            workspace_id: metadata
+                .workspace_id
+                .clone()
+                .or_else(|| workspace_hint.map(|record| record.id.clone())),
+            project_workspace_id: metadata.project_workspace_id.clone(),
+            workspace_path: metadata.workspace_path.clone().or_else(|| {
+                workspace_hint.map(|record| record.root_path.to_string_lossy().into_owned())
+            }),
             project_workspace_path: metadata.project_workspace_path.clone(),
             execution_target: metadata.execution_target.clone(),
+            remote_ssh_host: metadata.workspace_hostname.clone(),
             ..SessionConfig::default()
         };
-
-        let remote_hostname = metadata
-            .workspace_hostname
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty() && *value != LOCAL_WORKSPACE_SSH_HOST)
-            .map(str::to_string);
-
-        let matched_workspace = match workspace_hint {
-            Some(workspace) => Some(workspace.clone()),
-            None if remote_hostname.is_some() => {
-                self.match_tracked_remote_workspace(&workspace_path, remote_hostname.as_deref())
-                    .await
-            }
-            None => None,
-        };
-
-        if let Some(workspace) = matched_workspace.as_ref() {
-            config.workspace_id = Some(workspace.id.clone());
-            if workspace.workspace_kind == WorkspaceKind::Remote {
-                config.remote_connection_id =
-                    workspace.remote_ssh_connection_id().map(ToOwned::to_owned);
-                config.remote_ssh_host = workspace
-                    .metadata
-                    .get("sshHost")
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_string);
-                config.remote_connection_id.as_ref()?;
-            }
-        } else if remote_hostname.is_some() {
-            return None;
-        }
-
+        crate::agentic::workspace::normalize_session_workspace(&mut config)
+            .await
+            .ok()?;
         Some(config)
-    }
-
-    async fn match_tracked_remote_workspace(
-        &self,
-        workspace_path: &str,
-        ssh_host: Option<&str>,
-    ) -> Option<WorkspaceInfo> {
-        let ssh_host = ssh_host.map(str::trim).filter(|value| !value.is_empty())?;
-
-        let normalized_workspace_path =
-            crate::service::remote_ssh::normalize_remote_workspace_path(workspace_path);
-
-        self.tracked_workspace_candidates()
-            .await?
-            .into_iter()
-            .find(|workspace| {
-                if workspace.workspace_kind != WorkspaceKind::Remote {
-                    return false;
-                }
-
-                if crate::service::remote_ssh::normalize_remote_workspace_path(
-                    &workspace.root_path.to_string_lossy(),
-                ) != normalized_workspace_path
-                {
-                    return false;
-                }
-
-                let workspace_host = workspace
-                    .metadata
-                    .get("sshHost")
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty());
-
-                workspace_host == Some(ssh_host)
-            })
     }
 
     async fn tracked_workspace_candidates(&self) -> Option<Vec<WorkspaceInfo>> {
@@ -1596,21 +1549,8 @@ impl SessionManager {
     }
 
     async fn session_storage_path_for_workspace_info(workspace: &WorkspaceInfo) -> Option<PathBuf> {
-        let remote_connection_id = workspace.remote_ssh_connection_id().map(ToOwned::to_owned);
-        let remote_ssh_host = workspace
-            .metadata
-            .get("sshHost")
-            .and_then(|value| value.as_str())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string);
-
         CoreSessionStorePort::default()
-            .resolve_session_storage_path(SessionStoragePathRequest {
-                workspace_path: workspace.root_path.clone(),
-                remote_connection_id,
-                remote_ssh_host,
-            })
+            .resolve_workspace_storage(&workspace.id)
             .await
             .ok()
             .map(|resolution| resolution.effective_storage_path)
@@ -2770,6 +2710,8 @@ impl SessionManager {
         kind: SessionKind,
         transient: bool,
     ) -> OpenBitFunResult<Session> {
+        let mut config = config;
+        crate::agentic::workspace::normalize_session_workspace(&mut config).await?;
         let _workspace_path = Self::session_workspace_from_config(&config).ok_or_else(|| {
             OpenBitFunError::Validation("Session workspace_path is required".to_string())
         })?;
@@ -4971,7 +4913,7 @@ impl SessionManager {
             )));
         }
         self.cleanup_session_owned_resources(
-            workspace_path,
+            session.config.workspace_id.as_deref(),
             session_id,
             SessionResourceCleanupPolicy::Required,
         )
@@ -5046,7 +4988,7 @@ impl SessionManager {
 
     async fn cleanup_session_owned_resources(
         &self,
-        cleanup_workspace_path: &Path,
+        workspace_id: Option<&str>,
         session_id: &str,
         policy: SessionResourceCleanupPolicy,
     ) -> OpenBitFunResult<()> {
@@ -5063,7 +5005,8 @@ impl SessionManager {
             }
         };
 
-        if let Ok(snapshot_manager) = ensure_snapshot_manager_for_workspace(cleanup_workspace_path)
+        if let Some(snapshot_manager) =
+            workspace_id.and_then(|id| ensure_snapshot_manager_for_workspace(id).ok())
         {
             let snapshot_service = snapshot_manager.get_snapshot_service();
             let snapshot_service = snapshot_service.read().await;
@@ -5116,6 +5059,10 @@ impl SessionManager {
         session_id: &str,
     ) -> OpenBitFunResult<()> {
         let delete_started_at = Instant::now();
+        let cleanup_workspace_id = self
+            .resolve_session_workspace_binding(session_id)
+            .await
+            .and_then(|binding| binding.workspace_id);
         let _temporary_write_lock = if self.config.enable_persistence
             && !self.is_transient_session(session_id)
             && !self.session_write_locks.contains_key(session_id)
@@ -5161,11 +5108,10 @@ impl SessionManager {
                 session_id,
                 elapsed_ms_u64(persistence_stage_started_at)
             );
-            if let Some(revert_state) = revert_state {
-                match get_or_create_snapshot_manager(
-                    cleanup_workspace_path.to_path_buf(),
-                    None,
-                )
+            if let (Some(revert_state), Some(workspace_id)) =
+                (revert_state, cleanup_workspace_id.as_deref())
+            {
+                match get_or_create_snapshot_manager(workspace_id, None)
                 .await
                 {
                     Ok(snapshot_manager) => {
@@ -5188,7 +5134,7 @@ impl SessionManager {
         }
 
         self.cleanup_session_owned_resources(
-            cleanup_workspace_path,
+            cleanup_workspace_id.as_deref(),
             session_id,
             SessionResourceCleanupPolicy::BestEffort,
         )
@@ -5910,26 +5856,13 @@ impl SessionManager {
         let mut auto_cleared_reasoning_preset = None;
 
         if !include_internal {
-            let external_workspace_root =
-                crate::agentic::workspace::session_execution_workspace_root(&session.config);
-            let workspace_path_is_remote = match external_workspace_root {
-                Some(path) => {
-                    crate::service::remote_ssh::workspace_state::is_remote_path(
-                        &path.to_string_lossy(),
-                    )
-                    .await
-                }
-                None => false,
-            };
-            let external_sources_supported = cfg!(feature = "external-sources")
-                && session.config.remote_connection_id.is_none()
-                && session.config.remote_ssh_host.is_none()
-                && !workspace_path_is_remote;
+            let external_sources_supported =
+                cfg!(feature = "external-sources") && !session.config.is_remote_workspace();
             #[cfg(feature = "external-sources")]
             if external_sources_supported {
                 if let Err(error) =
                     crate::external_sources::ensure_external_source_workspace_snapshot(
-                        external_workspace_root,
+                        session.config.workspace_id.as_deref(),
                     )
                     .await
                 {
@@ -5942,14 +5875,17 @@ impl SessionManager {
             }
             let agent_registry = get_agent_registry();
             agent_registry
-                .load_custom_agents(external_workspace_root)
+                .load_custom_agents(session.config.workspace_id.as_deref())
                 .await;
             let available_modes = agent_registry
-                .get_modes_info_for_workspace(external_workspace_root, external_sources_supported)
+                .get_modes_info_for_workspace(
+                    session.config.workspace_id.as_deref(),
+                    external_sources_supported,
+                )
                 .await;
             let persisted_binding = agent_registry.resolve_primary_agent_for_turn_with_route(
                 &session.agent_type,
-                external_workspace_root,
+                session.config.workspace_id.as_deref(),
                 external_sources_supported,
                 Some(session.config.agent_route_owner),
                 session.config.agent_route_key.as_deref(),
@@ -7418,6 +7354,98 @@ impl SessionManager {
         Ok(turn_id)
     }
 
+    /// Record a provider-native voice exchange in the same model-visible ledger.
+    /// Stable exchange IDs make transport retries harmless. Admission and persistence
+    /// share the ordinary Session mutation lock; a running Agent is never overwritten.
+    pub async fn append_voice_exchange(
+        &self,
+        session_id: &str,
+        exchange_id: &str,
+        user_text: String,
+        assistant_text: String,
+    ) -> OpenBitFunResult<()> {
+        if exchange_id.trim().is_empty() || user_text.trim().is_empty() {
+            return Err(OpenBitFunError::Validation(
+                "Voice exchange requires an id and final user transcript".into(),
+            ));
+        }
+        let _guard = self.acquire_session_mutation(session_id).await?;
+        let mut session = self
+            .get_session(session_id)
+            .ok_or_else(|| OpenBitFunError::NotFound(format!("Session not found: {session_id}")))?;
+        if session.dialog_turn_ids.iter().any(|id| id == exchange_id) {
+            return Ok(());
+        }
+        if matches!(session.state, SessionState::Processing { .. }) {
+            return Err(OpenBitFunError::Validation(
+                "Voice exchange is waiting for the active Agent turn".into(),
+            ));
+        }
+        self.ensure_persisted_turn_append_allowed(session_id)
+            .await?;
+        let storage = self
+            .effective_storage_path_for_config(&session.config)
+            .await
+            .ok_or_else(|| OpenBitFunError::Validation("Session storage is unavailable".into()))?;
+        let index = session.dialog_turn_ids.len();
+        let timestamp = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let user = Message::user(user_text.clone())
+            .with_semantic_kind(MessageSemanticKind::ActualUserInput)
+            .with_turn_id(exchange_id.to_string());
+        let assistant =
+            Message::assistant(assistant_text.clone()).with_turn_id(exchange_id.to_string());
+        let mut turn = DialogTurnData::new_with_kind(
+            DialogTurnKind::UserDialog,
+            exchange_id.to_string(),
+            index,
+            session_id.to_string(),
+            Some(session.agent_type.clone()),
+            UserMessageData {
+                id: format!("{exchange_id}-user"),
+                content: user_text,
+                timestamp,
+                metadata: Some(json!({ "source": "realtime_voice", "nativeExchange": true })),
+            },
+        );
+        turn.timestamp = timestamp;
+        turn.start_time = timestamp;
+        turn.end_time = Some(timestamp);
+        turn.duration_ms = Some(0);
+        turn.status = TurnStatus::Completed;
+        turn.model_rounds =
+            Self::build_model_rounds_from_messages(&[assistant.clone()], exchange_id, timestamp);
+        let persist = self.config.enable_persistence && self.should_persist_session(&session);
+        // A failed write leaves the in-memory ledger untouched and can be retried.
+        if persist {
+            self.persistence_manager
+                .save_dialog_turn(&storage, &turn)
+                .await?;
+        }
+        session.dialog_turn_ids.push(exchange_id.to_string());
+        session.updated_at = SystemTime::now();
+        session.last_activity_at = session.updated_at;
+        if persist {
+            self.persistence_manager
+                .save_session(&storage, &session)
+                .await?;
+        }
+        self.sessions.insert(session_id.to_string(), session);
+        self.context_store.add_message(session_id, user);
+        if !assistant_text.is_empty() {
+            self.context_store.add_message(session_id, assistant);
+        }
+        self.persist_context_snapshot_for_turn_best_effort(
+            session_id,
+            index,
+            "voice_exchange_recorded",
+        )
+        .await;
+        Ok(())
+    }
+
     /// Append a completed local command turn that should be persisted in user-facing
     /// history without entering model-visible runtime context.
     pub async fn append_completed_local_command_turn(
@@ -7712,7 +7740,11 @@ impl SessionManager {
                                         result_for_assistant: assistant_text,
                                         image_attachments: image_attachments.clone(),
                                         error: if *is_error {
-                                            serde_json::to_string(result).ok()
+                                            result
+                                                .get("error")
+                                                .and_then(serde_json::Value::as_str)
+                                                .map(str::to_owned)
+                                                .or_else(|| serde_json::to_string(result).ok())
                                         } else {
                                             None
                                         },
@@ -9465,7 +9497,7 @@ impl SessionManager {
                     .map(str::trim)
                     .filter(|model_id| !model_id.is_empty());
                 let fallback_model_id = if explicit_model_id.is_none() {
-                    let workspace = session.config.workspace_path.as_deref().map(Path::new);
+                    let workspace = session.config.workspace_id.as_deref();
                     Some(
                         get_agent_registry()
                             .get_model_id_for_agent(&session.agent_type, workspace)
@@ -9817,6 +9849,42 @@ mod tests {
     use std::time::{Duration, SystemTime};
     use uuid::Uuid;
 
+    #[test]
+    fn classified_edit_history_preserves_detail_and_readable_error() {
+        let assistant = Message::assistant_with_tools(
+            String::new(),
+            vec![ToolCall {
+                tool_id: "edit-1".into(),
+                tool_name: "Edit".into(),
+                arguments: json!({}),
+                raw_arguments: None,
+                is_error: false,
+                parse_error: None,
+                recovered_from_truncation: false,
+                repair_kind: Default::default(),
+            }],
+        );
+        let result = Message::tool_result(ToolResult {
+            tool_id: "edit-1".into(),
+            tool_name: "Edit".into(),
+            effective_tool_name: None,
+            result: json!({"error":"[guidance] Inputs are equal", "error_detail":{"code":"edit_no_change", "kind":"guidance"}}),
+            result_for_assistant: None,
+            is_error: true,
+            duration_ms: None,
+            image_attachments: None,
+        });
+        let rounds =
+            SessionManager::build_model_rounds_from_messages(&[assistant, result], "turn-1", 1);
+        let encoded = serde_json::to_value(&rounds[0]).unwrap();
+        let restored: crate::service::session::ModelRoundData =
+            serde_json::from_value(encoded).unwrap();
+        let result = restored.tool_items[0].tool_result.as_ref().unwrap();
+        assert!(!result.success);
+        assert_eq!(result.error.as_deref(), Some("[guidance] Inputs are equal"));
+        assert_eq!(result.result["error_detail"]["code"], "edit_no_change");
+    }
+
     #[tokio::test]
     async fn runtime_model_is_visible_to_turn_admission_config() {
         let dir = tempfile::tempdir().expect("temporary config directory");
@@ -9854,20 +9922,37 @@ mod tests {
 
     struct TestWorkspace {
         path: PathBuf,
+        workspace_id: String,
     }
 
     impl TestWorkspace {
+        /// Creates the directory and registers it as a local workspace record
+        /// in the shared fixture catalog. Sessions only exist inside registered
+        /// workspaces, so a path-only `SessionConfig` naming this directory
+        /// resolves to that record exactly like a folder a host has opened.
+        /// The path is canonical so IO projections written back from the
+        /// record compare equal on hosts with symlinked temp roots.
         fn new() -> Self {
             let path = std::env::temp_dir().join(format!(
                 "openbitfun-session-restore-test-{}",
                 Uuid::new_v4()
             ));
             std::fs::create_dir_all(&path).expect("test workspace should be created");
-            Self { path }
+            let path = dunce::canonicalize(&path).expect("test workspace should canonicalize");
+            let record =
+                crate::service::workspace::legacy_compat::register_local_fixture_blocking(&path);
+            Self {
+                path,
+                workspace_id: record.id,
+            }
         }
 
         fn path(&self) -> &Path {
             &self.path
+        }
+
+        fn workspace_id(&self) -> &str {
+            &self.workspace_id
         }
 
         fn path_manager(&self) -> Arc<PathManager> {
@@ -10956,7 +11041,7 @@ mod tests {
                     execution_target: Some(SessionExecutionTarget::local(
                         original_workspace.clone(),
                     )),
-                    workspace_id: Some("workspace-original".to_string()),
+                    workspace_id: Some(workspace.workspace_id().to_string()),
                     ..SessionConfig::default()
                 },
             )
@@ -13017,12 +13102,18 @@ mod tests {
             .await
             .expect("session should create");
 
-        manager
-            .sessions
-            .get_mut(&session.session_id)
-            .expect("loaded session")
-            .config
-            .workspace_path = None;
+        {
+            // Simulate a session whose persistence location can no longer be
+            // resolved: neither its workspace record nor an IO projection.
+            let mut loaded = manager
+                .sessions
+                .get_mut(&session.session_id)
+                .expect("loaded session");
+            loaded.config.workspace_id = None;
+            loaded.config.project_workspace_id = None;
+            loaded.config.workspace_path = None;
+            loaded.config.project_workspace_path = None;
+        }
 
         manager
             .update_session_title(&session.session_id, "Not persisted")
@@ -14075,6 +14166,111 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn voice_exchange_survives_restore_and_idempotent_replay() {
+        let workspace = TestWorkspace::new();
+        let persistence = Arc::new(PersistenceManager::new(workspace.path_manager()).unwrap());
+        let manager = test_manager(persistence.clone());
+        let session = manager
+            .create_session(
+                "Voice".into(),
+                "agent".into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        for _ in 0..2 {
+            manager
+                .append_voice_exchange(
+                    &session.session_id,
+                    "voice-1",
+                    "Remember this".into(),
+                    "I will".into(),
+                )
+                .await
+                .unwrap();
+        }
+        assert_eq!(
+            manager
+                .get_messages(&session.session_id)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+        let turns = persistence
+            .load_session_turns(workspace.path(), &session.session_id)
+            .await
+            .unwrap();
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].kind, DialogTurnKind::UserDialog);
+        assert_eq!(SessionManager::build_messages_from_turns(&turns).len(), 2);
+        // The existing persisted UserDialog shape is enough; no new enum is required.
+        let encoded = serde_json::to_value(&turns[0]).unwrap();
+        let decoded: DialogTurnData = serde_json::from_value(encoded).unwrap();
+        assert_eq!(decoded.user_message.content, "Remember this");
+        assert!(manager
+            .unload_session_from_memory(&session.session_id)
+            .await
+            .expect("first writer should unload"));
+        drop(manager);
+        let restored = test_manager(persistence);
+        restored
+            .restore_session(workspace.path(), &session.session_id)
+            .await
+            .unwrap();
+        restored
+            .append_voice_exchange(
+                &session.session_id,
+                "voice-1",
+                "Remember this".into(),
+                "I will".into(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            restored
+                .get_messages(&session.session_id)
+                .await
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    #[tokio::test]
+    async fn voice_exchange_does_not_overwrite_a_running_turn() {
+        let workspace = TestWorkspace::new();
+        let manager = test_manager(Arc::new(
+            PersistenceManager::new(workspace.path_manager()).unwrap(),
+        ));
+        let session = manager
+            .create_session(
+                "Voice".into(),
+                "agent".into(),
+                SessionConfig {
+                    workspace_path: Some(workspace.path().to_string_lossy().to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        manager.sessions.get_mut(&session.session_id).unwrap().state = SessionState::Processing {
+            current_turn_id: "running".into(),
+            phase: ProcessingPhase::Thinking,
+        };
+        assert!(manager
+            .append_voice_exchange(&session.session_id, "voice-2", "Hello".into(), "Hi".into())
+            .await
+            .is_err());
+        let unchanged = manager.get_session(&session.session_id).unwrap();
+        assert!(matches!(unchanged.state, SessionState::Processing { .. }));
+        assert!(unchanged.dialog_turn_ids.is_empty());
+    }
+
+    #[tokio::test]
     async fn append_completed_local_command_turn_persists_without_model_context() {
         let workspace = TestWorkspace::new();
         let persistence_manager = Arc::new(
@@ -14543,30 +14739,54 @@ mod tests {
     #[tokio::test]
     async fn core_session_store_port_resolves_unresolved_remote_storage_path() {
         use openbitfun_runtime_ports::{
-            SessionStorageKind, SessionStoragePathRequest, SessionStorePort,
+            PortErrorKind, SessionStorageKind, SessionStoragePathRequest, SessionStorePort,
         };
 
         let workspace = TestWorkspace::new();
-        let port = CoreSessionStorePort::with_path_manager_for_tests(workspace.path_manager());
-        let resolution = port
+        let path_manager = workspace.path_manager();
+        let port = CoreSessionStorePort::with_path_manager_for_tests(path_manager.clone());
+
+        // A connection ID alone is transport metadata, not a workspace
+        // identity. Without a registered remote record the request must fail
+        // loudly instead of inventing an `_unresolved` mirror.
+        let error = port
             .resolve_session_storage_path(SessionStoragePathRequest {
                 workspace_path: PathBuf::from("/remote/project"),
                 remote_connection_id: Some("conn-1".to_string()),
                 remote_ssh_host: None,
             })
             .await
-            .expect("storage path should resolve");
+            .expect_err("unregistered remote reference must not resolve storage");
+        assert_eq!(error.kind, PortErrorKind::InvalidRequest);
+        assert!(
+            error.message.contains("does not resolve"),
+            "unexpected error: {}",
+            error.message
+        );
 
+        // Sessions already persisted under a legacy `_unresolved` mirror stay
+        // readable: the resolved sessions dir passes through with its kind.
+        let legacy_unresolved_dir =
+            openbitfun_services_core::workspace_identity::unresolved_remote_session_storage_dir(
+                path_manager.remote_ssh_mirror_root_dir(),
+                "conn-1",
+                "/remote/project",
+            );
+        let resolution = port
+            .resolve_session_storage_path(SessionStoragePathRequest {
+                workspace_path: legacy_unresolved_dir.clone(),
+                remote_connection_id: Some("conn-1".to_string()),
+                remote_ssh_host: None,
+            })
+            .await
+            .expect("legacy unresolved sessions dir should pass through");
         assert_eq!(
             resolution.storage_kind,
             SessionStorageKind::UnresolvedRemote
         );
         assert!(resolution.is_remote_storage());
         assert_eq!(resolution.remote_connection_id.as_deref(), Some("conn-1"));
-        assert_ne!(
-            resolution.effective_storage_path,
-            PathBuf::from("/remote/project")
-        );
+        assert_eq!(resolution.effective_storage_path, legacy_unresolved_dir);
     }
 
     #[cfg(feature = "remote-workspace")]
@@ -14684,6 +14904,12 @@ mod tests {
 
     #[tokio::test]
     async fn restore_session_for_workspace_uses_remote_identity() {
+        crate::service::workspace::legacy_compat::register_remote_fixture(
+            "/home/wsp/project",
+            "ssh-1",
+            "dev-host",
+        )
+        .await;
         let workspace = TestWorkspace::new();
         let path_manager = workspace.path_manager();
         let persistence_manager =
@@ -17614,6 +17840,12 @@ mod tests {
     #[cfg(feature = "remote-workspace")]
     #[tokio::test]
     async fn remote_workspace_evidence_uses_the_resolved_session_mirror() {
+        crate::service::workspace::legacy_compat::register_remote_fixture(
+            "/home/wsp/project",
+            "ssh-1",
+            "dev-host",
+        )
+        .await;
         let workspace = TestWorkspace::new();
         let path_manager = workspace.path_manager();
         let persistence_manager =

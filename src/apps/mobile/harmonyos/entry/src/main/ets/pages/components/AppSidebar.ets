@@ -75,7 +75,7 @@ export struct AppSidebar {
             }
             .width('100%').height(48).padding({ left: 4, right: 8 })
             .backgroundColor(TRANSPARENT).borderRadius(12)
-            .margin({ top: 16, bottom: 16 }).stateEffect(true)
+            .margin({ top: 4, bottom: 8 }).stateEffect(true)
             .accessibilityText(RemoteI18n.t('miniapp.title'))
             .onClick(() => this.onOpenMiniApps())
             if (this.showWorkspaceSection) {

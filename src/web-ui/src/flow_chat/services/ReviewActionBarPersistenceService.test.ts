@@ -50,6 +50,7 @@ function createStoreSession(overrides: Record<string, unknown> = {}) {
     lastActiveAt: 1000,
     error: null,
     sessionKind: 'deep_review',
+    workspaceId: 'workspace-1',
     workspacePath: '/workspace/project',
     ...overrides,
   };
@@ -151,7 +152,7 @@ describe('ReviewActionBarPersistenceService', () => {
       } as any);
 
       expect(sessionAPI.saveSessionMetadata).toHaveBeenCalledTimes(1);
-      const [metadata, workspacePath, fields] = (sessionAPI.saveSessionMetadata as any).mock.calls[0];
+      const [metadata, workspaceId, fields] = (sessionAPI.saveSessionMetadata as any).mock.calls[0];
       expect(metadata.sessionId).toBe('session-1');
       expect(metadata.sessionName).toBe('Existing Session');
       expect(metadata.agentType).toBe('Standard');
@@ -170,7 +171,7 @@ describe('ReviewActionBarPersistenceService', () => {
         remediationScopeRequiresWorkspaceFallback: true,
         persistedAt: expect.any(Number),
       });
-      expect(workspacePath).toBe('/workspace/project');
+      expect(workspaceId).toBe('workspace-1');
       expect(fields).toEqual(['reviewActionState']);
     });
 
@@ -224,8 +225,37 @@ describe('ReviewActionBarPersistenceService', () => {
       expect(Array.isArray(metadata.tags)).toBe(true);
     });
 
-    it('passes remote connection info when available', async () => {
+    it('does not persist when the session has no workspace ID', async () => {
+      (flowChatStore.getState as any).mockReturnValue({
+        sessions: new Map([['session-1', createStoreSession({ workspaceId: undefined })]]),
+      });
+
+      await expect(persistReviewActionState({
+        childSessionId: 'session-1',
+        parentSessionId: null,
+        reviewMode: 'deep',
+        phase: 'review_completed',
+        reviewData: null,
+        remediationItems: [],
+        selectedRemediationIds: new Set(),
+        minimized: false,
+        activeAction: null,
+        customInstructions: '',
+        errorMessage: null,
+        interruption: null,
+        completedRemediationIds: new Set(),
+        fixingRemediationIds: new Set(),
+        remainingFixIds: [],
+      } as any)).rejects.toThrow('Session workspace ID is unavailable');
+
+      expect(sessionAPI.loadSessionMetadata).not.toHaveBeenCalled();
+      expect(sessionAPI.saveSessionMetadata).not.toHaveBeenCalled();
+    });
+
+    it('scopes a remote session by its workspace ID rather than connection details', async () => {
       const mockSession = createStoreSession({
+        workspaceId: 'remote-workspace-1',
+        workspacePath: '/srv/project',
         remoteConnectionId: 'remote-1',
         remoteSshHost: 'ssh-host-1',
       });
@@ -253,11 +283,12 @@ describe('ReviewActionBarPersistenceService', () => {
         remainingFixIds: [],
       } as any);
 
+      expect(sessionAPI.loadSessionMetadata).toHaveBeenCalledWith('session-1', 'remote-workspace-1');
       expect(sessionAPI.saveSessionMetadata).toHaveBeenCalledTimes(1);
-      const [, , fields, remoteConnectionId, remoteSshHost] = (sessionAPI.saveSessionMetadata as any).mock.calls[0];
+      expect((sessionAPI.saveSessionMetadata as any).mock.calls[0]).toHaveLength(3);
+      const [, workspaceId, fields] = (sessionAPI.saveSessionMetadata as any).mock.calls[0];
+      expect(workspaceId).toBe('remote-workspace-1');
       expect(fields).toEqual(['reviewActionState']);
-      expect(remoteConnectionId).toBe('remote-1');
-      expect(remoteSshHost).toBe('ssh-host-1');
     });
   });
 
@@ -274,13 +305,14 @@ describe('ReviewActionBarPersistenceService', () => {
         },
       }));
 
-      await clearPersistedReviewState('session-1', '/workspace/project');
+      await clearPersistedReviewState('session-1', 'workspace-1');
 
       expect(sessionAPI.saveSessionMetadata).toHaveBeenCalledTimes(1);
-      const [metadata, , fields] = (sessionAPI.saveSessionMetadata as any).mock.calls[0];
+      const [metadata, workspaceId, fields] = (sessionAPI.saveSessionMetadata as any).mock.calls[0];
       expect(metadata.sessionId).toBe('session-1');
       expect(metadata.sessionName).toBe('Test Session');
       expect(metadata.reviewActionState).toBeUndefined();
+      expect(workspaceId).toBe('workspace-1');
       expect(fields).toEqual(['reviewActionState']);
     });
   });
@@ -289,7 +321,7 @@ describe('ReviewActionBarPersistenceService', () => {
     it('returns null when no metadata exists', async () => {
       (sessionAPI.loadSessionMetadata as any).mockResolvedValue(undefined);
 
-      const result = await loadPersistedReviewState('session-1', '/workspace/project');
+      const result = await loadPersistedReviewState('session-1', 'workspace-1');
       expect(result).toBeNull();
     });
 
@@ -299,7 +331,7 @@ describe('ReviewActionBarPersistenceService', () => {
         title: 'Test Session',
       });
 
-      const result = await loadPersistedReviewState('session-1', '/workspace/project');
+      const result = await loadPersistedReviewState('session-1', 'workspace-1');
       expect(result).toBeNull();
     });
 
@@ -318,27 +350,23 @@ describe('ReviewActionBarPersistenceService', () => {
         reviewActionState: persistedState,
       });
 
-      const result = await loadPersistedReviewState('session-1', '/workspace/project');
+      const result = await loadPersistedReviewState('session-1', 'workspace-1');
       expect(result).toEqual(persistedState);
     });
 
-    it('passes remote connection info when loading', async () => {
+    it('loads by workspace ID only, without path or connection details', async () => {
       (sessionAPI.loadSessionMetadata as any).mockResolvedValue(undefined);
 
-      await loadPersistedReviewState('session-1', '/workspace/project', 'remote-1', 'ssh-host-1');
+      await loadPersistedReviewState('session-1', 'remote-workspace-1');
 
-      expect(sessionAPI.loadSessionMetadata).toHaveBeenCalledWith(
-        'session-1',
-        '/workspace/project',
-        'remote-1',
-        'ssh-host-1',
-      );
+      expect(sessionAPI.loadSessionMetadata).toHaveBeenCalledTimes(1);
+      expect((sessionAPI.loadSessionMetadata as any).mock.calls[0]).toEqual(['session-1', 'remote-workspace-1']);
     });
 
     it('returns null and does not throw on error', async () => {
       (sessionAPI.loadSessionMetadata as any).mockRejectedValue(new Error('Network error'));
 
-      const result = await loadPersistedReviewState('session-1', '/workspace/project');
+      const result = await loadPersistedReviewState('session-1', 'workspace-1');
       expect(result).toBeNull();
     });
   });

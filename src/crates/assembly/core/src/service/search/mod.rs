@@ -15,9 +15,11 @@ pub use openbitfun_services_integrations::workspace_search::{
     WorkspaceSearchTaskStatus,
 };
 #[cfg(feature = "ssh-remote")]
-pub use remote::{remote_workspace_search_service_for_path, RemoteWorkspaceSearchService};
+pub use remote::{remote_workspace_search_service_for_workspace, RemoteWorkspaceSearchService};
 #[cfg(not(feature = "ssh-remote"))]
-pub use remote_disabled::{remote_workspace_search_service_for_path, RemoteWorkspaceSearchService};
+pub use remote_disabled::{
+    remote_workspace_search_service_for_workspace, RemoteWorkspaceSearchService,
+};
 pub use service::{
     get_global_workspace_search_service, resolve_workspace_search_daemon_program_path,
     set_global_workspace_search_service, workspace_search_daemon_available,

@@ -287,6 +287,7 @@ fn acp_tool_call_events(
             events.push(AcpClientStreamEvent::ToolEvent(ToolEventData::Failed {
                 params: None,
                 identity: openbitfun_events::ToolEventIdentity::direct(tool_id, tool_name),
+                error_detail: None,
                 error: acp_tool_error_text(tool_call.raw_output, tool_call.content),
                 duration_ms: None,
                 queue_wait_ms: None,
@@ -367,6 +368,7 @@ fn acp_tool_call_update_events(
             events.push(AcpClientStreamEvent::ToolEvent(ToolEventData::Failed {
                 params: None,
                 identity: openbitfun_events::ToolEventIdentity::direct(tool_id, tool_name),
+                error_detail: None,
                 error: acp_tool_error_text(
                     update.fields.raw_output,
                     update.fields.content.unwrap_or_default(),

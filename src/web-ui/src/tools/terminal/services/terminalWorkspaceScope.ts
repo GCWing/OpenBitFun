@@ -1,6 +1,7 @@
 import type { SessionResponse } from '../types/session';
 
 export interface TerminalWorkspaceScope {
+  workspaceId: string;
   rootPath: string;
   connectionId?: string | null;
   isRemote: boolean;
@@ -20,38 +21,24 @@ export function isTerminalPathInside(path: string, root: string, remote = false)
   return candidate === parent || candidate.startsWith(parent === '/' ? '/' : `${parent}/`);
 }
 
-export function terminalMatchesEnvironment(session: SessionResponse, scope: TerminalWorkspaceScope): boolean {
-  const remote = session.shellType === 'Remote' || Boolean(session.connectionId);
-  return scope.isRemote
-    ? remote && Boolean(scope.connectionId) && session.connectionId === scope.connectionId
-    : !remote;
-}
-
-/** Prefer the closest opened workspace, so nested projects do not share terminals. */
+/** Workspace ownership is independent of the terminal's mutable cwd. */
 export function terminalBelongsToWorkspace(
   session: SessionResponse,
   scope: TerminalWorkspaceScope,
-  workspaces: TerminalWorkspaceScope[] = [],
 ): boolean {
-  if (!terminalMatchesEnvironment(session, scope)) return false;
-  const origin = session.initialCwd || session.cwd;
-  if (!isTerminalPathInside(origin, scope.rootPath, scope.isRemote)) return false;
-  const root = normalizeTerminalPath(scope.rootPath, scope.isRemote);
-  return !workspaces.some(other =>
-    terminalMatchesEnvironment(session, other)
-    && normalizeTerminalPath(other.rootPath, other.isRemote).length > root.length
-    && isTerminalPathInside(origin, other.rootPath, other.isRemote),
-  );
+  return !!session.workspaceId && session.workspaceId === scope.workspaceId;
 }
 
 /** Legacy hosts expose only cwd. Remember the first observation for this service lifetime. */
 export class TerminalOriginCache {
-  private origins = new Map<string, string>();
+  private origins = new Map<string, { initialCwd: string; workspaceId?: string }>();
 
   project(surfaceId: string, session: SessionResponse): SessionResponse {
-    const key = JSON.stringify([surfaceId, session.connectionId ?? '', session.id]);
-    const initialCwd = session.initialCwd || this.origins.get(key) || session.cwd;
-    if (initialCwd) this.origins.set(key, initialCwd);
-    return { ...session, initialCwd };
+    const key = JSON.stringify([surfaceId, session.id]);
+    const previous = this.origins.get(key);
+    const initialCwd = session.initialCwd || previous?.initialCwd || session.cwd;
+    const workspaceId = session.workspaceId || previous?.workspaceId;
+    this.origins.set(key, { initialCwd, workspaceId });
+    return { ...session, initialCwd, workspaceId };
   }
 }

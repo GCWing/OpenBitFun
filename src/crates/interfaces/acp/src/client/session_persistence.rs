@@ -43,6 +43,7 @@ impl AcpSessionPersistence {
     pub(super) async fn create_flow_session_record(
         &self,
         session_storage_path: &Path,
+        workspace_id: &str,
         workspace_path: &str,
         client_id: &str,
         session_name: Option<String>,
@@ -59,6 +60,7 @@ impl AcpSessionPersistence {
             agent_type.clone(),
             "primary".to_string(),
         );
+        metadata.workspace_id = Some(workspace_id.to_string());
         metadata.workspace_path = Some(workspace_path.to_string());
         metadata.custom_metadata = Some(json!({
             "kind": "normal",

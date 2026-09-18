@@ -78,7 +78,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
   const notification = useNotification();
   const { workspace, workspacePath } = useCurrentWorkspace();
   const peer = usePeerDeviceModeOptional();
-  const cache = ecosystemDiscoveryCache(scopeKey ?? JSON.stringify([peer?.peerMode.active ? peer.peerMode.deviceId : undefined, workspace?.id, workspace?.workspaceKind, workspacePath]));
+  const cache = ecosystemDiscoveryCache(scopeKey ?? JSON.stringify([peer?.peerMode.active ? peer.peerMode.deviceId : undefined, workspace?.id]));
   const automaticDiscovery = snapshot !== null && (snapshot.discovery?.enabled ?? true);
   const localImportSupported = isTauriRuntime() && !peer?.peerMode.active
     && workspace?.workspaceKind !== WorkspaceKind.Remote;
@@ -86,8 +86,8 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
   const [skillSettings, setSkillSettings] = useState<GlobalSkillSettings | null>(null);
   const [skillDiagnostics, setSkillDiagnostics] = useState<SkillScanDiagnostic[]>(() => cache.skillDiagnostics?.filter((entry) => entry.sourceId === runtime.spec.ecosystemId) ?? []);
   const [hooks, setHooks] = useState<ExternalHookImportSnapshot | null>(() => cache.hooks ?? null);
-  const [instructionSnapshot, setInstructionSnapshot] = useState<{ workspacePath: typeof workspacePath; catalog: InstructionSourceCatalog | null } | null>(null);
-  const instructions = localImportSupported && instructionSnapshot?.workspacePath === workspacePath
+  const [instructionSnapshot, setInstructionSnapshot] = useState<{ workspaceId: string | undefined; catalog: InstructionSourceCatalog | null } | null>(null);
+  const instructions = localImportSupported && instructionSnapshot?.workspaceId === workspace?.id
     ? instructionSnapshot?.catalog ?? null : null;
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -136,14 +136,14 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     setLoading(true);
     const [skillResult, hookResult, instructionResult, settingsResult] = await Promise.allSettled([
       collectPending ? Promise.resolve(null)
-        : configAPI.getSkillScanReport({ workspacePath: workspacePath || undefined, forceRefresh: refresh }),
+        : configAPI.getSkillScanReport({ workspaceId: workspace?.id, forceRefresh: refresh }),
       !refresh && !automaticDiscovery && !collectPending ? Promise.resolve(cache.hooks ?? null) : localImportSupported
-        ? externalHooksAPI.getImportSnapshot(workspacePath || undefined, refresh)
-        : externalHooksAPI.getCatalog(workspacePath || undefined, refresh).then((catalog) => ({
+        ? externalHooksAPI.getImportSnapshot(workspace?.id, refresh)
+        : externalHooksAPI.getCatalog(workspace?.id, refresh).then((catalog) => ({
           schemaVersion: 1 as const, revision: '', catalog, imports: [], diagnostics: [],
         })),
-      localImportSupported ? instructionSourcesAPI.getCatalog(workspacePath || undefined) : Promise.resolve(null),
-      localImportSupported ? configAPI.getGlobalSkillSettings(workspacePath || undefined) : Promise.resolve(null),
+      localImportSupported ? instructionSourcesAPI.getCatalog(workspace?.id) : Promise.resolve(null),
+      localImportSupported ? configAPI.getGlobalSkillSettings(workspace?.id) : Promise.resolve(null),
     ]);
     if (!alive.current || sequence !== loadSequence.current) return;
     const failures: string[] = [];
@@ -154,14 +154,14 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     if (hookResult.status === 'fulfilled') {
       if (hookResult.value) setHooks(rememberEcosystemHooks(cache, hookResult.value));
     } else { failures.push('hook'); }
-    setInstructionSnapshot({ workspacePath, catalog: instructionResult.status === 'fulfilled' ? instructionResult.value : null });
+    setInstructionSnapshot({ workspaceId: workspace?.id, catalog: instructionResult.status === 'fulfilled' ? instructionResult.value : null });
     if (instructionResult.status === 'rejected') failures.push('instruction');
     if (settingsRevision === skillSettingsRevision.current) {
       setSkillSettings(settingsResult.status === 'fulfilled' ? settingsResult.value : null);
     }
     setLoadFailures(failures);
     setLoading(false);
-  }, [automaticDiscovery, cache, localImportSupported, runtime.spec.ecosystemId, workspacePath]);
+  }, [automaticDiscovery, cache, localImportSupported, runtime.spec.ecosystemId, workspace?.id]);
 
   useEffect(() => {
     alive.current = true;
@@ -177,7 +177,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     const refreshAvailability = async () => {
       const revision = ++skillSettingsRevision.current;
       try {
-        const settings = await configAPI.getGlobalSkillSettings(workspacePath || undefined);
+        const settings = await configAPI.getGlobalSkillSettings(workspace?.id);
         if (alive.current && revision === skillSettingsRevision.current) setSkillSettings(settings);
       } catch {
         if (alive.current && revision === skillSettingsRevision.current) setSkillSettings(null);
@@ -188,7 +188,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
       skillSettingsRevision.current += 1;
       globalEventBus.off('mode:config:updated', refreshAvailability);
     };
-  }, [localImportSupported, workspacePath]);
+  }, [localImportSupported, workspacePath, workspace?.id]);
 
   useEffect(() => {
     if (!hooks?.catalog.discoveryPending) return;
@@ -247,12 +247,12 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     if (!localImportSupported || !hasMcp) { setPlanLoading(false); return; }
     setPlanLoading(true);
     setPlanFailed(false);
-    const next = await externalSourcesAPI.planMcpImport(workspacePath || undefined).catch(() => null);
+    const next = await externalSourcesAPI.planMcpImport(workspace?.id).catch(() => null);
     if (!alive.current || sequence !== mcpPlanSequence.current) return;
     setPlan(next);
     setPlanFailed(next === null);
     setPlanLoading(false);
-  }, [automaticDiscovery, hasMcp, localImportSupported, workspacePath]);
+  }, [automaticDiscovery, hasMcp, localImportSupported, workspace?.id]);
   useEffect(() => {
     void refreshMcpPlan();
     return () => { mcpPlanSequence.current += 1; };
@@ -279,7 +279,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     const scope = getActiveSurfaceScope();
     setBusy(true); setNotice(null);
     try {
-      const settings = await configAPI.setGlobalSkillDisabled({ skillKey: skill.key, disabled: !enabled, workspacePath: workspacePath || undefined });
+      const settings = await configAPI.setGlobalSkillDisabled({ skillKey: skill.key, disabled: !enabled, workspaceId: workspace?.id });
       if (alive.current && scope.isCurrent()) {
         setSkillSettings(settings);
         globalEventBus.emit('mode:config:updated');
@@ -350,7 +350,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     const entries: BatchImportEntry[] = [];
     try {
       const freshMcpPlan = candidates.some((item) => item.kind === 'mcp')
-        ? await externalSourcesAPI.planMcpImport(workspacePath || undefined).catch(() => null) : null;
+        ? await externalSourcesAPI.planMcpImport(workspace?.id).catch(() => null) : null;
       for (const item of candidates) {
         if (!alive.current) return;
         if (!presentation(item).canImport) continue;
@@ -358,7 +358,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
           candidate.candidateId === item.candidateId && ['eligible', 'automatic_rename'].includes(candidate.disposition))) {
           entries.push({ id: item.id, name: item.name, kind: 'mcp', candidateId: item.candidateId, plan: freshMcpPlan });
         } else if (item.hookSource) {
-          const next = await externalHooksAPI.planImport(workspacePath || undefined, item.hookSource.key).catch(() => null);
+          const next = await externalHooksAPI.planImport(workspace?.id, item.hookSource.key).catch(() => null);
           if (next && next.source.ecosystemId === runtime.spec.ecosystemId
             && next.source.key.providerId === item.hookSource.key.providerId
             && next.source.key.sourceId === item.hookSource.key.sourceId
@@ -379,7 +379,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     setBusy(true);
     setBatchResults([]);
     try {
-      await applyEcosystemBatch(batch, workspacePath || undefined, (result) => {
+      await applyEcosystemBatch(batch, { workspaceId: workspace?.id }, (result) => {
         if (!alive.current) return;
         setBatchResults((current) => [...(current ?? []), result]);
         if (result.status === 'imported' && batch.find((entry) => entry.id === result.id)?.kind !== 'mcp') {
@@ -402,12 +402,12 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     setBusy(true);
     try {
       if (item.hookSource) {
-        const next = await externalHooksAPI.planImport(workspacePath || undefined, item.hookSource.key);
+        const next = await externalHooksAPI.planImport(workspace?.id, item.hookSource.key);
         if (!alive.current || sequence !== reviewSequence.current) return;
         if (next.source.ecosystemId !== runtime.spec.ecosystemId || next.source.key.providerId !== item.hookSource.key.providerId || next.source.key.sourceId !== item.hookSource.key.sourceId) { setNotice(t('content.previewFailed')); return; }
         setReview({ kind: 'hook', item, plan: next });
       } else if (item.kind === 'mcp') {
-        const next = plan ?? await externalSourcesAPI.planMcpImport(workspacePath || undefined);
+        const next = plan ?? await externalSourcesAPI.planMcpImport(workspace?.id);
         if (!alive.current || sequence !== reviewSequence.current) return;
         setPlan(next);
         setReview({ kind: 'mcp', item, plan: next });
@@ -429,7 +429,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
         const candidateId = captured.item.candidateId!;
         const selected = captured.plan.items.find((item) => item.candidateId === candidateId);
         if (!selected || !['eligible', 'automatic_rename'].includes(selected.disposition)) return;
-        const result = await externalSourcesAPI.applyMcpImport(workspacePath || undefined, captured.plan, [{ candidateId }]);
+        const result = await externalSourcesAPI.applyMcpImport(workspace?.id, captured.plan, [{ candidateId }]);
         if (!alive.current) return;
         if (result.outcome.status === 'stale') {
           setPlan(result.outcome.refreshedPlan);
@@ -439,7 +439,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
         }
       } else {
         if (captured.plan.disposition === 'unavailable' || captured.plan.handlers.length === 0) return;
-        const result = await externalHooksAPI.applyImport(workspacePath || undefined, captured.plan);
+        const result = await externalHooksAPI.applyImport(workspace?.id, captured.plan);
         if (!alive.current) return;
         if (result.outcome.kind === 'stale') {
           setReview({ ...captured, plan: result.outcome.refreshedPlan });
@@ -471,7 +471,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     setNotice(null);
     try {
       const next = item.kind === 'mcp' && item.candidateId ? await prepareMcpUndo(item.candidateId)
-        : item.hookSource ? await prepareHookUndo(item.hookSource, workspacePath || undefined)
+        : item.hookSource ? await prepareHookUndo(item.hookSource, workspace?.id)
           : null;
       if (!alive.current || sequence !== reviewSequence.current) return;
       if (!next) { setNotice(t('content.undoUnavailable')); return; }
@@ -489,7 +489,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     setBusy(true);
     setNotice(null);
     try {
-      const result = await applyImportUndo(captured.review, workspacePath || undefined);
+      const result = await applyImportUndo(captured.review, workspace?.id);
       if (!alive.current) return;
       setCompleted((current) => { const next = new Set(current); next.delete(captured.item.id); return next; });
       setUndo(null);
@@ -521,7 +521,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
       for (const item of items.filter((entry) => (!group || entry.kind === group) && (!selectedOnly || (selected.has(entry.id)
         && `${entry.name} ${entry.description ?? ''} ${entry.sourceLocation ?? ''}`.toLowerCase().includes(search.trim().toLowerCase()))) && contentState(entry) === 'imported')) {
           const review = item.kind === 'mcp' && item.candidateId ? await prepareMcpUndo(item.candidateId)
-          : item.hookSource ? await prepareHookUndo(item.hookSource, workspacePath || undefined)
+          : item.hookSource ? await prepareHookUndo(item.hookSource, workspace?.id)
             : null;
         if (!alive.current) return;
         if (!review) throw new Error(t('content.undoUnavailable'));
@@ -536,7 +536,7 @@ export default function ExternalAgentContent({ scopeKey, refreshControlRef, onRe
     if (!batchUndo?.length || busy || !localImportSupported) return;
     setBusy(true); setBatchUndoResults([]);
     try {
-      await applyEcosystemBatchUndo(batchUndo, workspacePath || undefined, (result) => {
+      await applyEcosystemBatchUndo(batchUndo, workspace?.id, (result) => {
         if (!alive.current) return;
         setBatchUndoResults((current) => [...(current ?? []), result]);
         if (result.status !== 'failed') setCompleted((current) => { const next = new Set(current); next.delete(result.id); return next; });

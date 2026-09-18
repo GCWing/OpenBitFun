@@ -30,9 +30,9 @@ vi.mock('../../store/FlowChatStore', () => ({
   flowChatStore: { getState: () => ({ sessions: new Map(), activeSessionId: mocks.activeSessionId }) },
 }));
 vi.mock('../../store/modernFlowChatStore', () => ({
-  useModernFlowChatStore: {
+  useModernFlowChatStoreApi: () => ({
     getState: () => ({ activeSession: { sessionId: mocks.activeSessionId } }),
-  },
+  }),
 }));
 vi.mock('./flowChatFocusTarget', () => ({
   resolveFlowChatFocusTarget: mocks.resolveFlowChatFocusTarget,
@@ -61,8 +61,9 @@ const excerpt: ConversationExcerptContext = {
     prefix: 'source ', suffix: '' }],
 };
 
-function Harness({ listRef }: { listRef: React.RefObject<any> }) {
+function Harness({ listRef, containerRef }: { listRef: React.RefObject<any>; containerRef: React.RefObject<HTMLElement> }) {
   useFlowChatNavigation({
+    containerRef,
     activeSessionId: 'session-1',
     virtualItems: [],
     virtualListRef: listRef,
@@ -83,7 +84,7 @@ describe('useFlowChatNavigation focus placement', () => {
     const element = document.createElement('div');
     element.dataset.flowItemId = FOCUS_ITEM_ID;
     element.scrollIntoView = scrollIntoView as unknown as HTMLElement['scrollIntoView'];
-    document.body.append(element);
+    container.append(element);
     return element;
   }
 
@@ -117,7 +118,7 @@ describe('useFlowChatNavigation focus placement', () => {
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
-    act(() => root.render(<Harness listRef={listRef} />));
+    act(() => root.render(<Harness listRef={listRef} containerRef={{ current: container }} />));
   });
 
   afterEach(() => {
@@ -143,6 +144,16 @@ describe('useFlowChatNavigation focus placement', () => {
     // Nothing has been given a frame yet: every queued callback is still queued.
     expect(frames).toHaveLength(0);
     expect(focusFlowItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('highlights only the requesting host when another retained view has the same item', async () => {
+    const other = document.createElement('div');
+    other.dataset.flowItemId = FOCUS_ITEM_ID;
+    document.body.prepend(other);
+    const owned = renderItem();
+    await dispatchFocusRequest();
+    expect(owned.classList.contains('flowchat-flow-item--focused')).toBe(true);
+    expect(other.classList.contains('flowchat-flow-item--focused')).toBe(false);
   });
 
   it('asks again on the next frame while the item is still unrendered', async () => {

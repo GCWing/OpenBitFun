@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   ownerSurface: null as string | null,
   selectedProductId: 'codex',
   setOwnerSurface: vi.fn(),
+  workspaceId: 'workspace-a' as string | null,
   workspacePath: '/workspace',
   peerDeviceId: '',
   skills: [] as Array<Record<string, unknown>>,
@@ -21,7 +22,10 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@/infrastructure/api/service-api/ExternalSourcesAPI', () => ({ externalSourcesAPI: mocks }));
 vi.mock('@/infrastructure/api/service-api/ACPClientAPI', () => ({ ACPClientAPI: { getClients: async () => [] } }));
-vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({ useCurrentWorkspace: () => ({ workspacePath: mocks.workspacePath, workspace: { workspaceKind: 'normal', sshHost: 'localhost' } }) }));
+// The workspace is identified by its ID; the path is only the IO projection.
+vi.mock('@/infrastructure/contexts/WorkspaceContext', () => ({ useCurrentWorkspace: () => (mocks.workspaceId
+  ? { workspacePath: mocks.workspacePath, workspace: { id: mocks.workspaceId, name: 'Workspace', rootPath: mocks.workspacePath, workspaceKind: 'normal' } }
+  : { workspacePath: '', workspace: null }) }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: mocks.t, formatNumber: String }) }));
 vi.mock('@/infrastructure/peer-device/peerDeviceContextState', () => ({ usePeerDeviceModeOptional: () => mocks.peerDeviceId ? ({ peerMode: { active: true, deviceId: mocks.peerDeviceId } }) : null }));
 vi.mock('@/shared/notification-system', () => ({ useNotification: () => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }) }));
@@ -101,6 +105,7 @@ describe('compatibility discovery lifecycle', () => {
     mocks.setOwnerSurface.mockClear();
     mocks.planMcpImport.mockResolvedValue({ schemaVersion: 1, planFingerprint: 'plan', items: [] });
     mocks.applyMcpImport.mockReset();
+    mocks.workspaceId = 'workspace-a';
     mocks.workspacePath = '/workspace';
     mocks.peerDeviceId = '';
     mocks.skills = [];
@@ -175,7 +180,7 @@ describe('compatibility discovery lifecycle', () => {
     mocks.setAutomaticDiscovery.mockResolvedValue(snapshot(true, true, false, 2));
     await renderMcp();
     await act(async () => discoverySwitch().click());
-    expect(mocks.setAutomaticDiscovery).toHaveBeenCalledExactlyOnceWith('/workspace', true, 1);
+    expect(mocks.setAutomaticDiscovery).toHaveBeenCalledExactlyOnceWith('workspace-a', true, 1);
     expect(initial.integrationPolicy.effective.enabled).toBe(false);
     expect(discoverySwitch().checked).toBe(true);
     expect(discoveryDescription().textContent).toBe('discovery.enabledDescription discovery.workspaceScope');
@@ -186,7 +191,7 @@ describe('compatibility discovery lifecycle', () => {
   });
 
   it('uses host user settings when no workspace is open', async () => {
-    mocks.workspacePath = '';
+    mocks.workspaceId = null;
     mocks.getDiscoverySnapshot.mockResolvedValue(snapshot(true));
     mocks.setAutomaticDiscovery.mockResolvedValue(snapshot(false, false, false, 2));
     await renderMcp();
@@ -228,7 +233,7 @@ describe('compatibility discovery lifecycle', () => {
     expect(alert?.querySelector('[data-openbitfun-part="icon"]')).toBeNull();
     expect(discoverySwitch().checked).toBe(true);
     expect(discoverySwitch().disabled).toBe(false);
-    expect(mocks.getDiscoverySnapshot).toHaveBeenLastCalledWith('/workspace', false);
+    expect(mocks.getDiscoverySnapshot).toHaveBeenLastCalledWith('workspace-a', false);
   });
 
   it('does not let an older refresh undo a confirmed discovery change', async () => {
@@ -254,6 +259,7 @@ describe('compatibility discovery lifecycle', () => {
     await renderMcp();
     await act(async () => discoverySwitch().click());
     expect(discoverySwitch().disabled).toBe(true);
+    mocks.workspaceId = 'workspace-b';
     mocks.workspacePath = '/other-workspace';
     await renderMcp();
     await act(async () => resolveSave(snapshot(true, false, false, 2)));
@@ -270,7 +276,7 @@ describe('compatibility discovery lifecycle', () => {
     expect(container.textContent).toContain('Docs MCP');
     await act(async () => vi.advanceTimersByTimeAsync(10000));
     expect(mocks.getDiscoverySnapshot).toHaveBeenCalledTimes(2);
-    expect(mocks.getDiscoverySnapshot).toHaveBeenLastCalledWith('/workspace', false);
+    expect(mocks.getDiscoverySnapshot).toHaveBeenLastCalledWith('workspace-a', false);
   });
 
   it('scans from the empty state while automatic discovery stays paused', async () => {
@@ -284,7 +290,7 @@ describe('compatibility discovery lifecycle', () => {
     const scanButton = container.querySelector<HTMLButtonElement>('[data-content-empty-state] button')!;
     expect(scanButton.textContent).toBe('content.scan');
     await act(async () => scanButton.click());
-    expect(mocks.getDiscoverySnapshot).toHaveBeenLastCalledWith('/workspace', true);
+    expect(mocks.getDiscoverySnapshot).toHaveBeenLastCalledWith('workspace-a', true);
     expect(container.querySelector('[data-content-empty-state="checking"]')).not.toBeNull();
     expect(scanButton.disabled).toBe(true);
     await act(async () => scanButton.click());
@@ -295,7 +301,7 @@ describe('compatibility discovery lifecycle', () => {
     await act(async () => vi.advanceTimersByTimeAsync(300));
     expect(container.textContent).toContain('Docs MCP');
     expect(container.querySelector('[data-content-empty-state]')).toBeNull();
-    expect(mocks.getDiscoverySnapshot).toHaveBeenLastCalledWith('/workspace', false);
+    expect(mocks.getDiscoverySnapshot).toHaveBeenLastCalledWith('workspace-a', false);
     expect(mocks.setAutomaticDiscovery).not.toHaveBeenCalled();
   });
 
@@ -316,6 +322,7 @@ describe('compatibility discovery lifecycle', () => {
     mocks.getDiscoverySnapshot.mockResolvedValueOnce(snapshot(true, true)).mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }));
     await renderMcp();
     await act(async () => vi.advanceTimersByTimeAsync(300));
+    mocks.workspaceId = 'workspace-b';
     mocks.workspacePath = '/other-workspace';
     mocks.getDiscoverySnapshot.mockResolvedValue(snapshot(false));
     await renderMcp();
@@ -324,7 +331,17 @@ describe('compatibility discovery lifecycle', () => {
     expect(container.querySelector('[data-content-empty-state="notScanned"]')).not.toBeNull();
   });
 
-  it('drops local catalog content immediately when switching to a peer on the same path', async () => {
+  it('keeps the discovered catalog when only the workspace path changes', async () => {
+    mocks.getDiscoverySnapshot.mockResolvedValueOnce(snapshot(true, false, true));
+    await renderMcp();
+    expect(container.textContent).toContain('Docs MCP');
+    mocks.workspacePath = '/moved-checkout';
+    await renderMcp();
+    expect(container.textContent).toContain('Docs MCP');
+    expect(mocks.getDiscoverySnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops local catalog content immediately when switching to a peer on the same workspace', async () => {
     mocks.getDiscoverySnapshot.mockResolvedValueOnce(snapshot(true, false, true));
     await renderMcp();
     expect(container.textContent).toContain('Docs MCP');

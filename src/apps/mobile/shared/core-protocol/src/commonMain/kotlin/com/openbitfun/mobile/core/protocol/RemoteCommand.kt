@@ -64,6 +64,7 @@ public data class RemoteCommand(
     @SerialName("display_content") val displayContent: String? = null,
     @SerialName("plan_file_path") val planFilePath: String? = null,
     @SerialName("plan_name") val planName: String? = null,
+    @SerialName("workspace_id") val workspaceId: String? = null,
     @SerialName("workspace_path") val workspacePath: String? = null,
     @SerialName("path") val path: String? = null,
     @SerialName("remote_connection_id") val remoteConnectionId: String? = null,

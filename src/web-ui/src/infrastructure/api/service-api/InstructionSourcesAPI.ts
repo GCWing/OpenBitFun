@@ -1,4 +1,4 @@
-import { ExternalSourceApiError, invokeExternalSourceCommand, normalizeOptionalWorkspacePath } from './ExternalSourcesAPI';
+import { ExternalSourceApiError, invokeExternalSourceCommand, normalizeOptionalWorkspaceId } from './ExternalSourcesAPI';
 
 export interface InstructionSourceEntry {
   ecosystemId: string;
@@ -15,9 +15,9 @@ export interface InstructionSourceCatalog {
 }
 
 export const instructionSourcesAPI = {
-  async getCatalog(workspacePath?: string): Promise<InstructionSourceCatalog> {
+  async getCatalog(workspaceId?: string): Promise<InstructionSourceCatalog> {
     const value = await invokeExternalSourceCommand<InstructionSourceCatalog>('get_instruction_source_catalog', {
-      request: { workspacePath: normalizeOptionalWorkspacePath(workspacePath) },
+      request: { workspaceId: normalizeOptionalWorkspaceId(workspaceId) },
     });
     if (!value || value.schemaVersion !== 1 || !Array.isArray(value.entries)
       || !Array.isArray(value.failedEcosystems) || !value.failedEcosystems.every((id) => typeof id === 'string')

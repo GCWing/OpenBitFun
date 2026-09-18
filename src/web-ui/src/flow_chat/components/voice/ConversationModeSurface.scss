@@ -1,3 +1,5 @@
+@use '../../markdown-typography' as markdownTypography;
+
 .openbitfun-conversation-mode-surface {
   flex: 1;
   min-width: 0;
@@ -80,4 +82,149 @@
     transform: none;
   }
 
+}
+.openbitfun-conversation-mode-surface__logo {
+  display: block;
+  width: 20px;
+  height: 20px;
+  background: currentColor;
+  mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
+  -webkit-mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
+}
+
+.openbitfun-conversation-mode-surface--integrated {
+  --_conversation-header-overlap: calc(var(--openbitfun-control-height-sm) + var(--openbitfun-space-6));
+  position: relative;
+  container-type: size;
+  color: inherit;
+
+  &[data-openbitfun-state='voice'] { --_conversation-header-overlap: 0px; }
+
+  // The identity stays on one axis; text records pass beneath its compact form.
+  .openbitfun-conversation-mode-surface__body > [data-openbitfun-part='identity'] {
+    z-index: 1;
+    isolation: isolate;
+    margin-block-end: calc(0px - var(--_conversation-header-overlap));
+    transition-property: block-size, margin-block-end;
+
+    &::before {
+      content: '';
+      position: absolute;
+      z-index: -1;
+      inset: 0;
+      pointer-events: none;
+      background: var(--openbitfun-color-surface-raised);
+      // Keep mask coverage independent of translucent text colors; fade inside the lower edge.
+      -webkit-mask-image: linear-gradient(to bottom, var(--openbitfun-color-content-on-light) calc(100% - var(--openbitfun-space-1)), transparent);
+      mask-image: linear-gradient(to bottom, var(--openbitfun-color-content-on-light) calc(100% - var(--openbitfun-space-1)), transparent);
+      opacity: 0;
+      transition: opacity var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard);
+    }
+  }
+
+  &[data-openbitfun-state='chat'] .openbitfun-conversation-mode-surface__body:has(
+    > .openbitfun-conversation-mode-surface__transcript[data-scrolled='true']
+  ) > [data-openbitfun-part='identity']::before { opacity: 1; }
+
+  .openbitfun-conversation-mode-surface__transcript {
+    padding-block-start: 0;
+    scroll-padding-block-start: calc(var(--_conversation-header-overlap) + var(--openbitfun-space-3));
+
+    > [data-openbitfun-part='entries'] {
+      padding-block-start: calc(var(--_conversation-header-overlap) + var(--openbitfun-space-3));
+      transition: padding-block-start 480ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+  }
+
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .openbitfun-conversation-mode-surface__body > [data-openbitfun-part='identity']::before {
+      background: color-mix(in srgb, var(--openbitfun-color-surface-raised) 72%, transparent);
+      -webkit-backdrop-filter: var(--openbitfun-effect-blur-medium) var(--openbitfun-effect-blur-medium);
+      backdrop-filter: var(--openbitfun-effect-blur-medium) var(--openbitfun-effect-blur-medium);
+    }
+  }
+
+  @media (prefers-reduced-transparency: reduce) {
+    .openbitfun-conversation-mode-surface__body > [data-openbitfun-part='identity']::before {
+      background: var(--openbitfun-color-surface-raised);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .openbitfun-conversation-mode-surface__body > [data-openbitfun-part='identity'],
+    .openbitfun-conversation-mode-surface__body > [data-openbitfun-part='identity']::before,
+    .openbitfun-conversation-mode-surface__transcript > [data-openbitfun-part='entries'] { transition: none; }
+  }
+}
+
+.openbitfun-conversation-mode-surface__voice-header {
+  display: grid;
+  grid-template-rows: 1fr;
+  flex: 0 0 auto;
+  opacity: 1;
+  visibility: inherit;
+  transition: grid-template-rows 700ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms, visibility 0s;
+
+  &[aria-hidden='true'] {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition: grid-template-rows 480ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms, visibility 0s 160ms;
+  }
+}
+.openbitfun-conversation-mode-surface__voice-header-content { min-height: 0; overflow: hidden; }
+
+.openbitfun-conversation-mode-surface__composer {
+  display: grid;
+  grid-template-rows: 1fr;
+  flex: 0 0 auto;
+  opacity: 1;
+  visibility: inherit;
+  transition: grid-template-rows 480ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms, visibility 0s;
+
+  &[aria-hidden='true'] {
+    grid-template-rows: 0fr;
+    opacity: 0;
+    visibility: hidden;
+    transition: grid-template-rows 700ms cubic-bezier(0.22, 1, 0.36, 1), opacity 160ms, visibility 0s 160ms;
+  }
+}
+.openbitfun-conversation-mode-surface__composer-content { min-height: 0; overflow: hidden; }
+.openbitfun-conversation-mode-surface__transcript {
+  .markdown-renderer { white-space: normal; }
+
+  &[data-openbitfun-presentation='chat'] {
+    @include markdownTypography.apply;
+  }
+}
+
+.openbitfun-conversation-mode-surface__transcript[data-openbitfun-presentation='voice'] .markdown-renderer {
+  color: inherit;
+  font: inherit;
+  :is(p, h1, h2, h3, h4, h5, h6, strong, em, li) { color: inherit; }
+}
+.openbitfun-conversation-mode-surface__history {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--openbitfun-space-2);
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-label-sm-font-size);
+  line-height: var(--openbitfun-type-label-sm-line-height);
+}
+.openbitfun-conversation-mode-surface__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--openbitfun-space-2);
+  margin-top: var(--openbitfun-space-2);
+  img { display: block; max-width: 160px; max-height: 160px; object-fit: contain; border-radius: var(--openbitfun-radius-base); }
+}
+.openbitfun-conversation-mode-surface__image-preview { display: block; max-width: 100%; max-height: 75vh; object-fit: contain; }
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-conversation-mode-surface__voice-header,
+  .openbitfun-conversation-mode-surface__voice-header[aria-hidden='true'],
+  .openbitfun-conversation-mode-surface__composer,
+  .openbitfun-conversation-mode-surface__composer[aria-hidden='true'] { transition: none; }
 }

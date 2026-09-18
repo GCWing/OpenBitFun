@@ -1,11 +1,11 @@
 use crate::api::app_state::AppState;
 use openbitfun_core::infrastructure::{FileSearchResult, FileSearchResultGroup, SearchMatchType};
-use openbitfun_core::service::remote_ssh::workspace_state::is_remote_path;
 use openbitfun_core::service::search::{
-    remote_workspace_search_service_for_path, workspace_search_daemon_available,
+    remote_workspace_search_service_for_workspace, workspace_search_daemon_available,
     workspace_search_feature_enabled, ContentSearchRequest, ContentSearchResult,
     RemoteWorkspaceSearchService, WorkspaceSearchBackend, WorkspaceSearchRepoPhase,
 };
+use openbitfun_core::service::workspace::{WorkspaceInfo, WorkspaceKind};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -13,6 +13,10 @@ use tauri::State;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchRepoIndexRequest {
+    #[serde(default)]
+    pub workspace_id: Option<String>,
+    /// Upgrade-only input for pre-ID hosts/clients.
+    #[serde(default)]
     pub root_path: String,
 }
 
@@ -54,27 +58,32 @@ impl WorkspaceContentSearchRunner {
     }
 }
 
-pub(crate) async fn remote_workspace_search_service(
+pub(crate) async fn resolve_search_workspace(
     state: &State<'_, AppState>,
-    root_path: &str,
-) -> Result<RemoteWorkspaceSearchService, String> {
-    let preferred_connection_id = state
-        .get_remote_workspace_async()
+    id: Option<&str>,
+    legacy_root: &str,
+    legacy_connection: Option<&str>,
+) -> Result<WorkspaceInfo, String> {
+    if let Some(id) = id {
+        return state
+            .workspace_service
+            .require_workspace(id)
+            .await
+            .map_err(|e| e.to_string());
+    }
+    state
+        .workspace_service
+        .resolve_legacy_workspace_reference(None, legacy_root, legacy_connection, None)
         .await
-        .and_then(|workspace| {
-            let remote_root = openbitfun_core::service::remote_ssh::normalize_remote_workspace_path(
-                &workspace.remote_path,
-            );
-            let root_path =
-                openbitfun_core::service::remote_ssh::normalize_remote_workspace_path(root_path);
-            if root_path == remote_root || root_path.starts_with(&format!("{remote_root}/")) {
-                Some(workspace.connection_id)
-            } else {
-                None
-            }
-        });
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Legacy search workspace cannot be resolved; select its ID".into())
+}
 
-    remote_workspace_search_service_for_path(root_path, preferred_connection_id).await
+pub(crate) async fn remote_workspace_search_service(
+    _state: &State<'_, AppState>,
+    workspace: &WorkspaceInfo,
+) -> Result<RemoteWorkspaceSearchService, String> {
+    remote_workspace_search_service_for_workspace(&workspace.id).await
 }
 
 /// flashgrep refuses to open a directory that is not a Git worktree with a HEAD commit.
@@ -93,12 +102,16 @@ fn repo_status_error_message(error: impl std::fmt::Display) -> String {
 
 async fn workspace_search_unavailable_message(
     _state: &State<'_, AppState>,
-    root_path: &str,
+    workspace: &WorkspaceInfo,
 ) -> Option<String> {
-    if is_remote_path(root_path.trim()).await {
+    if workspace.workspace_kind == WorkspaceKind::Remote {
         return Some("Flashgrep is not supported for remote workspaces".to_string());
     }
 
+    local_workspace_search_unavailable_message(&workspace.root_path.to_string_lossy()).await
+}
+
+async fn local_workspace_search_unavailable_message(root_path: &str) -> Option<String> {
     if !workspace_search_feature_enabled().await {
         return Some(
             "Workspace search is disabled. Enable it in Settings > Session Config to use accelerated workspace search.".to_string(),
@@ -125,9 +138,9 @@ async fn workspace_search_unavailable_message(
 
 pub(crate) async fn should_use_workspace_search(
     state: &State<'_, AppState>,
-    root_path: &str,
+    workspace: &WorkspaceInfo,
 ) -> bool {
-    workspace_search_unavailable_message(state, root_path)
+    workspace_search_unavailable_message(state, workspace)
         .await
         .is_none()
 }
@@ -152,25 +165,27 @@ pub(crate) fn remote_content_search_refusal_message(
 pub(crate) async fn remote_content_search_refusal(
     state: &State<'_, AppState>,
     command: &str,
-    root_path: &str,
+    workspace: &WorkspaceInfo,
 ) -> Option<String> {
-    if !is_remote_path(root_path.trim()).await {
+    if workspace.workspace_kind != WorkspaceKind::Remote {
         return None;
     }
 
-    let reason = workspace_search_unavailable_message(state, root_path).await?;
+    let reason = workspace_search_unavailable_message(state, workspace).await?;
     Some(remote_content_search_refusal_message(
-        command, root_path, &reason,
+        command,
+        &workspace.root_path.to_string_lossy(),
+        &reason,
     ))
 }
 
 pub(crate) async fn prepare_content_search_runner(
     state: &State<'_, AppState>,
-    root_path: &str,
+    workspace: &WorkspaceInfo,
 ) -> Result<WorkspaceContentSearchRunner, String> {
-    if is_remote_path(root_path.trim()).await {
+    if workspace.workspace_kind == WorkspaceKind::Remote {
         Ok(WorkspaceContentSearchRunner::Remote(
-            remote_workspace_search_service(state, root_path).await?,
+            remote_workspace_search_service(state, workspace).await?,
         ))
     } else {
         Ok(WorkspaceContentSearchRunner::Local(
@@ -181,7 +196,7 @@ pub(crate) async fn prepare_content_search_runner(
 
 pub(crate) async fn search_file_contents_via_workspace_search(
     state: &State<'_, AppState>,
-    root_path: &str,
+    workspace: &WorkspaceInfo,
     pattern: &str,
     case_sensitive: bool,
     use_regex: bool,
@@ -190,8 +205,9 @@ pub(crate) async fn search_file_contents_via_workspace_search(
 ) -> Result<openbitfun_core::service::search::ContentSearchResult, String> {
     search_content_request_via_workspace_search(
         state,
+        workspace,
         build_content_search_request(
-            root_path,
+            &workspace.root_path.to_string_lossy(),
             pattern,
             case_sensitive,
             use_regex,
@@ -228,10 +244,10 @@ pub(crate) fn build_content_search_request(
 
 pub(crate) async fn search_content_request_via_workspace_search(
     state: &State<'_, AppState>,
+    workspace: &WorkspaceInfo,
     request: ContentSearchRequest,
 ) -> Result<ContentSearchResult, String> {
-    let repo_root = request.repo_root.to_string_lossy().to_string();
-    prepare_content_search_runner(state, &repo_root)
+    prepare_content_search_runner(state, workspace)
         .await?
         .search_content(request)
         .await
@@ -282,27 +298,44 @@ pub(crate) fn search_metadata_from_content_result(
     }
 }
 
+async fn index_workspace_root(
+    state: &State<'_, AppState>,
+    request: &SearchRepoIndexRequest,
+) -> Result<String, String> {
+    let workspace = if let Some(id) = request.workspace_id.as_deref() {
+        state
+            .workspace_service
+            .require_workspace(id)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        state
+            .workspace_service
+            .resolve_legacy_workspace_reference(None, &request.root_path, None, None)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("Legacy search workspace cannot be resolved; select its ID")?
+    };
+    if workspace.workspace_kind == openbitfun_core::service::workspace::WorkspaceKind::Remote {
+        return Err("Flashgrep is not supported for remote workspaces".into());
+    }
+    let root = workspace.root_path.to_string_lossy().into_owned();
+    if let Some(message) = local_workspace_search_unavailable_message(&root).await {
+        return Err(message);
+    }
+    Ok(root)
+}
+
 #[tauri::command]
 pub async fn search_get_repo_status(
     state: State<'_, AppState>,
     request: SearchRepoIndexRequest,
 ) -> Result<serde_json::Value, String> {
-    if let Some(message) = workspace_search_unavailable_message(&state, &request.root_path).await {
-        return Err(message);
-    }
-
-    if is_remote_path(request.root_path.trim()).await {
-        return remote_workspace_search_service(&state, &request.root_path)
-            .await?
-            .get_index_status(&request.root_path)
-            .await
-            .map(|status| serde_json::to_value(status).unwrap_or_else(|_| serde_json::json!({})))
-            .map_err(repo_status_error_message);
-    }
+    let root_path = index_workspace_root(&state, &request).await?;
 
     state
         .workspace_search_service
-        .get_index_status(&request.root_path)
+        .get_index_status(&root_path)
         .await
         .map(|status| serde_json::to_value(status).unwrap_or_else(|_| serde_json::json!({})))
         .map_err(repo_status_error_message)
@@ -313,22 +346,11 @@ pub async fn search_build_index(
     state: State<'_, AppState>,
     request: SearchRepoIndexRequest,
 ) -> Result<serde_json::Value, String> {
-    if let Some(message) = workspace_search_unavailable_message(&state, &request.root_path).await {
-        return Err(message);
-    }
-
-    if is_remote_path(request.root_path.trim()).await {
-        return remote_workspace_search_service(&state, &request.root_path)
-            .await?
-            .build_index(&request.root_path)
-            .await
-            .map(|task| serde_json::to_value(task).unwrap_or_else(|_| serde_json::json!({})))
-            .map_err(|error| format!("Failed to build workspace index: {}", error));
-    }
+    let root_path = index_workspace_root(&state, &request).await?;
 
     state
         .workspace_search_service
-        .build_index(&request.root_path)
+        .build_index(&root_path)
         .await
         .map(|task| serde_json::to_value(task).unwrap_or_else(|_| serde_json::json!({})))
         .map_err(|error| format!("Failed to build workspace index: {}", error))
@@ -339,22 +361,11 @@ pub async fn search_rebuild_index(
     state: State<'_, AppState>,
     request: SearchRepoIndexRequest,
 ) -> Result<serde_json::Value, String> {
-    if let Some(message) = workspace_search_unavailable_message(&state, &request.root_path).await {
-        return Err(message);
-    }
-
-    if is_remote_path(request.root_path.trim()).await {
-        return remote_workspace_search_service(&state, &request.root_path)
-            .await?
-            .rebuild_index(&request.root_path)
-            .await
-            .map(|task| serde_json::to_value(task).unwrap_or_else(|_| serde_json::json!({})))
-            .map_err(|error| format!("Failed to rebuild workspace index: {}", error));
-    }
+    let root_path = index_workspace_root(&state, &request).await?;
 
     state
         .workspace_search_service
-        .rebuild_index(&request.root_path)
+        .rebuild_index(&root_path)
         .await
         .map(|task| serde_json::to_value(task).unwrap_or_else(|_| serde_json::json!({})))
         .map_err(|error| format!("Failed to rebuild workspace index: {}", error))

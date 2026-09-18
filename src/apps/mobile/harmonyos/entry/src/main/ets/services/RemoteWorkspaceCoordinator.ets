@@ -1,5 +1,12 @@
 import { WorkspaceCatalog } from './WorkspaceCatalog';
-import { SavedRuntimeConnection, AssistantEntry, RecentWorkspaceEntry, RemoteSession, WorkspaceInfo } from '../model/RemoteModels';
+import {
+  SavedRuntimeConnection,
+  AssistantEntry,
+  RecentWorkspaceEntry,
+  RemoteSession,
+  RemoteWorkspaceIdentity,
+  WorkspaceInfo
+} from '../model/RemoteModels';
 import {
   CONCURRENT_WORKSPACE_LISTINGS,
   mapInConcurrentBatches,
@@ -30,37 +37,37 @@ export class RemoteWorkspaceCoordinator {
 
   async savedConnections(): Promise<SavedRuntimeConnection[]> { return await this.repository.savedConnections(); }
 
-  async switchWorkspace(path: string, connectionId?: string, sshHost?: string): Promise<WorkspaceInfo> {
-    return await this.repository.setWorkspace(path, connectionId, sshHost);
+  async switchWorkspace(path: string, connectionId?: string, sshHost?: string, workspaceId?: string): Promise<WorkspaceInfo> {
+    return await this.repository.setWorkspace(path, connectionId, sshHost, workspaceId);
   }
 
-  async switchAssistant(path: string): Promise<WorkspaceInfo> {
-    return await this.repository.setAssistant(path);
+  async switchAssistant(path: string, workspaceId?: string): Promise<WorkspaceInfo> {
+    return await this.repository.setAssistant(path, workspaceId);
   }
 
   /**
    * Every session the given workspaces know about, first occurrence winning.
    *
    * Listings run a batch at a time rather than all at once or one at a time,
-   * and results are merged in the order the paths were given, so widening the
-   * batch changes how long this takes and nothing about what it returns.
+   * and results are merged in the order the workspaces were given, so widening
+   * the batch changes how long this takes and nothing about what it returns.
    */
-  async sessionsForWorkspaces(paths: string[]): Promise<RemoteSession[]> {
+  async sessionsForWorkspaces(workspaces: RemoteWorkspaceIdentity[]): Promise<RemoteSession[]> {
     const listings = await mapInConcurrentBatches(
-      paths,
-      (path: string): Promise<RemoteSession[]> => this.sessionsForWorkspace(path),
+      workspaces,
+      (workspace: RemoteWorkspaceIdentity): Promise<RemoteSession[]> => this.sessionsForWorkspace(workspace),
       CONCURRENT_WORKSPACE_LISTINGS
     );
     return mergeUniqueSessions(listings);
   }
 
   /** One workspace's sessions, or none when that workspace cannot be read. */
-  private async sessionsForWorkspace(path: string): Promise<RemoteSession[]> {
+  private async sessionsForWorkspace(workspace: RemoteWorkspaceIdentity): Promise<RemoteSession[]> {
     try {
-      return await this.repository.listSessionsForWorkspace(path, 50);
+      return await this.repository.listSessionsForWorkspace(workspace, 50);
     } catch (err) {
       // One unreadable workspace is not a reason to lose the other twenty.
-      RemoteLogger.warn(`load workspace sessions failed path=${path}: ${String(err)}`);
+      RemoteLogger.warn(`load workspace sessions failed workspace=${workspace.workspaceId || ''} path=${workspace.path}: ${String(err)}`);
       return [];
     }
   }

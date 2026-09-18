@@ -355,6 +355,7 @@ class DeviceDirectoryStoreTest {
     @Test
     fun workspaceFailureKeepsSiblingSessionsAndCanRetry() = runTest {
         val transport = FakeDeviceTransport("a")
+        transport.extraWorkspaces = """,{"path":"/other","name":"Other","workspace_kind":"normal"}"""
         val store = DeviceDirectoryStore.create(this, FakeDeviceStoreFactory(mutableMapOf("a" to transport)))
         store.dispatch(DeviceDirectoryIntent.Sync(listOf(DeviceDirectoryDevice("a", true))))
         store.dispatch(DeviceDirectoryIntent.Load("a"))
@@ -396,6 +397,7 @@ class DeviceDirectoryStoreTest {
             "a" to FakeDeviceTransport("a"),
             "b" to FakeDeviceTransport("b"),
         )
+        transports.getValue("a").extraWorkspaces = """,{"path":"/assistant-not-current","name":"Assistant","workspace_kind":"normal"}"""
         val store = DeviceDirectoryStore.create(this, FakeDeviceStoreFactory(transports))
         store.dispatch(DeviceDirectoryIntent.Sync(listOf(DeviceDirectoryDevice("a", true), DeviceDirectoryDevice("b", true))))
         store.dispatch(DeviceDirectoryIntent.Load("a"))
@@ -588,6 +590,7 @@ private class FakeDeviceTransport(private val deviceId: String) : RemoteCommandT
         """[{"id":"s-$deviceId","title":"Session $deviceId","agent_type":"code"}]"""
     var assistantJson: String = "[]"
     var openedJson: String = "null"
+    var extraWorkspaces: String = ""
 
     override suspend fun <T : CommandStatus> send(
         deserializer: DeserializationStrategy<T>,
@@ -599,7 +602,7 @@ private class FakeDeviceTransport(private val deviceId: String) : RemoteCommandT
             "list_recent_workspaces" -> {
                 workspaceFailure?.let { throw RelayTransportException(it) }
                 workspaceGate?.await()
-                """{"resp":"ok","workspaces":[{"path":"/repo-$deviceId","name":"Repo $deviceId","last_opened":"2026-08-09","workspace_kind":"local"}],"opened_workspaces":$openedJson}"""
+                """{"resp":"ok","workspaces":[{"path":"/repo-$deviceId","name":"Repo $deviceId","last_opened":"2026-08-09","workspace_kind":"local"}$extraWorkspaces],"opened_workspaces":$openedJson}"""
             }
             "list_assistants" -> """{"resp":"ok","assistants":$assistantJson}"""
             "get_workspace_info" ->

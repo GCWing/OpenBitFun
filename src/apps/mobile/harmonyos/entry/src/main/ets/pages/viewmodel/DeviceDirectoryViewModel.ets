@@ -1,4 +1,4 @@
-import { RecentWorkspaceEntry, RemoteSession, SessionListResult } from '../../model/RemoteModels';
+import { RecentWorkspaceEntry, RemoteSession, RemoteWorkspaceIdentity, SessionListResult } from '../../model/RemoteModels';
 import {
   AccountDeviceDirectory,
   AccountDeviceDirectorySource
@@ -23,8 +23,8 @@ export interface DeviceDirectoryViewModelHooks {
   readonly activeDeviceId: () => string;
   /** Whether the conversation link to [activeDeviceId] is currently live. */
   readonly activeDeviceConnected: () => boolean;
-  readonly loadActiveWorkspaceSessions?: (path: string, remoteConnectionId?: string, remoteSshHost?: string) => Promise<SessionListResult>;
-  readonly onActiveWorkspaceSessions?: (path: string, result: SessionListResult, remoteConnectionId?: string, remoteSshHost?: string) => void;
+  readonly loadActiveWorkspaceSessions?: (path: string, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string) => Promise<SessionListResult>;
+  readonly onActiveWorkspaceSessions?: (path: string, result: SessionListResult, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string) => void;
 }
 
 interface DeviceCatalogRequest {
@@ -327,14 +327,14 @@ export class DeviceDirectoryViewModel {
    * every workspace here was both expensive and the source of unrelated row
    * updates while the user was only opening one branch.
    */
-  async loadWorkspaceSessions(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string): Promise<void> {
+  async loadWorkspaceSessions(deviceId: string, path: string, remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string): Promise<void> {
     const entry = this.state.find(deviceId);
     const normalizedPath = path.trim();
     const active = deviceId === this.hooks.activeDeviceId() && this.hooks.activeDeviceConnected();
     if (normalizedPath.length === 0 || (!active && (!entry || !entry.online))) {
       return;
     }
-    const scope = this.state.workspaceLoadState(deviceId, normalizedPath, remoteConnectionId, remoteSshHost);
+    const scope = this.state.workspaceLoadState(deviceId, normalizedPath, remoteConnectionId, remoteSshHost, workspaceId);
     const pending = this.workspaceInFlight.get(scope);
     if (pending) {
       return pending;
@@ -358,7 +358,7 @@ export class DeviceDirectoryViewModel {
       if (!this.state.isCurrentWorkspaceLoad(scope) || !scope.expanded ||
         this.state.selectedDeviceId !== selected) return;
       try {
-        await this.loadWorkspaceSessions(scope.deviceId, scope.path, scope.remoteConnectionId, scope.remoteSshHost);
+        await this.loadWorkspaceSessions(scope.deviceId, scope.path, scope.remoteConnectionId, scope.remoteSshHost, scope.workspaceId);
       } catch (_err) {
         // Each failed branch exposes its own retry row and retains its cache.
       }
@@ -379,18 +379,26 @@ export class DeviceDirectoryViewModel {
         (!active || (scope.deviceId === this.hooks.activeDeviceId() && this.hooks.activeDeviceConnected()));
     };
     scope.status = 'loading';
+    // The disclosed row keyed by its ID when the catalog supplied one; the
+    // legacy triple is only what pre-ID rows have.
+    const workspace: RemoteWorkspaceIdentity = {
+      workspaceId: scope.workspaceId.length > 0 ? scope.workspaceId : undefined,
+      path: path,
+      remoteConnectionId: scope.remoteConnectionId.length > 0 ? scope.remoteConnectionId : undefined,
+      remoteSshHost: scope.remoteSshHost.length > 0 ? scope.remoteSshHost : undefined
+    };
     try {
       if (active && this.hooks.loadActiveWorkspaceSessions && this.hooks.onActiveWorkspaceSessions) {
-        const result = await this.hooks.loadActiveWorkspaceSessions(path, scope.remoteConnectionId, scope.remoteSshHost);
+        const result = await this.hooks.loadActiveWorkspaceSessions(path, workspace.remoteConnectionId, workspace.remoteSshHost, workspace.workspaceId);
         if (!isCurrent()) return;
-        this.captureWorkspaceSessions(scope.deviceId, path, result.sessions, scope.remoteConnectionId, scope.remoteSshHost);
-        this.hooks.onActiveWorkspaceSessions(path, result, scope.remoteConnectionId, scope.remoteSshHost);
+        this.captureWorkspaceSessions(scope.deviceId, path, result.sessions, workspace.remoteConnectionId, workspace.remoteSshHost, workspace.workspaceId);
+        this.hooks.onActiveWorkspaceSessions(path, result, workspace.remoteConnectionId, workspace.remoteSshHost, workspace.workspaceId);
       } else {
         const source = this.directorySource();
         if (!source || !entry) throw new Error('Account device directory is unavailable.');
-        const sessions = await new DeviceDirectoryCoordinator(source).loadWorkspaceSessions(scope.deviceId, path, scope.remoteConnectionId, scope.remoteSshHost);
+        const sessions = await new DeviceDirectoryCoordinator(source).loadWorkspaceSessions(scope.deviceId, workspace);
         if (!isCurrent()) return;
-        entry.sessions = DeviceDirectoryViewModel.replaceWorkspaceSessions(entry.sessions, path, sessions, scope.remoteConnectionId, scope.remoteSshHost, entry.workspaces);
+        entry.sessions = DeviceDirectoryViewModel.replaceWorkspaceSessions(entry.sessions, workspace, sessions, entry.workspaces);
         await this.persistDevice(scope.deviceId, entry.workspaces, entry.sessions);
       }
       if (isCurrent()) {
@@ -410,16 +418,23 @@ export class DeviceDirectoryViewModel {
   }
 
   /** Replaces one refreshed workspace while preserving every cached sibling. */
-  captureWorkspaceSessions(deviceId: string, path: string, sessions: RemoteSession[], remoteConnectionId?: string, remoteSshHost?: string): void {
+  captureWorkspaceSessions(deviceId: string, path: string, sessions: RemoteSession[], remoteConnectionId?: string, remoteSshHost?: string, workspaceId?: string): void {
     const entry = this.state.find(deviceId.trim());
     const normalizedPath = path.trim();
     if (!entry || normalizedPath.length === 0) {
       return;
     }
+    const workspace: RemoteWorkspaceIdentity = {
+      workspaceId: workspaceId?.trim() || undefined,
+      path: normalizedPath,
+      remoteConnectionId,
+      remoteSshHost
+    };
     entry.sessions = DeviceDirectoryViewModel.replaceWorkspaceSessions(
       entry.sessions,
-      normalizedPath,
-      stampRemoteSessionsDevice(stampRemoteSessionsWorkspace(sessions, normalizedPath, remoteConnectionId, remoteSshHost), deviceId.trim()), remoteConnectionId, remoteSshHost, entry.workspaces
+      workspace,
+      stampRemoteSessionsDevice(stampRemoteSessionsWorkspace(sessions, workspace), deviceId.trim()),
+      entry.workspaces
     );
   }
 
@@ -585,11 +600,12 @@ export class DeviceDirectoryViewModel {
 
   private static replaceWorkspaceSessions(
     current: RemoteSession[],
-    path: string,
-    replacement: RemoteSession[], remoteConnectionId?: string, remoteSshHost?: string, catalog: RecentWorkspaceEntry[] = []
+    workspace: RemoteWorkspaceIdentity,
+    replacement: RemoteSession[],
+    catalog: RecentWorkspaceEntry[] = []
   ): RemoteSession[] {
     const preserved = current.filter((item: RemoteSession): boolean => {
-      return !remoteSessionBelongsToWorkspace(item, { path, remoteConnectionId, remoteSshHost }, catalog);
+      return !remoteSessionBelongsToWorkspace(item, workspace, catalog);
     });
     return replacement.concat(preserved);
   }

@@ -2,7 +2,7 @@ import { FlowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { openBtwSessionInAuxPane } from '@/flow_chat/services/btwSessionPane';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { resolveSessionRelationship } from '@/flow_chat/utils/sessionMetadata';
-import { sessionBelongsToWorkspaceNavRow } from '@/flow_chat/utils/sessionOrdering';
+import { findWorkspaceForSession as resolveWorkspace } from '@/flow_chat/utils/workspaceScope';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import type { Session } from '@/flow_chat/types/flow-chat';
 import type { WorkspaceInfo } from '@/shared/types/global-state';
@@ -12,30 +12,7 @@ import type { WorkspaceInfo } from '@/shared/types/global-state';
  * can activate it — matching the sidebar's workspace-switch behaviour.
  */
 function findWorkspaceForSession(session: Session): WorkspaceInfo | null {
-  if (!session.workspacePath) {
-    return null;
-  }
-  const { openedWorkspaces } = workspaceManager.getState();
-
-  // Fast path: session carries an explicit workspaceId that is still opened.
-  if (session.workspaceId && openedWorkspaces.has(session.workspaceId)) {
-    return openedWorkspaces.get(session.workspaceId) ?? null;
-  }
-
-  // Fallback: match by path + remote identity (same logic the sidebar uses).
-  for (const workspace of openedWorkspaces.values()) {
-    if (
-      sessionBelongsToWorkspaceNavRow(
-        session,
-        workspace.rootPath,
-        workspace.connectionId ?? null,
-        workspace.sshHost ?? null,
-      )
-    ) {
-      return workspace;
-    }
-  }
-  return null;
+  return resolveWorkspace(session, workspaceManager.getState().openedWorkspaces.values()) ?? null;
 }
 
 export async function openAgentCompanionSession(sessionId: string): Promise<boolean> {
@@ -69,6 +46,7 @@ export async function openAgentCompanionSession(sessionId: string): Promise<bool
     openBtwSessionInAuxPane({
       childSessionId: sessionId,
       parentSessionId,
+      workspaceId: session.workspaceId ?? workspaceId,
       workspacePath: session.workspacePath,
     });
     return true;

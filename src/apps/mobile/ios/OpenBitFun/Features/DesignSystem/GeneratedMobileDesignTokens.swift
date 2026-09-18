@@ -26,11 +26,13 @@ enum MobileDesignColors {
     static let transparent = dynamic(light: 0x00000000, dark: 0x00000000)
     static let pageBg = dynamic(light: 0xFFFFFFFF, dark: 0xFF151514)
     static let pageBgFade = dynamic(light: 0x00FFFFFF, dark: 0x00151514)
+    static let pageBgOverlay = dynamic(light: 0xB8FFFFFF, dark: 0xB8151514)
     static let ink = dynamic(light: 0xFF171717, dark: 0xFFF4F3EF)
     static let muted = dynamic(light: 0xFF706F6A, dark: 0xFFAAA8A0)
     static let subtle = dynamic(light: 0xFFA5A39B, dark: 0xFF77756E)
     static let line = dynamic(light: 0xFFE9E7E2, dark: 0xFF363531)
     static let card = dynamic(light: 0xFFFFFFFF, dark: 0xFF252522)
+    static let cardOverlay = dynamic(light: 0xCCFFFFFF, dark: 0xCC252522)
     static let accent = dynamic(light: 0xFF111111, dark: 0xFF5B5954)
     static let fileLink = dynamic(light: 0xFF2563EB, dark: 0xFF60A5FA)
     static let primaryAction = dynamic(light: 0xFF111111, dark: 0xFF454540)
@@ -115,6 +117,8 @@ enum MobileDesignGeometry {
     static let contentGutter: CGFloat = 16
     static let connectionStripHeight: CGFloat = 48
     static let timelineTopPadding: CGFloat = 22
+    static let conversationOverlaySideInset: CGFloat = 16
+    static let conversationEdgeFadeHeight: CGFloat = 28
     static let messageSpacing: CGFloat = 18
     static let messageBubbleMaxWidth: CGFloat = 276
     static let messageBubbleHorizontalPadding: CGFloat = 14

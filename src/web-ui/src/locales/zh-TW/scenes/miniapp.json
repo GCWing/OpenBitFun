@@ -101,6 +101,7 @@
     "cancel": "取消"
   },
   "scene": {
+    "conversation": "對話",
     "loading": "載入中…",
     "loadFailed": "載入失敗：{{error}}",
     "retry": "重試",

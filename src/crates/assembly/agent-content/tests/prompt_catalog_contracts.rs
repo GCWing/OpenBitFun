@@ -62,6 +62,10 @@ const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
         include_bytes!("../prompts/agents/minimal-harness-v1.md"),
     ),
     (
+        "openbitfun_agent",
+        include_bytes!("../prompts/agents/openbitfun_agent.md"),
+    ),
+    (
         "phase1_system",
         include_bytes!("../prompts/memories/phase1_system.md"),
     ),
@@ -229,7 +233,7 @@ fn minimal_harness_prompt_preserves_the_concise_coding_contract() {
     let prompt = agent_prompt("minimal-harness-v1").expect("minimal prompt");
     assert_eq!(
         prompt,
-        include_str!("../prompts/agents/minimal-harness-v1.md")
+        include_str!("../prompts/agents/minimal-harness-v1.md").replace("\r\n", "\n")
     );
     assert!(prompt.starts_with("You are a helpful software engineer assistant.\n\n"));
     for required in [

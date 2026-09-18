@@ -251,8 +251,8 @@ export function useAgentsList({
 
     try {
       const [modes, subagents, toolCatalog, configs, reviewTeamDefinition, modelConfigs] = await Promise.all([
-        agentAPI.getAvailableModes({ workspacePath: workspacePath || undefined }).catch(() => []),
-        SubagentAPI.listSubagents({ workspacePath: workspacePath || undefined }).catch(() => []),
+        agentAPI.getAvailableModes({ workspaceId: workspace?.id }).catch(() => []),
+        SubagentAPI.listSubagents({ workspaceId: workspace?.id }).catch(() => []),
         fetchTools(),
         configAPI.getAgentProfileConfigs().catch(() => ({})),
         loadDefaultReviewTeamDefinition().catch(() => undefined),
@@ -283,7 +283,7 @@ export function useAgentsList({
           cacheKey,
           await configAPI.getModeSkillConfigs({
             modeId: agentId,
-            workspacePath: workspacePath || undefined,
+            workspaceId: workspace?.id,
           }).catch(() => []),
         ] as const),
       );
@@ -292,7 +292,7 @@ export function useAgentsList({
           profile.profileId,
           await SubagentAPI.listManageableSubagents({
             parentAgentType: profile.representativeModeId,
-            workspacePath: workspacePath || undefined,
+            workspaceId: workspace?.id,
           }).catch(() => []),
         ] as const),
       );
@@ -363,7 +363,7 @@ export function useAgentsList({
         setLoading(false);
       }
     }
-  }, [canQueryToolCatalog, workspacePath, renderedPeerDeviceId, t]);
+  }, [canQueryToolCatalog, workspace?.id, renderedPeerDeviceId, t]);
 
   useEffect(() => {
     void loadAgents();
@@ -463,7 +463,7 @@ export function useAgentsList({
       const updated = await configAPI.getAgentProfileConfigs();
       const updatedSkills = await configAPI.getModeSkillConfigs({
         modeId: profile.representativeModeId,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
       const modes = await agentAPI.getAvailableModes().catch(() => []);
       setModeConfigs(buildModeConfigsByProfile(modes, updated as Record<string, AgentProfileConfigItem>));
@@ -479,7 +479,7 @@ export function useAgentsList({
     } catch {
       notification.error(t('agentsOverview.toolsResetFailed'));
     }
-  }, [getModeProfile, notification, t, workspacePath]);
+  }, [getModeProfile, notification, t, workspace?.id]);
 
   const handleSetSkills = useCallback(async (agentId: string, enabledSkillKeys: string[]) => {
     const profile = getModeProfile(agentId);
@@ -490,12 +490,12 @@ export function useAgentsList({
       await configAPI.replaceModeSkillSelection({
         modeId: targetAgentId,
         enabledSkillKeys,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
 
       const updatedSkills = await configAPI.getModeSkillConfigs({
         modeId: targetAgentId,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
       setAgentSkills((prev) => ({ ...prev, [cacheKey]: updatedSkills }));
 
@@ -510,7 +510,7 @@ export function useAgentsList({
       notification.error(t('agentsOverview.skillToggleFailed'));
       return false;
     }
-  }, [getModeProfile, notification, t, workspacePath]);
+  }, [getModeProfile, notification, t, workspace?.id]);
 
   const handleResetSkills = useCallback(async (agentId: string) => {
     const profile = getModeProfile(agentId);
@@ -520,12 +520,12 @@ export function useAgentsList({
     try {
       await configAPI.resetModeSkillSelection({
         modeId: targetAgentId,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
 
       const updatedSkills = await configAPI.getModeSkillConfigs({
         modeId: targetAgentId,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
       setAgentSkills((prev) => ({ ...prev, [cacheKey]: updatedSkills }));
 
@@ -540,7 +540,7 @@ export function useAgentsList({
       notification.error(t('agentsOverview.skillToggleFailed'));
       return false;
     }
-  }, [getModeProfile, notification, t, workspacePath]);
+  }, [getModeProfile, notification, t, workspace?.id]);
 
   const handleSetSubagentEnabled = useCallback(async (
     agentId: string,
@@ -555,12 +555,12 @@ export function useAgentsList({
         subagentId,
         parentAgentType: agentId,
         enabled,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
 
       const updatedSubagents = await SubagentAPI.listManageableSubagents({
         parentAgentType: profile.representativeModeId,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       }).catch(() => []);
 
       setModeManageableSubagents((prev) => ({
@@ -585,7 +585,7 @@ export function useAgentsList({
     } catch {
       notification.error(t('agentsOverview.subagentToggleFailed'));
     }
-  }, [getModeProfile, notification, t, workspacePath]);
+  }, [getModeProfile, notification, t, workspace?.id]);
 
   const handleSetSubagentModel = useCallback(async (
     subagentId: string,
@@ -598,13 +598,13 @@ export function useAgentsList({
           ? (selection.kind === 'inherit' ? 'inherit' : selection.model_id)
           : undefined,
         clearModelOverride: !selection,
-        workspacePath: workspacePath || undefined,
+        workspaceId: workspace?.id,
       });
       await loadAgents();
     } catch {
       notification.error(t('agentCard.modelSelector.updateFailed'));
     }
-  }, [loadAgents, notification, t, workspacePath]);
+  }, [loadAgents, notification, t, workspace?.id]);
 
   const filteredAgents = useMemo(() => allAgents.filter((agent) => {
     if (searchQuery) {
@@ -644,6 +644,7 @@ export function useAgentsList({
 
   return {
     workspacePath,
+    workspaceId: workspace?.id,
     workspaceIsRemote: isRemoteWorkspace(workspace),
     allAgents,
     filteredAgents,

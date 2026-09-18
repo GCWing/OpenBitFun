@@ -41,7 +41,7 @@ import { SessionUsageReportCard } from '../usage/SessionUsageReportCard';
 import type { SessionUsagePanelTab } from '../usage/sessionUsagePanelTypes';
 import { coerceSessionUsageReport } from '../usage/usageReportUtils';
 import { resolveSessionRelationship } from '../../utils/sessionMetadata';
-import { isRemoteWorkspaceSession } from '../../utils/sessionWorkspace';
+import { isLocalWorkspaceSession } from '../../utils/sessionWorkspace';
 import { resolveSessionDriverId } from '../../session-drivers/resolve';
 import { absoluteSessionTurnIndexForId } from '../../utils/flowChatTurnOrdinal';
 import {
@@ -83,6 +83,7 @@ function buildPresentationRerunPayload(presentation: ComposerPresentation): {
     .join('\n');
   const sessionReferences = composerPresentationSessionReferences(presentation).map(context => ({
     sessionId: context.sessionId,
+    ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
     workspacePath: context.workspacePath,
     remoteConnectionId: context.remoteConnectionId,
     remoteSshHost: context.remoteSshHost,
@@ -202,7 +203,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
       ? resolvedAbsoluteTurnIndex - 1
       : -1;
     const isDispatchSession = resolveSessionDriverId(resolvedSessionId ?? '', currentSession ?? undefined) === 'dispatch';
-    const isRemoteSession = isRemoteWorkspaceSession(currentSession ?? undefined, null) || isDispatchSession;
+    const isRemoteSession = !isLocalWorkspaceSession(currentSession ?? undefined, null) || isDispatchSession;
     const isSystemTriggered = Boolean(
       message?.metadata?.triggerSource && message.metadata.triggerSource !== 'desktop_ui',
     );
@@ -534,39 +535,55 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
         </div>
       );
     }
+
+    const messageImageGallery = messageImages.length > 0 ? (
+      <div
+        className="user-message-item__images"
+        data-openbitfun-product-component="user-message-item"
+        data-openbitfun-product-part="images"
+      >
+        {messageImages.map(img => (
+          <UserMessageImage key={img.id} image={img} onPreview={setLightboxImage} />
+        ))}
+      </div>
+    ) : null;
     
     return (
       <div className="user-message-item-shell" ref={shellRef}>
+        {messageImageGallery}
+
         <div
           data-openbitfun-product-component="user-message-item"
           data-openbitfun-product-part="root"
           data-openbitfun-state={[expanded && 'expanded', isFailed && 'failed'].filter(Boolean).join(' ') || undefined}
           ref={containerRef}
-          className={`user-message-item ${expanded ? 'user-message-item--expanded' : ''}${isFailed ? ' user-message-item--failed' : ''}`}
+          className={`user-message-item ${expanded ? 'user-message-item--expanded' : ''}${isFailed ? ' user-message-item--failed' : ''}${isEditing ? ' user-message-item--editing' : ''}`}
           data-testid="chat-user-message"
           data-turn-id={turnId}
           data-status={resolvedTurnStatus || ''}
           data-failed={isFailed ? 'true' : 'false'}
         >
         {isEditing ? (
-          <UserMessageEditComposer
-            value={editDraft}
-            isSubmitting={isEditSubmitting}
-            submitLabel={t('message.saveEdit')}
-            cancelLabel={t('message.cancelEdit')}
-            placeholder={t('message.editPlaceholder')}
-            onChange={setEditDraft}
-            onSubmit={handleSubmitEdit}
-            onCancel={cancelEdit}
-            presentation={composerPresentation}
-            workspacePath={currentSession?.workspacePath}
-            workspaceId={currentSession?.workspaceId}
-            remoteConnectionId={
-              currentSession?.remoteConnectionId
-              || currentSession?.config?.remoteConnectionId
-            }
-            excludeSessionId={resolvedSessionId}
-          />
+          <div className="user-message-item__edit-layout">
+            <UserMessageEditComposer
+              value={editDraft}
+              isSubmitting={isEditSubmitting}
+              submitLabel={t('message.saveEdit')}
+              cancelLabel={t('message.cancelEdit')}
+              placeholder={t('message.editPlaceholder')}
+              onChange={setEditDraft}
+              onSubmit={handleSubmitEdit}
+              onCancel={cancelEdit}
+              presentation={composerPresentation}
+              workspacePath={currentSession?.workspacePath}
+              workspaceId={currentSession?.workspaceId}
+              remoteConnectionId={
+                currentSession?.remoteConnectionId
+                || currentSession?.config?.remoteConnectionId
+              }
+              excludeSessionId={resolvedSessionId}
+            />
+          </div>
         ) : (
           <div className="user-message-item__main" data-openbitfun-product-component="user-message-item" data-openbitfun-product-part="main">
           <div
@@ -578,7 +595,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
           >
             {isFailed ? (
               <div className="user-message-item__failed-body">
-                <div 
+                <div
                   ref={contentRef}
                   className="user-message-item__content"
                   data-openbitfun-product-component="user-message-item"
@@ -603,7 +620,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
               </div>
             ) : (
               <>
-                <div 
+                <div
                   ref={contentRef}
                   className="user-message-item__content"
                   data-openbitfun-product-component="user-message-item"
@@ -628,14 +645,6 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
               </>
             )}
             </div>
-          </div>
-        )}
-
-        {message.images && message.images.length > 0 && (
-          <div className="user-message-item__images" data-openbitfun-product-component="user-message-item" data-openbitfun-product-part="images">
-            {message.images.map(img => (
-              <UserMessageImage key={img.id} image={img} onPreview={setLightboxImage} />
-            ))}
           </div>
         )}
 
@@ -667,7 +676,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
         </div>
 
         <div className="user-message-item__meta" data-openbitfun-product-component="user-message-item" data-openbitfun-product-part="meta">
-          {sentTime && sentAtLabel && sentTimestamp !== null && (
+          {!isEditing && sentTime && sentAtLabel && sentTimestamp !== null && (
             <time
               className="user-message-item__timestamp"
               data-openbitfun-product-component="user-message-item"
@@ -720,9 +729,9 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
                     disabled={!canRollback}
                     aria-label={rollbackTooltip}
                     icon={sessionMutation?.kind === 'rollback' && sessionMutation.targetTurnId === turnId ? (
-                      <Loader2 size={14} className="user-message-item__rollback-spinner" />
+                      <Icon glyph={Loader2} size="sm" className="user-message-item__rollback-spinner" />
                     ) : (
-                      <RotateCcw size={14} />
+                      <Icon glyph={RotateCcw} size="sm" />
                     )}
                   />
                 </Tooltip>

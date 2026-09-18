@@ -19,6 +19,7 @@ import { formatSessionViewPreviewText } from '../utils/sessionViewPreview';
 const EXEC_COLLAPSED_STATUSES = new Set(['completed', 'cancelled', 'error', 'rejected']);
 const EXEC_OUTPUT_STREAMING_MAX_ROWS = 4;
 const EXEC_OUTPUT_EXPANDED_MAX_ROWS = 15;
+const EXEC_MINIMUM_EXPANDED_MS = 1000;
 
 export interface ExecProcessCardModel {
   kind: 'command' | 'stdin' | 'control';
@@ -50,21 +51,23 @@ function isCollapsedStatus(status: string): boolean {
   return EXEC_COLLAPSED_STATUSES.has(status);
 }
 
-function getInitialExpandedState(status: string): boolean {
-  return !isCollapsedStatus(status);
+function getInitialExpandedState(status: string, waitForOutput: boolean, hasLiveOutput: boolean): boolean {
+  return !isCollapsedStatus(status) && (!waitForOutput || hasLiveOutput || status === 'pending_confirmation');
 }
 
 function getAutoExpandedStateForStatus(
   status: string,
   isLastItem: boolean | undefined,
   keepTailPreview: boolean,
+  hasLiveOutput: boolean,
+  waitForOutput: boolean,
 ): boolean | null {
   if (isCollapsedStatus(status)) {
     return isLastItem === true && keepTailPreview ? null : false;
   }
 
   if (status === 'preparing' || status === 'streaming' || status === 'running' || status === 'receiving') {
-    return true;
+    return !waitForOutput || hasLiveOutput;
   }
 
   return null;
@@ -129,9 +132,12 @@ export const ExecProcessToolCardView: React.FC<ExecProcessToolCardViewProps> = (
     ? 'toolCards.terminal.rejected'
     : 'toolCards.terminal.cancelled';
   const toolId = toolItem.id ?? toolItem.toolCall?.id;
+  const waitForOutput = model.kind === 'command';
+  const hasLiveOutput = liveOutput.length > 0;
 
-  const [isExpanded, setIsExpandedState] = useState(() => getInitialExpandedState(status));
+  const [isExpanded, setIsExpandedState] = useState(() => getInitialExpandedState(status, waitForOutput, hasLiveOutput));
   const userToggledRef = useRef(false);
+  const autoExpandedAtRef = useRef<number | null>(null);
   const outputRendererRef = useRef<TerminalOutputRendererHandle | null>(null);
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -142,6 +148,7 @@ export const ExecProcessToolCardView: React.FC<ExecProcessToolCardViewProps> = (
     isActive: isCompletionPreviewActive,
   } = useToolCardCompletionGracePeriod({
     eligible:
+      !waitForOutput &&
       isCollapsedStatus(status) &&
       isLastItem === true &&
       isExpanded &&
@@ -166,22 +173,50 @@ export const ExecProcessToolCardView: React.FC<ExecProcessToolCardViewProps> = (
       return;
     }
 
+    if (waitForOutput) {
+      if (isRunning && hasLiveOutput) {
+        // Start once, including when mounting with output already available.
+        autoExpandedAtRef.current ??= Date.now();
+        applyExecExpandedState(true);
+      } else if (isCollapsedStatus(status)) {
+        const remainingMs = autoExpandedAtRef.current === null
+          ? 0
+          : EXEC_MINIMUM_EXPANDED_MS - (Date.now() - autoExpandedAtRef.current);
+        if (isExpanded && remainingMs > 0) {
+          const timer = setTimeout(() => {
+            if (!userToggledRef.current) {
+              applyExecExpandedState(false);
+            }
+          }, remainingMs);
+          return () => clearTimeout(timer);
+        }
+        applyExecExpandedState(false);
+      } else if (isRunning && autoExpandedAtRef.current === null) {
+        applyExecExpandedState(false);
+      }
+      return;
+    }
+
     const keepTailPreview = isCollapsedStatus(status) && beginCompletionPreview();
-    const nextExpanded = getAutoExpandedStateForStatus(status, isLastItem, keepTailPreview);
+    const nextExpanded = getAutoExpandedStateForStatus(status, isLastItem, keepTailPreview, hasLiveOutput, waitForOutput);
     if (nextExpanded !== null) {
       applyExecExpandedState(nextExpanded);
     }
   }, [
     applyExecExpandedState,
     beginCompletionPreview,
+    hasLiveOutput,
     isCompletionPreviewActive,
+    isExpanded,
+    isRunning,
     isLastItem,
     status,
+    waitForOutput,
   ]);
 
   const compactSettledPreview =
     isExpanded &&
-    isLastItem === true &&
+    (waitForOutput || isLastItem === true) &&
     isCollapsedStatus(status) &&
     !userToggledRef.current;
   // Keep auto-managed completed cards on the compact preview through the

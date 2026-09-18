@@ -1,3 +1,4 @@
+import { useEditorDocument } from '../services/EditorDocument';
 /** File path breadcrumb with a dropdown for quick navigation. */
 
 import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
@@ -307,11 +308,14 @@ export const EditorBreadcrumb: React.FC<EditorBreadcrumbProps> = ({
   }, [filePath, workspacePath]);
 
   // Load directory contents
+  const document = useEditorDocument();
+  const workspaceId = document?.scope.workspaceId;
   const loadDirectoryContents = useCallback(async (dirPath: string) => {
     setDropdownLoading(true);
     setCurrentDirPath(dirPath);
     try {
-      const fileTree = await workspaceAPI.getFileTree(dirPath, 1);
+      if (!workspaceId) throw new Error('Workspace ID is required to browse an editor directory');
+      const fileTree = await workspaceAPI.getFileTree(workspaceId, dirPath, 1);
       const rootNode = fileTree?.[0];
       const children = rootNode?.children || [];
       
@@ -334,7 +338,7 @@ export const EditorBreadcrumb: React.FC<EditorBreadcrumbProps> = ({
     } finally {
       setDropdownLoading(false);
     }
-  }, []);
+  }, [workspaceId]);
 
   // Handle segment click
   const handleSegmentClick = useCallback((segment: PathSegment, event: React.MouseEvent) => {

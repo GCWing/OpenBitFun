@@ -41,6 +41,8 @@ type YamlEditorPlacement = 'none' | 'inline' | 'trailing';
 export interface PlanViewerProps {
   /** File path */
   filePath: string;
+  /** Workspace identity that owns the plan file. */
+  workspaceId?: string;
   /** Workspace path */
   workspacePath?: string;
   /** File name */
@@ -53,6 +55,7 @@ export interface PlanViewerProps {
 
 const PlanViewer: React.FC<PlanViewerProps> = ({
   filePath,
+  workspaceId,
   workspacePath,
   fileName,
   jumpToLine: _jumpToLine,
@@ -60,13 +63,26 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
 }) => {
   const { t } = useI18n('tools');
   const { workspace: currentWorkspace } = useOptionalCurrentWorkspace();
+  const effectiveWorkspaceId = workspaceId ?? currentWorkspace?.id;
   const effectiveWorkspacePath = workspacePath ?? currentWorkspace?.rootPath ?? '';
   const effectiveRemoteConnectionId = currentWorkspace?.connectionId;
   const planFileRef = useMemo(() => ({
     planFilePath: filePath,
+    workspaceId: effectiveWorkspaceId,
     workspacePath: effectiveWorkspacePath,
     remoteConnectionId: effectiveRemoteConnectionId,
-  }), [effectiveRemoteConnectionId, effectiveWorkspacePath, filePath]);
+  }), [effectiveRemoteConnectionId, effectiveWorkspaceId, effectiveWorkspacePath, filePath]);
+  /** Plan file IO is routed by the owning workspace ID; path + connection is the pre-ID fallback. */
+  const readPlanContent = useCallback((): Promise<string> => (
+    effectiveWorkspaceId
+      ? workspaceAPI.readWorkspaceFile(effectiveWorkspaceId, filePath)
+      : workspaceAPI.readFileContent(filePath, undefined, effectiveRemoteConnectionId)
+  ), [effectiveRemoteConnectionId, effectiveWorkspaceId, filePath]);
+  const writePlanContent = useCallback((fullContent: string): Promise<void> => (
+    effectiveWorkspaceId
+      ? workspaceAPI.writeWorkspaceFile(effectiveWorkspaceId, filePath, fullContent)
+      : workspaceAPI.writeFileContent(effectiveWorkspacePath, filePath, fullContent, effectiveRemoteConnectionId)
+  ), [effectiveRemoteConnectionId, effectiveWorkspaceId, effectiveWorkspacePath, filePath]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [planData, setPlanData] = useState<PlanData | null>(null);
@@ -139,11 +155,7 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
     setError(null);
 
     try {
-      const content = await workspaceAPI.readFileContent(
-        filePath,
-        undefined,
-        effectiveRemoteConnectionId,
-      );
+      const content = await readPlanContent();
 
       const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
       if (frontmatterMatch) {
@@ -187,7 +199,7 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
         setLoading(false);
       }
     }
-  }, [effectiveRemoteConnectionId, filePath, planFileRef, t]);
+  }, [filePath, planFileRef, readPlanContent, t]);
 
   useEffect(() => {
     loadFileContent();
@@ -292,12 +304,7 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
         fullContent = planContent;
       }
 
-      await workspaceAPI.writeFileContent(
-        effectiveWorkspacePath,
-        filePath,
-        fullContent,
-        effectiveRemoteConnectionId,
-      );
+      await writePlanContent(fullContent);
       editorRef.current?.markSaved?.();
       yamlEditorRef.current?.markSaved?.();
       setIsContentDirty(false);
@@ -320,7 +327,7 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
     } catch (err) {
       log.error('Failed to save file', err);
     }
-  }, [effectiveRemoteConnectionId, effectiveWorkspacePath, planContent, yamlContent, filePath, hasUnsavedChanges]);
+  }, [planContent, yamlContent, filePath, hasUnsavedChanges, writePlanContent]);
 
   const handleContentChange = useCallback((newContent: string) => {
     setPlanContent(newContent);
@@ -433,12 +440,7 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
       const fullContent = nextYamlContent
         ? `---\n${nextYamlContent}\n---\n\n${planContent}`
         : planContent;
-      await workspaceAPI.writeFileContent(
-        effectiveWorkspacePath,
-        filePath,
-        fullContent,
-        effectiveRemoteConnectionId,
-      );
+      await writePlanContent(fullContent);
       setPlanData(prev => (prev ? { ...prev, todos: nextTodos } : prev));
       setYamlContent(nextYamlContent);
       setOriginalYamlContent(nextYamlContent);
@@ -447,7 +449,7 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
     } catch (err) {
       log.error('Failed to save todo edit', err);
     }
-  }, [effectiveRemoteConnectionId, effectiveWorkspacePath, filePath, planContent, planData, yamlContent]);
+  }, [filePath, planContent, planData, yamlContent, writePlanContent]);
 
   const saveInlineTodoEdit = useCallback(async () => {
     if (!planData?.todos?.length) return;
@@ -729,6 +731,7 @@ const PlanViewer: React.FC<PlanViewerProps> = ({
         sessionId,
         planFilePath: filePath,
         todoIds,
+        workspaceId: effectiveWorkspaceId,
         workspacePath: effectiveWorkspacePath,
         remoteConnectionId: effectiveRemoteConnectionId,
       });
@@ -751,7 +754,7 @@ Read the plan file before making changes and treat it as the source of truth. Do
       log.error('Build failed', err);
       planBuildStateService.cancelBuild(planFileRef);
     }
-  }, [filePath, planFileRef, buildStatus, effectiveRemoteConnectionId, effectiveWorkspacePath, hasUnsavedChanges, planData, t]);
+  }, [filePath, planFileRef, buildStatus, effectiveRemoteConnectionId, effectiveWorkspaceId, effectiveWorkspacePath, hasUnsavedChanges, planData, t]);
 
   // Get todo status icon
   function getTodoIcon(status?: string) {

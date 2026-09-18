@@ -22,7 +22,7 @@ export interface UseSceneManagerReturn {
   tabDefs: SceneTabDef[];
   activateScene: (id: SceneTabId) => void;
   openScene: (id: SceneTabId) => void;
-  closeScene: (id: SceneTabId) => void;
+  closeScene: (id: SceneTabId) => void | Promise<void>;
 }
 
 export function useSceneManager(): UseSceneManagerReturn {

@@ -23,6 +23,9 @@ pub enum BotDisplayMode {
 /// string. Deserialization still accepts that form and upgrades it in memory.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BotWorkspaceRef {
+    /// Absent only in pre-ID persisted state or responses from legacy peers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
     pub path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_connection_id: Option<String>,
@@ -33,6 +36,7 @@ pub struct BotWorkspaceRef {
 impl BotWorkspaceRef {
     pub fn local(path: impl Into<String>) -> Self {
         Self {
+            workspace_id: None,
             path: path.into(),
             remote_connection_id: None,
             remote_ssh_host: None,
@@ -45,6 +49,7 @@ impl BotWorkspaceRef {
         remote_ssh_host: Option<String>,
     ) -> Self {
         Self {
+            workspace_id: None,
             path: path.into(),
             remote_connection_id: remote_connection_id
                 .map(|value| value.trim().to_string())
@@ -53,6 +58,11 @@ impl BotWorkspaceRef {
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty()),
         }
+    }
+
+    pub fn with_workspace_id(mut self, workspace_id: Option<String>) -> Self {
+        self.workspace_id = workspace_id;
+        self
     }
 
     pub fn path(&self) -> &str {
@@ -97,6 +107,7 @@ where
 /// One selectable workspace row in the bot `/switch` picker.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BotWorkspaceChoice {
+    pub workspace_id: Option<String>,
     pub path: String,
     pub name: String,
     pub remote_connection_id: Option<String>,
@@ -111,11 +122,17 @@ impl BotWorkspaceChoice {
         remote_ssh_host: Option<String>,
     ) -> Self {
         Self {
+            workspace_id: None,
             path: path.into(),
             name: name.into(),
             remote_connection_id,
             remote_ssh_host,
         }
+    }
+
+    pub fn with_workspace_id(mut self, workspace_id: Option<String>) -> Self {
+        self.workspace_id = workspace_id;
+        self
     }
 
     pub fn to_workspace_ref(&self) -> BotWorkspaceRef {
@@ -124,6 +141,7 @@ impl BotWorkspaceChoice {
             self.remote_connection_id.clone(),
             self.remote_ssh_host.clone(),
         )
+        .with_workspace_id(self.workspace_id.clone())
     }
 }
 
@@ -137,7 +155,10 @@ pub struct BotChatState {
         skip_serializing_if = "Option::is_none"
     )]
     pub current_workspace: Option<BotWorkspaceRef>,
+    /// Legacy path retained for old readers; selection uses current_assistant_id.
     pub current_assistant: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub current_assistant_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_assistant_name: Option<String>,
     pub current_session_id: Option<String>,
@@ -201,12 +222,23 @@ pub struct RemoteBotTarget {
 }
 
 impl BotChatState {
+    pub fn assistant_workspace_ref(&self) -> Option<BotWorkspaceRef> {
+        if self.current_assistant_id.is_none() && self.current_assistant.is_none() {
+            return None;
+        }
+        let mut reference =
+            BotWorkspaceRef::local(self.current_assistant.clone().unwrap_or_default());
+        reference.workspace_id = self.current_assistant_id.clone();
+        Some(reference)
+    }
+
     pub fn new(chat_id: String) -> Self {
         Self {
             chat_id,
             paired: false,
             current_workspace: None,
             current_assistant: None,
+            current_assistant_id: None,
             current_assistant_name: None,
             current_session_id: None,
             display_mode: BotDisplayMode::Assistant,
@@ -341,6 +373,7 @@ impl BotChatState {
     fn clear_device_scoped_context(&mut self) {
         self.current_workspace = None;
         self.current_assistant = None;
+        self.current_assistant_id = None;
         self.current_assistant_name = None;
         self.current_session_id = None;
     }
@@ -479,6 +512,18 @@ pub type BotMessageSender =
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn assistant_id_survives_storage_and_overrides_stale_path() {
+        let mut state = BotChatState::new("chat".into());
+        state.current_assistant_id = Some("assistant-id".into());
+        state.current_assistant = Some("/old/folder".into());
+        let restored: BotChatState =
+            serde_json::from_value(serde_json::to_value(&state).unwrap()).unwrap();
+        let reference = restored.assistant_workspace_ref().unwrap();
+        assert_eq!(reference.workspace_id.as_deref(), Some("assistant-id"));
+        assert_eq!(reference.path, "/old/folder");
+    }
 
     #[test]
     fn active_workspace_path_prefers_workspace_then_assistant() {

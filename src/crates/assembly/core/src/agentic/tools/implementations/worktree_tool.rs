@@ -97,6 +97,7 @@ impl WorktreeTool {
             OpenBitFunError::tool("Current workspace root is unavailable".to_string())
         })?;
         let worktree = WorktreeService::list(WorktreeListRequest {
+            project_workspace_id: None,
             project_workspace_path: project_workspace_path.to_string(),
         })
         .await
@@ -345,6 +346,7 @@ The tool cannot remove or rebind the worktree in which it is running. Use Sessio
         let data = match input.operation {
             WorktreeToolOperation::List => {
                 let worktrees = WorktreeService::list(WorktreeListRequest {
+                    project_workspace_id: None,
                     project_workspace_path: project_workspace_path.clone(),
                 })
                 .await
@@ -373,6 +375,7 @@ The tool cannot remove or rebind the worktree in which it is running. Use Sessio
                     .to_string();
                 let created = WorktreeService::create(WorktreeCreateRequest {
                     request_id: operation_request_id,
+                    project_workspace_id: None,
                     project_workspace_path: project_workspace_path.clone(),
                     source_workspace_path: Some(source_workspace_path),
                     base_ref: input.base_ref,
@@ -435,7 +438,11 @@ The tool cannot remove or rebind the worktree in which it is running. Use Sessio
                 };
                 let existing = match runtime
                     .list_sessions(AgentSessionListRequest {
-                        workspace_path: project_workspace_path.clone(),
+                        workspace_id: context
+                            .workspace
+                            .as_ref()
+                            .and_then(|workspace| workspace.project_workspace_id.clone()),
+                        workspace_path: String::new(),
                         remote_connection_id: None,
                         remote_ssh_host: None,
                     })
@@ -560,6 +567,7 @@ The tool cannot remove or rebind the worktree in which it is running. Use Sessio
                     .await?;
                 let result = WorktreeService::create_branch(WorktreeCreateBranchRequest {
                     request_id: Self::request_id(context, "create_branch"),
+                    project_workspace_id: None,
                     project_workspace_path,
                     worktree_id: worktree_id.to_string(),
                     branch: input.branch.unwrap_or_default(),
@@ -578,6 +586,7 @@ The tool cannot remove or rebind the worktree in which it is running. Use Sessio
                     .await?;
                 let result = WorktreeService::remove(WorktreeRemoveRequest {
                     request_id: Self::request_id(context, "remove"),
+                    project_workspace_id: None,
                     project_workspace_path,
                     worktree_id: worktree_id.to_string(),
                     force: false,

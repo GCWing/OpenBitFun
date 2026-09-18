@@ -550,7 +550,8 @@ export class SettingsController {
         initialSync.workspace.gitBranch,
         initialSync.workspace.workspaceKind || 'normal',
         initialSync.workspace.remoteConnectionId || '',
-        initialSync.workspace.remoteSshHost || ''
+        initialSync.workspace.remoteSshHost || '',
+        initialSync.workspace.workspaceId || ''
       );
       cloud.remoteState.setSessions(
         stampRemoteSessionsDevice(initialSync.sessions, deviceId),

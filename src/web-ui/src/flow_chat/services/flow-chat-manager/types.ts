@@ -28,7 +28,7 @@ export interface FlowChatContext {
     promise: Promise<void>;
     includeInternal: boolean;
     deferFullHistoryUntilActive: boolean;
-    locationKey: string;
+    workspaceId: string;
   }>;
   /** In-flight backend context restore keyed by device surface and activation. */
   pendingContextRestores?: Map<string, Promise<void>>;
@@ -67,6 +67,12 @@ export interface FlowChatContext {
    * this set is used to make handlers idempotent. Key format: `sessionId:turnId`.
    */
   handledTerminalTurnEvents: Set<string>;
+  /**
+   * Workspace this manager last initialized for. The ID is the identity used
+   * to attribute external sessions whose events carry no workspace facts; the
+   * path is only the matching IO projection.
+   */
+  currentWorkspaceId: string | null;
   currentWorkspacePath: string | null;
   /**
    * Re-arm this window's live agentic subscription. The reconcile loop calls it
@@ -74,13 +80,6 @@ export interface FlowChatContext {
    * workspace bootstrap that a newer surface switch may have superseded.
    */
   ensureLiveSubscription?: () => Promise<void>;
-}
-
-/** Current owner scope used only when a restored child lacks saved location metadata. */
-export interface SessionHistoryHydrationLocation {
-  workspacePath?: string;
-  remoteConnectionId?: string;
-  remoteSshHost?: string;
 }
 
 /**

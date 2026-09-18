@@ -9,6 +9,49 @@ This directory contains OpenBitFun’s **Web UI** (React + TypeScript). The same
 - **Desktop**: loaded via **Tauri**
 - **Server/Web**: built into static assets and served by the backend
 
+## Floating conversations
+
+The bottom-right window opens the persistent OpenBitFun control conversation in
+text mode. Drag a session tab into the window to continue that session there;
+use its return action or drag it back to the main tab bar to move it out.
+Agentic MiniApps add their associated conversations as tabs automatically.
+Drafts, attachments, execution and reading position stay with the conversation.
+
+The MiniApp header's Conversation action restores its current conversation,
+including a hidden dock tab, without creating a session. Open app in the dock
+returns to its application tab. An expanded MiniApp conversation follows the
+active application unless the user is typing, on a call, or viewing a regular
+conversation. Hidden tabs and collapsed windows stay hidden during background
+updates. Closing the application tab stops its Agent runs and worker, ends its
+call, and removes its dock entry; saved history remains. A failed shutdown keeps
+the application open and reports the failure. Switching devices only detaches
+the view and never stops applications on the device being left.
+
+The control conversation uses a continuous, lightweight transcript. Scrolling up
+automatically loads earlier records while preserving the reading position.
+In text mode, records scroll beneath the fixed controls, whose translucent blur
+appears away from the top. A quiet three-dot activity indicator appears below the
+current user message while its turn is processing, and stops when attention is
+needed or processing ends. Collapsing hides the whole panel after its exit
+animation while retaining the draft and records.
+The new-conversation button selects a fresh control conversation on the host and
+keeps earlier records. Finish a running task or call before starting a new one;
+peer hosts must advertise `control_conversation_reset_v1` for this action.
+Its compact logo-and-label button
+above the messages opens realtime voice, expanding into the particle call image
+on the same axis. The original top-left back arrow returns to text and gathers
+it back into the compact identity;
+the transcript, reading position and unsent draft stay mounted. Only available
+task progress is shown. Permission requests bring the text composer back into
+view while keeping the call active. Other conversation tabs retain their
+standard chat presentation and header voice entry. Collapsing the window also
+keeps the call active; hang up explicitly to end it. Voice and text share
+saved conversation history; a live call remains bound to its original session
+and device. ACP and Detached Dispatch conversations retain text interaction;
+shared voice history requires a host advertising `control_conversation_v1`.
+The standalone web server does not yet expose this control-conversation contract;
+use Desktop or a capable peer host.
+
 ## Tech stack
 
 - React 18.3

@@ -1094,6 +1094,7 @@ mod session_lineage_tests {
             parent_tool_call_id: None,
             subagent_type: Some("explore".to_string()),
             agent_id: Some(id.to_string()),
+            workspace_id: None,
             workspace_path: None,
             remote_connection_id: None,
             remote_ssh_host: None,

@@ -2020,6 +2020,59 @@ test('CLI Core capability closure requires every reviewed owner', () => {
   assert.match(violations[0].message, /must include plugin-runtime/);
 });
 
+test('CLI openbitfun-core dev-dependency may select only test-support', () => {
+  const core = packageAt('openbitfun-core', 'src/crates/assembly/core/Cargo.toml');
+  const cli = packageAt('openbitfun-cli', 'src/apps/cli/Cargo.toml', [
+    pathDependency('src/crates/assembly/core', {
+      name: 'openbitfun-core',
+      usesDefaultFeatures: false,
+      features: CLI_REVIEWED_CORE_FEATURES,
+    }),
+    pathDependency('src/crates/assembly/core', {
+      name: 'openbitfun-core',
+      kind: 'dev',
+      usesDefaultFeatures: false,
+      features: ['test-support'],
+    }),
+  ]);
+
+  assert.deepEqual(
+    findProductEntrypointCoreFeatureViolations(
+      [cli, core],
+      { root: TEST_ROOT, crateLayoutRules },
+    ),
+    [],
+  );
+});
+
+test('CLI openbitfun-core dev-dependency cannot widen the product capability closure', () => {
+  const core = packageAt('openbitfun-core', 'src/crates/assembly/core/Cargo.toml');
+  const cli = packageAt('openbitfun-cli', 'src/apps/cli/Cargo.toml', [
+    pathDependency('src/crates/assembly/core', {
+      name: 'openbitfun-core',
+      usesDefaultFeatures: false,
+      features: CLI_REVIEWED_CORE_FEATURES,
+    }),
+    pathDependency('src/crates/assembly/core', {
+      name: 'openbitfun-core',
+      kind: 'dev',
+      usesDefaultFeatures: false,
+      features: ['test-support', 'tools-canvas'],
+    }),
+  ]);
+
+  const violations = findProductEntrypointCoreFeatureViolations(
+    [cli, core],
+    { root: TEST_ROOT, crateLayoutRules },
+  );
+
+  assert.equal(violations.length, 1);
+  assert.match(
+    violations[0].message,
+    /openbitfun-core dev-dependency may select only test-support, not \[test-support, tools-canvas\]/,
+  );
+});
+
 test('CLI entrypoint must not select the product-full Core feature', () => {
   const core = packageAt('openbitfun-core', 'src/crates/assembly/core/Cargo.toml');
   const cli = packageAt('openbitfun-cli', 'src/apps/cli/Cargo.toml', [
