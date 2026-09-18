@@ -5710,16 +5710,38 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     input.type = 'file';
     input.accept = CHAT_INPUT_CONFIG.image.acceptedTypes.join(',');
     input.multiple = true;
-    
+
+    // WebKitGTK never fires `change` on a detached file input after the native
+    // chooser closes, so a detached picker silently dropped every selection on
+    // Linux. Mounting the element offscreen keeps WebKitGTK on the same path as
+    // WebView2 and WKWebView. `display: none` is deliberately avoided because
+    // some WebKit builds refuse to open a chooser for a display:none input.
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    input.style.top = '0';
+    input.style.width = '1px';
+    input.style.height = '1px';
+    input.style.opacity = '0';
+
+    const dismissPicker = () => {
+      window.removeEventListener('focus', dismissPicker);
+      input.onchange = null;
+      input.remove();
+    };
+    // Cancelling the chooser never fires `change`; reclaim the node the next
+    // time the window regains focus.
+    window.addEventListener('focus', dismissPicker);
+
     input.onchange = async (e) => {
+      dismissPicker();
       const files = (e.target as HTMLInputElement).files;
       if (!files || files.length === 0) return;
-      
+
       const fileArray = Array.from(files).slice(0, remaining);
       if (files.length > remaining) {
         notificationService.warning(t('input.maxImagesWarning', { count: CHAT_INPUT_CONFIG.image.maxCount }), { duration: 3000 });
       }
-      
+
       for (const file of fileArray) {
         try {
           const imageContext = await createImageContextFromFile(file);
@@ -5733,7 +5755,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         }
       }
     };
-    
+
+    document.body.appendChild(input);
     input.click();
   }, [addContext, currentImageCount, t]);
   
