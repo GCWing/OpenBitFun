@@ -41,7 +41,7 @@ for (const sigPath of walkFiles(assetsDir).filter((file) => file.endsWith('.sig'
 
 const platformNames = Object.keys(platforms);
 if (platformNames.length === 0) {
-  fail('No signed updater artifacts were found. Expected .AppImage.sig, .app.tar.gz.sig, .tar.gz.sig, .zip.sig, or .exe.sig files.');
+  fail('No signed updater artifacts were found. Expected .AppImage.sig, .app.tar.gz.sig, .tar.gz.sig, .zip.sig, .exe.sig, .deb.sig, or .rpm.sig files.');
 }
 
 const missingPlatforms = requiredPlatforms.filter((platform) => !platforms[platform]);
@@ -132,7 +132,9 @@ function isUpdaterBundle(file) {
     lower.endsWith('.app.tar.gz') ||
     lower.endsWith('.tar.gz') ||
     lower.endsWith('.zip') ||
-    lower.endsWith('.exe')
+    lower.endsWith('.exe') ||
+    lower.endsWith('.deb') ||
+    lower.endsWith('.rpm')
   );
 }
 
@@ -154,6 +156,16 @@ function inferPlatform(file) {
   }
   if (lower.includes('.appimage.tar.gz')) {
     return `linux-${arch}`;
+  }
+  if (lower.endsWith('.deb')) {
+    // Bundle-type key: tauri-plugin-updater installs a deb payload via dpkg only
+    // when the running install is itself a deb, so these clients must receive a
+    // dedicated `linux-<arch>-deb` entry instead of the AppImage the bare key
+    // serves.
+    return `linux-${arch}-deb`;
+  }
+  if (lower.endsWith('.rpm')) {
+    return `linux-${arch}-rpm`;
   }
   if (lower.includes('.app.tar.gz')) {
     return `darwin-${arch}`;

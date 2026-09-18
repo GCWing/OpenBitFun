@@ -75,6 +75,84 @@ test('1.0.0-beta manifest keeps the updater URL separate from the manual install
   assert.equal(verified.status, 0, verified.stderr);
 });
 
+// deb/rpm installs reject every payload that is not their own package format
+// (tauri-plugin-updater: install_deb/install_rpm -> InvalidUpdaterFormat), so the
+// feed must carry bundle-type keys. Regression: the 1.0.1 feed served the
+// AppImage under the bare linux-x86_64 key and every deb install failed in-app
+// updates with "invalid updater binary format".
+test('deb and rpm installs get bundle-type Linux updater keys through collect + generate', () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'openbitfun-deb-updater-'));
+  const collected = path.join(temp, 'collected');
+  const out = path.join(temp, 'latest-v1.json');
+  const assets = [
+    ['OpenBitFun_1.2.3_amd64.AppImage', 'appimage'],
+    ['OpenBitFun_1.2.3_amd64.deb', 'deb'],
+    ['OpenBitFun-1.2.3-1.x86_64.rpm', 'rpm'],
+    ['OpenBitFun_1.2.3_arm64.deb', 'deb-arm64'],
+    ['OpenBitFun-1.2.3-1.aarch64.rpm', 'rpm-arm64'],
+  ];
+  for (const [name, body] of assets) {
+    fs.writeFileSync(path.join(temp, name), body);
+    fs.writeFileSync(path.join(temp, `${name}.sig`), `sig ${name}`);
+  }
+
+  const staging = run('scripts/collect-tauri-updater-assets.mjs', [
+    '--assets-dir', temp,
+    '--version', '1.2.3',
+    '--out-dir', collected,
+    '--required-platforms', 'linux-x86_64,linux-x86_64-deb,linux-x86_64-rpm,linux-aarch64-deb,linux-aarch64-rpm',
+  ]);
+  assert.equal(staging.status, 0, staging.stderr);
+  assert.deepEqual(fs.readdirSync(collected).sort(), [
+    'OpenBitFun_1.2.3_linux-aarch64-deb.deb',
+    'OpenBitFun_1.2.3_linux-aarch64-deb.deb.sig',
+    'OpenBitFun_1.2.3_linux-aarch64-rpm.rpm',
+    'OpenBitFun_1.2.3_linux-aarch64-rpm.rpm.sig',
+    'OpenBitFun_1.2.3_linux-x86_64-deb.deb',
+    'OpenBitFun_1.2.3_linux-x86_64-deb.deb.sig',
+    'OpenBitFun_1.2.3_linux-x86_64-rpm.rpm',
+    'OpenBitFun_1.2.3_linux-x86_64-rpm.rpm.sig',
+    'OpenBitFun_1.2.3_linux-x86_64.AppImage',
+    'OpenBitFun_1.2.3_linux-x86_64.AppImage.sig',
+  ]);
+
+  const generated = run('scripts/generate-tauri-latest-json.mjs', [
+    '--assets-dir', collected,
+    '--version', '1.2.3',
+    '--tag', 'v1.2.3',
+    '--repo', 'GCWing/OpenBitFun',
+    '--out', out,
+    '--required-platforms', 'linux-x86_64,linux-x86_64-deb,linux-x86_64-rpm,linux-aarch64-deb,linux-aarch64-rpm',
+  ]);
+  assert.equal(generated.status, 0, generated.stderr);
+
+  const manifest = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.match(manifest.platforms['linux-x86_64'].url, /OpenBitFun_1\.2\.3_linux-x86_64\.AppImage$/);
+  assert.match(manifest.platforms['linux-x86_64-deb'].url, /OpenBitFun_1\.2\.3_linux-x86_64-deb\.deb$/);
+  assert.match(manifest.platforms['linux-x86_64-rpm'].url, /OpenBitFun_1\.2\.3_linux-x86_64-rpm\.rpm$/);
+  assert.match(manifest.platforms['linux-aarch64-deb'].url, /OpenBitFun_1\.2\.3_linux-aarch64-deb\.deb$/);
+  assert.match(manifest.platforms['linux-aarch64-rpm'].url, /OpenBitFun_1\.2\.3_linux-aarch64-rpm\.rpm$/);
+  // collect renames the files but copies signatures byte-for-byte: minisign
+  // signatures cover the package bytes, not the asset name.
+  const renamedToRawSignature = {
+    'linux-x86_64': 'sig OpenBitFun_1.2.3_amd64.AppImage',
+    'linux-x86_64-deb': 'sig OpenBitFun_1.2.3_amd64.deb',
+    'linux-x86_64-rpm': 'sig OpenBitFun-1.2.3-1.x86_64.rpm',
+    'linux-aarch64-deb': 'sig OpenBitFun_1.2.3_arm64.deb',
+    'linux-aarch64-rpm': 'sig OpenBitFun-1.2.3-1.aarch64.rpm',
+  };
+  for (const [key, signature] of Object.entries(renamedToRawSignature)) {
+    assert.equal(manifest.platforms[key].signature, signature);
+  }
+
+  const verified = run('scripts/verify-tauri-latest-json.mjs', [
+    '--manifest', out,
+    '--version', '1.2.3',
+    '--required-platforms', 'linux-x86_64,linux-x86_64-deb,linux-x86_64-rpm,linux-aarch64-deb,linux-aarch64-rpm',
+  ]);
+  assert.equal(verified.status, 0, verified.stderr);
+});
+
 test('stages GitHub release assets in a flat directory', () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'openbitfun-release-assets-'));
   const first = path.join(temp, 'updater', 'latest.json');

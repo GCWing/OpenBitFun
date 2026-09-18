@@ -122,7 +122,9 @@ function isUpdaterBundle(file) {
     lower.endsWith('.app.tar.gz') ||
     lower.endsWith('.tar.gz') ||
     lower.endsWith('.zip') ||
-    lower.endsWith('.exe')
+    lower.endsWith('.exe') ||
+    lower.endsWith('.deb') ||
+    lower.endsWith('.rpm')
   );
 }
 
@@ -139,6 +141,14 @@ function updaterOutputName(file, version, platform) {
   }
   if (lower.endsWith('.exe')) {
     return `OpenBitFun_${version}_${platform}-setup.exe`;
+  }
+  if (lower.endsWith('.deb')) {
+    // The bundle-type platform key is part of the name, so the renamed copy
+    // never collides with the raw bundler deb staged from release-assets.
+    return `OpenBitFun_${version}_${platform}.deb`;
+  }
+  if (lower.endsWith('.rpm')) {
+    return `OpenBitFun_${version}_${platform}.rpm`;
   }
   if (lower.endsWith('.tar.gz')) {
     return `OpenBitFun_${version}_${platform}.tar.gz`;
@@ -161,6 +171,16 @@ function inferPlatform(file) {
   }
   if (lower.includes('.appimage.tar.gz')) {
     return `linux-${arch}`;
+  }
+  if (lower.endsWith('.deb')) {
+    // Bundle-type key: tauri-plugin-updater installs a deb payload via dpkg only
+    // when the running install is itself a deb, so these clients must receive a
+    // dedicated `linux-<arch>-deb` entry instead of the AppImage the bare key
+    // serves.
+    return `linux-${arch}-deb`;
+  }
+  if (lower.endsWith('.rpm')) {
+    return `linux-${arch}-rpm`;
   }
   if (lower.includes('.app.tar.gz')) {
     return `darwin-${arch}`;
