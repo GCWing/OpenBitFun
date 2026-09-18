@@ -129,7 +129,7 @@ pub(crate) fn start_peer_event_fanout(state: PeerHostState, mut rx: AgentEventRe
         loop {
             match rx.recv().await {
                 Ok(envelope) => {
-                    let publisher = state.account_routing.session_publisher().await;
+                    let hub = state.account_routing.host_stream_hub().await;
                     let mut incoming = vec![envelope.event];
                     // A microbatch is a scheduling unit, never an admission limit.
                     // Drain already-ready events without delaying a quiet stream.
@@ -147,21 +147,17 @@ pub(crate) fn start_peer_event_fanout(state: PeerHostState, mut rx: AgentEventRe
                     }
                     let mut publication = Vec::new();
                     for event in incoming {
-                        if let Err(error) = handle_agentic_event(
-                            &state,
-                            event,
-                            publisher.is_some(),
-                            &mut publication,
-                        )
-                        .await
+                        if let Err(error) =
+                            handle_agentic_event(&state, event, hub.is_some(), &mut publication)
+                                .await
                         {
                             tracing::error!("CLI session event publication failed: {error}");
                             report_publication_gap(&state, &error).await;
                         }
                     }
-                    if let Some(publisher) = publisher {
-                        if let Err(error) = publisher.append_batch(publication).await {
-                            tracing::error!("CLI session journal commit failed: {error}");
+                    if let Some(hub) = hub {
+                        if let Err(error) = hub.append_batch(publication).await {
+                            tracing::error!("CLI session stream publication failed: {error}");
                             report_publication_gap(&state, &error.to_string()).await;
                         }
                     }
@@ -248,24 +244,25 @@ async fn fanout_permission_event(event: PermissionRequestEvent) {
 }
 
 async fn report_publication_gap(state: &PeerHostState, reason: &str) {
-    if let Some(publisher) = state.account_routing.session_publisher().await {
-        for session in publisher
-            .session_ids()
-            .await
+    if let Some(hub) = state.account_routing.host_stream_hub().await {
+        // Only streams a controller is currently reading are reconciled; there
+        // is no offline history to repair.
+        for session in hub
+            .active_stream_ids()
             .into_iter()
-            .filter(|session| !session.starts_with("terminal-"))
+            .filter(|session| openbitfun_core::service::remote_connect::is_session_stream(session))
         {
             if let Err(error) =
                 openbitfun_core::service::remote_connect::synchronize_session_records(
-                    &publisher, &session,
+                    &hub, &session,
                 )
                 .await
             {
                 tracing::error!("Unable to reconcile runtime records after source gap: {error}");
             }
         }
-        if let Err(error) = publisher.report_source_gap(reason).await {
-            tracing::error!("Unable to persist session continuity warning: {error}");
+        if let Err(error) = hub.report_source_gap(reason).await {
+            tracing::error!("Unable to publish session continuity warning: {error}");
         }
     }
 }
@@ -477,7 +474,7 @@ async fn handle_agentic_event(
         if !policy.synchronize_records && !policy.persist_control {
             return Ok(());
         }
-        if let Some(publisher) = state.account_routing.session_publisher().await {
+        if let Some(hub) = state.account_routing.host_stream_hub().await {
             if policy.synchronize_records {
                 async {
                     if let Some(turn) = projected
@@ -487,12 +484,12 @@ async fn handle_agentic_event(
                         .and_then(serde_json::Value::as_str)
                     {
                         openbitfun_core::service::remote_connect::synchronize_session_record_turn(
-                            &publisher, session_id, turn,
+                            &hub, session_id, turn,
                         )
                         .await
                     } else if name == "agentic://session-history-changed" {
                         openbitfun_core::service::remote_connect::synchronize_session_records(
-                            &publisher, session_id,
+                            &hub, session_id,
                         )
                         .await
                     } else {
@@ -655,6 +652,19 @@ fn terminal_turn_key(event: &AgenticEvent) -> Option<PeerTurnKey> {
             ..
         } => Some(PeerTurnKey::new(session_id, turn_id)),
         _ => None,
+    }
+}
+
+/// Host-local UI hints (for example the workspace catalog invalidation) have
+/// no webview on a CLI host; attached Peer Mode controllers are their only
+/// consumer, so the emitter mirrors them straight into the DeviceEvent fan-out.
+pub(crate) struct PeerControllerEventEmitter;
+
+#[async_trait::async_trait]
+impl openbitfun_events::EventEmitter for PeerControllerEventEmitter {
+    async fn emit(&self, event_name: &str, payload: serde_json::Value) -> anyhow::Result<()> {
+        fanout_peer_device_event(event_name.to_string(), payload).await;
+        Ok(())
     }
 }
 

@@ -110,7 +110,11 @@ public object RemoteSidebarPresentation {
                     WorkspaceSessionDirectoryStatus.IDLE -> RemoteSidebarWorkspaceLoad.IDLE
                     WorkspaceSessionDirectoryStatus.LOADING -> RemoteSidebarWorkspaceLoad.LOADING
                     WorkspaceSessionDirectoryStatus.READY -> RemoteSidebarWorkspaceLoad.READY
-                    WorkspaceSessionDirectoryStatus.FAILED -> RemoteSidebarWorkspaceLoad.FAILED
+                    // The host cannot address this branch by ID; its cached rows
+                    // stay visible, but the branch is not loadable.
+                    WorkspaceSessionDirectoryStatus.FAILED,
+                    WorkspaceSessionDirectoryStatus.UNSUPPORTED,
+                    -> RemoteSidebarWorkspaceLoad.FAILED
                 }
             }
             val owned = if (!isSelected && branch != null && branch.sessions.isNotEmpty()) {

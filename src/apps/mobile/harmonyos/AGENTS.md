@@ -69,7 +69,7 @@ through `LocaleController`. Do not import Web UI or mobile-web locale catalogs.
 The current local HarmonyOS verification loop is:
 
 ```bash
-node --test tools/tests/*.test.cjs  # session fragment, cursor, reconnect and identity checks
+node --test tools/tests/*.test.cjs  # host stream paging/hints/restart gaps, catalog, terminal, identity checks
 node --test miniapps/*.test.cjs  # bundled sources, browser bridge, and local storage compatibility
 source scripts/ohos-env.sh
 "$HVIGORW" --mode module -p product=default -p module=entry@default assembleHap --no-daemon

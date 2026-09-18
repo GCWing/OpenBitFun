@@ -197,19 +197,43 @@ location and process.
 | `GET /api/devices` | Same-account device directory |
 | `GET /api/devices/{id}/key` | Same-account device public key |
 | `DELETE /api/devices/{id}` | Explicit device removal and revocation |
-| `GET /v1/updates` | Authenticated Socket.IO account, machine and session scopes |
-| `POST /v1/sessions`, `GET /v1/sessions/{id}` | Opaque session metadata |
-| `GET/POST /v3/sessions/{id}/messages` | Ordered encrypted session history and catch-up |
-| `POST /v1/rpc/payloads`, `GET /v1/rpc/payloads/{id}` | Account-scoped encrypted bulk RPC bodies |
+| `GET /v1/updates` | Authenticated Socket.IO account and machine scopes |
+| `POST /v1/rpc/payloads`, `GET /v1/rpc/payloads/{id}` | Account-scoped encrypted bulk RPC bodies (short-lived) |
+| `POST /v1/sessions`, `GET /v1/sessions/{id}`, `GET/POST /v3/sessions/{id}/messages` | Retired; answer `410 Gone` with `{"error":"relay_session_history_retired"}` |
 
 Realtime clients authenticate the namespace and wait for `auth-ok` before
 registering or calling methods. Machine-owned RPC methods route inside the
 same account; only the selected target socket can acknowledge a request.
 A lost acknowledgement reports an unknown outcome and never replays a mutation.
 Small encrypted messages travel over the live connection; larger RPC bodies use
-short-lived HTTP references. Session history uses durable records, independent
-of those temporary references. Continuous session sequences apply directly;
-missing sequences and reconnects use the same encrypted history API.
+short-lived HTTP references that expire on their own.
+
+### Forwarding only
+
+The relay stores no session content. Session transcripts, terminal output and
+the workspace/session catalog are host-owned streams
+(`services-integrations::remote_connect::host_stream`): a controller reads
+pages on demand with the pairwise-encrypted `read_stream` device RPC, and the
+host pushes an encrypted `host-stream-changed` device event naming only the
+stream id, epoch and newest sequence. Both travel through the same RPC and
+`ephemeral` device-event forwarding as every other command, so the relay never
+sees plaintext and keeps nothing after delivery. When the controlled device is
+offline there is no history to show, by design.
+
+Compatibility on the same connection:
+
+- An older client that still calls the session history routes or requests the
+  Socket.IO `session` scope receives `410 Gone` / an explicit auth failure with
+  the same `relay_session_history_retired` reason, never an empty page.
+- A newer client against an older relay ignores the `update` frames that relay
+  still emits; stream pages and hints do not depend on relay-side state.
+- Hosts advertise `host_stream_v1` in their handshake `capabilities`;
+  controllers check it before opening a stream and report an older host as
+  unsupported instead of probing it with unknown commands.
+- On start-up the service drops the retired `realtime_sessions`,
+  `realtime_messages` and `realtime_account_sequence` tables from an existing
+  database and runs `VACUUM`, so previously stored ciphertext is removed from
+  disk without an operator step.
 
 The old `/ws`, HTTP device `rpc` and `messages` routes are retired. Deploy the
 new client and server together under a separate versioned relay prefix.

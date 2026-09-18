@@ -1933,11 +1933,11 @@ impl CoreServiceAgentRuntime {
     /// One source read/commit owner for both migration and live block updates.
     #[cfg(feature = "remote-connect")]
     pub(crate) async fn synchronize_relay_session(
-        publisher: &openbitfun_services_integrations::remote_connect::session_log::SessionPublisher,
+        hub: &openbitfun_services_integrations::remote_connect::host_stream::HostStreamHub,
         session_id: &str,
         turn_id: Option<&str>,
     ) -> Result<(), String> {
-        publisher.synchronize_records(session_id.to_owned(),turn_id.is_none(),||async {
+        hub.synchronize_records(session_id.to_owned(),turn_id.is_none(),||async {
             let directory=Self::resolve_session_storage_dir(session_id).await
                 .ok_or_else(||anyhow::anyhow!("Session storage is unavailable on this host"))?;
             let coordinator=get_global_coordinator().ok_or_else(||anyhow::anyhow!("Runtime is unavailable"))?;

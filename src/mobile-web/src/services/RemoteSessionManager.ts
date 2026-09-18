@@ -1,5 +1,8 @@
 import { normalizeWorkspaceRouting } from './workspaceIdentity';
-import type { SessionStreamHandle, SessionHistoryState } from '../../../shared/relay-transport/SessionStream';
+import {
+  REMOTE_CAPABILITY_HOST_STREAM_V1, UNSUPPORTED_HOST_MESSAGE,
+  type HostStreamOptions, type SessionStreamHandle,
+} from '../../../shared/relay-transport/HostStream';
 import { translateAgentIdentityFields } from '../../../shared/agent-harness/wire';
 /**
  * Manages remote sessions by sending commands to the desktop via the relay.
@@ -279,6 +282,7 @@ export interface InitialSyncData {
 export const REMOTE_CAPABILITY_HARNESS_PROFILES_V1 = 'harness_profiles_v1';
 /** The host resolves `workspace_id` on workspace-scoped commands and events. */
 export const REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1 = 'workspace_id_references_v1';
+export type SessionStreamCallbacks = Pick<HostStreamOptions, 'onEvent' | 'onError' | 'onCaughtUp' | 'onHistoryState' | 'onResumed' | 'onGap'>;
 
 /**
  * A workspace reference as the UI knows it. `workspaceId` is authoritative;
@@ -546,14 +550,21 @@ export class RemoteSessionManager {
     return this.request({ cmd: 'set_workspace', ...reference }, target);
   }
 
-  async subscribeSessionStream(sessionId: string,
-    onEvent: (event: import('../../../shared/relay-transport/SessionCipher').SessionEvent) => void,
-    onError: (error: unknown) => void, onCaughtUp?: () => void, onHistoryState?: (state: SessionHistoryState) => void, onResumed?: () => void): Promise<SessionStreamHandle> {
+  /** True when the connected host serves session, terminal and catalog
+   * streams on demand. Older hosts kept them on the Relay, which no longer
+   * stores them, so they cannot be read from this client at all. */
+  supportsHostStreams(): boolean {
+    return this.supportsHostCapability(REMOTE_CAPABILITY_HOST_STREAM_V1);
+  }
+
+  /** Open one host-owned stream. Content is read from the online controlled
+   * device over encrypted RPC and never cached by the Relay or this client. */
+  async subscribeSessionStream(streamId: string, callbacks: SessionStreamCallbacks): Promise<SessionStreamHandle> {
     const target = this.client.getControlTargetSnapshot();
-    const grant = await this.request<{ session_id: string; relay_session_id: string; key: string }>({ cmd: 'get_session_key', session_id: sessionId }, target);
+    await this.ensureHostCapabilitiesKnown(target);
     this.ensureControlTargetCurrent(target);
-    if (grant.session_id !== sessionId) throw new Error('Session key grant does not match the requested stream');
-    return this.client.subscribeSessionStream(sessionId, grant.relay_session_id, grant.key, onEvent, onError, onCaughtUp, onHistoryState, onResumed);
+    if (!this.supportsHostStreams()) throw new Error(UNSUPPORTED_HOST_MESSAGE);
+    return this.client.subscribeHostStream(streamId, callbacks);
   }
 
   /** Product operations execute on the controlled host, including its SSH adapter. */

@@ -78,6 +78,52 @@ export class RelayFixture {
   holdLogins = false;
   pendingLogins = [];
   online = true;
+  /** Host-owned streams served over `read_stream`; the simulated Relay stores none. */
+  streams = new Map();
+  streamReads = [];
+  streamUnsubscribes = [];
+  sockets = new Set();
+  /** Emulate a host from before host streams: no capability, no `read_stream`. */
+  legacyHost = false;
+
+  stream(id) {
+    let stream = this.streams.get(id);
+    if (!stream) { stream = { epoch: 1000 + this.streams.size, events: [] }; this.streams.set(id, stream); }
+    return stream;
+  }
+  appendStreamEvent(id, event, payload) {
+    const stream = this.stream(id);
+    stream.events.push({ seq: stream.events.length + 1, event, payload });
+    return stream.events.length;
+  }
+  restartStream(id) { const stream = this.stream(id); stream.epoch += 1; stream.events = []; }
+  readStream(request) {
+    this.streamReads.push(request);
+    const stream = this.stream(request.stream_id);
+    const limit = request.limit ?? 200;
+    let events, hasMore;
+    if (request.after !== undefined && request.after !== null) {
+      const rest = stream.events.filter(event => event.seq > request.after); events = rest.slice(0, limit); hasMore = rest.length > limit;
+    } else {
+      const before = request.before ?? Number.MAX_SAFE_INTEGER;
+      const rest = stream.events.filter(event => event.seq < before); events = rest.slice(-limit); hasMore = rest.length > limit;
+    }
+    return { resp: 'stream_page', stream_id: request.stream_id, epoch: stream.epoch, events, has_more: hasMore,
+      cursor: stream.events.length, oldest_seq: stream.events[0]?.seq ?? stream.events.length + 1, truncated: false };
+  }
+  /** Encrypted `host-stream-changed` hint from `hostDeviceId` to every connected controller socket. */
+  emitStreamHint(hostDeviceId, streamId) {
+    const stream = this.stream(streamId);
+    const plaintext = JSON.stringify({ cmd: 'device_event', event: 'host-stream-changed',
+      payload: { stream_id: streamId, epoch: stream.epoch, cursor: stream.events.length } });
+    for (const { ws, auth, endpoint } of this.sockets) {
+      const key = messageKey(this.devices.get(`${endpoint}:${auth.userId}:${auth.deviceId}`));
+      const nonce = randomBytes(12);
+      const encrypted = gcm(key, nonce).encrypt(new TextEncoder().encode(plaintext));
+      ws.send('42' + JSON.stringify(['ephemeral', { type: 'device-event', sourceDeviceId: hostDeviceId,
+        params: { encrypted_data: Buffer.from(encrypted).toString('base64'), nonce: nonce.toString('base64') } }]));
+    }
+  }
 
   register(endpoint, deviceId, privateKey, userId = '123', token = `fixture-${this.tokens.size + 1}`) {
     this.devices.set(`${endpoint}:${userId}:${deviceId}`, Buffer.from(x25519.getPublicKey(privateKey)));
@@ -114,7 +160,10 @@ export class RelayFixture {
       if (this.directoryStatus !== 200) return { status: this.directoryStatus, body: 'Unavailable' };
       return json(['desktop-a', 'desktop-b'].map(device_id => ({ device_id, device_name: device_id, online: this.online })));
     }
-    if (/^\/v3\/sessions\/[^/]+\/messages$/.test(path)) return json({ messages: [], hasMore: false });
+    // The Relay of this release keeps no session history; earlier routes are gone.
+    if (/^\/v[13]\/sessions(\/|$)/.test(path)) {
+      return { status: 410, contentType: 'application/json', body: JSON.stringify({ error: 'relay_session_history_retired', message: 'This relay does not store session history.' }) };
+    }
     const keyPath = path.match(/^\/api\/devices\/([^/]+)\/key$/);
     if (keyPath) return json({ device_id: keyPath[1], public_key: Buffer.from(hostPublicKey).toString('base64') });
     throw new Error(`Unhandled Relay route: ${path}`);
@@ -132,8 +181,10 @@ export class RelayFixture {
         this.clients.set(`${endpoint}:${target}:${command.client.id}`, command.client);
         response = { resp: 'pong' }; break;
       }
-      case 'get_session_key': response = { resp: 'session_key', session_id: command.session_id, relay_session_id: 'fixture-stream', key: Buffer.alloc(32, 7).toString('base64') }; break;
-      case 'get_workspace_info': response = { resp: 'workspace_info', has_workspace: false, capabilities: [] }; break;
+      case 'get_session_key': response = { resp: 'error', message: 'Relay-stored session history has been retired; session content is now read directly from the online host. Update the controlling app to continue.' }; break;
+      case 'read_stream': response = this.legacyHost ? { resp: 'error', message: 'invalid RPC command: unknown variant `read_stream`, expected one of `get_session_key`, `get_workspace_info`' } : this.readStream(command); break;
+      case 'unsubscribe_stream': this.streamUnsubscribes.push(command.stream_id); response = { resp: 'stream_unsubscribed', stream_id: command.stream_id }; break;
+      case 'get_workspace_info': response = { resp: 'workspace_info', has_workspace: false, capabilities: this.legacyHost ? [] : ['host_stream_v1'] }; break;
       case 'list_recent_workspaces': response = { resp: 'recent_workspaces', workspaces: [], opened_workspaces: [] }; break;
       case 'list_sessions': response = { resp: 'sessions', sessions: [], has_more: false }; break;
       case 'list_assistants': response = { resp: 'assistants', assistants: [] }; break;
@@ -157,6 +208,9 @@ export class RelayFixture {
             ws.send('44' + JSON.stringify({ message: 'Unauthorized' })); return;
           }
           ws.send('40' + JSON.stringify({ sid: auth.deviceId }));
+          const connection = { ws, auth, endpoint };
+          this.sockets.add(connection);
+          ws.once('close', () => this.sockets.delete(connection));
           ws.send('42' + JSON.stringify(['auth-ok', { userId: auth.userId, deviceId: auth.deviceId }]));
         } else if (frame.startsWith('42')) {
           assert.ok(auth, 'RPC requires authenticated connection');

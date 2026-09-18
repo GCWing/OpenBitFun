@@ -97,4 +97,12 @@ public data class RemoteCommand(
     @SerialName("answers") val answers: JsonElement? = null,
     @SerialName("image_contexts") val imageContexts: List<RemoteImageContext>? = null,
     @SerialName("images") val images: List<ImageAttachment>? = null,
+    // `read_stream` / `unsubscribe_stream`: host-owned streams read directly
+    // from the online desktop. Mirrors `StreamReadRequest` in
+    // `remote_connect/host_stream.rs`.
+    @SerialName("stream_id") val streamId: String? = null,
+    @SerialName("after") val after: Long? = null,
+    @SerialName("before") val before: Long? = null,
+    @SerialName("epoch") val epoch: Long? = null,
+    @SerialName("subscribe") val subscribe: Boolean? = null,
 )

@@ -25,7 +25,7 @@ export function WorkspaceTerminal({ manager, workspace }: { manager: RemoteSessi
     if (!sessionId || !container.current) return;
     let disposed = false;
     let caughtUp = false;
-    let stop: import('../../../shared/relay-transport/SessionStream').SessionStreamHandle | undefined;
+    let stop: import('../../../shared/relay-transport/HostStream').SessionStreamHandle | undefined;
     const fail = (cause: unknown) => { if (!disposed) setError(cause instanceof Error ? cause.message : String(cause)); };
     const typography = getComputedStyle(container.current);
     const terminal = new Terminal({
@@ -86,11 +86,11 @@ export function WorkspaceTerminal({ manager, workspace }: { manager: RemoteSessi
       }catch(cause){fail(cause);}finally{running=false;}
     };
     refresh.current=()=>{void read();};
-    void manager.subscribeSessionStream('terminal-'+sessionId,
-      ()=>{if(caughtUp)void read();},fail,
-      ()=>{if(!caughtUp){caughtUp=true;void read();}},undefined,
-      ()=>{if(caughtUp)void read();},
-    ).then(stream=>{stop=stream;if(disposed)stream.close();}).catch(fail);
+    void manager.subscribeSessionStream('terminal-'+sessionId,{
+      onEvent:()=>{if(caughtUp)void read();},onError:fail,
+      onCaughtUp:()=>{if(!caughtUp){caughtUp=true;void read();}},
+      onResumed:()=>{if(caughtUp)void read();},
+    }).then(stream=>{stop=stream;if(disposed)stream.close();}).catch(fail);
     return ()=>{
       disposed=true;stop?.close();queue.clear();input.current=undefined;refresh.current=()=>{};
       dataListener.dispose();resizeListener.dispose();resizeObserver.disconnect();window.visualViewport?.removeEventListener('resize', fitVisible);themeObserver.disconnect();terminal.dispose();

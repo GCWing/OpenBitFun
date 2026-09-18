@@ -3,6 +3,8 @@
 //! Full workspace management system: open, manage, scan, statistics, etc.
 
 #[cfg(feature = "workspace-runtime")]
+pub mod catalog_publication;
+#[cfg(feature = "workspace-runtime")]
 pub mod factory;
 #[cfg(feature = "workspace-watch")]
 pub mod identity_watch;
@@ -29,6 +31,11 @@ pub enum WorktreeTopologyFreshness {
 }
 
 // Re-export main components
+#[cfg(feature = "workspace-runtime")]
+pub use catalog_publication::{
+    start_workspace_catalog_publication, WorkspaceCatalogChangedEvent,
+    WORKSPACE_CATALOG_CHANGED_EVENT,
+};
 #[cfg(feature = "workspace-runtime")]
 pub use factory::WorkspaceFactory;
 #[cfg(feature = "workspace-watch")]

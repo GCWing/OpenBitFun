@@ -466,7 +466,6 @@ public data class MobilePersistenceStores public constructor(
     public val remoteSessions: RemoteSessionListStore = EmptyRemoteSessionListStore,
     public val remoteTranscripts: RemoteTranscriptStore = EmptyRemoteTranscriptStore,
     public val remoteWorkspaces: RemoteWorkspaceListStore = EmptyRemoteWorkspaceListStore,
-    public val relayStreams: RelayStreamStore? = null,
 )
 
 public fun mobilePersistenceStores(driver: SqlDriver): MobilePersistenceStores = MobilePersistenceStores(
@@ -474,5 +473,4 @@ public fun mobilePersistenceStores(driver: SqlDriver): MobilePersistenceStores =
     remoteSessions = SqlDelightRemoteSessionListStore(driver),
     remoteTranscripts = SqlDelightRemoteTranscriptStore(driver),
     remoteWorkspaces = SqlDelightRemoteWorkspaceListStore(driver),
-    relayStreams = SqlDelightRelayStreamStore(driver),
 )

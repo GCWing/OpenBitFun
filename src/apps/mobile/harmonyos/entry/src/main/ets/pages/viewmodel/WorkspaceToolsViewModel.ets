@@ -2,7 +2,7 @@ import { RemoteFileDownloadController } from '../../services/RemoteFileDownloadC
 import { WorkspaceFileUploadClient } from '../../services/WorkspaceFileUploadClient';
 import { Encoding } from '../../services/Encoding';
 import { RemoteSessionManager } from '../../services/RemoteSessionManager';
-import { DurableSessionStream } from '../../services/DurableSessionStream';
+import { HostSessionStream } from '../../services/HostSessionStream';
 import { WorkspaceToolsState, WorkspaceToolsIntent, WorkspaceFileEntry, WorkspaceTerminalEntry, WorkspaceToolLocation } from '../state/WorkspaceToolsState';
 import { RuntimeFileLocation } from '../../model/RemoteModels';
 
@@ -31,7 +31,7 @@ export class WorkspaceToolsViewModel {
   private pendingNavigation?: WorkspaceToolsIntent;
   private expectedHash: string = ''; 
   private epoch: number = 0;
-  private stream?: DurableSessionStream;
+  private stream?: HostSessionStream;
   private terminalCursor: number = 0;
   private terminalGeneration: number = 0;
   private readingTerminal: boolean = false;

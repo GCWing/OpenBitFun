@@ -18,7 +18,6 @@ import com.openbitfun.mobile.core.domain.WorkspaceReferenceResolution
 import com.openbitfun.mobile.core.domain.identity
 import com.openbitfun.mobile.core.feature.relay.HostCatalogNotice
 import com.openbitfun.mobile.core.persistence.TemporaryDownload
-import com.openbitfun.mobile.core.persistence.RelayStreamStore
 import kotlinx.coroutines.flow.collect
 import com.openbitfun.mobile.core.persistence.PersistedRemoteWorkspace
 import com.openbitfun.mobile.core.persistence.RemoteWorkspaceListStore
@@ -63,7 +62,6 @@ public class RemoteWorkspaceStore internal constructor(
     private val backgroundDispatcher: CoroutineDispatcher,
     public val deviceKey: String? = null,
     private val persistence: RemoteWorkspaceListStore? = null,
-    private val relayStreams: RelayStreamStore? = null,
 ) {
     private var catalogSubscription: Job? = null
     private var catalogRefresh: Job? = null
@@ -133,7 +131,7 @@ public class RemoteWorkspaceStore internal constructor(
     private var filesObserver: Job? = null
     /** Device-tool terminals keyed by [RemoteWorkspaceIdentity.key] (workspace ID first, legacy triple otherwise). */
     private val workspaceTerminals = mutableMapOf<String, RuntimeTerminalStore>()
-    private var terminal = RuntimeTerminalStore(scope, transport, relayStreams)
+    private var terminal = RuntimeTerminalStore(scope, transport)
     private var terminalObserver: Job? = null
     /** False until a live `get_workspace_info` reported the host capability list for this connection. */
     private var hostCapabilitiesKnown = false
@@ -678,7 +676,7 @@ public class RemoteWorkspaceStore internal constructor(
     /** Binds the active terminal to the store cached for [scope]'s identity key (workspace ID first, legacy triple otherwise). */
     private fun bindTerminal(scope: RemoteWorkspaceIdentity) {
         terminalObserver?.cancel()
-        terminal = workspaceTerminals.getOrPut(scope.key) { RuntimeTerminalStore(this.scope, transport, relayStreams) }
+        terminal = workspaceTerminals.getOrPut(scope.key) { RuntimeTerminalStore(this.scope, transport) }
         updateReady { it.copy(terminal = terminal.state.value) }
         terminalObserver = this.scope.launch { terminal.state.collect { value -> updateReady { it.copy(terminal = value) } } }
     }
@@ -1094,8 +1092,7 @@ public class RemoteWorkspaceStore internal constructor(
             backgroundDispatcher: CoroutineDispatcher,
             deviceKey: String,
             persistence: RemoteWorkspaceListStore? = null,
-            relayStreams: RelayStreamStore? = null,
-        ): RemoteWorkspaceStore = RemoteWorkspaceStore(scope, transport, backgroundDispatcher, deviceKey, persistence, relayStreams)
+        ): RemoteWorkspaceStore = RemoteWorkspaceStore(scope, transport, backgroundDispatcher, deviceKey, persistence)
 
         private const val DOWNLOAD_CHUNK_BYTES = 3 * 1024 * 1024
         private const val ASSISTANT_KIND = "assistant"

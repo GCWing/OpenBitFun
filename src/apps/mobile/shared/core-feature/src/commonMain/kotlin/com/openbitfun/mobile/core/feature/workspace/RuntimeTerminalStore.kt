@@ -1,7 +1,5 @@
 package com.openbitfun.mobile.core.feature.workspace
 
-import com.openbitfun.mobile.core.persistence.RelayStreamStore
-import com.openbitfun.mobile.core.feature.relay.PersistentSessionReplica
 import com.openbitfun.mobile.core.protocol.isError
 import com.openbitfun.mobile.core.protocol.CommandStatus
 import com.openbitfun.mobile.core.protocol.RemoteCommand
@@ -25,8 +23,7 @@ public data class RuntimeTerminalUiState public constructor(
 private data class HostResult(override val resp: String? = null, override val message: String? = null,
     val ok: Boolean = false, val value: JsonElement = JsonNull, val error: String? = null) : CommandStatus
 
-internal class RuntimeTerminalStore(private val scope: CoroutineScope, private val transport: RemoteCommandTransport,
-    private val persistence: RelayStreamStore?) {
+internal class RuntimeTerminalStore(private val scope: CoroutineScope, private val transport: RemoteCommandTransport) {
     private val mutable = MutableStateFlow(RuntimeTerminalUiState(null, "", false, false))
     val state = mutable.asStateFlow()
     private var owner: Job? = null
@@ -72,9 +69,6 @@ internal class RuntimeTerminalStore(private val scope: CoroutineScope, private v
         owner = scope.launch {
             try {
                 val source = transport as? RemoteSessionStreamTransport ?: error("Session stream unavailable")
-                val store = persistence ?: error("Persistent session replica unavailable")
-                val stream = source.streamIdentity + ":terminal:" + id
-                val replica = PersistentSessionReplica(store, stream)
                 var offset = 0L
                 suspend fun refresh() {
                     do {
@@ -108,10 +102,10 @@ internal class RuntimeTerminalStore(private val scope: CoroutineScope, private v
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (error: Throwable) { if (isCurrent()) failHistory(error) }
                 } }
-                source.subscribe("terminal-$id", replica, { error -> if (isCurrent()) failHistory(error) }, {
+                source.subscribe("terminal-$id", { error -> if (isCurrent()) failHistory(error) }, {
                     if (isCurrent() && !caughtUp) { caughtUp = true; refreshRequests.trySend(Unit) }
                 }).collect { event ->
-                    if (isCurrent() && caughtUp && event["event"]?.jsonPrimitive?.content in setOf("terminal-output", "relay://session-resumed")) refreshRequests.trySend(Unit)
+                    if (isCurrent() && caughtUp && event["event"]?.jsonPrimitive?.content in setOf("terminal-output", STREAM_EVENT_RESUMED, STREAM_EVENT_GAP)) refreshRequests.trySend(Unit)
                 }
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (error: Throwable) { if (isCurrent()) failHistory(error) }

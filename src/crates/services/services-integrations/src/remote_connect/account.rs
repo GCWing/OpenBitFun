@@ -28,11 +28,21 @@ pub fn is_retired_official_relay(value: &str) -> bool {
     })
 }
 
+/// A host announced that one of its streams changed. Hints are lossy wake-ups;
+/// the subscriber always reads the authoritative page from the host.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StreamHint {
+    pub source_device_id: String,
+    pub stream_id: String,
+    pub epoch: u64,
+    pub cursor: u64,
+}
+
 /// Device-scoped relay credentials and a locally owned X25519 private key.
 #[derive(Clone)]
 pub struct AccountSession {
     pub token: String,
-    updates: tokio::sync::broadcast::Sender<Option<(String, serde_json::Value)>>,
+    hints: tokio::sync::broadcast::Sender<Option<StreamHint>>,
     pub user_id: String,
     pub master_key: [u8; MASTER_KEY_LEN],
     peer_keys: Arc<Mutex<HashMap<String, Arc<OnceCell<[u8; 32]>>>>>,
@@ -51,7 +61,7 @@ impl AccountSession {
     pub fn new(token: String, user_id: String, device_secret: [u8; 32]) -> Self {
         Self {
             token,
-            updates: tokio::sync::broadcast::channel(64).0,
+            hints: tokio::sync::broadcast::channel(64).0,
             user_id,
             master_key: device_secret,
             peer_keys: Arc::new(Mutex::new(HashMap::new())),
@@ -59,11 +69,37 @@ impl AccountSession {
         }
     }
 
-    /// Notifications are hints; receiver lag means catch up all subscribed logs.
-    pub fn session_updates(
+    /// Stream change hints from hosts. `None` marks a (re)connect; receiver lag
+    /// means catch up every subscribed stream.
+    pub fn stream_hints(&self) -> tokio::sync::broadcast::Receiver<Option<StreamHint>> {
+        self.hints.subscribe()
+    }
+
+    /// Route an already-decrypted `DeviceEvent` from `source_device_id` to the
+    /// local stream subscribers. Returns true when the event was a stream hint.
+    pub fn deliver_device_event(
         &self,
-    ) -> tokio::sync::broadcast::Receiver<Option<(String, serde_json::Value)>> {
-        self.updates.subscribe()
+        source_device_id: &str,
+        event: &str,
+        payload: &serde_json::Value,
+    ) -> bool {
+        if event != super::host_stream::HOST_STREAM_CHANGED_EVENT {
+            return false;
+        }
+        let (Some(stream_id), Some(epoch), Some(cursor)) = (
+            payload["stream_id"].as_str(),
+            payload["epoch"].as_u64(),
+            payload["cursor"].as_u64(),
+        ) else {
+            return true;
+        };
+        let _ = self.hints.send(Some(StreamHint {
+            source_device_id: source_device_id.to_owned(),
+            stream_id: stream_id.to_owned(),
+            epoch,
+            cursor,
+        }));
+        true
     }
 
     pub async fn clear_peer_keys(&self) {
@@ -503,23 +539,54 @@ impl AccountClient {
                 transport
                     .connect_authenticated(&session.token, "Controller")
                     .await?;
-                let updates = session.updates.clone();
+                let hints = session.hints.clone();
                 let peer_keys = session.peer_keys.clone();
+                let event_session = session.clone();
+                let event_relay = relay_url.to_string();
                 tokio::spawn(async move {
                     while let Some(event) = events.recv().await {
                         use super::relay_client::RelayEvent;
                         match event {
-                            RelayEvent::SessionUpdated {
-                                relay_session_id,
-                                message,
-                            } => {
-                                let _ = updates.send(Some((relay_session_id, message)));
+                            RelayEvent::DeviceMessageReceived {
+                                source_device_id,
+                                correlation_id,
+                                encrypted_data,
+                                nonce,
+                            } if correlation_id.is_empty() => {
+                                // Stream hints arrive as encrypted DeviceEvents on
+                                // the controller transport; RPC requests to this
+                                // device are answered by its routing owner instead.
+                                let Ok(plaintext) = event_session
+                                    .decrypt_from_peer(
+                                        &event_relay,
+                                        &source_device_id,
+                                        &encrypted_data,
+                                        &nonce,
+                                    )
+                                    .await
+                                else {
+                                    continue;
+                                };
+                                let Ok(value) =
+                                    serde_json::from_str::<serde_json::Value>(&plaintext)
+                                else {
+                                    continue;
+                                };
+                                if value["cmd"] == "device_event" {
+                                    if let Some(event) = value["event"].as_str() {
+                                        event_session.deliver_device_event(
+                                            &source_device_id,
+                                            event,
+                                            &value["payload"],
+                                        );
+                                    }
+                                }
                             }
                             RelayEvent::Connected
                             | RelayEvent::Reconnected
                             | RelayEvent::AuthOk { .. } => {
                                 peer_keys.lock().await.clear();
-                                let _ = updates.send(None);
+                                let _ = hints.send(None);
                             }
                             RelayEvent::DevicePresence { .. } => {
                                 peer_keys.lock().await.clear();

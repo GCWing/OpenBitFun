@@ -14,6 +14,8 @@ pub mod device;
 pub mod device_crypto;
 pub mod encryption;
 pub mod file_projection;
+pub mod host_stream;
+pub mod host_stream_subscriber;
 mod lan;
 mod page_upload;
 pub mod pairing;
@@ -22,10 +24,8 @@ pub mod realtime_client;
 mod realtime_payload;
 pub mod relay_client;
 mod relay_http;
-pub mod session_log;
 pub mod session_records;
 pub mod session_store;
-pub mod session_subscriber;
 
 pub use chat_projection::{
     agent_input_attachment_from_remote_image_context, no_host_image_pixels,
@@ -557,6 +557,7 @@ pub const REMOTE_CAPABILITY_HARNESS_PROFILES_V1: &str = "harness_profiles_v1";
 pub const REMOTE_CAPABILITY_DIALOG_STEER_V1: &str = "dialog_steer_v1";
 pub const REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1: &str = "user_question_interaction_v1";
 pub const REMOTE_CAPABILITY_PLAN_BUILD_V1: &str = "plan_build_v1";
+pub use host_stream::REMOTE_CAPABILITY_HOST_STREAM_V1;
 
 fn remote_host_capabilities() -> Vec<String> {
     vec![
@@ -565,6 +566,7 @@ fn remote_host_capabilities() -> Vec<String> {
         REMOTE_CAPABILITY_DIALOG_STEER_V1.to_string(),
         REMOTE_CAPABILITY_PLAN_BUILD_V1.to_string(),
         REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1.to_string(),
+        REMOTE_CAPABILITY_HOST_STREAM_V1.to_string(),
     ]
 }
 
@@ -2524,9 +2526,20 @@ pub struct RemoteControlClient {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum RemoteCommand {
-    /// Granted only over authenticated, pairwise-encrypted account routing.
+    /// Retired: relay-stored session history. Kept so older controllers get an
+    /// explicit upgrade message instead of an unknown-command failure.
     GetSessionKey {
         session_id: String,
+    },
+    /// Read one page of a host-owned stream (session records, terminal output
+    /// hints, host catalog) directly from the online host. Answered only over
+    /// authenticated, pairwise-encrypted account routing.
+    ReadStream {
+        #[serde(flatten)]
+        request: host_stream::StreamReadRequest,
+    },
+    UnsubscribeStream {
+        stream_id: String,
     },
     GetWorkspaceInfo,
     ListRecentWorkspaces,
@@ -2752,10 +2765,18 @@ pub enum RemoteCommand {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "resp", rename_all = "snake_case")]
 pub enum RemoteResponse {
+    /// Retired shape; new hosts never produce it but older peers may still send it.
     SessionKey {
         session_id: String,
         relay_session_id: String,
         key: String,
+    },
+    StreamPage {
+        #[serde(flatten)]
+        page: host_stream::StreamPage,
+    },
+    StreamUnsubscribed {
+        stream_id: String,
     },
     WorkspaceInfo {
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -3168,9 +3189,17 @@ where
         ),
 
         // The authenticated host owns credential provisioning.
-        RemoteCommand::ProvisionPeerDevice { .. } | RemoteCommand::GetSessionKey { .. } => {
+        RemoteCommand::ProvisionPeerDevice { .. } => RemoteResponse::Error {
+            message: "Device provisioning is not available on this host".to_string(),
+        },
+        RemoteCommand::GetSessionKey { .. } => RemoteResponse::Error {
+            message: host_stream::RELAY_SESSION_HISTORY_RETIRED_MESSAGE.to_string(),
+        },
+        // Host streams are served by the account routing owner, which knows the
+        // requesting device; this generic dispatcher has no device identity.
+        RemoteCommand::ReadStream { .. } | RemoteCommand::UnsubscribeStream { .. } => {
             RemoteResponse::Error {
-                message: "Device provisioning is not available on this host".to_string(),
+                message: "Host streams are only available over account device routing".to_string(),
             }
         }
 

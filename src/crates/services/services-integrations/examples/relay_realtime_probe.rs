@@ -61,7 +61,7 @@ async fn main() -> Result<()> {
     if role == "product-session-start" || role == "product-session-recover" {
         use openbitfun_services_integrations::remote_connect::{
             account::{AccountClient, AccountSession},
-            session_subscriber::{SessionEvent, SessionSubscriber},
+            host_stream_subscriber::{HostStreamSubscriber, SessionEvent},
         };
         use std::sync::{Arc, Mutex};
         let account = AccountSession::new(token, "realtime-lab".into(), [11; 32]);
@@ -87,7 +87,7 @@ async fn main() -> Result<()> {
         let output = records.clone();
         let errors = Arc::new(Mutex::new(Vec::<String>::new()));
         let failure = errors.clone();
-        let subscriber = SessionSubscriber::start(
+        let mut subscriber = HostStreamSubscriber::start(
             account.clone(),
             url.clone(),
             target.clone(),
@@ -261,15 +261,15 @@ async fn main() -> Result<()> {
         }
         if role == "product-catalog" {
             use openbitfun_services_integrations::remote_connect::{
-                session_log::HOST_CATALOG_ID,
-                session_subscriber::{SessionEvent, SessionSubscriber},
+                host_stream::HOST_CATALOG_ID,
+                host_stream_subscriber::{HostStreamSubscriber, SessionEvent},
             };
             use std::sync::{Arc, Mutex};
             let events = Arc::new(Mutex::new(Vec::<serde_json::Value>::new()));
             let output = events.clone();
             let errors = Arc::new(Mutex::new(Vec::<String>::new()));
             let failure = errors.clone();
-            let subscriber = SessionSubscriber::start(
+            let mut subscriber = HostStreamSubscriber::start(
                 session.clone(),
                 url.clone(),
                 target.clone(),

@@ -171,7 +171,6 @@ pub fn clear_credential_hint() {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::*;
     use std::os::unix::fs::PermissionsExt;
 
     #[test]

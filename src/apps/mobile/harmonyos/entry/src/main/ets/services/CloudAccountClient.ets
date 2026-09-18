@@ -1,4 +1,4 @@
-import { DurableSessionStream, DurableSessionCallbacks, DurableSessionSource, DurableSessionEvent, SessionKeyGrant, SessionMessagePage, SessionCiphertext } from './DurableSessionStream';
+import { HostSessionStream, HostSessionCallbacks, HostSessionSource, HostStreamHint, HostStreamPage, HostStreamReadRequest, HostStreamHintPlaintext, parseHostStreamHint } from './HostSessionStream';
 import { AccountRealtime } from './AccountRealtime';
 import { normalizeAccountRelayUrl, OFFICIAL_RELAY_URL } from './AccountDeviceLink';
 import { http } from '@kit.NetworkKit';
@@ -25,6 +25,8 @@ interface LoginRequest {
 }
 interface PeerPublicKey { public_key: string; }
 interface RelayErrorResponse { error?: string; }
+/** `ephemeral` frame the relay forwards for a host's `DeviceEvent`; the body is ciphertext. */
+interface DeviceEventFrame { type?: string; sourceDeviceId?: string; params?: EncryptedPayload; }
 
 interface NetworkRequestFailure { code?: number; }
 
@@ -180,6 +182,30 @@ export class CloudAccountClient {
   closeAccount(): void {
     this.realtime?.close(); this.realtime = undefined;
     this.realtimeUrl = ''; this.realtimeToken = '';
+    this.peerKeys.clear();
+  }
+
+  /**
+   * Pairwise message keys by target device, derived from the peer's published
+   * X25519 key. Stream hints arrive unsolicited, so their key must be at hand;
+   * a stale entry is dropped when a frame fails to decrypt.
+   */
+  private readonly peerKeys: Map<string, Promise<Uint8Array>> = new Map();
+
+  private peerMessageKey(relayUrl: string, session: CloudAccountSession, target: string): Promise<Uint8Array> {
+    const cacheKey = `${session.userId}\n${target}`;
+    const cached = this.peerKeys.get(cacheKey);
+    if (cached) return cached;
+    const derived = this.request<PeerPublicKey>(relayUrl,
+      `/api/devices/${encodeURIComponent(target)}/key`, 'GET', undefined, session.token)
+      .then((peer: PeerPublicKey) => CloudAccountCrypto.deriveDeviceKey(session.masterKey, Encoding.base64ToBytes(peer.public_key)));
+    this.peerKeys.set(cacheKey, derived);
+    derived.catch((): void => { this.peerKeys.delete(cacheKey); });
+    return derived;
+  }
+
+  private forgetPeerKey(session: CloudAccountSession, target: string): void {
+    this.peerKeys.delete(`${session.userId}\n${target}`);
   }
 
   private readonly cipher: HarmonyRemoteCryptoCipher = new HarmonyRemoteCryptoCipher();
@@ -315,9 +341,7 @@ export class CloudAccountClient {
       throw new Error('Remote target device is required.');
     }
     const socket = this.connection(relayUrl, session.token);
-    const peer = await this.request<PeerPublicKey>(relayUrl,
-      `/api/devices/${encodeURIComponent(target)}/key`, 'GET', undefined, session.token);
-    const messageKey = await CloudAccountCrypto.deriveDeviceKey(session.masterKey, Encoding.base64ToBytes(peer.public_key));
+    const messageKey = await this.peerMessageKey(relayUrl, session, target);
     const nonce = Encoding.randomBytes(12);
     const encrypted = await this.cipher.encrypt(
       Encoding.utf8ToBytes(JSON.stringify(command)),
@@ -330,11 +354,18 @@ export class CloudAccountClient {
     };
     RemoteLogger.info(`device rpc cmd=${command.cmd || 'unknown'} bytes=${body.encrypted_data.length}`);
     const response = await socket.call(target, body, timeoutMs);
-    const plain = await this.cipher.decrypt(
-      Encoding.base64ToBytes(response.encrypted_data),
-      messageKey,
-      Encoding.base64ToBytes(response.nonce)
-    );
+    let plain: Uint8Array;
+    try {
+      plain = await this.cipher.decrypt(
+        Encoding.base64ToBytes(response.encrypted_data),
+        messageKey,
+        Encoding.base64ToBytes(response.nonce)
+      );
+    } catch (err) {
+      // The peer may have re-registered with a new key; the next call re-derives.
+      this.forgetPeerKey(session, target);
+      throw OhosError.wrap('device rpc decrypt', err);
+    }
     const parsed = Encoding.parseJsonObject<T>(Encoding.bytesToUtf8(plain));
     if (parsed.resp === 'error') {
       throw new Error(parsed.message || 'Remote device command failed.');
@@ -355,25 +386,65 @@ export class CloudAccountClient {
     return () => { stopUpdate(); stopReconnect(); };
   }
 
+  /**
+   * Opens one host-owned stream (a session transcript, a terminal, or the
+   * catalog) on the desktop [targetId]. Pages travel as pairwise-encrypted
+   * `read_stream` RPCs and change hints as `host-stream-changed` device
+   * events, both forwarded by the relay without being stored. Nothing is
+   * cached on the phone; an offline desktop has no history to show.
+   */
   subscribeSession(relayUrl: string, session: CloudAccountSession, targetId: string,
-    logicalId: string, callbacks: DurableSessionCallbacks): DurableSessionStream {
-    const socket = this.connection(relayUrl, session.token);
-    const source: DurableSessionSource = {
-      grant: () => this.deviceRpc<SessionKeyGrant>(relayUrl, session, targetId,
-        { cmd: 'get_session_key', session_id: logicalId }),
-      read: (relayId: string, after: number) => this.request<SessionMessagePage>(relayUrl,
-        `/v3/sessions/${encodeURIComponent(relayId)}/messages?after_seq=${after}&limit=100`, 'GET', undefined, session.token),
-      readBefore: (relayId: string, before: number) => this.request<SessionMessagePage>(relayUrl,
-        `/v3/sessions/${encodeURIComponent(relayId)}/messages?before_seq=${before}&limit=100`, 'GET', undefined, session.token),
-      decrypt: async (content: SessionCiphertext, key: string): Promise<DurableSessionEvent> => {
-        const plain = await this.cipher.decrypt(Encoding.base64ToBytes(content.data),
-          Encoding.base64ToBytes(key), Encoding.base64ToBytes(content.nonce));
-        return Encoding.parseJsonObject<DurableSessionEvent>(Encoding.bytesToUtf8(plain));
+    streamId: string, callbacks: HostSessionCallbacks): HostSessionStream {
+    const target = targetId.trim();
+    const source: HostSessionSource = {
+      target: target,
+      read: (request: HostStreamReadRequest): Promise<HostStreamPage> => {
+        const command: RemoteCommand = { cmd: 'read_stream', stream_id: streamId, subscribe: true };
+        if (request.after !== undefined) command.after = request.after;
+        if (request.before !== undefined) command.before = request.before;
+        if (request.epoch !== undefined) command.epoch = request.epoch;
+        return this.deviceRpc<HostStreamPage>(relayUrl, session, target, command, 30000);
       },
-      onUpdate: (listener: (event: string, data: Object) => void) => socket.onUpdate(listener),
-      onReconnect: (listener: () => void) => socket.onReconnect(listener)
+      unsubscribe: async (): Promise<void> => {
+        await this.deviceRpc<CommandStatusResponse>(relayUrl, session, target,
+          { cmd: 'unsubscribe_stream', stream_id: streamId }, 15000);
+      },
+      onHint: (listener: (hint: HostStreamHint) => void): (() => void) =>
+        this.observeStreamHints(relayUrl, session, target, listener),
+      onReconnect: (listener: () => void): (() => void) => this.connection(relayUrl, session.token).onReconnect(listener)
     };
-    return new DurableSessionStream(logicalId, source, callbacks);
+    return new HostSessionStream(streamId, source, callbacks);
+  }
+
+  /** Decrypts `device-event` frames from [target] and forwards the stream hints among them. */
+  private observeStreamHints(relayUrl: string, session: CloudAccountSession, target: string,
+    listener: (hint: HostStreamHint) => void): () => void {
+    const socket = this.connection(relayUrl, session.token);
+    return socket.onUpdate((event: string, data: Object) => {
+      const frame = data as DeviceEventFrame;
+      if (event !== 'ephemeral' || frame.type !== 'device-event') return;
+      if (frame.sourceDeviceId !== target || !frame.params) return;
+      void this.decodeStreamHint(relayUrl, session, target, frame.params).then((hint?: HostStreamHint) => {
+        if (hint) listener(hint);
+      });
+    });
+  }
+
+  private async decodeStreamHint(relayUrl: string, session: CloudAccountSession, target: string,
+    params: EncryptedPayload): Promise<HostStreamHint | undefined> {
+    try {
+      const key = await this.peerMessageKey(relayUrl, session, target);
+      const plain = await this.cipher.decrypt(Encoding.base64ToBytes(params.encrypted_data), key,
+        Encoding.base64ToBytes(params.nonce));
+      const body = Encoding.parseJsonObject<HostStreamHintPlaintext>(Encoding.bytesToUtf8(plain));
+      return parseHostStreamHint(target, body);
+    } catch (err) {
+      // A frame this key cannot open means the peer re-keyed or the frame was
+      // not for us; the next RPC re-derives, and the hint is only a nudge.
+      this.forgetPeerKey(session, target);
+      RemoteLogger.warn(`device event ignored: ${OhosError.reason(err)}`);
+      return undefined;
+    }
   }
 
   private async post<T>(relayUrl: string, path: string, body: Object): Promise<T> {

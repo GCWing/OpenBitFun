@@ -42,6 +42,7 @@ const SURFACE_SCOPED_EVENTS = new Set<string>([
   'account://settings-applied',
   'ai://model-catalog-updated',
   'session_title_generated',
+  'workspace-catalog-changed',
 ]);
 
 const SURFACE_SCOPED_PREFIXES = ['agentic://', 'backend-event-'];

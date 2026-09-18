@@ -39,12 +39,12 @@ pub mod account {
     pub use openbitfun_services_integrations::remote_connect::account::*;
 }
 
-pub mod session_subscriber {
-    pub use openbitfun_services_integrations::remote_connect::session_subscriber::*;
+pub mod host_stream {
+    pub use openbitfun_services_integrations::remote_connect::host_stream::*;
 }
 
-pub mod session_log {
-    pub use openbitfun_services_integrations::remote_connect::session_log::*;
+pub mod host_stream_subscriber {
+    pub use openbitfun_services_integrations::remote_connect::host_stream_subscriber::*;
 }
 
 pub mod session_records {
@@ -160,7 +160,7 @@ pub struct RemoteConnectService {
     bot_connected_info: Arc<RwLock<Option<String>>>,
     /// The single account-authenticated transport for every Relay endpoint.
     device_relay_client: Arc<RwLock<Option<Arc<RelayClient>>>>,
-    session_publisher: Arc<RwLock<Option<Arc<session_log::SessionPublisher>>>>,
+    host_stream_hub: Arc<RwLock<Option<Arc<host_stream::HostStreamHub>>>>,
     device_relay_lifecycle: Arc<Mutex<()>>,
     device_connection_generation: AtomicU64,
     active_device_connection_id: Arc<RwLock<Option<u64>>>,
@@ -198,7 +198,7 @@ impl RemoteConnectService {
             weixin_bot: Arc::new(RwLock::new(None)),
             bot_connected_info: Arc::new(RwLock::new(None)),
             device_relay_client: Arc::new(RwLock::new(None)),
-            session_publisher: Arc::new(RwLock::new(None)),
+            host_stream_hub: Arc::new(RwLock::new(None)),
             device_relay_lifecycle: Arc::new(Mutex::new(())),
             device_connection_generation: AtomicU64::new(0),
             active_device_connection_id: Arc::new(RwLock::new(None)),
@@ -879,11 +879,15 @@ impl RemoteConnectService {
     /// `AuthOk` is consumed here (not forwarded) so callers must use the returned
     /// `authenticated_device_id` — and this method adopts it into the persisted
     /// local `DeviceIdentity` before returning.
+    ///
+    /// `notifier` delivers host stream hints to subscribed controllers; the host
+    /// adapter owns pairwise encryption and the routing lease, so it supplies it.
     pub async fn start_device_connection(
         &self,
         relay_url: &str,
         token: &str,
         device_name: &str,
+        notifier: Arc<dyn host_stream::HostStreamNotifier>,
     ) -> Result<(
         tokio::sync::mpsc::Receiver<relay_client::RelayEvent>,
         String,
@@ -916,16 +920,10 @@ impl RemoteConnectService {
                     if let Err(e) = DeviceIdentity::adopt_account_device_id(&device_id) {
                         log::warn!("Failed to adopt AuthOk device_id: {e}");
                     }
-                    let publisher = session_log::SessionPublisher::start_for_host(
-                        user_id,
-                        device_id.clone(),
-                        relay_url.to_owned(),
-                        token.to_owned(),
-                    )
-                    .await?;
-                    let publisher = Arc::new(publisher);
-                    start_session_interaction_publication(&publisher);
-                    *self.session_publisher.write().await = Some(publisher);
+                    let hub = start_host_stream_hub(notifier.clone());
+                    if let Some(previous) = self.host_stream_hub.write().await.replace(hub) {
+                        previous.close();
+                    }
                     authenticated_device_id = Some(device_id);
                 }
                 Ok(Some(relay_client::RelayEvent::AuthError { message })) => {
@@ -1006,13 +1004,14 @@ impl RemoteConnectService {
         self.stop_device_connection_inner().await;
     }
 
-    pub async fn session_publisher(&self) -> Option<Arc<session_log::SessionPublisher>> {
-        self.session_publisher.read().await.clone()
+    /// Host streams served to controllers while device routing is alive.
+    pub async fn host_stream_hub(&self) -> Option<Arc<host_stream::HostStreamHub>> {
+        self.host_stream_hub.read().await.clone()
     }
 
     async fn stop_device_connection_inner(&self) {
-        if let Some(publisher) = self.session_publisher.write().await.take() {
-            publisher.close();
+        if let Some(hub) = self.host_stream_hub.write().await.take() {
+            hub.close();
         }
         *self.authenticated_device_id.write().await = None;
         *self.device_relay_url.write().await = None;
@@ -1080,40 +1079,105 @@ impl RemoteConnectService {
 
 #[cfg(test)]
 mod host_lifecycle_tests;
+#[cfg(test)]
+mod host_stream_command_tests;
+
+/// Create the account-scoped host stream owner and bridge runtime invalidation
+/// sources into it. Streams hold no offline history: they are materialized by a
+/// controller's first read and dropped once nobody reads them.
+pub fn start_host_stream_hub(
+    notifier: Arc<dyn host_stream::HostStreamNotifier>,
+) -> Arc<host_stream::HostStreamHub> {
+    let hub = host_stream::HostStreamHub::start(notifier);
+    start_session_interaction_publication(&hub);
+    hub
+}
+
+/// Answer the host-stream commands of one controller. `None` means the command
+/// is not a host stream command and belongs to the regular dispatcher.
+pub async fn handle_host_stream_command(
+    hub: Option<&Arc<host_stream::HostStreamHub>>,
+    source_device_id: &str,
+    command: &remote_server::RemoteCommand,
+) -> Option<remote_server::RemoteResponse> {
+    use remote_server::{RemoteCommand, RemoteResponse};
+    match command {
+        RemoteCommand::GetSessionKey { .. } => Some(RemoteResponse::Error {
+            message: host_stream::RELAY_SESSION_HISTORY_RETIRED_MESSAGE.to_string(),
+        }),
+        RemoteCommand::ReadStream { request } => {
+            let Some(hub) = hub else {
+                return Some(RemoteResponse::Error {
+                    message: "Host streams are unavailable while device routing is offline"
+                        .to_string(),
+                });
+            };
+            if is_session_stream(&request.stream_id) && hub.needs_full_synchronization(request) {
+                // A fresh subscriber, or one whose epoch the host no longer holds,
+                // needs the runtime's stable records before its first page.
+                hub.activate(&request.stream_id);
+                if let Err(error) = synchronize_session_records(hub, &request.stream_id).await {
+                    return Some(RemoteResponse::Error { message: error });
+                }
+            }
+            Some(match hub.read(source_device_id, request) {
+                Ok(page) => RemoteResponse::StreamPage { page },
+                Err(error) => RemoteResponse::Error {
+                    message: error.to_string(),
+                },
+            })
+        }
+        RemoteCommand::UnsubscribeStream { stream_id } => {
+            if let Some(hub) = hub {
+                hub.unsubscribe(source_device_id, stream_id);
+            }
+            Some(RemoteResponse::StreamUnsubscribed {
+                stream_id: stream_id.clone(),
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Session streams are keyed by session id; catalog and terminal streams carry
+/// their own prefixes and are fed by appends rather than record synchronization.
+pub fn is_session_stream(stream_id: &str) -> bool {
+    stream_id != host_stream::HOST_CATALOG_ID && !stream_id.starts_with("terminal-")
+}
 
 /// Publish the owning runtime's stable persisted session records.
 pub async fn synchronize_session_records(
-    publisher: &session_log::SessionPublisher,
+    hub: &host_stream::HostStreamHub,
     session_id: &str,
 ) -> Result<(), String> {
     crate::service_agent_runtime::CoreServiceAgentRuntime::synchronize_relay_session(
-        publisher, session_id, None,
+        hub, session_id, None,
     )
     .await
 }
 
 /// Publish only a dirty turn at a semantic message boundary.
 pub async fn synchronize_session_record_turn(
-    publisher: &session_log::SessionPublisher,
+    hub: &host_stream::HostStreamHub,
     session_id: &str,
     turn_id: &str,
 ) -> Result<(), String> {
     crate::service_agent_runtime::CoreServiceAgentRuntime::synchronize_relay_session(
-        publisher,
+        hub,
         session_id,
         Some(turn_id),
     )
     .await
 }
 
-/// Bridge the runtime-owned question mailbox to the account log. Only revisions
+/// Bridge the runtime-owned question mailbox to the host streams. Only revisions
 /// travel here; controllers read the authoritative live mailbox on invalidation.
-pub fn start_session_interaction_publication(publisher: &Arc<session_log::SessionPublisher>) {
-    permission_publication::start(publisher);
+pub fn start_session_interaction_publication(hub: &Arc<host_stream::HostStreamHub>) {
+    permission_publication::start(hub);
     #[cfg(feature = "workspace-runtime")]
-    start_host_catalog_publication(publisher);
-    let mut closed = publisher.subscribe_closed();
-    let weak = Arc::downgrade(publisher);
+    start_host_catalog_publication(hub);
+    let mut closed = hub.subscribe_closed();
+    let weak = Arc::downgrade(hub);
     let manager = crate::agentic::tools::user_input_manager::get_user_input_manager();
     let mut changes = manager.subscribe_changes();
     tokio::spawn(async move {
@@ -1127,7 +1191,7 @@ pub fn start_session_interaction_publication(publisher: &Arc<session_log::Sessio
                 manager.pending_question_counts().into_keys().collect();
             let sessions: std::collections::HashSet<_> =
                 previous.union(&current).cloned().collect();
-            let Some(publisher) = weak.upgrade() else {
+            let Some(hub) = weak.upgrade() else {
                 break;
             };
             let events = sessions.into_iter().map(|session_id| {
@@ -1137,12 +1201,12 @@ pub fn start_session_interaction_publication(publisher: &Arc<session_log::Sessio
                 tokio::select! {
                     biased;
                     _ = closed.changed() => break,
-                    result = publisher.append_batch(events) => if let Err(error) = result {
-                        log::error!("Unable to persist session interaction invalidation: {error}");
+                    result = hub.append_batch(events) => if let Err(error) = result {
+                        log::error!("Unable to publish session interaction invalidation: {error}");
                     }
                 }
             }
-            drop(publisher);
+            drop(hub);
             previous = current;
             tokio::select! {
                 biased;
@@ -1154,9 +1218,9 @@ pub fn start_session_interaction_publication(publisher: &Arc<session_log::Sessio
 }
 
 #[cfg(feature = "workspace-runtime")]
-fn start_host_catalog_publication(publisher: &Arc<session_log::SessionPublisher>) {
-    let mut closed = publisher.subscribe_closed();
-    let weak = Arc::downgrade(publisher);
+fn start_host_catalog_publication(hub: &Arc<host_stream::HostStreamHub>) {
+    let mut closed = hub.subscribe_closed();
+    let weak = Arc::downgrade(hub);
     let mut sessions = crate::service::session::SessionMetadataStore::subscribe_catalog_changes();
     let mut workspaces = crate::service::workspace::WorkspaceService::subscribe_catalog_changes();
     tokio::spawn(async move {
@@ -1173,17 +1237,17 @@ fn start_host_catalog_publication(publisher: &Arc<session_log::SessionPublisher>
             }
             let sessions_revision = *sessions.borrow_and_update();
             let workspaces_revision = *workspaces.borrow_and_update();
-            let Some(publisher) = weak.upgrade() else {
+            let Some(hub) = weak.upgrade() else {
                 break;
             };
             tokio::select! {
                 biased;
                 _ = closed.changed() => break,
-                result = publisher.append(session_log::HOST_CATALOG_ID.into(), "host-catalog-changed".into(), serde_json::json!({"sessionsRevision":sessions_revision,"workspacesRevision":workspaces_revision})) => {
-                    if let Err(error) = result { log::error!("Unable to persist host catalog invalidation: {error}"); }
+                result = hub.append(host_stream::HOST_CATALOG_ID.into(), "host-catalog-changed".into(), serde_json::json!({"sessionsRevision":sessions_revision,"workspacesRevision":workspaces_revision})) => {
+                    if let Err(error) = result { log::error!("Unable to publish host catalog invalidation: {error}"); }
                 }
             }
-            drop(publisher);
+            drop(hub);
             tokio::select! {
                 biased;
                 _ = closed.changed() => break,

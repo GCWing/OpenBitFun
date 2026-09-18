@@ -136,7 +136,10 @@ describe('WorkspaceManager startup initialization', () => {
         }) => void)
       | null = null;
     let resolveListener: ((unlisten: () => void) => void) | null = null;
-    listenMock.mockImplementation((_eventName, handler) => {
+    listenMock.mockImplementation((eventName, handler) => {
+      if (eventName !== 'workspace-identity-changed') {
+        return Promise.resolve(() => undefined);
+      }
       identityHandler = handler;
       return new Promise(resolve => {
         resolveListener = resolve;
@@ -195,9 +198,11 @@ describe('WorkspaceManager startup initialization', () => {
     globalStateMocks.getOpenedWorkspaces.mockResolvedValue([refreshedWorkspace]);
 
     let resolveListener: ((unlisten: () => void) => void) | null = null;
-    listenMock.mockReturnValue(new Promise(resolve => {
-      resolveListener = resolve;
-    }));
+    listenMock.mockImplementation(eventName => eventName === 'workspace-identity-changed'
+      ? new Promise<() => void>(resolve => {
+        resolveListener = resolve;
+      })
+      : Promise.resolve(() => undefined));
 
     const manager = await getFreshWorkspaceManager();
     await manager.initialize();
@@ -249,8 +254,10 @@ describe('WorkspaceManager startup initialization', () => {
           };
         }) => void)
       | null = null;
-    listenMock.mockImplementation((_eventName, handler) => {
-      identityHandler = handler;
+    listenMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'workspace-identity-changed') {
+        identityHandler = handler;
+      }
       return Promise.resolve(() => undefined);
     });
 
@@ -545,8 +552,10 @@ describe('WorkspaceManager device surface switching', () => {
       identity: { name: string };
       changedFields: string[];
     } }) => void) | null = null;
-    listenMock.mockImplementation((_eventName, handler) => {
-      identityHandler = handler;
+    listenMock.mockImplementation((eventName, handler) => {
+      if (eventName === 'workspace-identity-changed') {
+        identityHandler = handler;
+      }
       return Promise.resolve(() => undefined);
     });
     const { manager, deviceSurface } = await getFreshWorkspaceHarness();
@@ -611,5 +620,214 @@ describe('WorkspaceManager project rename', () => {
     expect(state.currentWorkspace?.name).toBe('Renamed project');
     expect(state.openedWorkspaces.get('project-1')?.name).toBe('Renamed project');
     expect(state.recentWorkspaces[0]?.name).toBe('Renamed project');
+  });
+});
+
+describe('WorkspaceManager host catalog hints', () => {
+  const localWorkspace = {
+    id: 'workspace-local',
+    name: 'Local repo',
+    rootPath: '/repo/local',
+    workspaceKind: 'normal',
+    identity: null,
+  };
+  const remoteOpenedWorkspace = {
+    id: 'workspace-remote-opened',
+    name: 'Opened from phone',
+    rootPath: '/repo/phone',
+    workspaceKind: 'normal',
+    identity: null,
+  };
+
+  type CatalogHandler = (event: { payload: Record<string, unknown> }) => void;
+
+  function captureCatalogHandler(): { current: () => CatalogHandler | null } {
+    let handler: CatalogHandler | null = null;
+    listenMock.mockImplementation((eventName, callback) => {
+      if (eventName === 'workspace-catalog-changed') {
+        handler = callback;
+      }
+      return Promise.resolve(() => undefined);
+    });
+    return { current: () => handler };
+  }
+
+  function snapshot(workspaces: Array<typeof localWorkspace>, current: typeof localWorkspace | null) {
+    return {
+      cleanupRemovedCount: 0,
+      recentWorkspaces: workspaces,
+      openedWorkspaces: workspaces,
+      currentWorkspace: current,
+      primaryAssistantWorkspaceId: null,
+      legacyRemoteWorkspace: null,
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    configureGlobalState();
+  });
+
+  it('subscribes to host catalog hints during startup', async () => {
+    listenMock.mockResolvedValue(() => undefined);
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+
+    expect(listenMock).toHaveBeenCalledWith('workspace-catalog-changed', expect.any(Function));
+  });
+
+  it('shows a workspace another controller opened without stealing the active slot', async () => {
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue(
+      snapshot([localWorkspace], localWorkspace),
+    );
+    const handler = captureCatalogHandler();
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    const events: string[] = [];
+    manager.addEventListener(event => {
+      events.push(event.type);
+    });
+
+    // The remote controller selected its workspace, so the host's current
+    // workspace moved; this surface keeps what its user is looking at.
+    globalStateMocks.getCurrentWorkspace.mockResolvedValue(remoteOpenedWorkspace);
+    globalStateMocks.getRecentWorkspaces.mockResolvedValue([remoteOpenedWorkspace, localWorkspace]);
+    globalStateMocks.getOpenedWorkspaces.mockResolvedValue([localWorkspace, remoteOpenedWorkspace]);
+
+    handler.current()?.({ payload: { revision: 3 } });
+    await flushAsyncWork();
+
+    const state = manager.getState();
+    expect(globalStateMocks.getOpenedWorkspaces).toHaveBeenCalledTimes(1);
+    expect(Array.from(state.openedWorkspaces.keys())).toEqual([
+      'workspace-local',
+      'workspace-remote-opened',
+    ]);
+    expect(state.activeWorkspaceId).toBe('workspace-local');
+    expect(state.currentWorkspace?.id).toBe('workspace-local');
+    expect(state.recentWorkspaces.map(workspace => workspace.id)).toEqual([
+      'workspace-remote-opened',
+      'workspace-local',
+    ]);
+    expect(events).toEqual(['workspace:opened']);
+  });
+
+  it('adopts the host current workspace when this surface had no selection', async () => {
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue(snapshot([], null));
+    const handler = captureCatalogHandler();
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    const events: string[] = [];
+    manager.addEventListener(event => {
+      events.push(event.type);
+    });
+
+    globalStateMocks.getCurrentWorkspace.mockResolvedValue(remoteOpenedWorkspace);
+    globalStateMocks.getRecentWorkspaces.mockResolvedValue([remoteOpenedWorkspace]);
+    globalStateMocks.getOpenedWorkspaces.mockResolvedValue([remoteOpenedWorkspace]);
+
+    handler.current()?.({ payload: { revision: 1 } });
+    await flushAsyncWork();
+
+    expect(manager.getState().activeWorkspaceId).toBe('workspace-remote-opened');
+    expect(events).toEqual(['workspace:opened', 'workspace:active-changed']);
+  });
+
+  it('retires a workspace the host closed and moves the selection with the host', async () => {
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue(
+      snapshot([localWorkspace, remoteOpenedWorkspace], remoteOpenedWorkspace),
+    );
+    const handler = captureCatalogHandler();
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+    const events: string[] = [];
+    manager.addEventListener(event => {
+      events.push(event.type);
+    });
+
+    globalStateMocks.getCurrentWorkspace.mockResolvedValue(localWorkspace);
+    globalStateMocks.getRecentWorkspaces.mockResolvedValue([localWorkspace]);
+    globalStateMocks.getOpenedWorkspaces.mockResolvedValue([localWorkspace]);
+
+    handler.current()?.({ payload: { revision: 2 } });
+    await flushAsyncWork();
+
+    const state = manager.getState();
+    expect(Array.from(state.openedWorkspaces.keys())).toEqual(['workspace-local']);
+    expect(state.activeWorkspaceId).toBe('workspace-local');
+    expect(events).toEqual(['workspace:closed', 'workspace:active-changed']);
+  });
+
+  it('coalesces hints that arrive while a re-read is running into one more re-read', async () => {
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue(
+      snapshot([localWorkspace], localWorkspace),
+    );
+    const handler = captureCatalogHandler();
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+
+    let releaseFirstRead: ((workspaces: Array<typeof localWorkspace>) => void) | null = null;
+    globalStateMocks.getOpenedWorkspaces
+      .mockImplementationOnce(() => new Promise(resolve => {
+        releaseFirstRead = resolve;
+      }))
+      .mockResolvedValue([localWorkspace, remoteOpenedWorkspace]);
+    globalStateMocks.getCurrentWorkspace.mockResolvedValue(localWorkspace);
+    globalStateMocks.getRecentWorkspaces.mockResolvedValue([localWorkspace, remoteOpenedWorkspace]);
+
+    handler.current()?.({ payload: { revision: 4 } });
+    await flushAsyncWork();
+    handler.current()?.({ payload: { revision: 5 } });
+    handler.current()?.({ payload: { revision: 6 } });
+    await flushAsyncWork();
+    expect(globalStateMocks.getOpenedWorkspaces).toHaveBeenCalledTimes(1);
+
+    releaseFirstRead?.([localWorkspace]);
+    await flushAsyncWork();
+    await flushAsyncWork();
+
+    expect(globalStateMocks.getOpenedWorkspaces).toHaveBeenCalledTimes(2);
+    expect(manager.getState().openedWorkspaces.has('workspace-remote-opened')).toBe(true);
+  });
+
+  it('re-reads after startup when a hint arrived while the bootstrap snapshot was in flight', async () => {
+    let resolveStartup: ((snapshot: ReturnType<typeof snapshot>) => void) | null = null;
+    globalStateMocks.initializeWorkspaceStartupState.mockImplementation(
+      () => new Promise(resolve => {
+        resolveStartup = resolve;
+      }),
+    );
+    const handler = captureCatalogHandler();
+    const manager = await getFreshWorkspaceManager();
+    const initializePromise = manager.initialize();
+    await flushAsyncWork();
+
+    globalStateMocks.getCurrentWorkspace.mockResolvedValue(localWorkspace);
+    globalStateMocks.getRecentWorkspaces.mockResolvedValue([localWorkspace, remoteOpenedWorkspace]);
+    globalStateMocks.getOpenedWorkspaces.mockResolvedValue([localWorkspace, remoteOpenedWorkspace]);
+    handler.current()?.({ payload: { revision: 9 } });
+    expect(globalStateMocks.getOpenedWorkspaces).not.toHaveBeenCalled();
+
+    resolveStartup?.(snapshot([localWorkspace], localWorkspace));
+    await initializePromise;
+    await flushAsyncWork();
+
+    expect(globalStateMocks.getOpenedWorkspaces).toHaveBeenCalledTimes(1);
+    expect(manager.getState().openedWorkspaces.has('workspace-remote-opened')).toBe(true);
+  });
+
+  it('ignores hints mirrored from a peer device while the local surface is rendered', async () => {
+    globalStateMocks.initializeWorkspaceStartupState.mockResolvedValue(
+      snapshot([localWorkspace], localWorkspace),
+    );
+    const handler = captureCatalogHandler();
+    const manager = await getFreshWorkspaceManager();
+    await manager.initialize();
+
+    handler.current()?.({ payload: { revision: 2, __openbitfunSourceDeviceId: 'device-b' } });
+    await flushAsyncWork();
+
+    expect(globalStateMocks.getOpenedWorkspaces).not.toHaveBeenCalled();
+    expect(manager.getState().openedWorkspaces.size).toBe(1);
   });
 });

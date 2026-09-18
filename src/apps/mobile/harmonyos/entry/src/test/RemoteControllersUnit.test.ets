@@ -1,4 +1,4 @@
-import { FakeDurableSessionManager, durableRecord } from './LocalTestFixtures';
+import { FakeHostSessionManager, hostRecord } from './LocalTestFixtures';
 import { describe, it, expect } from '@ohos/hypium';
 import { RemoteI18n } from '../main/ets/i18n/RemoteI18n';
 import { ChatSessionController, ChatSessionSnapshot } from '../main/ets/services/ChatSessionController';
@@ -3015,7 +3015,7 @@ export default function remoteControllersUnitTest() {
 
   describe('ChatSessionController', () => {
     it('ignores durable records delivered after observer stop', 0, async () => {
-      const manager = new FakeDurableSessionManager();
+      const manager = new FakeHostSessionManager();
       const snapshots: ChatSessionSnapshot[] = [];
       const controller = new ChatSessionController(manager, {
         onSnapshot: (value: ChatSessionSnapshot) => { snapshots.push(value); },
@@ -3023,21 +3023,21 @@ export default function remoteControllersUnitTest() {
       });
       controller.start('session', { pollVersion: 0, knownMessageCount: 0, knownModelCatalogVersion: 0 });
       controller.stop();
-      await manager.emit(durableRecord('session', 1, 'must not render'));
+      await manager.emit(hostRecord('session', 1, 'must not render'));
       expect(snapshots.length).assertEqual(0);
     });
     it('upserts a stable item through active and completed states without duplicate transcript rows', 0, async () => {
-      const manager = new FakeDurableSessionManager();
+      const manager = new FakeHostSessionManager();
       const snapshots: ChatSessionSnapshot[] = [];
       const controller = new ChatSessionController(manager, {
         onSnapshot: (value: ChatSessionSnapshot) => { snapshots.push(value); },
         onError: (_error: Object) => {}, canPoll: () => true
       });
       controller.start('session', { pollVersion: 0, knownMessageCount: 0, knownModelCatalogVersion: 0 });
-      await manager.emit(durableRecord('session', 1, 'partial'));
+      await manager.emit(hostRecord('session', 1, 'partial'));
       expect(snapshots[snapshots.length - 1].activeTurn?.text).assertEqual('partial');
-      await manager.emit(durableRecord('session', 2, 'complete', 'completed'));
-      await manager.emit(durableRecord('session', 1, 'stale'));
+      await manager.emit(hostRecord('session', 2, 'complete', 'completed'));
+      await manager.emit(hostRecord('session', 1, 'stale'));
       const latest = snapshots[snapshots.length - 1];
       expect(latest.activeTurn).assertUndefined();
       expect(latest.messageSnapshot?.length).assertEqual(2);

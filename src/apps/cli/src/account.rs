@@ -104,9 +104,8 @@ fn bounded_account_error(message: &str) -> String {
 
 /// CLI-owned routing effects injected into the shared Account Runtime.
 pub(crate) struct CliAccountRoutingHost {
-    publisher: RwLock<
-        Option<Arc<openbitfun_core::service::remote_connect::session_log::SessionPublisher>>,
-    >,
+    host_stream_hub:
+        RwLock<Option<Arc<openbitfun_core::service::remote_connect::host_stream::HostStreamHub>>>,
     self_ref: Weak<CliAccountRoutingHost>,
     runtime: OnceLock<Weak<AccountRuntime>>,
     relay_client: RwLock<Option<Arc<RelayClient>>>,
@@ -121,7 +120,7 @@ impl CliAccountRoutingHost {
     fn new() -> Arc<Self> {
         Arc::new_cyclic(|self_ref| Self {
             self_ref: self_ref.clone(),
-            publisher: RwLock::new(None),
+            host_stream_hub: RwLock::new(None),
             runtime: OnceLock::new(),
             relay_client: RwLock::new(None),
             lifecycle: Arc::new(RwLock::new(())),
@@ -129,10 +128,11 @@ impl CliAccountRoutingHost {
         })
     }
 
-    pub(crate) async fn session_publisher(
+    /// Host streams served to controllers while this device's routing is alive.
+    pub(crate) async fn host_stream_hub(
         &self,
-    ) -> Option<Arc<openbitfun_core::service::remote_connect::session_log::SessionPublisher>> {
-        self.publisher.read().await.clone()
+    ) -> Option<Arc<openbitfun_core::service::remote_connect::host_stream::HostStreamHub>> {
+        self.host_stream_hub.read().await.clone()
     }
 
     fn bind_runtime(&self, runtime: Weak<AccountRuntime>) {
@@ -229,8 +229,8 @@ impl CliAccountRoutingHost {
     }
 
     async fn stop_routing_locked(&self) {
-        if let Some(publisher) = self.publisher.write().await.take() {
-            publisher.close();
+        if let Some(hub) = self.host_stream_hub.write().await.take() {
+            hub.close();
         }
         if let Some(client) = self.relay_client.write().await.take() {
             client.disconnect().await;
@@ -360,15 +360,13 @@ impl CliAccountRoutingHost {
                             .routing_loop_is_current(account_generation, relay_client)
                             .await
                     {
-                        match openbitfun_core::service::remote_connect::session_log::SessionPublisher::start_for_host(
-                            session.user_id.clone(), device_id.clone(), relay_url.clone(), session.token.clone(),
-                        ).await {
-                            Ok(publisher) => {
-                                let publisher = Arc::new(publisher);
-                                openbitfun_core::service::remote_connect::start_session_interaction_publication(&publisher);
-                                if let Some(old) = self.publisher.write().await.replace(publisher) { old.close(); }
-                            }
-                            Err(error) => tracing::error!("Unable to start durable session publisher: {error}"),
+                        let hub = openbitfun_core::service::remote_connect::start_host_stream_hub(
+                            Arc::new(CliHostStreamNotifier {
+                                routing: self.self_ref.clone(),
+                            }),
+                        );
+                        if let Some(old) = self.host_stream_hub.write().await.replace(hub) {
+                            old.close();
                         }
                         if let Err(error) = session_store::save_session_with_device(
                             &session.token,
@@ -396,10 +394,14 @@ impl CliAccountRoutingHost {
                 {
                     return;
                 }
-                crate::peer_host::update_controller_presence(
-                    devices.into_iter().map(|device| device.device_id).collect(),
-                )
-                .await;
+                let online: Vec<String> =
+                    devices.into_iter().map(|device| device.device_id).collect();
+                // Presence is authoritative for who can still receive stream
+                // hints; a device that dropped off stops holding streams alive.
+                if let Some(hub) = self.host_stream_hub().await {
+                    hub.retain_online(&online);
+                }
+                crate::peer_host::update_controller_presence(online).await;
             }
             RelayEvent::DeviceMessageReceived {
                 source_device_id,
@@ -451,39 +453,31 @@ impl CliAccountRoutingHost {
                         return;
                     }
                 };
-                let response = match &command {
-                    RemoteCommand::GetSessionKey { session_id } => {
-                        let result=async {
-                            let publisher=self.session_publisher().await.ok_or_else(||anyhow::anyhow!("Session publisher unavailable"))?;
-                            if session_id != openbitfun_core::service::remote_connect::session_log::HOST_CATALOG_ID && !session_id.starts_with("terminal-") {
-                                openbitfun_core::service::remote_connect::synchronize_session_records(&publisher,session_id).await.map_err(anyhow::Error::msg)?;
+                // Host streams are answered from this host's memory for the
+                // requesting device; every other command goes to the dispatcher.
+                let hub = self.host_stream_hub().await;
+                let response =
+                    match openbitfun_core::service::remote_connect::handle_host_stream_command(
+                        hub.as_ref(),
+                        &source_device_id,
+                        &command,
+                    )
+                    .await
+                    {
+                        Some(response) => response,
+                        None => match &command {
+                            RemoteCommand::HostInvoke { command, args } => {
+                                crate::peer_host::handle_host_invoke(command, args.clone()).await
                             }
-                            let session_id=session_id.clone();let account=session.user_id.clone();
-                            tokio::task::spawn_blocking(move || -> Result<(String,String)> {
-                                let device=DeviceIdentity::from_current_machine()?;
-                                let log=openbitfun_core::service::remote_connect::session_log::SessionLog::existing_for_host(&account,&device.device_id,&session_id)?;
-                                Ok((log.relay_session_id(),log.key_grant()?))
-                            }).await?
-                        }.await;
-                        match result {
-                            Ok((relay_session_id, key)) => RemoteResponse::SessionKey {
-                                session_id: session_id.clone(),
-                                relay_session_id,
-                                key,
-                            },
-                            Err(error) => RemoteResponse::Error {
-                                message: error.to_string(),
-                            },
-                        }
-                    }
-                    RemoteCommand::HostInvoke { command, args } => {
-                        crate::peer_host::handle_host_invoke(command, args.clone()).await
-                    }
-                    RemoteCommand::DeviceEvent { .. } => {
-                        crate::peer_host::handle_device_event_command()
-                    }
-                    other => RemoteServer::new(peer_key).dispatch(other).await,
-                };
+                            RemoteCommand::DeviceEvent { event, payload } => {
+                                // A host is also a controller of its peers: stream
+                                // hints addressed to this device feed local subscribers.
+                                session.deliver_device_event(&source_device_id, event, payload);
+                                crate::peer_host::handle_device_event_command()
+                            }
+                            other => RemoteServer::new(peer_key).dispatch(other).await,
+                        },
+                    };
                 if !self
                     .routing_loop_is_current(account_generation, relay_client)
                     .await
@@ -730,6 +724,72 @@ pub(crate) struct PeerFanoutLease {
     pub(crate) session: AccountSession,
     pub(crate) relay_url: String,
     pub(crate) relay_client: Arc<RelayClient>,
+}
+
+/// Delivers host stream hints as encrypted `DeviceEvent`s to the one device
+/// that subscribed, attached Peer controller or not. Only the stream id, epoch
+/// and cursor travel; the controller reads content back over RPC.
+struct CliHostStreamNotifier {
+    routing: Weak<CliAccountRoutingHost>,
+}
+
+impl openbitfun_core::service::remote_connect::host_stream::HostStreamNotifier
+    for CliHostStreamNotifier
+{
+    fn notify(&self, target_device_id: &str, payload: serde_json::Value) {
+        let Some(routing) = self.routing.upgrade() else {
+            return;
+        };
+        let target = target_device_id.to_owned();
+        tokio::spawn(async move {
+            let owner = match routing.capture_peer_fanout_owner().await {
+                Ok(owner) => owner,
+                Err(error) => {
+                    tracing::debug!("Host stream hint skipped: {error}");
+                    return;
+                }
+            };
+            let lease = match acquire_peer_fanout_lease(&owner) {
+                Ok(lease) => lease,
+                Err(error) => {
+                    tracing::debug!("Host stream hint skipped: {error}");
+                    return;
+                }
+            };
+            use openbitfun_core::service::remote_connect::remote_server::RemoteCommand;
+            let envelope = match serde_json::to_string(&RemoteCommand::DeviceEvent {
+                event:
+                    openbitfun_core::service::remote_connect::host_stream::HOST_STREAM_CHANGED_EVENT
+                        .to_owned(),
+                payload,
+            }) {
+                Ok(envelope) => envelope,
+                Err(error) => {
+                    tracing::warn!("Host stream hint serialization failed: {error}");
+                    return;
+                }
+            };
+            let (encrypted_data, nonce) = match lease
+                .session
+                .encrypt_for_peer(&lease.relay_url, &target, &envelope)
+                .await
+            {
+                Ok(encrypted) => encrypted,
+                Err(error) => {
+                    tracing::warn!("Host stream hint encryption failed: {error}");
+                    return;
+                }
+            };
+            let correlation_id = uuid::Uuid::new_v4().to_string();
+            if let Err(error) = lease
+                .relay_client
+                .send_device_message(&target, &correlation_id, &encrypted_data, &nonce)
+                .await
+            {
+                tracing::debug!("Host stream hint to {target} failed: {error}");
+            }
+        });
+    }
 }
 
 pub(crate) fn acquire_peer_fanout_lease(owner: &PeerFanoutOwner) -> Result<PeerFanoutLease> {

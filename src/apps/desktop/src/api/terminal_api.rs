@@ -373,7 +373,7 @@ fn notify_terminal_replay(session_id: &str) {
                     .unwrap_or_else(|e| e.into_inner())
                     .drain()
                     .collect();
-                let Some(publisher) = super::remote_connect_api::session_publisher().await else {
+                let Some(hub) = super::remote_connect_api::host_stream_hub().await else {
                     continue;
                 };
                 for id in ids {
@@ -388,7 +388,7 @@ fn notify_terminal_replay(session_id: &str) {
                             cursor = api.session_manager().replay_cursor(&id).await;
                         }
                     }
-                    if let Err(error) = publisher
+                    if let Err(error) = hub
                         .append(
                             format!("terminal-{id}"),
                             "terminal-output".into(),
@@ -396,7 +396,7 @@ fn notify_terminal_replay(session_id: &str) {
                         )
                         .await
                     {
-                        warn!("Failed to publish terminal notification: {}", error);
+                        warn!("Failed to publish terminal stream notification: {}", error);
                     }
                 }
             }
@@ -411,15 +411,14 @@ fn notify_terminal_replay(session_id: &str) {
 }
 
 async fn register_terminal_stream(id: &str) -> Result<(), String> {
-    if let Some(publisher) = super::remote_connect_api::session_publisher().await {
-        publisher
-            .append(
-                format!("terminal-{id}"),
-                "terminal-created".into(),
-                serde_json::json!({"terminal_id":id}),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
+    if let Some(hub) = super::remote_connect_api::host_stream_hub().await {
+        hub.append(
+            format!("terminal-{id}"),
+            "terminal-created".into(),
+            serde_json::json!({"terminal_id":id}),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
     }
     Ok(())
 }

@@ -42,10 +42,17 @@ public sealed interface RelayFailure {
      * than invented here.
      */
     public data class RemoteRejected(val message: String?) : RelayFailure
+
+    /**
+     * The desktop runs an OpenBitFun version without `read_stream`, so its
+     * sessions cannot be streamed on demand. Only updating that device helps;
+     * nothing is retried here.
+     */
+    public data object HostStreamUnsupported : RelayFailure
 }
 
 /** Thrown by every transport entry point; carries a [failure] the UI can switch on. */
-public class RelayTransportException(
+public open class RelayTransportException(
     public val failure: RelayFailure,
     cause: Throwable? = null,
 ) : Exception(failure.toString(), cause)

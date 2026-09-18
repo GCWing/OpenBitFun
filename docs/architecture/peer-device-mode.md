@@ -94,20 +94,44 @@ rendered, local included.
 ### Running-Turn attachment
 
 Desktop and CLI own a durable session journal independently of attached
-controllers. The publisher emits `session-record` updates carrying the existing
-persisted Turn, ModelRound and item contracts, stable record IDs, revisions and
-tombstones. Controllers merge the highest revision for each identity; an older
-child record cannot regress a completed parent. Text, thinking and tool-body
-content have this one authority. Permission and other control events remain
-separate from transcript content.
+controllers. `HostStreamHub` (`services-integrations::remote_connect::host_stream`)
+publishes `session-record` events carrying the existing persisted Turn,
+ModelRound and item contracts, stable record IDs, revisions and tombstones into
+an in-memory, per-stream, byte-bounded log on the host. Controllers merge the
+highest revision for each identity; an older child record cannot regress a
+completed parent. Text, thinking and tool-body content have this one authority.
+Permission and other control events remain separate from transcript content.
 
-`SessionSubscriber` and `SessionStream` initially load the latest bounded page,
-complete any fragment crossing the page boundary, and replay older pages through
-the same replica. Contiguous WebSocket records are applied directly; reconnects
-and sequence gaps fetch only the missing range. Backward pagination does not
-move the forward receive cursor. The Surface epoch rejects records and responses
-from a device that is no longer rendered. Desktop `RelaySessionHistory` owns the
-subscription across initial loading, realtime delivery and older-page prefetch.
+The relay stores none of this. A controller opens a stream with the
+`read_stream` device RPC (`{stream_id, after|before, epoch, subscribe}`), which
+answers a `stream_page` with `epoch`, `cursor`, `events`, `has_more` and
+`oldest_seq`; `unsubscribe_stream` releases the hint lease. While subscribed,
+the host fans out an encrypted `host-stream-changed` device event naming only
+the stream id, epoch and newest sequence; controllers treat it as a nudge and
+read the missing range themselves. The catalog is the `@host/catalog` stream,
+terminals are `terminal-<id>`. Every page and hint is pairwise-encrypted
+between the two devices and forwarded by the relay without persistence, so an
+offline host has no history to show and nothing about a session leaves the
+account's devices.
+
+`HostStreamSubscriber` (Rust) and `HostStream`/`HostSessionStream` (Web,
+Kotlin, ArkTS) load the latest bounded page first, replay older pages backward
+without moving the forward cursor, and catch up forward on hints, reconnects
+and a keepalive renewal. A page whose `epoch` differs from the one being
+followed means the host restarted the stream: the client announces a gap so
+consumers drop derived state, then resyncs from the latest page. Nothing is
+cached on the controller beyond the rendered replica. The Surface epoch rejects
+records and responses from a device that is no longer rendered. Desktop
+`RelaySessionHistory` owns the subscription across initial loading, realtime
+delivery and older-page prefetch.
+
+Version skew is negotiated, not assumed. Hosts advertise `host_stream_v1` in
+their handshake `capabilities`; a controller that does not see it reports the
+host as too old instead of sending `read_stream`, and a host that receives the
+retired `get_session_key` command answers an explicit error pointing at the
+upgrade. A relay from before this change still emits session `update` frames,
+which new clients ignore; the current relay answers the retired
+`/v1/sessions` and `/v3/sessions/{id}/messages` routes with `410 Gone`.
 
 Remote session loading does not combine a full `restore_session_view` response
 with token deltas, and the former 3s reconciliation poll is not a Relay history
@@ -180,6 +204,20 @@ deduped); cloud changes are pulled at process start and then every ~30s. After
 applying or uploading settings, a host fans out `account://settings-applied`
 to attached controllers; the controller re-emits it locally so the frontend
 config cache and model selectors refresh without reconnecting.
+
+The opened/recent workspace catalog is host-owned in the same way. Whenever a
+host's `WorkspaceService` persists a catalog change — including one made by a
+mobile controller, an IM bot, or a Peer Mode controller through
+`set_workspace` / `create_session` — `start_workspace_catalog_publication`
+emits a `workspace-catalog-changed` hint (payload: `{ revision }`, no catalog
+data). The host's own webview re-reads `get_opened_workspaces` /
+`get_recent_workspaces` / `get_current_workspace` on that hint so a workspace
+another surface opened appears in its list without a manual open; the hint is
+also fanned out to attached controllers (Desktop through
+`should_fanout_peer_ui_event`, CLI through `PeerControllerEventEmitter`) and is
+surface-scoped on the controller, so only the rendered device's catalog is
+re-read. A surface never lets a host-side selection change steal its active
+workspace unless it had no usable selection.
 
 The account settings payload is the complete `ConfigExport.config` document,
 not a whitelist assembled by the login UI. Its scope is:

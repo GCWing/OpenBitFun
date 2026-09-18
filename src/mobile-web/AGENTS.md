@@ -39,6 +39,7 @@ Mobile web is the browser-based remote control client for OpenBitFun desktop ses
 | Pairing | `src/pages/PairingPage.tsx`, `src/services/RelayHttpClient.ts` |
 | Session list | `src/pages/SessionListPage.tsx`, `src/services/store.ts` |
 | Chat | `src/pages/ChatPage.tsx`, `src/services/RemoteSessionManager.ts` |
+| Session content (host streams) | `src/services/SessionSynchronizer.ts`, `src/services/RelayHttpClient.ts`, `src/shared/relay-transport/HostStream.ts` — pages are read from the online desktop via `read_stream`; the relay stores nothing and the phone caches nothing |
 | Connection health / reconnect | `src/App.tsx`, `src/services/RemoteSessionManager.ts`, `src/services/store.ts` |
 | Styles | `src/styles/`, `src/theme/` |
 | Messages | `src/i18n/messages.ts` |
@@ -52,8 +53,8 @@ pnpm --dir src/mobile-web run test:runtime-files # streaming file sinks and resu
 pnpm --dir src/mobile-web run test:interaction-mailbox # independent question/permission owner
 pnpm --dir src/mobile-web run test:terminal-browser # real xterm keyboard, ANSI and native bridge
 pnpm --dir src/mobile-web run test:ui-components
-pnpm --dir src/mobile-web run test:session-stream-browser # real IndexedDB latest/backward pages and visibility catch-up
-pnpm --dir src/mobile-web run test:realtime-sync # ordered live updates, gap recovery, replica failures
+pnpm --dir src/mobile-web run test:session-stream-browser # host-driven latest/backward pages, hints, restart gaps, no relay history routes
+pnpm --dir src/mobile-web run test:host-stream # HostStream reader: hints, reconnects, host restart, unsupported hosts; catalog subscription
 pnpm --dir src/mobile-web run test:account-login # account login without an online desktop
 pnpm --dir src/mobile-web run test:account-browser # real Chrome tabs, persistence, migration, races; simulated Relay
 pnpm --dir src/mobile-web run test:images # image preparation and upload limits

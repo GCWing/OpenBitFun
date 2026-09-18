@@ -15,7 +15,7 @@ test('workspace terminal renders ANSI, sends keyboard input and resizes the cont
     if(command==='terminal_create')return{id:'pty'};
     if(command==='terminal_get_history')return{data:request.afterOffset===0?'alpha\r\x1b[31mOMEGA\x1b[0m':'',nextOffset:5,cursor:5,truncated:false};
     return null;
-   },subscribeSessionStream:async(id,onEvent,onError,onCaughtUp)=>{
+   },subscribeSessionStream:async(id,{onCaughtUp})=>{
     setTimeout(onCaughtUp,0);return{close:()=>calls.push({command:'stream-close'}),wake(){},async loadOlder(){}};
    }};
    document.body.innerHTML='<div id="terminal-test" style="width:700px"></div>';

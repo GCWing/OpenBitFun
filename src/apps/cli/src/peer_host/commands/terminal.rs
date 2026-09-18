@@ -65,11 +65,11 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
         // can open a terminal before any workspace has been registered.
         explicit.filter(|id| !id.is_empty())
     };
-    let publisher = state
+    let hub = state
         .account_routing
-        .session_publisher()
+        .host_stream_hub()
         .await
-        .ok_or("Account realtime publisher is unavailable")?;
+        .ok_or("Account host streams are unavailable")?;
     if let Some(connection) = connection {
         let services = openbitfun_core::service::remote_ssh::workspace_state::ensure_saved_connection_services().await?;
         let ssh = services
@@ -112,14 +112,13 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
             )
             .await
             .map_err(|e| e.to_string())?;
-        publisher
-            .append(
-                format!("terminal-{id}"),
-                "terminal-created".into(),
-                json!({"terminal_id":id}),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
+        hub.append(
+            format!("terminal-{id}"),
+            "terminal-created".into(),
+            json!({"terminal_id":id}),
+        )
+        .await
+        .map_err(|e| e.to_string())?;
         let mut created = created;
         manager
             .set_workspace_id(&created.session.id, workspace_id.clone())
@@ -128,7 +127,7 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
         let result = response(created.session);
         let mut rx = created.output_rx;
         tokio::spawn(async move {
-            let mut closed = publisher.subscribe_closed();
+            let mut closed = hub.subscribe_closed();
             loop {
                 if *closed.borrow() {
                     break;
@@ -147,7 +146,7 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
                 let Some(cursor) = manager.replay_cursor(&id).await else {
                     break;
                 };
-                if publisher
+                if hub
                     .append(
                         format!("terminal-{id}"),
                         "terminal-output".into(),
@@ -190,16 +189,15 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
             .map_err(|e| e.to_string())?;
         session.workspace_id = Some(workspace_id);
     }
-    publisher
-        .append(
-            format!("terminal-{id}"),
-            "terminal-created".into(),
-            json!({"terminal_id":id}),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+    hub.append(
+        format!("terminal-{id}"),
+        "terminal-created".into(),
+        json!({"terminal_id":id}),
+    )
+    .await
+    .map_err(|e| e.to_string())?;
     tokio::spawn(async move {
-        let mut closed = publisher.subscribe_closed();
+        let mut closed = hub.subscribe_closed();
         loop {
             if *closed.borrow() {
                 break;
@@ -214,7 +212,7 @@ pub(crate) async fn create(state: &PeerHostState, args: &Value) -> Result<Value,
                 break;
             }
             let cursor = *rx.borrow_and_update();
-            if publisher
+            if hub
                 .append(
                     format!("terminal-{id}"),
                     "terminal-output".into(),

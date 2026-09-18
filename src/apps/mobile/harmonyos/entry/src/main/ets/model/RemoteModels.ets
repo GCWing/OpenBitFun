@@ -167,6 +167,13 @@ export interface RemoteCommand {
   device_id?: string;
   device_name?: string;
   request_id?: string;
+  // read_stream / unsubscribe_stream: host-owned stream pages read on demand
+  // from the online desktop (`remote_connect/host_stream.rs`).
+  stream_id?: string;
+  after?: number;
+  before?: number;
+  epoch?: number;
+  subscribe?: boolean;
 }
 
 export interface PairChallengeResponse {

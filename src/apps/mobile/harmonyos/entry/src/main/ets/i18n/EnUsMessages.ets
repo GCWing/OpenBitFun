@@ -694,6 +694,7 @@ export const EN_US_MESSAGES: [string, string][] = [
   ['errors.operationFailed', 'The operation failed. Try again later.'],
   ['errors.payloadTooLarge', 'This message’s attachments exceed the relay size limit. Send fewer images or smaller ones.'],
   ['errors.workspaceIdUnsupported', 'The connected desktop does not support workspace ID references. Update the desktop app to open this workspace.'],
+  ['errors.hostStreamUnsupported', 'The connected desktop runs an older OpenBitFun version that does not support on-demand session streaming. Update OpenBitFun on that device to continue.'],
   ['errors.imageTooLargeAfterCompression', 'The image is still larger than {0} MB after compression. Choose a smaller image.'],
   ['errors.imageCompressionFailed', 'Image compression failed. Choose a smaller image.'],
   ['errors.voicePermissionDenied', 'Microphone permission was denied, so voice input is unavailable.'],

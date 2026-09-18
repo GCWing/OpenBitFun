@@ -12,7 +12,7 @@ use openbitfun_core::service::workspace::{self, WorkspaceService};
 
 use crate::runtime::CliRuntimeContext;
 
-use super::fanout::start_peer_event_fanout;
+use super::fanout::{start_peer_event_fanout, PeerControllerEventEmitter};
 use super::state::{set_peer_host_state, try_peer_host_state, PeerHostState, PeerTurnTracker};
 
 /// Ensure Peer Host services are ready. Idempotent.
@@ -77,6 +77,9 @@ pub(crate) async fn ensure_peer_host_ready(runtime: &CliRuntimeContext) -> Resul
     }
 
     start_peer_event_fanout(state, agent_events);
+    // A mobile controller or IM bot that opens a workspace on this host changes
+    // the catalog an attached Desktop controller renders; mirror the hint.
+    workspace::start_workspace_catalog_publication(Arc::new(PeerControllerEventEmitter));
     tracing::info!("CLI peer host services ready");
     Ok(())
 }

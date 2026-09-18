@@ -27,7 +27,6 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.*
 import kotlinx.coroutines.flow.*
 import com.openbitfun.mobile.core.transport.RemoteSessionStreamTransport
-import com.openbitfun.mobile.core.transport.SessionStreamReplica
 import kotlinx.serialization.DeserializationStrategy
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
@@ -428,7 +427,7 @@ private class MemoryPersistence {
     val drafts = MemoryDrafts()
     val sessions = MemorySessions()
     val transcripts = MemoryTranscripts()
-    val stores = MobilePersistenceStores(drafts, NoOpChats(), sessions, transcripts, relayStreams = TestRelayStreamStore())
+    val stores = MobilePersistenceStores(drafts, NoOpChats(), sessions, transcripts)
 }
 
 private class MemoryDrafts : DraftStore {
@@ -486,13 +485,12 @@ private class MemoryTranscripts : RemoteTranscriptStore {
 }
 
 private class PersistenceTransport : RemoteCommandTransport, RemoteSessionStreamTransport {
-    override val streamIdentity = "test/device-a"
     var initialRecords = emptyList<JsonObject>()
     val records = MutableSharedFlow<JsonObject>(extraBufferCapacity = 10)
     var streamFailure: ((Throwable) -> Unit)? = null
     var caughtUp: (() -> Unit)? = null
     var subscriptions = 0
-    override suspend fun subscribe(sessionId: String, replica: SessionStreamReplica, onError: (Throwable) -> Unit, onCaughtUp: () -> Unit): Flow<JsonObject> = flow {
+    override suspend fun subscribe(sessionId: String, onError: (Throwable) -> Unit, onCaughtUp: () -> Unit): Flow<JsonObject> = flow {
         subscriptions++
         streamFailure = onError; caughtUp = onCaughtUp
         initialRecords.forEach { emit(it) }
@@ -524,7 +522,7 @@ private class PersistenceTransport : RemoteCommandTransport, RemoteSessionStream
             pollFailure?.let { throw RelayTransportException(it) }
         }
         val json = when (command.cmd) {
-            "get_workspace_info" -> "{\"resp\":\"ok\",\"path\":\"/repo\"}"
+            "get_workspace_info" -> "{\"resp\":\"ok\",\"path\":\"/repo\",\"capabilities\":[\"host_stream_v1\"]}"
             "create_session" -> "{\"resp\":\"ok\",\"session_id\":\"created\",\"title\":\"Created\"}"
             "set_session_model" -> "{\"resp\":\"ok\",\"model_id\":\"model-primary\"}"
             "list_sessions" -> "{\"resp\":\"ok\",\"sessions\":$sessionsJson,\"has_more\":$hasMore}"

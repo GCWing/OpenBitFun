@@ -1,5 +1,5 @@
 import { WorkspaceCatalog, mergeLegacyWorkspaces } from '../main/ets/services/WorkspaceCatalog';
-import { DurableSessionStream, DurableSessionCallbacks, DurableSessionEvent, DurableSessionSource, SessionKeyGrant } from '../main/ets/services/DurableSessionStream';
+import { HostSessionStream, HostSessionCallbacks, HostSessionEvent, HostSessionSource, HostStreamPage } from '../main/ets/services/HostSessionStream';
 import { SessionRecord } from '../main/ets/services/DurableSessionReducer';
 import { SavedRuntimeConnection } from '../main/ets/model/RemoteModels';
 import { describe, it, expect } from '@ohos/hypium';
@@ -1383,23 +1383,23 @@ export class FakeGeneralChatConfigStore extends GeneralChatConfigStore {
   }
 }
 
-export class FakeDurableSessionManager extends RemoteSessionManager {
-  callbacks?: DurableSessionCallbacks;
-  subscribeSession(logicalId: string, callbacks: DurableSessionCallbacks): DurableSessionStream {
+export class FakeHostSessionManager extends RemoteSessionManager {
+  callbacks?: HostSessionCallbacks;
+  subscribeSession(logicalId: string, callbacks: HostSessionCallbacks): HostSessionStream {
     this.callbacks = callbacks;
-    const source: DurableSessionSource = {
-      grant: () => new Promise<SessionKeyGrant>(() => {}),
-      read: async () => ({ messages: [], hasMore: false }),
-      decrypt: async (): Promise<DurableSessionEvent> => { throw new Error('Unexpected decrypt in lifecycle fixture'); },
-      onUpdate: () => () => {}, onReconnect: () => () => {}
+    const source: HostSessionSource = {
+      target: 'fixture-host',
+      read: () => new Promise<HostStreamPage>(() => {}),
+      unsubscribe: async (): Promise<void> => {},
+      onHint: () => () => {}, onReconnect: () => () => {}
     };
-    return new DurableSessionStream(logicalId, source, callbacks);
+    return new HostSessionStream(logicalId, source, callbacks);
   }
-  async emit(event: DurableSessionEvent): Promise<void> {
+  async emit(event: HostSessionEvent): Promise<void> {
     await this.callbacks?.onEvent(event); await this.callbacks?.onCaughtUp();
   }
 }
-export function durableRecord(sessionId: string, revision: number, text: string, status: string = 'inprogress'): DurableSessionEvent {
+export function hostRecord(sessionId: string, revision: number, text: string, status: string = 'inprogress'): HostSessionEvent {
   const record: SessionRecord = { sessionId: sessionId, id: 'item/text', revision: revision,
     turn: { sessionId: sessionId, turnId: 'turn', turnIndex: 0, timestamp: 1,
       userMessage: { id: 'user', content: 'question', timestamp: 1 }, status: status },

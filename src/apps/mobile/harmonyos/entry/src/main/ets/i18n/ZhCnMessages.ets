@@ -694,6 +694,7 @@ export const ZH_CN_MESSAGES: [string, string][] = [
   ['errors.operationFailed', '操作失败，请稍后重试。'],
   ['errors.payloadTooLarge', '这条消息带的附件超过了中继允许的大小，请减少图片数量或选择更小的图片。'],
   ['errors.workspaceIdUnsupported', '已连接的桌面端不支持按工作区 ID 引用。请升级桌面端后再打开该工作区。'],
+  ['errors.hostStreamUnsupported', '已连接的桌面端 OpenBitFun 版本过旧，不支持按需会话流。请升级该设备上的 OpenBitFun 后继续。'],
   ['errors.imageTooLargeAfterCompression', '图片压缩后仍超过 {0} MB，请选择较小图片。'],
   ['errors.imageCompressionFailed', '图片压缩失败，请选择较小图片。'],
   ['errors.voicePermissionDenied', '没有获得麦克风权限，无法语音输入。'],

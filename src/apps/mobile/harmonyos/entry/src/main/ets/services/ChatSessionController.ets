@@ -1,7 +1,7 @@
 import { InteractionMailboxStore } from './InteractionMailboxStore';
 import { InteractionMailboxAction, InteractionMailboxState } from '../model/InteractionMailbox';
 import { DurableSessionReducer } from './DurableSessionReducer';
-import { DurableSessionStream, DurableSessionEvent } from './DurableSessionStream';
+import { HostSessionStream, HostSessionEvent } from './HostSessionStream';
 import {
   ChatMessage,
   RemoteModelCatalog
@@ -57,7 +57,7 @@ export class ChatSessionController {
   private callbacks: ChatSessionControllerCallbacks;
   private sessionId: string = '';
   private cursor: ChatSessionCursor = { pollVersion: 0, knownMessageCount: 0, knownModelCatalogVersion: 0 };
-  private stream?: DurableSessionStream;
+  private stream?: HostSessionStream;
   private reducer: DurableSessionReducer = new DurableSessionReducer();
   private mailbox: InteractionMailboxStore;
   private generation: number = 0;
@@ -89,7 +89,7 @@ export class ChatSessionController {
     void this.loadInitialModelCatalog(sessionId, epoch);
     try {
       this.stream = this.sessionManager.subscribeSession(sessionId, {
-        onEvent: async (event: DurableSessionEvent): Promise<void> => {
+        onEvent: async (event: HostSessionEvent): Promise<void> => {
           if (!this.current(epoch) || event.session_id !== sessionId) return;
           // Mailbox RPCs are independently coalesced and generation-fenced. They
           // must not delay the serial transcript stream or its durable cursor.
@@ -98,6 +98,12 @@ export class ChatSessionController {
           if (this.caughtUp) this.publish();
         },
         onResumed: async (): Promise<void> => { if (this.current(epoch)) void this.mailbox.refresh(); },
+        onGap: async (): Promise<void> => {
+          // The desktop restarted the stream: everything reduced so far came
+          // from its previous epoch and is replayed from the latest page.
+          if (!this.current(epoch)) return;
+          this.reducer = new DurableSessionReducer(); this.hasMoreMessages = false;
+        },
         onCaughtUp: async (): Promise<void> => {
           if (!this.current(epoch)) return;
           this.caughtUp = true; this.publish();

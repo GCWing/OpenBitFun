@@ -1,5 +1,5 @@
 import { ChatMessage, ChatMessageItemResponse, RemoteToolStatusResponse, ImageAttachment } from '../model/RemoteModels';
-import { DurableSessionEvent } from './DurableSessionStream';
+import { HostSessionEvent } from './HostSessionStream';
 
 interface UserMetadata { original_text?: string; images?: ImageAttachment[]; }
 interface UserRecord { id: string; content: string; timestamp: number; metadata?: Object; }
@@ -28,7 +28,7 @@ export class DurableSessionReducer {
   private turns: Map<string, StoredTurn> = new Map();
   private rounds: Map<string, StoredRound> = new Map();
   private items: Map<string, StoredItem> = new Map();
-  apply(event: DurableSessionEvent): boolean {
+  apply(event: HostSessionEvent): boolean {
     if (event.event !== 'session-record') return false;
     const record = event.payload as SessionRecord;
     if (record.sessionId !== event.session_id || !record.id || !Number.isSafeInteger(record.revision) || record.revision < 1) throw new Error('Invalid session record identity');

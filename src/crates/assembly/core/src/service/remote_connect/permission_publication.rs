@@ -2,9 +2,9 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use super::session_log::SessionPublisher;
+use super::host_stream::HostStreamHub;
 
-pub(super) fn start(publisher: &Arc<SessionPublisher>) {
+pub(super) fn start(hub: &Arc<HostStreamHub>) {
     let manager = match crate::product_runtime::core_permission_request_manager() {
         Ok(manager) => manager,
         Err(error) => {
@@ -14,8 +14,8 @@ pub(super) fn start(publisher: &Arc<SessionPublisher>) {
     };
     // Subscribe before taking the initial snapshot so startup cannot miss a request.
     let mut changes = manager.subscribe();
-    let mut closed = publisher.subscribe_closed();
-    let weak = Arc::downgrade(publisher);
+    let mut closed = hub.subscribe_closed();
+    let weak = Arc::downgrade(hub);
     tokio::spawn(async move {
         let mut previous = BTreeSet::new();
         loop {
@@ -29,7 +29,7 @@ pub(super) fn start(publisher: &Arc<SessionPublisher>) {
                 .map(|request| request.session_id.clone())
                 .collect();
             let sessions = affected_sessions(&previous, &current);
-            let Some(publisher) = weak.upgrade() else {
+            let Some(hub) = weak.upgrade() else {
                 break;
             };
             let events = sessions.into_iter().map(|session_id| {
@@ -40,12 +40,12 @@ pub(super) fn start(publisher: &Arc<SessionPublisher>) {
                 tokio::select! {
                     biased;
                     _ = closed.changed() => break,
-                    result = publisher.append_batch(events) => if let Err(error) = result {
-                        log::error!("Unable to persist permission mailbox invalidation: {error}");
+                    result = hub.append_batch(events) => if let Err(error) = result {
+                        log::error!("Unable to publish permission mailbox invalidation: {error}");
                     }
                 }
             }
-            drop(publisher);
+            drop(hub);
             previous = current;
             tokio::select! {
                 biased;
@@ -61,7 +61,7 @@ pub(super) fn start(publisher: &Arc<SessionPublisher>) {
 
 // Removed requests must invalidate their old session too. Rebuilding from the
 // live snapshot on every notification also recovers from a lagged broadcast;
-// no request payloads or credentials are copied into the durable session log.
+// no request payloads or credentials are copied into the host stream.
 fn affected_sessions(previous: &BTreeSet<String>, current: &BTreeSet<String>) -> BTreeSet<String> {
     previous
         .union(current)

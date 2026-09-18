@@ -373,6 +373,7 @@
     <string name="sessions_failed_protocol_mismatch">The desktop answered in a format this app does not understand. Update OpenBitFun on the desktop.</string>
     <string name="sessions_failed_session_not_found">That session is no longer on the desktop.</string>
     <string name="sessions_failed_workspace_id_unsupported">The desktop does not support selecting workspaces by ID. Update OpenBitFun on the desktop.</string>
+    <string name="sessions_failed_host_stream_unsupported">The desktop runs an older OpenBitFun version that does not support on-demand session streaming. Update OpenBitFun on the desktop to continue.</string>
     <string name="sessions_failed_workspace_id_unknown">The desktop no longer has this workspace.</string>
     <!-- 8.3 conversation surface -->
     <string name="conversation_back">Back to sessions</string>

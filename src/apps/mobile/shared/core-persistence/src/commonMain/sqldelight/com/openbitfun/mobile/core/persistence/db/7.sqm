@@ -1,0 +1,8 @@
+-- v7 -> v8: relay stream replicas are retired.
+--
+-- Session, terminal and host-catalog streams are now read on demand from the
+-- online desktop over encrypted device RPC; neither the relay nor this device
+-- keeps a copy. The v5 replica tables held decrypted stream fragments, so they
+-- are dropped rather than left behind.
+DROP TABLE IF EXISTS relay_stream_fragment;
+DROP TABLE IF EXISTS relay_stream_cursor;

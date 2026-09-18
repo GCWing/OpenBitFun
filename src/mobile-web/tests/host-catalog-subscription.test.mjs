@@ -11,14 +11,16 @@ const load = (file, dependencies = {}) => {
   return exported;
 };
 const { InvalidationSync } = load('../../shared/relay-transport/InvalidationSync.ts');
+const { HOST_CATALOG_ID } = load('../../shared/relay-transport/HostStream.ts');
 const { subscribeHostCatalog } = load('../src/services/HostCatalogSubscription.ts', {
   '../../../shared/relay-transport/InvalidationSync': { InvalidationSync },
+  '../../../shared/relay-transport/HostStream': { HOST_CATALOG_ID },
 });
 const tick = () => new Promise(resolve => setImmediate(resolve));
 function fixture(read) {
   let callbacks, closed = false;
-  const source = { async subscribeSessionStream(id, event, error, caughtUp, history, resumed) {
-    assert.equal(id, '@host/catalog'); callbacks = {event, error, caughtUp, resumed};
+  const source = { async subscribeSessionStream(id, {onEvent: event, onError: error, onCaughtUp: caughtUp, onResumed: resumed, onGap: gap}) {
+    assert.equal(id, '@host/catalog'); callbacks = {event, error, caughtUp, resumed, gap};
     return {close(){closed = true;}, wake(){}, async loadOlder(){}};
   }};
   const errors = [];
@@ -47,6 +49,12 @@ test('target retirement closes a late key-grant subscription and suppresses old 
   const sub=subscribeHostCatalog(source,async()=>{reads++;},()=>{errors++;});
   sub.close(); resolveGrant({close(){closed++;},wake(){},async loadOlder(){}}); await tick();
   await sub.refresh(); assert.equal(closed,1); assert.equal(reads,0); assert.equal(errors,0);
+});
+test('a host restart marks the catalog dirty so the list is re-read, not trusted',async()=>{
+  let reads=0; const f=fixture(async()=>{reads++;});
+  f.callbacks.caughtUp(); await tick(); assert.equal(reads,1);
+  f.callbacks.gap('host stream restarted'); f.callbacks.caughtUp(); await tick(); assert.equal(reads,2);
+  f.subscription.close();
 });
 test('page uses catalog subscription without timer-based session requests',()=>{
   const page=fs.readFileSync(new URL('../src/pages/SessionListPage.tsx',import.meta.url),'utf8');

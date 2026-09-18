@@ -1,6 +1,6 @@
 import { WorkspaceCatalog, projectWorkspaceCatalog } from './WorkspaceCatalog';
 import { RuntimeFileLocation } from '../model/RemoteModels';
-import { DurableSessionCallbacks, DurableSessionStream } from './DurableSessionStream';
+import { HostSessionCallbacks, HostSessionStream, REMOTE_CAPABILITY_HOST_STREAM_V1 } from './HostSessionStream';
 import { SavedRuntimeConnection, SavedRuntimeConnectionsResponse } from '../model/RemoteModels';
 import { AssistantEntry, AssistantListResponse, ChatMessageItemResponse, ChatMessageResponse, CommandStatusResponse, CreateSessionOptions, CreateSessionResponse, FileInfo, FileInfoResponse, InitialSyncResult, ModelCatalogResponse, PermissionModeResponse, PollSessionResponse, PollSessionResult, ReadFileChunkResponse, ReadFileChunkResult, ReadFileResult, RecentWorkspaceEntry, RecentWorkspaceListResponse, RemoteCommand, RemoteImageContext, RemoteModelCatalog, RemotePermissionMode, RemoteQuestionAnswerPayload, RemoteSession, RemoteWorkspaceIdentity, REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1, SendMessageResponse, SessionListResponse, SessionListResult, SessionMessagesResponse, SessionMessagesResult, SessionSummary, SetAssistantResponse, SetSessionModelResponse, SetWorkspaceResponse, SteerTurnResponse, SteerTurnResult, WorkspaceInfo, WorkspaceInfoResponse } from '../model/RemoteModels';
 import { Encoding } from './Encoding';
@@ -45,10 +45,23 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
   /** Capabilities the connected host advertised in its handshake response. */
   private hostCapabilities: string[] = [];
 
-  subscribeSession(logicalId: string, callbacks: DurableSessionCallbacks): DurableSessionStream {
+  /**
+   * Opens a host-owned stream on the connected desktop. Pages are read from
+   * that desktop on demand and the relay stores none of them, so a host that
+   * predates `host_stream_v1` has nothing to answer with: refuse up front with
+   * the message the user can act on instead of probing it with a command it
+   * does not know.
+   */
+  subscribeSession(logicalId: string, callbacks: HostSessionCallbacks): HostSessionStream {
     const transport = this.transport;
     if (!transport?.subscribeSession) throw new Error('Remote session streaming is unavailable');
+    if (!this.supportsHostStreams()) throw new Error(RemoteI18n.t('errors.hostStreamUnsupported'));
     return transport.subscribeSession(logicalId, callbacks);
+  }
+
+  /** Whether the connected host serves `read_stream`, per its handshake `capabilities`. */
+  supportsHostStreams(): boolean {
+    return (this.hostCapabilities || []).indexOf(REMOTE_CAPABILITY_HOST_STREAM_V1) >= 0;
   }
 
   async hostInvoke<T>(command: string, args: Object): Promise<T> {

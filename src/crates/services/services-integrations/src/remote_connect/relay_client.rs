@@ -25,10 +25,6 @@ pub struct DevicePresenceEntry {
 }
 #[derive(Debug, Clone)]
 pub enum RelayEvent {
-    SessionUpdated {
-        relay_session_id: String,
-        message: serde_json::Value,
-    },
     Connected,
     Reconnected,
     Disconnected,
@@ -335,19 +331,9 @@ impl RelayClient {
                     true
                 }
             }
-            Incoming::Update(event) => {
-                if let Some(sid) = event.payload.0["body"]["sid"].as_str() {
-                    events
-                        .try_send(RelayEvent::SessionUpdated {
-                            relay_session_id: sid.to_owned(),
-                            message: event.payload.0["body"]["message"].clone(),
-                        })
-                        .is_ok()
-                } else {
-                    true
-                }
-            }
-            Incoming::AuthOk(_) | Incoming::Registered(_) => true,
+            // Relay-stored session updates are retired; an older relay may still
+            // emit them and they are ignored.
+            Incoming::Update(_) | Incoming::AuthOk(_) | Incoming::Registered(_) => true,
         }
     }
     pub async fn request_device(

@@ -844,6 +844,7 @@ private fun SessionFailure(state: RemoteSessionUiState.Failed, onRetry: () -> Un
                     RemoteSessionFailureReason.SESSION_NOT_FOUND -> R.string.sessions_failed_session_not_found
                     RemoteSessionFailureReason.WORKSPACE_ID_UNSUPPORTED -> R.string.sessions_failed_workspace_id_unsupported
                     RemoteSessionFailureReason.WORKSPACE_ID_UNKNOWN -> R.string.sessions_failed_workspace_id_unknown
+                    RemoteSessionFailureReason.HOST_STREAM_UNSUPPORTED -> R.string.sessions_failed_host_stream_unsupported
                     // Exhaustive on purpose rather than an `else`: every reason
                     // that reaches this screen was raised to say something
                     // specific, and a new one falling into the generic line is

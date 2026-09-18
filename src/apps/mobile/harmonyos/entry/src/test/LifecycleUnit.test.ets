@@ -1,4 +1,4 @@
-import { FakeDurableSessionManager, durableRecord } from './LocalTestFixtures';
+import { FakeHostSessionManager, hostRecord } from './LocalTestFixtures';
 import { describe, it, expect } from '@ohos/hypium';
 import { RemoteI18n } from '../main/ets/i18n/RemoteI18n';
 import { RemoteControlSettingsPagePolicy } from '../main/ets/pages/policy/RemoteControlSettingsPagePolicy';
@@ -513,14 +513,14 @@ export default function lifecycleUnitTest() {
 
   describe('RemoteChatPollingLifecycleController', () => {
     it('starts the active durable session subscription and forwards records', 0, async () => {
-      const manager = new FakeDurableSessionManager();
+      const manager = new FakeHostSessionManager();
       const snapshots: ChatSessionSnapshot[] = [];
       const controller = new RemoteChatPollingLifecycleController(manager, {
         onSnapshot: (snapshot: ChatSessionSnapshot) => { snapshots.push(snapshot); },
         onError: (_error: Object) => {}, canPoll: () => true
       });
       controller.startActiveSession({ sessionId: 'session-1', cursor: { pollVersion: 0, knownMessageCount: 0, knownModelCatalogVersion: 0 } });
-      await manager.emit(durableRecord('session-1', 1, 'Done', 'completed'));
+      await manager.emit(hostRecord('session-1', 1, 'Done', 'completed'));
       controller.stop();
       expect(snapshots.length).assertEqual(1);
       expect(snapshots[0].messageSnapshot?.[1].text).assertEqual('Done');

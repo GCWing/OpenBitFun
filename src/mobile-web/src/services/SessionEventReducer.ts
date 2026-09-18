@@ -1,5 +1,5 @@
 import type { ActiveTurnSnapshot, ChatMessage, ChatMessageItem, PollResponse } from './RemoteSessionManager';
-import type { SessionEvent } from '../../../shared/relay-transport/SessionCipher';
+import type { SessionEvent } from '../../../shared/relay-transport/HostStream';
 
 /** Presentation-only reduction of the runtime's durable typed event contract.
  * Reads and execution stay on the host. Transport sequence deduplication occurs

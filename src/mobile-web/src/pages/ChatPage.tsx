@@ -751,7 +751,10 @@ const ChatPage: React.FC<ChatPageProps> = ({
           ));
         }
         setActiveTurn(resp.active_turn ?? null);
-      }, initialCatalog?.version || 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); });
+      }, initialCatalog?.version || 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); },
+      // Stream failures are stated, not hidden: an older host or a lost
+      // connection shows up in the same banner as any other remote error.
+      error => { if (isInitCurrent()) reportRemoteSessionError(error, setError); });
 
       synchronizer.start(initialMsgCount);
       streamRef.current = synchronizer;

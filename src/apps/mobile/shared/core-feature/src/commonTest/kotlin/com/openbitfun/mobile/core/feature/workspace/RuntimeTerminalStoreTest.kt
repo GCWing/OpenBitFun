@@ -1,6 +1,5 @@
 package com.openbitfun.mobile.core.feature.workspace
 
-import com.openbitfun.mobile.core.persistence.*
 import com.openbitfun.mobile.core.protocol.*
 import com.openbitfun.mobile.core.transport.*
 import kotlinx.coroutines.flow.Flow
@@ -18,7 +17,7 @@ import kotlin.coroutines.suspendCoroutine
 class RuntimeTerminalStoreTest {
     @Test fun unsupportedHostReasonRemainsVisibleWithoutCreatingTerminal() = runTest {
         val host = FakeTerminalHost(false).apply { failureDetail = "Unsupported host operation: terminal_create" }
-        val store = RuntimeTerminalStore(this, host, MemoryReplica())
+        val store = RuntimeTerminalStore(this, host)
         store.open("/workspace", null); advanceUntilIdle()
         assertTrue(store.state.value.failed)
         assertEquals(host.failureDetail, store.state.value.errorDetail)
@@ -30,7 +29,7 @@ class RuntimeTerminalStoreTest {
 
     @Test fun recoveredEmptyHistoryClearsConnectionFailureWithoutChangingOutput() = runTest {
         val host = FakeTerminalHost().apply { live = true }
-        val store = RuntimeTerminalStore(this, host, MemoryReplica())
+        val store = RuntimeTerminalStore(this, host)
         store.open("/workspace", null); advanceUntilIdle()
         val before = store.state.value
         host.errors.single()(IllegalStateException("Disconnected"))
@@ -51,7 +50,7 @@ class RuntimeTerminalStoreTest {
 
     @Test fun nonAdvancingHistoryStopsWithoutDuplicatingOutput() = runTest {
         val host = FakeTerminalHost().apply { stalledHistory = true }
-        val store = RuntimeTerminalStore(this, host, MemoryReplica())
+        val store = RuntimeTerminalStore(this, host)
         store.open("/workspace", null); advanceUntilIdle()
         assertEquals(listOf(0L, 5L), host.offsets)
         assertEquals("hello", store.state.value.output)
@@ -61,7 +60,7 @@ class RuntimeTerminalStoreTest {
 
     @Test fun hostOwnsTerminalAndPushNotificationReadsOnlyNewOutput() = runTest {
         val host = FakeTerminalHost()
-        val store = RuntimeTerminalStore(this, host, MemoryReplica())
+        val store = RuntimeTerminalStore(this, host)
         store.open("/workspace", "saved-ssh")
         advanceUntilIdle()
         assertEquals("hello world", store.state.value.output)
@@ -82,7 +81,7 @@ class RuntimeTerminalStoreTest {
 
     @Test fun rapidInputAndResizeAreBatchedAndStopDiscardsQueuedInput() = runTest {
         val host = FakeTerminalHost()
-        val store = RuntimeTerminalStore(this, host, MemoryReplica())
+        val store = RuntimeTerminalStore(this, host)
         store.open("/workspace", null); advanceUntilIdle()
         "pwd\r".forEach { store.write(it.toString()) }
         store.resize(100, 30); store.resize(120, 40)
@@ -100,7 +99,7 @@ class RuntimeTerminalStoreTest {
 
     @Test fun callbacksFromStoppedStreamCannotFailReplacementTerminal() = runTest {
         val host = FakeTerminalHost()
-        val store = RuntimeTerminalStore(this, host, MemoryReplica())
+        val store = RuntimeTerminalStore(this, host)
         store.open("/first", null); advanceUntilIdle()
         val staleError = host.errors.single()
         store.stop()
@@ -116,7 +115,7 @@ class RuntimeTerminalStoreTest {
 
     @Test fun lateCloseCannotStopReplacementTerminal() = runTest {
         val host = FakeTerminalHost()
-        val store = RuntimeTerminalStore(this, host, MemoryReplica())
+        val store = RuntimeTerminalStore(this, host)
         store.open("/first", null); advanceUntilIdle()
         host.holdClose = true
         store.close(); advanceUntilIdle()
@@ -131,7 +130,7 @@ class RuntimeTerminalStoreTest {
 
     @Test fun hostRefusalDoesNotReportAnOpenTerminal() = runTest {
         val host = FakeTerminalHost(false)
-        val store = RuntimeTerminalStore(this, host, MemoryReplica())
+        val store = RuntimeTerminalStore(this, host)
         store.open("/workspace", null)
         advanceUntilIdle()
         assertNull(store.state.value.sessionId)
@@ -141,7 +140,7 @@ class RuntimeTerminalStoreTest {
 
     @Test fun refusedClosePreservesTerminalAndAllowsRetry() = runTest {
         val host = FakeTerminalHost()
-        val store = RuntimeTerminalStore(this, host, MemoryReplica())
+        val store = RuntimeTerminalStore(this, host)
         store.open("/workspace", null); advanceUntilIdle()
         val original = store.state.value
         host.refuseClose = true
@@ -159,7 +158,7 @@ class RuntimeTerminalStoreTest {
 
     @Test fun reopeningUsesOriginalSshLocationAndDisconnectForgetsIt() = runTest {
         val host = FakeTerminalHost()
-        val store = RuntimeTerminalStore(this, host, MemoryReplica())
+        val store = RuntimeTerminalStore(this, host)
         store.open("/ssh/project", "saved-ssh"); advanceUntilIdle()
         store.close(); advanceUntilIdle()
         store.reopen(); advanceUntilIdle()
@@ -186,8 +185,7 @@ private class FakeTerminalHost(private val accepted: Boolean = true) : RemoteCom
     var refuseWrite = false
     var closeContinuation: Continuation<Unit>? = null
     val errors = mutableListOf<(Throwable) -> Unit>()
-    override val streamIdentity = "test-account-target"
-    override suspend fun subscribe(sessionId: String, replica: SessionStreamReplica, onError: (Throwable) -> Unit, onCaughtUp: () -> Unit): Flow<JsonObject> {
+    override suspend fun subscribe(sessionId: String, onError: (Throwable) -> Unit, onCaughtUp: () -> Unit): Flow<JsonObject> {
         stream = sessionId
         errors += onError
         return flow { onCaughtUp(); emit(buildJsonObject { put("event", "terminal-output") }); if (live) events.collect { emit(it) } }
@@ -210,10 +208,4 @@ private class FakeTerminalHost(private val accepted: Boolean = true) : RemoteCom
         val ok = accepted && !(refuseClose && command.command == "terminal_close") && !(refuseWrite && command.command == "terminal_write")
         return RelayJson.decodeFromString(deserializer, """{"resp":"host_invoke_result","ok":$ok,"value":$value,"error":${JsonPrimitive(failureDetail)}}""")
     }
-}
-private class MemoryReplica : RelayStreamStore {
-    override fun eventIds(stream: String) = emptyList<String>()
-    override fun cursor(stream: String) = 0L
-    override fun fragments(stream: String, eventId: String) = emptyList<String>()
-    override fun commit(stream: String, fragments: List<PersistedRelayFragment>, cursor: Long) {}
 }

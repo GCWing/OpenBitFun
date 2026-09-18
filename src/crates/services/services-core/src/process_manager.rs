@@ -165,6 +165,7 @@ pub fn create_tokio_command<S: AsRef<std::ffi::OsStr>>(program: S) -> TokioComma
 /// the executable from an authenticated installation boundary; this helper
 /// only supplies lifecycle and no-console-window behavior.
 pub fn create_detached_command<S: AsRef<std::ffi::OsStr>>(program: S) -> Command {
+    #[cfg_attr(not(windows), allow(unused_mut))]
     let mut command = create_handoff_command(program);
 
     #[cfg(windows)]

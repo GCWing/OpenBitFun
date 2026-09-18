@@ -172,6 +172,13 @@ public enum class RemoteSessionFailureReason {
 
     /** The host does not serve the workspace ID the command named. */
     WORKSPACE_ID_UNKNOWN,
+
+    /**
+     * The connected host predates on-demand session streaming (`host_stream_v1`
+     * / `read_stream`). Session content is read only from the online host, so
+     * nothing can be shown until that device is updated.
+     */
+    HOST_STREAM_UNSUPPORTED,
 }
 
 public enum class WorkspaceSessionDirectoryStatus {

@@ -163,9 +163,7 @@ async fn connect_with_presence_reset(db_path: &str, reset_presence: bool) -> Res
         .connect_with(options)
         .await?;
     sqlx::query(SCHEMA).execute(&pool).await?;
-    sqlx::query(crate::realtime::store::SCHEMA)
-        .execute(&pool)
-        .await?;
+    retire_relay_session_history(&pool).await?;
     // Older DBs created pages without deployed_version_id.
     let _ = sqlx::query(MIGRATE_PAGES_DEPLOYED_VERSION)
         .execute(&pool)
@@ -251,6 +249,48 @@ async fn connect_with_presence_reset(db_path: &str, reset_presence: bool) -> Res
     }
     tracing::info!("Account database initialized at {db_path}");
     Ok(pool)
+}
+
+/// Tables that held encrypted session history and metadata for earlier
+/// releases. The relay forwards ciphertext and stores no session content, so an
+/// upgraded database drops them and returns the file space to the operating
+/// system. Dropping is the product decision here, not error recovery: the
+/// content belongs to online hosts, which serve it to controllers on demand.
+const RETIRED_SESSION_HISTORY_TABLES: [&str; 3] = [
+    "realtime_messages",
+    "realtime_sessions",
+    "realtime_account_sequence",
+];
+
+/// Returns true when retired tables were present and have been removed.
+pub async fn retire_relay_session_history(pool: &DbPool) -> Result<bool> {
+    let mut removed = false;
+    for table in RETIRED_SESSION_HISTORY_TABLES {
+        let exists: Option<(String,)> =
+            sqlx::query_as("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+                .bind(table)
+                .fetch_optional(pool)
+                .await
+                .map_err(|e| anyhow!("inspect retired session history table {table}: {e}"))?;
+        if exists.is_none() {
+            continue;
+        }
+        sqlx::query(&format!("DROP TABLE IF EXISTS {table}"))
+            .execute(pool)
+            .await
+            .map_err(|e| anyhow!("drop retired session history table {table}: {e}"))?;
+        removed = true;
+    }
+    if removed {
+        // Dropped rows only become free pages; VACUUM rewrites the file so the
+        // retired ciphertext is not left on disk inside the database.
+        sqlx::query("VACUUM")
+            .execute(pool)
+            .await
+            .map_err(|e| anyhow!("reclaim retired session history space: {e}"))?;
+        tracing::info!("Removed relay-stored session history tables from the account database");
+    }
+    Ok(removed)
 }
 
 /// Migrate the original globally-keyed `devices(device_id)` table to the
@@ -2078,6 +2118,96 @@ pub fn new_page_version_id() -> String {
         "v{}",
         bytes.iter().map(|b| format!("{b:02x}")).collect::<String>()
     )
+}
+
+#[cfg(test)]
+mod retired_session_history_tests {
+    use super::*;
+
+    const LEGACY_SCHEMA: &str = r#"
+CREATE TABLE IF NOT EXISTS realtime_sessions (
+ account_id TEXT NOT NULL,
+ id TEXT NOT NULL,
+ machine_id TEXT NOT NULL,
+ seq INTEGER NOT NULL DEFAULT 0,
+ metadata TEXT NOT NULL,
+ metadata_version INTEGER NOT NULL DEFAULT 1,
+ agent_state TEXT,
+ agent_state_version INTEGER NOT NULL DEFAULT 0,
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL,
+ PRIMARY KEY(account_id, id)
+);
+CREATE TABLE IF NOT EXISTS realtime_messages (
+ account_id TEXT NOT NULL,
+ session_id TEXT NOT NULL,
+ id TEXT NOT NULL,
+ seq INTEGER NOT NULL,
+ local_id TEXT NOT NULL,
+ content TEXT NOT NULL,
+ created_at INTEGER NOT NULL,
+ PRIMARY KEY(account_id, session_id, seq)
+);
+CREATE TABLE IF NOT EXISTS realtime_account_sequence (
+ account_id TEXT PRIMARY KEY,
+ seq INTEGER NOT NULL DEFAULT 0,
+ log_bytes INTEGER NOT NULL DEFAULT 0
+);
+"#;
+
+    async fn table_names(pool: &DbPool) -> Vec<String> {
+        sqlx::query_as::<_, (String,)>(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'realtime_%'",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(name,)| name)
+        .collect()
+    }
+
+    #[tokio::test]
+    async fn upgraded_databases_drop_legacy_history_tables_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("relay.db");
+        let path = path.to_str().unwrap();
+        {
+            let legacy = sqlx::sqlite::SqlitePoolOptions::new()
+                .connect_with(
+                    sqlx::sqlite::SqliteConnectOptions::from_str(&format!("sqlite://{path}"))
+                        .unwrap()
+                        .create_if_missing(true),
+                )
+                .await
+                .unwrap();
+            sqlx::raw_sql(LEGACY_SCHEMA).execute(&legacy).await.unwrap();
+            sqlx::query("INSERT INTO realtime_sessions(account_id,id,machine_id,metadata,created_at,updated_at) VALUES('u','s','m','{}',0,0)")
+                .execute(&legacy).await.unwrap();
+            sqlx::query("INSERT INTO realtime_messages(account_id,session_id,id,seq,local_id,content,created_at) VALUES('u','s','m1',1,'l1','ciphertext',0)")
+                .execute(&legacy).await.unwrap();
+            legacy.close().await;
+        }
+        let pool = connect(path).await.unwrap();
+        assert!(
+            table_names(&pool).await.is_empty(),
+            "legacy history tables are gone"
+        );
+        assert!(
+            !retire_relay_session_history(&pool).await.unwrap(),
+            "second run is a no-op"
+        );
+        pool.close().await;
+        // Reopening keeps working and does not recreate the tables.
+        let pool = connect(path).await.unwrap();
+        assert!(table_names(&pool).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fresh_databases_never_create_history_tables() {
+        let pool = connect(":memory:").await.unwrap();
+        assert!(table_names(&pool).await.is_empty());
+    }
 }
 
 #[cfg(test)]

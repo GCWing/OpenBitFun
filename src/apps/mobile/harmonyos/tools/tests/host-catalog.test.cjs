@@ -5,7 +5,7 @@ const path = require('node:path');
 const ts = require('typescript');
 const source = fs.readFileSync(path.join(__dirname, '../../entry/src/main/ets/services/HostCatalogObserver.ets'), 'utf8');
 const js = ts.transpileModule(source, { compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS} }).outputText;
-const exported = {}; new Function('require', 'exports', js)(() => ({}), exported);
+const exported = {}; new Function('require', 'exports', js)(() => ({ HOST_CATALOG_ID: '@host/catalog' }), exported);
 const { HostCatalogObserver } = exported;
 function fixture(refresh) {
   const streams = [];

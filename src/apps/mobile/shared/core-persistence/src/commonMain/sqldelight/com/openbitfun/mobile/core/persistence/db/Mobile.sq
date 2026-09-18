@@ -191,30 +191,3 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRemoteWorkspacesForDevice:
 DELETE FROM remote_workspace_list WHERE device_key = ?;
-
-CREATE TABLE relay_stream_cursor (
-    stream TEXT NOT NULL PRIMARY KEY,
-    seq INTEGER NOT NULL
-);
-CREATE TABLE relay_stream_fragment (
-    stream TEXT NOT NULL,
-    event_id TEXT NOT NULL,
-    part_index INTEGER NOT NULL,
-    content TEXT NOT NULL,
-    PRIMARY KEY (stream, event_id, part_index)
-);
-
-relayStreamCursor:
-SELECT seq FROM relay_stream_cursor WHERE stream = ?;
-
-relayStreamFragments:
-SELECT content FROM relay_stream_fragment WHERE stream = ? AND event_id = ? ORDER BY part_index;
-
-relayStreamCommitCursor:
-INSERT OR REPLACE INTO relay_stream_cursor(stream, seq) VALUES (?, ?);
-
-relayStreamCommitFragment:
-INSERT OR REPLACE INTO relay_stream_fragment(stream, event_id, part_index, content) VALUES (?, ?, ?, ?);
-
-relayStreamEventIds:
-SELECT DISTINCT event_id FROM relay_stream_fragment WHERE stream = ? ORDER BY event_id;

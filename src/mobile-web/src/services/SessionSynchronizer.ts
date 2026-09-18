@@ -1,9 +1,10 @@
-import type { SessionStreamHandle, SessionHistoryState } from '../../../shared/relay-transport/SessionStream';
+import { UNSUPPORTED_HOST_MESSAGE, type SessionStreamHandle, type SessionHistoryState } from '../../../shared/relay-transport/HostStream';
 import type { RemoteSessionManager, PollResponse, ChatMessage, RemoteToolStatus } from './RemoteSessionManager';
 import { SessionRecordReplica, type SessionRecord } from '../../../shared/relay-transport/SessionRecordReplica';
 import { presentSessionTurn, type MobileStoredTurn } from './SessionRecordPresentation';
 
-/** The journal is the sole transcript authority for initial, live and recovery data. */
+/** The online host's stream is the sole transcript authority for initial, live
+ * and recovery data; nothing is read from the Relay or from a local cache. */
 export class SessionSynchronizer {
   private stopped = true;
   private unsubscribe: SessionStreamHandle | null = null;
@@ -12,11 +13,11 @@ export class SessionSynchronizer {
   private connecting = false;
   private ready = false;
   private revision = 0;
-  private readonly replica: SessionRecordReplica;
+  private replica: SessionRecordReplica;
   private readonly controls = new Map<string,{turnId:string;tool:RemoteToolStatus}>();
   private readonly turns = new Map<string, {index:number;messages:ChatMessage[]}>();
   constructor(private readonly sessionMgr: RemoteSessionManager, private readonly sessionId: string,
-    private readonly onUpdate: (state: PollResponse) => void, _knownModelCatalogVersion = 0, private readonly onHistoryState?: (state: SessionHistoryState) => void, private readonly onControlInvalidated?: () => void) { this.replica = new SessionRecordReplica(sessionId); }
+    private readonly onUpdate: (state: PollResponse) => void, _knownModelCatalogVersion = 0, private readonly onHistoryState?: (state: SessionHistoryState) => void, private readonly onControlInvalidated?: () => void, private readonly onError?: (error: unknown) => void) { this.replica = new SessionRecordReplica(sessionId); }
   start(_initialMsgCount=0): void {this.stopped=false;void this.connect();}
   stop(): void {this.stopped=true;this.unsubscribe?.close();this.unsubscribe=null;if(this.retry!==null)clearTimeout(this.retry);}
   resetCursors(): void { /* Cursor belongs to the persistent stream owner. */ }
@@ -36,11 +37,16 @@ export class SessionSynchronizer {
       message_snapshot:active?messages.slice(0,-1):messages,
       active_turn:active?{turn_id:active.turn_id!,status:'active',text:active.content,thinking:active.thinking??'',items,tools,round_index:0}:null});
   }
+  /** Host restarts renumber records; derived state is rebuilt from the replayed page. */
+  private resetDerivedState():void {
+    this.replica=new SessionRecordReplica(this.sessionId);
+    this.turns.clear();this.controls.clear();
+  }
   private async connect():Promise<void> {
     if(this.stopped||this.connecting||this.unsubscribe)return;
     this.connecting=true;
     try {
-      const unsubscribe=await this.sessionMgr.subscribeSessionStream(this.sessionId,event=>{
+      const unsubscribe=await this.sessionMgr.subscribeSessionStream(this.sessionId,{onEvent:event=>{
         if(this.stopped)return;
         if(event.session_id!==this.sessionId)throw new Error('Session stream binding mismatch');
         if(event.event==='session-record') {
@@ -68,13 +74,18 @@ export class SessionSynchronizer {
         } else if(event.event==='session_title_generated') {
           this.onUpdate({resp:'session_update',changed:true,version:++this.revision,title:String((event.payload as {title?:string}).title??'')});
         }
-      },error=>console.error('[SessionSync] recovery failed',error),()=>{
+      },onError:error=>{console.error('[SessionSync] recovery failed',error);if(!this.stopped)this.onError?.(error);},onCaughtUp:()=>{
         if(!this.stopped){this.ready=true;this.publish();}
-      },this.onHistoryState,this.onControlInvalidated);
+      },onHistoryState:this.onHistoryState,onResumed:this.onControlInvalidated,
+      onGap:()=>{if(!this.stopped){this.resetDerivedState();this.onControlInvalidated?.();}}});
       if(this.stopped)unsubscribe.close();else{this.unsubscribe=unsubscribe;this.retryDelay=1000;}
     }catch(error){
       if(this.stopped)return;
       console.error('[SessionSync] subscription deferred',error);
+      this.onError?.(error);
+      // An older host cannot serve streams at all; retrying would only repeat
+      // the same answer, so the explicit unsupported state stands.
+      if(error instanceof Error&&error.message===UNSUPPORTED_HOST_MESSAGE)return;
       this.retry=setTimeout(()=>{this.retry=null;void this.connect();},this.retryDelay);
       this.retryDelay=Math.min(this.retryDelay*2,30000);
     }finally{this.connecting=false;}

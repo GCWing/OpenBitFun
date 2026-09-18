@@ -360,6 +360,7 @@
     <string name="sessions_failed_protocol_mismatch">桌面端返回了本应用无法识别的格式，请升级桌面端的 OpenBitFun。</string>
     <string name="sessions_failed_session_not_found">该会话已不在桌面端。</string>
     <string name="sessions_failed_workspace_id_unsupported">桌面端不支持按 ID 选择工作区，请升级桌面端的 OpenBitFun。</string>
+    <string name="sessions_failed_host_stream_unsupported">桌面端的 OpenBitFun 版本过旧，不支持按需读取会话内容，请升级桌面端的 OpenBitFun。</string>
     <string name="sessions_failed_workspace_id_unknown">桌面端已没有这个工作区。</string>
     <!-- 8.3 会话界面 -->
     <string name="conversation_back">返回会话列表</string>

@@ -228,6 +228,44 @@ class RemotePersistenceStoreTest {
         assertEquals("/repo", workspaces.load("device-a").single().path)
     }
 
+    /**
+     * v5 introduced replica tables holding decrypted relay stream fragments.
+     * Streams are now read on demand from the online host, so upgrading a v7
+     * device removes those copies while every other cache survives.
+     */
+    @Test
+    fun migratingAV7DatabaseDropsTheRelayStreamReplicaAndKeepsOtherCaches() = runTest {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        MobileDatabase.Schema.migrate(driver, 2, 7).await()
+        driver.execute(null, "INSERT INTO relay_stream_cursor(stream, seq) VALUES ('account:session:s1', 9)", 0).await()
+        driver.execute(null, "INSERT INTO relay_stream_fragment(stream, event_id, part_index, content) VALUES ('account:session:s1', 'e1', 0, 'secret')", 0).await()
+        val workspaces = SqlDelightRemoteWorkspaceListStore(driver)
+        workspaces.save("device-a", listOf(PersistedRemoteWorkspace("/repo", "Repo")))
+
+        MobileDatabase.Schema.migrate(driver, 7, MobileDatabase.Schema.version).await()
+        val replicaTables = driver.executeQuery(
+            identifier = null,
+            sql = "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name IN ('relay_stream_cursor', 'relay_stream_fragment')",
+            mapper = { cursor ->
+                check(cursor.next().value)
+                QueryResult.Value(cursor.getLong(0))
+            },
+            parameters = 0,
+        ).await()
+        assertEquals(0L, replicaTables)
+        assertEquals("/repo", workspaces.load("device-a").single().path)
+        // A fresh install never has the tables either.
+        val fresh = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        MobileDatabase.Schema.create(fresh).await()
+        val freshTables = fresh.executeQuery(
+            identifier = null,
+            sql = "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name LIKE 'relay_stream_%'",
+            mapper = { cursor -> check(cursor.next().value); QueryResult.Value(cursor.getLong(0)) },
+            parameters = 0,
+        ).await()
+        assertEquals(0L, freshTables)
+    }
+
     @Test
     fun workspaceIdentityColumnsRoundTripAndSamePathRowsCoexist() = runTest {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)

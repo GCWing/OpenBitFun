@@ -48,8 +48,8 @@ use openbitfun_services_integrations::remote_connect::{
     RemoteTerminalPrewarmRequest, RemoteToolStatus, RemoteWorkspaceFacts, RemoteWorkspaceFileChunk,
     RemoteWorkspaceFileContent, RemoteWorkspaceFileInfo, RemoteWorkspaceFileRuntimeHost,
     RemoteWorkspaceKind, RemoteWorkspaceUpdate, TrackerEvent, REMOTE_CAPABILITY_DIALOG_STEER_V1,
-    REMOTE_CAPABILITY_HARNESS_PROFILES_V1, REMOTE_CAPABILITY_PLAN_BUILD_V1,
-    REMOTE_FILE_MAX_CHUNK_BYTES, REMOTE_FILE_MAX_READ_BYTES,
+    REMOTE_CAPABILITY_HARNESS_PROFILES_V1, REMOTE_CAPABILITY_HOST_STREAM_V1,
+    REMOTE_CAPABILITY_PLAN_BUILD_V1, REMOTE_FILE_MAX_CHUNK_BYTES, REMOTE_FILE_MAX_READ_BYTES,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -2188,7 +2188,8 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
             REMOTE_CAPABILITY_HARNESS_PROFILES_V1,
             REMOTE_CAPABILITY_DIALOG_STEER_V1,
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
-            "user_question_interaction_v1"
+            "user_question_interaction_v1",
+            REMOTE_CAPABILITY_HOST_STREAM_V1
         ])
     );
     let mut legacy_info_json = info_json.clone();
@@ -2283,6 +2284,7 @@ fn remote_connect_session_list_hides_child_sessions_and_counts_only_what_it_send
     // command path is flat, so a child would read as a standalone conversation.
     let metadata = vec![
         RemoteSessionMetadata {
+            workspace_id: None,
             session_id: "parent".to_string(),
             name: "iOS sidebar spacing".to_string(),
             agent_type: "Standard".to_string(),
@@ -2293,6 +2295,7 @@ fn remote_connect_session_list_hides_child_sessions_and_counts_only_what_it_send
             relationship_kind: None,
         },
         RemoteSessionMetadata {
+            workspace_id: None,
             session_id: "btw".to_string(),
             name: "why did it grep with bash".to_string(),
             agent_type: "Standard".to_string(),
@@ -2317,6 +2320,7 @@ fn remote_connect_session_list_hides_child_sessions_and_counts_only_what_it_send
 #[test]
 fn remote_connect_session_info_carries_child_lineage_to_clients() {
     let child = RemoteSessionMetadata {
+        workspace_id: None,
         session_id: "btw".to_string(),
         name: "why did it grep with bash".to_string(),
         agent_type: "Standard".to_string(),
@@ -2429,7 +2433,8 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
             REMOTE_CAPABILITY_HARNESS_PROFILES_V1,
             REMOTE_CAPABILITY_DIALOG_STEER_V1,
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
-            "user_question_interaction_v1"
+            "user_question_interaction_v1",
+            REMOTE_CAPABILITY_HOST_STREAM_V1
         ])
     );
     let mut legacy_initial_json = initial_json;

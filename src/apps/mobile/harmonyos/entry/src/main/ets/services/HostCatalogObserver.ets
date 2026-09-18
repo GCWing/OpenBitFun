@@ -1,9 +1,9 @@
 import { RemoteSessionManager } from './RemoteSessionManager';
-import { DurableSessionEvent, DurableSessionStream } from './DurableSessionStream';
+import { HOST_CATALOG_ID, HostSessionEvent, HostSessionStream } from './HostSessionStream';
 
 /** One host invalidation stream; directory contents remain owned by the runtime. */
 export class HostCatalogObserver {
-  private stream?: DurableSessionStream;
+  private stream?: HostSessionStream;
   private target: string = '';
   private generation: number = 0;
   private dirty: boolean = false;
@@ -26,11 +26,14 @@ export class HostCatalogObserver {
     const generation = this.generation;
     this.dirty = true;
     try {
-      this.stream = this.manager.subscribeSession('@host/catalog', {
-        onEvent: async (event: DurableSessionEvent): Promise<void> => {
+      this.stream = this.manager.subscribeSession(HOST_CATALOG_ID, {
+        onEvent: async (event: HostSessionEvent): Promise<void> => {
           if (generation === this.generation && event.event === 'host-catalog-changed') this.dirty = true;
         },
         onResumed: async (): Promise<void> => {
+          if (generation === this.generation) this.dirty = true;
+        },
+        onGap: async (): Promise<void> => {
           if (generation === this.generation) this.dirty = true;
         },
         onCaughtUp: async (): Promise<void> => { await this.flush(generation); },

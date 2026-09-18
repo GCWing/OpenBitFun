@@ -80,12 +80,12 @@ public class AccountStore internal constructor(
     private fun closeCatalogs() { catalogScope.coroutineContext[Job]?.cancel(); catalogObservers.clear() }
     private val catalogObservers = mutableMapOf<String, Flow<HostCatalogNotice>>()
     init { scope.coroutineContext[Job]?.invokeOnCompletion { closeCatalogs() } }
-    private fun catalogChanges(current: AccountSessionData, target: String): Flow<HostCatalogNotice> {
-        val store = persistence?.relayStreams ?: return emptyFlow()
+    /** [transport] is the store's own transport; the catalog is read through it, on demand from the host. */
+    private fun catalogChanges(current: AccountSessionData, target: String, transport: RemoteCommandTransport): Flow<HostCatalogNotice> {
+        val source = transport as? RemoteSessionStreamTransport ?: return emptyFlow()
         if (catalogScope.coroutineContext[Job]?.isActive != true) catalogScope = CoroutineScope(scope.coroutineContext + kotlinx.coroutines.SupervisorJob())
         return catalogObservers.getOrPut(current.userId + ":" + current.token + ":" + target) {
-            val source = backend.transport(current, target) as? RemoteSessionStreamTransport ?: return emptyFlow()
-            hostCatalogObserver(catalogScope, source, store)
+            hostCatalogObserver(catalogScope, source)
         }
     }
     private var directoryWork: Job? = null
@@ -128,25 +128,26 @@ public class AccountStore internal constructor(
     public fun createSessionStore(scope: CoroutineScope): RemoteSessionStore? {
         val current = session ?: return null
         val target = current.targetDeviceId?.let(::authorizedDeviceId) ?: return null
+        val transport = backend.transport(current, target)
         return RemoteSessionStore.create(
             scope,
-            backend.transport(current, target),
+            transport,
             deviceKey = target,
             persistence = persistence,
-        ).also { it.bindCatalog(catalogChanges(current, target)) }
+        ).also { it.bindCatalog(catalogChanges(current, target, transport)) }
     }
 
     public fun createWorkspaceStore(scope: CoroutineScope): RemoteWorkspaceStore? {
         val current = session ?: return null
         val target = current.targetDeviceId?.let(::authorizedDeviceId) ?: return null
+        val transport = backend.transport(current, target)
         return RemoteWorkspaceStore.create(
             scope,
-            backend.transport(current, target),
+            transport,
             kotlinx.coroutines.Dispatchers.Default,
             target,
             persistence?.remoteWorkspaces,
-            persistence?.relayStreams,
-        ).also { it.bindCatalog(catalogChanges(current, target)) }
+        ).also { it.bindCatalog(catalogChanges(current, target, transport)) }
     }
 
     /**
@@ -158,26 +159,27 @@ public class AccountStore internal constructor(
     public fun createSessionStore(scope: CoroutineScope, deviceId: String): RemoteSessionStore? {
         val current = session ?: return null
         val target = authorizedDeviceId(deviceId) ?: return null
+        val transport = backend.transport(current, target)
         return RemoteSessionStore.create(
             scope,
-            backend.transport(current, target),
+            transport,
             deviceKey = target,
             persistence = persistence,
-        ).also { it.bindCatalog(catalogChanges(current, target)) }
+        ).also { it.bindCatalog(catalogChanges(current, target, transport)) }
     }
 
     /** The explicit-device twin of [createWorkspaceStore]. */
     public fun createWorkspaceStore(scope: CoroutineScope, deviceId: String): RemoteWorkspaceStore? {
         val current = session ?: return null
         val target = authorizedDeviceId(deviceId) ?: return null
+        val transport = backend.transport(current, target)
         return RemoteWorkspaceStore.create(
             scope,
-            backend.transport(current, target),
+            transport,
             kotlinx.coroutines.Dispatchers.Default,
             target,
             persistence?.remoteWorkspaces,
-            persistence?.relayStreams,
-        ).also { it.bindCatalog(catalogChanges(current, target)) }
+        ).also { it.bindCatalog(catalogChanges(current, target, transport)) }
     }
 
     /**

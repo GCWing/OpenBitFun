@@ -1,15 +1,10 @@
 import { InvalidationSync } from '../../../shared/relay-transport/InvalidationSync';
-import type { SessionEvent } from '../../../shared/relay-transport/SessionCipher';
-import type { SessionStreamHandle } from '../../../shared/relay-transport/SessionStream';
+import { HOST_CATALOG_ID, type HostStreamOptions, type SessionStreamHandle } from '../../../shared/relay-transport/HostStream';
 
 export interface HostCatalogSource {
   subscribeSessionStream(
     id: string,
-    onEvent: (event: SessionEvent) => void,
-    onError: (error: unknown) => void,
-    onCaughtUp?: () => void,
-    onHistoryState?: undefined,
-    onResumed?: () => void,
+    callbacks: Pick<HostStreamOptions, 'onEvent' | 'onError' | 'onCaughtUp' | 'onResumed' | 'onGap'>,
   ): Promise<SessionStreamHandle>;
 }
 
@@ -32,13 +27,19 @@ export function subscribeHostCatalog(
   const connect = () => {
     if (stopped || connecting || stream) return;
     connecting = true;
-    void source.subscribeSessionStream('@host/catalog', (event) => {
-      if (!stopped && event.event === 'host-catalog-changed') dirty = true;
-    }, fail, () => {
-      if (stopped || !dirty) return;
-      dirty = false;
-      void refresh();
-    }, undefined, () => { if (!stopped) dirty = true; }).then((value) => {
+    void source.subscribeSessionStream(HOST_CATALOG_ID, {
+      onEvent: (event) => { if (!stopped && event.event === 'host-catalog-changed') dirty = true; },
+      onError: fail,
+      onCaughtUp: () => {
+        if (stopped || !dirty) return;
+        dirty = false;
+        void refresh();
+      },
+      onResumed: () => { if (!stopped) dirty = true; },
+      // A host restart replays the catalog stream from scratch; the list is
+      // re-read from the host rather than trusted from memory.
+      onGap: () => { if (!stopped) dirty = true; },
+    }).then((value) => {
       if (stopped) value.close();
       else stream = value;
     }).catch(fail).finally(() => { connecting = false; });

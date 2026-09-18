@@ -69,6 +69,13 @@ UiState or an Intent declared there, and no module above it is visible to them.
   ports it declares, wired by `core-feature`.
 - Shared code returns typed states, never localized display strings; the apps
   own all user-facing text.
+- Remote session content is read on demand from the online desktop
+  (`core-transport/.../HostStream.kt`, `read_stream` device RPC plus encrypted
+  `host-stream-changed` hints). The relay stores none of it and the apps keep
+  no relay stream replica: a `STREAM_EVENT_GAP` means the desktop restarted the
+  stream and derived state must be dropped, and a host without `host_stream_v1`
+  is surfaced as `RemoteSessionFailureReason.HOST_STREAM_UNSUPPORTED`, never
+  probed with unknown commands. Do not reintroduce `relay_stream_*` tables.
 - Run `pnpm run mobile:architecture` before pushing. It enforces the rules
   above, mirroring `pnpm run harmony:architecture`.
 - Build and test from `shared/`: `./gradlew jvmTest` for host logic,

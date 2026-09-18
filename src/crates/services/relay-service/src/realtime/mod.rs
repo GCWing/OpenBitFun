@@ -1,21 +1,23 @@
-//! Account / machine / session scoped realtime transport, following Happy's
-//! Socket.IO update, ephemeral and acknowledged RPC contracts.
+//! Account / machine scoped realtime transport, following Happy's Socket.IO
+//! ephemeral and acknowledged RPC contracts.
 //!
 //! Reference: slopus/happy @ 108a337e87a5653b604250a9ac3e3bd873dba551.
-//! OpenBitFun keeps GitHub device credentials and host-owned execution; the
-//! relay stores only opaque encrypted messages and versioned metadata.
+//! OpenBitFun keeps GitHub device credentials and host-owned execution. The
+//! relay forwards opaque ciphertext between online devices and stores no
+//! session content: controllers read session records from the online host on
+//! demand, and the host-history HTTP routes of earlier releases answer
+//! `410 Gone` (see `retired_session_history`).
 mod device_lifecycle;
 mod origin;
 mod payloads;
 mod presence;
-pub(crate) mod store;
+pub(crate) mod retired_session_history;
 
 use crate::{db::AuthToken, routes::api::AppState};
 use axum::{
-    extract::{Path, Query, State},
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     routing::{any, get, post},
-    Json, Router,
+    Router,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -37,7 +39,6 @@ struct Identity {
     device: String,
     token: String,
     scope: Scope,
-    session: Option<String>,
     account_calls: Arc<Semaphore>,
     server_calls: Arc<Semaphore>,
     _connection: Arc<OwnedSemaphorePermit>,
@@ -57,6 +58,9 @@ struct Handshake {
     token: String,
     client_type: Scope,
     machine_id: Option<String>,
+    /// Sent by session-scoped clients of earlier releases; the handshake is
+    /// rejected before it is read.
+    #[allow(dead_code)]
     session_id: Option<String>,
 }
 #[derive(Deserialize)]
@@ -75,13 +79,6 @@ struct Call {
 struct MachineEvent {
     target_device_id: String,
     params: Value,
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct MetadataUpdate {
-    sid: String,
-    metadata: String,
-    expected_version: i64,
 }
 
 fn account_room(account: &str) -> String {
@@ -115,7 +112,7 @@ fn can_register(identity: &Identity, method: &str) -> bool {
     }
     match identity.scope {
         Scope::Machine => owner == identity.device,
-        Scope::Session => identity.session.as_deref() == Some(owner),
+        Scope::Session => false,
         Scope::User => false,
     }
 }
@@ -202,15 +199,10 @@ pub(crate) fn mount(router: Router<AppState>, state: AppState) -> Router<AppStat
                         {
                             return Err("machine identity mismatch")
                         }
+                        // Session-scoped sockets only ever received relay-stored
+                        // history updates, which no longer exist.
                         Scope::Session => {
-                            let id = data.session_id.as_deref().ok_or("sessionId required")?;
-                            let session = store::get_session(&state.db, &auth.user_id, id)
-                                .await
-                                .map_err(|_| "session unavailable")?
-                                .ok_or("session not found")?;
-                            if !auth.is_device_token() || session.machine_id != device {
-                                return Err("session owner mismatch");
-                            }
+                            return Err(retired_session_history::HANDSHAKE_MESSAGE);
                         }
                         _ => {}
                     }
@@ -232,7 +224,6 @@ pub(crate) fn mount(router: Router<AppState>, state: AppState) -> Router<AppStat
                         device,
                         token: data.token,
                         scope: data.client_type,
-                        session: data.session_id,
                         account_calls,
                         server_calls,
                         _connection: Arc::new(permit),
@@ -253,13 +244,14 @@ pub(crate) fn mount(router: Router<AppState>, state: AppState) -> Router<AppStat
         )
         .route("/v1/rpc/payloads/{id}", get(payloads::download))
         .layer(axum::Extension(payloads::Payloads::new()))
-        .route("/v1/sessions", post(open_session))
-        .route("/v1/sessions/{id}", get(get_session))
+        // Earlier releases stored encrypted session history here. Admission
+        // answers these paths before any body is read; the routes stay owned so
+        // a host static fallback can never shadow the retirement answer.
+        .route("/v1/sessions", post(retired_session_history::gone))
+        .route("/v1/sessions/{id}", get(retired_session_history::gone))
         .route(
             "/v3/sessions/{id}/messages",
-            get(read_messages)
-                .post(write_messages)
-                .layer(axum::extract::DefaultBodyLimit::max(store::MAX_BATCH_BYTES)),
+            get(retired_session_history::gone).post(retired_session_history::gone),
         )
         .layer(axum::Extension(io))
         .layer(layer)
@@ -285,9 +277,6 @@ async fn install(socket: SocketRef, state: AppState, io: SocketIo) {
         return;
     }
 
-    if let Some(session) = &identity.session {
-        socket.join(format!("user:{}:session:{session}", identity.account));
-    }
     let auth_socket = socket.clone();
     let auth_identity = identity.clone();
     let auth_state = state.clone();
@@ -412,52 +401,10 @@ async fn install(socket: SocketRef, state: AppState, io: SocketIo) {
             let _=ack.send(&json!({"ok":sent}));
         }
     });
-    let metadata_state = state.clone();
-    let metadata_io = io.clone();
     socket.on(
         "update-metadata",
-        move |socket: SocketRef, TryData(data): TryData<MetadataUpdate>, ack: AckSender| {
-            let state = metadata_state.clone();
-            let io = metadata_io.clone();
-            async move {
-                let Some(identity) = socket.extensions.get::<Identity>() else {
-                    return;
-                };
-                let Ok(data) = data else {
-                    let _ = ack.send(&failure("invalid metadata update"));
-                    return;
-                };
-                if !authorized(&state, &identity).await {
-                    let _ = ack.send(&failure("authorization expired"));
-                    return;
-                }
-                match store::update_metadata(
-                    &state.db,
-                    &identity.account,
-                    &data.sid,
-                    data.expected_version,
-                    &data.metadata,
-                )
-                .await
-                {
-                    Ok(mut result) => {
-                        if let Some(update) = result
-                            .as_object_mut()
-                            .and_then(|result| result.remove("update"))
-                        {
-                            for target in io.within(account_room(&identity.account)).sockets() {
-                                if target.emit("update", &update).is_err() {
-                                    let _ = target.disconnect();
-                                }
-                            }
-                        }
-                        let _ = ack.send(&result);
-                    }
-                    Err(_) => {
-                        let _ = ack.send(&failure("metadata update failed"));
-                    }
-                }
-            }
+        |TryData(_data): TryData<Value>, ack: AckSender| async move {
+            let _ = ack.send(&failure(retired_session_history::HANDSHAKE_MESSAGE));
         },
     );
     let _ = socket.emit(
@@ -467,62 +414,8 @@ async fn install(socket: SocketRef, state: AppState, io: SocketIo) {
     presence::broadcast(&io, &state, &identity.account);
 }
 
-async fn http_identity(state: &AppState, headers: &HeaderMap) -> Result<AuthToken, StatusCode> {
-    let token =
-        crate::routes::auth::extract_bearer_token(headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    AuthToken::find(&state.db, &token)
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
-        .filter(|auth| auth.can_control_devices())
-        .ok_or(StatusCode::UNAUTHORIZED)
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OpenSession {
-    id: String,
-    metadata: String,
-}
-async fn open_session(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(data): Json<OpenSession>,
-) -> Result<Json<Value>, StatusCode> {
-    let identity = http_identity(&state, &headers).await?;
-    if !identity.is_device_token() {
-        return Err(StatusCode::FORBIDDEN);
-    }
-    let session = store::open_session(
-        &state.db,
-        &identity.user_id,
-        &identity.device_id,
-        &data.id,
-        &data.metadata,
-    )
-    .await
-    .map_err(|_| StatusCode::CONFLICT)?;
-    Ok(Json(json!({"session":session})))
-}
-async fn get_session(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Result<Json<Value>, StatusCode> {
-    let identity = http_identity(&state, &headers).await?;
-    let session = store::get_session(&state.db, &identity.user_id, &id)
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
-        .ok_or(StatusCode::NOT_FOUND)?;
-    Ok(Json(json!({"session":session})))
-}
-#[derive(Deserialize)]
-struct ReadMessages {
-    after_seq: Option<i64>,
-    before_seq: Option<i64>,
-    limit: Option<usize>,
-}
-
 #[cfg(test)]
-mod history_route_tests {
+mod route_tests {
     use super::*;
     use axum::{
         body::{to_bytes, Body},
@@ -568,131 +461,4 @@ mod history_route_tests {
             "static page"
         );
     }
-
-    // Happy's initial page uses a backward sentinel; subsequent pages keep
-    // separate oldest and newest cursors. Exercise the real HTTP contract.
-    #[tokio::test]
-    async fn latest_page_and_forward_recovery_share_the_same_messages() {
-        let db = Arc::new(crate::db::connect(":memory:").await.unwrap());
-        crate::db::UserRow::create(&db, "owner", "owner")
-            .await
-            .unwrap();
-        crate::db::DeviceRow::upsert(&db, "host", "owner", "host", None, None)
-            .await
-            .unwrap();
-        let token = AuthToken::create(&db, "owner", "host").await.unwrap().token;
-        store::open_session(&db, "owner", "host", "history", "opaque")
-            .await
-            .unwrap();
-        for batch in 0..3 {
-            let messages = (0..50)
-                .map(|index| store::NewMessage {
-                    local_id: format!("message-{}", batch * 50 + index),
-                    content: "opaque".into(),
-                })
-                .collect::<Vec<_>>();
-            store::append(&db, "owner", "history", &messages)
-                .await
-                .unwrap();
-        }
-        let app = crate::build_relay_router(
-            Arc::new(crate::MemoryAssetStore::new()),
-            std::time::Instant::now(),
-            db,
-            "test",
-        );
-        let request = |query: &str| {
-            Request::builder()
-                .uri(format!("/v3/sessions/history/messages?{query}"))
-                .header("authorization", format!("Bearer {token}"))
-                .body(Body::empty())
-                .unwrap()
-        };
-        for (query, first, last, more) in [
-            ("before_seq=9007199254740991&limit=100", 150, 51, true),
-            ("before_seq=51&limit=100", 50, 1, false),
-            ("after_seq=148&limit=100", 149, 150, false),
-        ] {
-            let response = app.clone().oneshot(request(query)).await.unwrap();
-            assert_eq!(response.status(), StatusCode::OK);
-            let value: Value =
-                serde_json::from_slice(&to_bytes(response.into_body(), 1024 * 1024).await.unwrap())
-                    .unwrap();
-            let messages = value["messages"].as_array().unwrap();
-            assert_eq!(messages.first().unwrap()["seq"], first);
-            assert_eq!(messages.last().unwrap()["seq"], last);
-            assert_eq!(value["hasMore"], more);
-        }
-        assert_eq!(
-            app.oneshot(request("after_seq=0&before_seq=100"))
-                .await
-                .unwrap()
-                .status(),
-            StatusCode::BAD_REQUEST
-        );
-    }
-}
-async fn read_messages(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-    Query(query): Query<ReadMessages>,
-) -> Result<Json<store::MessagePage>, StatusCode> {
-    let identity = http_identity(&state, &headers).await?;
-    if store::get_session(&state.db, &identity.user_id, &id)
-        .await
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?
-        .is_none()
-    {
-        return Err(StatusCode::NOT_FOUND);
-    }
-    if query.after_seq.is_some() && query.before_seq.is_some() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-    store::read(
-        &state.db,
-        &identity.user_id,
-        &id,
-        query.after_seq.unwrap_or(0),
-        query.before_seq,
-        query.limit.unwrap_or(100),
-    )
-    .await
-    .map(Json)
-    .map_err(|_| StatusCode::BAD_REQUEST)
-}
-#[derive(Deserialize)]
-struct WriteMessages {
-    messages: Vec<store::NewMessage>,
-}
-async fn write_messages(
-    State(state): State<AppState>,
-    axum::Extension(io): axum::Extension<SocketIo>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-    Json(data): Json<WriteMessages>,
-) -> Result<Json<Value>, StatusCode> {
-    let identity = http_identity(&state, &headers).await?;
-    let messages = store::append(&state.db, &identity.user_id, &id, &data.messages)
-        .await
-        .map_err(|_| StatusCode::CONFLICT)?;
-    for (message, user_seq) in &messages {
-        if let Some(seq) = user_seq {
-            // Commit precedes notification. A disconnect here loses only the
-            // hint; after_seq always recovers the committed message.
-            let update = json!({"id":message.id,"seq":seq,"createdAt":message.created_at,"body":{"t":"new-message","sid":id,"message":message}});
-            let rooms = [
-                format!("user:{}:user-scoped", identity.user_id),
-                format!("user:{}:session:{id}", identity.user_id),
-            ];
-            for socket in io.within(rooms).sockets() {
-                if socket.emit("update", &update).is_err() {
-                    let _ = socket.disconnect();
-                }
-            }
-        }
-    }
-    Ok(Json(
-        json!({"messages":messages.into_iter().map(|(m,_)|m).collect::<Vec<_>>()}),
-    ))
 }

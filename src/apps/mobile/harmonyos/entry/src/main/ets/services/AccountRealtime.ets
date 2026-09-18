@@ -164,7 +164,10 @@ export class AccountRealtime {
       this.waiters.clear();
       this.reconnectListeners.forEach((listener: () => void) => { listener(); });
       }
-      if (name === 'update' || name === 'ephemeral') {
+      // Relay-stored session updates ('update') are retired; an older relay may
+      // still emit them and no listener reads their body. Presence and
+      // encrypted device events (stream hints) arrive as 'ephemeral'.
+      if (name === 'ephemeral') {
         this.updateListeners.forEach((listener: (event: string, data: Object) => void) => { listener(name, parts[1]); });
       }
     } else {

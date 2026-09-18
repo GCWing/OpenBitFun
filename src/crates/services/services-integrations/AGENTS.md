@@ -28,6 +28,12 @@ slices that are outside pure product logic but still platform-neutral.
   orchestration ports, LAN endpoint helpers, IM bot provider clients,
   provider-private cursor caches, mobile-web relay upload, image-context adapter
   contracts, remote workspace helpers, and command/response assembly.
+- `remote_connect::host_stream` is the host-side owner of on-demand session,
+  terminal and catalog streams: an in-memory, byte-bounded per-stream log with
+  an epoch, `read_stream`/`unsubscribe_stream` handling, and `HostStreamNotifier`
+  hint leases. `remote_connect::host_stream_subscriber` is the Rust controller
+  reader. Neither the relay nor any client persists stream content; do not add
+  relay-stored history, `get_session_key`, or a durable stream cache here.
 - The `remote-persistence` feature is the lightweight persisted-shape owner shared
   by Remote Connect, remote SSH, and offline migration. Keep it free of network,
   SSH transport, and runtime orchestration dependencies so owner readers and
@@ -125,8 +131,8 @@ cargo test -p openbitfun-services-integrations --no-default-features --features 
 cargo test -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::wsl::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-ssh-concrete --lib remote_ssh::relay_deploy::tests::
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::relay_client::tests::
-cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::session_log::tests::
-cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::session_subscriber::tests::
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream::tests::
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib remote_connect::host_stream_subscriber::tests::
 cargo test -p openbitfun-services-integrations --no-default-features --features file-watch --test file_watch_contracts
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features workspace-search --test workspace_search_contracts
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features deep-research --lib deep_research::tests::

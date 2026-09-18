@@ -105,8 +105,10 @@ async function moduleUrl(relative, imports = {}) {
 const agentContract = await moduleUrl('../../shared/agent-harness/contract.generated.ts');
 const agentWire = await moduleUrl('../../shared/agent-harness/wire.ts', { './contract.generated': agentContract });
 const controlIdentity = await moduleUrl('../src/services/controlClientIdentity.ts');
+const hostStream = await moduleUrl('../../shared/relay-transport/HostStream.ts');
 const managerUrl = await moduleUrl('../src/services/RemoteSessionManager.ts', {
   '../../../shared/agent-harness/wire': agentWire,
+  '../../../shared/relay-transport/HostStream': hostStream,
   './controlClientIdentity': controlIdentity,
   './SessionSynchronizer': 'data:text/javascript,export class SessionSynchronizer {}',
   './workspaceIdentity': `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`,

@@ -10,8 +10,9 @@ and blocking interactions. A controller owns presentation and drafts. Its lifeti
 never determines whether an accepted turn continues running.
 
 `RelaySessionHistory` owns one subscription per visible surface/session.
-`SessionRecordReplica` applies both cached/replayed history and live canonical
-records using stable IDs, revisions and tombstones. Following Happy's sync owner,
+`SessionRecordReplica` applies both replayed pages and live canonical records
+using stable IDs, revisions and tombstones; every page comes from the online
+host, and a stream-epoch change (host restart) drops the replica before replay. Following Happy's sync owner,
 the latest page paints first; older pages share one in-flight reader and are
 prefetched with a yield between pages. Receive cursors advance only after applying
 records, never from a send acknowledgement. Transport reconnect resumes that same
@@ -77,9 +78,12 @@ listener alone recovers an interaction emitted before attachment.
      for one render, including when both devices use the same Session id.
 
 1. **Relay subscriptions stay on the controller.** The account subscription
-   commands attach to the selected runtime's encrypted session log. Product
-   commands such as listing sessions execute on that runtime through HostInvoke.
-   Never route a controller's subscription back onto the peer.
+   commands open host-owned streams on the selected runtime (`read_stream`
+   pages plus encrypted `host-stream-changed` hints, both forwarded by the
+   relay without storage). Product commands such as listing sessions execute
+   on that runtime through HostInvoke. Never route a controller's subscription
+   back onto the peer, and never substitute relay-side or local caches for a
+   host that is offline: an offline host has no history to show.
 
 2. **Peer history has one owner.** `loadSessionHistory` uses
    `RelaySessionHistory`; it must not fall back to `restore_session_view`, cloud

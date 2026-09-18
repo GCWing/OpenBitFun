@@ -47,8 +47,12 @@ import com.openbitfun.mobile.core.protocol.SendMessageResponse
 import com.openbitfun.mobile.core.protocol.SessionItemResponse
 import com.openbitfun.mobile.core.protocol.SessionListResponse
 import com.openbitfun.mobile.core.protocol.WorkspaceInfoResponse
-import com.openbitfun.mobile.core.feature.relay.PersistentSessionReplica
+import com.openbitfun.mobile.core.transport.HostStreamUnsupportedException
+import com.openbitfun.mobile.core.transport.REMOTE_CAPABILITY_HOST_STREAM_V1
 import com.openbitfun.mobile.core.transport.RemoteSessionStreamTransport
+import com.openbitfun.mobile.core.transport.STREAM_EVENT_GAP
+import com.openbitfun.mobile.core.transport.STREAM_EVENT_READY
+import com.openbitfun.mobile.core.transport.STREAM_EVENT_RESUMED
 import kotlinx.coroutines.flow.collect
 import com.openbitfun.mobile.core.transport.RemoteCommandTransport
 import com.openbitfun.mobile.core.transport.send
@@ -83,7 +87,6 @@ public class RemoteSessionStore internal constructor(
     private val transport: RemoteCommandTransport,
     private val deviceKey: String? = null,
     private val persistence: MobilePersistenceStores? = null,
-    private val relayStreamStore: com.openbitfun.mobile.core.persistence.RelayStreamStore? = persistence?.relayStreams,
 ) {
     private var catalogSubscription: Job? = null
     private var catalogRefresh: Job? = null
@@ -1027,8 +1030,11 @@ public class RemoteSessionStore internal constructor(
         sessionUpdates = scope.launch {
             try {
                 val source = transport as? RemoteSessionStreamTransport ?: error("Durable session transport unavailable")
-                val store = relayStreamStore ?: error("Durable session storage unavailable")
-                val records = SessionRecordReplica(sessionId)
+                // A host that has not advertised `host_stream_v1` cannot serve
+                // the transcript; say so instead of sending a command it will
+                // fail to parse.
+                if (hostCapabilitiesKnown && REMOTE_CAPABILITY_HOST_STREAM_V1 !in hostCapabilities) throw HostStreamUnsupportedException()
+                var records = SessionRecordReplica(sessionId)
                 var caughtUp = false
                 /**
                  * Renders everything received so far and reports the turn's phase.
@@ -1054,7 +1060,7 @@ public class RemoteSessionStore internal constructor(
                     timelineStore.setSyncPhase(phase)
                     return phase
                 }
-                source.subscribe(sessionId, PersistentSessionReplica(store, source.streamIdentity + ":session:" + sessionId),
+                source.subscribe(sessionId,
                     { handleFailure(it, _state.value as? RemoteSessionUiState.Ready) },
                     {
                         caughtUp = true
@@ -1083,8 +1089,15 @@ public class RemoteSessionStore internal constructor(
                                 else writeTranscriptNow(sessionId)
                             }
                         }
-                        "relay://session-resumed", "session-interaction-changed" -> permissionMailbox.invalidate()
-                        "relay://session-ready" -> {
+                        STREAM_EVENT_RESUMED, "session-interaction-changed" -> permissionMailbox.invalidate()
+                        // The host restarted this stream: everything derived from
+                        // the previous replay is stale and the latest page follows.
+                        STREAM_EVENT_GAP -> {
+                            records = SessionRecordReplica(sessionId)
+                            timelineStore.reset(sessionId)
+                            permissionMailbox.invalidate()
+                        }
+                        STREAM_EVENT_READY -> {
                             sessionHistoryHasMore = payload["hasMore"]?.jsonPrimitive?.content == "true"
                             val current = _state.value as? RemoteSessionUiState.Ready
                             if (current != null) _state.value = current.copy(hasMoreMessages = sessionHistoryHasMore)
@@ -1405,7 +1418,9 @@ public class RemoteSessionStore internal constructor(
             RemoteSessionFailureReason.WORKSPACE_ID_UNKNOWN -> CreateSessionOperationFailure.WORKSPACE_ID_UNKNOWN
             RemoteSessionFailureReason.NETWORK, RemoteSessionFailureReason.TIMEOUT,
             RemoteSessionFailureReason.TRANSPORT, RemoteSessionFailureReason.RATE_LIMITED,
-            RemoteSessionFailureReason.REMOTE_REJECTED, RemoteSessionFailureReason.SESSION_NOT_FOUND ->
+            RemoteSessionFailureReason.REMOTE_REJECTED, RemoteSessionFailureReason.SESSION_NOT_FOUND,
+            // Creating a session is a plain command; only reading its stream needs `host_stream_v1`.
+            RemoteSessionFailureReason.HOST_STREAM_UNSUPPORTED ->
                 CreateSessionOperationFailure.TRANSPORT
         }
         failCreate(requestId, generation, reason, retryable = reason != CreateSessionOperationFailure.UNSUPPORTED, unsupported = reason == CreateSessionOperationFailure.UNSUPPORTED)
@@ -1952,7 +1967,9 @@ public class RemoteSessionStore internal constructor(
      */
     private fun handleFailure(error: Throwable, current: RemoteSessionUiState.Ready?) {
         val failed = remoteSessionFailure(error)
-        if (current == null) {
+        // An older host cannot show any session; a generic "connection error"
+        // next to a live list would hide the one thing the user can do about it.
+        if (current == null || failed.reason == RemoteSessionFailureReason.HOST_STREAM_UNSUPPORTED) {
             _state.value = failed
             _connectionPhase.value = ConnectionPhase.FAILED
             return
