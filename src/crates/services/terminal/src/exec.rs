@@ -38,6 +38,8 @@ const PTY_EXIT_DRAIN_TIMEOUT_MS: u64 = 500;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 #[cfg(windows)]
 const PIPE_JOB_CLOSE_WAIT_MS: u64 = 2_000;
+#[cfg(windows)]
+const PIPE_TASKKILL_WAIT_MS: u64 = 3_000;
 
 static GLOBAL_EXEC_MANAGER: OnceLock<Arc<ExecProcessManager>> = OnceLock::new();
 
@@ -728,7 +730,7 @@ impl ExecProcess {
                         let _ = killer.kill();
                     }
                     Terminator::Pipe(tx) => {
-                        self.close_windows_pipe_job("request_control");
+                        // Preserve the root for tree termination before closing its job.
                         let _ = tx.try_send(action);
                     }
                 }
@@ -1254,6 +1256,7 @@ async fn spawn_pipe_process(
     };
     #[cfg(windows)]
     let pipe_job = create_windows_pipe_job(&child)?;
+
     #[cfg(windows)]
     let wait_task_pipe_job = Arc::clone(&pipe_job);
     #[cfg(unix)]
@@ -1481,17 +1484,33 @@ async fn interrupt_pipe_child(
 }
 
 #[cfg(windows)]
+async fn wait_for_tree_killer(
+    helper: &mut tokio::process::Child,
+    timeout: Duration,
+) -> std::io::Result<std::process::ExitStatus> {
+    match tokio::time::timeout(timeout, helper.wait()).await {
+        Ok(result) => result,
+        Err(_) => {
+            // Bound cleanup too: a stuck helper must not prevent job fallback.
+            let _ = helper.start_kill();
+            let _ =
+                tokio::time::timeout(Duration::from_millis(PIPE_JOB_CLOSE_WAIT_MS), helper.wait())
+                    .await;
+            Err(std::io::Error::new(
+                ErrorKind::TimedOut,
+                "process-tree termination helper timed out",
+            ))
+        }
+    }
+}
+
+#[cfg(windows)]
 async fn kill_pipe_child(
     child: &mut tokio::process::Child,
     pipe_job: &WindowsPipeJobHandle,
 ) -> Option<i32> {
-    let _ = close_windows_pipe_job_handle(pipe_job, "kill_pipe_child");
-    if let Ok(wait_result) =
-        tokio::time::timeout(Duration::from_millis(PIPE_JOB_CLOSE_WAIT_MS), child.wait()).await
-    {
-        return wait_result.ok().and_then(|status| status.code());
-    }
-
+    // App Execution Alias descendants can live outside the job. Terminate
+    // the process tree while its shell root is still alive.
     if let Some(pid) = child.id() {
         let pid = pid.to_string();
         let mut command = Command::new("taskkill");
@@ -1503,10 +1522,34 @@ async fn kill_pipe_child(
             command.creation_flags(CREATE_NO_WINDOW);
         }
 
-        let taskkill_result = command.status().await;
-        if taskkill_result.is_ok_and(|status| status.success()) {
-            return child.wait().await.ok().and_then(|status| status.code());
+        command.kill_on_drop(true);
+        let taskkill_result = match command.spawn() {
+            Ok(mut helper) => {
+                wait_for_tree_killer(&mut helper, Duration::from_millis(PIPE_TASKKILL_WAIT_MS))
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        if let Err(error) = &taskkill_result {
+            log::warn!("Process-tree termination failed; falling back to job termination: pid={}, error={}", pid, error);
         }
+
+        if taskkill_result.is_ok_and(|status| status.success()) {
+            if let Ok(wait_result) =
+                tokio::time::timeout(Duration::from_millis(PIPE_JOB_CLOSE_WAIT_MS), child.wait())
+                    .await
+            {
+                let _ = close_windows_pipe_job_handle(pipe_job, "kill_after_taskkill");
+                return wait_result.ok().and_then(|status| status.code());
+            }
+        }
+    }
+
+    let _ = close_windows_pipe_job_handle(pipe_job, "kill_pipe_child");
+    if let Ok(wait_result) =
+        tokio::time::timeout(Duration::from_millis(PIPE_JOB_CLOSE_WAIT_MS), child.wait()).await
+    {
+        return wait_result.ok().and_then(|status| status.code());
     }
 
     let _ = child.kill().await;
@@ -2393,12 +2436,81 @@ print("parent_exit", flush=True)"#;
 
     #[cfg(windows)]
     async fn assert_default_windows_shell_python_child_control(action: ExecControlAction) {
-        let manager = ExecProcessManager::default();
         let script = r#"python -c "import time; [print(i, flush=True) or time.sleep(1) for i in range(30)]""#;
+        assert_windows_python_control(default_windows_shell_argv(script), action).await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[ignore = "requires a working Python Install Manager App Execution Alias"]
+    async fn control_terminates_python_app_execution_alias() {
+        use std::os::windows::fs::MetadataExt;
+        let alias = std::env::var("OPENBITFUN_TEST_PYTHON_ALIAS")
+            .expect("set OPENBITFUN_TEST_PYTHON_ALIAS to the WindowsApps python.exe alias");
+        let metadata = std::fs::metadata(&alias).expect("alias metadata");
+        assert_eq!(metadata.len(), 0, "must use an application execution alias");
+        assert_ne!(metadata.file_attributes() & 0x400, 0);
+        for action in [ExecControlAction::Kill, ExecControlAction::Interrupt] {
+            let script = format!(
+                "& '{}' -u -c \"import time; print('ALIAS_READY', flush=True); time.sleep(30)\"",
+                alias.replace('\'', "''")
+            );
+            assert_windows_python_control(
+                vec![
+                    "powershell.exe".into(),
+                    "-NoProfile".into(),
+                    "-Command".into(),
+                    script,
+                ],
+                action,
+            )
+            .await;
+        }
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn tree_killer_timeout_reaps_helper() {
+        use super::{wait_for_tree_killer, CREATE_NO_WINDOW};
+        use std::{io::ErrorKind, process::Stdio, time::Duration};
+        use tokio::process::Command;
+        let mut command = Command::new("powershell.exe");
+        command.args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "Start-Sleep -Seconds 30",
+        ]);
+        command.creation_flags(CREATE_NO_WINDOW);
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        command.kill_on_drop(true);
+        let mut helper = command.spawn().expect("start slow helper");
+        let result = tokio::time::timeout(
+            Duration::from_secs(5),
+            wait_for_tree_killer(&mut helper, Duration::from_millis(100)),
+        )
+        .await
+        .expect("helper timeout and cleanup must be bounded");
+        assert_eq!(
+            result.expect_err("slow helper must time out").kind(),
+            ErrorKind::TimedOut
+        );
+        assert!(
+            helper.try_wait().expect("query helper").is_some(),
+            "timed-out helper must be reaped"
+        );
+    }
+
+    #[cfg(windows)]
+    async fn assert_windows_python_control(argv: Vec<String>, action: ExecControlAction) {
+        let manager = ExecProcessManager::default();
 
         let first = manager
             .exec_command(ExecCommandRequest {
-                argv: default_windows_shell_argv(script),
+                argv,
                 cwd: std::env::current_dir().expect("current dir"),
                 env: HashMap::new(),
                 tty: false,
