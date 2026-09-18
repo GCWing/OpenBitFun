@@ -2838,6 +2838,13 @@ function runtimeInstallAction(runtime) {
 
 function environmentFactAction(kind, fact) {
   if (!fact) return null;
+  // While a repair runs the host reports the fact as `checking`, and that
+  // fact carries no remediation action. Keep painting our own progress so the
+  // row shows "installing..." with the spinner instead of a generic
+  // "checking" pill.
+  if (environmentInstallEntry(kind)) {
+    return kind === 'loopx' ? loopxInstallAction(fact) : runtimeInstallAction(kind);
+  }
   const remediationAction = fact.remediationAction;
   if (kind === 'loopx' && remediationAction === 'install_loopx') {
     return loopxInstallAction(fact);
