@@ -99,6 +99,97 @@ describe('ExecProcessToolCardView', () => {
     vi.unstubAllGlobals();
   });
 
+  const expandedSurface = '[data-openbitfun-part="surface"][data-openbitfun-state~="expanded"]';
+
+  it.each(['_progressLogs', '_progressMessage'])('expands only when live output arrives through %s, then collapses on completion', (field) => {
+    vi.useFakeTimers();
+    for (const status of ['preparing', 'streaming', 'running', 'receiving'] as const) {
+      act(() => {
+        root.render(<ExecProcessToolCardView toolItem={toolItem(status)} model={model} />);
+      });
+      expect(container.querySelector(expandedSurface)).toBeNull();
+    }
+
+    act(() => {
+      root.render(<ExecProcessToolCardView toolItem={{ ...toolItem('running'), [field]: field === '_progressLogs' ? [''] : '' } as FlowToolItem} model={model} />);
+    });
+    expect(container.querySelector(expandedSurface)).toBeNull();
+
+    act(() => {
+      root.render(<ExecProcessToolCardView toolItem={{ ...toolItem('running'), [field]: field === '_progressLogs' ? ['hello'] : 'hello' } as FlowToolItem} model={model} />);
+    });
+    expect(container.querySelector(expandedSurface)).not.toBeNull();
+    expect(container.textContent).toContain('hello');
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(container.querySelector(expandedSurface)).not.toBeNull();
+
+    act(() => {
+      root.render(<ExecProcessToolCardView toolItem={toolItem('completed')} model={{ ...model, resultOutput: 'hello' }} />);
+    });
+    expect(container.querySelector(expandedSurface)).toBeNull();
+  });
+
+  it('stays collapsed when buffered output arrives only on completion', () => {
+    act(() => {
+      root.render(<ExecProcessToolCardView toolItem={toolItem('running')} model={model} isLastItem />);
+    });
+    expect(container.querySelector(expandedSurface)).toBeNull();
+    act(() => {
+      root.render(<ExecProcessToolCardView toolItem={toolItem('completed')} model={{ ...model, resultOutput: 'buffered output' }} isLastItem />);
+    });
+    expect(container.querySelector(expandedSurface)).toBeNull();
+  });
+
+  it('respects manual collapse when more output arrives', () => {
+    act(() => {
+      root.render(<ExecProcessToolCardView toolItem={{ ...toolItem('running'), _progressLogs: ['hello'] } as FlowToolItem} model={model} />);
+    });
+    act(() => {
+      container.querySelector<HTMLElement>(expandedSurface)!.click();
+    });
+    act(() => {
+      root.render(<ExecProcessToolCardView toolItem={{ ...toolItem('running'), _progressLogs: ['hello', 'world'] } as FlowToolItem} model={model} />);
+    });
+    expect(container.querySelector(expandedSurface)).toBeNull();
+  });
+
+  it('does not restart the minimum duration for more output or a tail change', () => {
+    vi.useFakeTimers();
+    const render = (status: FlowToolItem['status'], output: string, tail: boolean) => {
+      root.render(<ExecProcessToolCardView
+        toolItem={{ ...toolItem(status), _progressLogs: [output] } as FlowToolItem}
+        model={{ ...model, resultOutput: output }}
+        isLastItem={tail}
+      />);
+    };
+    act(() => { render('running', 'first', true); });
+    act(() => { vi.advanceTimersByTime(100); });
+    act(() => { render('running', 'first\nsecond', false); });
+    act(() => { render('completed', 'first\nsecond', false); });
+    act(() => { vi.advanceTimersByTime(899); });
+    expect(container.querySelector(expandedSurface)).not.toBeNull();
+    act(() => { vi.advanceTimersByTime(1); });
+    expect(container.querySelector(expandedSurface)).toBeNull();
+  });
+
+  it('lets manual toggles override a pending automatic collapse', () => {
+    vi.useFakeTimers();
+    act(() => {
+      root.render(<ExecProcessToolCardView toolItem={{ ...toolItem('running'), _progressLogs: ['hello'] } as FlowToolItem} model={model} />);
+    });
+    act(() => { vi.advanceTimersByTime(100); });
+    act(() => {
+      root.render(<ExecProcessToolCardView toolItem={toolItem('completed')} model={{ ...model, resultOutput: 'hello' }} />);
+    });
+    act(() => { container.querySelector<HTMLElement>(expandedSurface)!.click(); });
+    expect(container.querySelector(expandedSurface)).toBeNull();
+    act(() => {
+      container.querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')!.click();
+    });
+    act(() => { vi.advanceTimersByTime(1000); });
+    expect(container.querySelector(expandedSurface)).not.toBeNull();
+  });
+
   it('shows cancelled state instead of receiving params when a stale streaming flag remains', () => {
     act(() => {
       root.render(<ExecProcessToolCardView toolItem={toolItem('running', true)} model={model} />);
@@ -182,16 +273,17 @@ describe('ExecProcessToolCardView', () => {
     expect(container.querySelector('[data-openbitfun-component="command-tool-card"] [data-openbitfun-part="output"] pre')).toBeNull();
   });
 
-  it('retains a just-completed tail result during the grace period', () => {
+  it('retains a just-completed WriteStdin tail result during the grace period', () => {
     const resultModel: ExecProcessCardModel = {
       ...model,
+      kind: 'stdin',
       resultOutput: 'All tests passed',
     };
 
     act(() => {
       root.render(
         <ExecProcessToolCardView
-          toolItem={toolItem('running')}
+          toolItem={{ ...toolItem('running'), _progressLogs: ['All tests passed'] } as FlowToolItem}
           model={resultModel}
           isLastItem
         />,
@@ -328,17 +420,17 @@ describe('ExecProcessToolCardView', () => {
     };
 
     act(() => {
-      root.render(<ExecProcessToolCardView toolItem={toolItem('running')} model={model} />);
+      root.render(<ExecProcessToolCardView toolItem={streamingItem} model={model} />);
     });
     const frameBeforeOutput = container.querySelector('[data-openbitfun-component="command-tool-card"] [data-openbitfun-part="outputFrame"]');
     const footerBeforeOutput = container.querySelector('[data-openbitfun-component="command-tool-card"] [data-openbitfun-part="footer"]');
     expect(frameBeforeOutput?.getAttribute('data-density')).toBe('compact');
     expect(frameBeforeOutput?.getAttribute('data-sizing')).toBe('fixed');
     expect(footerBeforeOutput?.textContent).toBe('');
-    expect(container.querySelector('[data-openbitfun-part="output"] pre')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="output"] pre')).not.toBeNull();
 
     act(() => {
-      root.render(<ExecProcessToolCardView toolItem={streamingItem} model={model} />);
+      root.render(<ExecProcessToolCardView toolItem={{ ...streamingItem, _progressLogs: ['more output'] } as FlowToolItem} model={model} />);
     });
     expect(container.querySelector('[data-openbitfun-component="command-tool-card"] [data-openbitfun-part="outputFrame"]')).toBe(frameBeforeOutput);
     expect(container.querySelector('[data-openbitfun-component="command-tool-card"] [data-openbitfun-part="footer"]')).toBe(footerBeforeOutput);
@@ -359,7 +451,7 @@ describe('ExecProcessToolCardView', () => {
     expect(container.querySelector('[data-openbitfun-component="command-tool-card"] [data-openbitfun-part="outputFrame"]')?.getAttribute('data-density')).toBe('compact');
   });
 
-  it('collapses a completed tail result when the grace period expires', () => {
+  it.each([true, false])('keeps a command expanded for 1000ms from first output (tail=%s)', (isLastItem) => {
     vi.useFakeTimers();
     const resultModel: ExecProcessCardModel = {
       ...model,
@@ -369,26 +461,27 @@ describe('ExecProcessToolCardView', () => {
     act(() => {
       root.render(
         <ExecProcessToolCardView
-          toolItem={toolItem('running')}
+          toolItem={{ ...toolItem('running'), _progressLogs: ['All tests passed'] } as FlowToolItem}
           model={resultModel}
-          isLastItem
+          isLastItem={isLastItem}
         />,
       );
     });
 
+    act(() => { vi.advanceTimersByTime(100); });
     act(() => {
       root.render(
         <ExecProcessToolCardView
           toolItem={toolItem('completed')}
           model={resultModel}
-          isLastItem
+          isLastItem={isLastItem}
         />,
       );
     });
     expect(vi.getTimerCount()).toBeGreaterThan(0);
 
     act(() => {
-      vi.advanceTimersByTime(799);
+      vi.advanceTimersByTime(899);
     });
     expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"][data-openbitfun-state~="expanded"]')).not.toBeNull();
 
