@@ -13,6 +13,8 @@ import { gcm } from '@noble/ciphers/aes.js';
 
 export const LAN = 'http://192.168.50.7:9700';
 export const OFFICIAL = 'https://remote.openbitfun.com/v/1.0.2';
+// The reverse proxy strips the official version prefix before the Relay sees a path.
+const OFFICIAL_PREFIX = new URL(OFFICIAL).pathname.replace(/\/+$/, '');
 export const invitation = (endpoint = LAN, device = 'desktop-a') => `${endpoint}/#/pair?did=${device}`;
 const mobileRoot = fileURLToPath(new URL('../../', import.meta.url));
 const realtimeFixtures = new Map();
@@ -267,7 +269,9 @@ export class RelayFixture {
         if (![new URL(LAN).origin, new URL(OFFICIAL).origin].includes(requested.origin)) {
           await request.abort(); return;
         }
-        const path = requested.pathname.replace(/^\/v\/1\.0\.1(?=\/|$)/, '') || '/';
+        const path = (requested.pathname.startsWith(`${OFFICIAL_PREFIX}/`) || requested.pathname === OFFICIAL_PREFIX
+          ? requested.pathname.slice(OFFICIAL_PREFIX.length)
+          : requested.pathname) || '/';
         if (path === '/' && requested.searchParams.has('account-store-test')) {
           await request.respond({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Browser storage contract</title>' });
           return;
