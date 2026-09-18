@@ -10,6 +10,7 @@ pub mod draft;
 pub mod exporter;
 pub mod host_routing;
 pub mod lifecycle;
+pub mod loopx;
 pub mod market;
 pub mod permission_policy;
 pub mod ports;

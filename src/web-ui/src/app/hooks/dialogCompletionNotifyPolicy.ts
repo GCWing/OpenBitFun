@@ -34,6 +34,16 @@ export function shouldSendDialogCompletionNotification({
     return false;
   }
 
+  // MiniApp headless agent runs (including the builtin LoopX driver) are
+  // unattended by design: every turn completes quietly and the next one is
+  // scheduled by the host. A completion toast per turn would train the owner
+  // to ignore notifications. Human attention is requested only at owner
+  // decision points, which the MiniApp surface itself raises through the
+  // host notification bridge when a user gate appears.
+  if (sessionKind === 'miniapp') {
+    return false;
+  }
+
   return true;
 }
 

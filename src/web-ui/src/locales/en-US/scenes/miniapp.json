@@ -351,5 +351,9 @@
       "cancel": "Back to preview",
       "confirm": "Apply and grant permissions"
     }
+  },
+  "unsupported": {
+    "title": "MiniApps are desktop-only",
+    "body": "Built-in MiniApps and the market run in the desktop BitFun app. Open the desktop app and use the MiniApp entry at the bottom-left of the navigation."
   }
 }

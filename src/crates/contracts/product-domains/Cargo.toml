@@ -35,6 +35,11 @@ path = "tests/miniapp_contracts.rs"
 required-features = ["miniapp"]
 
 [[test]]
+name = "loopx_contracts"
+path = "tests/loopx_contracts.rs"
+required-features = ["miniapp"]
+
+[[test]]
 name = "legacy_migration_contracts"
 path = "tests/legacy_migration_contracts.rs"
 required-features = ["legacy-migration"]
@@ -49,6 +54,7 @@ sha2 = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 hmac = { workspace = true, optional = true }
 which = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
 url = { workspace = true, optional = true }
 ts-rs = { workspace = true, optional = true }
 
@@ -56,7 +62,7 @@ ts-rs = { workspace = true, optional = true }
 default = []
 appearance-market = ["hex", "sha2"]
 plugin-source = ["hex", "sha2"]
-miniapp = ["dirs", "hex", "sha2", "which"]
+miniapp = ["dirs", "hex", "sha2", "which", "dep:regex"]
 function-agents = ["log"]
 external-sources = ["hex", "hmac", "sha2", "url"]
 legacy-migration = []

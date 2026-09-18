@@ -81,8 +81,35 @@ pub fn detect_runtime_with_probe<P: MiniAppRuntimeProbe + ?Sized>(
                 version,
             });
         }
+        // Windows: the `which`-style PATH search treats any existing file
+        // without an extension as an executable candidate, so an npm-style
+        // extensionless shim (a POSIX script that CreateProcess cannot run)
+        // can beat the real launcher in the same directory (e.g. `bun` vs
+        // `bun.cmd`). Retry the same candidate with the standard executable
+        // suffixes before giving up on this runtime.
+        #[cfg(windows)]
+        {
+            for ext in [".exe", ".cmd", ".bat", ".com"] {
+                let candidate = append_suffix(&path, ext);
+                if let Some(version) = probe.runtime_version(&candidate) {
+                    return Some(DetectedRuntime {
+                        kind,
+                        path: candidate,
+                        version,
+                    });
+                }
+            }
+        }
     }
     None
+}
+
+/// Append an extension suffix to a Windows candidate path, e.g. `bun` -> `bun.cmd`.
+#[cfg(windows)]
+fn append_suffix(path: &Path, ext: &str) -> PathBuf {
+    let mut os = path.as_os_str().to_owned();
+    os.push(ext);
+    PathBuf::from(os)
 }
 
 pub fn runtime_lookup_order() -> &'static [&'static str] {
@@ -293,5 +320,28 @@ mod tests {
 
         assert_eq!(detected.kind, RuntimeKind::Node);
         assert_eq!(detected.path, node);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn detector_recovers_extensionless_shim_via_pathext_suffixes() {
+        // npm installs a POSIX `bun` shim (no extension, not executable by
+        // CreateProcess) alongside `bun.cmd`; the PATH search can return the
+        // shim first. The detector must retry the executable suffixes and
+        // still pick bun over node.
+        let mut probe = FakeProbe::default();
+        let shim = PathBuf::from(r"C:\Program Files\bun\bun");
+        let real = PathBuf::from(r"C:\Program Files\bun\bun.cmd");
+        let node = PathBuf::from(r"C:\Program Files\nodejs\node.exe");
+        probe.path_hits.insert("bun".to_string(), shim);
+        probe.path_hits.insert("node".to_string(), node.clone());
+        probe.versions.insert(real.clone(), "1.3.14".to_string());
+        probe.versions.insert(node, "v24.0.0".to_string());
+
+        let detected = detect_runtime_with_probe(&probe).expect("bun should be detected");
+
+        assert_eq!(detected.kind, RuntimeKind::Bun);
+        assert_eq!(detected.path, real);
+        assert_eq!(detected.version, "1.3.14");
     }
 }

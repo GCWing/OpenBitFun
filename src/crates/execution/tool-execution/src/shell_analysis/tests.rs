@@ -257,3 +257,34 @@ fn shell_analysis_does_not_confuse_logical_cd_with_physical_parent() {
         assert!(!a.unresolved_effects.is_empty(), "{cmd}");
     }
 }
+#[test]
+fn absolute_windows_workdir_is_accepted_as_posix_cwd_is() {
+    for workdir in [
+        "C:\\Users\\huawei\\.bitfun\\loopx-workspaces\\4400fb652d5c99d56f31",
+        "c:/users/test/worktree",
+        "\\\\server\\share\\workspace",
+        "/home/user/worktree",
+    ] {
+        let a = analyze("printf hi", "bash", workdir);
+        assert_eq!(
+            a.parse_status,
+            AnalysisStatus::Supported,
+            "workdir {workdir:?} was not accepted"
+        );
+        assert!(
+            !a.unresolved_effects
+                .iter()
+                .any(|i| i.reason.contains("non-POSIX")),
+            "workdir {workdir:?} tripped the non-POSIX rejection"
+        );
+    }
+    // Relative workdirs remain unsupported: no host-local inference.
+    let relative = analyze("printf hi", "bash", "relative/worktree");
+    assert!(
+        relative
+            .unresolved_effects
+            .iter()
+            .any(|i| i.reason.contains("non-POSIX")),
+        "relative workdir should stay unsupported"
+    );
+}

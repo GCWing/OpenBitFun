@@ -115,6 +115,16 @@ app.platform     // 'win32' | 'darwin' | 'linux'
 app.mode         // 'hosted'
 ```
 
+### 内置产品私有扩展不属于公共 API
+
+宿主可以为源码和来源均通过校验的内置产品界面注入私有 namespace。此类 namespace
+不会进入普通或市场 MiniApp 的编译结果，也不属于 `window.app` 公共能力合同。
+当前 `builtin-bitfun-loopx` 使用私有 `app.loopx` 连接持久宿主控制器；宿主在每次调用时
+还会校验内置 id、原始 bundle 内容、非 draft/非本地覆盖状态和执行域。
+
+生成、导入和市场 MiniApp 不得声明、探测或依赖 `app.loopx`，也不得以自定义 Worker
+模拟该控制器。需要类似能力时应先建立新的公开、产品无关且有权限合同的 MiniApp API。
+
 ### `app.fs.*` — 文件系统
 
 需在 `permissions.fs` 中声明读写范围。

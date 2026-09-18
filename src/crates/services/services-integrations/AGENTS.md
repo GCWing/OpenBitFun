@@ -81,6 +81,35 @@ slices that are outside pure product logic but still platform-neutral.
   writes, marker IO, storage/import bundle filesystem IO, and JS worker process/pool
   lifecycle. Manager workflow orchestration remains outside this crate until
   reviewed owner migration.
+- LoopX continuation inspections probe the live `quota should-run
+  --turn-envelope` decision (codex/pi host parity), never `turn plan`: the
+  quota decision has no 8192-byte envelope-budget gate and keeps projecting
+  should_run/selected todo past it, while `turn plan` degrades to
+  `contract_error` and strands the goal. Probes carry no turn identity so
+  they never mint a heartbeat receipt. The settlement binding derives from
+  the envelope's `replan_settlement_contract` (receipt parity): a replan
+  obligation with a selected todo settles through the TODO
+  (`todo_bound_writeback`), and only a todo-less frontier settles through the
+  obligation. External-host settlement must verify the exact
+  goal/agent/Todo/turn identity through the supported compact `history`
+  projection and require both typed `validated_progress` and the matching
+  `quota_slot_spent` event. A legacy `validated_progress` without
+  `progress_observation` is accountable only when it carries an explicit
+  progress delivery outcome. The host never repairs a missing turn-scoped quota
+  spend: a validated writeback without the matching spend receipt is reported as
+  `RetryRequired` and takes the explicit recovery path. Only a COMPLETED turn is
+  exempt - that is the pinned CLI's false-negative settlement for a terminal
+  frontier, where the guard refuses to admit a repair run, so the host follows
+  the post-settlement Goal projection and records the missing receipt as an
+  important task event. Do not infer success from the next turn plan, do not
+  re-read history to accept a settlement, and never fabricate progress when no
+  matching validation exists.
+- WebFetch treats HTTP 401, 403, and 429 as structured access restrictions so
+  the Agent can change routes without presenting an expected server policy as
+  a tool crash. Preserve retry/rate-limit headers, prohibit blind same-URL
+  retries in the result guidance, and route authentication through an existing
+  browser or provider boundary; never bypass access controls in the HTTP
+  provider.
 - Managed plugin source integration may own bounded package discovery,
   integrity checks, fixed package input reads, no-follow path handling,
   trust-file locking, and atomic persistence. Product path selection stays in

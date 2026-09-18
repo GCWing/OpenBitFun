@@ -513,6 +513,7 @@ impl AgentDialogTurnPort for FakeOwner {
                         attempt_id: Some("attempt-fixture".to_string()),
                         attempt_index: Some(0),
                         tool_event: ToolEventData::Completed {
+                            params: None,
                             identity: ToolEventIdentity::direct("tool-fixture", "Read"),
                             result: serde_json::json!({ "content": "must-not-leak" }),
                             result_for_assistant: None,

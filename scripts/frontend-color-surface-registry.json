@@ -209,6 +209,17 @@
       }
     },
     {
+      "id": "miniapp-bitfun-loopx",
+      "label": "BitFun LoopX MiniApp",
+      "kind": "miniapp",
+      "owner": "MiniApp public appearance contract",
+      "root": "src/crates/contracts/product-domains/src/miniapp/builtin/assets/bitfun-loopx",
+      "audit": {
+        "engine": "miniapp",
+        "excludePaths": ["test"]
+      }
+    },
+    {
       "id": "miniapp-coding-selfie",
       "label": "Coding Selfie MiniApp",
       "kind": "miniapp",

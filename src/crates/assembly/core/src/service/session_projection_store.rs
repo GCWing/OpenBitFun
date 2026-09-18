@@ -19,6 +19,24 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+const DEFAULT_RUNTIME_EVENT_PAGE_SIZE: usize = 200;
+const MAX_RUNTIME_EVENT_PAGE_SIZE: usize = 1_000;
+
+#[derive(Debug, Clone)]
+pub struct RuntimeEventRecord {
+    pub stream_id: String,
+    pub cursor: u64,
+    pub event: AgenticEvent,
+}
+
+#[derive(Debug, Clone)]
+pub struct RuntimeEventPage {
+    pub stream_id: String,
+    pub events: Vec<RuntimeEventRecord>,
+    pub next_cursor: u64,
+    pub has_more: bool,
+}
+
 /// Open append handles, keyed by Session. Holding the handle is what makes a
 /// per-event write an append to an already-open file rather than an open/close
 /// cycle per token.
@@ -46,6 +64,94 @@ pub fn runtime_event_log_dir(
     path_manager: &crate::infrastructure::PathManager,
 ) -> std::path::PathBuf {
     path_manager.product_home_dir().join("runtime-events")
+}
+
+pub fn read_runtime_events_since(
+    root: &Path,
+    session_id: &str,
+    stream_id: Option<&str>,
+    after_cursor: u64,
+    requested_limit: Option<u32>,
+) -> Result<Option<RuntimeEventPage>, String> {
+    let path = log_path(root, session_id);
+    let file = match File::open(&path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "Failed to open runtime event log for {session_id}: {error}"
+            ))
+        }
+    };
+
+    let limit = requested_limit
+        .map(|value| value as usize)
+        .unwrap_or(DEFAULT_RUNTIME_EVENT_PAGE_SIZE)
+        .clamp(1, MAX_RUNTIME_EVENT_PAGE_SIZE);
+    let mut latest_stream_id: Option<String> = None;
+    let mut active_after_cursor = after_cursor;
+    let mut events = Vec::new();
+    let mut has_more = false;
+    let mut next_cursor = after_cursor;
+
+    for line in BufReader::new(file).lines() {
+        let line = line.map_err(|error| {
+            format!("Failed to read runtime event log for {session_id}: {error}")
+        })?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let record = match serde_json::from_str::<LoggedEvent>(&line) {
+            Ok(record) => record,
+            Err(_) => break,
+        };
+        match latest_stream_id.as_deref() {
+            Some(current) if current != record.stream_id => {
+                active_after_cursor = match stream_id {
+                    Some(requested) if requested == record.stream_id => after_cursor,
+                    Some(_) => 0,
+                    None => after_cursor,
+                };
+                events.clear();
+                has_more = false;
+                next_cursor = active_after_cursor;
+                latest_stream_id = Some(record.stream_id.clone());
+            }
+            None => {
+                active_after_cursor = match stream_id {
+                    Some(requested) if requested == record.stream_id => after_cursor,
+                    Some(_) => 0,
+                    None => after_cursor,
+                };
+                next_cursor = active_after_cursor;
+                latest_stream_id = Some(record.stream_id.clone());
+            }
+            _ => {}
+        }
+        if record.cursor <= active_after_cursor {
+            continue;
+        }
+        if events.len() >= limit {
+            has_more = true;
+            continue;
+        }
+        next_cursor = record.cursor;
+        events.push(RuntimeEventRecord {
+            stream_id: record.stream_id,
+            cursor: record.cursor,
+            event: record.event,
+        });
+    }
+
+    let Some(latest_stream_id) = latest_stream_id else {
+        return Ok(None);
+    };
+    Ok(Some(RuntimeEventPage {
+        stream_id: latest_stream_id,
+        events,
+        next_cursor,
+        has_more,
+    }))
 }
 
 impl FileSessionProjectionStore {
@@ -212,6 +318,25 @@ mod tests {
         let stored = store.load("session-1").expect("log is readable");
         assert_eq!(stored.stream_id, "stream-new");
         assert_eq!(stored.events.len(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn output_pages_reset_cursor_when_stream_changes() {
+        let root = temp_root();
+        let store = FileSessionProjectionStore::new(root.clone());
+
+        store.append("session-1", "stream-old", 100, &text("session-1", "stale"));
+        store.append("session-1", "stream-new", 1, &text("session-1", "fresh"));
+
+        let page =
+            read_runtime_events_since(&root, "session-1", Some("stream-old"), 100, Some(10))
+                .expect("page read succeeds")
+                .expect("latest stream exists");
+        assert_eq!(page.stream_id, "stream-new");
+        assert_eq!(page.events.len(), 1);
+        assert_eq!(page.events[0].cursor, 1);
+        assert_eq!(page.next_cursor, 1);
         let _ = std::fs::remove_dir_all(&root);
     }
 

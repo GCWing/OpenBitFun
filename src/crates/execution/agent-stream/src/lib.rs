@@ -697,6 +697,7 @@ impl StreamProcessor {
             let tool_event = if is_user_cancellation {
                 ToolEventData::Cancelled {
                     identity,
+                    params: None,
                     reason: reason.clone(),
                     duration_ms: None,
                     queue_wait_ms: None,
@@ -706,6 +707,7 @@ impl StreamProcessor {
                 }
             } else {
                 ToolEventData::Failed {
+                    params: None,
                     identity,
                     error_detail: None,
                     error: reason.clone(),

@@ -23,6 +23,9 @@ use std::time::Duration;
 use thiserror::Error;
 
 const USER_AGENT_VALUE: &str = "OpenBitFun/1.0";
+const WEB_FETCH_ACCEPT_VALUE: &str =
+    "text/html,application/xhtml+xml,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5";
+const WEB_FETCH_ACCEPT_LANGUAGE_VALUE: &str = "en-US,en;q=0.9";
 const WEB_FETCH_TIMEOUT_SECS: u64 = 30;
 const EXA_URL: &str = "https://mcp.exa.ai/mcp";
 const EXA_TIMEOUT_SECS: u64 = 60;
@@ -39,7 +42,14 @@ pub enum WebToolNetworkError {
     #[error("Failed to fetch URL: {0}")]
     Fetch(String),
     #[error("HTTP error {status}: {reason}")]
-    HttpStatus { status: String, reason: String },
+    HttpStatus {
+        status_code: u16,
+        status: String,
+        reason: String,
+        retry_after: Option<String>,
+        rate_limit_remaining: Option<String>,
+        rate_limit_reset: Option<String>,
+    },
     #[error("Failed to read response: {0}")]
     ReadResponse(String),
     #[error("Failed to send request: {0}")]
@@ -169,18 +179,27 @@ impl WebToolNetworkProvider {
 
         let response = client
             .get(url)
+            .header(reqwest::header::ACCEPT, WEB_FETCH_ACCEPT_VALUE)
+            .header(
+                reqwest::header::ACCEPT_LANGUAGE,
+                WEB_FETCH_ACCEPT_LANGUAGE_VALUE,
+            )
             .send()
             .await
             .map_err(|error| WebToolNetworkError::Fetch(error.to_string()))?;
 
         if !response.status().is_success() {
+            let status = response.status();
             return Err(WebToolNetworkError::HttpStatus {
-                status: response.status().to_string(),
-                reason: response
-                    .status()
+                status_code: status.as_u16(),
+                status: status.to_string(),
+                reason: status
                     .canonical_reason()
                     .unwrap_or("Unknown error")
                     .to_string(),
+                retry_after: response_header(&response, reqwest::header::RETRY_AFTER),
+                rate_limit_remaining: response_header_name(&response, "x-ratelimit-remaining"),
+                rate_limit_reset: response_header_name(&response, "x-ratelimit-reset"),
             });
         }
 
@@ -953,4 +972,23 @@ mod tests {
         request_task.await.expect("large fixture request task");
         assert_eq!(error.kind, WebSearchErrorKind::InvalidResponse);
     }
+}
+
+fn response_header(
+    response: &reqwest::Response,
+    name: reqwest::header::HeaderName,
+) -> Option<String> {
+    response
+        .headers()
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+}
+
+fn response_header_name(response: &reqwest::Response, name: &str) -> Option<String> {
+    response
+        .headers()
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
 }

@@ -92,6 +92,7 @@
     "verify:webkit-compatibility": "node scripts/verify-webkit-compatibility.cjs",
     "verify:webkit-compatibility:test": "node --test scripts/verify-webkit-compatibility.test.mjs",
     "build:web": "pnpm run appearance:contract-audit && node scripts/build-web-parallel.mjs && node scripts/generate-frontend-revision.mjs && pnpm run verify:monaco-assets && pnpm run verify:webkit-compatibility",
+    "build:loopx": "node scripts/build-loopx.mjs",
     "build:mobile-web": "pnpm --dir src/mobile-web build",
     "build:miniapp-market": "pnpm --dir src/miniapp-market-web build",
     "type-check:miniapp-market": "pnpm --dir src/miniapp-market-web type-check",

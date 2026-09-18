@@ -65,6 +65,19 @@ describe('shouldSendDialogCompletionNotification', () => {
     ).toBe(false);
   });
 
+  it('suppresses miniapp headless agent completions (LoopX turns notify only at owner gates)', () => {
+    expect(
+      shouldSendDialogCompletionNotification({
+        event: event(),
+        session: session({
+          sessionKind: 'miniapp',
+        }),
+        isBackground: true,
+        notificationsEnabled: true,
+      }),
+    ).toBe(false);
+  });
+
   it('suppresses notifications when the session is not available locally', () => {
     expect(
       shouldSendDialogCompletionNotification({

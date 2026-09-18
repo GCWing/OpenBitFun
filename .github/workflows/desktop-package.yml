@@ -288,6 +288,11 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Setup Python (bundled loopx CLI)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:

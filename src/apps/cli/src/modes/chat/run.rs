@@ -93,6 +93,7 @@ fn context_compression_tool_event(
             ..
         } => Some(ToolEventData::Completed {
             identity: ToolEventIdentity::direct(compression_id, "ContextCompression"),
+            params: None,
             result: serde_json::json!({
                 "compression_count": compression_count,
                 "tokens_before": tokens_before,
@@ -117,6 +118,7 @@ fn context_compression_tool_event(
             ..
         } => Some(ToolEventData::Failed {
             identity: ToolEventIdentity::direct(compression_id, "ContextCompression"),
+            params: None,
             error_detail: None,
             error: error.clone(),
             duration_ms: None,

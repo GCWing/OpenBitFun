@@ -31,6 +31,7 @@ async-trait = { workspace = true, optional = true }
 base64 = { workspace = true, optional = true }
 openbitfun-services-core = { path = "../services-core", optional = true }
 bzip2 = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
 chrono = { workspace = true, optional = true }
 dunce = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
@@ -70,6 +71,7 @@ url = { workspace = true, optional = true }
 which = { workspace = true, optional = true }
 zip = { workspace = true, optional = true }
 dirs = { workspace = true, optional = true }
+encoding_rs = { workspace = true, optional = true }
 russh = { workspace = true, optional = true }
 russh-sftp = { workspace = true, optional = true }
 russh-keys = { workspace = true, optional = true }
@@ -200,6 +202,35 @@ miniapp-runtime = [
     "tokio/time",
     "uuid",
     "which",
+]
+miniapp-loopx = [
+    "async-trait",
+    "openbitfun-product-domains/miniapp",
+    "openbitfun-services-core/process-runtime",
+    "openbitfun-services-core/tls-provider",
+    "dep:openbitfun-product-domains",
+    "dunce",
+    "dep:encoding_rs",
+    "flate2",
+    "hex",
+    "reqwest",
+    "reqwest/json",
+    "reqwest/rustls-no-provider",
+    "sha2",
+    "thiserror",
+    "tokio/fs",
+    "tokio/io-util",
+    "tokio/macros",
+    "tokio/process",
+    "tokio/rt",
+    "tokio/sync",
+    "tokio/time",
+    "tar",
+    "tokio-util",
+    "url",
+    "uuid",
+    "which",
+    "zip",
 ]
 account-identity = [
     "dep:openbitfun-product-domains",
@@ -486,6 +517,7 @@ product-full = [
     "function-agents",
     "git",
     "hook-import",
+    "miniapp-loopx",
     "miniapp-runtime",
     "mcp",
     "plugin-source",
@@ -537,6 +569,11 @@ required-features = ["mcp"]
 name = "mcp_streamable_http_contracts"
 path = "tests/mcp_streamable_http_contracts.rs"
 required-features = ["mcp"]
+
+[[test]]
+name = "miniapp_loopx_contracts"
+path = "tests/miniapp_loopx_contracts.rs"
+required-features = ["miniapp-loopx"]
 
 [[test]]
 name = "remote_connect_contracts"

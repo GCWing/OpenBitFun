@@ -470,7 +470,9 @@ test('official packaging injects the DeepSeek profile resource', () => {
   mkdirSync(fixture, { recursive: true });
   const baseConfig = join(fixture, 'tauri.conf.json');
   writeFileSync(baseConfig, JSON.stringify({
-    bundle: { resources: { 'resources/worker_host.js': 'resources/worker_host.js' } },
+    bundle: { resources: {
+      'resources/worker_host.js': 'resources/worker_host.js',
+    } },
   }));
   try {
     const generated = prepareTauriConfig(baseConfig, {

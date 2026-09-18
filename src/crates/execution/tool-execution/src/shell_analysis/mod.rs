@@ -330,7 +330,7 @@ impl Parser {
 /// No filesystem access, process launch, environment expansion, or permission decision.
 pub fn analyze(command: &str, shell_kind: &str, workdir: &str) -> Analysis {
     let mut result = Analysis::default();
-    if !workdir.starts_with('/') {
+    if !is_absolute_workdir(workdir) {
         result.add_issue(Issue {
             status: AnalysisStatus::Unsupported,
             reason: "non-POSIX working directory requires a shell path adapter",
@@ -347,6 +347,19 @@ pub fn analyze(command: &str, shell_kind: &str, workdir: &str) -> Analysis {
     );
     result
 }
+
+/// Absolute POSIX (`/...`) or absolute Windows (`C:[/\\]...`, UNC `\\...`)
+/// working directory. Host worktrees on Windows use drive-letter paths; these
+/// are valid cwd inputs even though the path facts stay best-effort (path
+/// joining is POSIX-only, and Windows shell path translation is not inferred).
+fn is_absolute_workdir(workdir: &str) -> bool {
+    workdir.starts_with('/')
+        || workdir.starts_with("\\\\")
+        || (workdir.len() >= 3
+            && workdir.as_bytes()[0].is_ascii_alphabetic()
+            && workdir.as_bytes()[1] == b':'
+            && (workdir.as_bytes()[2] == b'/' || workdir.as_bytes()[2] == b'\\'))
+}
 fn analyze_into(command: &str, shell: &str, cwd: &Cwd, depth: usize, result: &mut Analysis) {
     let span = Span {
         start: 0,
@@ -360,7 +373,7 @@ fn analyze_into(command: &str, shell: &str, cwd: &Cwd, depth: usize, result: &mu
         });
         return;
     }
-    if !matches!(shell, "bash" | "sh" | "zsh") {
+    if !matches!(shell, "bash" | "sh" | "zsh" | "powershell" | "pwsh" | "cmd" | "ps") {
         result.add_issue(Issue {
             status: AnalysisStatus::Unsupported,
             reason: "unsupported shell dialect",
@@ -368,12 +381,20 @@ fn analyze_into(command: &str, shell: &str, cwd: &Cwd, depth: usize, result: &mu
         });
         return;
     }
-    if command.contains('\0') {
-        result.add_issue(Issue {
-            status: AnalysisStatus::Invalid,
-            reason: "NUL in shell source",
-            span,
-        });
+    // Windows shell dialects: the bash syntax oracle cannot parse PowerShell
+    // sources, and the complete-shell guard would otherwise fail closed on
+    // EVERY ExecCommand on Windows (`whoami` included). Keep the hard input
+    // limits and NUL rejection, then treat the command as syntactically
+    // supported with best-effort facts (no file-op attribution). Edit-constraint
+    // policy still applies through the other tools and the exec policy layer.
+    if matches!(shell, "powershell" | "pwsh" | "cmd" | "ps") {
+        if command.contains('\0') {
+            result.add_issue(Issue {
+                status: AnalysisStatus::Invalid,
+                reason: "NUL in shell source",
+                span,
+            });
+        }
         return;
     }
     let tokens = match lexer::lex(command) {

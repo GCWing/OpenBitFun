@@ -94,6 +94,37 @@ struct DiagnosticMetadata {
     platform_crash_report_hints: Vec<String>,
 }
 
+/// Ensures a single GUI instance owns this data root. Two instances sharing
+/// one root corrupt controller state and workspace lifecycle (for example
+/// LoopX worktrees removed out from under live tasks). File locks are
+/// released by the OS when the holder dies, so a crashed instance never
+/// blocks the next launch.
+pub fn acquire_single_instance_lock(session_log_dir: &Path) -> Result<(), String> {
+    let logs_root = session_log_dir.parent().unwrap_or(session_log_dir);
+    let lock_path = logs_root.join(".bitfun-instance.lock");
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|error| {
+            format!(
+                "failed to open the instance lock {}: {error}",
+                lock_path.display()
+            )
+        })?;
+    file.try_lock().map_err(|_| {
+        format!(
+            "another BitFun instance is already running for this data root (lock: {}); close that instance before starting a new one",
+            lock_path.display()
+        )
+    })?;
+    // Deliberately leak the handle: the lock must outlive every other use of
+    // this data root for the whole process lifetime.
+    std::mem::forget(file);
+    Ok(())
+}
+
 pub fn initialize_run_state(session_log_dir: PathBuf, startup_trace_id: &str) {
     let logs_root = session_log_dir
         .parent()

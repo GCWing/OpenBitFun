@@ -189,6 +189,7 @@ impl ToolStateManager {
                 confirmation_wait_ms,
                 execution_ms,
             } => ToolStateEventKind::Completed {
+                params: Some(task.invocation.wire_arguments.clone()),
                 result: result.content(),
                 result_for_assistant: match result {
                     crate::agentic::tools::framework::ToolResult::Result {
@@ -220,6 +221,7 @@ impl ToolStateManager {
                 confirmation_wait_ms,
                 execution_ms,
             } => ToolStateEventKind::Failed {
+                params: Some(task.invocation.wire_arguments.clone()),
                 error_detail: error_detail.clone(),
                 error: error.clone(),
                 duration_ms: *duration_ms,
@@ -237,6 +239,7 @@ impl ToolStateManager {
                 confirmation_wait_ms,
                 execution_ms,
             } => ToolStateEventKind::Cancelled {
+                params: Some(task.invocation.wire_arguments.clone()),
                 reason: reason.clone(),
                 duration_ms: *duration_ms,
                 queue_wait_ms: *queue_wait_ms,

@@ -351,5 +351,9 @@
       "confirm": "应用并授予权限"
     },
     "chatLoading": "正在打开编辑会话..."
+  },
+  "unsupported": {
+    "title": "MiniApp 仅在桌面版可用",
+    "body": "内置小应用与市场需要桌面版 BitFun 才能运行。请打开桌面版 BitFun，点击左下角的「小应用」入口使用。"
   }
 }

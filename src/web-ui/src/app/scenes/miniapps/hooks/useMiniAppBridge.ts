@@ -4,11 +4,14 @@
  * ai.* → Host AI client, agent.* → Host agent bridge (hidden subagent runs),
  * deck.renderPage → hidden host WebView slide rasterization (export),
  * chat.* → floating session bubble composer claims and session focus,
+ * private loopx.* → the host-owned persistent LoopX controller (verified builtin only;
+ * this namespace is not injected into ordinary or marketplace MiniApps),
  * clipboard.* → Host navigator.clipboard.
  * Also handles openbitfun/request-appearance and pushes Appearance changes to the iframe.
  */
 import { useLayoutEffect, useRef, useEffect, useState, RefObject } from 'react';
 import { miniAppAPI } from '@/infrastructure/api/service-api/MiniAppAPI';
+import { loopxAPI } from '@/infrastructure/api/service-api/LoopxAPI';
 import { open as dialogOpen, save as dialogSave, message as dialogMessage } from '@tauri-apps/plugin-dialog';
 import type { MiniApp } from '@/infrastructure/api/service-api/MiniAppAPI';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
@@ -35,6 +38,13 @@ import { shouldOpenMiniAppAgentRunInMainScene } from './miniAppAgentVisibility';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { createLogger } from '@/shared/utils/logger';
+import { logElapsed, measureAsyncAndLog, nowMs } from '@/shared/utils/timing';
+import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
+import {
+  isLoopxBridgeMethod,
+  LOOPX_BUILTIN_APP_ID,
+  parseLoopxBridgeCall,
+} from './loopxBridgeProtocol';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { beginMiniAppOperation, isMiniAppClosing, trackMiniAppStream } from '../miniAppLifecycle';
 
@@ -43,6 +53,14 @@ interface JSONRPC {
   id: number | string;
   method: string;
   params?: Record<string, unknown>;
+}
+
+interface MiniAppDiagnosticMessage {
+  type?: string;
+  scope?: string;
+  phase?: string;
+  action?: string;
+  requestId?: string;
 }
 
 interface AiStreamPayload {
@@ -56,6 +74,36 @@ interface AiStreamPayload {
 let composerTokenSeq = 0;
 const log = createLogger('useMiniAppBridge');
 
+/**
+ * Module-level registry of MiniApp-owned agent session ids, keyed by runner
+ * scope. Installed apps and draft previews intentionally share an app id, but
+ * must never share Agent ownership.
+ *
+ * A hidden agent turn runs in the host while this hook owns its event routing.
+ * When the hook REMOUNTS mid-turn (tab switch, iframe reload), a per-hook
+ * `useRef` would reset to empty and silently drop the turn's remaining
+ * `agentic://*` events — most importantly `dialog-turn-completed`. The MiniApp
+ * then never learns the turn finished, so its own stall watchdog later cancels
+ * an already-completed turn. Keeping the set at module scope makes it survive
+ * remounts for the lifetime of the webview.
+ */
+const agentSessionIdsByRunner = new Map<string, Set<string>>();
+
+function agentSessionRegistryKey(scope: MiniAppRunScope): string {
+  return scope.kind === 'draft'
+    ? `draft:${scope.appId}:${scope.draftId}`
+    : `active:${scope.appId}`;
+}
+
+function agentSessionIdsFor(registryKey: string): Set<string> {
+  let set = agentSessionIdsByRunner.get(registryKey);
+  if (!set) {
+    set = new Set<string>();
+    agentSessionIdsByRunner.set(registryKey, set);
+  }
+  return set;
+}
+
 export function useMiniAppBridge(
   iframeRef: RefObject<HTMLIFrameElement>,
   app: MiniApp,
@@ -63,8 +111,10 @@ export function useMiniAppBridge(
   strictRuntime = false,
 ) {
   const [bridgeReady, setBridgeReady] = useState(false);
+  const { workspace, workspacePath } = useCurrentWorkspace();
+  const peerModeActive = isPeerDeviceModeActive();
+  const remoteWorkspaceActive = workspace?.workspaceKind === 'remote';
   const surfaceScope = useRef(getActiveSurfaceScope()).current;
-  const { workspacePath } = useCurrentWorkspace();
   const { current: currentAppearance } = useAppearance();
   const { currentLanguage } = useI18n('scenes/miniapp');
   const appearanceRef = useRef(currentAppearance);
@@ -76,6 +126,8 @@ export function useMiniAppBridge(
 
   const runScopeRef = useRef<MiniAppRunScope>(runScope);
   runScopeRef.current = runScope;
+  const loadedAppIdRef = useRef(app.id);
+  loadedAppIdRef.current = app.id;
   // Whether this app opts out of the JS Worker. When true, framework primitive
   // calls (fs.*/shell.*/os.*/net.*) are routed to the host directly via
   // `miniapp_host_call`, so the app does not require Bun/Node at runtime.
@@ -88,6 +140,10 @@ export function useMiniAppBridge(
   const aiEnabledRef = useRef(app.permissions?.ai?.enabled === true);
   const strictRuntimeRef = useRef(strictRuntime);
   const hostPermissionsRef = useRef(app.permissions?.host);
+  const loopxAccessCheckRef = useRef<{
+    key: string;
+    check: Promise<void>;
+  }>();
   useLayoutEffect(() => {
     nodeDisabledRef.current = app.permissions?.node?.enabled === false;
     systemNotificationsAllowedRef.current = app.permissions?.notifications?.system === true;
@@ -106,8 +162,16 @@ export function useMiniAppBridge(
   ]);
 
   // Hidden agent sessions started by this iframe; used to filter the global
-  // agentic:// event stream before forwarding events into the iframe.
-  const agentSessionIdsRef = useRef<Set<string>>(new Set());
+  // agentic:// event stream before forwarding events into the iframe. Backed by
+  // a module-level map (see agentSessionIdsFor) so a mid-turn remount does not
+  // reset the set and drop the turn's completion event.
+  const sessionRegistryKey = agentSessionRegistryKey(runScope);
+  const sessionRegistryKeyRef = useRef(sessionRegistryKey);
+  const agentSessionIdsRef = useRef<Set<string>>(agentSessionIdsFor(sessionRegistryKey));
+  if (sessionRegistryKeyRef.current !== sessionRegistryKey) {
+    sessionRegistryKeyRef.current = sessionRegistryKey;
+    agentSessionIdsRef.current = agentSessionIdsFor(sessionRegistryKey);
+  }
 
   // This runner's identity for bubble composer claims.
   const composerTokenRef = useRef<string>('');
@@ -118,10 +182,36 @@ export function useMiniAppBridge(
   useLayoutEffect(() => {
     const handler = async (event: MessageEvent) => {
       if (!iframeRef.current || event.source !== iframeRef.current.contentWindow) return;
-      const msg = event.data as JSONRPC & { method?: string };
+      const rawMessage = event.data as MiniAppDiagnosticMessage & JSONRPC & { method?: string };
+      if (rawMessage?.type === 'bitfun:diagnostic' && rawMessage.scope === 'loopx-install') {
+        log.info('LoopX install MiniApp phase', {
+          action: String(rawMessage.action || 'install_loopx').slice(0, 64),
+          phase: String(rawMessage.phase || 'unknown').slice(0, 64),
+          requestId: String(rawMessage.requestId || 'unassigned').slice(0, 128),
+        });
+        return;
+      }
+      const msg = rawMessage;
       if (!msg?.method) return;
 
       const { id, method, params = {} } = msg;
+      const installAction = method === 'loopx.action'
+        && params.action === 'install_loopx'
+        ? String(params.action)
+        : null;
+      const installTrace = installAction
+        ? {
+            action: installAction,
+            requestId: String(params.clientRequestId || id).slice(0, 128),
+            receivedAt: nowMs(),
+          }
+        : null;
+      if (installTrace) {
+        log.info('LoopX install bridge request received', {
+          action: installTrace.action,
+          requestId: installTrace.requestId,
+        });
+      }
       const scope = runScopeRef.current;
       const appId = scope.appId;
       const reply = (result: unknown) =>
@@ -164,6 +254,108 @@ export function useMiniAppBridge(
       const finishOperation = ['worker.call', 'agent.ensureSession', 'agent.run', 'ai.complete', 'ai.chat'].includes(method)
         ? beginMiniAppOperation(appId, surfaceScope) : undefined;
       try {
+        if (isLoopxBridgeMethod(method)) {
+          if (
+            loadedAppIdRef.current !== LOOPX_BUILTIN_APP_ID
+            || appId !== loadedAppIdRef.current
+          ) {
+            replyError(
+              `The LoopX controller bridge is restricted to '${LOOPX_BUILTIN_APP_ID}'.`,
+            );
+            return;
+          }
+          if (scope.kind !== 'active') {
+            replyError('The LoopX controller bridge is unavailable in MiniApp draft previews.');
+            return;
+          }
+          if (strictRuntimeRef.current) {
+            replyError('The LoopX controller bridge is unavailable to strict MiniApp runtimes.');
+            return;
+          }
+
+          const accessKey = `${appId}:${scope.kind}:${strictRuntimeRef.current}`;
+          if (loopxAccessCheckRef.current?.key !== accessKey) {
+            loopxAccessCheckRef.current = {
+              key: accessKey,
+              check: miniAppAPI.getCustomizationMetadata(appId)
+                .then((metadata) => {
+                  if (!metadata) return;
+                  if (metadata.local_override) {
+                    throw new Error(
+                      'The LoopX controller bridge is disabled because this builtin MiniApp has a local override.',
+                    );
+                  }
+                  if (
+                    metadata.origin.kind !== 'builtin'
+                    || (
+                      metadata.origin.builtin_id !== undefined
+                      && metadata.origin.builtin_id !== LOOPX_BUILTIN_APP_ID
+                    )
+                  ) {
+                    throw new Error(
+                      'The LoopX controller bridge requires verified builtin customization metadata.',
+                    );
+                  }
+                })
+                .catch((error) => {
+                  const message = error instanceof Error ? error.message : String(error);
+                  throw new Error(`Unable to verify access to the LoopX controller bridge: ${message}`);
+                }),
+            };
+          }
+          await loopxAccessCheckRef.current.check;
+          if (installTrace) {
+            logElapsed(log, 'LoopX install access check completed', installTrace.receivedAt, {
+              level: 'info',
+              data: { requestId: installTrace.requestId },
+            });
+          }
+
+          const call = parseLoopxBridgeCall(method, params);
+          if (call.kind === 'attach') {
+            reply(await loopxAPI.attach(appId, call.request));
+            return;
+          }
+          if (call.kind === 'listModels') {
+            reply(await loopxAPI.listModels(appId));
+            return;
+          }
+          if (call.kind === 'resolveIntake') {
+            reply(await loopxAPI.resolveIntake(appId, call.request));
+            return;
+          }
+          if (call.kind === 'createTask') {
+            reply(await loopxAPI.createTask(appId, call.request));
+            return;
+          }
+          if (call.kind === 'action') {
+            if (installTrace) {
+              const measured = await measureAsyncAndLog(
+                log,
+                'LoopX install Tauri action completed',
+                () => loopxAPI.action(appId, call.request),
+                {
+                  level: 'info',
+                  data: {
+                    action: installTrace.action,
+                    requestId: installTrace.requestId,
+                  },
+                },
+              );
+              reply(measured.value);
+            } else {
+              reply(await loopxAPI.action(appId, call.request));
+            }
+            return;
+          }
+          if (call.kind === 'eventsSince') {
+            reply(await loopxAPI.eventsSince(appId, call.request));
+            return;
+          }
+          reply(await loopxAPI.turnOutputSince(appId, call.request));
+          return;
+        }
+
         if (method === 'worker.call') {
           const innerMethod = (params.method as string) ?? '';
           const innerParams = (params.params as Record<string, unknown>) ?? {};
@@ -663,6 +855,13 @@ export function useMiniAppBridge(
 
         replyError(`Unknown method: ${method}`);
       } catch (error) {
+        if (installTrace) {
+          log.error('LoopX install bridge request failed', {
+            action: installTrace.action,
+            requestId: installTrace.requestId,
+            error,
+          });
+        }
         if (method === 'ai.chat') trackMiniAppStream(appId, String(params.streamId ?? ''), surfaceScope, false);
         replyError(typeof error === 'string' ? error : String(error));
       } finally {
@@ -775,6 +974,60 @@ export function useMiniAppBridge(
     };
   }, [app.id, iframeRef, surfaceScope]);
 
+  // LoopX task execution belongs to the persistent host controller. This push
+  // channel is only a latency optimization; the MiniApp repairs every cursor
+  // gap through loopx.eventsSince and re-attaches when the stream changes.
+  useEffect(() => {
+    const activeScope = runScope.kind === 'active' && runScope.appId === app.id;
+    if (
+      app.id !== LOOPX_BUILTIN_APP_ID
+      || !activeScope
+      || strictRuntime
+      || peerModeActive
+      || remoteWorkspaceActive
+    ) return;
+
+    let disposed = false;
+    let accessVerified = false;
+    void miniAppAPI.getCustomizationMetadata(app.id)
+      .then((metadata) => {
+        if (disposed) return;
+        accessVerified = !metadata || (
+          !metadata.local_override
+          && metadata.origin.kind === 'builtin'
+          && (
+            metadata.origin.builtin_id === undefined
+            || metadata.origin.builtin_id === LOOPX_BUILTIN_APP_ID
+          )
+        );
+      })
+      .catch((error) => {
+        log.warn('Failed to verify LoopX event bridge access', { appId: app.id, error });
+      });
+
+    const unlisten = api.listen<Record<string, unknown>>('miniapp://loopx-event', (payload) => {
+      if (!accessVerified || !iframeRef.current?.contentWindow) return;
+      iframeRef.current.contentWindow.postMessage(
+        { type: 'bitfun:event', event: 'loopx:event', payload },
+        '*',
+      );
+    });
+    return () => {
+      disposed = true;
+      unlisten();
+    };
+  }, [
+    app.id,
+    app.runtime?.content_hash,
+    iframeRef,
+    runScope.appId,
+    runScope.kind,
+    runScope.kind === 'draft' ? runScope.draftId : undefined,
+    peerModeActive,
+    remoteWorkspaceActive,
+    strictRuntime,
+  ]);
+
   // Forward agentic:// events for MiniApp-owned hidden agent sessions into the
   // iframe as 'agent:event' (consumed via app.agent.onEvent in the SDK).
   useEffect(() => {
@@ -824,6 +1077,20 @@ export function useMiniAppBridge(
             },
             '*',
           );
+          if (
+            eventName === 'dialog-turn-completed'
+            || eventName === 'dialog-turn-failed'
+            || eventName === 'dialog-turn-cancelled'
+          ) {
+            agentSessionIdsRef.current.delete(eventSessionId);
+            const registryKey = sessionRegistryKeyRef.current;
+            if (
+              agentSessionIdsRef.current.size === 0
+              && agentSessionIdsByRunner.get(registryKey) === agentSessionIdsRef.current
+            ) {
+              agentSessionIdsByRunner.delete(registryKey);
+            }
+          }
         },
       ),
     );

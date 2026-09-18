@@ -173,6 +173,9 @@ pub struct JsWorkerPool {
     runtime: DetectedRuntime,
     worker_host_path: PathBuf,
     miniapps_dir: PathBuf,
+    /// Directory of host-bundled sidecar resources, exported to every worker
+    /// as `BITFUN_RESOURCE_DIR` (None in host-less tests and minimal hosts).
+    resource_dir: Option<PathBuf>,
     event_sink: Option<SharedMiniAppWorkerEventSink>,
 }
 
@@ -180,6 +183,7 @@ impl JsWorkerPool {
     pub fn new(
         miniapps_dir: PathBuf,
         worker_host_path: PathBuf,
+        resource_dir: Option<PathBuf>,
         event_sink: Option<SharedMiniAppWorkerEventSink>,
     ) -> MiniAppWorkerPoolResult<Self> {
         let runtime = detect_runtime().ok_or_else(|| {
@@ -190,6 +194,7 @@ impl JsWorkerPool {
         Ok(Self::from_runtime(
             miniapps_dir,
             worker_host_path,
+            resource_dir,
             runtime,
             event_sink,
         ))
@@ -198,6 +203,7 @@ impl JsWorkerPool {
     pub fn from_runtime(
         miniapps_dir: PathBuf,
         worker_host_path: PathBuf,
+        resource_dir: Option<PathBuf>,
         runtime: DetectedRuntime,
         event_sink: Option<SharedMiniAppWorkerEventSink>,
     ) -> Self {
@@ -209,6 +215,7 @@ impl JsWorkerPool {
             runtime,
             worker_host_path,
             miniapps_dir,
+            resource_dir,
             event_sink,
         }
     }
@@ -308,6 +315,7 @@ impl JsWorkerPool {
         let worker = JsWorker::spawn(
             &self.runtime,
             &self.worker_host_path,
+            self.resource_dir.as_deref(),
             app_dir,
             policy_json,
             app_id.to_string(),
@@ -538,6 +546,7 @@ mod tests {
         let pool = JsWorkerPool::from_runtime(
             miniapps_dir,
             PathBuf::from("worker-host.js"),
+            None,
             DetectedRuntime {
                 kind: RuntimeKind::Node,
                 path: PathBuf::from("node"),
@@ -578,6 +587,7 @@ mod tests {
         let pool = JsWorkerPool::from_runtime(
             miniapps_dir,
             PathBuf::from("worker-host.js"),
+            None,
             DetectedRuntime {
                 kind: RuntimeKind::Node,
                 path: PathBuf::from("node"),

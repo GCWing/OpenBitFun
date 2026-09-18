@@ -1,8 +1,8 @@
 //! MiniApp compiler — assemble source (html/css/ui_js) + import map + runtime bridge.
 
 use crate::miniapp::bridge_builder::{
-    build_bridge_script, build_csp_content, build_import_map, build_market_csp_content,
-    build_miniapp_default_appearance_css, scroll_boundary_script,
+    build_bridge_script, build_csp_content, build_import_map, build_market_bridge_script,
+    build_market_csp_content, build_miniapp_default_appearance_css, scroll_boundary_script,
 };
 use crate::miniapp::lifecycle::workspace_dir_string;
 use crate::miniapp::types::{MiniAppPermissions, MiniAppSource};
@@ -96,13 +96,23 @@ fn compile_internal(
         "linux"
     };
 
-    let bridge = build_bridge_script(
-        app_id,
-        app_data_dir,
-        workspace_dir,
-        appearance_mode,
-        platform,
-    );
+    let bridge = if market_strict {
+        build_market_bridge_script(
+            app_id,
+            app_data_dir,
+            workspace_dir,
+            appearance_mode,
+            platform,
+        )
+    } else {
+        build_bridge_script(
+            app_id,
+            app_data_dir,
+            workspace_dir,
+            appearance_mode,
+            platform,
+        )
+    };
     let csp = if market_strict {
         build_market_csp_content().to_string()
     } else {
@@ -442,5 +452,29 @@ mod tests {
             url: None,
         });
         assert!(compile_market_with_request(&source, &permissions, &request).is_err());
+    }
+
+    #[test]
+    fn market_compile_never_injects_private_builtin_extensions() {
+        let source = MiniAppSource {
+            html: "<!DOCTYPE html><html><head></head><body></body></html>".to_string(),
+            css: String::new(),
+            ui_js: String::new(),
+            esm_dependencies: vec![],
+            worker_js: String::new(),
+            npm_dependencies: vec![],
+        };
+        let permissions = MiniAppPermissions {
+            node: Some(crate::miniapp::types::NodePermissions {
+                enabled: false,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let request =
+            MiniAppCompileRequest::from_paths("builtin-bitfun-loopx", "/tmp/app", None, "dark");
+
+        let compiled = compile_market_with_request(&source, &permissions, &request).unwrap();
+        assert!(!compiled.contains("loopx.attach"));
     }
 }

@@ -1813,15 +1813,15 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
 
   const state = store.getState();
   const session = state.sessions.get(sessionId);
+  const isMiniAppAgentRun = userMessageMetadata?.surface === 'miniapp_agent';
+  const miniAppId = typeof userMessageMetadata?.appId === 'string'
+    ? userMessageMetadata.appId
+    : undefined;
 
   if (!session) {
     // Hidden MiniApp agent runs (e.g. PPT Live) submit turns with
     // `surface: 'miniapp_agent'`. Register them as transient miniapp sessions
     // so they stay out of the session list and the agent companion bubbles.
-    const isMiniAppAgentRun = userMessageMetadata?.surface === 'miniapp_agent';
-    const miniAppId = typeof userMessageMetadata?.appId === 'string'
-      ? userMessageMetadata.appId
-      : undefined;
     log.warn('DialogTurnStarted: session not in store, creating placeholder', { sessionId, sessionsCount: state.sessions.size, isMiniAppAgentRun });
     const workspace = resolveExternalSessionWorkspace(context, event);
     store.addExternalSession(
@@ -1835,6 +1835,15 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
       extractEventRemoteConnectionId(event),
       extractEventRemoteSshHost(event)
     );
+  } else if (isMiniAppAgentRun) {
+    // SessionCreated does not carry user-message metadata, so a transient
+    // MiniApp session can already exist as a normal external session by the
+    // time DialogTurnStarted provides the authoritative surface identity.
+    store.updateSessionLifetime(sessionId, {
+      isTransient: true,
+      agentBackedTransient: true,
+      sessionKind: 'miniapp',
+    });
   }
 
   // Extract image display data from metadata (sent by coordinator for all platforms)

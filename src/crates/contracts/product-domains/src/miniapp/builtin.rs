@@ -8,7 +8,7 @@ use crate::miniapp::ports::{MiniAppPortFuture, MiniAppPortResult};
 use crate::miniapp::storage::{
     build_package_json, ESM_DEPS_JSON, INDEX_HTML, STYLE_CSS, UI_JS, WORKER_JS,
 };
-use crate::miniapp::types::MiniAppMeta;
+use crate::miniapp::types::{EsmDep, MiniAppMeta, MiniAppSource};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -157,6 +157,16 @@ pub const BUILTIN_APPS: &[BuiltinMiniAppBundle] = &[
         worker_js: include_str!("builtin/assets/ppt-live/worker.js"),
         esm_dependencies_json: include_str!("builtin/assets/ppt-live/esm_dependencies.json"),
     },
+    BuiltinMiniAppBundle {
+        id: "builtin-bitfun-loopx",
+        version: 15,
+        meta_json: include_str!("builtin/assets/bitfun-loopx/meta.json"),
+        html: include_str!("builtin/assets/bitfun-loopx/index.html"),
+        css: include_str!("builtin/assets/bitfun-loopx/style.css"),
+        ui_js: include_str!("builtin/assets/bitfun-loopx/ui.js"),
+        worker_js: include_str!("builtin/assets/bitfun-loopx/worker.js"),
+        esm_dependencies_json: include_str!("builtin/assets/bitfun-loopx/esm_dependencies.json"),
+    },
 ];
 
 pub fn builtin_content_hash(app: &BuiltinMiniAppBundle) -> String {
@@ -172,6 +182,23 @@ pub fn builtin_content_hash(app: &BuiltinMiniAppBundle) -> String {
         app.esm_dependencies_json,
     );
     format!("sha256:{}", hex_encode(&hasher.finalize()))
+}
+
+/// Whether installed source files still match the bundled built-in assets
+/// verbatim. Privileged host bridges use this to refuse driving from locally
+/// modified built-in content. The meta.json identity/timestamp rewrite performed
+/// at seed time is intentionally excluded.
+pub fn builtin_source_matches(source: &MiniAppSource, bundle: &BuiltinMiniAppBundle) -> bool {
+    let Ok(bundled_esm_deps) = serde_json::from_str::<Vec<EsmDep>>(bundle.esm_dependencies_json)
+    else {
+        return false;
+    };
+    source.html == bundle.html
+        && source.css == bundle.css
+        && source.ui_js == bundle.ui_js
+        && source.worker_js == bundle.worker_js
+        && source.esm_dependencies == bundled_esm_deps
+        && source.npm_dependencies.is_empty()
 }
 
 pub fn build_builtin_install_marker(
@@ -342,9 +369,9 @@ mod tests {
     // Version bumps should only touch bundle registration and seed runtime, not tests.
 
     use super::{
-        build_builtin_seed_artifacts, builtin_content_hash, seed_builtin_miniapp_with_host,
-        BuiltinInstallMarker, BuiltinMiniAppSeedBundleRequest, BuiltinMiniAppSeedHost,
-        BuiltinMiniAppSeedOutcome, BuiltinSeedArtifacts, BUILTIN_APPS,
+        build_builtin_seed_artifacts, builtin_content_hash, builtin_source_matches,
+        seed_builtin_miniapp_with_host, BuiltinInstallMarker, BuiltinMiniAppSeedBundleRequest,
+        BuiltinMiniAppSeedHost, BuiltinMiniAppSeedOutcome, BuiltinSeedArtifacts, BUILTIN_APPS,
     };
     use crate::miniapp::ports::{MiniAppPortFuture, MiniAppPortResult};
     use std::sync::{Arc, Mutex};
@@ -361,6 +388,7 @@ mod tests {
                 "builtin-regex-playground",
                 "builtin-coding-selfie",
                 "builtin-ppt-live",
+                "builtin-bitfun-loopx",
             ]
         );
 
@@ -371,6 +399,63 @@ mod tests {
             assert!(!app.ui_js.trim().is_empty());
             assert!(!app.worker_js.trim().is_empty());
             assert!(builtin_content_hash(app).starts_with("sha256:"));
+        }
+    }
+
+    #[test]
+    fn builtin_miniapp_meta_and_deps_parse_into_product_types() {
+        use crate::miniapp::types::{EsmDep, MiniAppMeta};
+
+        for app in BUILTIN_APPS {
+            let meta: MiniAppMeta = serde_json::from_str(app.meta_json).unwrap_or_else(|e| {
+                panic!(
+                    "builtin '{}' meta.json does not parse as MiniAppMeta: {e}",
+                    app.id
+                )
+            });
+            assert_eq!(
+                meta.id, app.id,
+                "builtin '{}' meta id must match the bundle id",
+                app.id
+            );
+            assert!(
+                !meta.name.trim().is_empty(),
+                "builtin '{}' meta name must not be empty",
+                app.id
+            );
+            assert!(
+                !meta.icon.trim().is_empty(),
+                "builtin '{}' meta icon must not be empty",
+                app.id
+            );
+            let i18n = meta.i18n.as_ref().unwrap_or_else(|| {
+                panic!("builtin '{}' meta.json must carry i18n locales", app.id)
+            });
+            assert!(
+                i18n.locales.contains_key("zh-CN"),
+                "builtin '{}' i18n must cover zh-CN",
+                app.id
+            );
+            assert!(
+                i18n.locales.contains_key("en-US"),
+                "builtin '{}' i18n must cover en-US",
+                app.id
+            );
+
+            let deps: Vec<EsmDep> =
+                serde_json::from_str(app.esm_dependencies_json).unwrap_or_else(|e| {
+                    panic!(
+                        "builtin '{}' esm_dependencies.json does not parse as an ESM dep list: {e}",
+                        app.id
+                    )
+                });
+            for dep in &deps {
+                assert!(
+                    !dep.name.trim().is_empty(),
+                    "builtin '{}' has an ESM dependency without a name",
+                    app.id
+                );
+            }
         }
     }
 
@@ -631,5 +716,33 @@ mod tests {
         assert!(!app.html.contains("src=\"./ui.js\""));
         assert!(!app.html.contains("href=\"./style.css\""));
         assert!(app.css.contains("--openbitfun-bg"));
+    }
+
+    #[test]
+    fn builtin_source_matches_detects_modified_source() {
+        use crate::miniapp::types::{EsmDep, MiniAppSource};
+
+        let app = &BUILTIN_APPS[0];
+        let pristine = MiniAppSource {
+            html: app.html.to_string(),
+            css: app.css.to_string(),
+            ui_js: app.ui_js.to_string(),
+            worker_js: app.worker_js.to_string(),
+            esm_dependencies: serde_json::from_str(app.esm_dependencies_json).unwrap(),
+            npm_dependencies: Vec::new(),
+        };
+        assert!(builtin_source_matches(&pristine, app));
+
+        let mut modified_ui = pristine.clone();
+        modified_ui.ui_js.push_str("\n// tampered");
+        assert!(!builtin_source_matches(&modified_ui, app));
+
+        let mut modified_deps = pristine;
+        modified_deps.esm_dependencies.push(EsmDep {
+            name: "extra".to_string(),
+            version: None,
+            url: None,
+        });
+        assert!(!builtin_source_matches(&modified_deps, app));
     }
 }

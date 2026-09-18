@@ -4,7 +4,7 @@
 //! Why this exists
 //! ---------------
 //! The original MiniApp design routed every `app.*` call through a Bun/Node Worker
-//! (`resources/worker_host.js`). That gives apps a real V8 sandbox for arbitrary
+//! (`resources/worker_host.cjs`). That gives apps a real V8 sandbox for arbitrary
 //! `worker.js` code, but it forces every app — even ones that just want to shell out
 //! to `git` — to depend on having Bun or Node installed and a worker runtime online.
 //!
@@ -19,7 +19,7 @@
 //!   pool when the app has `node.enabled = true`. `storage.*` is served by the manager
 //!   directly from the Tauri command layer regardless of node.enabled.
 //!
-//! Permission enforcement here mirrors `worker_host.js` exactly so the security
+//! Permission enforcement here mirrors `worker_host.cjs` exactly so the security
 //! contract is identical regardless of the routing path.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
@@ -105,7 +105,7 @@ pub type MiniAppHostDispatchResult<T> = Result<T, MiniAppHostDispatchError>;
 /// Dispatch a framework-primitive RPC on the host.
 ///
 /// `perms` and the path arguments are used to build a permission policy with the
-/// same shape `worker_host.js` consumes, then the namespace-specific handler is
+/// same shape `worker_host.cjs` consumes, then the namespace-specific handler is
 /// invoked.
 pub async fn dispatch_host(
     perms: &MiniAppPermissions,
@@ -169,7 +169,7 @@ fn canonicalize_best_effort(p: &Path) -> PathBuf {
 }
 
 /// A target path is allowed when its canonicalized form starts with one of the
-/// canonicalized scope roots. Mirrors the worker_host.js check, but uses real
+/// canonicalized scope roots. Mirrors the worker_host.cjs check, but uses real
 /// canonicalization so e.g. `/tmp/foo` on macOS (`/private/tmp/foo`) matches a
 /// `/tmp` scope after both sides resolve symlinks.
 fn path_allowed(policy: &Value, target: &Path, mode: FsAccessMode) -> bool {
@@ -410,7 +410,7 @@ async fn dispatch_shell(
         }
     };
     cmd.current_dir(&plan.cwd);
-    // Match worker_host.js: never let git prompt for credentials, force C locale so
+    // Match worker_host.cjs: never let git prompt for credentials, force C locale so
     // stdout parsing is deterministic.
     for (key, value) in shell_exec_default_env() {
         cmd.env(key, value);
@@ -433,7 +433,7 @@ async fn dispatch_shell(
     let code = output.status.code().unwrap_or(-1);
 
     if !output.status.success() {
-        // Mirror worker_host.js (which uses Node `execAsync`, rejecting on non-zero
+        // Mirror worker_host.cjs (which uses Node `execAsync`, rejecting on non-zero
         // exit with stderr in the message).
         let msg = if !stderr.trim().is_empty() {
             stderr.trim().to_string()

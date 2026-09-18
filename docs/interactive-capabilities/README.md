@@ -27,9 +27,9 @@ OpenBitFun Playbook currently contains **22 features**, **21 settings pages**, a
 - Generated per-item interaction audit: `docs/interactive-capabilities/technical/product-control-open-audit.json`
 - Generated low-level audit map: `docs/interactive-capabilities/technical/tauri-command-map.json`
 
-说明书、网站、搜索和智能体只看“功能 + 设置 + 子能力”。每项子能力都必须引用已注册 Tauri Command 或可解析的源码标记；这些证据不会进入公开目录。当前 **660** 个 Tauri 命令只用于实现覆盖审计。产品 UI 交互源码会在生成和检查时扫描并校验，但不会保存成随普通 UI 改动频繁变化的版本化快照。
+说明书、网站、搜索和智能体只看“功能 + 设置 + 子能力”。每项子能力都必须引用已注册 Tauri Command 或可解析的源码标记；这些证据不会进入公开目录。当前 **667** 个 Tauri 命令只用于实现覆盖审计。产品 UI 交互源码会在生成和检查时扫描并校验，但不会保存成随普通 UI 改动频繁变化的版本化快照。
 
-Docs, website, search, and agents see only features, settings, and documented sub-capabilities. Every sub-capability must reference a registered Tauri command or a resolvable source marker; evidence is stripped from public projections. The **660** Tauri commands remain implementation-audit evidence only. Product UI interaction sources are scanned and validated during generation and checks, but are not stored as a versioned snapshot that churns with ordinary UI changes.
+Docs, website, search, and agents see only features, settings, and documented sub-capabilities. Every sub-capability must reference a registered Tauri command or a resolvable source marker; evidence is stripped from public projections. The **667** Tauri commands remain implementation-audit evidence only. Product UI interaction sources are scanned and validated during generation and checks, but are not stored as a versioned snapshot that churns with ordinary UI changes.
 
 ## 控制边界 / Control boundary
 
