@@ -6152,29 +6152,19 @@ function timelineTurnSummary(group) {
   ].filter(Boolean).join(' · ');
 }
 
-function defaultRawLogsCollapsed(task) {
-  return [
-    'completed',
-    'failed',
-    'recovery_required',
-    'waiting_for_user',
-    'stopped',
-    'aborted',
-    'archived',
-  ].includes(String(task && task.state || ''))
-    || isExternalWait(task)
-    || isMonitorTodo(task);
-}
-
-function isTurnCollapsed(task, group, index, total) {
+function isTurnCollapsed(task, group) {
   const key = timelineTurnGroupKey(task, group);
   if (state.turnCollapseOverrides.has(key)) return state.turnCollapseOverrides.get(key);
-  return index < total - 1 || defaultRawLogsCollapsed(task);
+  // Turns start expanded. The stream is read from the bottom, where the
+  // conclusion lands, and the sticky turn header keeps the evidence
+  // navigable while the owner scrolls back through a long turn. Only an
+  // explicit toggle collapses a turn now.
+  return false;
 }
 
-function updateTimelineTurnDivider(node, task, group, index, total) {
+function updateTimelineTurnDivider(node, task, group, index) {
   const key = timelineTurnGroupKey(task, group);
-  const collapsed = isTurnCollapsed(task, group, index, total);
+  const collapsed = isTurnCollapsed(task, group);
   node.dataset.turnKey = key;
   node.dataset.timelineKey = `d:${key}`;
   const button = node.querySelector('.timeline-turn__toggle');
@@ -6184,18 +6174,18 @@ function updateTimelineTurnDivider(node, task, group, index, total) {
     button.setAttribute('aria-expanded', String(!collapsed));
     button.dataset.collapsed = String(collapsed);
     button.onclick = () => {
-      const nextCollapsed = !isTurnCollapsed(task, group, index, total);
+      const nextCollapsed = !isTurnCollapsed(task, group);
       state.turnCollapseOverrides.set(key, nextCollapsed);
-      applyLogViewportChange(() => applyTimelineTurnCollapse(task, group, index, total));
+      applyLogViewportChange(() => applyTimelineTurnCollapse(task, group, index));
     };
   }
   if (label) label.textContent = text('timelineTurn', { value: timelineTurnNumber(group.turnId, index) });
   if (meta) meta.textContent = timelineTurnSummary(group);
 }
 
-function applyTimelineTurnCollapse(task, group, index, total, nodes) {
+function applyTimelineTurnCollapse(task, group, index, nodes) {
   const key = timelineTurnGroupKey(task, group);
-  const collapsed = isTurnCollapsed(task, group, index, total);
+  const collapsed = isTurnCollapsed(task, group);
   const children = nodes || view.logList.children;
   [...children].forEach((node) => {
     if (
@@ -6213,11 +6203,11 @@ function applyTimelineTurnCollapse(task, group, index, total, nodes) {
     && node.dataset
     && node.dataset.turnKey === key
   ));
-  if (divider) updateTimelineTurnDivider(divider, task, group, index, total);
+  if (divider) updateTimelineTurnDivider(divider, task, group, index);
   return collapsed;
 }
 
-function createTimelineTurnDivider(task, group, index, total) {
+function createTimelineTurnDivider(task, group, index) {
   const node = document.createElement('li');
   node.className = 'timeline-turn';
   const button = document.createElement('button');
@@ -6229,7 +6219,7 @@ function createTimelineTurnDivider(task, group, index, total) {
   meta.className = 'timeline-turn__meta';
   button.append(disclosureChevron(), label, meta);
   node.append(button);
-  updateTimelineTurnDivider(node, task, group, index, total);
+  updateTimelineTurnDivider(node, task, group, index);
   return node;
 }
 
@@ -6272,20 +6262,19 @@ function renderTimeline() {
     if (key) existingNodes.set(key, node);
   });
 
-  const totalGroups = blockGroups.length;
   // Apply the current collapse plan to already rendered rows before taking
   // the scroll anchor, so auto-collapsing a historical turn does not move the
   // reader's place in the stream.
   blockGroups.forEach((group, groupIndex) => {
-    applyTimelineTurnCollapse(task, group, groupIndex, totalGroups);
+    applyTimelineTurnCollapse(task, group, groupIndex);
   });
 
   const desiredNodes = [];
   blockGroups.forEach((group, groupIndex) => {
     const groupKey = timelineTurnGroupKey(task, group);
     let divider = existingNodes.get(`d:${groupKey}`);
-    if (!divider) divider = createTimelineTurnDivider(task, group, groupIndex, totalGroups);
-    else updateTimelineTurnDivider(divider, task, group, groupIndex, totalGroups);
+    if (!divider) divider = createTimelineTurnDivider(task, group, groupIndex);
+    else updateTimelineTurnDivider(divider, task, group, groupIndex);
     desiredNodes.push(divider);
 
     group.blocks.forEach((block) => {
@@ -6309,7 +6298,7 @@ function renderTimeline() {
   });
 
   blockGroups.forEach((group, groupIndex) => {
-    applyTimelineTurnCollapse(task, group, groupIndex, totalGroups);
+    applyTimelineTurnCollapse(task, group, groupIndex);
   });
 
   const hasRows = blockGroups.some((group) => group.blocks.length > 0);

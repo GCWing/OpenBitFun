@@ -1780,10 +1780,18 @@ details[open] > summary .disclosure-chevron { transform: rotate(90deg); }
 /* ---------- per-turn log grouping ---------- */
 .log-row.is-turn-collapsed { display: none; }
 .timeline-turn {
+  /* Pin the turn header while its rows scroll past, so expanding a long turn
+     never loses the "which turn am I reading" anchor. Every header shares the
+     same sticky offset and the list has no stacking contexts, so the later
+     header paints over the previous one and only one stays visible. */
+  position: sticky;
+  top: 0;
+  z-index: 3;
   margin: 0;
   padding: 0 14px;
   border-bottom: 1px solid color-mix(in srgb, var(--lx-border) 65%, transparent);
-  background: color-mix(in srgb, var(--lx-muted-surface) 55%, transparent);
+  /* Opaque: rows must not show through the pinned header. */
+  background: color-mix(in srgb, var(--lx-muted-surface) 55%, var(--lx-bg));
   list-style: none;
 }
 .timeline-turn__toggle {
