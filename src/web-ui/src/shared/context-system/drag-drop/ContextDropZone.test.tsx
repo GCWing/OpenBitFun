@@ -82,4 +82,23 @@ describe('conversation area drops', () => {
     expect(drag('transcript', 'dragover', ['text/plain']).defaultPrevented).toBe(false);
     expect(drag('transcript', 'drop', ['text/plain']).defaultPrevented).toBe(false);
   });
+  it('does not claim empty-typed OS file drags (WebKitGTK) so the native pane drop path owns them', () => {
+    // On WebKitGTK an OS file drag reports NO dataTransfer types. Claiming it
+    // (preventDefault) would make WebKit swallow the drop at the DOM level and
+    // stop forwarding it to the native window drag handler. The zone must stay
+    // unclaimed so the pane-level native drop path can receive the file.
+    function LinuxPane() {
+      const ref = useRef<HTMLDivElement>(null);
+      return <div ref={ref}>
+        <ContextDropZone extendedTargetRef={ref}>
+          <div data-testid="composer">Input</div>
+        </ContextDropZone>
+      </div>;
+    }
+    root = createRoot(container);
+    act(() => root.render(<LinuxPane />));
+    expect(drag('composer', 'dragenter', []).defaultPrevented).toBe(false);
+    expect(drag('composer', 'dragover', []).defaultPrevented).toBe(false);
+    expect(drag('composer', 'drop', []).defaultPrevented).toBe(false);
+  });
 });
