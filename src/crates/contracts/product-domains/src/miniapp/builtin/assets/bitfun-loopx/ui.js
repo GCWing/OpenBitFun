@@ -2747,6 +2747,16 @@ function environmentFact(name, label, fact, action) {
   title.className = 'environment-fact__title';
   const strong = document.createElement('strong');
   strong.textContent = label;
+  // The short version stays inline after the label so a row with a version
+  // is exactly as tall as a row without one; the long host detail (English
+  // prose) lives in the tooltip instead.
+  const version = fact && fact.version ? fact.version : '';
+  if (version) {
+    const versionLabel = document.createElement('span');
+    versionLabel.className = 'environment-fact__version';
+    versionLabel.textContent = version;
+    strong.append(versionLabel);
+  }
 
   // One button carries the whole row state: install -> installing -> available.
   // A click flips the local pending flag synchronously, so the spinner shows
@@ -2788,15 +2798,6 @@ function environmentFact(name, label, fact, action) {
   title.append(strong, button);
   element.append(title);
 
-  // Keep the row compact: only the short version stays visible; the long host
-  // detail (English prose) lives in the tooltip instead.
-  const version = fact && fact.version ? fact.version : '';
-  if (version) {
-    const versionLine = document.createElement('p');
-    versionLine.className = 'environment-fact__version';
-    versionLine.textContent = version;
-    element.append(versionLine);
-  }
   const description = (fact && (fact.detail || fact.remediation)) || '';
   element.title = [version, description].filter(Boolean).join(' · ');
   return element;

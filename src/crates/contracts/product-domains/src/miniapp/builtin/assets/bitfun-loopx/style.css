@@ -493,7 +493,7 @@ button:disabled { cursor: not-allowed; opacity: .48; }
   outline-offset: 1px;
 }
 .environment-fact__spinner { transform-origin: center; animation: lx-spin .8s linear infinite; }
-.environment-fact__version { margin: 3px 0 0; overflow: hidden; color: var(--lx-text-muted); font: 11px/1.2 var(--lx-mono); text-overflow: ellipsis; white-space: nowrap; }
+.environment-fact__version { margin-left: 6px; color: var(--lx-text-muted); font: 11px/1.2 var(--lx-mono); }
 @keyframes lx-spin { to { transform: rotate(360deg); } }
 
 .text-button, .primary-button, .danger-button {
