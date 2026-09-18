@@ -622,7 +622,11 @@ jobs:
       needs.publish-relay-image.result == 'success'
     runs-on: ubuntu-latest
     env:
-      REQUIRED_UPDATER_PLATFORMS: windows-x86_64,darwin-x86_64,darwin-aarch64,linux-x86_64,linux-aarch64
+      # Bundle-type Linux keys are load-bearing: tauri-plugin-updater on a deb
+      # (or rpm) install rejects every non-deb (non-rpm) payload with
+      # "invalid updater binary format", so the manifest MUST carry
+      # linux-*-deb / linux-*-rpm entries alongside the AppImage keys.
+      REQUIRED_UPDATER_PLATFORMS: windows-x86_64,darwin-x86_64,darwin-aarch64,linux-x86_64,linux-aarch64,linux-x86_64-deb,linux-aarch64-deb,linux-x86_64-rpm,linux-aarch64-rpm
 
     steps:
       - name: Checkout
