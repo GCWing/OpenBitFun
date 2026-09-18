@@ -49,7 +49,7 @@ import kotlin.io.encoding.Base64
 import kotlin.uuid.Uuid
 import kotlin.uuid.ExperimentalUuidApi
 
-public const val DEFAULT_CLOUD_RELAY_URL: String = "https://remote.openbitfun.com/v/1.0.1"
+public const val DEFAULT_CLOUD_RELAY_URL: String = "https://remote.openbitfun.com/v/1.0.2"
 
 /** Device kinds the relay accepts; mirrors `relay-service/src/db.rs::DEVICE_KINDS`. */
 private const val DEVICE_KIND_DESKTOP = "desktop"

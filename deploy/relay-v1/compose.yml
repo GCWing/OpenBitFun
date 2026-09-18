@@ -1,14 +1,14 @@
-name: openbitfun-relay-v1.0.1
+name: openbitfun-relay-v1.0.2
 services:
   relay-v1:
-    image: openbitfun-relay-v1.0.1:${RELAY_GIT_COMMIT:?Set the verified source commit}
+    image: openbitfun-relay-v1.0.2:${RELAY_GIT_COMMIT:?Set the verified source commit}
     build:
       context: ../..
       dockerfile: src/apps/relay-server/Dockerfile
       args:
         RELAY_GIT_COMMIT: ${RELAY_GIT_COMMIT:?Set the verified source commit}
         CARGO_BUILD_JOBS: "4"
-    container_name: openbitfun-relay-v1.0.1
+    container_name: openbitfun-relay-v1.0.2
     network_mode: host
     user: "10001:10001"
     read_only: true
@@ -26,27 +26,27 @@ services:
       # The encrypted payload owner admits 512 MiB, plus temporary-file overhead.
       - /tmp:size=640m,mode=1777
     environment:
-      RELAY_PORT: "19701"
-      RELAY_LISTEN_ADDR: 127.0.0.1:19701
+      RELAY_PORT: "19702"
+      RELAY_LISTEN_ADDR: 127.0.0.1:19702
       RELAY_STATIC_DIR: /app/static
       RELAY_DB_PATH: /app/data/relay.db
       RELAY_ROOM_WEB_DIR: /app/room-web
       RELAY_ASSET_STORE_MAX_BYTES: "1073741824"
       RELAY_CORS_ALLOW_ORIGINS: https://remote.openbitfun.com,https://auth.openbitfun.com
-      RELAY_PAGE_PUBLIC_BASE_URL: https://remote.openbitfun.com/v/1.0.1
-      RELAY_PAGE_AUTH_BASE_URL: https://auth.openbitfun.com/v/1.0.1
+      RELAY_PAGE_PUBLIC_BASE_URL: https://remote.openbitfun.com/v/1.0.2
+      RELAY_PAGE_AUTH_BASE_URL: https://auth.openbitfun.com/v/1.0.2
       RUST_LOG: info
     volumes:
-      - /srv/openbitfun-relay-v1.0.1/data:/app/data
-      - /srv/openbitfun-relay-v1.0.1/assets:/app/room-web
-      - /srv/openbitfun-relay-v1.0.1/static:/app/static:ro
+      - /srv/openbitfun-relay-v1.0.2/data:/app/data
+      - /srv/openbitfun-relay-v1.0.2/assets:/app/room-web
+      - /srv/openbitfun-relay-v1.0.2/static:/app/static:ro
     logging:
       driver: json-file
       options:
         max-size: 10m
         max-file: "3"
     healthcheck:
-      test: [CMD, curl, -fsS, http://127.0.0.1:19701/health]
+      test: [CMD, curl, -fsS, http://127.0.0.1:19702/health]
       interval: 15s
       timeout: 5s
       retries: 5

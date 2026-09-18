@@ -1288,7 +1288,7 @@ mod device_secret_tests {
             key,
             load_or_create_device_secret(
                 dir.path(),
-                "https://remote.openbitfun.com/v/1.0.1",
+                "https://remote.openbitfun.com/v/1.0.2",
                 "1",
                 "device"
             )

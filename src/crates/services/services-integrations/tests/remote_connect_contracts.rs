@@ -57,7 +57,7 @@ use std::sync::{Arc, Mutex};
 #[test]
 fn relay_invitations_and_authentication_use_the_same_protocol_for_all_endpoints() {
     for endpoint in [
-        "https://remote.openbitfun.com/v/1.0.1",
+        "https://remote.openbitfun.com/v/1.0.2",
         "http://192.168.1.8:9700",
     ] {
         assert_eq!(

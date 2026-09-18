@@ -9,7 +9,7 @@ function deferred<T>() { let resolve!: (value: T) => void; const promise = new P
 beforeEach(() => { vi.stubGlobal('window', globalThis); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
-describe.each(['https://remote.openbitfun.com/v/1.0.1', 'http://192.168.1.9:9700'])('account device routing on %s', (relayUrl) => {
+describe.each(['https://remote.openbitfun.com/v/1.0.2', 'http://192.168.1.9:9700'])('account device routing on %s', (relayUrl) => {
   it('rejects an unauthenticated constructor and sends nothing after logout', async () => {
     expect(() => new RelayHttpClient(relayUrl, { ...identity(), token: '' })).toThrow();
     const client = new RelayHttpClient(relayUrl, identity());

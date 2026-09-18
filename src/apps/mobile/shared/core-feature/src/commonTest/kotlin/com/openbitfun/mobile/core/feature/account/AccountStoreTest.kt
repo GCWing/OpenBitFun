@@ -771,7 +771,7 @@ private class FakeAccountBackend : AccountBackend {
         loginThrowable?.let { throw it }
         failure?.let { throw CloudAccountException(it) }
         return AccountSessionData(
-            "https://remote.openbitfun.com/v/1.0.1",
+            "https://remote.openbitfun.com/v/1.0.2",
             "user",
             "token",
             userId,

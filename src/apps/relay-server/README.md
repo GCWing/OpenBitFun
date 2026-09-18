@@ -4,7 +4,7 @@ The official Relay connects devices signed in to the same GitHub identity.
 GitHub identity is shared with the marketplaces. Users sign in
 from OpenBitFun; they do not create a Relay account or deploy a server.
 
-The official endpoint is `https://remote.openbitfun.com/v/1.0.1`. This release is deployed with
+The official endpoint is `https://remote.openbitfun.com/v/1.0.2`. This release is deployed with
 its own process, database, assets, and reverse-proxy location. An existing
 `/relay` deployment remains on its existing binary and data directory.
 
@@ -43,7 +43,7 @@ Relay URL. A private Relay therefore needs a matching client build.
    and `src/mobile-web/src/services/pairingLink.ts`. Native clients have
    matching constants in KMP `core-transport/AccountDeviceLink.kt` and HarmonyOS
    `services/AccountDeviceLink.ets`; update the HarmonyOS account-link parser too.
-   Search for `https://remote.openbitfun.com/v/1.0.1` to verify every runtime
+   Search for `https://remote.openbitfun.com/v/1.0.2` to verify every runtime
    reference and corresponding test before building your distribution.
 3. Decide who owns identity. You can retain the official GitHub identity
    authority, or run the [shared identity service](../../../deploy/miniapp-market/README.md)
@@ -93,7 +93,7 @@ RELAY_PORT=9700 RELAY_DB_PATH=/var/lib/openbitfun-relay-v1/relay.db \
 ```
 
 Use the isolated [v1 Compose project](../../../deploy/relay-v1/README.md).
-Set `RELAY_LISTEN_ADDR=127.0.0.1:19701` with host networking so the service can
+Set `RELAY_LISTEN_ADDR=127.0.0.1:19702` with host networking so the service can
 verify the immediate loopback proxy peer. Invalid listener values fail startup.
 Expose only the TLS reverse proxy. Keep the database and asset paths distinct from older deployments.
 `relay-admin` supports listing and explicitly deleting accounts; GitHub login
@@ -156,8 +156,8 @@ observed source address, and the upstream port must be unreachable externally.
 The Relay trusts forwarded client IPs only from an immediate loopback peer.
 
 ```nginx
-location ^~ /v/1.0.1/ {
-    proxy_pass http://127.0.0.1:19701/;
+location ^~ /v/1.0.2/ {
+    proxy_pass http://127.0.0.1:19702/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $remote_addr;

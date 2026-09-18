@@ -1,7 +1,7 @@
 import type { ConnectionResult, RemoteConnectionMethod, RemoteConnectStatus } from '../api/service-api/RemoteConnectAPI';
 
 export type RemoteNetworkMethod = 'lan' | 'openbitfun_server';
-export const OFFICIAL_RELAY_URL = 'https://remote.openbitfun.com/v/1.0.1';
+export const OFFICIAL_RELAY_URL = 'https://remote.openbitfun.com/v/1.0.2';
 
 export function remoteNetworkMethod(method: RemoteConnectionMethod | null | undefined): RemoteNetworkMethod | null {
   if (typeof method === 'object' && method !== null && 'lan' in method) return 'lan';

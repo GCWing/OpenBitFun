@@ -8,7 +8,7 @@ struct PairingSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var step: Step = .intro
     @State private var pairingURL = MobileLaunchConfiguration.pairingAccountPreview
-        ? "https://remote.openbitfun.com/v/1.0.1/#/pair?did=preview-device"
+        ? "https://remote.openbitfun.com/v/1.0.2/#/pair?did=preview-device"
         : ""
     @State private var manualOpen = false
     @State private var scanError: String?

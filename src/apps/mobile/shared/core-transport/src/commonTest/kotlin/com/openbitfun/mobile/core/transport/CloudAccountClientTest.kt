@@ -78,7 +78,7 @@ class CloudAccountClientTest {
     fun githubLoginRegistersOnlyThePublicDeviceKey() = runTest {
         val bodies = mutableListOf<kotlinx.serialization.json.JsonObject>()
         val engine = MockEngine { request ->
-            assertEquals("https://remote.openbitfun.com/v/1.0.1/api/auth/login", request.url.toString())
+            assertEquals("https://remote.openbitfun.com/v/1.0.2/api/auth/login", request.url.toString())
             bodies += RelayJson.parseToJsonElement(request.text()).jsonObject
             json("""{"token":"token-1","user_id":"123"}""")
         }

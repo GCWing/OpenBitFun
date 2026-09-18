@@ -92,7 +92,7 @@ test('GitHub login registers the browser store key without generating another id
   globalThis.window = { setTimeout, clearTimeout };
   const browserPrivateKey = new Uint8Array(32).fill(7);
   globalThis.fetch = async (url, options) => {
-    assert.equal(url, 'https://remote.openbitfun.com/v/1.0.1/api/auth/login');
+    assert.equal(url, 'https://remote.openbitfun.com/v/1.0.2/api/auth/login');
     const body = JSON.parse(options.body);
     requests.push(body);
     assert.equal(body.access_token, 'verified-github-token');
@@ -102,8 +102,8 @@ test('GitHub login registers the browser store key without generating another id
     return Response.json({ token: 'test-account-token', user_id: '101' });
   };
   try {
-    const first = await new CloudAccountClient('https://remote.openbitfun.com/v/1.0.1').login('verified-github-token', 'browser', browserPrivateKey);
-    const second = await new CloudAccountClient('https://remote.openbitfun.com/v/1.0.1').login('verified-github-token', 'browser', browserPrivateKey);
+    const first = await new CloudAccountClient('https://remote.openbitfun.com/v/1.0.2').login('verified-github-token', 'browser', browserPrivateKey);
+    const second = await new CloudAccountClient('https://remote.openbitfun.com/v/1.0.2').login('verified-github-token', 'browser', browserPrivateKey);
     assert.equal(first.userId, '101');
     assert.deepEqual(first.masterKey, second.masterKey);
     assert.equal(requests[0].public_key, requests[1].public_key);
@@ -166,7 +166,7 @@ test('authorization follows the central GitHub OAuth URL and rejects lookalike d
         return Response.json({ status: 'authorized', tokens: { accessToken: 'verified' } });
       };
       const popup = { location: { href: 'about:blank' } };
-      const result = new CloudAccountClient('https://remote.openbitfun.com/v/1.0.1').authorize(popup, new AbortController().signal);
+      const result = new CloudAccountClient('https://remote.openbitfun.com/v/1.0.2').authorize(popup, new AbortController().signal);
       if (authorizationUrl === 'https://github.com/login/oauth/authorize?state=test' || authorizationUrl === 'https://auth.openbitfun.com/sign-in#ticket=test') {
         assert.equal(await result, 'verified');
         assert.equal(popup.location.href, authorizationUrl.startsWith('https://auth.openbitfun.com') ? authorizationUrl.replace('/sign-in#', '/sign-in?locale=en-US#') : authorizationUrl);
@@ -188,7 +188,7 @@ test('authorization follows the central GitHub OAuth URL and rejects lookalike d
 
 test('official and local invitations share strict device-only targeting', async () => {
   const { currentRelayUrl, pairingRelayUrl, accountDeviceIdFromHash } = await import(links.url);
-  for (const base of ['https://remote.openbitfun.com/v/1.0.1/', 'http://192.168.1.9:9700/']) {
+  for (const base of ['https://remote.openbitfun.com/v/1.0.2/', 'http://192.168.1.9:9700/']) {
     const url = new URL(`${base}#/pair?did=desktop-1`);
     assert.equal(currentRelayUrl(url), base.replace(/\/$/, ''));
     assert.equal(accountDeviceIdFromHash(url.hash), 'desktop-1');
@@ -198,7 +198,7 @@ test('official and local invitations share strict device-only targeting', async 
     }
   }
   for (const base of ['https://evil.example/', 'https://remote.openbitfun.com.evil.example/v/1.0.0/',
-    'https://user@remote.openbitfun.com/v/1.0.1/', 'http://remote.openbitfun.com/v/1.0.1/',
+    'https://user@remote.openbitfun.com/v/1.0.2/', 'http://remote.openbitfun.com/v/1.0.2/',
     'https://remote.openbitfun.com/relay/']) {
     assert.equal(pairingRelayUrl(base), null);
   }
@@ -280,7 +280,7 @@ test('legacy v2 account proof remains readable and scoped for migration', () => 
   accountStore.saveCloudAccountSession(restored, storage);
   assert.deepEqual(JSON.parse(storage.getItem('openbitfun.mobile.account_session.v2')), JSON.parse(legacy));
   for (const [relay, username, controllerId] of [
-    ['https://remote.openbitfun.com/v/1.0.1', '', 'browser-a'],
+    ['https://remote.openbitfun.com/v/1.0.2', '', 'browser-a'],
     [storedAccount.relayUrl, '', 'browser-b'], [storedAccount.relayUrl, '456', 'browser-a'],
   ]) assert.equal(accountStore.loadMatchingCloudAccountSession(relay, username, controllerId, storage), null);
   assert.equal(storage.getItem('openbitfun.mobile.account_session.v2'), legacy);

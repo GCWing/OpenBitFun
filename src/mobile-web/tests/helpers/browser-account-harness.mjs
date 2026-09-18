@@ -12,7 +12,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { gcm } from '@noble/ciphers/aes.js';
 
 export const LAN = 'http://192.168.50.7:9700';
-export const OFFICIAL = 'https://remote.openbitfun.com/v/1.0.1';
+export const OFFICIAL = 'https://remote.openbitfun.com/v/1.0.2';
 export const invitation = (endpoint = LAN, device = 'desktop-a') => `${endpoint}/#/pair?did=${device}`;
 const mobileRoot = fileURLToPath(new URL('../../', import.meta.url));
 const realtimeFixtures = new Map();

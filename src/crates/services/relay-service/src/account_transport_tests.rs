@@ -138,7 +138,7 @@ async fn official_and_local_layouts_share_authenticated_directory_and_rpc() {
         axum::serve(listener, authority).await.unwrap();
     });
     for email in [false, true] {
-        for prefix in ["", "/v/1.0.1"] {
+        for prefix in ["", "/v/1.0.2"] {
             let db = Arc::new(db::connect(":memory:").await.unwrap());
             let shared = build_relay_router(
                 Arc::new(MemoryAssetStore::new()),

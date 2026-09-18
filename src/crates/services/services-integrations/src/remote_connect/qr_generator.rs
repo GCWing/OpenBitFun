@@ -60,13 +60,13 @@ mod account_device_tests {
     #[test]
     fn invitation_uses_only_the_authenticated_device_target() {
         assert_eq!(
-            QrGenerator::build_device_url("https://remote.openbitfun.com/v/1.0.1", "host-1")
+            QrGenerator::build_device_url("https://remote.openbitfun.com/v/1.0.2", "host-1")
                 .unwrap(),
-            "https://remote.openbitfun.com/v/1.0.1/#/pair?did=host-1"
+            "https://remote.openbitfun.com/v/1.0.2/#/pair?did=host-1"
         );
         for id in ["", "host&relay=evil", "../host", "host/other"] {
             assert!(
-                QrGenerator::build_device_url("https://remote.openbitfun.com/v/1.0.1", id).is_err()
+                QrGenerator::build_device_url("https://remote.openbitfun.com/v/1.0.2", id).is_err()
             );
         }
     }

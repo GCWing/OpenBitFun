@@ -15,17 +15,31 @@ pub const MASTER_KEY_LEN: usize = 32;
 
 /// A retired official deployment has its own credential database. Authenticate
 /// with the new deployment instead of replaying its token or deleting the record.
+///
+/// Every official release lives under `https://remote.openbitfun.com/v/<version>`;
+/// any such endpoint other than the one this build targets is retired.
 pub fn is_retired_official_relay(value: &str) -> bool {
+    let current = reqwest::Url::parse(openbitfun_product_domains::account::DEFAULT_RELAY_URL)
+        .expect("official relay endpoint is a valid URL");
     reqwest::Url::parse(value).is_ok_and(|url| {
         url.scheme() == "https"
-            && url.host_str() == Some("remote.openbitfun.com")
+            && url.host_str() == current.host_str()
             && url.username().is_empty()
             && url.password().is_none()
             && url.port().is_none()
-            && url.path().trim_end_matches('/') == "/v/1.0.0"
             && url.query().is_none()
             && url.fragment().is_none()
+            && is_retired_official_version_path(url.path(), current.path())
     })
+}
+
+fn is_retired_official_version_path(path: &str, current: &str) -> bool {
+    let path = path.trim_end_matches('/');
+    let current = current.trim_end_matches('/');
+    path != current
+        && path
+            .strip_prefix("/v/")
+            .is_some_and(|version| !version.is_empty() && !version.contains('/'))
 }
 
 /// A host announced that one of its streams changed. Hints are lossy wake-ups;
@@ -709,19 +723,30 @@ mod tests {
 
     #[test]
     fn retired_official_endpoint_does_not_capture_custom_relays() {
-        let old = ["https://remote.openbitfun.com", "/v/1.0.0"].concat();
-        assert!(is_retired_official_relay(&old));
-        assert!(is_retired_official_relay(&format!("{old}/")));
+        let current = openbitfun_product_domains::account::DEFAULT_RELAY_URL;
+        assert_eq!(current, "https://remote.openbitfun.com/v/1.0.2");
+        for old in [
+            ["https://remote.openbitfun.com", "/v/1.0.0"].concat(),
+            ["https://remote.openbitfun.com", "/v/1.0.1"].concat(),
+        ] {
+            assert!(is_retired_official_relay(&old), "{old}");
+            assert!(is_retired_official_relay(&format!("{old}/")), "{old}/");
+            assert!(!is_retired_official_relay(&format!("{old}?other=1")));
+            assert!(!is_retired_official_relay(&format!("{old}#pair")));
+        }
         for endpoint in [
-            "https://remote.openbitfun.com/v/1.0.1",
+            current,
+            &format!("{current}/"),
             "https://custom.example/v/1.0.0",
             "http://127.0.0.1:9700",
             "https://remote.openbitfun.com/relay",
+            "https://remote.openbitfun.com/v/",
+            "https://remote.openbitfun.com/v/1.0.0/p/alice/demo",
             "https://user@remote.openbitfun.com/v/1.0.0",
             "https://remote.openbitfun.com:444/v/1.0.0",
+            "http://remote.openbitfun.com/v/1.0.1",
         ] {
-            assert!(!is_retired_official_relay(endpoint));
+            assert!(!is_retired_official_relay(endpoint), "{endpoint}");
         }
-        assert!(!is_retired_official_relay(&format!("{old}?other=1")));
     }
 }

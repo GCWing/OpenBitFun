@@ -606,14 +606,14 @@ export default function transportAndGeneralChatUnitTest() {
     });
 
     it('uses the same device selector for official and LAN endpoints', 0, () => {
-      for (const endpoint of ['https://remote.openbitfun.com/v/1.0.1', 'http://192.168.1.10:9700']) {
+      for (const endpoint of ['https://remote.openbitfun.com/v/1.0.2', 'http://192.168.1.10:9700']) {
         const parsed = accountDeviceLink(`${endpoint}/#/pair?did=desktop-1`);
         expect(parsed?.deviceId).assertEqual('desktop-1');
         expect(parsed?.relayUrl).assertEqual(endpoint);
       }
     });
     it('rejects credentials, legacy rooms, duplicate targets and public lookalikes', 0, () => {
-      const prefix = 'https://remote.openbitfun.com/v/1.0.1/#/pair?';
+      const prefix = 'https://remote.openbitfun.com/v/1.0.2/#/pair?';
       for (const suffix of ['did=desktop-1&pk=untrusted', 'did=desktop-1&relay=evil',
         'did=desktop-1&did=desktop-2', 'did=%00', 'did=%ZZ', 'room=old&pk=old']) {
         expect(accountDeviceLink(prefix + suffix)).assertUndefined();
@@ -656,7 +656,7 @@ export default function transportAndGeneralChatUnitTest() {
   describe('RemoteSessionManager account connection', () => {
     it('loads account device sessions through either relay endpoint', 0, async () => {
       const manager = new RemoteSessionManager();
-      for (const endpoint of ['https://remote.openbitfun.com/v/1.0.1', 'http://192.168.1.10:9700']) {
+      for (const endpoint of ['https://remote.openbitfun.com/v/1.0.2', 'http://192.168.1.10:9700']) {
         const result = await manager.connectAccountDevice(new RecordingAccountDeviceClient(), endpoint,
           { token: 'token', userId: 'account-user', masterKey: new Uint8Array(32) }, 'desktop-device');
         expect(result.workspace.path).assertEqual('/account-workspace');

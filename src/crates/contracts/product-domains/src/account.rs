@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Versioned hosted Relay deployment for the GitHub account/device-key protocol.
-pub const DEFAULT_RELAY_URL: &str = "https://remote.openbitfun.com/v/1.0.1";
+pub const DEFAULT_RELAY_URL: &str = "https://remote.openbitfun.com/v/1.0.2";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

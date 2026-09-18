@@ -67,7 +67,7 @@ vi.mock('@/shared/notification-system', () => ({ useNotification: () => ({ succe
 vi.mock('@/infrastructure/confirm-dialog', () => ({ confirmWarning: vi.fn().mockResolvedValue(true) }));
 vi.mock('./AccountPanel', () => ({ AccountPanel: () => null }));
 
-const relayA = 'https://remote.openbitfun.com/v/1.0.1';
+const relayA = 'https://remote.openbitfun.com/v/1.0.2';
 
 function status(overrides: Partial<RemoteConnectStatus> = {}): RemoteConnectStatus {
   return {

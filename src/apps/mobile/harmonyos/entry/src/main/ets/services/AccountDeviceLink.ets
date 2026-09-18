@@ -1,4 +1,4 @@
-export const OFFICIAL_RELAY_URL: string = 'https://remote.openbitfun.com/v/1.0.1';
+export const OFFICIAL_RELAY_URL: string = 'https://remote.openbitfun.com/v/1.0.2';
 export interface AccountDeviceLink { relayUrl: string; deviceId: string; }
 
 export function normalizeAccountRelayUrl(value: string): string {
