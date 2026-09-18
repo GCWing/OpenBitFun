@@ -40,4 +40,18 @@ describe('composer image file intake', () => {
       /const dismissPicker = \(\) => \{\s*\n\s*window\.removeEventListener\('focus', dismissPicker\);\s*\n\s*input\.onchange = null;\s*\n\s*input\.remove\(\);/,
     );
   });
+
+  it('falls back to a host clipboard read for empty-typed pastes', () => {
+    // WebKitGTK fires paste with zero DataTransfer types, so the composer must
+    // listen for paste directly and ask the host for the clipboard image.
+    expect(component).toContain(
+      'shouldAttemptNativeClipboardImageRead(Array.from(clipboardData.types ?? []))',
+    );
+    expect(component).toMatch(
+      /inputElement\.addEventListener\('paste', handlePasteFallback\);/,
+    );
+    expect(component).toMatch(
+      /const image = await workspaceAPI\.getClipboardImage\(\);/,
+    );
+  });
 });

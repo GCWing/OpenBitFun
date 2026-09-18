@@ -62,6 +62,21 @@ export function normalizeExternalFilePath(path: string): string {
   return repositoryPathKey(path);
 }
 
+/**
+ * Whether a paste event should fall back to a native host clipboard read.
+ *
+ * WebKitGTK (the Linux webview) delivers paste events with NO DataTransfer
+ * types or items at all, so the in-page file branch can never see a pasted
+ * image. Engines that report any types (WebView2, WKWebView, Chromium)
+ * deliver clipboard images in-band, so only fully empty-typed pastes use the
+ * host fallback.
+ */
+export function shouldAttemptNativeClipboardImageRead(
+  types: ReadonlyArray<string>,
+): boolean {
+  return types.length === 0;
+}
+
 export function getContextLocalPath(context: ContextItem): string | undefined {
   if (context.type === 'file') return context.filePath;
   if (context.type === 'directory') return context.directoryPath;

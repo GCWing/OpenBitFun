@@ -235,6 +235,7 @@ import {
   buildExternalFileContexts,
   partitionExternalDropFiles,
   resolveExternalFileIntakeAvailability,
+  shouldAttemptNativeClipboardImageRead,
   type ExternalFileSource,
 } from '../utils/externalFileIntake';
 import { selectInterruptedTurnRecovery } from '../utils/interruptedTurnRecovery';
@@ -4756,6 +4757,28 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   }, [addContext, contextStore, isExternalFileIntakeRequestCurrent, t]);
 
+  /**
+   * Host-side clipboard image read for engines that deliver paste events with
+   * empty DataTransfer (WebKitGTK on Linux). Reuses the clipboard-image
+   * intake, so limits and error reporting stay identical to the in-page path.
+   */
+  const readPastedClipboardImage = useCallback(async (request: ExternalFileIntakeRequest) => {
+    try {
+      const image = await workspaceAPI.getClipboardImage();
+      if (!image || !isExternalFileIntakeRequestCurrent(request)) return;
+      const binary = atob(image.base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      const extension = image.mimeType === 'image/png' ? 'png' : 'jpg';
+      const file = new File([bytes], `clipboard-image.${extension}`, { type: image.mimeType });
+      await addClipboardImageFiles(request, [file]);
+    } catch (error) {
+      log.warn('Native clipboard image read failed', { error });
+    }
+  }, [addClipboardImageFiles, isExternalFileIntakeRequestCurrent]);
+
   const addExternalPaths = useCallback(async (
     request: ExternalFileIntakeRequest,
     source: ExternalFileSource,
@@ -4937,9 +4960,32 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         () => addClipboardImageFiles(request, [file]),
       );
     };
+    const handlePasteFallback = (event: Event) => {
+      // WebKitGTK fires paste with zero DataTransfer types; the in-page file
+      // branch can never run there, so ask the host to read the clipboard.
+      const clipboardData = (event as ClipboardEvent).clipboardData;
+      if (!clipboardData) return;
+      if (!shouldAttemptNativeClipboardImageRead(Array.from(clipboardData.types ?? []))) return;
+      if (!externalFileAvailability.supported) return;
+      const request = captureExternalFileIntakeRequest();
+      void enqueueExternalFileIntake(
+        request,
+        () => readPastedClipboardImage(request),
+      );
+    };
     inputElement.addEventListener('imagePaste', handleImagePaste);
-    return () => inputElement.removeEventListener('imagePaste', handleImagePaste);
-  }, [addClipboardImageFiles, captureExternalFileIntakeRequest, enqueueExternalFileIntake]);
+    inputElement.addEventListener('paste', handlePasteFallback);
+    return () => {
+      inputElement.removeEventListener('imagePaste', handleImagePaste);
+      inputElement.removeEventListener('paste', handlePasteFallback);
+    };
+  }, [
+    addClipboardImageFiles,
+    captureExternalFileIntakeRequest,
+    enqueueExternalFileIntake,
+    externalFileAvailability,
+    readPastedClipboardImage,
+  ]);
 
   useWindowsFileDropPreview({
     targetRef: fileDropTargetRef ?? externalFileDropTargetRef,

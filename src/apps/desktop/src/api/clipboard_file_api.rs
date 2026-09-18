@@ -324,6 +324,90 @@ pub async fn get_clipboard_files() -> Result<ClipboardFilesResponse, String> {
     }
 }
 
+/// Image bytes read from the system clipboard, base64-encoded for the webview.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipboardImageResponse {
+    pub base64: Option<String>,
+    pub mime_type: Option<String>,
+}
+
+impl Default for ClipboardImageResponse {
+    fn default() -> Self {
+        Self {
+            base64: None,
+            mime_type: None,
+        }
+    }
+}
+
+/// Sniffs the image format from magic bytes so a tool that misreports success
+/// cannot inject arbitrary text as an attachment payload.
+pub(crate) fn sniff_image_mime(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
+        Some("image/png")
+    } else if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+        Some("image/jpeg")
+    } else {
+        None
+    }
+}
+
+/// Reads a clipboard image on Linux.
+///
+/// WebKitGTK delivers paste events with empty `DataTransfer` items, so the
+/// webview itself can never see a pasted image; reading the Wayland/X11
+/// clipboard through the same tools as `get_clipboard_files` is the only
+/// delivery path. Other platforms return `None`: their webviews deliver
+/// clipboard images to the page directly and never need this fallback.
+#[cfg(target_os = "linux")]
+fn read_clipboard_image_internal() -> Option<(String, String)> {
+    use base64::Engine as _;
+    use std::process::Command;
+
+    let read_target = |program: &str, args: &[&str]| -> Option<Vec<u8>> {
+        Command::new(program)
+            .args(args)
+            .output()
+            .ok()
+            .filter(|output| output.status.success() && !output.stdout.is_empty())
+            .map(|output| output.stdout)
+    };
+
+    for mime in ["image/png", "image/jpeg"] {
+        let bytes = read_target("wl-paste", &["-t", mime])
+            .or_else(|| read_target("xclip", &["-selection", "clipboard", "-t", mime, "-o"]));
+        if let Some(bytes) = bytes {
+            if let Some(sniffed) = sniff_image_mime(&bytes) {
+                let encoded = base64::engine::general_purpose::STANDARD.encode(&bytes);
+                return Some((encoded, sniffed.to_string()));
+            }
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn get_clipboard_image_internal() -> Option<(String, String)> {
+    read_clipboard_image_internal()
+}
+
+#[cfg(not(target_os = "linux"))]
+fn get_clipboard_image_internal() -> Option<(String, String)> {
+    None
+}
+
+#[tauri::command]
+pub async fn get_clipboard_image() -> Result<ClipboardImageResponse, String> {
+    Ok(match get_clipboard_image_internal() {
+        Some((base64, mime_type)) => ClipboardImageResponse {
+            base64: Some(base64),
+            mime_type: Some(mime_type),
+        },
+        None => ClipboardImageResponse::default(),
+    })
+}
+
 /// Pastes clipboard files between controller-local paths.
 ///
 /// The remote file provider exposes no copy primitive, so a remote workspace path is refused here
@@ -485,9 +569,31 @@ pub(crate) fn copy_directory_recursive(source: &Path, target: &Path) -> Result<(
 mod tests {
     use super::{
         copy_directory_recursive, decode_file_uri, generate_unique_path,
-        parse_clipboard_path_segments, parse_uri_list,
+        parse_clipboard_path_segments, parse_uri_list, sniff_image_mime,
     };
     use std::path::Path;
+
+    #[test]
+    fn sniff_image_mime_detects_png_header() {
+        assert_eq!(
+            sniff_image_mime(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A, 0, 0]),
+            Some("image/png")
+        );
+    }
+
+    #[test]
+    fn sniff_image_mime_detects_jpeg_header() {
+        assert_eq!(
+            sniff_image_mime(&[0xFF, 0xD8, 0xFF, 0xE0, 0, 0]),
+            Some("image/jpeg")
+        );
+    }
+
+    #[test]
+    fn sniff_image_mime_rejects_non_image_payloads() {
+        assert_eq!(sniff_image_mime(b"image/png but not really"), None);
+        assert_eq!(sniff_image_mime(&[]), None);
+    }
 
     #[test]
     fn decode_unix_file_uri() {

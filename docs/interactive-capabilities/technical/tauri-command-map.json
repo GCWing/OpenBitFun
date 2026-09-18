@@ -2,10 +2,10 @@
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
   "catalogDigest": "5473331e06ecd4bfafbf9b547d48b4fe1561ccf69d86fdfde51ea10dc919531c",
-  "commandCount": 660,
+  "commandCount": 661,
   "coverage": {
-    "commandCount": 660,
-    "documentedCommandCount": 613,
+    "commandCount": 661,
+    "documentedCommandCount": 614,
     "implementationCommandCount": 47,
     "implementationDigest": "401fd0a5f64377e65573d1b0883fbfa844570096adfafd4c11a999d749ba5859"
   },
@@ -2790,6 +2790,22 @@
       "rustPath": "get_clipboard_files",
       "sourceFile": "src/apps/desktop/src/api/clipboard_file_api.rs",
       "signature": "fn get_clipboard_files() -> Result<ClipboardFilesResponse, String>",
+      "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "get_clipboard_image",
+      "moduleId": "clipboard_file",
+      "capabilityId": "feature.files-editor",
+      "capabilityIds": [
+        "feature.files-editor"
+      ],
+      "documentedItemIds": [
+        "feature.files-editor:attachments"
+      ],
+      "visibility": "documented",
+      "rustPath": "get_clipboard_image",
+      "sourceFile": "src/apps/desktop/src/api/clipboard_file_api.rs",
+      "signature": "fn get_clipboard_image() -> Result<ClipboardImageResponse, String>",
       "remoteWorkspacePolicy": "LocalOnly"
     },
     {
