@@ -143,6 +143,26 @@ test("mobile sheet keeps its closed server-rendering contract", () => {
   assert.equal(sheet, "");
 });
 
+test("mobile sheet header keeps the title on the sheet centerline beside header actions", async () => {
+  const styles = await readFile(
+    new URL("../src/mobile/MobileSheet/MobileSheet.module.css", import.meta.url),
+    "utf8",
+  );
+  const headerRule = styles.match(/\.header\s*\{[^}]*display:[^}]+\}/)?.[0];
+  const headingRule = styles.match(/\.heading\s*\{[^}]+\}/)?.[0];
+  const headerActionRule = styles.match(/\.headerAction\s*\{[^}]+\}/)?.[0];
+
+  assert.ok(headerRule, "missing MobileSheet header display rule");
+  assert.match(headerRule, /display:\s*grid/);
+  assert.match(
+    headerRule,
+    /grid-template-columns:\s*minmax\([^,]+,\s*1fr\)\s+minmax\(0,\s*auto\)\s+minmax\([^,]+,\s*1fr\)/,
+  );
+  assert.match(headingRule ?? "", /grid-column:\s*2/);
+  assert.match(headerActionRule ?? "", /grid-column:\s*3/);
+  assert.match(headerActionRule ?? "", /justify-self:\s*end/);
+});
+
 test("mobile confirmation sheets present custom icons without a decorative tile", async () => {
   const styles = await readFile(
     new URL("../src/mobile/MobileConfirmSheet/MobileConfirmSheet.module.css", import.meta.url),

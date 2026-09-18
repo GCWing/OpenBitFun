@@ -101,6 +101,17 @@ test('settings sheet title stays on the sheet centerline beside the close action
   assert.doesNotMatch(closeRule ?? "", /margin-left:\s*auto/);
 });
 
+test('left-aligned sheet headers keep flex after MobileSheet centers by default', async () => {
+  const composer = await readFile(path.join(sourceDirectory, 'styles/components/chat-input.scss'), 'utf8');
+  const files = await readFile(path.join(sourceDirectory, 'components/WorkspaceFiles.scss'), 'utf8');
+  const composerHeader = composer.match(/\.chat-composer-sheet\s*>\s*\[data-openbitfun-part='header'\]\s*\{[^}]+\}/)?.[0];
+  const editorHeader = files.match(/\[data-openbitfun-part="header"\]\s*\{[^}]+\}/)?.[0];
+
+  assert.match(composerHeader ?? "", /display:\s*flex/);
+  assert.match(composerHeader ?? "", /text-align:\s*left/);
+  assert.match(editorHeader ?? "", /display:\s*flex/);
+});
+
 test('pairing and settings styles follow component parts instead of obsolete native anatomy', async () => {
   const harmony = await readFile(path.join(sourceDirectory, 'styles/components/harmony-native.scss'), 'utf8');
   const overlays = await readFile(path.join(sourceDirectory, 'components/SessionOverlays.tsx'), 'utf8');

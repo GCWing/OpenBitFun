@@ -50,17 +50,17 @@
   }
 
   .header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    display: grid;
+    align-items: center;
+    grid-template-columns: minmax(var(--openbitfun-space-12), 1fr) minmax(0, auto) minmax(var(--openbitfun-space-12), 1fr);
     gap: var(--openbitfun-space-3);
     flex: 0 0 auto;
     padding: var(--openbitfun-space-3) var(--openbitfun-space-4) var(--openbitfun-space-2);
     text-align: center;
   }
 
-  .heading { min-inline-size: 0; flex: 1; }
-  .headerAction { flex: 0 0 auto; margin-block-start: calc(var(--openbitfun-space-1) * -1); }
+  .heading { min-inline-size: 0; grid-column: 2; }
+  .headerAction { grid-column: 3; justify-self: end; }
 
   .title {
     min-inline-size: 0;

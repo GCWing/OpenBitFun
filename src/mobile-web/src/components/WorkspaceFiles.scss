@@ -51,7 +51,7 @@
 .runtime-file-editor[data-openbitfun-part="surface"] {
   inline-size: 100%; max-inline-size: none; block-size: 100dvh; max-block-size: 100dvh;
   margin: 0; border: 0; border-radius: 0; box-shadow: none;
-  [data-openbitfun-part="header"] { align-items: center; padding-top: max(16px, env(safe-area-inset-top)); border-bottom: 1px solid var(--openbitfun-color-border-subtle); }
+  [data-openbitfun-part="header"] { display: flex; align-items: center; padding-top: max(16px, env(safe-area-inset-top)); border-bottom: 1px solid var(--openbitfun-color-border-subtle); }
   [data-openbitfun-part="heading"] { text-align: left; }
   [data-openbitfun-part="body"] { display: flex; flex: 1; min-height: 0; flex-direction: column; padding: 0; overflow: hidden; }
   [data-openbitfun-component="mobile-textarea"] { flex: 1; min-height: 0; border: 0; border-radius: 0; }
