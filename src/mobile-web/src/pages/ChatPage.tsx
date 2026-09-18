@@ -3,7 +3,7 @@ import { PermissionMailbox } from '../components/PermissionMailbox';
 import { QuestionInteractionContext } from "../components/ChatAskQuestionCard";
 import { ChevronDown as LucideChevronDown } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { MobileIconButton } from '@openbitfun/ui/mobile';
+import { MobileIconButton, MobileStatus } from '@openbitfun/ui/mobile';
 import { useI18n } from '../i18n';
 import { useControlTargetEpoch } from '../hooks/useControlTargetEpoch';
 import {
@@ -138,6 +138,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
   const messagesRequestSeqRef = useRef(0);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const [transcriptHydrating, setTranscriptHydrating] = useState(true);
   const isLoadingMoreRef = useRef(false);
   const hasMoreRef = useRef(true);
   const controlTargetEpoch = useControlTargetEpoch(sessionMgr);
@@ -230,6 +231,7 @@ const ChatPage: React.FC<ChatPageProps> = ({
       setModelCatalog(null);
       setSelectedModelId('auto');
       setMessages(sessionId, []);
+      setTranscriptHydrating(true);
       setMenuMessage(null);
       setDeletingMsg(false);
       setActionToast(null);
@@ -697,67 +699,80 @@ const ChatPage: React.FC<ChatPageProps> = ({
       && isChatTargetCurrent(targetEpoch)
     );
     const initialize = async () => {
-      const catalogPromise = loadModelCatalog();
-      const cached = await remoteCache.loadTranscript(cacheScope, sessionId);
-      if (!isInitCurrent()) return;
-      if (cached) {
-        setMessages(sessionId, cached.messages);
-        setHasMore(cached.hasMore);
-        hasMoreRef.current = cached.hasMore;
-        pendingInitialScroll.current = true;
-      }
-
-      // Always reconcile with the authoritative host. The cached transcript is
-      // only an immediate paint and remains isolated to this account/device.
-      // Durable records reconcile the cached view through the same stream.
-      const initialCatalog = await catalogPromise;
-      if (!isInitCurrent()) return;
-      const initialMsgCount = useMobileStore.getState().getMessages(sessionId).length;
-      pendingInitialScroll.current = true;
-
-      const synchronizer = new SessionSynchronizer(sessionMgr, sessionId, (resp: PollResponse) => {
+      const markTranscriptReady = () => {
+        if (isInitCurrent()) setTranscriptHydrating(false);
+      };
+      try {
+        const catalogPromise = loadModelCatalog();
+        const cached = await remoteCache.loadTranscript(cacheScope, sessionId);
         if (!isInitCurrent()) return;
-        if (resp.message_snapshot) {
-          // Completion can grow the content of an already-counted assistant
-          // message. Replace from the host's durable transcript; message count
-          // alone cannot detect that repair.
-          setMessages(sessionId, resp.message_snapshot);
-          remoteCache.saveTranscript(
-            cacheScope,
-            sessionId,
-            resp.message_snapshot,
-            hasMoreRef.current,
-          );
-        } else if (resp.new_messages && resp.new_messages.length > 0) {
-          appendNewMessages(sessionId, resp.new_messages);
-          remoteCache.saveTranscript(
-            cacheScope,
-            sessionId,
-            useMobileStore.getState().getMessages(sessionId),
-            hasMoreRef.current,
-          );
+        if (cached) {
+          setMessages(sessionId, cached.messages);
+          setHasMore(cached.hasMore);
+          hasMoreRef.current = cached.hasMore;
+          pendingInitialScroll.current = true;
+          if (cached.messages.length > 0) markTranscriptReady();
         }
 
-        if (resp.title) {
-          setLiveTitle(resp.title);
-          updateSessionName(sessionId, resp.title);
-          remoteCache.renameSession(cacheScope, sessionId, resp.title);
-        }
-        if (resp.model_catalog) {
-          setModelCatalog(resp.model_catalog);
-          setSelectedModelId(normalizeSelectedModelId(
-            resp.model_catalog.session_model_id || 'auto',
-            resp.model_catalog,
-          ));
-        }
-        setActiveTurn(resp.active_turn ?? null);
-      }, initialCatalog?.version || 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); },
-      // Stream failures are stated, not hidden: an older host or a lost
-      // connection shows up in the same banner as any other remote error.
-      error => { if (isInitCurrent()) reportRemoteSessionError(error, setError); });
+        // Always reconcile with the authoritative host. The cached transcript is
+        // only an immediate paint and remains isolated to this account/device.
+        // Durable records reconcile the cached view through the same stream.
+        const initialCatalog = await catalogPromise;
+        if (!isInitCurrent()) return;
+        const initialMsgCount = useMobileStore.getState().getMessages(sessionId).length;
+        pendingInitialScroll.current = true;
 
-      synchronizer.start(initialMsgCount);
-      streamRef.current = synchronizer;
+        const synchronizer = new SessionSynchronizer(sessionMgr, sessionId, (resp: PollResponse) => {
+          if (!isInitCurrent()) return;
+          if (resp.message_snapshot) {
+            // Completion can grow the content of an already-counted assistant
+            // message. Replace from the host's durable transcript; message count
+            // alone cannot detect that repair.
+            setMessages(sessionId, resp.message_snapshot);
+            remoteCache.saveTranscript(
+              cacheScope,
+              sessionId,
+              resp.message_snapshot,
+              hasMoreRef.current,
+            );
+            markTranscriptReady();
+          } else if (resp.new_messages && resp.new_messages.length > 0) {
+            appendNewMessages(sessionId, resp.new_messages);
+            remoteCache.saveTranscript(
+              cacheScope,
+              sessionId,
+              useMobileStore.getState().getMessages(sessionId),
+              hasMoreRef.current,
+            );
+            markTranscriptReady();
+          }
+
+          if (resp.title) {
+            setLiveTitle(resp.title);
+            updateSessionName(sessionId, resp.title);
+            remoteCache.renameSession(cacheScope, sessionId, resp.title);
+          }
+          if (resp.model_catalog) {
+            setModelCatalog(resp.model_catalog);
+            setSelectedModelId(normalizeSelectedModelId(
+              resp.model_catalog.session_model_id || 'auto',
+              resp.model_catalog,
+            ));
+          }
+          setActiveTurn(resp.active_turn ?? null);
+        }, initialCatalog?.version || 0, history => { if(isInitCurrent()){setHasMore(history.hasMore);hasMoreRef.current=history.hasMore;} }, () => { if(isInitCurrent())setMailboxInvalidation(value=>value+1); },
+        // Stream failures are stated, not hidden: an older host or a lost
+        // connection shows up in the same banner as any other remote error.
+        error => { if (isInitCurrent()) { reportRemoteSessionError(error, setError); setTranscriptHydrating(false); } });
+
+        synchronizer.start(initialMsgCount);
+        streamRef.current = synchronizer;
+      } catch (error) {
+        if (isInitCurrent()) {
+          reportRemoteSessionError(error, setError);
+          setTranscriptHydrating(false);
+        }
+      }
     };
     void initialize();
 
@@ -1017,6 +1032,10 @@ const ChatPage: React.FC<ChatPageProps> = ({
       <PermissionMailbox key={`${sessionId}:${controlTargetEpoch}`} manager={sessionMgr} sessionId={sessionId} invalidation={mailboxInvalidation} />
       {/* Messages */}
       <div className="chat-page__messages" ref={messagesContainerRef} onScroll={handleScroll}>
+        {transcriptHydrating && messages.length === 0 ? (
+          <MobileStatus className="chat-page__hydrate" loading title={t('chat.loadingSession')} />
+        ) : (
+          <>
         {isLoadingMore && (
           <div className="chat-page__load-more-indicator">{t('chat.loadingOlderMessages')}</div>
         )}
@@ -1057,6 +1076,8 @@ const ChatPage: React.FC<ChatPageProps> = ({
           />
         </ArtifactImageReader.Provider>
         </QuestionInteractionContext.Provider>
+          </>
+        )}
 
         <div ref={messagesEndRef} />
 

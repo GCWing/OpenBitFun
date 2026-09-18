@@ -170,6 +170,15 @@
   position: relative;
 }
 
+.chat-page__hydrate {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+}
+
 .chat-page__load-more-indicator {
   text-align: center;
   font-size: var(--openbitfun-type-body-xs-font-size);

@@ -229,6 +229,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
     },
     chat: {
       session: 'Session',
+      loadingSession: 'Loading session...',
       loadingOlderMessages: 'Loading older messages...',
       showResponse: 'Show response',
       hideResponse: 'Hide response',
@@ -552,6 +553,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
     },
     chat: {
       session: '会话',
+      loadingSession: '正在加载会话...',
       loadingOlderMessages: '正在加载更早的消息...',
       showResponse: 'Show response',
       hideResponse: 'Hide response',
@@ -875,6 +877,7 @@ export const messages: Record<MobileLanguage, MessageTree> = {
     },
     chat: {
       session: '會話',
+      loadingSession: '正在加載會話...',
       loadingOlderMessages: '正在加載更早的消息...',
       showResponse: 'Show response',
       hideResponse: 'Hide response',

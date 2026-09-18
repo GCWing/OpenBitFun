@@ -463,7 +463,7 @@ const AppContent: React.FC = () => {
     }
     if (currentPage === 'chat' && sessionMgrRef.current && activeSessionId) {
       return (
-        <Suspense fallback={<MobileStatus loading title={t('workspace.loadingInfo')} />}>
+        <Suspense fallback={<div className="chat-page"><MobileStatus className="chat-page__hydrate" loading title={t('chat.loadingSession')} /></div>}>
           <ChatPage
             sessionMgr={sessionMgrRef.current}
             key={activeSessionId}

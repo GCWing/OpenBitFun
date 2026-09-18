@@ -224,6 +224,27 @@ test('large mobile pages delegate stable UI regions to app components', async ()
   assert.doesNotMatch(sessionPage, /createPortal\b/, 'shared sheets own their portal lifecycle');
 });
 
+test('opening a chat keeps a hydrate status until cache or the host snapshot arrives', async () => {
+  const chatPage = await readFile(path.join(sourceDirectory, 'pages/ChatPage.tsx'), 'utf8');
+  const app = await readFile(path.join(sourceDirectory, 'App.tsx'), 'utf8');
+  const chatStyles = await readFile(path.join(sourceDirectory, 'styles/components/chat.scss'), 'utf8');
+  const messages = await readFile(path.join(sourceDirectory, 'i18n/messages.ts'), 'utf8');
+
+  assert.match(chatPage, /<MobileStatus\b/);
+  assert.match(chatPage, /transcriptHydrating/);
+  assert.match(chatPage, /setTranscriptHydrating\(true\)/);
+  assert.match(chatPage, /cached\.messages\.length\s*>\s*0[\s\S]*setTranscriptHydrating\(false\)/);
+  assert.match(chatPage, /resp\.message_snapshot[\s\S]*setTranscriptHydrating\(false\)/);
+  assert.match(chatPage, /className="chat-page__hydrate"/);
+  assert.match(chatPage, /t\('chat\.loadingSession'\)/);
+  assert.match(app, /t\('chat\.loadingSession'\)/);
+  assert.doesNotMatch(app, /fallback=\{<MobileStatus[^}]*workspace\.loadingInfo/);
+  assert.match(chatStyles, /\.chat-page__hydrate\s*\{[\s\S]*?flex:\s*1;/);
+  assert.match(messages, /loadingSession:\s*'Loading session\.\.\.'/);
+  assert.match(messages, /loadingSession:\s*'正在加载会话\.\.\.'/);
+  assert.match(messages, /loadingSession:\s*'正在加載會話\.\.\.'/);
+});
+
 test('mobile remote control exposes approval commands and responsive composer contracts', async () => {
   const manager = await readFile(path.join(sourceDirectory, 'services/RemoteSessionManager.ts'), 'utf8');
   const chatPage = await readFile(path.join(sourceDirectory, 'pages/ChatPage.tsx'), 'utf8');
