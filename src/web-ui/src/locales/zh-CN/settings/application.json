@@ -200,7 +200,7 @@
   "terminal": {
     "sections": {
       "terminal": "终端",
-      "terminalHint": "默认 Shell 与新建终端行为",
+      "terminalHint": "默认 Shell",
       "defaultTerminal": "默认终端"
     },
     "controls": {

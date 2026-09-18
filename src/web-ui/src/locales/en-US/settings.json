@@ -34,7 +34,7 @@
       },
       "terminal": {
         "label": "Terminal",
-        "description": "Default shell and terminal panel placement."
+        "description": "Default shell."
       },
       "editor": {
         "label": "Editor",

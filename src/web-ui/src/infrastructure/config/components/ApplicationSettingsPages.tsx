@@ -6,11 +6,7 @@ import { ConfigLoadingState, ConfigMessage, ConfigRetryState } from '@/infrastru
 import { configAPI, workspaceAPI } from '@/infrastructure/api';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import type { CloseBehavior } from '@/infrastructure/api/service-api/SystemAPI';
-import {
-  getTerminalService,
-  refreshTerminalPanelPosition,
-  setTerminalPanelPosition,
-} from '@/tools/terminal/services';
+import { getTerminalService } from '@/tools/terminal/services';
 import type { ShellInfo } from '@/tools/terminal/types/session';
 import {
   ConfigPageContent,
@@ -25,7 +21,6 @@ import type {
   BackendLogLevel,
   RuntimeLoggingInfo,
   TerminalConfig as TerminalSettings,
-  TerminalPanelPosition,
 } from '../types';
 import './ApplicationSettingsPages.scss';
 
@@ -598,7 +593,6 @@ function LoggingSection() {
 function TerminalSection() {
   const { t } = useTranslation('settings/application');
   const [defaultShell, setDefaultShell] = useState<string>('');
-  const [terminalPanelPosition, setTerminalPanelPositionState] = useState<TerminalPanelPosition>('right');
   const [availableShells, setAvailableShells] = useState<ShellInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -621,8 +615,6 @@ function TerminalSection() {
       ]);
 
       setDefaultShell(terminalConfig?.default_shell || '');
-      setTerminalPanelPositionState(terminalConfig?.terminal_panel_position === 'bottom' ? 'bottom' : 'right');
-      void refreshTerminalPanelPosition();
 
       const availableOnly = shells.filter((s) => s.available);
       setAvailableShells(availableOnly);
@@ -661,28 +653,6 @@ function TerminalSection() {
     [defaultShell, showMessage, t]
   );
 
-  const handleTerminalPanelPositionChange = useCallback(
-    async (value: TerminalPanelPosition) => {
-      const previous = terminalPanelPosition;
-      try {
-        setSaving(true);
-        setTerminalPanelPositionState(value);
-
-        await setTerminalPanelPosition(value);
-        configManager.clearCache();
-
-        showMessage('success', t('terminal.messages.panelPositionUpdated'));
-      } catch (error) {
-        setTerminalPanelPositionState(previous);
-        log.error('Failed to save terminal panel position', { value, error });
-        showMessage('error', t('terminal.messages.saveFailed'));
-      } finally {
-        setSaving(false);
-      }
-    },
-    [showMessage, t, terminalPanelPosition],
-  );
-
   const shellOptions = useMemo<TerminalShellOption[]>(
     () => [
       { value: AUTO_DETECT_SHELL_VALUE, label: t('terminal.controls.autoDetect') },
@@ -704,13 +674,6 @@ function TerminalSection() {
   );
   const selectedShellValue = selectedShell?.path ?? (defaultShell || AUTO_DETECT_SHELL_VALUE);
 
-  const terminalPanelPositionOptions = useMemo(
-    () => [
-      { value: 'right', label: t('terminal.panelPosition.options.right') },
-      { value: 'bottom', label: t('terminal.panelPosition.options.bottom') },
-    ],
-    [t],
-  );
   const shouldShowCmdFallbackNotice = selectedShell?.shellType === 'Cmd' || defaultShell === 'Cmd';
 
   if (loading) {
@@ -762,20 +725,6 @@ function TerminalSection() {
             )}
           </ConfigPageRow>
 
-          <ConfigPageRow
-            label={t('terminal.panelPosition.label')}
-            description={t('terminal.panelPosition.description')}
-            align="center"
-          >
-            <Select
-              size="sm"
-              value={terminalPanelPosition}
-              onValueChange={(v) => handleTerminalPanelPositionChange(v as TerminalPanelPosition)}
-              options={terminalPanelPositionOptions}
-              placeholder={t('terminal.panelPosition.placeholder')}
-              disabled={saving}
-            />
-          </ConfigPageRow>
         </ConfigPageSection>
       </div>
     </div>

@@ -659,7 +659,8 @@ pub struct MinimapConfig {
 pub struct TerminalConfig {
     /// Empty string means "auto-detect".
     pub default_shell: String,
-    /// Terminal panel placement in the session layout: "right" or "bottom".
+    /// Persisted for compatibility; the current terminal routing no longer honors this
+    /// setting after the workbench UI restructuring. Values remain "right" or "bottom".
     pub terminal_panel_position: String,
     pub font_size: u32,
     pub font_family: String,

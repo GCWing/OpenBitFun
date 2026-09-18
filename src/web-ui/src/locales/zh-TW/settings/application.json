@@ -186,7 +186,7 @@
   "terminal": {
     "sections": {
       "terminal": "終端",
-      "terminalHint": "默認 Shell 與新增終端行為",
+      "terminalHint": "預設 Shell",
       "defaultTerminal": "默認終端"
     },
     "controls": {

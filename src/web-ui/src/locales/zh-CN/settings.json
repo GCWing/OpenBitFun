@@ -34,7 +34,7 @@
       },
       "terminal": {
         "label": "终端",
-        "description": "默认 Shell 与终端面板显示位置。"
+        "description": "默认 Shell。"
       },
       "editor": {
         "label": "编辑器",

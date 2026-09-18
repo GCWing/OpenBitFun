@@ -34,7 +34,7 @@
       },
       "terminal": {
         "label": "終端",
-        "description": "預設 Shell 與終端面板顯示位置。"
+        "description": "預設 Shell。"
       },
       "editor": {
         "label": "編輯器",

@@ -200,7 +200,7 @@
   "terminal": {
     "sections": {
       "terminal": "Terminal",
-      "terminalHint": "Default shell and new terminal behavior",
+      "terminalHint": "Default shell",
       "defaultTerminal": "Default Terminal"
     },
     "controls": {
