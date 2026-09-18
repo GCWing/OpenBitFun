@@ -43,7 +43,7 @@ vi.mock('@/tools/terminal/components/LazyTerminalOutputRenderer', () => ({
   }),
 }));
 
-const model: ExecProcessCardModel = {
+const baseModel: ExecProcessCardModel = {
   kind: 'command',
   actionLabel: 'Run command:',
   primaryText: 'npm test',
@@ -54,7 +54,7 @@ const model: ExecProcessCardModel = {
   resultOutput: '',
 };
 
-function toolItem(status: FlowToolItem['status'], isParamsStreaming = false): FlowToolItem {
+function makeToolItem(status: FlowToolItem['status'], isParamsStreaming = false): FlowToolItem {
   return {
     id: 'tool-exec-1',
     type: 'tool',
@@ -69,7 +69,16 @@ function toolItem(status: FlowToolItem['status'], isParamsStreaming = false): Fl
   };
 }
 
-describe('ExecProcessToolCardView', () => {
+describe.each([
+  ['command', 'ExecCommand'],
+  ['stdin', 'WriteStdin'],
+  ['control', 'ExecControl'],
+] as const)('ExecProcessToolCardView (%s)', (kind, toolName) => {
+  const model: ExecProcessCardModel = { ...baseModel, kind };
+  const toolItem = (status: FlowToolItem['status'], isParamsStreaming = false): FlowToolItem => ({
+    ...makeToolItem(status, isParamsStreaming),
+    toolName,
+  });
   let dom: JSDOM;
   let container: HTMLDivElement;
   let root: Root;
@@ -273,10 +282,10 @@ describe('ExecProcessToolCardView', () => {
     expect(container.querySelector('[data-openbitfun-component="command-tool-card"] [data-openbitfun-part="output"] pre')).toBeNull();
   });
 
-  it('retains a just-completed WriteStdin tail result during the grace period', () => {
+  it('retains a compact completed result when it stops being the tail', () => {
+    vi.useFakeTimers();
     const resultModel: ExecProcessCardModel = {
       ...model,
-      kind: 'stdin',
       resultOutput: 'All tests passed',
     };
 
@@ -318,6 +327,8 @@ describe('ExecProcessToolCardView', () => {
       );
     });
 
+    expect(container.querySelector(expandedSurface)).not.toBeNull();
+    act(() => { vi.advanceTimersByTime(1000); });
     // Collapsed cards keep the prominent framework shell and animate height closed.
     expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')).not.toBeNull();
     expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"][data-openbitfun-state~="expanded"]')).toBeNull();
@@ -372,10 +383,9 @@ describe('ExecProcessToolCardView', () => {
     expect(container.querySelector('[data-openbitfun-part="outputFrame"]')?.getAttribute('data-sizing')).toBe('content');
   });
 
-  it('pushes WriteStdin session and execution metadata to the footer end', () => {
-    const stdinModel: ExecProcessCardModel = {
+  it('pushes session and execution metadata to the footer end', () => {
+    const metadataModel: ExecProcessCardModel = {
       ...model,
-      kind: 'stdin',
       sessionId: 42,
       exitCode: 0,
       wallTimeSeconds: 1.25,
@@ -384,8 +394,8 @@ describe('ExecProcessToolCardView', () => {
     act(() => {
       root.render(
         <ExecProcessToolCardView
-          toolItem={{ ...toolItem('completed'), toolName: 'WriteStdin' }}
-          model={stdinModel}
+          toolItem={toolItem('completed')}
+          model={metadataModel}
         />,
       );
     });
@@ -401,9 +411,9 @@ describe('ExecProcessToolCardView', () => {
     expect(footerItems[0]?.getAttribute('data-push-to-end')).toBe('true');
     expect(footerItems[0]?.textContent).toContain('#42');
     expect(footerItems[1]?.getAttribute('data-push-to-end')).toBe('false');
-    expect(footerItems[1]?.textContent).toContain('toolCards.execProcess.wallTime');
+    expect(footerItems[1]?.textContent).toContain(kind === 'stdin' ? 'toolCards.execProcess.wallTime' : 'Exit code: 0');
     expect(footerItems[2]?.getAttribute('data-push-to-end')).toBe('false');
-    expect(footerItems[2]?.textContent).toContain('Exit code: 0');
+    expect(footerItems[2]?.textContent).toContain(kind === 'stdin' ? 'Exit code: 0' : 'toolCards.execProcess.wallTime');
   });
 
   it('keeps the output frame and footer mounted while content changes', () => {
