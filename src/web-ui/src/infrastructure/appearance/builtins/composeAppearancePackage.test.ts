@@ -4,6 +4,29 @@ import { APPEARANCE_THEME_TOKEN_NAMES } from './catalog';
 import { composeAppearancePackage } from './composeAppearancePackage';
 
 describe('composeAppearancePackage', () => {
+  it.each(['light', 'dark'] as const)('supplies update material cyan to legacy %s packages and preserves explicit overrides', mode => {
+    const original: AppearancePackage = {
+      schema: 'openbitfun.appearance', schemaVersion: 2,
+      id: 'example.legacy-updates', name: 'Legacy updates', version: '1.0.0', mode,
+      renderers: { 'theme-tokens': { version: 1, settings: {
+        tokens: { '--openbitfun-color-accent-default': '#7755aa' },
+      } } },
+    };
+    const payload = JSON.stringify(original);
+    const resolved = composeAppearancePackage(JSON.parse(payload));
+    expect(resolved.renderers!['theme-tokens']!.settings.tokens).toMatchObject({
+      '--openbitfun-component-update-material-cyan': '#059cb0',
+      '--openbitfun-color-accent-default': '#7755aa',
+    });
+    expect(composeAppearancePackage(JSON.parse(JSON.stringify(resolved))).renderers?.['theme-tokens'])
+      .toEqual(resolved.renderers?.['theme-tokens']);
+    expect(JSON.stringify(original)).toBe(payload);
+
+    original.renderers!['theme-tokens']!.settings.tokens['--openbitfun-component-update-material-cyan'] = '#44aaaa';
+    expect(composeAppearancePackage(JSON.parse(JSON.stringify(original))).renderers!['theme-tokens']!.settings.tokens)
+      .toHaveProperty('--openbitfun-component-update-material-cyan', '#44aaaa');
+  });
+
   it.each(['light', 'dark'] as const)('supplies annotation cyan to legacy %s packages without replacing their accent', mode => {
     const original: AppearancePackage = {
       schema: 'openbitfun.appearance', schemaVersion: 2,

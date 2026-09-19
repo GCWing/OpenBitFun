@@ -1,12 +1,11 @@
  
 
-import { ScrollArea } from '@openbitfun/ui';
+import { OverlayLayer, OverlayRegion, ScrollArea, useHasModalOverlay } from '@openbitfun/ui';
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Notification } from '../types';
 import { useActiveNotifications } from '../hooks/useNotificationState';
 import { NotificationItem } from './NotificationItem';
-import { ProgressNotification } from './ProgressNotification';
-import { LoadingNotification } from './LoadingNotification';
+import { notificationService } from '../services/NotificationService';
 import './NotificationContainer.scss';
 
 const NOTIFICATION_EXIT_DURATION_MS = 140;
@@ -19,6 +18,18 @@ interface NotificationPresenceProps {
 const NotificationPresence: React.FC<NotificationPresenceProps> = ({ notification, isExiting }) => {
   const presenceRef = useRef<HTMLDivElement>(null);
   const [exitAccessibilityApplied, setExitAccessibilityApplied] = useState(false);
+  const modalOpen = useHasModalOverlay();
+  const remainingDuration = useRef(notification.duration ?? 0);
+
+  useEffect(() => {
+    if (isExiting || modalOpen || remainingDuration.current <= 0) return;
+    const startedAt = Date.now();
+    const timer = window.setTimeout(() => notificationService.dismiss(notification.id), remainingDuration.current);
+    return () => {
+      window.clearTimeout(timer);
+      remainingDuration.current = Math.max(0, remainingDuration.current - (Date.now() - startedAt));
+    };
+  }, [isExiting, modalOpen, notification.id]);
 
   useLayoutEffect(() => {
     if (!isExiting) {
@@ -50,11 +61,9 @@ const NotificationPresence: React.FC<NotificationPresenceProps> = ({ notificatio
   );
 };
 
-export const NotificationContainer: React.FC = () => {
+export const NotificationContainer: React.FC<React.PropsWithChildren> = ({ children }) => {
   const activeNotifications = useActiveNotifications();
 
-  
-  
   const visibleNotifications = useMemo(() => activeNotifications.filter(
     n => n.variant !== 'silent' && n.variant !== 'progress' && n.variant !== 'loading'
   ), [activeNotifications]);
@@ -114,51 +123,29 @@ export const NotificationContainer: React.FC = () => {
     exitTimersRef.current.clear();
   }, []);
 
-  if (presentedNotifications.length === 0) {
+  if (presentedNotifications.length === 0 && !children) {
     return null;
   }
 
   return (
-    <div
-      className="notification-container"
-      data-openbitfun-component="notification"
-      data-openbitfun-part="container"
-    >
-    <ScrollArea
-      className="notification-container__viewport"
-      scrollbarVisibility="hidden"
-    >
-      {presentedNotifications.map((notification) => {
-        const isExiting = !visibleIds.has(notification.id);
-
-        
-        if (notification.variant === 'progress') {
-          return (
-            <ProgressNotification
-              key={notification.id}
-              notification={notification}
-            />
-          );
-        }
-
-        if (notification.variant === 'loading') {
-          return (
-            <LoadingNotification
-              key={notification.id}
-              notification={notification}
-            />
-          );
-        }
-
-        return (
-          <NotificationPresence
-            key={notification.id}
-            notification={notification}
-            isExiting={isExiting}
-          />
-        );
-      })}
-    </ScrollArea>
-    </div>
+    <OverlayRegion>
+      <div
+        className="notification-container"
+        data-openbitfun-component="notification"
+        data-openbitfun-part="container"
+      >
+        <ScrollArea className="notification-container__viewport" scrollbarVisibility="hidden">
+          {children}
+          {presentedNotifications.map(notification => {
+            const isExiting = !visibleIds.has(notification.id);
+            return (
+              <OverlayLayer key={notification.id} passive open={!isExiting}>
+                <NotificationPresence notification={notification} isExiting={isExiting} />
+              </OverlayLayer>
+            );
+          })}
+        </ScrollArea>
+      </div>
+    </OverlayRegion>
   );
 };

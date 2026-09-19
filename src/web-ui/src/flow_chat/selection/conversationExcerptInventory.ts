@@ -19,7 +19,7 @@ function metadataExcerpts(metadata: Record<string, unknown> | undefined): readon
   return result;
 }
 
-/** Runtime-owned messages are authoritative; draft overlays are added by the caller. */
+/** Sent snapshots retain their numbers for history and subsequent annotation numbering. */
 export function sessionConversationExcerpts(session: Session): readonly ConversationExcerptContext[] {
   const cached = turnsCache.get(session.dialogTurns);
   if (cached) return cached;
@@ -48,24 +48,22 @@ const EMPTY_QUEUE: readonly QueuedMessage[] = [];
 /**
  * Shared annotation projection, separate from either transcript renderer. Panes
  * consume only their own source index; parent streaming keeps that snapshot stable.
- * Persisted messages own sent annotations and composer drafts overlay pending edits.
+ * Only drafts and queued messages own source marks. Sent snapshots are consumed
+ * annotations and must not recreate marks when history is loaded or streamed.
  */
 export function createConversationExcerptInventory() {
-  let previousSessions: ReadonlyMap<string, Session> | undefined;
   let previousDrafts: Readonly<Record<string, SessionComposerDraft>> | undefined;
   let previousQueue = EMPTY_QUEUE;
   let bySource = new Map<string, ConversationExcerptSourceIndex>();
-  return (sessions: ReadonlyMap<string, Session>, drafts: Readonly<Record<string, SessionComposerDraft>>, queue = EMPTY_QUEUE) => {
-    if (sessions === previousSessions && drafts === previousDrafts
+  return (drafts: Readonly<Record<string, SessionComposerDraft>>, queue = EMPTY_QUEUE) => {
+    if (drafts === previousDrafts
       && queue.length === previousQueue.length && queue.every((item, i) => item === previousQueue[i])) return bySource;
-    previousSessions = sessions;
     previousDrafts = drafts;
     previousQueue = queue;
     const records = new Map<string, ConversationExcerptContext>();
     const add = (excerpt: ConversationExcerptContext) => {
       records.set(surfaceScopedKey(excerpt.source.surfaceId, excerpt.id), excerpt);
     };
-    sessions.forEach(session => sessionConversationExcerpts(session).forEach(add));
     queuedConversationExcerpts(queue).forEach(add);
     Object.values(drafts).forEach(draft => draft.contexts.filter(isConversationExcerpt).forEach(add));
     const next = new Map<string, Map<string, ConversationExcerptContext[]>>();

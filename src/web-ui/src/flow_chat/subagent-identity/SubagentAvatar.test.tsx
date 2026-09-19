@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SubagentAvatar } from './SubagentAvatar';
 import { resolveSubagentAvatarPresentation } from './avatarResolver';
+import { getSubagentAvatarDefinition } from './catalog';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -23,7 +24,7 @@ describe('SubagentAvatar', () => {
     container.remove();
   });
 
-  it('renders the session-mapped raster avatar and lifecycle state', () => {
+  it('renders the session-mapped SVG avatar and lifecycle state', () => {
     act(() => {
       root.render(
         <SubagentAvatar
@@ -38,10 +39,12 @@ describe('SubagentAvatar', () => {
     const avatar = container.querySelector('[data-openbitfun-component="subagent-avatar"]');
     const presentation = resolveSubagentAvatarPresentation('child');
     expect(avatar?.getAttribute('data-openbitfun-avatar-id')).toBe(presentation.avatarId);
-    expect(avatar?.getAttribute('data-openbitfun-avatar-color-id')).toBe(presentation.colorId);
+    expect(avatar?.hasAttribute('data-openbitfun-avatar-color-id')).toBe(false);
     expect(avatar?.getAttribute('data-openbitfun-state')).toBe('running');
     expect(avatar?.getAttribute('style')).toContain('28px');
-    expect(container.querySelector('img')?.getAttribute('src')).toContain(presentation.avatarId);
+    expect(container.querySelector('img')?.getAttribute('src')).toBe(
+      getSubagentAvatarDefinition(presentation.avatarId).src,
+    );
   });
 
   it('renders a stable avatar from the session ID before a name is assigned', () => {
@@ -58,10 +61,8 @@ describe('SubagentAvatar', () => {
     const avatar = container.querySelector('[data-openbitfun-component="subagent-avatar"]');
     const presentation = resolveSubagentAvatarPresentation('restored-child-session');
     expect(avatar?.getAttribute('data-openbitfun-avatar-id')).toBe(presentation.avatarId);
-    expect(avatar?.getAttribute('data-openbitfun-avatar-color-id')).toBe(presentation.colorId);
-    expect(avatar?.getAttribute('style')).toContain(
-      `--subagent-avatar-hue-shift: ${presentation.hueShiftDegrees}deg`,
-    );
+    expect(avatar?.getAttribute('style')).toContain('--subagent-avatar-size: 22px');
+    expect(avatar?.getAttribute('style')).not.toContain('hue-shift');
     expect(avatar?.hasAttribute('data-openbitfun-name-id')).toBe(false);
   });
 });

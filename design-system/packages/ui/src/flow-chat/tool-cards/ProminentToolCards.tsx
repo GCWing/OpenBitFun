@@ -414,6 +414,9 @@ export function AgentControlToolCard({
   const hasActions = Boolean(interruptAction);
   const hasTrailingActions = Boolean(onOpenAgent && openAgentLabel);
   const hasExtra = Boolean(statusMeta || statusLabel);
+  const showStatusGlyph = status !== "completed"
+    && status !== "confirmed"
+    && hasVisibleToolCardStatusGlyph(status);
 
   const identity = (
     <span className={styles.agentIdentity} data-openbitfun-part="agentIdentity">
@@ -472,7 +475,7 @@ export function AgentControlToolCard({
               {avatar ?? <Icon name="user" aria-hidden="true" />}
             </span>
           )}
-          statusIcon={hasVisibleToolCardStatusGlyph(status)
+          statusIcon={showStatusGlyph
             ? <ToolCardStatusSlot size={16} status={status} />
             : undefined}
           trailingActions={hasTrailingActions ? (

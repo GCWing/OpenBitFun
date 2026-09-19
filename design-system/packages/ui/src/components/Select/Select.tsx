@@ -489,7 +489,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
         {renderTriggerContent()}
       </button>
       {popup && (
-        <Portal ownerDocument={triggerRef.current?.ownerDocument}>
+        <Portal ownerDocument={triggerRef.current?.ownerDocument} ownerRef={triggerRef} open={resolvedOpen}>
           {popup}
         </Portal>
       )}

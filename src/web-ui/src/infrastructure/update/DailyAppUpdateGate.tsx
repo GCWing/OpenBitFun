@@ -1,173 +1,97 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
-import { systemAPI } from '@/infrastructure/api';
-import { configManager } from '@/infrastructure/config/services/ConfigManager';
+import { lazy, Suspense, useEffect, type ReactElement } from 'react';
+import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import { createLogger } from '@/shared/utils/logger';
 import { scheduleAfterStartupSignal } from '@/shared/utils/startupTaskScheduling';
-import type { CheckForUpdatesResponse } from '@/infrastructure/api/service-api/SystemAPI';
-import { canCheckForAppUpdates, isTauriRuntime } from './tauriEnv';
-import {
-  recordDailyPromptDismissed,
-  recordSkipThisVersion,
-  shouldShowDailyUpdatePrompt
-} from './appUpdateStorage';
-import { UpdateAvailableDialog } from './UpdateAvailableDialog';
+import { canAutoCheckForAppUpdates, canCheckForAppUpdates } from './tauriEnv';
+import { getSkippedVersion } from './appUpdateStorage';
 import { UpdateInstallProgressModal } from './UpdateInstallProgressModal';
-import { useUpdateInstallStore } from './updateInstallStore';
-import { useI18n } from '@/infrastructure/i18n';
-import { notificationService } from '@/shared/notification-system';
+import { APP_UPDATE_CHECK_INTERVAL, useUpdateInstallStore } from './updateInstallStore';
+import { RetainedMountBoundary } from '@/shared/presence';
+
+const AppUpdateDetailsDialog = lazy(() => import('./AppUpdateDetailsDialog'));
 
 const log = createLogger('DailyAppUpdate');
 
-/**
- * On first launch after a short delay, checks for updates and may show the daily prompt.
- * Renders update dialogs; mount once near the app root (e.g. inside AppLayout).
- */
+/** One shell-owned scheduler; discovery, notices and installation have separate state. */
 export function DailyAppUpdateGate(): ReactElement | null {
-  const { t } = useI18n('common');
-  const [dailyOpen, setDailyOpen] = useState(false);
-  const [dailyData, setDailyData] = useState<CheckForUpdatesResponse | null>(null);
-  const dailyCheckTimerRef = useRef<number | null>(null);
-  const updateStatus = useUpdateInstallStore(state => state.status);
-  const updateProgress = useUpdateInstallStore(state => state.progress);
-  const updateError = useUpdateInstallStore(state => state.error);
-  const startUpdateInstall = useUpdateInstallStore(state => state.startInstall);
-  const clearUpdateError = useUpdateInstallStore(state => state.clearError);
-  const promptOpen = useUpdateInstallStore(state => state.promptOpen);
-  const updateVersion = useUpdateInstallStore(state => state.version);
-  const deferInstall = useUpdateInstallStore(state => state.deferInstall);
-  const confirmInstall = useUpdateInstallStore(state => state.confirmInstall);
+  const state = useUpdateInstallStore();
 
   useEffect(() => {
-    if (!canCheckForAppUpdates()) {
-      return;
-    }
+    if (!canCheckForAppUpdates()) return;
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== 'openbitfun:update:skippedVersion' && event.key !== null) return;
+      const skippedVersion = getSkippedVersion();
+      const current = useUpdateInstallStore.getState();
+      useUpdateInstallStore.setState({
+        skippedVersion,
+        ...(current.notice === 'available' && skippedVersion === current.availableUpdate?.latestVersion
+          ? { notice: null } : {}),
+      });
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  useEffect(() => {
+    if (!canAutoCheckForAppUpdates()) return;
     let cancelled = false;
-    const runDailyCheck = async () => {
-      await useUpdateInstallStore.getState().initialize();
-      if (cancelled || useUpdateInstallStore.getState().status !== 'idle') return;
-      let autoUpdate = true;
-      try {
-        const v = await configManager.getConfig<boolean>('app.auto_update');
-        if (v === false) {
-          autoUpdate = false;
-        }
-      } catch (e) {
-        log.warn('Failed to read app.auto_update; defaulting to enabled', e);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let started = false;
+    const check = (force = false) => {
+      if (!cancelled && started && document.visibilityState !== 'hidden' && navigator.onLine !== false) {
+        void useUpdateInstallStore.getState().checkForUpdates('automatic', force);
       }
-      if (cancelled || !autoUpdate) {
-        return;
-      }
-      dailyCheckTimerRef.current = window.setTimeout(() => {
-        void (async () => {
-          try {
-            const autoAtCheck = await configManager.getConfig<boolean>('app.auto_update');
-            if (cancelled || autoAtCheck === false) {
-              return;
-            }
-            const res = await systemAPI.checkForUpdates();
-            if (cancelled || useUpdateInstallStore.getState().status !== 'idle') {
-              return;
-            }
-            if (!res.updateAvailable || !res.latestVersion) {
-              return;
-            }
-            if (!shouldShowDailyUpdatePrompt(res.latestVersion)) {
-              return;
-            }
-            setDailyData(res);
-            setDailyOpen(true);
-          } catch (e) {
-            log.warn('Daily update check failed', e);
-          }
-        })();
-      }, 900);
     };
     const cancelStartupSchedule = scheduleAfterStartupSignal(() => {
-      void runDailyCheck();
+      timer = setTimeout(() => {
+        started = true;
+        void useUpdateInstallStore.getState().initialize().then(() => check());
+        interval = setInterval(() => check(), APP_UPDATE_CHECK_INTERVAL);
+      }, 900);
     }, {
       signalName: 'openbitfun:interactive-shell-ready',
       fallbackTimeoutMs: 10000,
       frameCount: 1,
-      onError: error => {
-        log.warn('Failed to schedule daily update check after startup', error);
-      },
+      onError: error => log.warn('Failed to schedule update checks after startup', error),
     });
+    const onResume = () => check();
+    const unsubscribe = systemAPI.onAutoUpdateEnabledChange(enabled => {
+      if (enabled) check(true);
+      else if (useUpdateInstallStore.getState().notice === 'available') {
+        useUpdateInstallStore.getState().dismissNotice();
+      }
+    });
+    window.addEventListener('online', onResume);
+    document.addEventListener('visibilitychange', onResume);
     return () => {
       cancelled = true;
       cancelStartupSchedule();
-      if (dailyCheckTimerRef.current != null) {
-        window.clearTimeout(dailyCheckTimerRef.current);
-        dailyCheckTimerRef.current = null;
-      }
+      clearTimeout(timer);
+      clearInterval(interval);
+      unsubscribe();
+      window.removeEventListener('online', onResume);
+      document.removeEventListener('visibilitychange', onResume);
     };
   }, []);
 
-  const closeDaily = useCallback(() => {
-    setDailyOpen(false);
-    setDailyData(null);
-  }, []);
-
-  const onLater = useCallback(() => {
-    const v = dailyData?.latestVersion;
-    if (v) {
-      recordDailyPromptDismissed(v);
-    }
-    closeDaily();
-  }, [closeDaily, dailyData]);
-
-  const onSkip = useCallback(() => {
-    const v = dailyData?.latestVersion;
-    if (v) {
-      recordSkipThisVersion(v);
-    }
-    closeDaily();
-  }, [closeDaily, dailyData]);
-
-  const onInstall = useCallback(() => {
-    const v = dailyData?.latestVersion;
-    if (v) {
-      recordDailyPromptDismissed(v);
-    }
-    setDailyOpen(false);
-    setDailyData(null);
-    void startUpdateInstall();
-  }, [dailyData, startUpdateInstall]);
-
-  const onCloseProgressError = useCallback(() => {
-    clearUpdateError();
-  }, [clearUpdateError]);
-
-  const onCloseInstalled = useCallback(() => {
-    if (useUpdateInstallStore.getState().status !== 'ready') return;
-    deferInstall();
-    notificationService.info(t('update.deferredMessage'));
-  }, [deferInstall, t]);
-
-  if (!isTauriRuntime()) {
-    return null;
-  }
+  if (!canCheckForAppUpdates()) return null;
 
   return (
     <>
-      <UpdateAvailableDialog
-        isOpen={dailyOpen}
-        variant="daily"
-        data={dailyData}
-        onLater={onLater}
-        onSkip={onSkip}
-        onInstall={onInstall}
-      />
+      <RetainedMountBoundary present={state.detailsOpen}>
+        <Suspense fallback={null}><AppUpdateDetailsDialog /></Suspense>
+      </RetainedMountBoundary>
       <UpdateInstallProgressModal
-        isOpen={updateStatus === 'error' || promptOpen}
-        error={updateError}
-        installed={updateStatus === 'ready' || updateStatus === 'installing'}
-        installing={updateStatus === 'installing'}
-        version={updateVersion}
-        progress={updateProgress}
-        onCloseError={onCloseProgressError}
-        onCloseInstalled={onCloseInstalled}
-        onRestart={() => void confirmInstall()}
-        onDownloadAgain={() => void startUpdateInstall(true)}
+        isOpen={state.promptOpen}
+        error={state.error}
+        installed={state.status === 'ready' || state.status === 'installing'}
+        installing={state.status === 'installing'}
+        version={state.version}
+        progress={state.progress}
+        onCloseInstalled={state.deferInstall}
+        onRestart={() => void state.confirmInstall()}
+        onDownloadAgain={() => void state.startInstall(true, state.version ?? undefined)}
       />
     </>
   );

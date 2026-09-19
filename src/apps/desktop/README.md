@@ -20,15 +20,84 @@ remote host's tray or execution state.
 
 ## Application updates
 
-Choose **Background download** in the new-version dialog to download and verify
-an update while continuing to use OpenBitFun. Downloading does not install the
-update or restart the application.
+New versions appear in a fixed 368 × 224 px bottom-left card that stays until an explicit
+action. Only narrow viewports constrain its width; content and update status do not
+resize the card. Clicking outside does not dismiss it. The card shows up to three lines
+from the first paragraph of the release notes, omitting Markdown formatting and
+decorative content. Releases without a summary use a quiet brand imprint and fine
+rules in the reserved body area, without placeholder copy. The actions remain at
+the bottom, and long error messages use a two-line preview with the full text on hover.
+Errors reduce the introduction to one line to keep feedback and retry controls visible.
+Select the version title to open the full release notes in a 600 × 480 px details
+dialog, constrained by the viewport. Both cards share a frosted surface with an even,
+softly blurred blue and cyan tint at low intensity. Semantic color and blur
+tokens keep this material consistent across themes. Dark mode gently lifts the base,
+adds a broad soft reflection and a thin inner highlight, and retains a muted cyan
+companion to the icy blue tint. High-contrast and
+reduced-transparency modes use a solid surface. The dialog header shows the product and release version
+once. Release notes are always expanded, with a clear introduction, compact
+section headings, and evenly spaced list entries. Typography uses semantic
+dialog-title, body-md, section-heading, and supporting-text roles; introduction
+and details share the same standard body size. A space-8 gap separates the title
+from the reading area. The header, reading column, and footer share one inset.
+The body scrolls while
+the standard dialog footer keeps update actions and download progress visible.
+The footer uses the primary action for download or install and a neutral action
+for skip or restore; downloading shows only a progress bar. No-summary releases
+center a larger official brand mark on the same frosted surface, filling the
+reserved body without placeholder copy or a repeated version number.
+Closing the card or reading the notes keeps a blue dot on the bottom-left
+settings gear and **Check for updates** in its More menu. Hover to see the
+available version, or select the menu item to reopen the download/skip card.
+**Skip this version** suppresses reminders for that version only. An explicit
+manual check can revisit a skipped release without restoring automatic reminders.
 
-When the download finishes, OpenBitFun offers **Install and restart** or
-**Later**. Installation restarts OpenBitFun on this device and interrupts its
-active sessions. Choosing Later, or closing the dialog, keeps the downloaded
-update. Open **About → Install and restart** whenever you are ready; the same
-confirmation appears before installation.
+Choose **More → Check for updates** for a manual check. The single menu row shows
+only the action and its temporary checking state. Up-to-date, already-downloaded,
+and failure results use the notification system; an available release reuses the
+download/skip card. Results still arrive if the menu closes during the check,
+and reopening the menu does not replay them. Checking never opens About or starts a download.
+The menu item is always present in desktop builds, including development.
+Manual checks use the configured update feed. Development builds skip automatic
+checks and do not restore discovery from previous runs; starting the app or opening
+More cannot create a new-version reminder without a manual check in that run.
+Packaged builds restore only valid discovery for the installed host version.
+Available releases must have a higher semantic version: an equal version, an older
+release, or build metadata alone never creates a reminder. The displayed `-dev`
+suffix is a UI label and does not participate in update comparisons.
+Browser-only surfaces omit desktop update actions.
+About only contains
+product identity and build information.
+
+Choose **Download update** to download and verify an update while continuing to
+use OpenBitFun. Downloading does not install or restart the application.
+When the navigation footer is visible, a dot travels from the download button to
+the circle beside **More**. Only after it arrives does the navigation circle appear and the
+card close. The circle fills from bottom to top using downloaded bytes, with a
+gently flowing wave along the rising surface.
+Hover for the percentage, or select it to reopen the progress card.
+Hover subtly enlarges and brightens the circle itself, and pressing gently
+compresses it. The surrounding hit area stays transparent, while keyboard focus
+retains the design-system focus ring. Reduced motion keeps this feedback stationary.
+The progress card retains the version and introduction, with only a progress
+bar along the bottom and no status sentence or percentage text.
+Until the total size is known, a shallow wave flows continuously along the bottom
+of the same circle, with a steady fill level and a tooltip showing the downloading
+status. As soon as the total arrives, the same wave continues flowing while its
+level follows real byte progress. No dot-grid spinner or fabricated percentage
+is shown; reduced motion disables the wave animation and fill transitions.
+Keyboard activation and reduced motion use an immediate handoff; hidden
+navigation keeps progress in the card.
+
+When the download finishes, the navigation circle changes to a solid success
+color with no border and a contrasting checkmark. No completion card or dialog
+opens automatically. Select the checkmark to open the installation confirmation
+directly. More no longer shows a reminder for the downloaded version.
+Failed downloads return to the reminder in More; an older downloaded package
+keeps its own installation checkmark if a newer download fails.
+Installation restarts OpenBitFun on this device and interrupts its active sessions.
+Choosing **Later**, or closing the confirmation, keeps the downloaded update.
+The checkmark remains available whenever you are ready.
 
 Downloaded updates remain available after closing and reopening OpenBitFun.
 After reopening, the current updater requires access to the update server to

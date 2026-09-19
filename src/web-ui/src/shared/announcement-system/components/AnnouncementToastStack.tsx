@@ -1,4 +1,5 @@
 import React from 'react';
+import { Portal } from '@openbitfun/ui';
 import { useAnnouncementStore } from '../store/announcementStore';
 import AnnouncementToastItem from './AnnouncementToastItem';
 import '../styles/AnnouncementToast.scss';
@@ -18,6 +19,7 @@ const AnnouncementToastStack: React.FC = () => {
   const ghostCount = Math.min(queue.length, 2);
 
   return (
+    <Portal passive key={activeToast.id}>
     <div className="announcement-toast-stack" aria-label="Announcements" data-openbitfun-component="announcement" data-openbitfun-part="stack">
       <div className="announcement-toast-deck" data-openbitfun-component="announcement" data-openbitfun-part="deck">
         {/* Ghost layers: rendered before active card = lower in DOM = behind */}
@@ -30,6 +32,7 @@ const AnnouncementToastStack: React.FC = () => {
         <AnnouncementToastItem card={activeToast} />
       </div>
     </div>
+    </Portal>
   );
 };
 

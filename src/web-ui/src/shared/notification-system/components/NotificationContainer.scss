@@ -2,11 +2,12 @@
   --notification-stack-max-height: calc(100vh - 120px);
   --notification-visual-gutter: var(--openbitfun-space-8);
 
-  position: fixed;
+  // The document overlay host owns fixed positioning. This layout/scroll
+  // region must not create a stacking context: cards have independent ranks.
+  position: absolute;
   bottom: 60px;
   left: 16px;
   right: auto;
-  z-index: var(--openbitfun-layer-notification);
   display: flex;
   pointer-events: none;
 

@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { OverflowText, Button, Card, CardBody, CardFooter, CardHeader, Icon, IconButton, ScrollArea } from '@openbitfun/ui';
-import { createPortal } from 'react-dom';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Button, Card, CardBody, CardFooter, CardHeader, Icon, IconButton, ScrollArea } from '@openbitfun/ui';
 import { ChevronLeft, ChevronRight, MessageCircle, Monitor, Server, Smartphone, Undo2 } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
@@ -174,6 +173,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   });
 
   useEffect(() => {
+    let removeOverlayKeydown0: (() => void) | undefined;
     if (!open) return undefined;
     void refresh();
     const onKeyDown = (event: KeyboardEvent) => {
@@ -182,8 +182,8 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
         triggerRef.current?.focus();
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    removeOverlayKeydown0 = subscribeOverlayInteraction(popoverRef, 'keydown', onKeyDown);
+    return () => removeOverlayKeydown0?.();
   }, [onOpenChange, open, refresh]);
 
   const handleReturnLocal = useCallback(async () => {
@@ -303,7 +303,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
         )}
       </button>
 
-      {open && createPortal(
+      {open && createOverlayPortal(
         <>
           <div
             className="openbitfun-nav-panel__footer-backdrop"

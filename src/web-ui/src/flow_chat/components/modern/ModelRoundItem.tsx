@@ -8,9 +8,8 @@
  */
 
 import React, { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Button, Icon, IconButton, Menu, MenuItem, Tooltip } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, Button, Icon, IconButton, Menu, MenuItem, Tooltip } from '@openbitfun/ui';
 import { CircleAlert } from 'lucide-react';
 import type { ModelRound, ModelRoundAttempt, ModelRoundAttemptDiagnostic, FlowItem, FlowTextItem, FlowToolItem, FlowThinkingItem, ToolRejectOptions } from '../../types/flow-chat';
 import { useI18n } from '@/infrastructure/i18n';
@@ -376,6 +375,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     const renderTraceStartedAtMs = renderTraceEnabled ? performance.now() : null;
 
     useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
       if (!copied && !isCopyMenuOpen) return;
 
       const handleClickOutside = (event: MouseEvent) => {
@@ -387,13 +387,14 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
         setIsCopyMenuOpen(false);
       };
 
-      document.addEventListener('mousedown', handleClickOutside);
+      removeOverlayMousedown0 = subscribeOverlayInteraction(copyMenuRef, 'mousedown', handleClickOutside);
       return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
+        removeOverlayMousedown0?.();
       };
     }, [copied, isCopyMenuOpen]);
 
     useEffect(() => {
+    let removeOverlayKeydown1: (() => void) | undefined;
       if (!isCopyMenuOpen) return;
 
       const handleKeyDown = (event: KeyboardEvent) => {
@@ -402,9 +403,9 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
         }
       };
 
-      document.addEventListener('keydown', handleKeyDown);
+      removeOverlayKeydown1 = subscribeOverlayInteraction(copyMenuRef, 'keydown', handleKeyDown);
       return () => {
-        document.removeEventListener('keydown', handleKeyDown);
+        removeOverlayKeydown1?.();
       };
     }, [isCopyMenuOpen]);
 
@@ -805,7 +806,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
                   />
                 </Tooltip>
 
-                {isCopyMenuOpen && createPortal(
+                {isCopyMenuOpen && createOverlayPortal(
                   <Menu
                     ref={copyMenuRef}
                     className="model-round-item__copy-menu"

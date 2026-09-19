@@ -14,7 +14,8 @@ export interface UpdateDownloadProgressPayload {
  * Downloads and verifies only. Installation requires a separate confirmation.
  */
 export async function installUpdateWithProgress(
-  onProgress: (p: UpdateDownloadProgressPayload) => void
+  onProgress: (p: UpdateDownloadProgressPayload) => void,
+  expectedVersion?: string,
 ): Promise<import('../api/service-api/SystemAPI').PendingUpdateResponse> {
   const { listen } = await import('@tauri-apps/api/event');
   const unlisten = await listen<UpdateDownloadProgressPayload>(
@@ -28,7 +29,7 @@ export async function installUpdateWithProgress(
     }
   );
   try {
-    return await systemAPI.downloadUpdate();
+    return await systemAPI.downloadUpdate(expectedVersion);
   } catch (error) {
     log.error('Update download failed', error);
     throw error;

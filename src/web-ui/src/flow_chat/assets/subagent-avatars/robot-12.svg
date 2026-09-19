@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="1.1429 0.1429 253.7143 253.7143" role="img" aria-labelledby="avatar-title-12">
+  <title id="avatar-title-12">grape joystick avatar</title>
+  <rect x="116" y="60" width="24" height="30" rx="12" fill="#9D7CB4"/>
+  <path d="M82 84H174C218 84 240 110 240 160C240 210 218 236 174 236H82C38 236 16 210 16 160C16 110 38 84 82 84Z" transform="matrix(0.99 0 0 1.0395 1.28 -9.3158)" fill="#725086"/>
+  <circle cx="128" cy="43" r="25" fill="#C9AEDB"/>
+  <g fill="#FBF5EB">
+    <ellipse cx="104" cy="162" rx="10" ry="16"/>
+    <ellipse cx="152" cy="162" rx="10" ry="16"/>
+  </g>
+</svg>

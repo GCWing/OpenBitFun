@@ -11,9 +11,8 @@
  * and the text field already accepts it.
  */
 
-import { Button, Icon, IconButton } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, Button, Icon, IconButton } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useI18n } from '@/infrastructure/i18n';
@@ -95,6 +94,8 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
   }, [anchorRef]);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
@@ -106,11 +107,11 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
       if (event.key === 'Escape') onClose();
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
+    removeOverlayMousedown0 = subscribeOverlayInteraction(popoverRef, 'mousedown', handlePointerDown);
+    removeOverlayKeydown1 = subscribeOverlayInteraction(popoverRef, 'keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
+      removeOverlayMousedown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [anchorRef, onClose]);
 
@@ -130,7 +131,7 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
     });
   }, []);
 
-  return createPortal(
+  return createOverlayPortal(
     <div
       ref={popoverRef}
       className="openbitfun-datetime-picker"

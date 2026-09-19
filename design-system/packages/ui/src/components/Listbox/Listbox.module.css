@@ -38,8 +38,17 @@
     flex-direction: column;
   }
 
-  .list {
+  .list,
+  .groupOptions {
+    gap: var(--openbitfun-overlay-menu-row-gap);
+  }
+
+  .group {
     gap: var(--openbitfun-overlay-menu-section-gap);
+  }
+
+  .group + .group {
+    margin-block-start: max(0px, calc(var(--openbitfun-overlay-menu-section-gap) - var(--openbitfun-overlay-menu-row-gap)));
   }
 
   .groupLabel {

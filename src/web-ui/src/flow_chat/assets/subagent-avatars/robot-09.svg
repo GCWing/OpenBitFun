@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="1.1429 0.1429 253.7143 253.7143" role="img" aria-labelledby="avatar-title-09">
+  <title id="avatar-title-09">sea salt joystick avatar</title>
+  <rect x="116" y="58" width="24" height="30" rx="12" fill="#78B5BD"/>
+  <path d="M128 72C188 72 234 88 234 138V178C234 220 218 238 180 238H76C38 238 22 220 22 178V138C22 88 68 72 128 72Z" transform="matrix(1.04 0 0 0.9759 -5.12 5.7349)" fill="#9ED7DA"/>
+  <circle cx="128" cy="41" r="25" fill="#548F9D"/>
+  <g fill="#245D66">
+    <ellipse cx="102" cy="161" rx="10" ry="16"/>
+    <ellipse cx="154" cy="161" rx="10" ry="16"/>
+  </g>
+</svg>

@@ -6,10 +6,9 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
 import { FolderGit2, Laptop, Loader2, MonitorSmartphone, Server } from 'lucide-react';
 
-import { OverflowText, Icon, Menu, MenuItem, MenuSection, MenuSeparator, Tooltip } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, Menu, MenuItem, MenuSection, MenuSeparator, Tooltip } from '@openbitfun/ui';
 import { SSHConnectionDialog } from '@/features/ssh-remote/SSHConnectionDialog';
 import { useAccountLoginState } from '@/infrastructure/account/useAccountLoginState';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
@@ -86,6 +85,8 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
     : t('chatInput.dispatch.current', { target: displayLabel });
 
   useEffect(() => {
+    let removeOverlayPointerdown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     if (!open) return;
     const handlePointerDown = (event: PointerEvent) => {
       const targetNode = event.target as Node;
@@ -99,11 +100,11 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
     };
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
+    removeOverlayPointerdown0 = subscribeOverlayInteraction(menuRef, 'pointerdown', handlePointerDown);
+    removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
+      removeOverlayPointerdown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [open]);
 
@@ -340,7 +341,7 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
             <span><OverflowText>{displayLabel}</OverflowText></span>
           </button>
         </Tooltip>
-        {menu && createPortal(menu, getAppearanceOverlayHost())}
+        {menu && createOverlayPortal(menu, getAppearanceOverlayHost())}
       </div>
 
       <DispatchInstallDialog

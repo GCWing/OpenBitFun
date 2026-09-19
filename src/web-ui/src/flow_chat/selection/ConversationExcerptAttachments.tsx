@@ -1,6 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Button, Card, Icon, IconButton, useDismissibleLayer } from '@openbitfun/ui';
+import { createOverlayPortal, Button, Card, Icon, IconButton, useDismissibleLayer } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useI18n } from '@/infrastructure/i18n';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
@@ -68,6 +67,11 @@ export function ConversationExcerptAttachments({ contexts, onUpdate, onRemove, i
         onUpdate(excerpt.id, comment.trim());
         return 'saved';
       },
+      remove: () => {
+        if (!scope.isCurrent() || scope.surfaceId !== excerpt.source.surfaceId) return 'unavailable';
+        onRemove(excerpt.id);
+        return 'removed';
+      },
     } });
   };
   if (!excerpts.length) return null;
@@ -91,7 +95,7 @@ export function ConversationExcerptAttachments({ contexts, onUpdate, onRemove, i
       <IconButton size="xs" shape="circle" aria-label={t('selection.remove')} icon={<Icon name="xmark" />}
         onClick={() => { close(); excerpts.forEach(excerpt => onRemove(excerpt.id)); }} />
     </div>
-    {open && createPortal(<Card ref={popoverRef} id={id} role="dialog" aria-label={countLabel}
+    {open && createOverlayPortal(<Card ref={popoverRef} id={id} role="dialog" aria-label={countLabel}
       className="conversation-excerpt__details" appearance="raised" radius="lg"
       data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="details"
       data-flowchat-selection-ignore="true" data-openbitfun-native-webview-occlusion

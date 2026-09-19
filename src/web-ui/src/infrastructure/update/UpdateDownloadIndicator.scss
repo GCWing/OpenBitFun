@@ -1,0 +1,127 @@
+.openbitfun-update-download {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+
+  &__button {
+    // Keep the full hit area while the circle itself owns pointer feedback.
+    &::before { display: none; }
+
+    &:is(:hover, :focus-visible):not(:disabled) .openbitfun-update-download__vessel {
+      filter: brightness(1.12);
+      scale: 1.06;
+    }
+
+    &:active:not(:disabled) .openbitfun-update-download__vessel {
+      filter: brightness(0.98);
+      scale: 0.96;
+    }
+  }
+
+  &__vessel {
+    position: relative;
+    isolation: isolate;
+    box-sizing: border-box;
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--openbitfun-space-5);
+    block-size: var(--openbitfun-space-5);
+    overflow: hidden;
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-status-info-border);
+    border-radius: var(--openbitfun-radius-pill);
+    background: var(--openbitfun-color-status-info-surface);
+    transition:
+      filter var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      scale var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+    &[data-download-status='ready'],
+    &[data-download-status='installing'] {
+      border: 0;
+      background: var(--openbitfun-color-status-success-emphasis);
+    }
+
+  }
+
+  &__fill {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    background: var(--openbitfun-color-status-info-emphasis);
+    transition: transform var(--openbitfun-motion-duration-base) linear;
+
+    &::before {
+      position: absolute;
+      inset-block-start: calc(var(--openbitfun-space-1) * -1);
+      left: 0;
+      inline-size: 200%;
+      block-size: var(--openbitfun-space-1);
+      background: inherit;
+      // Two matching wave periods keep crests and troughs flowing through the loop.
+      mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 8' preserveAspectRatio='none'%3E%3Cpath d='M0 4C3.33 0 6.67 0 10 4S16.67 8 20 4S26.67 0 30 4S36.67 8 40 4V8H0Z'/%3E%3C/svg%3E") 0 0 / 100% 100% no-repeat;
+      animation: openbitfun-update-download-wave calc(var(--openbitfun-motion-duration-loop) * 2) linear infinite;
+      content: '';
+    }
+
+    &[data-openbitfun-state='indeterminate'] {
+      // Keep the wave near the bottom until byte progress can set the water level.
+      transform: translateY(calc(100% - var(--openbitfun-space-1) / 4));
+    }
+  }
+
+  &__complete {
+    color: var(--openbitfun-color-content-on-dark);
+    animation: openbitfun-update-download-complete var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-enter) both;
+  }
+
+  &__transfer {
+    position: fixed;
+    z-index: var(--openbitfun-layer-notification);
+    top: 0;
+    left: 0;
+    inline-size: var(--openbitfun-space-5);
+    block-size: var(--openbitfun-space-5);
+    border-radius: var(--openbitfun-radius-pill);
+    background: var(--openbitfun-color-status-info-emphasis);
+    box-shadow: var(--openbitfun-shadow-raised);
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+@keyframes openbitfun-update-download-wave {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes openbitfun-update-download-complete {
+  from { opacity: 0; transform: translateY(var(--openbitfun-motion-distance-sm)); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-update-download {
+    &__vessel { transition: none; }
+    &__button:is(:hover, :focus-visible, :active):not(:disabled) .openbitfun-update-download__vessel { scale: 1; }
+    &__complete { animation: none; }
+    &__fill { transition: none; }
+    &__fill::before { animation: none; }
+    &__transfer { display: none; }
+  }
+}
+
+@media (forced-colors: active) {
+  .openbitfun-update-download__button:is(:hover, :focus-visible, :active):not(:disabled) .openbitfun-update-download__vessel {
+    filter: none;
+  }
+  .openbitfun-update-download__vessel[data-download-status] {
+    border-color: ButtonText;
+    background: Canvas;
+  }
+  .openbitfun-update-download__fill,
+  .openbitfun-update-download__vessel[data-download-status='ready'],
+  .openbitfun-update-download__vessel[data-download-status='installing'],
+  .openbitfun-update-download__transfer { background: Highlight; }
+  .openbitfun-update-download__complete { color: HighlightText; }
+}

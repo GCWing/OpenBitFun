@@ -108,10 +108,6 @@ test("Combobox embeds search and scrollable options in one token-driven surface"
   assert.match(styles, /\.options\s*\{[^}]*min-block-size:\s*0[^}]*--openbitfun-overlay-menu-surface-padding/s);
   assert.match(styles, /\.root\[data-open="true"\] \.control\s*\{[^}]*visibility:\s*hidden/s);
   assert.doesNotMatch(styles, /scale\(/);
-  assert.match(
-    styles,
-    /\.listbox \[data-openbitfun-part="list"\],[^}]*gap:\s*calc\(var\(--openbitfun-space-1\) \/ 2\)/s,
-  );
 });
 
 test("Combobox and MultiSelect keep the field height independent of text, tags, and clear actions", async () => {

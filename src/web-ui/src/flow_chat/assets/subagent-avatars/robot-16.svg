@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="2.2857 2.2857 251.4286 251.4286" role="img" aria-labelledby="avatar-title-16">
+  <title id="avatar-title-16">cloud joystick avatar</title>
+  <rect x="116" y="58" width="24" height="30" rx="12" fill="#8D9FB5"/>
+  <path d="M128 78C189 78 236 116 236 169C236 214 213 238 176 238H80C43 238 20 214 20 169C20 116 67 78 128 78Z" transform="matrix(1 0 0 1.0125 0 -2.975)" fill="#B6C3D2"/>
+  <circle cx="128" cy="42" r="24" fill="#637B9B"/>
+  <g fill="#405369">
+    <ellipse cx="103" cy="162" rx="10" ry="16"/>
+    <ellipse cx="153" cy="162" rx="10" ry="16"/>
+  </g>
+</svg>

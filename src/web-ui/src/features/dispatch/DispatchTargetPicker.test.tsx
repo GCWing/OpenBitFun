@@ -102,7 +102,7 @@ describe('DispatchTargetPicker overlay', () => {
     await act(async () => trigger?.click());
 
     const menu = document.querySelector<HTMLElement>('[data-testid="dispatch-target-menu"]');
-    expect(menu?.parentElement?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
+    expect(menu?.closest('[data-openbitfun-overlay-host]')?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
     expect(menu?.style.visibility).toBe('visible');
     expect(menu?.style.left).toBe('240px');
     expect(menu?.style.top).toBe('293px');

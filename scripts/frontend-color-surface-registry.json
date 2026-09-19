@@ -33,7 +33,29 @@
       "root": "src/web-ui",
       "audit": {
         "engine": "theme",
-        "baseline": "scripts/theme-color-governance-baseline.json"
+        "baseline": "scripts/theme-color-governance-baseline.json",
+        "excludePaths": [
+          "src/flow_chat/assets/subagent-avatars/robot-01.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-02.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-03.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-04.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-05.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-06.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-07.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-08.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-09.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-10.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-11.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-12.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-13.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-14.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-15.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-16.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-17.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-18.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-19.svg",
+          "src/flow_chat/assets/subagent-avatars/robot-20.svg"
+        ]
       }
     },
     {
@@ -376,6 +398,11 @@
   ],
   "generatedChecks": [
     {
+      "id": "subagent-avatar-artwork",
+      "surfaceIds": ["web-ui"],
+      "command": ["node", "scripts/check-subagent-avatar-assets.mjs"]
+    },
+    {
       "id": "data-migrator-design-system",
       "surfaceIds": ["data-migrator"],
       "command": ["node", "scripts/generate-data-migrator-theme.mjs", "--check"]
@@ -404,6 +431,13 @@
     }
   ],
   "exclusions": [
+    {
+      "id": "subagent-avatar-artwork",
+      "path": "src/web-ui/src/flow_chat/assets/subagent-avatars",
+      "kind": "authored-vector-artwork",
+      "owner": "src/web-ui/src/flow_chat/assets/subagent-avatars/palette.json",
+      "reason": "Only the twenty explicitly named SVGs leave the generic metadata budget. The asset check enforces their exact inventory and per-character palette; all surrounding UI remains under theme governance."
+    },
     {
       "id": "monaco-generated",
       "path": "src/web-ui/public/monaco-editor",

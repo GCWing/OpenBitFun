@@ -2032,9 +2032,9 @@
       "processing": "处理中..."
     },
     "taskTool": {
-      "headerLine": "{{agentType}} 智能体：{{description}}",
-      "headerLineWithModel": "{{agentType}} 智能体（{{modelName}}）：{{description}}",
-      "headerLinePrefix": "{{agentType}} 智能体",
+      "headerLine": "{{agentType}}：{{description}}",
+      "headerLineWithModel": "{{agentType}}（{{modelName}}）：{{description}}",
+      "headerLinePrefix": "{{agentType}}",
       "headerLineSuffix": "：{{description}}",
       "defaultAgentKind": "子代理",
       "cancelSession": "取消会话：{{sessionId}}",
@@ -2143,6 +2143,35 @@
       "permissionRequest": "请求读取权限：",
       "readingFile": "正在读取",
       "preparingRead": "准备读取"
+    },
+    "openBitFunControl": {
+      "title": "$t(shared:product.name)",
+      "actions": {
+        "list": "浏览功能",
+        "search": "查找功能",
+        "get": "查看功能",
+        "open": "打开功能",
+        "execute": "执行操作",
+        "configure": "修改设置",
+        "unknown": "控制 OpenBitFun"
+      },
+      "target": "目标",
+      "query": "$t(shared:tools.search)",
+      "requestedValue": "请求值",
+      "effectiveValue": "生效值",
+      "trueValue": "是",
+      "falseValue": "否",
+      "nullValue": "空值",
+      "emptyValue": "空字符串",
+      "noValue": "未返回值",
+      "noResults": "未找到匹配功能。",
+      "loadingAll": "正在加载全部结果…",
+      "loadAllFailed": "暂时无法加载全部结果，已保留现有内容。",
+      "catalogChanged": "功能目录已更新，请重新查询以查看当前全部结果。",
+      "sourceDeviceRequired": "请切回来源设备以加载剩余结果。",
+      "retryLoad": "重新加载结果",
+      "controlUnavailable": "当前主机的控制能力不可用或受限",
+      "syncPendingDetails": "设置已保存，界面同步尚未完成。"
     },
     "sessionControl": {
       "title": "会话",

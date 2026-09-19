@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="1.1429 -1.8571 253.7143 253.7143" role="img" aria-labelledby="avatar-title-08">
+  <title id="avatar-title-08">berry joystick avatar</title>
+  <rect x="116" y="52" width="24" height="30" rx="12" fill="#CB8199"/>
+  <path d="M128 72C190 72 230 112 230 170C230 214 214 236 182 236H74C42 236 26 214 26 170C26 112 66 72 128 72Z" transform="matrix(1.01 0 0 1.0122 -1.28 -2.878)" fill="#AD5675"/>
+  <circle cx="128" cy="37" r="23" fill="#EEA6B9"/>
+  <g fill="#FBF5EB">
+    <ellipse cx="105" cy="163" rx="10" ry="16"/>
+    <ellipse cx="151" cy="163" rx="10" ry="16"/>
+  </g>
+</svg>

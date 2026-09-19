@@ -13,6 +13,10 @@ export function chatInputSessionSubscriptionKey(session: Session): string {
   const latestTurn = session.dialogTurns.at(-1);
   const recoveryFacts = JSON.stringify([
     session.sessionKind,
+    session.subagentType,
+    session.status,
+    session.persistedStatus,
+    session.hasUnreadCompletion,
     session.config.agentType,
     session.config.modelName,
     session.config.remoteConnectionId,

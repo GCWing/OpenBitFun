@@ -216,6 +216,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
   // Dialog state (previously in TitleBar)
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [showAboutDialog, setShowAboutDialog] = useState(false);
+  const closeAboutDialog = useCallback(() => setShowAboutDialog(false), []);
   const [showWorkspaceStatus, setShowWorkspaceStatus] = useState(false);
   const handleOpenProject = useCallback(async () => {
     try {
@@ -234,7 +235,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     }
   }, [openWorkspace, t]);
   const handleNewProject = useCallback(() => setShowNewProjectDialog(true), []);
-  const handleShowAbout  = useCallback(() => setShowAboutDialog(true), []);
+  const handleShowAbout = useCallback(() => setShowAboutDialog(true), []);
 
   const handleConfirmNewProject = useCallback(async (parentPath: string, projectName: string) => {
     const normalized = parentPath.replace(/\\/g, '/');
@@ -254,11 +255,13 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     const onNewProject = () => handleNewProject();
     window.addEventListener('nav:open-project', onOpenProject);
     window.addEventListener('nav:new-project', onNewProject);
+    window.addEventListener('nav:show-about', handleShowAbout);
     return () => {
       window.removeEventListener('nav:open-project', onOpenProject);
       window.removeEventListener('nav:new-project', onNewProject);
+      window.removeEventListener('nav:show-about', handleShowAbout);
     };
-  }, [handleNewProject, handleOpenProject]);
+  }, [handleNewProject, handleOpenProject, handleShowAbout]);
 
   // macOS native menubar events (previously in TitleBar)
   useEffect(() => {
@@ -671,10 +674,22 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
     isTransitioning ? 'openbitfun-app-layout--transitioning' : '',
   ].filter(Boolean).join(' ');
 
+  const aboutDialog = (
+    <RetainedMountBoundary present={showAboutDialog}>
+      <Suspense fallback={null}>
+        <AboutDialog
+          isOpen={showAboutDialog}
+          onClose={closeAboutDialog}
+        />
+      </Suspense>
+    </RetainedMountBoundary>
+  );
+
   if (isToolbarMode) {
     return (
       <>
         <DailyAppUpdateGate />
+        {aboutDialog}
         <div
           className={`${containerClassName} openbitfun-app-layout--toolbar-mode`}
           data-testid="app-layout"
@@ -756,14 +771,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ className = '' }) => {
           />
         </Suspense>
       </RetainedMountBoundary>
-      <RetainedMountBoundary present={showAboutDialog}>
-        <Suspense fallback={null}>
-          <AboutDialog
-            isOpen={showAboutDialog}
-            onClose={() => setShowAboutDialog(false)}
-          />
-        </Suspense>
-      </RetainedMountBoundary>
+      {aboutDialog}
       <RetainedMountBoundary present={showWorkspaceStatus}>
         <Suspense fallback={null}>
           <WorkspaceManager

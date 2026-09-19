@@ -11,9 +11,8 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { IconButton, OverflowText, Menu, MenuItem } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, IconButton, OverflowText, Menu, MenuItem } from '@openbitfun/ui';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Square, Maximize2, MoreVertical, PanelTopOpen, PanelTopClose } from 'lucide-react';
 import { useToolbarModeContext } from './ToolbarModeContext';
@@ -143,6 +142,7 @@ export const ToolbarMode: React.FC = () => {
   }, [isExpanded]);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       if (headerOverflowRef.current?.contains(target)) {
@@ -156,11 +156,11 @@ export const ToolbarMode: React.FC = () => {
 
     if (showHeaderOverflowMenu) {
       const timer = setTimeout(() => {
-        document.addEventListener('mousedown', handleClickOutside);
+        removeOverlayMousedown0 = subscribeOverlayInteraction(headerOverflowRef, 'mousedown', handleClickOutside);
       }, 0);
       return () => {
         clearTimeout(timer);
-        document.removeEventListener('mousedown', handleClickOutside);
+        removeOverlayMousedown0?.();
       };
     }
   }, [showHeaderOverflowMenu]);
@@ -272,7 +272,7 @@ export const ToolbarMode: React.FC = () => {
                     icon={<MoreVertical size={14} />}
                   />
                 </Tooltip>
-                {showHeaderOverflowMenu && createPortal(
+                {showHeaderOverflowMenu && createOverlayPortal(
                   <Menu
                     ref={headerOverflowRef}
                     className="openbitfun-toolbar-mode__overflow-menu"

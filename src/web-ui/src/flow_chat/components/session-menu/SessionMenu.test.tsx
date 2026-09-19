@@ -98,7 +98,7 @@ describe('SessionMenu', () => {
     });
 
     const dropdown = document.querySelector<HTMLElement>('.openbitfun-session-menu__dropdown');
-    expect(dropdown?.parentElement?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
+    expect(dropdown?.closest('[data-openbitfun-overlay-host]')?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
     expect(dropdown?.dataset.openbitfunPlacement).toBe('top');
     expect(dropdown?.style.visibility).toBe('visible');
     expect(Number.parseFloat(dropdown?.style.left ?? '')).toBeLessThanOrEqual(752);

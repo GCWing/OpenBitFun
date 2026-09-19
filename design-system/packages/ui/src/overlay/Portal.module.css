@@ -1,0 +1,18 @@
+@layer openbitfun.components {
+  .layer {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .inlineLayer {
+    position: relative;
+    min-inline-size: 0;
+    min-block-size: 0;
+    pointer-events: none;
+  }
+
+  :where(.layer, .inlineLayer) > :where(*) {
+    pointer-events: auto;
+  }
+}

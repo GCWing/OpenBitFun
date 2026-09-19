@@ -7,9 +7,9 @@ import { standaloneEditorFileAccess } from '../services/editorFileAccess';
  * @module components/ImageViewer
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { ZoomIn, ZoomOut, RotateCw, Maximize2 } from 'lucide-react';
-import { OverflowText, Button, Icon, IconButton, Toolbar, ToolbarGroup, ToolbarSeparator, Tooltip } from '@openbitfun/ui';
+import { Portal, OverflowText, Button, Icon, IconButton, Toolbar, ToolbarGroup, ToolbarSeparator, Tooltip } from '@openbitfun/ui';
 import { createLogger } from '@/shared/utils/logger';
 
 import { useI18n } from '@/infrastructure/i18n';
@@ -54,6 +54,14 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
   const [rotation, setRotation] = useState(0);
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const fullscreenButtonRef = useRef<HTMLButtonElement>(null);
+  const expanded = isFullscreen && isActiveTab;
+  const wasExpanded = useRef(false);
+  useLayoutEffect(() => {
+    if (wasExpanded.current && !expanded && isActiveTab) fullscreenButtonRef.current?.focus({ preventScroll: true });
+    wasExpanded.current = expanded;
+  }, [expanded, isActiveTab]);
   const [loadedOrigin, setLoadedOrigin] = useState<{ filePath: string; imageSource: typeof imageSource; documentSession: typeof documentSession }>();
   const originCurrent = loadedOrigin?.filePath === filePath && loadedOrigin.imageSource === imageSource && loadedOrigin.documentSession === documentSession;
   const [fileSize, setFileSize] = useState<number>(0);
@@ -182,12 +190,18 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
     setIsFullscreen(prev => !prev);
   }, []);
 
-  return (
+  const content = (
     <div
-      className={`openbitfun-image-viewer ${className} ${isFullscreen ? 'fullscreen' : ''}`}
+      ref={surfaceRef}
+      role={expanded ? 'dialog' : undefined}
+      aria-modal={expanded || undefined}
+      aria-label={expanded ? fileName || filePath : undefined}
+      tabIndex={expanded ? -1 : undefined}
+      data-openbitfun-native-webview-occlusion={expanded || undefined}
+      className={`openbitfun-image-viewer ${className} ${expanded ? 'fullscreen' : ''}`}
       data-openbitfun-component="image-viewer"
       data-openbitfun-part="root"
-      data-openbitfun-state={isFullscreen ? 'fullscreen' : undefined}
+      data-openbitfun-state={expanded ? 'fullscreen' : undefined}
     >
       <Toolbar
         className="openbitfun-image-viewer__toolbar"
@@ -266,6 +280,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
                 placement="top"
               >
                 <IconButton
+                  ref={fullscreenButtonRef}
                   aria-label={isFullscreen ? t('editor.imageViewer.exitFullscreen') : t('editor.imageViewer.enterFullscreen')}
                   size="sm"
                   variant="quiet"
@@ -318,6 +333,7 @@ export const ImageViewer: React.FC<ImageViewerProps> = ({
       </div>
     </div>
   );
+  return expanded ? <Portal modal surfaceRef={surfaceRef} onDismiss={() => setIsFullscreen(false)}>{content}</Portal> : content;
 };
 
 export default ImageViewer;

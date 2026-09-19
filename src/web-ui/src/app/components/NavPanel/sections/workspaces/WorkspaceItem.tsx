@@ -1,4 +1,4 @@
-import { ActionItem } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, ActionItem } from '@openbitfun/ui';
 import {
   Button,
   ConfirmDialog,
@@ -16,7 +16,6 @@ import {
   OverflowText,
 } from '@openbitfun/ui';
 import React, { lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
 import { FolderOpen, FolderSearch, RotateCcw, FileText, ListChecks, ShieldCheck, Network, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { RetainedMountBoundary } from '@/shared/presence';
@@ -466,6 +465,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   }, []);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
     if (!menuOpen) return;
     const handleOutside = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -476,8 +476,8 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
         setMenuOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
+    removeOverlayMousedown0 = subscribeOverlayInteraction(menuPopoverRef, 'mousedown', handleOutside);
+    return () => removeOverlayMousedown0?.();
   }, [menuOpen]);
 
   useEffect(() => {
@@ -905,7 +905,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
               </button>
             </div>
 
-            {menuOpen && createPortal(
+            {menuOpen && createOverlayPortal(
               <Menu
                 ref={menuPopoverRef}
                 className="openbitfun-nav-panel__workspace-item-menu-popover"
@@ -1389,7 +1389,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
               </button>
             </div>
 
-            {menuOpen && createPortal(
+            {menuOpen && createOverlayPortal(
               <Menu
                 ref={menuPopoverRef}
                 className="openbitfun-nav-panel__workspace-item-menu-popover"

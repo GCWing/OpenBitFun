@@ -33,6 +33,11 @@
       background-color var(--_tool-card-transition);
   }
 
+  .prominentRoot[data-openbitfun-tool-card="agent-control"] {
+    /* Character artwork needs more room than a standard tool glyph. */
+    --_flow-chat-tool-card-icon-size: calc(var(--openbitfun-space-6) + var(--openbitfun-space-1));
+  }
+
   .prominentRoot:is(:hover, :focus-within),
   .prominentRoot[data-openbitfun-preview-state="hover"],
   :global([data-openbitfun-preview-state="hover"]) .prominentRoot {
@@ -118,6 +123,11 @@
     white-space: nowrap;
   }
 
+  .prominentRoot[data-openbitfun-tool-card="agent-control"] .prominentSummary:has(> .content) .actionLabel {
+    /* Share the row with a task summary; a standalone name can use the full row. */
+    max-inline-size: min(18rem, 38%);
+  }
+
   .content {
     display: flex;
     overflow: hidden;
@@ -180,11 +190,13 @@
 
   .actionRegion {
     overflow: hidden;
+    min-inline-size: 0;
     max-inline-size: 0;
     gap: var(--openbitfun-space-1);
-    margin-inline-start: 0;
+    /* Cancel the summary gap while hidden so text can use the released space. */
+    margin-inline-start: calc(-1 * var(--openbitfun-space-2));
     padding-inline-start: 0;
-    border-inline-start: var(--openbitfun-border-width-default) solid transparent;
+    border-inline-start: 0 solid transparent;
     opacity: 0;
     pointer-events: none;
     transform: translateX(var(--openbitfun-space-1));
@@ -204,6 +216,7 @@
     max-inline-size: 24rem;
     margin-inline-start: var(--openbitfun-space-1);
     padding-inline-start: var(--openbitfun-space-2);
+    border-inline-start-width: var(--openbitfun-border-width-default);
     border-inline-start-color: var(--openbitfun-color-border-subtle);
     opacity: 1;
     pointer-events: auto;
@@ -279,6 +292,8 @@
     flex: 0 0 auto;
     inline-size: var(--_tool-card-action-size);
     block-size: var(--_tool-card-action-size);
+    min-inline-size: var(--_flow-chat-tool-card-icon-size);
+    min-block-size: var(--_flow-chat-tool-card-icon-size);
     align-items: center;
     justify-content: center;
     color: var(--openbitfun-color-content-secondary);

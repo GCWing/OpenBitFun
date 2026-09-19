@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 -2 256 256" role="img" aria-labelledby="avatar-title-13">
+  <title id="avatar-title-13">coral joystick avatar</title>
+  <rect x="116" y="54" width="24" height="30" rx="12" fill="#CD6862"/>
+  <path d="M128 76C177 76 196 96 208 130L232 198C239 218 224 238 188 238H68C32 238 17 218 24 198L48 130C60 96 79 76 128 76Z" transform="matrix(0.99 0 0 1.0247 1.28 -5.8765)" fill="#E98275"/>
+  <circle cx="128" cy="38" r="24" fill="#B75356"/>
+  <g fill="#65383A">
+    <ellipse cx="103" cy="164" rx="10" ry="16"/>
+    <ellipse cx="153" cy="164" rx="10" ry="16"/>
+  </g>
+  <path d="M119 186Q128 197 137 186" fill="none" stroke="#65383A" stroke-width="8" stroke-linecap="round"/>
+</svg>

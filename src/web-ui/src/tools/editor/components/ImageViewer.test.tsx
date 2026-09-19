@@ -14,11 +14,11 @@ vi.mock('@/infrastructure/i18n', () => {
   const t = (key: string) => key;
   return { useI18n: () => ({ t }) };
 });
-vi.mock('@openbitfun/ui', () => ({
+vi.mock('@openbitfun/ui', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@openbitfun/ui')>(),
   OverflowText: ({ children }: React.PropsWithChildren) => <span>{children}</span>,
   Button: ({ children, onClick }: React.PropsWithChildren<{ onClick?: () => void }>) => <button onClick={onClick}>{children}</button>,
   Icon: () => null,
-  IconButton: ({ onClick, disabled, 'aria-label': label }: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button onClick={onClick} disabled={disabled} aria-label={label} />,
   Toolbar: ({ leading, trailing }: { leading: React.ReactNode; trailing: React.ReactNode }) => <div>{leading}{trailing}</div>,
   ToolbarGroup: ({ children }: React.PropsWithChildren) => <div>{children}</div>,
   ToolbarSeparator: () => null,
@@ -60,4 +60,21 @@ it('drops a stale read after switching to an immutable dispatch result', async (
   await act(async () => root.render(<ImageViewer filePath="dispatch-file://job/b.png" imageSource={{ dataUrl: 'data:image/png;base64,Ag==', size: 1 }} />));
   await act(async () => complete('AQ=='));
   expect(container.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,Ag==');
+});
+
+it('joins the overlay stack in fullscreen and restores its control on Escape', async () => {
+  await act(async () => root.render(<ImageViewer filePath="dispatch-file://job/a.png" imageSource={{ dataUrl: 'data:image/png;base64,AP8B', size: 3 }} />));
+  const label = 'editor.imageViewer.enterFullscreen';
+  await act(async () => container.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)!.click());
+  const dialog = document.querySelector('[role="dialog"]')!;
+  expect(dialog.closest('[data-openbitfun-overlay-layer]')).not.toBeNull();
+  expect(dialog.getAttribute('aria-modal')).toBe('true');
+  expect(container.hasAttribute('inert')).toBe(true);
+  await act(async () => document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', {
+    key: 'Escape', bubbles: true, cancelable: true,
+  })));
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(container.hasAttribute('inert')).toBe(false);
+  expect(document.activeElement).toBe(container.querySelector(`[aria-label="${label}"]`));
+  expect(mocks.read).not.toHaveBeenCalled();
 });

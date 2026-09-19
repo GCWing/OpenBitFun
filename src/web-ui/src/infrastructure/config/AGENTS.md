@@ -25,3 +25,12 @@ pnpm --dir src/web-ui run test:run src/infrastructure/config/components/common/S
 These source and DOM checks do not establish rendered visual fidelity. Follow
 the parent guide for `check:web`; do not use browser automation or mock
 screenshots as visual proof.
+
+For MCP form editing, JSON compatibility, and import/save behavior, run:
+
+```bash
+pnpm --dir src/web-ui run test:run src/infrastructure/config/components/mcpConfigForm.test.ts src/infrastructure/config/components/McpToolsConfig.test.tsx src/infrastructure/config/components/McpToolsConfig.presentation.test.ts src/infrastructure/api/service-api/MCPAPI.test.ts
+```
+
+These checks cover local configuration handling and unavailable-surface gates;
+they do not prove an actual remote MCP connection.

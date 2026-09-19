@@ -17,7 +17,6 @@ import {
 } from '@openbitfun/ui';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
-import { isImeOwnedKeyboardEvent } from '@/shared/utils/ime';
 import './TerminalEditModal.scss';
 
 export interface TerminalEditModalProps {
@@ -62,15 +61,7 @@ export const TerminalEditModal: React.FC<TerminalEditModalProps> = ({
     }
   }, [initialName, initialStartupCommand, initialWorkingDirectory, isOpen]);
 
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && !isImeOwnedKeyboardEvent(e)) {
-        onClose();
-      }
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [isOpen, onClose]);
+
 
   const handleSave = useCallback(() => {
     const trimmedName = name.trim();

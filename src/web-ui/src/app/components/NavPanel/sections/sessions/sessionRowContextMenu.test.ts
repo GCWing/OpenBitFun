@@ -38,7 +38,7 @@ describe('SessionsSection session row context menu', () => {
 
   it('reuses the shared portal menu for the context-menu path', () => {
     const source = readSessionsSectionSource();
-    expect(source).toContain('openMenuSessionId === session.sessionId && createPortal(');
+    expect(source).toContain('openMenuSessionId === session.sessionId && createOverlayPortal(');
     expect(source).toContain("visibility: sessionMenuPosition ? 'visible' : 'hidden'");
     expect(source).toContain('data-testid="nav-session-menu"');
   });

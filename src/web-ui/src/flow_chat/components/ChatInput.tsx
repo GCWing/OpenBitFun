@@ -8,7 +8,6 @@ import { withConversationExcerpts } from '../utils/composerPresentation';
  */
 
 import React, { useRef, useCallback, useEffect, useReducer, useState, useMemo, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
 import path from 'path-browserify';
 import { useTranslation } from 'react-i18next';
 import { RotateCcw, Loader2, Play } from 'lucide-react';
@@ -121,7 +120,7 @@ import { chatInputSessionSubscriptionKey } from '../utils/chatInputSessionSubscr
 import { isLocalWorkspaceSession, sessionProjectWorkspacePath } from '../utils/sessionWorkspace';
 import { findWorkspaceForSession } from '../utils/workspaceScope';
 import { isTauriRuntime, isWindowsDesktopRuntime } from '@/infrastructure/runtime';
-import { OverflowText, Tooltip } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Tooltip } from '@openbitfun/ui';
 import { useShortcut } from '@/infrastructure/hooks/useShortcut';
 import { confirmDanger, confirmWarning } from '@/infrastructure/confirm-dialog';
 import { PendingQueuePanel } from './PendingQueuePanel';
@@ -226,6 +225,8 @@ import type { SessionPermissionMode } from '@/infrastructure/api/service-api/Age
 import { isPeerDeviceModeActive } from '@/infrastructure/peer-device/peerModeFlag';
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { isBtwSessionDraft } from '../utils/modelSelectionTarget';
+import { SubagentAvatar } from '../subagent-identity';
+import { sessionLineageLifecycleForSession } from '../utils/sessionLineage';
 import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import { useLocalFileDrop } from '@/infrastructure/files/useLocalFileDrop';
 import { useWindowsFileDropPreview } from '@/infrastructure/files/useWindowsFileDropPreview';
@@ -724,7 +725,12 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     activeBtwRelationship.kind === 'subagent'
     ? activeBtwRelationship.kind
     : 'btw';
-  const activeBtwTargetLabel = t(`childSession.kinds.${activeBtwKind}.short`, {
+  const activeBtwAgentType = activeBtwRelationship.isSubagent
+    ? activeBtwSession?.subagentType?.trim()
+      || activeBtwSession?.mode?.trim()
+      || activeBtwSession?.config.agentType?.trim()
+    : undefined;
+  const activeBtwTargetLabel = activeBtwAgentType || t(`childSession.kinds.${activeBtwKind}.short`, {
     defaultValue: t('chatInput.targetBtw'),
   });
   const activeBtwSessionTitle = activeBtwSession
@@ -3131,6 +3137,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
   ]);
 
   React.useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (agentBoostRef.current?.contains(target) || boostMenuRef.current?.contains(target)) return;
@@ -3138,11 +3145,11 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     };
 
     if (modeState.dropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      removeOverlayMousedown0 = subscribeOverlayInteraction(boostMenuRef, 'mousedown', handleClickOutside);
     }
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      removeOverlayMousedown0?.();
     };
   }, [modeState.dropdownOpen]);
 
@@ -6144,6 +6151,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   data-openbitfun-part="target"
                   data-openbitfun-target="main"
                   data-openbitfun-state={inputTarget === 'main' ? 'selected' : ''}
+                  aria-pressed={inputTarget === 'main'}
                   onClick={() => setInputTarget('main')}
                 >
                   {t('chatInput.targetMain')}
@@ -6162,10 +6170,19 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                   data-openbitfun-part="target"
                   data-openbitfun-target="btw"
                   data-openbitfun-state={inputTarget === 'btw' ? 'selected' : ''}
+                  aria-pressed={inputTarget === 'btw'}
                   onClick={() => setInputTarget('btw')}
                 >
-                  {activeBtwTargetLabel}
-                  {inputTarget === 'btw' && activeBtwSessionTitle && (
+                  {activeBtwRelationship.isSubagent && (
+                    <SubagentAvatar
+                      sessionId={activeBtwSessionId}
+                      name={activeBtwTargetLabel}
+                      size={24}
+                      status={activeBtwSession ? sessionLineageLifecycleForSession(activeBtwSession) : 'idle'}
+                    />
+                  )}
+                  <OverflowText>{activeBtwTargetLabel}</OverflowText>
+                  {inputTarget === 'btw' && activeBtwSessionTitle && activeBtwSessionTitle !== activeBtwTargetLabel && (
                     <>
                       <span className="openbitfun-chat-input__target-tab-separator" aria-hidden="true">·</span>
                       <OverflowText className="openbitfun-chat-input__target-tab-name" data-openbitfun-component="chat-input" data-openbitfun-part="targetName">{activeBtwSessionTitle}</OverflowText>
@@ -6241,7 +6258,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                 }}
               />
               
-              {slashCommandState.isActive && createPortal((() => {
+              {slashCommandState.isActive && createOverlayPortal((() => {
                 if (slashCommandState.kind === 'actions') {
                   const actions = getFilteredActions();
                   return (
@@ -6540,7 +6557,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
                     </span>
                   )}
 
-                  {modeState.dropdownOpen && createPortal(
+                  {modeState.dropdownOpen && createOverlayPortal(
                     <Menu
                       ref={boostMenuRef}
                       className="openbitfun-chat-input__mode-dropdown openbitfun-chat-input__mode-dropdown--agent-boost"

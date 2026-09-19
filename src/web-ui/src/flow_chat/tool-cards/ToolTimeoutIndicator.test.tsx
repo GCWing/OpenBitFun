@@ -230,7 +230,7 @@ describe('ToolTimeoutIndicator', () => {
     });
 
     const popover = document.querySelector<HTMLElement>('.timeout-extend-popover');
-    expect(popover?.parentElement?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
+    expect(popover?.closest('[data-openbitfun-overlay-host]')?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
     expect(popover?.style.visibility).toBe('visible');
   });
 });

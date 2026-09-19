@@ -3,6 +3,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, createElement, createRef } from 'react';
+import { createRoot } from 'react-dom/client';
+import { Portal } from '@openbitfun/ui';
 import { EDITOR_SHORTCUTS } from '@/shared/constants/shortcuts';
 import { parseStoredKeybindings, shortcutManager } from './ShortcutManager';
 
@@ -42,6 +45,28 @@ describe('ShortcutManager platform primary modifier', () => {
   afterEach(() => {
     shortcutManager.clear();
     vi.restoreAllMocks();
+  });
+
+  it('lets the overlay consume Escape before the chat stop shortcut', () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    const stop = vi.fn(), dismiss = vi.fn();
+    shortcutManager.register('chat.stop', { key: 'Escape', scope: 'chat', allowInInput: true }, stop);
+    const container = document.createElement('div');
+    document.body.append(container);
+    const root = createRoot(container), surfaceRef = createRef<HTMLDivElement>();
+    try {
+      act(() => root.render(createElement(Portal, { surfaceRef, onDismiss: dismiss,
+        children: createElement('div', { ref: surfaceRef }, 'Menu'),
+      })));
+      dispatchScopedKey('chat', { key: 'Escape' });
+      expect(dismiss).toHaveBeenCalledOnce();
+      expect(stop).not.toHaveBeenCalled();
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+    dispatchScopedKey('chat', { key: 'Escape' });
+    expect(stop).toHaveBeenCalledOnce();
   });
 
   it('restores the registered default when synced overrides are removed', () => {

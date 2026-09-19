@@ -8,6 +8,7 @@ import { isMcpToolName } from '@/infrastructure/mcp/toolName';
 export {
   TOOL_CARD_CONFIGS,
   getToolCardConfig,
+  getToolItemCardConfig,
   requiresConfirmation,
   getAllToolNames,
   COLLAPSIBLE_TOOL_NAMES,
@@ -57,6 +58,7 @@ import { SessionControlToolCard } from './SessionControlToolCard';
 import { SessionMessageToolCard } from './SessionMessageToolCard';
 import { ComputerUseToolCard } from './ComputerUseToolCard';
 import { ViewImageToolCard } from './ViewImageToolCard';
+import { OpenBitFunControlToolCard } from './OpenBitFunControlToolCard';
 
 /**
  * Standard tool adapters backed by concrete `@openbitfun/ui/flow-chat` views.
@@ -135,6 +137,7 @@ export const PRODUCT_OWNED_TOOL_CARD_COMPONENTS = {
   'InitMiniApp': InitMiniAppDisplay,
   'GenerativeUI': GenerativeWidgetToolCard,
   'ComputerUse': ComputerUseToolCard,
+  'OpenBitFunControl': OpenBitFunControlToolCard,
 
   // OpenBitFun Canvas tools
   'CreateCanvas': CanvasToolCard,

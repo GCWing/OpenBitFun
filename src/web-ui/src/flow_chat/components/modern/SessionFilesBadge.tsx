@@ -4,10 +4,9 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { FilePlus, SearchCheck, Zap, GitPullRequest } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { OverflowText, Icon, IconButton, Menu, MenuItem, MenuSeparator, Tooltip } from '@openbitfun/ui';
+import { createOverlayPortal, useDismissibleLayer, OverflowText, Icon, IconButton, Menu, MenuItem, MenuSeparator, Tooltip } from '@openbitfun/ui';
 import { useSnapshotState } from '../../../tools/snapshot_system/hooks/useSnapshotState';
 import { createDiffEditorTab } from '../../../shared/utils/tabUtils';
 import { snapshotAPI } from '../../../infrastructure/api';
@@ -342,31 +341,14 @@ export const SessionFilesBadge: React.FC<SessionFilesBadgeProps> = ({
     }
   }, [clearReviewReadyGlint, latestTurnSnapshot]);
 
-  // Close the popovers when clicking outside.
-  useEffect(() => {
-    if (!isExpanded && !isReviewMenuOpen) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      const clickedBadge = !!badgeRef.current?.contains(target);
-      const clickedFilesPopover = !!filePopoverRef.current?.contains(target);
-      const clickedReviewMenu = !!reviewPopoverRef.current?.contains(target);
-      if (!clickedBadge && !clickedFilesPopover && !clickedReviewMenu) {
-        setIsExpanded(false);
-        setIsReviewMenuOpen(false);
-      }
-    };
-
-    // Delay binding to avoid immediate trigger.
-    const timeoutId = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
-    }, 0);
-
-    return () => {
-      clearTimeout(timeoutId);
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isExpanded, isReviewMenuOpen]);
+  useDismissibleLayer({
+    enabled: isExpanded, layerRef: filePopoverRef, branchRefs: [badgeRef],
+    onDismiss: () => setIsExpanded(false),
+  });
+  useDismissibleLayer({
+    enabled: isReviewMenuOpen, layerRef: reviewPopoverRef, branchRefs: [badgeRef],
+    onDismiss: () => setIsReviewMenuOpen(false),
+  });
 
   /**
    * Fetch per-file diff stats with caching.
@@ -810,7 +792,7 @@ export const SessionFilesBadge: React.FC<SessionFilesBadgeProps> = ({
           </span>
         </Tooltip>
 
-        {isReviewMenuOpen && !isReviewLaunchOrActivityBlocking && createPortal(
+        {isReviewMenuOpen && !isReviewLaunchOrActivityBlocking && createOverlayPortal(
           <Menu
             ref={reviewPopoverRef}
             className="session-files-badge__review-menu-popover"
@@ -904,7 +886,7 @@ export const SessionFilesBadge: React.FC<SessionFilesBadgeProps> = ({
       </button>
       ) : null}
 
-      {showFileStatsSummary && isExpanded && createPortal(
+      {showFileStatsSummary && isExpanded && createOverlayPortal(
         <div
           ref={filePopoverRef}
           className="session-files-badge__popover"

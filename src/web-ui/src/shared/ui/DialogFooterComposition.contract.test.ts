@@ -10,6 +10,10 @@ interface FooterSurfaceContract {
 
 const footerSurfaces: FooterSurfaceContract[] = [
   {
+    source: '../../infrastructure/update/AppUpdatePanel.tsx',
+    marker: 'className="openbitfun-update-details__footer"',
+  },
+  {
     source: '../../app/components/RemoteConnectDialog/RemoteConnectDisclaimer.tsx',
     marker: 'className="openbitfun-remote-disclaimer__actions"',
     stylesheet: '../../app/components/RemoteConnectDialog/RemoteConnectDisclaimer.scss',
@@ -32,12 +36,6 @@ const footerSurfaces: FooterSurfaceContract[] = [
     marker: 'className="workspace-project-permissions-dialog__footer"',
     stylesheet: '../../app/components/NavPanel/sections/workspaces/WorkspaceProjectPermissionsDialog.scss',
     selector: '&__footer',
-  },
-  {
-    source: '../../infrastructure/update/UpdateAvailableDialog.tsx',
-    marker: 'className="openbitfun-update-available__actions"',
-    stylesheet: '../../infrastructure/update/UpdateAvailableDialog.scss',
-    selector: '.openbitfun-update-available__actions',
   },
   {
     source: '../../infrastructure/config/components/QuickActionsConfig.tsx',

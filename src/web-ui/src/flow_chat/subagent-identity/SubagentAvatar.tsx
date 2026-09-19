@@ -40,11 +40,9 @@ export const SubagentAvatar: React.FC<SubagentAvatarProps> = ({
       data-openbitfun-component="subagent-avatar"
       data-openbitfun-part="root"
       data-openbitfun-avatar-id={presentation.avatarId}
-      data-openbitfun-avatar-color-id={presentation.colorId}
       data-openbitfun-state={status}
       style={{
         '--subagent-avatar-size': `${size}px`,
-        '--subagent-avatar-hue-shift': `${presentation.hueShiftDegrees}deg`,
       } as React.CSSProperties}
       role={decorative ? undefined : 'img'}
       aria-hidden={decorative ? 'true' : undefined}

@@ -2032,9 +2032,9 @@
       "processing": "處理中..."
     },
     "taskTool": {
-      "headerLine": "{{agentType}} 智能體：{{description}}",
-      "headerLineWithModel": "{{agentType}} 智能體（{{modelName}}）：{{description}}",
-      "headerLinePrefix": "{{agentType}} 智能體",
+      "headerLine": "{{agentType}}：{{description}}",
+      "headerLineWithModel": "{{agentType}}（{{modelName}}）：{{description}}",
+      "headerLinePrefix": "{{agentType}}",
       "headerLineSuffix": "：{{description}}",
       "defaultAgentKind": "子代理",
       "cancelSession": "取消會話：{{sessionId}}",
@@ -2143,6 +2143,35 @@
       "permissionRequest": "請求讀取權限：",
       "readingFile": "正在讀取",
       "preparingRead": "準備讀取"
+    },
+    "openBitFunControl": {
+      "title": "$t(shared:product.name)",
+      "actions": {
+        "list": "瀏覽功能",
+        "search": "尋找功能",
+        "get": "檢視功能",
+        "open": "開啟功能",
+        "execute": "執行操作",
+        "configure": "修改設定",
+        "unknown": "控制 OpenBitFun"
+      },
+      "target": "目標",
+      "query": "$t(shared:tools.search)",
+      "requestedValue": "請求值",
+      "effectiveValue": "生效值",
+      "trueValue": "是",
+      "falseValue": "否",
+      "nullValue": "空值",
+      "emptyValue": "空字串",
+      "noValue": "未回傳值",
+      "noResults": "找不到符合的功能。",
+      "loadingAll": "正在載入全部結果…",
+      "loadAllFailed": "暫時無法載入全部結果，已保留現有內容。",
+      "catalogChanged": "功能目錄已更新，請重新查詢以檢視目前全部結果。",
+      "sourceDeviceRequired": "請切回來源裝置以載入其餘結果。",
+      "retryLoad": "重新載入結果",
+      "controlUnavailable": "目前主機的控制能力無法使用或受限",
+      "syncPendingDetails": "設定已儲存，介面同步尚未完成。"
     },
     "sessionControl": {
       "title": "會話",

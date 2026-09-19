@@ -8,6 +8,19 @@ import type {
 
 export type ProductControlAction = 'get' | 'configure' | 'execute' | 'open';
 
+export type ProductControlDiscoveryRequest = (
+  | { action: 'list'; query?: string }
+  | { action: 'search'; query: string }
+) & { cursor?: number; limit?: number };
+
+export interface ProductControlDiscoveryPage {
+  items: Record<string, unknown>[];
+  catalogDigest?: string;
+  cursor?: number;
+  nextCursor?: number | null;
+  totalCount?: number;
+}
+
 export interface ProductControlInspectResult {
   catalogDigest: string;
   revision: number;
@@ -47,12 +60,16 @@ interface ProductControlInvokeRequest {
  * Tauri command names.
  */
 export class ProductControlAPI {
-  private async invoke<T>(request: ProductControlInvokeRequest): Promise<T> {
+  private async invoke<T>(request: ProductControlInvokeRequest | ProductControlDiscoveryRequest): Promise<T> {
     try {
       return await api.invoke<T>('product_control_invoke', { request });
     } catch (error) {
       throw createTauriCommandError('product_control_invoke', error, request);
     }
+  }
+
+  async discover(request: ProductControlDiscoveryRequest): Promise<ProductControlDiscoveryPage> {
+    return this.invoke(request);
   }
 
   async get<C extends ProductControlCapabilityId>(

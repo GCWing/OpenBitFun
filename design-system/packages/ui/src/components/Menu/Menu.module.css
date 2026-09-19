@@ -37,10 +37,6 @@
   }
 
   .list {
-    display: flex;
-    min-inline-size: 0;
-    flex-direction: column;
-    gap: 0;
     padding: 0;
     /* Balance the end inset with the start inset after the viewport scrollbar gap. */
     padding-inline-end: calc(
@@ -62,11 +58,11 @@
   }
 
   .section + .section {
-    margin-block-start: var(--openbitfun-overlay-menu-section-gap);
+    margin-block-start: max(0px, calc(var(--openbitfun-overlay-menu-section-gap) - var(--openbitfun-overlay-menu-row-gap)));
   }
 
   .items {
-    gap: 0;
+    gap: var(--openbitfun-overlay-menu-row-gap);
   }
 
   .heading {
@@ -136,6 +132,15 @@
     block-size: var(--openbitfun-border-width-default);
     margin-block: var(--openbitfun-overlay-menu-section-gap);
     background: var(--openbitfun-color-border-subtle);
+  }
+
+  /* A separator owns the total section spacing, including the list's gap. */
+  .items > .separator:not(:first-child) {
+    margin-block-start: max(0px, calc(var(--openbitfun-overlay-menu-section-gap) - var(--openbitfun-overlay-menu-row-gap)));
+  }
+
+  .items > .separator:not(:last-child) {
+    margin-block-end: max(0px, calc(var(--openbitfun-overlay-menu-section-gap) - var(--openbitfun-overlay-menu-row-gap)));
   }
 
   @media (prefers-contrast: more) {

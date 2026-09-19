@@ -46,7 +46,7 @@ describe.each(ANCHORED_OVERLAYS)('$name clipping contract', ({ path }) => {
   const source = readSource(path);
 
   it('escapes ancestor overflow and tracks its trigger in the viewport', () => {
-    expect(source).toContain('createPortal');
+    expect(source).toContain('createOverlayPortal');
     expect(source).toContain('getAppearanceOverlayHost');
     expect(source).toContain('useAnchoredPopoverPosition');
   });

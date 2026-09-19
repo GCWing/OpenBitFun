@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="1.1429 0.1429 253.7143 253.7143" role="img" aria-labelledby="avatar-title-19">
+  <title id="avatar-title-19">indigo joystick avatar</title>
+  <rect x="116" y="58" width="24" height="30" rx="12" fill="#718DB8"/>
+  <path d="M128 76C177 76 196 96 208 130L232 198C239 218 224 238 188 238H68C32 238 17 218 24 198L48 130C60 96 79 76 128 76Z" transform="matrix(1.03 0 0 1 -3.84 0)" fill="#425887"/>
+  <circle cx="128" cy="41" r="25" fill="#9EBDE9"/>
+  <g fill="#FBF5EB">
+    <ellipse cx="103" cy="163" rx="10" ry="16"/>
+    <ellipse cx="153" cy="163" rx="10" ry="16"/>
+  </g>
+</svg>

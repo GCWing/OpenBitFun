@@ -1,4 +1,4 @@
-import {
+import { subscribeOverlayInteraction, createOverlayPortal,
   Button,
   ConfirmDialog,
   Icon,
@@ -22,7 +22,6 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
 
 import {
   GalleryDetailModal,
@@ -163,6 +162,8 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({ tabs }) => {
   const closeImportMenu = useCallback(() => setImportMenuOpen(false), []);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     if (!importMenuOpen) return;
 
     const handlePointerDown = (event: MouseEvent) => {
@@ -181,11 +182,11 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({ tabs }) => {
       requestAnimationFrame(() => importTriggerRef.current?.focus());
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape, true);
+    removeOverlayMousedown0 = subscribeOverlayInteraction(importMenuRef, 'mousedown', handlePointerDown);
+    removeOverlayKeydown1 = subscribeOverlayInteraction(importMenuRef, 'keydown', handleEscape);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape, true);
+      removeOverlayMousedown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [closeImportMenu, importMenuOpen]);
 
@@ -793,7 +794,7 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({ tabs }) => {
                 data-testid="miniapp-import-action"
                 icon={<Icon name="plus" size="sm" />}
               />
-              {importMenuOpen ? createPortal(
+              {importMenuOpen ? createOverlayPortal(
                 <Menu
                   ref={importMenuRef}
                   className="miniapp-gallery__import-menu"

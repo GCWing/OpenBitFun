@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="3.4286 2.4286 249.1429 249.1429" role="img" aria-labelledby="avatar-title-14">
+  <title id="avatar-title-14">glacier joystick avatar</title>
+  <rect x="116" y="56" width="24" height="30" rx="12" fill="#6597BF"/>
+  <path d="M128 72C190 72 230 112 230 170C230 214 214 236 182 236H74C42 236 26 214 26 170C26 112 66 72 128 72Z" transform="matrix(1 0 0 0.9878 0 2.878)" fill="#8DBBDE"/>
+  <circle cx="128" cy="41" r="23" fill="#426C9C"/>
+  <g fill="#2B4A70">
+    <ellipse cx="105" cy="162" rx="10" ry="17"/>
+    <ellipse cx="151" cy="162" rx="10" ry="17"/>
+  </g>
+</svg>

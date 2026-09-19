@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0.8571 1.8571 254.2857 254.2857" role="img" aria-labelledby="avatar-title-17">
+  <title id="avatar-title-17">pistachio joystick avatar</title>
+  <rect x="116" y="62" width="24" height="30" rx="12" fill="#A4BA69"/>
+  <path d="M128 78C189 78 236 116 236 169C236 214 213 238 176 238H80C43 238 20 214 20 169C20 116 67 78 128 78Z" transform="matrix(1.03 0 0 0.9875 -3.84 2.975)" fill="#C9D887"/>
+  <circle cx="128" cy="45" r="25" fill="#7E994F"/>
+  <g fill="#4E6439">
+    <ellipse cx="100" cy="164" rx="10" ry="16"/>
+    <ellipse cx="156" cy="164" rx="10" ry="16"/>
+  </g>
+</svg>

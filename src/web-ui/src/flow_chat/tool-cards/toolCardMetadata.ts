@@ -8,7 +8,8 @@
 import type { FlowItem, FlowToolItem, ToolCardConfig } from '../types/flow-chat';
 import { isMcpToolName, parseMcpToolName } from '@/infrastructure/mcp/toolName';
 import { APPEARANCE_DOMAIN_TOKENS } from '@/infrastructure/appearance/appearanceDomainTokens';
-import { getEffectiveToolName } from '../utils/toolInvocationIdentity';
+import { getEffectiveToolName, projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
+import { getOpenBitFunControlInput, isOpenBitFunControlDiscovery } from './openBitFunControlCardModel';
 
 type ToolCardDefinition = Omit<ToolCardConfig, 'attention' | 'presentation'>;
 
@@ -33,6 +34,7 @@ const AMBIENT_TOOL_CARD_NAMES = new Set([
 ]);
 
 const PROMINENT_TOOL_CARD_NAMES = new Set([
+  'OpenBitFunControl',
   'Write',
   'Edit',
   'Task',
@@ -80,6 +82,16 @@ function getToolCardClassification(toolName: string): Pick<ToolCardConfig, 'atte
 
 // Tool card config map - uses backend tool names
 const TOOL_CARD_DEFINITIONS: Record<string, ToolCardDefinition> = {
+  'OpenBitFunControl': {
+    toolName: 'OpenBitFunControl',
+    displayName: 'OpenBitFun',
+    icon: 'CONTROL',
+    requiresConfirmation: false,
+    resultDisplayType: 'detailed',
+    description: 'Discover and control OpenBitFun features and settings',
+    displayMode: 'standard',
+    primaryColor: APPEARANCE_DOMAIN_TOKENS.toolIdentity.assistantAction,
+  },
   // File tools
   'Read': {
     toolName: 'Read',
@@ -532,7 +544,13 @@ export const TOOL_CARD_CONFIGS: Record<string, ToolCardConfig> = Object.fromEntr
 /**
  * Get tool card config.
  */
-export function getToolCardConfig(toolName: string): ToolCardConfig {
+export function getToolCardConfig(toolName: string, input?: unknown): ToolCardConfig {
+  if (toolName === 'OpenBitFunControl') {
+    return {
+      ...TOOL_CARD_CONFIGS[toolName],
+      attention: isOpenBitFunControlDiscovery(input) ? 'ambient' : 'prominent',
+    };
+  }
   // Check MCP tools (prefix: mcp__).
   if (isMcpToolName(toolName)) {
     const parsed = parseMcpToolName(toolName);
@@ -567,6 +585,14 @@ export function getToolCardConfig(toolName: string): ToolCardConfig {
   };
 }
 
+/** Keep wrapper and transcript spacing aligned with action-specific card anatomy. */
+export function getToolItemCardConfig(toolItem: FlowToolItem): ToolCardConfig {
+  const effective = projectEffectiveToolItem(toolItem);
+  return getToolCardConfig(effective.toolName, effective.toolName === 'OpenBitFunControl'
+    ? getOpenBitFunControlInput(effective)
+    : effective.toolCall?.input);
+}
+
 /**
  * Check whether a tool needs confirmation.
  */
@@ -592,6 +618,7 @@ export function getAllToolNames(): string[] {
  * card component just to tell dedicated cards from the DefaultToolCard.
  */
 export const DEDICATED_TOOL_CARD_NAMES = new Set([
+  'OpenBitFunControl',
   'Read',
   'Write',
   'Edit',

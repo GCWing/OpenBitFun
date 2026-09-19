@@ -29,7 +29,7 @@ vi.mock('../tool-cards', async () => {
 });
 
 vi.mock('../tool-cards/toolCardMetadata', () => ({
-  getToolCardConfig: (toolName: string) => ({
+  getToolItemCardConfig: ({ toolName }: { toolName: string }) => ({
     toolName,
     displayName: toolName,
     icon: 'TOOL',

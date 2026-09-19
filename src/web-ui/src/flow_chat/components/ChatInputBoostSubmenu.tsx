@@ -1,7 +1,6 @@
 import React, { useCallback, useId, useRef } from 'react';
-import { createPortal } from 'react-dom';
 
-import { Menu, MenuItem, Icon } from '@openbitfun/ui';
+import { createOverlayPortal, Menu, MenuItem, Icon } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useSideAnchoredPopoverPosition } from '@/shared/utils/useSideAnchoredPopoverPosition';
 
@@ -78,7 +77,7 @@ export const ChatInputBoostSubmenu: React.FC<ChatInputBoostSubmenuProps> = ({
       >
         {label}
       </MenuItem>
-      {open ? createPortal(
+      {open ? createOverlayPortal(
         <Menu
           ref={submenuRef}
           id={panelId}

@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "owner": "OpenBitFun subagent joystick character family",
+  "consumer": "src/web-ui/src/flow_chat/subagent-identity/catalog.ts",
+  "reason": "These fixed artwork colors preserve twenty existing character identities across light and dark themes. Semantic and status tokens describe UI states and would recolor the characters; they remain owned by the surrounding avatar component.",
+  "characters": [
+    {
+      "file": "robot-01.svg",
+      "stem": "#D5AB57",
+      "body": "#F4D57A",
+      "knob": "#B67D43",
+      "face": "#714B30"
+    },
+    {
+      "file": "robot-02.svg",
+      "stem": "#509DB6",
+      "body": "#62CDE3",
+      "knob": "#25718F",
+      "face": "#1C455B"
+    },
+    {
+      "file": "robot-03.svg",
+      "stem": "#A479C4",
+      "body": "#BF9DE0",
+      "knob": "#754BA0",
+      "face": "#4D2A5D"
+    },
+    {
+      "file": "robot-04.svg",
+      "stem": "#CCD9D2",
+      "body": "#323540",
+      "knob": "#62CEB7",
+      "face": "#FBF5EB"
+    },
+    {
+      "file": "robot-05.svg",
+      "stem": "#DB9887",
+      "body": "#F3B3A0",
+      "knob": "#C87362",
+      "face": "#78463D"
+    },
+    {
+      "file": "robot-06.svg",
+      "stem": "#7ABD99",
+      "body": "#A9DABC",
+      "knob": "#4F9775",
+      "face": "#34624C"
+    },
+    {
+      "file": "robot-07.svg",
+      "stem": "#D18A49",
+      "body": "#F1A554",
+      "knob": "#BB6035",
+      "face": "#703E27"
+    },
+    {
+      "file": "robot-08.svg",
+      "stem": "#CB8199",
+      "body": "#AD5675",
+      "knob": "#EEA6B9",
+      "face": "#FBF5EB"
+    },
+    {
+      "file": "robot-09.svg",
+      "stem": "#78B5BD",
+      "body": "#9ED7DA",
+      "knob": "#548F9D",
+      "face": "#245D66"
+    },
+    {
+      "file": "robot-10.svg",
+      "stem": "#739857",
+      "body": "#91B57B",
+      "knob": "#536F3E",
+      "face": "#34472D"
+    },
+    {
+      "file": "robot-11.svg",
+      "stem": "#BFC064",
+      "body": "#ECE16A",
+      "knob": "#8C9945",
+      "face": "#626637"
+    },
+    {
+      "file": "robot-12.svg",
+      "stem": "#9D7CB4",
+      "body": "#725086",
+      "knob": "#C9AEDB",
+      "face": "#FBF5EB"
+    },
+    {
+      "file": "robot-13.svg",
+      "stem": "#CD6862",
+      "body": "#E98275",
+      "knob": "#B75356",
+      "face": "#65383A"
+    },
+    {
+      "file": "robot-14.svg",
+      "stem": "#6597BF",
+      "body": "#8DBBDE",
+      "knob": "#426C9C",
+      "face": "#2B4A70"
+    },
+    {
+      "file": "robot-15.svg",
+      "stem": "#BA9170",
+      "body": "#956951",
+      "knob": "#E8B88A",
+      "face": "#FBF5EB"
+    },
+    {
+      "file": "robot-16.svg",
+      "stem": "#8D9FB5",
+      "body": "#B6C3D2",
+      "knob": "#637B9B",
+      "face": "#405369"
+    },
+    {
+      "file": "robot-17.svg",
+      "stem": "#A4BA69",
+      "body": "#C9D887",
+      "knob": "#7E994F",
+      "face": "#4E6439"
+    },
+    {
+      "file": "robot-18.svg",
+      "stem": "#D493B0",
+      "body": "#E8AFC6",
+      "knob": "#B9658E",
+      "face": "#713F58"
+    },
+    {
+      "file": "robot-19.svg",
+      "stem": "#718DB8",
+      "body": "#425887",
+      "knob": "#9EBDE9",
+      "face": "#FBF5EB"
+    },
+    {
+      "file": "robot-20.svg",
+      "stem": "#BDA17E",
+      "body": "#D9C4A6",
+      "knob": "#A07E54",
+      "face": "#675039"
+    }
+  ]
+}

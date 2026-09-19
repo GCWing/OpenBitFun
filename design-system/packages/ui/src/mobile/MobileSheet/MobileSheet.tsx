@@ -13,7 +13,6 @@ import { useDesignSystem } from "../../overlay/useDesignSystem";
 import { useDismissibleLayer } from "../../overlay/useDismissibleLayer";
 import { useFocusScope } from "../../overlay/useFocusScope";
 import { usePresence } from "../../overlay/usePresence";
-import { useScrollLock } from "../../overlay/useScrollLock";
 import type { OverlayDismissReason } from "../../overlay/types";
 import styles from "./MobileSheet.module.css";
 
@@ -89,20 +88,19 @@ export const MobileSheet = forwardRef<HTMLDivElement, MobileSheetProps>(
       ownerDocument,
     });
     useFocusScope({
-      active: open,
+      active: open && present,
       autoFocus,
       containerRef: surfaceRef,
       initialFocusRef,
       ownerDocument,
       trapFocus,
     });
-    useScrollLock((open || present) && preventScroll, ownerDocument);
 
     if (!present || !portalTarget) return null;
     const exiting = state === "exiting";
 
     return (
-      <Portal target={portalTarget}>
+      <Portal target={portalTarget} open={open} modal preventScroll={preventScroll}>
         <div
           className={styles.overlay}
           data-openbitfun-component="mobile-sheet"
@@ -111,6 +109,7 @@ export const MobileSheet = forwardRef<HTMLDivElement, MobileSheetProps>(
         >
           <div
             {...surfaceProps}
+            {...(!open ? { inert: "" } : {})}
             aria-describedby={ariaDescribedBy ?? (description ? descriptionId : undefined)}
             aria-hidden={exiting || undefined}
             aria-label={ariaLabel}

@@ -135,7 +135,7 @@ describe('WelcomePanel Git summary loading', () => {
     await act(async () => trigger?.querySelector<HTMLElement>('[data-openbitfun-part="label"]')?.click());
 
     const menu = document.querySelector<HTMLElement>('[data-openbitfun-product-part="workspaceMenu"]');
-    expect(menu?.parentElement?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
+    expect(menu?.closest('[data-openbitfun-overlay-host]')?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
     expect(menu?.style.visibility).toBe('visible');
 
     await act(async () => trigger?.querySelector<HTMLElement>('[data-openbitfun-part="trailing-icon"]')?.click());

@@ -8,8 +8,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { OverflowText, ActionItem, Icon, Menu, MenuItem, MenuSection, MenuSeparator } from '@openbitfun/ui';
-import { createPortal } from 'react-dom';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, ActionItem, Icon, Menu, MenuItem, MenuSection, MenuSeparator } from '@openbitfun/ui';
 import { Monitor, MonitorSmartphone, Loader2, Unplug } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { useNotification } from '@/shared/notification-system';
@@ -135,6 +134,7 @@ export const DeviceSurfaceSwitcher: React.FC = () => {
   }, [peerDevice, switching, success, warning, t]);
 
   useEffect(() => {
+    let removeOverlayKeydown0: (() => void) | undefined;
     if (!open) {
       return;
     }
@@ -143,8 +143,8 @@ export const DeviceSurfaceSwitcher: React.FC = () => {
         setOpen(false);
       }
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    removeOverlayKeydown0 = subscribeOverlayInteraction(popoverRef, 'keydown', onKeyDown);
+    return () => removeOverlayKeydown0?.();
   }, [open]);
 
   if (!loggedIn || !peerDevice) {
@@ -200,7 +200,7 @@ export const DeviceSurfaceSwitcher: React.FC = () => {
         </OverflowText>
       </ActionItem>
 
-      {open && createPortal(
+      {open && createOverlayPortal(
         <>
           <div
             className="openbitfun-device-switcher__backdrop"

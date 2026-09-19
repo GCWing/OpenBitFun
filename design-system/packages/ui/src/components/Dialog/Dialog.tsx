@@ -22,7 +22,6 @@ import { useDesignSystem } from "../../overlay/useDesignSystem";
 import { useDismissibleLayer } from "../../overlay/useDismissibleLayer";
 import { useFocusScope } from "../../overlay/useFocusScope";
 import { usePresence } from "../../overlay/usePresence";
-import { useScrollLock } from "../../overlay/useScrollLock";
 import { IconButton, type IconButtonProps } from "../IconButton";
 import styles from "./Dialog.module.css";
 
@@ -163,13 +162,12 @@ const OverlaySurface = forwardRef<HTMLDivElement, OverlaySurfaceProps>(function 
     trapFocus,
     restoreFocus,
   });
-  useScrollLock((open || present) && preventScroll, ownerDocument);
 
   if (!present || !resolvedPortalHost) return null;
   const exiting = state === "exiting";
 
   return (
-    <Portal target={resolvedPortalHost}>
+    <Portal target={resolvedPortalHost} open={open} modal preventScroll={preventScroll}>
       <div
         {...overlayProps}
         className={classNames(styles.overlay, overlayProps?.className)}

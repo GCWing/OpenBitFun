@@ -3,9 +3,8 @@
  * Used to browse and select remote directory as workspace
  */
 
-import { Button, Dialog, ConfirmDialog, Icon, IconButton, Input, Menu, MenuItem, MenuSeparator, ScrollArea } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, Button, Dialog, ConfirmDialog, Icon, IconButton, Input, Menu, MenuItem, MenuSeparator, ScrollArea } from '@openbitfun/ui';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useI18n } from '@/infrastructure/i18n';
 import type { RemoteFileEntry } from './types';
@@ -86,6 +85,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
   const [pathInputValue, setPathInputValue] = useState(initialPath);
   const [isEditingPath, setIsEditingPath] = useState(false);
   const pathInputRef = useRef<HTMLInputElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const textInputCompositionActiveRef = useRef(false);
   const [entries, setEntries] = useState<RemoteFileEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -147,13 +147,14 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
 
   // Close context menu when clicking outside
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
     const handleClickOutside = (e: MouseEvent) => {
       if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
         setContextMenu({ show: false, x: 0, y: 0, entry: null });
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    removeOverlayMousedown0 = subscribeOverlayInteraction(contextMenuRef, 'mousedown', handleClickOutside);
+    return () => removeOverlayMousedown0?.();
   }, []);
 
   const navigateTo = (path: string) => {
@@ -387,7 +388,8 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
 
   const browser = (
     <div className="remote-file-browser-overlay" data-openbitfun-component="ssh-remote" data-openbitfun-part="browserOverlay">
-      <div className="remote-file-browser" data-openbitfun-component="ssh-remote" data-openbitfun-part="browser">
+      <div ref={surfaceRef} role="dialog" aria-modal="true" tabIndex={-1}
+        className="remote-file-browser" data-openbitfun-component="ssh-remote" data-openbitfun-part="browser">
         {/* Header */}
         <div className="remote-file-browser__header" data-openbitfun-component="ssh-remote" data-openbitfun-part="browserHeader">
           <h2 className="remote-file-browser__header-title">
@@ -602,7 +604,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
         </ScrollArea>
 
         {/* Context Menu */}
-        {contextMenu.show && contextMenu.entry && createPortal(
+        {contextMenu.show && contextMenu.entry && createOverlayPortal(
           <Menu
             ref={contextMenuRef}
             className="remote-file-browser__context-menu"
@@ -747,7 +749,7 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
     </div>
   );
 
-  return createPortal(browser, getAppearanceOverlayHost());
+  return createOverlayPortal(browser, getAppearanceOverlayHost(), null, { modal: true, surfaceRef, onDismiss: onCancel });
 };
 
 export default RemoteFileBrowser;

@@ -8,12 +8,12 @@
  */
 
 import React, { useCallback, useState, useMemo, useEffect, useRef, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
-import { OverflowText,
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText,
   Icon,
   KeyHint,
   Menu,
   MenuItem,
+  MenuList,
   MenuSection,
   MenuSeparator,
   NavigationPanel,
@@ -190,6 +190,8 @@ const MainNav: React.FC = () => {
   }, [sshRemote]);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     if (!workspaceMenuOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node | null;
@@ -201,11 +203,11 @@ const MainNav: React.FC = () => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !isImeOwnedKeyboardEvent(event)) closeWorkspaceMenu();
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
+    removeOverlayMousedown0 = subscribeOverlayInteraction(workspaceMenuRef, 'mousedown', handleClickOutside);
+    removeOverlayKeydown1 = subscribeOverlayInteraction(workspaceMenuRef, 'keydown', handleEscape);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
+      removeOverlayMousedown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [closeWorkspaceMenu, workspaceMenuOpen]);
 
@@ -253,7 +255,7 @@ const MainNav: React.FC = () => {
     }
   }, [isAgentsActive, isEcosystemCompatibilityActive, isSkillsActive]);
 
-  const workspaceMenuPortal = workspaceMenuOpen ? createPortal(
+  const workspaceMenuPortal = workspaceMenuOpen ? createOverlayPortal(
     <Menu
       ref={workspaceMenuRef}
       className={`openbitfun-nav-panel__workspace-menu${workspaceMenuClosing ? ' is-closing' : ''}`}
@@ -289,41 +291,43 @@ const MainNav: React.FC = () => {
         title={t('header.recentWorkspaces')}
       >
         <ScrollArea className="openbitfun-nav-panel__workspace-menu-workspaces">
-        {recentWorkspaces.length === 0 ? (
-          <div className="openbitfun-nav-panel__workspace-menu-empty">
-            <span>{t('header.noRecentWorkspaces')}</span>
-          </div>
-        ) : (
-          recentWorkspaces.map((workspace) => {
-            const { hostPrefix, folderLabel, tooltip } = getRecentWorkspaceLineParts(workspace);
-            const isCurrent = workspace.id === currentWorkspace?.id;
-            return (
-              <MenuItem data-overflow-trigger
-                key={workspace.id}
-                leading={<Icon glyph={FolderOpen} />}
-                role="menuitemradio"
-                checked={isCurrent}
-                metadata={isCurrent ? <Icon name="check-line" size="xs" /> : undefined}
-                title={tooltip}
-                onClick={() => { void handleSwitchWorkspace(workspace.id); }}
-                data-testid="nav-workspace-menu-recent-workspace"
-                data-workspace-id={workspace.id}
-              >
-                <span className="openbitfun-nav-panel__workspace-menu-item-main">
-                  {hostPrefix ? (
-                    <>
-                      <OverflowText className="openbitfun-nav-panel__workspace-menu-item-host">{hostPrefix}</OverflowText>
-                      <span className="openbitfun-nav-panel__workspace-menu-item-host-sep" aria-hidden>
-                        ·
-                      </span>
-                    </>
-                  ) : null}
-                  <OverflowText className="openbitfun-nav-panel__workspace-menu-item-name">{folderLabel}</OverflowText>
-                </span>
-              </MenuItem>
-            );
-          })
-        )}
+          <MenuList>
+            {recentWorkspaces.length === 0 ? (
+              <div className="openbitfun-nav-panel__workspace-menu-empty">
+                <span>{t('header.noRecentWorkspaces')}</span>
+              </div>
+            ) : (
+              recentWorkspaces.map((workspace) => {
+                const { hostPrefix, folderLabel, tooltip } = getRecentWorkspaceLineParts(workspace);
+                const isCurrent = workspace.id === currentWorkspace?.id;
+                return (
+                  <MenuItem data-overflow-trigger
+                    key={workspace.id}
+                    leading={<Icon glyph={FolderOpen} />}
+                    role="menuitemradio"
+                    checked={isCurrent}
+                    metadata={isCurrent ? <Icon name="check-line" size="xs" /> : undefined}
+                    title={tooltip}
+                    onClick={() => { void handleSwitchWorkspace(workspace.id); }}
+                    data-testid="nav-workspace-menu-recent-workspace"
+                    data-workspace-id={workspace.id}
+                  >
+                    <span className="openbitfun-nav-panel__workspace-menu-item-main">
+                      {hostPrefix ? (
+                        <>
+                          <OverflowText className="openbitfun-nav-panel__workspace-menu-item-host">{hostPrefix}</OverflowText>
+                          <span className="openbitfun-nav-panel__workspace-menu-item-host-sep" aria-hidden>
+                            ·
+                          </span>
+                        </>
+                      ) : null}
+                      <OverflowText className="openbitfun-nav-panel__workspace-menu-item-name">{folderLabel}</OverflowText>
+                    </span>
+                  </MenuItem>
+                );
+              })
+            )}
+          </MenuList>
         </ScrollArea>
       </MenuSection>
     </Menu>,

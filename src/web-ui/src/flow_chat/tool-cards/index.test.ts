@@ -13,8 +13,14 @@ import {
 } from './index';
 import { TaskToolDisplay } from './TaskToolDisplay';
 import { AgentControlToolCard } from './AgentControlToolCard';
+import { OpenBitFunControlToolCard } from './OpenBitFunControlToolCard';
 
 describe('tool card registry', () => {
+  it('keeps OpenBitFun controls visible through their dedicated product card', () => {
+    expect(getToolCardComponent('OpenBitFunControl')).toBe(OpenBitFunControlToolCard);
+    expect(usesDefaultToolCard('OpenBitFunControl')).toBe(false);
+    expect(isCollapsibleTool('OpenBitFunControl')).toBe(false);
+  });
   it('projects managed Review workers through the unified coverage card', () => {
     expect(getToolCardComponent('LaunchReviewAgent')).toBe(TaskToolDisplay);
   });
@@ -72,6 +78,7 @@ describe('tool card registry', () => {
       'InitMiniApp',
       'GenerativeUI',
       'ComputerUse',
+      'OpenBitFunControl',
       'CreateCanvas',
       'ReadCanvas',
       'UpdateCanvas',

@@ -1,10 +1,12 @@
 export {
   Menu,
   MenuItem,
+  MenuList,
   MenuSection,
   MenuSeparator,
   type MenuItemProps,
   type MenuItemRole,
+  type MenuListProps,
   type MenuProps,
   type MenuSectionAction,
   type MenuSectionProps,

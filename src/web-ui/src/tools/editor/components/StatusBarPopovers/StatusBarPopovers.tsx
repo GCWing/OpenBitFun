@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import {
   FileCode,
@@ -18,7 +17,7 @@ import {
 
 import { useI18n } from '@/infrastructure/i18n';
 import './StatusBarPopovers.scss';
-import { Input, Listbox, ListboxOption } from '@openbitfun/ui';
+import { createOverlayPortal, Input, Listbox, ListboxOption } from '@openbitfun/ui';
 
 export type StatusBarPopoverType = 'position' | 'indent' | 'encoding' | 'language';
 
@@ -81,7 +80,7 @@ export const GoToLinePopover: React.FC<GoToLinePopoverProps> = ({
   const top = anchorRect.top - 4;
   const left = Math.max(8, Math.min(anchorRect.right - 200, anchorRect.left));
 
-  return createPortal(
+  return createOverlayPortal(
     <div
       className="status-bar-popover"
       data-openbitfun-component="status-bar-popover"
@@ -148,7 +147,7 @@ export const IndentPopover: React.FC<IndentPopoverProps> = ({
   const top = anchorRect.top - 4;
   const left = Math.max(8, Math.min(anchorRect.right - 160, anchorRect.left));
 
-  return createPortal(
+  return createOverlayPortal(
     <div
       className="status-bar-popover"
       data-openbitfun-component="status-bar-popover"
@@ -209,7 +208,7 @@ export const EncodingPopover: React.FC<EncodingPopoverProps> = ({
   const top = anchorRect.top - 4;
   const left = Math.max(8, Math.min(anchorRect.right - 160, anchorRect.left));
 
-  return createPortal(
+  return createOverlayPortal(
     <div
       className="status-bar-popover"
       data-openbitfun-component="status-bar-popover"
@@ -320,7 +319,7 @@ export const LanguagePopover: React.FC<LanguagePopoverProps> = ({
   const top = anchorRect.top - 4;
   const left = Math.max(8, Math.min(anchorRect.right - 180, anchorRect.left));
 
-  return createPortal(
+  return createOverlayPortal(
     <div
       className="status-bar-popover"
       data-openbitfun-component="status-bar-popover"

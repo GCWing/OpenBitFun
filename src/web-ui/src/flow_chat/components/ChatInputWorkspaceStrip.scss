@@ -461,11 +461,6 @@ $track-item-gap: 10px;
     z-index: var(--openbitfun-layer-popover);
   }
 
-  &__workspace-menu [data-openbitfun-part='list'] {
-    // Separate the multi-line workspace item surfaces at the list owner.
-    row-gap: var(--openbitfun-space-1);
-  }
-
   &__workspace-option-copy {
     display: flex;
     overflow: hidden;

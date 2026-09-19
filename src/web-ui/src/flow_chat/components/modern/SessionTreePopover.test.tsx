@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SessionTreePopover } from './SessionTreePopover';
 import {
+  getSubagentAvatarDefinition,
   resolveSubagentAvatarPresentation,
 } from '../../subagent-identity';
 
@@ -161,7 +162,7 @@ describe('SessionTreePopover', () => {
     });
 
     const panel = document.querySelector<HTMLElement>('.session-tree-popover__panel');
-    expect(panel?.parentElement?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
+    expect(panel?.closest('[data-openbitfun-overlay-host]')?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
     expect(panel?.style.visibility).toBe('visible');
     const actionButton = panel?.querySelector<HTMLButtonElement>(
       '[aria-label="flowChatHeader.agentTreeActions"]',
@@ -233,7 +234,7 @@ describe('SessionTreePopover', () => {
       const presentation = resolveSubagentAvatarPresentation(sessionId);
 
       expect(avatar.dataset.openbitfunAvatarId).toBe(presentation.avatarId);
-      expect(avatar.dataset.openbitfunAvatarColorId).toBe(presentation.colorId);
+      expect(avatar.querySelector('img')?.getAttribute('src')).toBe(getSubagentAvatarDefinition(presentation.avatarId).src);
     });
 
     expect(subagentNodes).toHaveLength(3);

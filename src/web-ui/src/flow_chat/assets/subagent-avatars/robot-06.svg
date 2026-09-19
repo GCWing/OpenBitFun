@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="2.2857 2.2857 251.4286 251.4286" role="img" aria-labelledby="avatar-title-06">
+  <title id="avatar-title-06">pea joystick avatar</title>
+  <rect x="116" y="58" width="24" height="30" rx="12" fill="#7ABD99"/>
+  <path d="M128 76C177 76 196 96 208 130L232 198C239 218 224 238 188 238H68C32 238 17 218 24 198L48 130C60 96 79 76 128 76Z" transform="matrix(1.02 0 0 1 -2.56 0)" fill="#A9DABC"/>
+  <circle cx="128" cy="42" r="24" fill="#4F9775"/>
+  <g fill="#34624C">
+    <ellipse cx="105" cy="163" rx="10" ry="16"/>
+    <ellipse cx="151" cy="163" rx="10" ry="16"/>
+  </g>
+</svg>

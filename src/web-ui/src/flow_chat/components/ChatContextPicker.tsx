@@ -1,11 +1,10 @@
-import { Disclosure } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, Disclosure } from '@openbitfun/ui';
 /**
  * Unified chat context picker.
  * The source level exposes files, skills, MCP, and images; typing searches providers together.
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Icon,
   IconButton,
@@ -729,18 +728,20 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   }, [canNavigateBack, displayItems, enterDirectory, goBack, handleItemClick, handleSelect, isOpen, isSearchMode, onClose, openSource, selectedIndex]);
 
   useEffect(() => {
+    let removeOverlayKeydown0: (() => void) | undefined;
     if (!isOpen) return;
-    document.addEventListener('keydown', handleKeyDown, true);
-    return () => document.removeEventListener('keydown', handleKeyDown, true);
+    removeOverlayKeydown0 = subscribeOverlayInteraction(containerRef, 'keydown', handleKeyDown);
+    return () => removeOverlayKeydown0?.();
   }, [handleKeyDown, isOpen]);
 
   useEffect(() => {
+    let removeOverlayMousedown1: (() => void) | undefined;
     if (!isOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) onClose();
     };
-    document.addEventListener('mousedown', handleClickOutside, true);
-    return () => document.removeEventListener('mousedown', handleClickOutside, true);
+    removeOverlayMousedown1 = subscribeOverlayInteraction(containerRef, 'mousedown', handleClickOutside);
+    return () => removeOverlayMousedown1?.();
   }, [isOpen, onClose]);
 
   useEffect(() => {
@@ -991,7 +992,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
     </div>
   );
 
-  return isOverlay ? createPortal(picker, getAppearanceOverlayHost()) : picker;
+  return isOverlay ? createOverlayPortal(picker, getAppearanceOverlayHost()) : picker;
 };
 
 export default ChatContextPicker;

@@ -47,10 +47,13 @@ describe('appearance overlay host', () => {
     expect(hostRule).toMatch(/z-index:\s*var\(--openbitfun-layer-overlay-host\)/);
   });
 
-  it('stacks above containers that host app UI and below always-on-top chrome', () => {
+  it('stacks above app content while all floating surfaces share the same host', () => {
     expect(systemTokens.layer.overlayHost.$value).toBeGreaterThan(systemTokens.layer.overlay.$value);
-    expect(systemTokens.layer.overlayHost.$value).toBeLessThan(systemTokens.layer.notification.$value);
-    expect(systemTokens.layer.overlayHost.$value).toBeLessThan(systemTokens.layer.contextMenu.$value);
+    expect(readSource('src/shared/notification-system/components/NotificationContainer.tsx')).toContain('<OverlayRegion>');
+    expect(readSource('src/shared/notification-system/components/NotificationContainer.tsx')).toContain('<OverlayLayer');
+    expect(readSource('src/shared/announcement-system/components/AnnouncementToastStack.tsx')).toContain('<Portal passive');
+    expect(readSource('src/shared/notification-system/components/NotificationContainer.scss')).not.toMatch(/z-index:/);
+    expect(readSource('src/shared/announcement-system/styles/AnnouncementToast.scss')).not.toMatch(/--openbitfun-layer-notification/);
   });
 
   it.each([
@@ -61,7 +64,7 @@ describe('appearance overlay host', () => {
     'src/flow_chat/components/modern/FlowChatHeader.scss',
     'src/flow_chat/components/modern/SessionTreePopover.scss',
     'src/infrastructure/peer-device/DeviceSurfaceSwitcher.scss',
-  ])('keeps %s below portaled tooltips', (path) => {
+  ])('keeps %s free of legacy numeric overlay priorities', (path) => {
     const styles = readSource(path);
     // Legacy 9999/10000 menu layers bypassed the shared scale and covered
     // Tooltip/OverflowText siblings even after the portal escaped clipping.
@@ -70,7 +73,6 @@ describe('appearance overlay host', () => {
         systemTokens.layer.tooltip.$value,
       );
     }
-    expect(systemTokens.layer.popover.$value + 1).toBeLessThan(systemTokens.layer.tooltip.$value);
   });
 
   // A containing block on the host would re-anchor every `position: fixed`

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="3.4286 4.4286 249.1429 249.1429" role="img" aria-labelledby="avatar-title-01">
+  <title id="avatar-title-01">cream joystick avatar</title>
+  <rect x="116" y="60" width="24" height="30" rx="12" fill="#D5AB57"/>
+  <path d="M128 78C189 78 236 116 236 169C236 214 213 238 176 238H80C43 238 20 214 20 169C20 116 67 78 128 78Z" transform="matrix(1 0 0 1 0 0)" fill="#F4D57A"/>
+  <circle cx="128" cy="44" r="24" fill="#B67D43"/>
+  <g fill="#714B30">
+    <ellipse cx="102" cy="164" rx="10" ry="16"/>
+    <ellipse cx="154" cy="164" rx="10" ry="16"/>
+  </g>
+  <path d="M119 186Q128 197 137 186" fill="none" stroke="#714B30" stroke-width="8" stroke-linecap="round"/>
+</svg>

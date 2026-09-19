@@ -1,0 +1,19 @@
+.openbitfun-update-indicator {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--openbitfun-radius-pill);
+  background: var(--openbitfun-color-status-info-emphasis);
+}
+
+.openbitfun-update-indicator-anchor {
+  position: relative;
+  display: inline-flex;
+
+  > .openbitfun-update-indicator {
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+}

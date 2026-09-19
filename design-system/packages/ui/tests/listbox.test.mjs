@@ -44,10 +44,18 @@ test("Listbox styling uses public menu, action, content, and focus tokens", asyn
   );
 
   assert.match(styles, /--openbitfun-overlay-menu-item-height/);
+  assert.match(styles, /\.list,\s*\.groupOptions\s*\{[^}]*gap: var\(--openbitfun-overlay-menu-row-gap\)/);
   assert.match(styles, /--openbitfun-color-action-neutral-surface/);
   assert.match(styles, /--openbitfun-color-content-muted/);
   assert.match(styles, /--openbitfun-color-focus-ring/);
   assert.doesNotMatch(styles, /#[0-9a-f]{3,8}/i);
+});
+
+test("selection popovers inherit row spacing from Listbox instead of patching its private lists", async () => {
+  for (const component of ["Select", "Combobox"]) {
+    const styles = await readFile(new URL(`../src/components/${component}/${component}.module.css`, import.meta.url), "utf8");
+    assert.doesNotMatch(styles, /\[data-openbitfun-part="(?:list|group-options|group)"\][^{]*\{[^}]*\bgap:/);
+  }
 });
 
 test("Listbox owns direct-option roving focus and standard navigation keys", async () => {

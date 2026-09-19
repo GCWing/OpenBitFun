@@ -90,6 +90,16 @@ describe('public MenuPopover', () => {
     act(() => document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })));
     expect(close).toHaveBeenCalledOnce();
   });
+  it('dismisses a submenu before its parent on Escape', () => {
+    const trigger = open(); key('End'); key('ArrowRight');
+    expect(document.activeElement?.textContent).toBe('Email');
+    key('Escape');
+    expect(host.querySelector('[role="menu"][aria-label="Share"]')).toBeNull();
+    expect(host.querySelector('[role="menu"]')?.getAttribute('aria-hidden')).toBeNull();
+    expect(document.activeElement?.textContent).toBe('Share');
+    key('Escape');
+    expect(document.activeElement).toBe(trigger);
+  });
   it('retains exit geometry and focuses the first item when reopened during exit', () => {
     const trigger = open();
     const menu = host.querySelector<HTMLElement>('[role="menu"]')!;

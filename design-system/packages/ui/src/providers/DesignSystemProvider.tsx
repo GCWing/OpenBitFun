@@ -4,7 +4,8 @@ import type {
   ContrastMode,
   DensityMode,
 } from "../primitives/ThemeRoot";
-import { OverlayLayerStack } from "../overlay/LayerStack";
+import { getOverlayLayerStack } from "../overlay/LayerStack";
+import { resolvePortalTarget } from "../overlay/Portal";
 import type { OverlayPortalTarget } from "../overlay/types";
 import {
   defaultDesignSystemContext,
@@ -36,7 +37,7 @@ export function DesignSystemProvider({
   portalHost,
   tooltipDelay = defaultDesignSystemContext.tooltipDelay,
 }: DesignSystemProviderProps) {
-  const layerStack = useMemo(() => new OverlayLayerStack(), []);
+  const layerStack = getOverlayLayerStack(resolvePortalTarget(portalHost)?.ownerDocument);
   const value = useMemo<DesignSystemContextValue>(() => ({
     colorScheme,
     contrast,

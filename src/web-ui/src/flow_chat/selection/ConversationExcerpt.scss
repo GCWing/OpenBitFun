@@ -64,6 +64,7 @@
     }
 
     > [data-openbitfun-part='footer'] {
+      flex-wrap: wrap;
       padding-block: 0 var(--openbitfun-space-5);
       padding-inline: var(--openbitfun-space-5);
     }

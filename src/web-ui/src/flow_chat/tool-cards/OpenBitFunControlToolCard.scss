@@ -1,0 +1,75 @@
+.openbitfun-control-card__details {
+  display: grid;
+  min-inline-size: 0;
+  gap: var(--openbitfun-space-3);
+  color: var(--openbitfun-color-content-primary);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+
+  p { margin: 0; }
+}
+
+.openbitfun-control-card__description,
+.openbitfun-control-card__result p {
+  color: var(--openbitfun-color-content-secondary);
+  overflow-wrap: anywhere;
+}
+
+.openbitfun-control-card__fields {
+  display: grid;
+  gap: var(--openbitfun-space-2);
+  margin: 0;
+}
+
+.openbitfun-control-card__field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--openbitfun-space-1) var(--openbitfun-space-3);
+
+  dt {
+    color: var(--openbitfun-color-content-muted);
+    font-weight: var(--openbitfun-type-label-sm-font-weight);
+  }
+
+  dd {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+
+.openbitfun-control-card__results {
+  display: grid;
+  min-inline-size: 0;
+  gap: var(--openbitfun-space-2);
+}
+
+.openbitfun-control-card__list {
+  display: grid;
+  gap: var(--openbitfun-space-3);
+  max-block-size: 20rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.openbitfun-control-card__result {
+  display: grid;
+  min-inline-size: 0;
+  gap: var(--openbitfun-space-1);
+}
+
+.openbitfun-control-card__notice {
+  color: var(--openbitfun-color-status-warning-content);
+  overflow-wrap: anywhere;
+}
+
+.openbitfun-control-card__error {
+  color: var(--openbitfun-color-status-danger-content);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

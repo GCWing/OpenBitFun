@@ -150,6 +150,8 @@ export const UpdateInstallProgressModal: React.FC<UpdateInstallProgressModalProp
     <Dialog
       open={isOpen}
       onOpenChange={(nextOpen) => { if (!nextOpen) onClose(); }}
+      closeOnPointerOutside={false}
+      closeOnEscape={!installing}
       size="sm"
     >
       <DialogHeader>

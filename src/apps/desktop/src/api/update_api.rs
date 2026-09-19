@@ -17,6 +17,26 @@ static UPDATE: OnceLock<tokio::sync::Mutex<Option<Update>>> = OnceLock::new();
 #[serde(rename_all = "camelCase")]
 pub struct PendingUpdateRequest {}
 
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DownloadUpdateRequest {
+    #[serde(default)]
+    pub expected_version: Option<String>,
+}
+
+impl DownloadUpdateRequest {
+    fn validate_version(&self, available: &str) -> Result<(), String> {
+        if let Some(expected) = &self.expected_version {
+            if expected != available {
+                return Err(format!(
+                    "Update version changed from {expected} to {available}; check for updates again"
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallPendingUpdateRequest {
@@ -165,9 +185,8 @@ pub async fn get_pending_update(
 #[tauri::command]
 pub async fn download_update(
     app: AppHandle,
-    request: PendingUpdateRequest,
+    request: DownloadUpdateRequest,
 ) -> Result<PendingUpdateResponse, String> {
-    let _ = request;
     let mut state = UPDATE
         .get_or_init(Default::default)
         .try_lock()
@@ -178,6 +197,7 @@ pub async fn download_update(
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "No update available".to_string())?;
+    request.validate_version(&update.version)?;
     let mut downloaded = 0u64;
     let bytes = update
         .download(
@@ -269,6 +289,22 @@ pub async fn install_pending_update(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn download_request_preserves_legacy_payloads_and_checks_the_selected_version() {
+        let legacy: DownloadUpdateRequest = serde_json::from_str("{}").unwrap();
+        assert!(legacy.validate_version("2.0.0").is_ok());
+        let roundtrip: DownloadUpdateRequest =
+            serde_json::from_str(&serde_json::to_string(&legacy).unwrap()).unwrap();
+        assert!(roundtrip.expected_version.is_none());
+        let request: DownloadUpdateRequest =
+            serde_json::from_str(r#"{"expectedVersion":"2.0.0","futureField":true}"#).unwrap();
+        assert!(request.validate_version("2.0.0").is_ok());
+        assert!(request
+            .validate_version("2.1.0")
+            .unwrap_err()
+            .contains("Update version changed"));
+    }
 
     fn record(bytes: &[u8]) -> PendingUpdateRecord {
         PendingUpdateRecord {

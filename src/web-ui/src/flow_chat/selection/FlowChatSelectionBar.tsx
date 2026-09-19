@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-import { createPortal } from 'react-dom';
-import {
+import { createOverlayPortal,
   Button, Card, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading,
   DialogTitle, Icon, ToolbarGroup, ToolbarSeparator, useDismissibleLayer,
 } from '@openbitfun/ui';
@@ -209,7 +208,7 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
 
   return (
     <>
-      {selection && active && !editing && createPortal(
+      {selection && active && !editing && createOverlayPortal(
         <Card appearance="raised" radius="lg" data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="root"
           ref={popupRef} className="conversation-excerpt__popover" data-flowchat-selection-ignore="true" data-openbitfun-native-webview-occlusion
           style={{ left: position?.left ?? 0, top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden' }}>

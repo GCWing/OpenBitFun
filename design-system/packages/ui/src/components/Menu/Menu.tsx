@@ -34,6 +34,12 @@ export interface MenuItemProps
   role?: MenuItemRole;
 }
 
+/** A row stack for custom scroll or animation wrappers inside a Menu. */
+export interface MenuListProps extends HTMLAttributes<HTMLDivElement> {
+  children: ReactNode;
+  "data-openbitfun-part"?: string;
+}
+
 export interface MenuSectionAction {
   disabled?: boolean;
   icon: ReactNode;
@@ -78,6 +84,22 @@ function setActiveItem(items: readonly HTMLButtonElement[], index: number, focus
     target.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }
 }
+
+export const MenuList = forwardRef<HTMLDivElement, MenuListProps>(function MenuList({
+  className,
+  "data-openbitfun-part": part = "items",
+  ...props
+}, ref) {
+  return (
+    <div
+      {...props}
+      className={classNames(styles.items, className)}
+      data-openbitfun-menu-list=""
+      data-openbitfun-part={part}
+      ref={ref}
+    />
+  );
+});
 
 export const Menu = forwardRef<HTMLDivElement, MenuProps>(function Menu({
   autoFocusFirstItem = false,
@@ -198,7 +220,7 @@ export const Menu = forwardRef<HTMLDivElement, MenuProps>(function Menu({
         orientation="vertical"
         scrollbarVisibility={scrollbarVisibility}
       >
-        <div className={styles.list} data-openbitfun-part="list">{children}</div>
+        <MenuList className={styles.list} data-openbitfun-part="list">{children}</MenuList>
       </ScrollArea>
     </div>
   );
@@ -272,9 +294,9 @@ export const MenuSection = forwardRef<HTMLDivElement, MenuSectionProps>(function
           )}
         </div>
       )}
-      <div className={styles.items} data-openbitfun-part="section-items">
+      <MenuList data-openbitfun-part="section-items">
         {children}
-      </div>
+      </MenuList>
     </div>
   );
 });

@@ -1,9 +1,8 @@
 import { HARNESS_IDS, canonicalAgentId, type HarnessId } from '@/shared/agents/identity';
 import { HARNESS_PRESENTATION } from '@/shared/agents/harnessPresentation';
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { OverflowText, Icon, Menu, MenuItem, MenuSection, MenuSeparator, Tooltip } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, Menu, MenuItem, MenuSection, MenuSeparator, Tooltip } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { confirmDialog } from '@/infrastructure/confirm-dialog';
 import { notificationService } from '@/shared/notification-system';
@@ -179,6 +178,8 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
   }, [finishSelection, onStartNewSession, t]);
 
   useEffect(() => {
+    let removeOverlayPointerdown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     if (!open) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -192,11 +193,11 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
       if (event.key === 'Escape') close();
     };
 
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
+    removeOverlayPointerdown0 = subscribeOverlayInteraction(menuRef, 'pointerdown', handlePointerDown);
+    removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
+      removeOverlayPointerdown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [close, open]);
 
@@ -361,7 +362,7 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
         )}
       </Tooltip>
 
-      {open && createPortal(
+      {open && createOverlayPortal(
         <Menu
           ref={menuRef}
           id={menuId}

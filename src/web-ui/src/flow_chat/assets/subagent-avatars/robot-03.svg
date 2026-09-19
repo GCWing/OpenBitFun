@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="4.5714 4.5714 246.8571 246.8571" role="img" aria-labelledby="avatar-title-03">
+  <title id="avatar-title-03">lilac joystick avatar</title>
+  <rect x="116" y="60" width="24" height="30" rx="12" fill="#A479C4"/>
+  <path d="M128 78C190 78 232 118 232 178C232 217 216 236 182 236H74C40 236 24 217 24 178C24 118 66 78 128 78Z" fill="#BF9DE0"/>
+  <circle cx="128" cy="44" r="24" fill="#754BA0"/>
+  <g fill="#4D2A5D">
+    <ellipse cx="104" cy="164" rx="10" ry="16"/>
+    <ellipse cx="152" cy="164" rx="10" ry="16"/>
+  </g>
+</svg>

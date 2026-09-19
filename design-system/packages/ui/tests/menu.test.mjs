@@ -6,8 +6,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   Menu,
   MenuItem,
+  MenuList,
   MenuSection,
   MenuSeparator,
+  ScrollArea,
 } from "../dist/index.js";
 
 test("Menu composes grouped items, heading actions, and separators with native roles", () => {
@@ -74,13 +76,48 @@ test("Menu styling uses only public surface, geometry, action, and scrollbar tok
 
   assert.match(styles, /--openbitfun-overlay-menu-inline-size/);
   assert.match(styles, /--openbitfun-overlay-menu-item-height/);
-  assert.match(styles, /\.list\s*\{[^}]*gap: 0/);
-  assert.match(styles, /\.items\s*\{[^}]*gap: 0/);
+  assert.match(styles, /\.items\s*\{[^}]*gap: var\(--openbitfun-overlay-menu-row-gap\)/);
+  assert.doesNotMatch(styles, /\.list\s*\{[^}]*\bgap:/);
   assert.match(styles, /\.separator\s*\{[^}]*margin-block: var\(--openbitfun-overlay-menu-section-gap\)/);
   assert.match(styles, /--openbitfun-color-surface-panel/);
   assert.match(styles, /--openbitfun-shadow-menu/);
   assert.match(styles, /--openbitfun-overlay-menu-scrollbar-gap/);
   assert.doesNotMatch(styles, /#[0-9a-f]{3,8}/i);
+});
+
+test("flat, grouped, and custom scrolling menus share the same row-spacing owner", () => {
+  const markup = renderToStaticMarkup(
+    createElement(Menu, null,
+      createElement(MenuItem, null, "Open project"),
+      createElement(MenuItem, null, "Add assistant"),
+      createElement(MenuSeparator),
+      createElement(MenuSection, { title: "Recent projects" },
+        createElement(ScrollArea, { style: { maxHeight: 240 } },
+          createElement(MenuList, { "data-openbitfun-part": "recent-projects" },
+            createElement(MenuItem, { checked: true, role: "menuitemradio" }, "Selected"),
+            createElement(MenuItem, null, "Next"),
+          ),
+        ),
+      ),
+    ),
+  );
+  const lists = Array.from(markup.matchAll(/<div[^>]*class="([^"]+)"[^>]*data-openbitfun-menu-list=""[^>]*>/g));
+  assert.equal(lists.length, 3, "root, section and nested scroll content must each own a row stack");
+  const sharedClass = lists[2][1];
+  assert.ok(lists.every(([, classes]) => classes.split(" ").includes(sharedClass)));
+  assert.match(lists[0][0], /data-openbitfun-part="list"/);
+  assert.match(lists[1][0], /data-openbitfun-part="section-items"/);
+  assert.match(lists[2][0], /data-openbitfun-part="recent-projects"/);
+  assert.equal((markup.match(/role="menu"/g) ?? []).length, 1, "a row stack must not introduce a nested menu");
+});
+
+test("section and separator spacing includes the row gap without doubling it", async () => {
+  const styles = await readFile(new URL("../src/components/Menu/Menu.module.css", import.meta.url), "utf8");
+  for (const selector of [".section + .section", ".items > .separator:not(:first-child)", ".items > .separator:not(:last-child)"]) {
+    const block = styles.slice(styles.indexOf(`${selector} {`)).split("}")[0];
+    assert.match(block, /margin-block-(?:start|end): max\(0px, calc\(var\(--openbitfun-overlay-menu-section-gap\) - var\(--openbitfun-overlay-menu-row-gap\)\)\)/);
+  }
+  assert.match(styles, /\.separator\s*\{[^}]*margin-block: var\(--openbitfun-overlay-menu-section-gap\)/);
 });
 
 test("Menu keeps focus rings inside items without adding a permanent gutter", async () => {

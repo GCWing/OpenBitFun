@@ -1010,8 +1010,6 @@ $_section-header-height: 22px;
   }
 
   &__workspace-menu-workspaces {
-    display: flex;
-    flex-direction: column;
     max-height: 240px;
     overscroll-behavior: contain;
   }

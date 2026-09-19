@@ -14,14 +14,13 @@
  */
 
 import React, { useEffect, useRef, useCallback, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useTranslation } from 'react-i18next';
 
 import FlexiblePanel from '../../base/FlexiblePanel';
 import type { PanelContent } from '../types';
 import './QuickLook.scss';
-import { OverflowText, Icon, Tooltip, useDismissibleLayer } from '@openbitfun/ui';
+import { createOverlayPortal, OverflowText, Icon, Tooltip, useDismissibleLayer } from '@openbitfun/ui';
 
 export interface QuickLookProps {
   /** Whether visible */
@@ -124,7 +123,7 @@ export const QuickLook: React.FC<QuickLookProps> = ({
     return null;
   }
 
-  return createPortal(
+  return createOverlayPortal(
     <div data-overflow-trigger
       ref={containerRef}
       className="canvas-quick-look"

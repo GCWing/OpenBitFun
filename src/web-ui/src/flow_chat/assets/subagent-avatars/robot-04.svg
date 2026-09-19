@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="2.2857 2.2857 251.4286 251.4286" role="img" aria-labelledby="avatar-title-04">
+  <title id="avatar-title-04">ink mint joystick avatar</title>
+  <rect x="116" y="55" width="24" height="31" rx="12" fill="#CCD9D2"/>
+  <path d="M128 72C188 72 234 88 234 138V178C234 220 218 238 180 238H76C38 238 22 220 22 178V138C22 88 68 72 128 72Z" fill="#323540"/>
+  <circle cx="128" cy="41" r="23" fill="#62CEB7"/>
+  <g fill="#FBF5EB">
+    <ellipse cx="102" cy="160" rx="10" ry="16"/>
+    <ellipse cx="154" cy="160" rx="10" ry="16"/>
+  </g>
+  <path d="M119 183Q128 194 137 183" fill="none" stroke="#FBF5EB" stroke-width="8" stroke-linecap="round"/>
+</svg>

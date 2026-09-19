@@ -3,6 +3,16 @@ import type { AppearanceSurfaceDescriptor } from '@/infrastructure/appearance';
 export const updateAppearanceDescriptor: AppearanceSurfaceDescriptor = {
   id: 'update',
   parts: [
+    { id: 'notice', visualRole: 'content' },
+    { id: 'noticeTitle', propertyProfile: 'paint', visualRole: 'content' },
+    { id: 'releaseArtwork', propertyProfile: 'paint', visualRole: 'decoration' },
+    { id: 'indicator', propertyProfile: 'paint', visualRole: 'decoration' },
+    { id: 'downloadControl', visualRole: 'content' },
+    { id: 'downloadVessel', propertyProfile: 'paint', visualRole: 'content' },
+    { id: 'downloadFill', propertyProfile: 'paint', visualRole: 'decoration' },
+    { id: 'downloadTransfer', propertyProfile: 'paint', visualRole: 'decoration' },
+    { id: 'panel', visualRole: 'content' },
+    { id: 'panelStatus', propertyProfile: 'paint', visualRole: 'content' },
     { id: 'availableRoot' },
     { id: 'lead' },
     { id: 'leadIcon' },

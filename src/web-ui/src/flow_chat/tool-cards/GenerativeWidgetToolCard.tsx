@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
-import { Tooltip, Icon } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, Tooltip, Icon } from '@openbitfun/ui';
 import type { ToolCardProps } from '../types/flow-chat';
 import { ProminentToolCard, ProminentToolCardSummary, ToolProcessingDots } from '@openbitfun/ui/flow-chat';
 import { useTranslation } from 'react-i18next';
@@ -192,10 +192,7 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
       setSelectionRevision((value) => value + 1);
     };
 
-    document.addEventListener('keydown', handleEscape, true);
-    return () => {
-      document.removeEventListener('keydown', handleEscape, true);
-    };
+    return subscribeOverlayInteraction(previewRef, 'keydown', handleEscape);
   }, [hideMenu, menuSelectionActive]);
 
   const handleExportImage = useCallback(

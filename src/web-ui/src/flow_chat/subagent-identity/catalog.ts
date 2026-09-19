@@ -1,22 +1,27 @@
-import robot01 from '../assets/subagent-avatars/robot-01.webp';
-import robot02 from '../assets/subagent-avatars/robot-02.webp';
-import robot03 from '../assets/subagent-avatars/robot-03.webp';
-import robot04 from '../assets/subagent-avatars/robot-04.webp';
-import robot05 from '../assets/subagent-avatars/robot-05.webp';
-import robot06 from '../assets/subagent-avatars/robot-06.webp';
-import robot07 from '../assets/subagent-avatars/robot-07.webp';
-import robot08 from '../assets/subagent-avatars/robot-08.webp';
-import robot09 from '../assets/subagent-avatars/robot-09.webp';
-import robot10 from '../assets/subagent-avatars/robot-10.webp';
-import robot11 from '../assets/subagent-avatars/robot-11.webp';
-import robot12 from '../assets/subagent-avatars/robot-12.webp';
-import robot13 from '../assets/subagent-avatars/robot-13.webp';
-import robot14 from '../assets/subagent-avatars/robot-14.webp';
-import robot15 from '../assets/subagent-avatars/robot-15.webp';
+import robot01 from '../assets/subagent-avatars/robot-01.svg';
+import robot02 from '../assets/subagent-avatars/robot-02.svg';
+import robot03 from '../assets/subagent-avatars/robot-03.svg';
+import robot04 from '../assets/subagent-avatars/robot-04.svg';
+import robot05 from '../assets/subagent-avatars/robot-05.svg';
+import robot06 from '../assets/subagent-avatars/robot-06.svg';
+import robot07 from '../assets/subagent-avatars/robot-07.svg';
+import robot08 from '../assets/subagent-avatars/robot-08.svg';
+import robot09 from '../assets/subagent-avatars/robot-09.svg';
+import robot10 from '../assets/subagent-avatars/robot-10.svg';
+import robot11 from '../assets/subagent-avatars/robot-11.svg';
+import robot12 from '../assets/subagent-avatars/robot-12.svg';
+import robot13 from '../assets/subagent-avatars/robot-13.svg';
+import robot14 from '../assets/subagent-avatars/robot-14.svg';
+import robot15 from '../assets/subagent-avatars/robot-15.svg';
+import robot16 from '../assets/subagent-avatars/robot-16.svg';
+import robot17 from '../assets/subagent-avatars/robot-17.svg';
+import robot18 from '../assets/subagent-avatars/robot-18.svg';
+import robot19 from '../assets/subagent-avatars/robot-19.svg';
+import robot20 from '../assets/subagent-avatars/robot-20.svg';
 
-// Keep the original seed so removing frontend-only names does not reshuffle avatars.
-export const SUBAGENT_AVATAR_CATALOG_VERSION = 'subagent-identity-v1';
-export const SUBAGENT_AVATAR_COLOR_CATALOG_VERSION = 'subagent-avatar-color-v1';
+// Keep the authored SVG family order and seed stable so a session retains its
+// complete character across artwork updates and every Web UI surface.
+export const SUBAGENT_AVATAR_CATALOG_VERSION = 'subagent-identity-v2';
 
 export const SUBAGENT_AVATAR_CATALOG = [
   { id: 'robot-01', src: robot01 },
@@ -34,30 +39,16 @@ export const SUBAGENT_AVATAR_CATALOG = [
   { id: 'robot-13', src: robot13 },
   { id: 'robot-14', src: robot14 },
   { id: 'robot-15', src: robot15 },
-] as const;
-
-// The order is part of the session-to-color mapping contract. Bump
-// SUBAGENT_AVATAR_COLOR_CATALOG_VERSION before changing this catalog.
-export const SUBAGENT_AVATAR_COLOR_CATALOG = [
-  { id: 'cyan', hueShiftDegrees: 0 },
-  { id: 'azure', hueShiftDegrees: 30 },
-  { id: 'indigo', hueShiftDegrees: 60 },
-  { id: 'violet', hueShiftDegrees: 90 },
-  { id: 'magenta', hueShiftDegrees: 120 },
-  { id: 'rose', hueShiftDegrees: 150 },
-  { id: 'red', hueShiftDegrees: 180 },
-  { id: 'orange', hueShiftDegrees: 210 },
-  { id: 'amber', hueShiftDegrees: 240 },
-  { id: 'lime', hueShiftDegrees: 270 },
-  { id: 'green', hueShiftDegrees: 300 },
-  { id: 'teal', hueShiftDegrees: 330 },
+  { id: 'robot-16', src: robot16 },
+  { id: 'robot-17', src: robot17 },
+  { id: 'robot-18', src: robot18 },
+  { id: 'robot-19', src: robot19 },
+  { id: 'robot-20', src: robot20 },
 ] as const;
 
 export type SubagentAvatarId = typeof SUBAGENT_AVATAR_CATALOG[number]['id'];
-export type SubagentAvatarColorId = typeof SUBAGENT_AVATAR_COLOR_CATALOG[number]['id'];
 
 export const SUBAGENT_AVATAR_IDS = SUBAGENT_AVATAR_CATALOG.map(item => item.id);
-export const SUBAGENT_AVATAR_COLOR_IDS = SUBAGENT_AVATAR_COLOR_CATALOG.map(item => item.id);
 
 const avatarById = new Map<SubagentAvatarId, typeof SUBAGENT_AVATAR_CATALOG[number]>(
   SUBAGENT_AVATAR_CATALOG.map(item => [item.id, item]),

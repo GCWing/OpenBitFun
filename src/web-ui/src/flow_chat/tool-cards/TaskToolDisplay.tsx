@@ -343,38 +343,6 @@ export const TaskToolDisplay: React.FC<ToolCardProps> = ({
     taskCollapseStateManager.setCollapsed(toolItem.id, isCancelAction ? true : !isExpanded);
   }, [isCancelAction, isExpanded, toolItem.id]);
 
-  // Detect full-width characters for visual width estimation.
-  const isFullWidth = (char: string) => {
-    const code = char.charCodeAt(0);
-    return (
-      (code >= 0x4E00 && code <= 0x9FFF) ||
-      (code >= 0x3400 && code <= 0x4DBF) ||
-      (code >= 0xAC00 && code <= 0xD7AF) ||
-      (code >= 0x3040 && code <= 0x309F) ||
-      (code >= 0x30A0 && code <= 0x30FF) ||
-      (code >= 0xFF00 && code <= 0xFFEF)
-    );
-  };
-
-  // Truncate by visual width (full-width counts as 2).
-  const truncateByVisualWidth = (str: string, maxWidth: number) => {
-    let width = 0;
-    let result = '';
-    
-    for (const char of str) {
-      const charWidth = isFullWidth(char) ? 2 : 1;
-      
-      if (width + charWidth > maxWidth) {
-        return result + '...';
-      }
-      
-      width += charWidth;
-      result += char;
-    }
-    
-    return result;
-  };
-
   const taskSessionId = readTaskSessionId(toolCall?.input, toolResult);
   const linkedSubagentSessionId = toolItem.subagentSessionId || taskSessionId;
   const readSubagentSnapshot = useCallback(
@@ -454,7 +422,7 @@ export const TaskToolDisplay: React.FC<ToolCardProps> = ({
         : null;
 
     return {
-      description: description || (prompt ? truncateByVisualWidth(prompt, 70) : 'Not provided'),
+      description: description || prompt || 'Not provided',
       prompt: prompt || 'Not provided',
       agentType,
       modelName,
@@ -859,7 +827,7 @@ export const TaskToolDisplay: React.FC<ToolCardProps> = ({
           <SubagentAvatar
             sessionId={linkedSubagentSessionId}
             name={taskAgentTypeLabel}
-            size={16}
+            size={28}
             status={subagentAvatarStatus}
           />
         ) : <Split size={16} />}

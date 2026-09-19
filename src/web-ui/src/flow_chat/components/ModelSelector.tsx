@@ -8,9 +8,8 @@
  * - Supports 'primary' | 'fast' | specific model IDs
  */
 
-import { Menu, MenuItem, MenuSection, MenuSeparator, OverflowText } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, Menu, MenuItem, MenuSection, MenuSeparator, OverflowText } from '@openbitfun/ui';
 import React, { useState, useEffect, useId, useRef, useCallback, useLayoutEffect, useMemo, useSyncExternalStore } from 'react';
-import { createPortal } from 'react-dom';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { Zap } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -591,6 +590,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   }, [acpClientId, isAcpSession, loadAcpOptions, sessionId]);
   
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (dropdownRef.current && !dropdownRef.current.contains(target)
@@ -604,11 +604,11 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
     };
 
     if (dropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
+      removeOverlayMousedown0 = subscribeOverlayInteraction(portalDropdownRef, 'mousedown', handleClickOutside);
     }
 
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      removeOverlayMousedown0?.();
     };
   }, [dropdownOpen]);
 
@@ -1948,7 +1948,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
       {hasReasoningSettings && (
       <RetainedMountBoundary present={dropdownOpen}>
-        {createPortal(
+        {createOverlayPortal(
           <Menu
             id={menuId}
             className="openbitfun-model-selector__dropdown"
@@ -2017,12 +2017,14 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
               {acpFastModeItem}
             </MenuSection>
           </Menu>,
-          getAppearanceOverlayHost()
+          getAppearanceOverlayHost(),
+          null,
+          { open: dropdownOpen, ownerRef: dropdownRef },
         )}
       </RetainedMountBoundary>
       )}
 
-      {dropdownOpen && nativeSubmenu && createPortal(
+      {dropdownOpen && nativeSubmenu && createOverlayPortal(
         <Menu
           id={nativeSubmenuId}
           ref={nativeSubmenuRef}
@@ -2276,7 +2278,9 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
             )}
           </ModelSelectorMenuLevel>
         </Menu>,
-        getAppearanceOverlayHost()
+        getAppearanceOverlayHost(),
+        null,
+        { ownerRef: hasReasoningSettings ? portalDropdownRef : dropdownRef },
       )}
     </div>
   );

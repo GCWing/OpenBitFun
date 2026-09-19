@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Button, Icon, IconButton, OverflowText } from '@openbitfun/ui';
+import { Button, Icon, IconButton, OverflowText, useHasModalOverlay } from '@openbitfun/ui';
 import type { AnnouncementCard } from '../types';
 import { useAnnouncementStore } from '../store/announcementStore';
 import { useAnnouncementI18n } from '../hooks/useAnnouncementI18n';
@@ -18,12 +18,14 @@ const AnnouncementToastItem: React.FC<Props> = ({ card }) => {
   const { t } = useAnnouncementI18n();
   const { openModalFor, dismissToast } = useAnnouncementStore();
   const [exiting, setExiting] = useState(false);
+  const modalOpen = useHasModalOverlay();
   const autoDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { toast, card_type, modal } = card;
   const hasModal = card_type !== 'tip' && modal !== null;
   const autoDismissMs = toast.auto_dismiss_ms;
+  const remainingMs = useRef(autoDismissMs ?? 0);
 
   const resolve = (key: string) => (key.startsWith('announcements.') ? t(key) : key);
 
@@ -47,15 +49,19 @@ const AnnouncementToastItem: React.FC<Props> = ({ card }) => {
   }
 
   useEffect(() => {
-    if (autoDismissMs) {
-      autoDismissTimer.current = setTimeout(handleDismiss, autoDismissMs);
-    }
+    if (exiting || modalOpen || remainingMs.current <= 0) return;
+    const startedAt = Date.now();
+    autoDismissTimer.current = setTimeout(handleDismiss, remainingMs.current);
     return () => {
       if (autoDismissTimer.current) clearTimeout(autoDismissTimer.current);
-      if (exitTimer.current) clearTimeout(exitTimer.current);
+      remainingMs.current = Math.max(0, remainingMs.current - (Date.now() - startedAt));
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [card.id]);
+  }, [card.id, exiting, modalOpen]);
+
+  useEffect(() => () => {
+    if (exitTimer.current) clearTimeout(exitTimer.current);
+  }, []);
 
   const actionLabel =
     resolve(toast.action_label) ||
@@ -85,7 +91,7 @@ const AnnouncementToastItem: React.FC<Props> = ({ card }) => {
                   className="announcement-toast__ring-track" />
                 <circle cx="14" cy="14" r="13.25" pathLength="100"
                   className="announcement-toast__ring-fill"
-                  style={{ animationDuration: `${autoDismissMs}ms` }} />
+                  style={{ animationDuration: `${autoDismissMs}ms`, animationPlayState: modalOpen ? 'paused' : 'running' }} />
               </svg>
             )}
             <IconButton

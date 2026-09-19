@@ -1,11 +1,10 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import {
   Circle,
   CircleOff,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { OverflowText, Menu, MenuItem } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Menu, MenuItem, MenuList } from '@openbitfun/ui';
 import { Tooltip } from '@openbitfun/ui';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
@@ -110,6 +109,7 @@ export const ReasoningPresetSelector: React.FC<ReasoningPresetSelectorProps> = (
   }, [presets.length]);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
     if (!open) return;
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -118,8 +118,8 @@ export const ReasoningPresetSelector: React.FC<ReasoningPresetSelectorProps> = (
         setKeyboardOpen(false);
       }
     };
-    document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
+    removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handlePointerDown);
+    return () => removeOverlayMousedown0?.();
   }, [open]);
 
   useEffect(() => {
@@ -244,7 +244,7 @@ export const ReasoningPresetSelector: React.FC<ReasoningPresetSelectorProps> = (
       </Tooltip>
 
       <RetainedMountBoundary present={open}>
-        {createPortal(
+        {createOverlayPortal(
           <Menu
           id={menuId}
           ref={menuRef}
@@ -283,7 +283,7 @@ export const ReasoningPresetSelector: React.FC<ReasoningPresetSelectorProps> = (
               <span>{t('reasoningSelector.auto')}</span>
             </MenuItem>
           </div>
-          <div
+          <MenuList
             className="openbitfun-reasoning-preset-selector__options"
             data-openbitfun-component="reasoning-preset-selector"
             data-openbitfun-part="options"
@@ -310,9 +310,11 @@ export const ReasoningPresetSelector: React.FC<ReasoningPresetSelectorProps> = (
                 </MenuItem>
               );
             })}
-          </div>
+          </MenuList>
           </Menu>,
           getAppearanceOverlayHost(),
+          null,
+          { open, ownerRef: triggerRef },
         )}
       </RetainedMountBoundary>
     </div>

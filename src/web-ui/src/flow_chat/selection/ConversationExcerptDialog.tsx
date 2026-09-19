@@ -31,6 +31,12 @@ export function ConversationExcerptDialog({ target, label, open, onOpenChange }:
     return false;
   };
   const save = () => { if (commit()) onOpenChange(false); };
+  const remove = () => {
+    if (target.mode !== 'edit') return;
+    const result = target.remove();
+    if (result === 'removed') onOpenChange(false);
+    else notificationService.warning(t(result === 'queue-unavailable' ? 'selection.queueEditUnavailable' : 'selection.editUnavailable'));
+  };
   const locate = () => {
     if (!target.isCurrent()) {
       notificationService.warning(t(target.mode === 'edit' ? 'selection.editUnavailable' : 'selection.sourceUnavailable'));
@@ -65,6 +71,8 @@ export function ConversationExcerptDialog({ target, label, open, onOpenChange }:
       </div>
     </DialogBody>
     <DialogFooter>
+      {target.mode === 'edit' && <Button variant="text" tone="danger" disabled={!available}
+        onClick={remove}>{t('selection.remove')}</Button>}
       <Button variant="outline"
         data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="locate"
         disabled={!available} onClick={locate}>{locateLabel}</Button>

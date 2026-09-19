@@ -1,4 +1,5 @@
 
+import { hasOverlayLayers } from '@openbitfun/ui';
 import type { ShortcutConfig, ShortcutScope } from '@/shared/types/shortcut';
 import { compareShortcutScope } from '@/shared/constants/shortcuts';
 import { createLogger } from '@/shared/utils/logger';
@@ -251,7 +252,10 @@ export class ShortcutManager {
 
   private handleKeyDown(event: KeyboardEvent): void {
     if (!this.isEnabled) return;
+    if (event.defaultPrevented) return;
     if (this.isImeOwnedKey(event)) return;
+    // The latest overlay owns Escape even if focus is still in its trigger.
+    if (event.key === 'Escape' && hasOverlayLayers()) return;
 
     const inInput = this.isInputContext(event);
     const activeScope = this.detectScope(event.target);

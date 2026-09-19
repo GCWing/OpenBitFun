@@ -53,6 +53,7 @@ export const selectMeta = {
     "overlay.menu.maxBlockSize",
     "overlay.menu.surfacePadding",
     "overlay.menu.surfaceRadius",
+    "overlay.menu.rowGap",
     "overlay.menu.sectionGap",
     "overlay.menu.headingHeight",
     "overlay.menu.headingPaddingInline",

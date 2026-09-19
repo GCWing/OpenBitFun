@@ -684,6 +684,7 @@
 
   &__target-switcher {
     display: flex;
+    min-width: 0;
     align-items: center;
     gap: 0.125rem;
     padding-bottom: 7px;
@@ -705,6 +706,7 @@
 
   &__target-tab {
     display: inline-flex;
+    min-width: 0;
     align-items: center;
     gap: var(--openbitfun-control-flow-chat-inline-gap);
     padding: 0.12rem var(--openbitfun-control-flow-chat-card-expanded-padding-block);

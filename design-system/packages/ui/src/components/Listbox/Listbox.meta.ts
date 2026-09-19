@@ -22,6 +22,7 @@ export const listboxMeta = {
     "color.focus.ring",
     "overlay.menu.maxBlockSize",
     "overlay.menu.scrollbarGap",
+    "overlay.menu.rowGap",
     "overlay.menu.sectionGap",
     "overlay.menu.headingHeight",
     "overlay.menu.headingPaddingInline",

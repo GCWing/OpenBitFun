@@ -10,7 +10,6 @@ export {
   type UpdateDownloadProgressPayload
 } from './installUpdateWithProgress';
 export { DailyAppUpdateGate } from './DailyAppUpdateGate';
-export { UpdateAvailableDialog } from './UpdateAvailableDialog';
 export { UpdateInstallProgressModal } from './UpdateInstallProgressModal';
 export { useUpdateInstallStore, type UpdateInstallStatus } from './updateInstallStore';
 export { formatUpdateInstallError } from './updateErrorMessage';

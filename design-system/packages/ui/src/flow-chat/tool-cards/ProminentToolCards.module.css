@@ -225,7 +225,7 @@
   }
 
   .agentIdentity {
-    max-inline-size: min(18rem, 38vw);
+    max-inline-size: 100%;
   }
 
   .agentExtra {

@@ -853,6 +853,10 @@
       "maxBlockSize": { "$value": "480px" },
       "surfacePadding": { "$value": "{space.2}" },
       "surfaceRadius": { "$value": "{radius.xl}" },
+      "rowGap": {
+        "$description": "Space between menu or listbox row surfaces, independent of spacing inside a row or between sections.",
+        "$value": "2px"
+      },
       "sectionGap": { "$value": "{space.2}" },
       "headingHeight": { "$value": "24px" },
       "headingPaddingInline": { "$value": "{space.2}" },

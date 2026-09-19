@@ -10,6 +10,16 @@ vi.mock('./ApiClient', () => ({
 describe('ProductControlAPI', () => {
   beforeEach(() => invokeMock.mockReset());
 
+  it('reads discovery pages through the same host adapter with the original query and cursor', async () => {
+    const page = { items: [{ id: 'peer.feature' }], cursor: 20, nextCursor: null, totalCount: 21 };
+    invokeMock.mockResolvedValueOnce(page);
+    await expect(new ProductControlAPI().discover({ action: 'search', query: 'appearance', cursor: 20 }))
+      .resolves.toBe(page);
+    expect(invokeMock).toHaveBeenCalledWith('product_control_invoke', {
+      request: { action: 'search', query: 'appearance', cursor: 20 },
+    });
+  });
+
   it('uses stable IDs and the structured Desktop command contract', async () => {
     invokeMock.mockResolvedValueOnce({ effectiveValue: true, revision: 8 });
 

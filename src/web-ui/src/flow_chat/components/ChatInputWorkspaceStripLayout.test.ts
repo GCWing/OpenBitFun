@@ -71,9 +71,11 @@ describe('composer context track layout', () => {
     expect(branchPicker).toMatch(
       /branch-quick-switch__item \{[\s\S]*?min-height: var\(--openbitfun-control-height-sm\);/,
     );
-    expect(branchPicker).toMatch(
-      /branch-quick-switch__list \[data-openbitfun-part='list'\] \{[\s\S]*?gap: calc\(var\(--openbitfun-space-1\) \/ 2\);/,
-    );
+    for (const stylesheet of [workspaceStrip, branchPicker, targetPicker]) {
+      expect(stylesheet).not.toMatch(
+        /\[data-openbitfun-part='(?:list|section-items)'\][^{]*\{[^}]*\bgap:/,
+      );
+    }
     expect(targetPicker).toMatch(
       /&__option-row \{[\s\S]*?min-height: var\(--openbitfun-control-height-md\);/,
     );
@@ -305,7 +307,7 @@ describe('composer context track layout', () => {
 
   it('places the compact Harness/main-Agent row inside the add menu', () => {
     const chatInput = readLocalFile('ChatInput.tsx');
-    const addMenuIndex = chatInput.indexOf('modeState.dropdownOpen && createPortal');
+    const addMenuIndex = chatInput.indexOf('modeState.dropdownOpen && createOverlayPortal');
     const harnessIndex = chatInput.indexOf('<HarnessProfileSelector');
     const agentBoostIndex = chatInput.indexOf('data-testid="chat-input-agent-boost"');
     const addMenuEndIndex = chatInput.indexOf('getAppearanceOverlayHost()', harnessIndex);

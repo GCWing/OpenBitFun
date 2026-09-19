@@ -113,153 +113,69 @@
   }
 }
 
-// Pill tag styles
-// Matches mode badges with soft fill and no border.
+// Inline references share the neutral StatusPill surface and geometry.
+// Use the Flow support type role so references stay subordinate to the draft.
 
 .rich-text-tag-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 6px 2px 8px;
-  margin: 0 3px;
-  background: color-mix(in srgb, var(--openbitfun-color-accent-default) 12%, transparent);
+  gap: var(--openbitfun-space-1);
+  max-width: calc(100% - var(--openbitfun-space-1));
+  padding: var(--openbitfun-control-status-pill-padding-block) var(--openbitfun-control-status-pill-padding-inline);
+  margin: 0 calc(var(--openbitfun-space-1) / 2);
+  background: var(--openbitfun-color-action-neutral-surface);
   border: none;
-  border-radius: 10px;
-  font-size: var(--openbitfun-type-flow-control-font-size);
-  font-weight: var(--openbitfun-type-label-sm-font-weight);
-  color: color-mix(in srgb, var(--openbitfun-color-accent-default) 95%, transparent);
+  border-radius: var(--openbitfun-control-status-pill-radius);
+  color: var(--openbitfun-color-content-secondary);
+  font-family: var(--openbitfun-type-flow-support-font-family);
+  font-size: var(--openbitfun-type-flow-support-font-size);
+  font-weight: var(--openbitfun-type-flow-support-font-weight);
+  line-height: var(--openbitfun-type-flow-support-line-height);
+  letter-spacing: var(--openbitfun-type-flow-support-letter-spacing);
   cursor: default;
   user-select: none;
   vertical-align: middle;
-  line-height: var(--openbitfun-type-flow-support-line-height);
+  white-space: nowrap;
   transition:
-    background-color 160ms ease,
-    color 160ms ease;
-  
-  &:hover {
-    background: color-mix(in srgb, var(--openbitfun-color-accent-default) 18%, transparent);
-  }
-  
-  // Context type colors.
-  &[data-context-type="file"] {
-    background: color-mix(in srgb, var(--openbitfun-color-accent-default) 12%, transparent);
-    color: color-mix(in srgb, var(--openbitfun-color-accent-default) 95%, transparent);
-    
-    &:hover {
-      background: color-mix(in srgb, var(--openbitfun-color-accent-default) 18%, transparent);
-    }
-  }
-  
-  &[data-context-type="directory"] {
-    background: color-mix(in srgb, var(--openbitfun-color-accent-secondary) 12%, transparent);
-    color: var(--openbitfun-color-accent-secondary);
-    
-    &:hover {
-      background: color-mix(in srgb, var(--openbitfun-color-accent-secondary) 18%, transparent);
-    }
-  }
-  
-  &[data-context-type="code-snippet"] {
-    background: color-mix(in srgb, var(--openbitfun-color-status-success-content) 12%, transparent);
-    color: var(--openbitfun-color-status-success-content);
-    
-    &:hover {
-      background: color-mix(in srgb, var(--openbitfun-color-status-success-content) 18%, transparent);
-    }
-  }
-  
-  &[data-context-type="mermaid-diagram"] {
-    background: color-mix(in srgb, var(--openbitfun-domain-mermaid-diagram) 12%, transparent);
-    color: var(--openbitfun-domain-mermaid-diagram);
-    
-    &:hover {
-      background: color-mix(in srgb, var(--openbitfun-domain-mermaid-diagram) 18%, transparent);
-    }
-  }
-  
-  &[data-context-type="mermaid-node"] {
-    background: color-mix(in srgb, var(--openbitfun-domain-mermaid-diagram) 12%, transparent);
-    color: var(--openbitfun-domain-mermaid-diagram);
-    
-    &:hover {
-      background: color-mix(in srgb, var(--openbitfun-domain-mermaid-diagram) 18%, transparent);
-    }
-  }
-  
-  &[data-context-type="image"] {
-    background: color-mix(in srgb, var(--openbitfun-color-status-warning-content) 12%, transparent);
-    color: var(--openbitfun-color-status-warning-content);
-    
-    &:hover {
-      background: color-mix(in srgb, var(--openbitfun-color-status-warning-content) 18%, transparent);
-    }
+    background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+    color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+
+  &:hover,
+  &:focus-within {
+    background: var(--openbitfun-color-action-neutral-surface-hover);
+    color: var(--openbitfun-color-content-primary);
   }
 }
 
 .rich-text-tag-pill__text {
+  min-width: 0;
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: var(--openbitfun-type-flow-support-line-height);
-  font-family: var(--openbitfun-type-code-md-font-family);
-  font-size: var(--openbitfun-type-label-sm-font-size);
-}
-
-.rich-text-tag-pill--widget-ref {
-  background: color-mix(in srgb, var(--openbitfun-color-status-success-content) 14%, transparent);
-  color: color-mix(in srgb, var(--openbitfun-color-status-success-content) 96%, var(--openbitfun-color-content-primary));
-
-  &:hover {
-    background: color-mix(in srgb, var(--openbitfun-color-status-success-content) 22%, transparent);
-  }
-}
-
-.rich-text-tag-pill--skill-ref {
-  background: color-mix(in srgb, var(--openbitfun-color-status-warning-content) 16%, transparent);
-  color: color-mix(in srgb, var(--openbitfun-color-status-warning-content) 96%, var(--openbitfun-color-content-primary));
-
-  &:hover {
-    background: color-mix(in srgb, var(--openbitfun-color-status-warning-content) 24%, transparent);
-  }
 }
 
 .rich-text-tag-pill__badge {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  min-width: 20px;
-  height: 16px;
-  padding: 0 5px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 15%, transparent);
-  color: inherit;
+  min-width: var(--openbitfun-space-4);
+  height: var(--openbitfun-space-4);
+  color: var(--openbitfun-color-content-muted);
+  font-family: var(--openbitfun-type-flow-micro-font-family);
   font-size: var(--openbitfun-type-flow-micro-font-size);
-  font-weight: var(--openbitfun-type-heading-page-font-weight);
-  letter-spacing: var(--openbitfun-type-modifier-tracking-wider-letter-spacing);
-  text-transform: uppercase;
+  font-weight: var(--openbitfun-type-flow-micro-font-weight);
+  line-height: var(--openbitfun-type-flow-micro-line-height);
+  letter-spacing: var(--openbitfun-type-flow-micro-letter-spacing);
 }
 
 .rich-text-tag-pill__badge--icon {
-  min-width: 18px;
-  padding: 0 3px;
-  background: transparent;
-  letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
-  text-transform: none;
-
-  svg {
-    width: 12px;
-    height: 12px;
-    stroke: currentColor;
-    fill: none;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    flex-shrink: 0;
-  }
+  min-width: var(--openbitfun-control-icon-size-xs);
+  color: inherit;
 }
 
 .rich-text-tag-pill__text--widget-ref {
-  font-family: var(--openbitfun-type-body-sm-font-family);
   max-width: 260px;
 }
 
@@ -269,33 +185,35 @@
 
 .rich-text-tag-pill__remove {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: var(--openbitfun-space-4);
+  height: var(--openbitfun-space-4);
   padding: 0;
   margin: 0;
   border: none;
   background: transparent;
-  color: currentColor;
-  opacity: 0.6;
-  font-size: var(--openbitfun-type-flow-section-title-font-size);
+  color: var(--openbitfun-color-content-muted);
+  font-family: inherit;
+  font-size: var(--openbitfun-type-body-md-font-size);
+  font-weight: inherit;
   line-height: var(--openbitfun-type-modifier-leading-none-line-height);
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: var(--openbitfun-radius-pill);
   transition:
-    transform 120ms cubic-bezier(0.23, 1, 0.32, 1),
-    opacity 120ms ease;
+    background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+    color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   
   &:hover {
-    background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 20%, transparent);
-    opacity: 1;
+    background: var(--openbitfun-color-action-neutral-surface-hover);
+    color: var(--openbitfun-color-content-primary);
   }
   
   &:focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--openbitfun-color-accent-hover) 40%, transparent);
-    outline-offset: 1px;
-    opacity: 1;
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: var(--openbitfun-focus-offset);
+    color: var(--openbitfun-color-content-primary);
   }
 }
 

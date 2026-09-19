@@ -67,10 +67,6 @@
     z-index: var(--openbitfun-layer-popover);
   }
 
-  &__local-section > [data-openbitfun-part='section-items'] {
-    gap: calc(var(--openbitfun-space-1) / 2);
-  }
-
   &__option-row {
     min-height: var(--openbitfun-control-height-md);
 

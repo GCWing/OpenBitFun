@@ -17,7 +17,7 @@ describe('ModelSelector portal layer', () => {
       /&__dropdown\s*\{(?<body>[\s\S]*?)\n\s*\}/,
     )?.groups?.body;
 
-    expect(component).toContain('createPortal(');
+    expect(component).toContain('createOverlayPortal(');
     expect(component).not.toContain('document.body');
     expect(dropdownBlock).toContain('z-index: var(--openbitfun-layer-popover);');
     expect(dropdownBlock).not.toContain('z-index: var(--openbitfun-layer-dropdown);');

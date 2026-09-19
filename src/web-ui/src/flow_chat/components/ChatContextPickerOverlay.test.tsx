@@ -220,7 +220,7 @@ describe('ChatContextPicker overlay', () => {
     });
 
     const picker = document.querySelector<HTMLElement>('.chat-context-picker--overlay');
-    expect(picker?.parentElement?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
+    expect(picker?.closest('[data-openbitfun-overlay-host]')?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
     expect(picker?.style.visibility).toBe('visible');
     expect(workspaceAPI.explorerGetChildren).toHaveBeenCalledWith(
       'workspace-id',

@@ -31,6 +31,9 @@ vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: vi.fn() },
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
+  useI18n: () => ({ t: (key: string) => key, formatNumber: (value: number) => String(value) }),
+}));
 vi.mock('@/infrastructure/peer-device/peerDeviceContextState', () => ({
   usePeerDeviceModeOptional: () => ({
     peerMode: peerState.active
@@ -143,6 +146,196 @@ describe('McpToolsConfig remote behavior', () => {
 
     expect(getServersMock).toHaveBeenCalledTimes(1);
     expect(loadJsonConfigMock).toHaveBeenCalledTimes(1);
+  });
+
+  async function changeField(field: string, value: string) {
+    await act(async () => {
+      const input = document.querySelector<HTMLInputElement>(`input[data-mcp-field="${field}"]`)!;
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  async function changeTextarea(testId: string, value: string) {
+    await act(async () => {
+      const input = document.querySelector<HTMLTextAreaElement>(`[data-testid="${testId}"]`)!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  it('adds a disabled server through the form against the original snapshot', async () => {
+    peerState.active = false;
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-add-server"]')!.click());
+    await changeField('name', 'Team Docs');
+    await changeField('url', 'https://example.test/mcp');
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-form-save"]')!.click());
+    expect(saveJsonConfigMock).toHaveBeenCalledTimes(1);
+    expect(saveJsonConfigMock.mock.calls[0][1]).toBe('sha256:test');
+    expect(JSON.parse(saveJsonConfigMock.mock.calls[0][0]).mcpServers['team-docs']).toMatchObject({
+      name: 'Team Docs', url: 'https://example.test/mcp', transport: 'streamable-http', enabled: false,
+    });
+    expect(startServerMock).not.toHaveBeenCalled();
+    expect(document.querySelector('[data-testid="mcp-form-save"]')).toBeNull();
+  });
+
+  it('keeps a form draft and its fingerprint when another surface changes configuration', async () => {
+    peerState.active = false;
+    saveJsonConfigMock.mockRejectedValue(new Error('User MCP configuration changed before write'));
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-add-server"]')!.click());
+    await changeField('name', 'My draft');
+    await changeField('url', 'https://example.test/mcp');
+    await act(async () => { globalEventBus.emit(MCP_CONFIG_CHANGED, { surfaceId: 'local' }); });
+    expect(loadJsonConfigMock).toHaveBeenCalledTimes(1);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-form-save"]')!.click());
+    expect(saveJsonConfigMock.mock.calls[0][1]).toBe('sha256:test');
+    expect(document.querySelector<HTMLInputElement>('[data-mcp-field="name"]')!.value).toBe('My draft');
+    expect(document.body.textContent).toContain('visual.saveFailed');
+    expect(notificationMocks.success).not.toHaveBeenCalled();
+  });
+
+  it('opens advanced JSON from an unfinished form and saves a new server disabled', async () => {
+    peerState.active = false;
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-add-server"]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-switch-editor"]')!.click());
+    expect(document.querySelector('[data-testid="mcp-server-json"]')).not.toBeNull();
+    await changeField('id', 'advanced-service');
+    await changeTextarea('mcp-server-json', '{"command":"server","enabled":true,"future":{"preserve":true}}');
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-form-save"]')!.click());
+    expect(JSON.parse(saveJsonConfigMock.mock.calls[0][0]).mcpServers['advanced-service']).toEqual({
+      command: 'server', enabled: false, future: { preserve: true },
+    });
+    expect(startServerMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves JSON-only fields and hidden credentials after returning to the form', async () => {
+    peerState.active = false;
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-add-server"]')!.click());
+    await changeField('name', 'New service');
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-switch-editor"]')!.click());
+    await changeField('id', 'custom-service');
+    await changeTextarea('mcp-server-json', '{"command":"server","env":{"KEY":"secret"},"enabled":true,"future":[1,2]}');
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-switch-editor"]')!.click());
+    expect(document.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe('');
+    await changeField('name', 'Updated name');
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-form-save"]')!.click());
+    expect(JSON.parse(saveJsonConfigMock.mock.calls[0][0]).mcpServers['custom-service']).toEqual({
+      name: 'Updated name', command: 'server', env: { KEY: 'secret' }, enabled: false, future: [1, 2],
+    });
+  });
+
+  it('retains advanced fields when collapsed and reopens them to focus a validation error', async () => {
+    peerState.active = false;
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-add-server"]')!.click());
+    await changeField('name', 'Docs');
+    await changeField('url', 'https://example.test/mcp');
+    const advanced = document.querySelector('.mcp-config-editor__advanced')!;
+    const trigger = advanced.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    const region = document.getElementById(trigger.getAttribute('aria-controls')!)!;
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(region.hasAttribute('inert')).toBe(true);
+    await act(async () => trigger.click());
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(region.hasAttribute('inert')).toBe(false);
+    await changeField('startupSeconds', '0');
+    await act(async () => trigger.click());
+    const timeout = document.querySelector<HTMLInputElement>('[data-mcp-field="startupSeconds"]')!;
+    expect(timeout.value).toBe('0');
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    vi.useFakeTimers();
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-form-save"]')!.click());
+    await act(async () => vi.advanceTimersByTime(20));
+    expect(trigger.getAttribute('aria-expanded')).toBe('true');
+    expect(region.hasAttribute('inert')).toBe(false);
+    expect(document.activeElement).toBe(timeout);
+    expect(saveJsonConfigMock).not.toHaveBeenCalled();
+  });
+
+  it('edits one service without changing another server, unknown fields, or its identity', async () => {
+    peerState.active = false;
+    const entry = { command: 'original', env: { SECRET: 'keep' }, future: { preserve: true } };
+    loadJsonConfigMock.mockResolvedValue({ jsonConfig: JSON.stringify({ mcpServers: { native: entry, other: { command: 'other' } } }), fingerprint: 'sha256:edit' });
+    getServersMock.mockResolvedValue([{ id: 'native', name: 'native', status: 'Stopped', serverType: 'local', transport: 'stdio', enabled: true, autoStart: false, startSupported: true }]);
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-edit-server"]')!.click());
+    expect(document.querySelector<HTMLInputElement>('input[type="password"]')!.value).toBe('');
+    await changeField('name', 'New display name');
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-form-save"]')!.click());
+    expect(JSON.parse(saveJsonConfigMock.mock.calls[0][0])).toEqual({ mcpServers: {
+      native: { ...entry, name: 'New display name' }, other: { command: 'other' },
+    } });
+  });
+
+  it('imports only previewed selections and does not start imported programs', async () => {
+    peerState.active = false;
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-import-config"]')!.click());
+    await act(async () => {
+      const input = document.querySelector<HTMLTextAreaElement>('[data-testid="mcp-import-input"]')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, '{"mcpServers":{"tools":{"command":"npx","args":["example"],"enabled":true}}}');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(document.querySelector<HTMLButtonElement>('[data-testid="mcp-form-save"]')!.disabled).toBe(true);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-import-preview"]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-form-save"]')!.click());
+    expect(JSON.parse(saveJsonConfigMock.mock.calls[0][0]).mcpServers.tools.enabled).toBe(false);
+    expect(startServerMock).not.toHaveBeenCalled();
+  });
+
+  it('clears an import conflict after changing the target ID without overwriting the existing service', async () => {
+    peerState.active = false;
+    loadJsonConfigMock.mockResolvedValue({
+      jsonConfig: '{"mcpServers":{"docs":{"command":"original"}}}', fingerprint: 'sha256:import',
+    });
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-import-config"]')!.click());
+    await changeTextarea('mcp-import-input', '{"mcpServers":{"docs":{"command":"new"}}}');
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-import-preview"]')!.click());
+    await act(async () => document.querySelector<HTMLInputElement>('.mcp-config-editor input[type="checkbox"]')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-form-save"]')!.click());
+    expect(saveJsonConfigMock).not.toHaveBeenCalled();
+    expect(document.querySelector('.mcp-config-editor [role="alert"]')?.textContent).toBe('visual.errors.idConflict');
+    await changeField('id', 'separate-docs');
+    expect(document.querySelector('.mcp-config-editor [role="alert"]')).toBeNull();
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-testid="mcp-form-save"]')!.click());
+    expect(JSON.parse(saveJsonConfigMock.mock.calls[0][0]).mcpServers).toEqual({
+      docs: { command: 'original' }, 'separate-docs': { command: 'new', enabled: false },
+    });
+  });
+
+  it('retains pasted import content when reading a file fails', async () => {
+    peerState.active = false;
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-import-config"]')!.click());
+    const pasted = '{"mcpServers":{"docs":{"command":"server"}}}';
+    await changeTextarea('mcp-import-input', pasted);
+    const file = new File([''], 'unreadable.json', { type: 'application/json' });
+    Object.defineProperty(file, 'text', { value: () => Promise.reject(new Error('Read failed')) });
+    await act(async () => {
+      const picker = document.querySelector<HTMLInputElement>('.mcp-config-editor input[type="file"]')!;
+      Object.defineProperty(picker, 'files', { value: [file] });
+      picker.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    expect(document.querySelector<HTMLTextAreaElement>('[data-testid="mcp-import-input"]')!.value).toBe(pasted);
+    expect(document.querySelector('.mcp-config-editor [role="alert"]')?.textContent).toBe('visual.fileReadFailed');
+    expect(saveJsonConfigMock).not.toHaveBeenCalled();
+  });
+
+  it('drops the local form when the controlled device changes', async () => {
+    peerState.active = false;
+    await act(async () => root.render(<McpToolsConfig />));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="mcp-add-server"]')!.click());
+    await changeField('name', 'Local draft');
+    peerState.active = true;
+    await act(async () => root.render(<McpToolsConfig />));
+    expect(document.querySelector('[data-testid="mcp-form-save"]')).toBeNull();
+    expect(container.textContent).toContain('section.serverList.remoteUnavailable');
+    expect(saveJsonConfigMock).not.toHaveBeenCalled();
   });
 
   it('ignores a desktop MCP load that finishes after switching to a remote connection', async () => {

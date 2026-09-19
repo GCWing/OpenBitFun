@@ -11,10 +11,9 @@
  */
 
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Circle, Shield, ShieldAlert, ShieldCheck, Square, SquareCheck } from 'lucide-react';
-import { OverflowText, Menu, MenuItem, MenuSection, MenuSeparator } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Menu, MenuItem, MenuSection, MenuSeparator } from '@openbitfun/ui';
 import { Tooltip, Icon } from '@openbitfun/ui';
 import { BranchQuickSwitch } from '@/tools/git/components/BranchQuickSwitch';
 import { useGitState } from '@/tools/git/hooks/useGitState';
@@ -286,6 +285,8 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
   }, [permissionMenuOpen, permissionMenuView]);
 
   useEffect(() => {
+    let removeOverlayPointerdown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     if (!permissionMenuOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -310,11 +311,11 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
       }
     };
 
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
+    removeOverlayPointerdown0 = subscribeOverlayInteraction(permissionMenuRef, 'pointerdown', handlePointerDown);
+    removeOverlayKeydown1 = subscribeOverlayInteraction(permissionMenuRef, 'keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
+      removeOverlayPointerdown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [
     closePermissionMenu,
@@ -324,6 +325,8 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
   ]);
 
   useEffect(() => {
+    let removeOverlayPointerdown2: (() => void) | undefined;
+    let removeOverlayKeydown3: (() => void) | undefined;
     if (!workspaceMenuOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -341,11 +344,11 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
       }
     };
 
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
+    removeOverlayPointerdown2 = subscribeOverlayInteraction(workspaceMenuRef, 'pointerdown', handlePointerDown);
+    removeOverlayKeydown3 = subscribeOverlayInteraction(workspaceMenuRef, 'keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
+      removeOverlayPointerdown2?.();
+      removeOverlayKeydown3?.();
     };
   }, [workspaceMenuOpen]);
 
@@ -584,7 +587,7 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
             <span className="openbitfun-chat-input-workspace-strip__workspace-name"><OverflowText>{label}</OverflowText></span>
           </button>
         </Tooltip>
-        {workspaceMenuOpen ? createPortal(
+        {workspaceMenuOpen ? createOverlayPortal(
           <Menu
             ref={workspaceMenuRef}
             data-openbitfun-component="chat-input-workspace-strip"
@@ -898,7 +901,7 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
               </button>
             </Tooltip>
 
-            {permissionMenuOpen && permissionMode !== 'acp' ? createPortal(
+            {permissionMenuOpen && permissionMode !== 'acp' ? createOverlayPortal(
               <Menu
                 ref={permissionMenuRef}
                 data-openbitfun-component="chat-input-workspace-strip"

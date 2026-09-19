@@ -1,7 +1,6 @@
 import type { VirtualItem } from '../../store/modernFlowChatStore';
-import { getToolCardConfig } from '../../tool-cards/toolCardMetadata';
+import { getToolItemCardConfig } from '../../tool-cards/toolCardMetadata';
 import type { FlowToolItem } from '../../types/flow-chat';
-import { getEffectiveToolName } from '../../utils/toolInvocationIdentity';
 
 function boundaryToolItem(
   item: VirtualItem | undefined,
@@ -22,7 +21,7 @@ function boundaryToolItem(
 function isAmbientTool(toolItem: FlowToolItem | undefined): boolean {
   return Boolean(
     toolItem
-    && getToolCardConfig(getEffectiveToolName(toolItem)).attention === 'ambient'
+    && getToolItemCardConfig(toolItem).attention === 'ambient'
   );
 }
 

@@ -470,7 +470,7 @@ describe('FlowChatHeader', () => {
 
     const panel = document.querySelector<HTMLElement>('.flowchat-header__session-overview-panel');
     expect(commandSection?.textContent).toContain('flowChatHeader.backgroundCommandEmpty');
-    expect(panel?.parentElement?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
+    expect(panel?.closest('[data-openbitfun-overlay-host]')?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
     expect(panel?.style.visibility).toBe('visible');
     expect(panel?.hasAttribute('data-openbitfun-view')).toBe(false);
   });

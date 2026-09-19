@@ -243,6 +243,11 @@ test("Menu tokens preserve the compact grouped surface contract", async () => {
   assert.equal(tokens["overlay.menu.maxBlockSize"], "480px");
   assert.equal(tokens["overlay.menu.headingHeight"], "24px");
   assert.equal(tokens["overlay.menu.itemHeight"], "30px");
+  for (const mode of tokenModes) {
+    assert.equal(tokenCatalog.find(token => token.name === "overlay.menu.rowGap").values[mode], "2px");
+  }
+  assert.notEqual(tokens["overlay.menu.rowGap"], tokens["overlay.menu.itemGap"]);
+  assert.notEqual(tokens["overlay.menu.rowGap"], tokens["overlay.menu.sectionGap"]);
   assert.equal(tokens["overlay.menu.itemIconSize"], "14px");
   assert.equal(systemDocument.overlay.menu.surfacePadding.$value, "{space.2}");
   assert.equal(systemDocument.overlay.menu.surfaceRadius.$value, "{radius.xl}");

@@ -7,8 +7,7 @@ import { requireSessionWorkspaceId } from '@/flow_chat/utils/sessionWorkspace';
  */
 
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { Button, Icon, IconButton, Input, Menu, MenuItem, OverflowText, Tooltip } from '@openbitfun/ui';
-import { createPortal } from 'react-dom';
+import { subscribeOverlayInteraction, createOverlayPortal, Button, Icon, IconButton, Input, Menu, MenuItem, OverflowText, Tooltip } from '@openbitfun/ui';
 import { Loader2, Archive, ListChecks } from 'lucide-react';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { useI18n } from '@/infrastructure/i18n';
@@ -687,6 +686,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   }, []);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
     if (!openMenuSessionId) return;
     const handleOutside = (event: MouseEvent) => {
       if (!sessionMenuPopoverRef.current?.contains(event.target as Node)
@@ -694,8 +694,8 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         closeSessionMenu();
       }
     };
-    document.addEventListener('mousedown', handleOutside);
-    return () => document.removeEventListener('mousedown', handleOutside);
+    removeOverlayMousedown0 = subscribeOverlayInteraction(sessionMenuPopoverRef, 'mousedown', handleOutside);
+    return () => removeOverlayMousedown0?.();
   }, [closeSessionMenu, openMenuSessionId]);
 
   const updateContextSessionMenuPosition = useCallback(() => {
@@ -1770,7 +1770,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
                       </button>
                     </div>
                   </div>
-                  {openMenuSessionId === session.sessionId && createPortal(
+                  {openMenuSessionId === session.sessionId && createOverlayPortal(
                     <Menu
                       ref={sessionMenuPopoverRef}
                       className="openbitfun-nav-panel__inline-item-menu-popover"

@@ -74,11 +74,8 @@ class NotificationService {
     notificationStore.addNotification(notification);
 
     
-    if (notification.duration && notification.duration > 0) {
-      setTimeout(() => {
-        this.dismiss(id);
-      }, notification.duration);
-    }
+    // Presentation owns the timeout. A queued toast must not expire before
+    // it has appeared, including while a modal keeps the notification inert.
 
     return id;
   }

@@ -1,12 +1,9 @@
 import { File as LucideFile } from 'lucide-react';
-import React, { useEffect, useCallback, useRef } from 'react';
-import { OverflowText, Button, Icon, IconButton, Tooltip } from '@openbitfun/ui';
-import { createPortal } from 'react-dom';
+import React, { useCallback, useRef } from 'react';
+import { createOverlayPortal, OverflowText, Button, Icon, IconButton, Tooltip } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
-;
 import { RetainedMountBoundary } from '@/shared/presence';
 import { useI18n } from '@/infrastructure/i18n';
-import { isImeOwnedKeyboardEvent } from '@/shared/utils/ime';
 import { DiffEditor } from '../../../tools/editor';
 import './DiffFullscreenViewer.css';
 
@@ -36,6 +33,7 @@ export const DiffFullscreenViewer: React.FC<DiffFullscreenViewerProps> = ({
   loading = false
 }) => {
   const { t } = useI18n('components');
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const retainedContentRef = useRef({
     filePath,
     originalContent,
@@ -53,26 +51,6 @@ export const DiffFullscreenViewer: React.FC<DiffFullscreenViewerProps> = ({
   }
 
   const retainedContent = retainedContentRef.current;
-  // Close on Escape
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && !isImeOwnedKeyboardEvent(e)) {
-        onClose();
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-      // Disable page scrolling
-      document.body.style.overflow = 'hidden';
-    }
-
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = '';
-    };
-  }, [isOpen, onClose]);
-
   const handleBackdropClick = useCallback((e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
       onClose();
@@ -91,7 +69,7 @@ export const DiffFullscreenViewer: React.FC<DiffFullscreenViewerProps> = ({
       data-openbitfun-component="diff-fullscreen-viewer"
       data-openbitfun-part="overlay"
     >
-      <div className="diff-fullscreen-container" data-openbitfun-component="diff-fullscreen-viewer" data-openbitfun-part="container">
+      <div ref={surfaceRef} role="dialog" aria-modal="true" aria-label={fileName} tabIndex={-1} className="diff-fullscreen-container" data-openbitfun-component="diff-fullscreen-viewer" data-openbitfun-part="container">
         {/* Top toolbar */}
         <div className="diff-fullscreen-header" data-openbitfun-component="diff-fullscreen-viewer" data-openbitfun-part="header">
           <div className="file-info" data-openbitfun-component="diff-fullscreen-viewer" data-openbitfun-part="fileInfo">
@@ -165,10 +143,11 @@ export const DiffFullscreenViewer: React.FC<DiffFullscreenViewerProps> = ({
     </div>
   );
 
-  return createPortal(
+  return (
     <RetainedMountBoundary present={isOpen}>
-      {fullscreenContent}
-    </RetainedMountBoundary>,
-    getAppearanceOverlayHost(),
+      {createOverlayPortal(fullscreenContent, getAppearanceOverlayHost(), null, {
+        modal: true, open: isOpen, surfaceRef, onDismiss: onClose,
+      })}
+    </RetainedMountBoundary>
   );
 };

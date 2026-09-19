@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="-0.5714 1.4286 257.1429 257.1429" role="img" aria-labelledby="avatar-title-07">
+  <title id="avatar-title-07">tangerine joystick avatar</title>
+  <rect x="116" y="64" width="24" height="30" rx="12" fill="#D18A49"/>
+  <path d="M128 78C189 78 236 116 236 169C236 214 213 238 176 238H80C43 238 20 214 20 169C20 116 67 78 128 78Z" transform="matrix(1.04 0 0 0.975 -5.12 5.95)" fill="#F1A554"/>
+  <circle cx="128" cy="47" r="25" fill="#BB6035"/>
+  <g fill="#703E27">
+    <ellipse cx="100" cy="164" rx="10" ry="16"/>
+    <ellipse cx="156" cy="164" rx="10" ry="16"/>
+  </g>
+  <path d="M119 186Q128 197 137 186" fill="none" stroke="#703E27" stroke-width="8" stroke-linecap="round"/>
+</svg>

@@ -738,7 +738,7 @@ const CollectionPicker = forwardRef<HTMLDivElement, PickerProps>(function Collec
         </span>
       ) : null}
       {popover && (
-        <Portal ownerDocument={triggerRef.current?.ownerDocument}>
+        <Portal ownerDocument={triggerRef.current?.ownerDocument} ownerRef={triggerRef} open={resolvedOpen}>
           {popover}
         </Portal>
       )}

@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import {
   FolderPlus,
   Gamepad2,
@@ -24,7 +23,7 @@ import {
   type MarketPackageInspection,
 } from '@/infrastructure/api/service-api/MiniAppMarketAPI';
 import { createLogger } from '@/shared/utils/logger';
-import {
+import { subscribeOverlayInteraction, createOverlayPortal,
   ConfirmDialog,
   Icon,
   IconButton,
@@ -106,6 +105,8 @@ const MiniAppGalleryView: React.FC<MiniAppGalleryViewProps> = ({ tabs }) => {
   const closeImportMenu = useCallback(() => setImportMenuOpen(false), []);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     if (!importMenuOpen) return;
 
     const handlePointerDown = (event: MouseEvent) => {
@@ -124,11 +125,11 @@ const MiniAppGalleryView: React.FC<MiniAppGalleryViewProps> = ({ tabs }) => {
       requestAnimationFrame(() => importTriggerRef.current?.focus());
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape, true);
+    removeOverlayMousedown0 = subscribeOverlayInteraction(importMenuRef, 'mousedown', handlePointerDown);
+    removeOverlayKeydown1 = subscribeOverlayInteraction(importMenuRef, 'keydown', handleEscape);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape, true);
+      removeOverlayMousedown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [closeImportMenu, importMenuOpen]);
 
@@ -450,7 +451,7 @@ const MiniAppGalleryView: React.FC<MiniAppGalleryViewProps> = ({ tabs }) => {
                 data-testid="miniapp-import-action"
                 icon={<Icon name="plus" size="sm" />}
               />
-              {importMenuOpen ? createPortal(
+              {importMenuOpen ? createOverlayPortal(
                 <Menu
                   ref={importMenuRef}
                   className="miniapp-gallery__import-menu"

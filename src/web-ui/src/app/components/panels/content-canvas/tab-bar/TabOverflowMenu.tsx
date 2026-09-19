@@ -7,8 +7,7 @@
  */
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { Button, IconButton, OverflowText, Icon, KeyHint, Menu, MenuItem, MenuSeparator, Tooltip } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, Button, IconButton, OverflowText, Icon, KeyHint, Menu, MenuItem, MenuList, MenuSeparator, Tooltip } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { LayoutGrid } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -80,6 +79,7 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
 
   // Close menu on outside click
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
     if (!isOpen) return;
 
     const handleClickOutside = (event: MouseEvent) => {
@@ -96,12 +96,12 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
 
     // Delay listener to avoid triggering the current click
     const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
+      removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handleClickOutside);
     }, 0);
 
     return () => {
       clearTimeout(timer);
-      document.removeEventListener('mousedown', handleClickOutside);
+      removeOverlayMousedown0?.();
     };
   }, [isOpen]);
 
@@ -195,7 +195,7 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
         )}
       </Tooltip>
 
-      {isOpen && hasOverflow && createPortal(
+      {isOpen && hasOverflow && createOverlayPortal(
         <Menu
           ref={menuRef}
           className="canvas-tab-overflow-menu"
@@ -223,7 +223,7 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
           )}
 
           {/* Overflow tab list */}
-          <div className="canvas-tab-overflow-menu__list">
+          <MenuList className="canvas-tab-overflow-menu__list">
             {overflowTabs.map((tab) => {
               const deletedSuffix = tab.fileDeletedFromDisk ? ` - ${t('tabs.fileDeleted')}` : '';
               const titleWithDeleted = `${tab.title}${deletedSuffix}`;
@@ -266,7 +266,7 @@ export const TabOverflowMenu: React.FC<TabOverflowMenuProps> = ({
               </MenuItem>
             );
             })}
-          </div>
+          </MenuList>
         </Menu>,
         getAppearanceOverlayHost()
       )}

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 
-const lockCounts = new WeakMap<Document, number>();
-const previousOverflow = new WeakMap<Document, string>();
+const SCROLL_LOCK = Symbol.for("openbitfun.overlay-scroll-lock.v1");
+interface ScrollLockState { count: number; previousOverflow: string }
 
 export function useScrollLock(active: boolean, ownerDocument?: Document | null): void {
   useEffect(() => {
@@ -10,22 +10,22 @@ export function useScrollLock(active: boolean, ownerDocument?: Document | null):
       ?? (typeof document === "undefined" ? null : document);
     if (!documentOwner) return;
 
-    const nextCount = (lockCounts.get(documentOwner) ?? 0) + 1;
-    if (nextCount === 1) {
-      previousOverflow.set(documentOwner, documentOwner.body.style.overflow);
+    // Separate public entry bundles must not restore overflow while another
+    // bundle still owns a modal in this same document.
+    const sharedDocument = documentOwner as Document & { [SCROLL_LOCK]?: ScrollLockState };
+    if (!sharedDocument[SCROLL_LOCK]) {
+      Object.defineProperty(sharedDocument, SCROLL_LOCK, { value: { count: 0, previousOverflow: "" } });
+    }
+    const state = sharedDocument[SCROLL_LOCK]!;
+    if (state.count === 0) {
+      state.previousOverflow = documentOwner.body.style.overflow;
       documentOwner.body.style.overflow = "hidden";
     }
-    lockCounts.set(documentOwner, nextCount);
+    state.count += 1;
 
     return () => {
-      const count = Math.max(0, (lockCounts.get(documentOwner) ?? 1) - 1);
-      if (count === 0) {
-        documentOwner.body.style.overflow = previousOverflow.get(documentOwner) ?? "";
-        previousOverflow.delete(documentOwner);
-        lockCounts.delete(documentOwner);
-      } else {
-        lockCounts.set(documentOwner, count);
-      }
+      state.count = Math.max(0, state.count - 1);
+      if (state.count === 0) documentOwner.body.style.overflow = state.previousOverflow;
     };
   }, [active, ownerDocument]);
 }

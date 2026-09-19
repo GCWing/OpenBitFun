@@ -9,8 +9,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { createPortal } from 'react-dom';
-import { OverflowText,
+import { createOverlayPortal, OverflowText,
   Button,
   Icon,
   Input,
@@ -538,7 +537,7 @@ export const BranchQuickSwitch: React.FC<BranchQuickSwitchProps> = ({
 
   return (
     <>
-      {popover && createPortal(
+      {popover && createOverlayPortal(
         <div
           ref={layerRef}
           className="branch-quick-switch__layer"

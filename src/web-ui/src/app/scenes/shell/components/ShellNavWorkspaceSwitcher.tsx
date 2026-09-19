@@ -1,8 +1,6 @@
 import React from 'react';
-import { createPortal } from 'react-dom';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
-;
-import { OverflowText, Icon, Menu, MenuItem, Tooltip } from '@openbitfun/ui';
+import { createOverlayPortal, OverflowText, Icon, Menu, MenuItem, Tooltip } from '@openbitfun/ui';
 import { WorkspaceKind, type WorkspaceInfo } from '@/shared/types';
 
 interface ShellNavWorkspaceSwitcherProps {
@@ -65,7 +63,7 @@ const ShellNavWorkspaceSwitcher: React.FC<ShellNavWorkspaceSwitcherProps> = ({
       </Tooltip>
 
       {workspaceMenuOpen && hasMultipleWorkspaces && workspaceMenuPosition
-        ? createPortal(
+        ? createOverlayPortal(
             <Menu
               ref={workspaceMenuRef}
               className="openbitfun-shell-nav__workspace-menu"

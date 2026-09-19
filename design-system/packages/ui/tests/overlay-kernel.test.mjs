@@ -38,7 +38,7 @@ test("DesignSystemProvider is the single locale, theme, portal and layer-stack h
 test("the overlay kernel centralizes portal, stack, dismissal, focus, scroll lock and presence", async () => {
   const files = await Promise.all([
     "../src/overlay/Portal.tsx",
-    "../src/overlay/LayerStack.ts",
+    "../src/overlay/OverlayCoordinator.ts",
     "../src/overlay/useDismissibleLayer.ts",
     "../src/overlay/useFocusScope.ts",
     "../src/overlay/useScrollLock.ts",
@@ -47,10 +47,13 @@ test("the overlay kernel centralizes portal, stack, dismissal, focus, scroll loc
 
   assert.match(files[0], /createPortal/);
   assert.match(files[1], /class OverlayLayerStack/);
-  assert.match(files[2], /pointerdown/);
-  assert.match(files[2], /Escape/);
-  assert.match(files[3], /FOCUSABLE_SELECTOR/);
-  assert.match(files[4], /lockCounts/);
+  assert.match(files[1], /pointerdown/);
+  assert.match(files[1], /Escape/);
+  assert.match(files[2], /stack.register/);
+  assert.match(files[1], /FOCUSABLE_SELECTOR/);
+  assert.match(files[3], /registerFocusScope/);
+  assert.match(files[4], /Symbol.for\("openbitfun.overlay-scroll-lock.v1"\)/);
+  assert.match(files[1], /Symbol.for\("openbitfun.overlay-coordinator.v1"\)/);
   assert.match(files[5], /PresenceState/);
 });
 
@@ -67,7 +70,7 @@ test("overlay components consume the shared kernel instead of owning document di
     assert.doesNotMatch(source, /addEventListener\("mousedown"/);
   }
   assert.match(dialog, /useFocusScope/);
-  assert.match(dialog, /useScrollLock/);
+  assert.match(dialog, /preventScroll=\{preventScroll\}/);
   assert.match(dialog, /usePresence/);
   assert.match(tooltip, /<Portal/);
 });

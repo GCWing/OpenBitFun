@@ -5,9 +5,8 @@
  */
 
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { Keyboard, Square } from 'lucide-react';
-import { OverflowText, Icon, IconButton, Menu, MenuItem, SearchField, Switch, Tooltip } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, IconButton, Menu, MenuItem, SearchField, Switch, Tooltip } from '@openbitfun/ui';
 import { SceneChromeContribution } from '@/app/components/SceneTopBar/SceneChrome';
 import { useSceneChromeContext } from '@/app/components/SceneTopBar/sceneChromeContext';
 import { useTranslation } from 'react-i18next';
@@ -261,6 +260,8 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
   }, []);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     if (!isSessionOverviewOpen) return;
 
     const handlePointerDown = (event: MouseEvent) => {
@@ -283,12 +284,12 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
       }
     };
 
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
+    removeOverlayMousedown0 = subscribeOverlayInteraction(sessionOverviewPanelRef, 'mousedown', handlePointerDown);
+    removeOverlayKeydown1 = subscribeOverlayInteraction(sessionOverviewPanelRef, 'keydown', handleKeyDown);
 
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
+      removeOverlayMousedown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [closeSessionOverview, isSessionOverviewOpen]);
 
@@ -495,7 +496,7 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
             icon={<Icon name="more" size="lg" style={{ width: 13, height: 13 }} aria-hidden="true" />}
           />
         </Tooltip>
-        {openBackgroundCommandMenuId === command.execSessionKey && backgroundCommandMenuPosition ? createPortal(
+        {openBackgroundCommandMenuId === command.execSessionKey && backgroundCommandMenuPosition ? createOverlayPortal(
           <Menu
             ref={backgroundCommandMenuRef}
             className="flowchat-header__background-command-menu flowchat-header__background-command-menu--portal"
@@ -727,7 +728,7 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
             />
           </Tooltip>
 
-          {isSessionOverviewOpen && createPortal(
+          {isSessionOverviewOpen && createOverlayPortal(
             <div
               ref={sessionOverviewPanelRef}
               className="flowchat-header__session-overview-panel"
@@ -838,7 +839,7 @@ export const FlowChatHeader: React.FC<FlowChatHeaderProps> = ({
                           />
                         </Tooltip>
                       ) : null}
-                      {isBackgroundCommandSectionMenuOpen && backgroundCommandMenuPosition ? createPortal(
+                      {isBackgroundCommandSectionMenuOpen && backgroundCommandMenuPosition ? createOverlayPortal(
                         <Menu
                           ref={backgroundCommandMenuRef}
                           className="flowchat-header__background-command-menu flowchat-header__background-command-menu--portal"

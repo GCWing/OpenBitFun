@@ -4,10 +4,9 @@
  */
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, FolderPlus } from 'lucide-react';
-import { Button, Menu, MenuItem, MenuSeparator, Icon, PageHeader } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, Button, Menu, MenuItem, MenuSeparator, Icon, PageHeader } from '@openbitfun/ui';
 import { useApp } from '../../app/hooks/useApp';
 import { createLogger } from '@/shared/utils/logger';
 import { useWorkspaceContext } from '@/infrastructure/contexts/WorkspaceContext';
@@ -180,6 +179,8 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   }, [gitState, handleGitClick, t]);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     if (!workspaceDropdownOpen) return;
     const handlePointerDown = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -197,11 +198,11 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
       setWorkspaceDropdownOpen(false);
       workspaceTriggerRef.current?.focus();
     };
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
+    removeOverlayMousedown0 = subscribeOverlayInteraction(workspaceMenuRef, 'mousedown', handlePointerDown);
+    removeOverlayKeydown1 = subscribeOverlayInteraction(workspaceMenuRef, 'keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
+      removeOverlayMousedown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [workspaceDropdownOpen]);
 
@@ -310,7 +311,7 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
                       >
                         {currentWorkspace?.name || t('shared:features.workspace')}
                       </Button>
-                      {workspaceDropdownOpen && createPortal(
+                      {workspaceDropdownOpen && createOverlayPortal(
                         <Menu
                           ref={workspaceMenuRef}
                           data-openbitfun-product-component="welcome-panel"

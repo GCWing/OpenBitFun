@@ -10,10 +10,9 @@
  * use the ordinary `var(--openbitfun-layer-dropdown)` level, which reads as a dead control: the menu
  * opens behind the panel, and the panel's own backdrop takes the clicks.
  *
- * So the host itself takes one level, above every container that hosts app UI
- * and below the chrome that must outrank overlays (notifications, context
- * menus). Overlay z-indexes then only order overlays against each other, inside
- * this stacking context.
+ * The host sits above app content. Every independently painted overlay,
+ * including notifications and context menus, gets its rank from the document's
+ * design-system coordinator. Product CSS must not rank overlay categories.
  *
  * The box mirrors the initial containing block the host used to sit in, so
  * absolutely positioned overlays resolve against the same rect as before.

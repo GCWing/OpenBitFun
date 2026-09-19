@@ -1,11 +1,10 @@
 /**
  * About dialog component.
- * Shows product identity, build metadata, license, app-update status, and the
+ * Shows product identity, build metadata, license, and the
  * persistent GitHub repository entry point.
  */
 
 import {
-  Alert,
   Button,
   FieldGroup,
   FieldRow,
@@ -27,11 +26,7 @@ import {
 } from '@/shared/utils/version';
 import { createLogger } from '@/shared/utils/logger';
 import { systemAPI } from '@/infrastructure/api';
-import type { CheckForUpdatesResponse } from '@/infrastructure/api/service-api/SystemAPI';
-import { canCheckForAppUpdates, isTauriRuntime } from '@/infrastructure/update/tauriEnv';
-import { UpdateAvailableDialog } from '@/infrastructure/update/UpdateAvailableDialog';
-import { useUpdateInstallStore } from '@/infrastructure/update/updateInstallStore';
-import { formatUpdateInstallError } from '@/infrastructure/update/updateErrorMessage';
+import { isTauriRuntime } from '@/infrastructure/update/tauriEnv';
 import { AboutBrandMark } from './AboutBrandMark';
 import './AboutDialog.scss';
 
@@ -51,34 +46,17 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
 }) => {
   const { t } = useI18n('common');
   const [copiedItem, setCopiedItem] = useState<string | null>(null);
-  const [manualCheckBusy, setManualCheckBusy] = useState(false);
-  const [manualCheckStatus, setManualCheckStatus] = useState<'idle' | 'latest' | 'error'>('idle');
-  const [manualCheckErrorMessage, setManualCheckErrorMessage] = useState<string | null>(null);
-  const [manualOpen, setManualOpen] = useState(false);
-  const [manualData, setManualData] = useState<CheckForUpdatesResponse | null>(null);
   const [nativeVersion, setNativeVersion] = useState<string | null>(null);
-  const updateStatus = useUpdateInstallStore(state => state.status);
-  const updateProgress = useUpdateInstallStore(state => state.progress);
-  const updateError = useUpdateInstallStore(state => state.error);
-  const startUpdateInstall = useUpdateInstallStore(state => state.startInstall);
-  const requestInstall = useUpdateInstallStore(state => state.requestInstall);
-  const updateVersion = useUpdateInstallStore(state => state.version);
-  const updateInitialized = useUpdateInstallStore(state => state.initialized);
 
   const aboutInfo = getAboutInfo();
   const { version, license } = aboutInfo;
   const nativeRuntime = isTauriRuntime();
-  const updateChecksAvailable = canCheckForAppUpdates();
   const displayedVersion = formatDisplayedVersion(
     version,
     nativeVersion,
     nativeRuntime,
     import.meta.env.DEV,
   );
-  const updateProgressPercent =
-    updateProgress.total != null && updateProgress.total > 0
-      ? Math.min(100, Math.round((updateProgress.downloaded / updateProgress.total) * 100))
-      : null;
   const licenseName = license.type === 'MIT' ? 'MIT License' : license.type;
   const licenseCopyright = license.text?.startsWith(`${licenseName} - `)
     ? license.text.slice(`${licenseName} - `.length)
@@ -97,73 +75,25 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
   }
 
   useEffect(() => {
-    if (isOpen) {
-      setManualCheckStatus('idle');
-      setManualCheckErrorMessage(null);
-    }
-  }, [isOpen]);
-
-  useEffect(() => {
     if (!isOpen || !nativeRuntime) return;
-    if (canCheckForAppUpdates()) void useUpdateInstallStore.getState().initialize();
     let active = true;
-    void systemAPI.getAppVersion()
+    void systemAPI.getLocalAppVersion()
       .then(currentVersion => {
         if (active) setNativeVersion(currentVersion);
       })
       .catch(error => {
-        log.warn('get_app_version failed; using generated version metadata', error);
+        log.warn('Failed to read the local version; using generated version metadata', error);
       });
     return () => {
       active = false;
     };
   }, [isOpen, nativeRuntime]);
 
-  const handleCheckForUpdates = useCallback(async () => {
-    if (!canCheckForAppUpdates()) return;
-
-    setManualCheckStatus('idle');
-    setManualCheckErrorMessage(null);
-    setManualCheckBusy(true);
-    try {
-      const res = await systemAPI.checkForUpdates();
-      if (!res.updateAvailable) {
-        setManualCheckStatus('latest');
-      } else {
-        setManualData(res);
-        setManualOpen(true);
-      }
-    } catch (error) {
-      log.error('check_for_updates failed', error);
-      const message = error instanceof Error ? error.message : String(error);
-      setManualCheckErrorMessage(formatUpdateInstallError(message, t));
-      setManualCheckStatus('error');
-    } finally {
-      setManualCheckBusy(false);
-    }
-  }, [t]);
-
   const handleGithubStar = useCallback(() => {
     systemAPI.openExternal(GITHUB_REPOSITORY_URL).catch(error => {
       log.error('Failed to open the GitHub repository', { url: GITHUB_REPOSITORY_URL, error });
     });
   }, []);
-
-  const onManualLater = useCallback(() => {
-    setManualOpen(false);
-    setManualData(null);
-  }, []);
-
-  const onManualInstall = useCallback(() => {
-    setManualOpen(false);
-    setManualData(null);
-    void startUpdateInstall();
-  }, [startUpdateInstall]);
-
-  const onRestart = useCallback(() => {
-    onClose();
-    requestInstall();
-  }, [onClose, requestInstall]);
 
   const copyToClipboard = async (text: string, itemId: string) => {
     try {
@@ -174,9 +104,6 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
       log.error('Failed to copy to clipboard', error);
     }
   };
-
-  const updateState = `${manualCheckBusy ? 'checking' : ''} ${manualCheckStatus} ${updateStatus}`.trim();
-  const updateBusy = !updateInitialized || manualCheckBusy || updateStatus === 'downloading' || updateStatus === 'ready' || updateStatus === 'installing';
 
   return (
     <>
@@ -338,114 +265,6 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
                   </FieldRow>
                 </FieldGroup>
 
-                {updateChecksAvailable ? (
-                  <div
-                    className="openbitfun-about-dialog__update-card"
-                    data-openbitfun-component="about-dialog"
-                    data-openbitfun-part="updateCard"
-                    data-openbitfun-state={updateState}
-                  >
-                    <div
-                      className="openbitfun-about-dialog__update-card-actions"
-                      data-openbitfun-component="about-dialog"
-                      data-openbitfun-part="updateActions"
-                    >
-                      {manualCheckStatus === 'latest' && updateStatus === 'idle' ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          leadingIcon={<Icon name="check-circle" size="sm" aria-hidden="true" />}
-                          onClick={() => void handleCheckForUpdates()}
-                          data-testid="about-check-updates"
-                        >
-                          {t('update.noUpdate')}
-                        </Button>
-                      ) : (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          leadingIcon={<Icon name="refresh" size="sm" aria-hidden="true" />}
-                          loading={manualCheckBusy}
-                          disabled={updateBusy}
-                          onClick={() => void handleCheckForUpdates()}
-                          data-testid="about-check-updates"
-                        >
-                          {manualCheckBusy ? t('update.checking') : t('update.checkForUpdates')}
-                        </Button>
-                      )}
-                    </div>
-
-                    <div
-                      className="openbitfun-about-dialog__update-feedback"
-                      data-openbitfun-component="about-dialog"
-                      data-openbitfun-part="updateFeedback"
-                    >
-                      {manualCheckStatus === 'error' && manualCheckErrorMessage ? (
-                        <Alert
-                          tone="error"
-                          message={manualCheckErrorMessage}
-                          showIcon
-                          className="openbitfun-about-dialog__update-alert"
-                        />
-                      ) : null}
-                      {updateStatus === 'downloading' ? (
-                        <div className="openbitfun-about-dialog__download-status" role="status">
-                          <div
-                            className="openbitfun-about-dialog__download-bar"
-                            data-openbitfun-component="about-dialog"
-                            data-openbitfun-part="progress"
-                            role="progressbar"
-                            aria-valuemin={0}
-                            aria-valuemax={100}
-                            aria-valuenow={updateProgressPercent ?? undefined}
-                            aria-label={t('update.downloadingTitle')}
-                          >
-                            <div
-                              data-openbitfun-component="about-dialog"
-                              data-openbitfun-part="progressFill"
-                              className={updateProgressPercent != null
-                                ? 'openbitfun-about-dialog__download-fill'
-                                : 'openbitfun-about-dialog__download-fill openbitfun-about-dialog__download-fill--indeterminate'}
-                              style={updateProgressPercent != null
-                                ? { width: `${updateProgressPercent}%` }
-                                : undefined}
-                            />
-                          </div>
-                          <div className="openbitfun-about-dialog__download-meta">
-                            <span>{t('update.backgroundDownloading')}</span>
-                            <span>
-                              {updateProgressPercent != null
-                                ? t('update.progressPercent', { percent: String(updateProgressPercent) })
-                                : t('update.progressUnknown')}
-                            </span>
-                          </div>
-                          <p className="openbitfun-about-dialog__download-hint">
-                            {t('update.backgroundDownloadHint')}
-                          </p>
-                        </div>
-                      ) : null}
-                      {updateStatus === 'ready' || updateStatus === 'installing' ? (
-                        <div className="openbitfun-about-dialog__update-installed">
-                          <div className="openbitfun-about-dialog__update-status openbitfun-about-dialog__update-status--success">
-                            <Icon name="check-circle" size="sm" className="openbitfun-about-dialog__update-status-icon" aria-hidden="true" />
-                            <span>{t('update.readyVersion', { version: updateVersion ?? '' })}</span>
-                          </div>
-                          <Button variant="primary" size="sm" disabled={updateStatus === 'installing'} onClick={onRestart}>
-                            {t(updateStatus === 'installing' ? 'update.installing' : 'update.installAndRestart')}
-                          </Button>
-                        </div>
-                      ) : null}
-                      {updateStatus === 'error' && updateError ? (
-                        <Alert
-                          tone="error"
-                          message={formatUpdateInstallError(updateError, t)}
-                          showIcon
-                          className="openbitfun-about-dialog__update-alert"
-                        />
-                      ) : null}
-                    </div>
-                  </div>
-                ) : null}
               </section>
             </div>
 
@@ -492,13 +311,6 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
         </DialogBody>
       </Dialog>
 
-      <UpdateAvailableDialog
-        isOpen={manualOpen}
-        variant="manual"
-        data={manualData}
-        onLater={onManualLater}
-        onInstall={onManualInstall}
-      />
     </>
   );
 };

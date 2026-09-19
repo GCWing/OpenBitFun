@@ -3,6 +3,10 @@ import { SystemAPI } from './SystemAPI';
 
 const invokeMock = vi.hoisted(() => vi.fn());
 const copyTextToClipboardMock = vi.hoisted(() => vi.fn());
+const controllerInvoke = vi.hoisted(() => vi.fn());
+const localVersion = vi.hoisted(() => vi.fn());
+vi.mock('@tauri-apps/api/core', () => ({ invoke: controllerInvoke }));
+vi.mock('@tauri-apps/api/app', () => ({ getVersion: localVersion }));
 
 vi.mock('./ApiClient', () => ({
   api: {
@@ -21,23 +25,16 @@ describe('SystemAPI', () => {
     systemAPI = new SystemAPI();
     invokeMock.mockReset();
     copyTextToClipboardMock.mockReset();
+    controllerInvoke.mockReset();
+    localVersion.mockReset();
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
   });
 
-  it('does not invoke the updater in development mode', async () => {
-    vi.stubEnv('DEV', true);
-
-    await expect(systemAPI.checkForUpdates()).rejects.toThrow(
-      'Update checks are disabled in development mode',
-    );
-    expect(invokeMock).not.toHaveBeenCalled();
-  });
-
-  it('invokes the updater outside development mode', async () => {
-    vi.stubEnv('DEV', false);
+  it.each([true, false])('allows explicit update checks with DEV=%s', async development => {
+    vi.stubEnv('DEV', development);
     const response = {
       updateAvailable: false,
       currentVersion: '1.0.0',
@@ -50,6 +47,24 @@ describe('SystemAPI', () => {
     await expect(systemAPI.checkForUpdates()).resolves.toEqual(response);
     expect(invokeMock).toHaveBeenCalledWith('check_for_updates', {
       request: {},
+    });
+  });
+
+  it('reads the installed version and update preference from the controller in peer mode', async () => {
+    localVersion.mockResolvedValue('1.0.0');
+    controllerInvoke.mockResolvedValue({ currentOptionValues: { 'auto-update': false } });
+    await expect(systemAPI.getLocalAppVersion()).resolves.toBe('1.0.0');
+    await expect(systemAPI.getAutoUpdateEnabled()).resolves.toBe(false);
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(controllerInvoke).toHaveBeenCalledWith('product_control_invoke', {
+      request: { action: 'get', capabilityId: 'setting.application.general' },
+    });
+  });
+
+  it('passes the reviewed download version to the host', async () => {
+    await systemAPI.downloadUpdate('2.0.0');
+    expect(invokeMock).toHaveBeenCalledWith('download_update', { request: { expectedVersion: '2.0.0' } }, {
+      timeout: 3600000, retries: 0,
     });
   });
 

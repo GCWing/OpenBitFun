@@ -403,15 +403,6 @@ export function Tooltip({
     else hideTooltip();
   }, [active, disabled, externalTriggerRef, hideTooltip, showTooltip, triggerRef]);
 
-  useEffect(() => {
-    const ownerDocument = triggerRef.current?.ownerDocument;
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") hideTooltip();
-    };
-    ownerDocument?.addEventListener("keydown", onEscape, true);
-    return () => ownerDocument?.removeEventListener("keydown", onEscape, true);
-  }, [hideTooltip, triggerRef]);
-
   const childProps = (children?.props ?? {}) as Record<string, unknown>;
   const childRef = (children as (ReactElement & { ref?: Ref<HTMLElement> }) | undefined)?.ref;
 
@@ -497,7 +488,8 @@ export function Tooltip({
         {triggerElement}
       </TooltipTriggerContext.Provider>
       {visible && (
-        <Portal ownerDocument={triggerRef.current?.ownerDocument}>
+        <Portal ownerDocument={triggerRef.current?.ownerDocument} ownerRef={triggerRef} passive
+          surfaceRef={tooltipRef} onDismiss={hideTooltip}>
         <div
           ref={tooltipRef}
           id={tooltipId}

@@ -8,7 +8,6 @@ $toast-width: 320px;
   position: fixed;
   bottom: 64px;
   left: 36px;
-  z-index: calc(var(--openbitfun-layer-notification) + 1);
   pointer-events: none;
   // Clip nothing — overflow visible so rotated ghosts are always fully shown
   overflow: visible;

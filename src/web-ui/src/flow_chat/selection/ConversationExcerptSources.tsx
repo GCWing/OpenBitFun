@@ -26,7 +26,7 @@ export function ConversationExcerptSourceProvider({ sessionId, active = true, ch
     if (!active || !sessionId || !scope.isCurrent()) return EMPTY_SOURCE_INDEX;
     const sessions = flowChatStore.getState().sessions;
     const queue = [...sessions.keys()].flatMap(id => pendingQueueManager.listForSurface(scope.surfaceId, id));
-    return inventory(sessions, sessionComposerStore.getState().drafts, queue)
+    return inventory(sessionComposerStore.getState().drafts, queue)
       .get(surfaceScopedKey(scope.surfaceId, sessionId)) ?? EMPTY_SOURCE_INDEX;
   }, [active, sessionId, scope]);
   const value = useSyncExternalStore(active && sessionId ? subscribe : noSubscription, getSnapshot, () => EMPTY_SOURCE_INDEX);

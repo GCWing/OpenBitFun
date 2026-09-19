@@ -17,10 +17,10 @@ each missing what the other had.
 | Test | Contract it holds |
 |---|---|
 | `../../hooks/useSessionReadOnOpen.test.tsx` | opening and foreground results mark read; inactive scenes, background windows, unmounts, and device switches cannot acknowledge from stale views |
-| `../../selection/conversationExcerptInventory.test.ts` | source session/device isolation, draft/queue removal, sent-number retention, stable snapshots during streaming |
+| `../../selection/conversationExcerptInventory.test.ts` | source session/device isolation, consumed draft/queue marks, sent-number retention without source marks, stable unrelated snapshots |
 | `../../selection/conversationExcerptMarkerPosition.test.ts` | full selection bounds, measured badge groups, persistent upper-right placement over occupied text, and clipping; geometry contracts only, not visual acceptance |
-| `../ChatInputAttachments.test.tsx` | shared image/annotation strip, pending editing/removal, read-only sent snapshots with no write controls/shortcuts, one-line source quote, locate, keyboard containment and stale-device rejection |
-| `../../selection/conversationExcerptEditing.test.ts` | draft/visible/queue ownership, preserved prompt context and attachments, legacy payload handling, sending guards and sent snapshots with no edit capability |
+| `../ChatInputAttachments.test.tsx` | shared image/annotation strip, source-marker and attachment-dialog removal, pending editing, read-only sent snapshots with no write controls/shortcuts, one-line source quote, locate, keyboard containment and stale-device rejection |
+| `../../selection/conversationExcerptEditing.test.ts` | draft/visible/queue edit and delete ownership, preserved prompt context and attachments, legacy payload handling, sending guards and sent snapshots with no mutation capability |
 | `../../services/flow-chat-manager/PendingQueueModule.test.ts` | persisted payload edits preserve queue order/identity, images and device isolation; sending entries reject edits |
 | `../../../infrastructure/markdown/useStreamingTextReveal.test.tsx` | appended-glyph-only fading, independent batch clocks and renderers, history/remount stability, stream completion and reduced motion |
 | `UserMessageItem.test.tsx` | sent and reloaded MCP references, mixed reference capsules, failed-message presentation, and message actions |
@@ -72,6 +72,9 @@ Escape/cancel focus return, one-line quote truncation, and save-and-locate from
 pending source marks and composer attachments without losing the comment. Sent
 annotations must display the sent comment without input/save controls and retain
 source navigation, including when a same-ID draft exists in the composer.
+Sending must consume the source superscripts and persistent highlights; loading
+history must not restore them. Deleting from a source-marker dialog must remove
+only that pending annotation from the composer or queue and close the dialog.
 The first ordinary side question forks the parent on send. Model and reasoning
 choices stay in its draft until that request; its Agent mode is inherited.
 Its permission control reads the parent and becomes editable after submission.

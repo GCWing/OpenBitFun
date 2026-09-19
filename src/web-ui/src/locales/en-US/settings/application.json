@@ -92,7 +92,7 @@
       "hint": "Check for new versions after startup"
     },
     "toggleLabel": "Automatic update check",
-    "toggleDescription": "When enabled, OpenBitFun may prompt you shortly after launch if a newer version is available. Manual check from About is always available.",
+    "toggleDescription": "Automatically check at startup and while running. Each version is announced once. You can still check manually in the bottom-left More menu when this is off.",
     "messages": {
       "loading": "Loading...",
       "loadFailed": "Failed to read update settings",

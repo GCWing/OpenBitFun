@@ -2032,9 +2032,9 @@
       "processing": "Processing..."
     },
     "taskTool": {
-      "headerLine": "{{agentType}} agent: {{description}}",
-      "headerLineWithModel": "{{agentType}} agent ({{modelName}}): {{description}}",
-      "headerLinePrefix": "{{agentType}} agent",
+      "headerLine": "{{agentType}}: {{description}}",
+      "headerLineWithModel": "{{agentType}} ({{modelName}}): {{description}}",
+      "headerLinePrefix": "{{agentType}}",
       "headerLineSuffix": ": {{description}}",
       "defaultAgentKind": "Sub-agent",
       "cancelSession": "Cancel session: {{sessionId}}",
@@ -2143,6 +2143,35 @@
       "permissionRequest": "Requesting read permission:",
       "readingFile": "Reading",
       "preparingRead": "Preparing to read"
+    },
+    "openBitFunControl": {
+      "title": "$t(shared:product.name)",
+      "actions": {
+        "list": "Browse capabilities",
+        "search": "Find capabilities",
+        "get": "Inspect capability",
+        "open": "Open feature",
+        "execute": "Run operation",
+        "configure": "Change setting",
+        "unknown": "Control OpenBitFun"
+      },
+      "target": "Target",
+      "query": "$t(shared:tools.search)",
+      "requestedValue": "Requested value",
+      "effectiveValue": "Applied value",
+      "trueValue": "True",
+      "falseValue": "False",
+      "nullValue": "Null",
+      "emptyValue": "Empty string",
+      "noValue": "No value returned",
+      "noResults": "No matching capabilities.",
+      "loadingAll": "Loading all results…",
+      "loadAllFailed": "Could not load all results. The recorded results are still available.",
+      "catalogChanged": "The capability catalog has changed. Run the query again to view all current results.",
+      "sourceDeviceRequired": "Switch back to the source device to load the remaining results.",
+      "retryLoad": "Retry loading results",
+      "controlUnavailable": "Control is unavailable or limited on this host",
+      "syncPendingDetails": "The setting was saved, but presentation sync is incomplete."
     },
     "sessionControl": {
       "title": "Session",

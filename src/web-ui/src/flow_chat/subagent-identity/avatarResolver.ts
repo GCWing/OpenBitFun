@@ -1,18 +1,10 @@
 import {
-  SUBAGENT_AVATAR_COLOR_CATALOG,
-  SUBAGENT_AVATAR_COLOR_CATALOG_VERSION,
   SUBAGENT_AVATAR_IDS,
   SUBAGENT_AVATAR_CATALOG_VERSION,
-  type SubagentAvatarColorId,
   type SubagentAvatarId,
 } from './catalog';
 
-export interface SubagentAvatarColor {
-  colorId: SubagentAvatarColorId;
-  hueShiftDegrees: number;
-}
-
-export interface SubagentAvatarPresentation extends SubagentAvatarColor {
+export interface SubagentAvatarPresentation {
   avatarId: SubagentAvatarId;
 }
 
@@ -43,28 +35,10 @@ export function resolveSubagentAvatarId(sessionId: string): SubagentAvatarId {
   return SUBAGENT_AVATAR_IDS[hash % SUBAGENT_AVATAR_IDS.length];
 }
 
-/** Resolve a stable color independently from the avatar shape hash. */
-export function resolveSubagentAvatarColor(sessionId: string): SubagentAvatarColor {
-  const normalizedSessionId = sessionId.trim();
-  const color = normalizedSessionId
-    ? SUBAGENT_AVATAR_COLOR_CATALOG[
-      hashString(
-        `${SUBAGENT_AVATAR_COLOR_CATALOG_VERSION}:color:${normalizedSessionId}`,
-      ) % SUBAGENT_AVATAR_COLOR_CATALOG.length
-    ]
-    : SUBAGENT_AVATAR_COLOR_CATALOG[0];
-
-  return {
-    colorId: color.id,
-    hueShiftDegrees: color.hueShiftDegrees,
-  };
-}
-
 export function resolveSubagentAvatarPresentation(
   sessionId: string,
 ): SubagentAvatarPresentation {
   return {
     avatarId: resolveSubagentAvatarId(sessionId),
-    ...resolveSubagentAvatarColor(sessionId),
   };
 }

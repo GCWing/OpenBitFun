@@ -7,6 +7,7 @@ export const menuMeta = {
   name: "Menu",
   props: [
     { name: "children", type: "ReactNode" },
+    { name: "MenuList.children", type: "ReactNode (row stack inside custom scroll or animation wrappers)" },
     { defaultValue: "false", name: "autoFocusFirstItem", type: "boolean" },
     { defaultValue: "auto", name: "scrollbarVisibility", type: "auto | always | hidden" },
     { name: "MenuPopover.items", type: "readonly MenuEntry[]" },
@@ -31,6 +32,7 @@ export const menuMeta = {
     "overlay.menu.maxBlockSize",
     "overlay.menu.surfacePadding",
     "overlay.menu.surfaceRadius",
+    "overlay.menu.rowGap",
     "overlay.menu.sectionGap",
     "overlay.menu.headingHeight",
     "overlay.menu.headingPaddingInline",

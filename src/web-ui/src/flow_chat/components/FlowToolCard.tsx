@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { getToolCardComponent } from '../tool-cards';
-import { getToolCardConfig } from '../tool-cards/toolCardMetadata';
+import { getToolItemCardConfig } from '../tool-cards/toolCardMetadata';
 import type { FlowToolItem, ToolCardDisplayContext, ToolRejectOptions } from '../types/flow-chat';
 import { createLogger } from '@/shared/utils/logger';
 import { FlowToolCardErrorBoundary } from './FlowToolCardErrorBoundary';
@@ -47,7 +47,7 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
   const { t } = useTranslation('flow-chat');
   const effectiveToolItem = projectEffectiveToolItem(toolItem);
   const { pendingPermissionToolCallIds } = useFlowChatVolatileContext();
-  const config = getToolCardConfig(effectiveToolItem.toolName);
+  const config = getToolItemCardConfig(effectiveToolItem);
   const CardComponent = getToolCardComponent(effectiveToolItem.toolName);
   const interruptionNote = getToolInterruptionNote(effectiveToolItem, t);
   const cardHandlesInterruptionNote = effectiveToolItem.toolName === 'Task';

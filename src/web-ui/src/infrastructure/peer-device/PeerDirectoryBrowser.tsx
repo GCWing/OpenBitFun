@@ -3,9 +3,8 @@
  * Lists directories on the peer via HostInvoke FS APIs.
  */
 
-import { OverflowText, Button, Icon, IconButton, Input, ScrollArea } from '@openbitfun/ui';
+import { createOverlayPortal, OverflowText, Button, Icon, IconButton, Input, ScrollArea } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { Home, Loader2 } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
@@ -49,6 +48,7 @@ export const PeerDirectoryBrowser: React.FC<PeerDirectoryBrowserProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const inputRevisionRef = useRef(0);
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const pathInputCompositionActiveRef = useRef(false);
   const loadSeqRef = useRef(0);
 
@@ -137,9 +137,11 @@ export const PeerDirectoryBrowser: React.FC<PeerDirectoryBrowserProps> = ({
     onSelect(path);
   }, [currentPath, error, loading, onSelect, pathInputValue, selectedPath]);
 
-  return createPortal(
+  return createOverlayPortal(
     <div
       className="peer-directory-browser-overlay"
+      ref={surfaceRef}
+      tabIndex={-1}
       data-state={visible ? 'open' : 'closed'}
       role="dialog"
       aria-modal="true"
@@ -355,6 +357,8 @@ export const PeerDirectoryBrowser: React.FC<PeerDirectoryBrowserProps> = ({
       </div>
     </div>,
     getAppearanceOverlayHost(),
+    null,
+    { modal: visible, open: visible, surfaceRef, onDismiss: onCancel },
   );
 };
 

@@ -1,6 +1,5 @@
-import { OverflowText, Button, Combobox, Icon, IconButton, Input, Listbox, ListboxEmpty, ListboxOption, Select, Switch, Textarea, Tooltip, type ComboboxOption, type SelectOption } from '@openbitfun/ui';
+import { createOverlayPortal, OverflowText, Button, Combobox, Icon, IconButton, Input, Listbox, ListboxEmpty, ListboxOption, Select, Switch, Textarea, Tooltip, type ComboboxOption, type SelectOption } from '@openbitfun/ui';
 import React, { useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type {
@@ -398,7 +397,7 @@ export const ReasoningPresetEditor: React.FC<ReasoningPresetEditorProps> = ({
                       }}
                       size="sm"
                     />
-                    {showModelsDevSearchResults && createPortal(
+                    {showModelsDevSearchResults && createOverlayPortal(
                       <div
                         ref={modelsDevSearchPopoverRef}
                         className="openbitfun-reasoning-preset-editor__models-dev-search-results"

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { FlowToolItem, ToolCardConfig } from '../types/flow-chat';
 import {
+  getSubagentAvatarDefinition,
   resolveSubagentAvatarPresentation,
 } from '../subagent-identity';
 import { AgentControlToolCard } from './AgentControlToolCard';
@@ -240,9 +241,8 @@ describeWithJsdom('AgentControlToolCard', () => {
     const avatar = container.querySelector('[data-openbitfun-component="subagent-avatar"]');
     const presentation = resolveSubagentAvatarPresentation('child-session');
     expect(avatar?.getAttribute('data-openbitfun-avatar-id')).toBe(presentation.avatarId);
-    expect(avatar?.getAttribute('data-openbitfun-avatar-color-id')).toBe(presentation.colorId);
-    expect(avatar?.getAttribute('style')).toContain(
-      `--subagent-avatar-hue-shift: ${presentation.hueShiftDegrees}deg`,
+    expect(avatar?.querySelector('img')?.getAttribute('src')).toBe(
+      getSubagentAvatarDefinition(presentation.avatarId).src,
     );
     expect(container.querySelector('[data-openbitfun-part="avatar"] > svg')).toBeNull();
     expect(container.textContent).toContain('Agent 1');

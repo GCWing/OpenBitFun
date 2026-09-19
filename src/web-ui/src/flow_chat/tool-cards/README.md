@@ -2,6 +2,25 @@
 
 This document captures UI behavior conventions for Flow Chat tool cards.
 
+## OpenBitFun controls
+
+`OpenBitFunControlToolCard` composes the public Ambient and Prominent frameworks.
+Discovery (`list`, `search`, `get`) uses Ambient; `open`, `execute`, `configure`,
+and unknown actions use Prominent. `getToolItemCardConfig` applies the same
+classification to wrappers and transcript spacing, including deferred calls.
+Control cards stay visible outside generic Explore groups.
+
+The executing host's result owns acknowledgement, effective values, availability,
+and presentation sync. A completed invocation alone does not establish that a
+change was applied. Catalog lookups supply labels only; unknown remote targets
+retain their IDs. Details present semantic fields and discovery results without
+a raw-payload disclosure. Expanding a partial discovery result reads every page
+of the original query through the ProductControl adapter. It restarts at cursor
+zero to include earlier pages, fences device activation and catalog identity,
+and keeps the recorded page on failure with an explicit retry. The complete list
+is view state; it never rewrites conversation history, executes mutations, or
+reads controller configuration as a substitute for a peer result.
+
 ## Preview-to-Result Transition
 
 For tool cards that:

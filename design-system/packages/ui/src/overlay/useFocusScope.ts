@@ -1,26 +1,7 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  type RefObject,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
+import { getOverlayLayerStack } from "./LayerStack";
 
-const useIsomorphicLayoutEffect = typeof window === "undefined"
-  ? useEffect
-  : useLayoutEffect;
-
-const FOCUSABLE_SELECTOR = [
-  "button:not([disabled])",
-  "[href]",
-  "input:not([disabled])",
-  "select:not([disabled])",
-  "textarea:not([disabled])",
-  '[tabindex]:not([tabindex="-1"])',
-].join(",");
-
-function focusableElements(container: HTMLElement): HTMLElement[] {
-  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
-    .filter((element) => element.getAttribute("aria-hidden") !== "true");
-}
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export interface UseFocusScopeOptions {
   active: boolean;
@@ -33,57 +14,24 @@ export interface UseFocusScopeOptions {
 }
 
 export function useFocusScope({
-  active,
-  autoFocus = true,
-  containerRef,
-  initialFocusRef,
-  ownerDocument,
-  restoreFocus = true,
-  trapFocus = true,
+  active, autoFocus = true, containerRef, initialFocusRef, ownerDocument,
+  restoreFocus = true, trapFocus = true,
 }: UseFocusScopeOptions): void {
+  const identity = useRef(Symbol("openbitfun-focus-scope"));
   useIsomorphicLayoutEffect(() => {
     if (!active) return;
     const container = containerRef.current;
-    const documentOwner = ownerDocument
-      ?? container?.ownerDocument
-      ?? (typeof document === "undefined" ? null : document);
-    if (!container || !documentOwner) return;
-    const HTMLElementConstructor = documentOwner.defaultView?.HTMLElement;
-    const previousFocus = HTMLElementConstructor
-      && documentOwner.activeElement instanceof HTMLElementConstructor
-      ? documentOwner.activeElement as HTMLElement
-      : null;
-
-    if (autoFocus) {
-      const target = initialFocusRef?.current
-        ?? focusableElements(container)[0]
-        ?? container;
-      target.focus();
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!trapFocus || event.key !== "Tab") return;
-      const elements = focusableElements(container);
-      if (elements.length === 0) {
-        event.preventDefault();
-        container.focus();
-        return;
-      }
-      const first = elements[0];
-      const last = elements[elements.length - 1];
-      if (event.shiftKey && documentOwner.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && documentOwner.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-
-    documentOwner.addEventListener("keydown", handleKeyDown, true);
-    return () => {
-      documentOwner.removeEventListener("keydown", handleKeyDown, true);
-      if (restoreFocus && previousFocus?.isConnected) previousFocus.focus();
-    };
+    const doc = ownerDocument ?? container?.ownerDocument;
+    if (!container || !doc) return;
+    const HTMLElementType = doc.defaultView?.HTMLElement;
+    return getOverlayLayerStack(doc).registerFocusScope({
+      id: identity.current,
+      element: container,
+      autoFocus,
+      trapFocus,
+      restoreFocus,
+      initialFocus: initialFocusRef?.current,
+      previousFocus: HTMLElementType && doc.activeElement instanceof HTMLElementType ? doc.activeElement : null,
+    });
   }, [active, autoFocus, containerRef, initialFocusRef, ownerDocument, restoreFocus, trapFocus]);
 }

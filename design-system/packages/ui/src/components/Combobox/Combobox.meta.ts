@@ -43,6 +43,7 @@ export const comboboxMeta = {
     "overlay.menu.inlineSize",
     "overlay.menu.surfacePadding",
     "overlay.menu.surfaceRadius",
+    "overlay.menu.rowGap",
     "overlay.menu.itemIconSize",
     "shadow.menu",
     "type.label.selected.fontWeight",

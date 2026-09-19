@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="1.7143 -0.7857 252.5714 252.5714" role="img" aria-labelledby="avatar-title-18">
+  <title id="avatar-title-18">sakura joystick avatar</title>
+  <rect x="116" y="55" width="24" height="30" rx="12" fill="#D493B0"/>
+  <path d="M128 72C190 72 230 112 230 170C230 214 214 236 182 236H74C42 236 26 214 26 170C26 112 66 72 128 72Z" fill="#E8AFC6"/>
+  <circle cx="128" cy="38" r="23" fill="#B9658E"/>
+  <g fill="#713F58">
+    <ellipse cx="104" cy="161" rx="10" ry="16"/>
+    <ellipse cx="152" cy="161" rx="10" ry="16"/>
+  </g>
+  <path d="M119 183Q128 194 137 183" fill="none" stroke="#713F58" stroke-width="8" stroke-linecap="round"/>
+</svg>

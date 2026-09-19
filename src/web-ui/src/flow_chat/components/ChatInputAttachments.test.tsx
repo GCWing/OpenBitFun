@@ -162,7 +162,7 @@ describe('numbered composer attachments', () => {
     expect(container.querySelector('img')?.alt).toBe('Photo.png');
   });
 
-  it('views sent source markers and message annotations without editor controls or write shortcuts', () => {
+  it('views stale source previews and sent annotations without editor controls or write shortcuts', () => {
     act(() => root.render(<div onKeyDown={callbacks.outerKey}>
       <ConversationExcerptPreview excerpt={excerpt} superscript origin="source" />
       <ConversationExcerptPreview excerpt={excerpt} />
@@ -258,6 +258,33 @@ describe('numbered composer attachments', () => {
     expect(dialog()).toBeNull();
   });
 
+  it('removes from a source marker dialog and clears the linked draft and composer attachment', () => {
+    useContextStore.getState().replaceContexts([image, excerpt, second]);
+    sessionComposerStore.getState().setContexts('main', [image, excerpt, second]);
+    act(() => root.render(<LinkedComposer />));
+    click(container.querySelector<HTMLButtonElement>('[data-openbitfun-product-part="superscript"]')!);
+    typeComment('Do not save this edit');
+    click(action('selection.remove'));
+    expect(dialog()).toBeNull();
+    expect(useContextStore.getState().contexts).toEqual([image, second]);
+    expect(sessionComposerStore.getState().getDraft('main').contexts).toEqual([image, second]);
+    expect(trigger(1)).toBeNull();
+    expect(trigger(2)).not.toBeNull();
+    expect(container.querySelector('img')?.alt).toBe('Photo.png');
+  });
+
+  it('removes directly from the attachment editor without saving unsent edits', () => {
+    act(() => root.render(<Composer />));
+    click(trigger(1));
+    typeComment('Do not save this edit');
+    click(action('selection.remove'));
+    expect(dialog()).toBeNull();
+    expect(callbacks.remove).toHaveBeenCalledExactlyOnceWith(excerpt.id);
+    expect(callbacks.update).not.toHaveBeenCalled();
+    expect(trigger(1)).toBeNull();
+    expect(trigger(2)).not.toBeNull();
+  });
+
   it('keeps an unavailable editor open and rejects navigation after the surface activation changed', () => {
     act(() => root.render(<Composer />));
     click(trigger(1));
@@ -265,6 +292,9 @@ describe('numbered composer attachments', () => {
     click(action('selection.locate'));
     expect(callbacks.locate).not.toHaveBeenCalled();
     expect(callbacks.warn).toHaveBeenCalledWith('selection.editUnavailable');
+    expect(dialog()).not.toBeNull();
+    click(action('selection.remove'));
+    expect(callbacks.remove).not.toHaveBeenCalled();
     expect(dialog()).not.toBeNull();
   });
 });

@@ -19,6 +19,8 @@ const menuParts: MenuPopoverParts = {
 
 /** Product adapter: portable menus own UI; callbacks retain their product context. */
 export const ContextMenu: React.FC<ContextMenuProps> = ({ items, position, visible, context, onClose, onItemClick }) => {
+  const ownerRef = React.useRef<HTMLElement | null>(null);
+  ownerRef.current = context?.targetElement ?? context?.element ?? null;
   const convert = (item: ContextMenuItem): MenuEntry => ({
     id: item.id,
     label: item.label,
@@ -39,7 +41,7 @@ export const ContextMenu: React.FC<ContextMenuProps> = ({ items, position, visib
     },
   });
 
-  return <MenuPopover items={items.map(convert)} position={position} open={visible} onClose={onClose} parts={menuParts} />;
+  return <MenuPopover items={items.map(convert)} position={position} ownerRef={ownerRef} open={visible} onClose={onClose} parts={menuParts} />;
 };
 
 export default ContextMenu;

@@ -367,7 +367,13 @@ describe('startup performance contract', () => {
     expect(appLayoutSource).toContain("import { FlowChatManager }");
     expect(appLayoutSource).not.toContain("import('../../flow_chat/services/FlowChatManager')");
     expect(footerSource).not.toContain("import { AboutDialog }");
-    expect(footerSource).toContain("import('../../AboutDialog')");
+    expect(footerSource).not.toContain("import('../../AboutDialog')");
+    expect(footerSource).toContain("new Event('nav:show-about')");
+    expect(appLayoutSource).toContain("window.addEventListener('nav:show-about', handleShowAbout)");
+    expect(appLayoutSource).not.toContain('useUpdateInstallStore');
+    const aboutSource = readSource('../components/AboutDialog/AboutDialog.tsx');
+    expect(aboutSource).not.toContain('AppUpdatePanel');
+    expect(aboutSource).not.toContain('useUpdateInstallStore');
     expect(chatPaneSource).not.toContain("from '../../../flow_chat'");
     expect(chatPaneSource).toContain(
       "from '../../../flow_chat/components/modern/ModernFlowChatContainer'"

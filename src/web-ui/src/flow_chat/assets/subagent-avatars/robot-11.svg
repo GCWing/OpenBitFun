@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="2.2857 3.2857 251.4286 251.4286" role="img" aria-labelledby="avatar-title-11">
+  <title id="avatar-title-11">lemon joystick avatar</title>
+  <rect x="116" y="62" width="24" height="30" rx="12" fill="#BFC064"/>
+  <path d="M128 76C177 76 196 96 208 130L232 198C239 218 224 238 188 238H68C32 238 17 218 24 198L48 130C60 96 79 76 128 76Z" transform="matrix(1.04 0 0 0.9753 -5.12 5.8765)" fill="#ECE16A"/>
+  <circle cx="128" cy="45" r="25" fill="#8C9945"/>
+  <g fill="#626637">
+    <ellipse cx="101" cy="165" rx="10" ry="16"/>
+    <ellipse cx="155" cy="165" rx="10" ry="16"/>
+  </g>
+  <path d="M119 187Q128 198 137 187" fill="none" stroke="#626637" stroke-width="8" stroke-linecap="round"/>
+</svg>

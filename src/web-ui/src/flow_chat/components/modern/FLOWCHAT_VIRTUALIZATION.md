@@ -274,11 +274,13 @@ package.
 
 ## Annotation markers
 
-The shared conversation-excerpt inventory projects sent presentation metadata,
-pending-queue attachments and device-scoped composer drafts into indexes keyed by
+The shared conversation-excerpt inventory projects pending-queue attachments and
+device-scoped composer drafts into indexes keyed by
 source session and Turn. Each transcript consumes its own stable index; embedded panes do not select the parent
-transcript. Draft removal clears pending marks, and sent metadata retains their
-numbers. The number is additive presentation metadata, never annotation identity;
+transcript. Removing a draft attachment or consuming its queued message clears its
+source marks and highlights. Sent metadata retains the message snapshot and its
+number, but never recreates source marks when history loads or streams.
+The number is additive presentation metadata, never annotation identity;
 legacy excerpts without it remain readable. New numbers follow the loaded session
 family's saved, queued and pending annotations, not a cross-controller global counter.
 
@@ -293,7 +295,7 @@ their ends match. It validates the frozen text anchor, clips partially visible a
 to the row's visible bounds, omits fully hidden anchors, observes only
 mounted rows and releases observers on unmount. It changes neither transcript text
 nor row keys, row height, or scroll position. Persistent CSS highlights follow the
-draft, queued and sent annotation inventory and release their row-owned ranges on
+draft and queued annotation inventory and release their row-owned ranges on
 unmount. Images and an annotation-count capsule share the composer attachment strip.
 The capsule opens a hover/focus/click detail list with individual edit/remove actions.
 Source superscripts and detail edit actions open `ConversationExcerptDialog`;
@@ -305,11 +307,13 @@ their persisted comment as plain text in a bounded ScrollArea, even when a pendi
 copy has the same annotation ID. Viewing has only source navigation and the
 Dialog close control; it exposes neither an editor nor a save/re-add action.
 
-Editing a pending annotation updates its owning draft and visible attachment;
-queued edits update the frozen prompt, display fallback and presentation together.
-Sending or unsupported legacy queue payloads remain intact and report why editing
-is unavailable. A source mark becomes read-only once it no longer has a pending
-owner, and a stale editor cannot create a follow-up after its owner disappears.
+Editing or deleting a pending annotation from the source-marker dialog updates its
+owning draft and visible attachment; queued changes update the frozen prompt,
+display fallback and presentation together. The attachment editor shares the delete
+action. Deletion discards unsaved comment changes and closes the dialog.
+Sending or unsupported legacy queue payloads remain intact and report why changing
+them is unavailable. Source marks disappear once they no longer have a pending
+owner, and a stale editor cannot recreate or delete a consumed annotation.
 Locate uses the existing viewport navigation owner, and explicitly saves changed
 draft text before closing. Device activation fences apply to both writes and
 navigation.

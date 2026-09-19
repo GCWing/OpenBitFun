@@ -19,7 +19,7 @@ import {
   DialogHeading,
   DialogTitle,
 } from '@openbitfun/ui';
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FileJson, Play, Square, AlertTriangle, MinusCircle, KeyRound } from 'lucide-react';
 import { confirmDanger } from '@/infrastructure/confirm-dialog';
@@ -50,6 +50,8 @@ import './McpToolsConfig.scss';
 import { globalEventBus } from '@/infrastructure/event-bus';
 import { MCP_CONFIG_CHANGED, type MCPConfigChanged } from '@/infrastructure/mcp/configEvents';
 import { isLocalSurface } from '@/infrastructure/peer-device/deviceSurface';
+import { MCPServerConfigDialog, type McpEditorSession } from './MCPServerConfigDialog';
+import { parseMcpConfigDocument } from './mcpConfigForm';
 
 const log = createLogger('McpToolsConfig');
 
@@ -77,6 +79,9 @@ function createErrorClassifier(t: (key: string, options?: any) => any) {
 
     const normalizedMessage = errorMessage.toLowerCase();
     const matches = (patterns: string[]) => patterns.some((p) => normalizedMessage.includes(p));
+
+    if (matches(['mcp configuration changed', 'mcp config changed']))
+      return { title: t('notifications.saveFailed'), message: t('visual.conflictMessage'), duration: 10000 };
 
     if (matches(['json parsing failed', 'json parse failed', 'invalid json', 'json format']))
       return {
@@ -197,6 +202,7 @@ const McpToolsConfig: React.FC = () => {
   const [mcpLoading, setMcpLoading] = useState(true);
   const [serverLoadFailed, setServerLoadFailed] = useState(false);
   const [showJsonEditor, setShowJsonEditor] = useState(false);
+  const [serverEditor, setServerEditor] = useState<McpEditorSession | null>(null);
   const [jsonConfig, setJsonConfig] = useState('');
   const [jsonSavedConfig, setJsonSavedConfig] = useState('');
   const [jsonConfigFingerprint, setJsonConfigFingerprint] = useState('');
@@ -222,6 +228,11 @@ const McpToolsConfig: React.FC = () => {
   } | null>(null);
 
   const jsonDirty = jsonConfig !== jsonSavedConfig;
+  const editableConfig = useMemo(() => {
+    try { return parseMcpConfigDocument(jsonSavedConfig); } catch { return null; }
+  }, [jsonSavedConfig]);
+  const canEditConfig = !jsonLoading && !jsonLoadFailed && !mcpSaving
+    && Boolean(jsonConfigFingerprint) && editableConfig !== null;
   const jsonSyntaxValid = (() => {
     if (!jsonConfig.trim()) return false;
     try {
@@ -445,6 +456,7 @@ const McpToolsConfig: React.FC = () => {
       setMcpLoading(false);
       setServerLoadFailed(false);
       setShowJsonEditor(false);
+      setServerEditor(null);
       setJsonConfigFingerprint('');
       setJsonLoading(false);
       setJsonLoadFailed(false);
@@ -469,9 +481,9 @@ const McpToolsConfig: React.FC = () => {
       // Settings scenes can stay mounted while the ecosystem page mutates MCP.
       void loadServers();
       // Preserve an open editor draft and its CAS fingerprint after other writes.
-      if (!jsonDirty && !mcpSavingRef.current) void loadJsonConfig();
+      if (!jsonDirty && !serverEditor && !mcpSavingRef.current) void loadJsonConfig();
     });
-  }, [desktopConfigAvailable, jsonDirty, loadJsonConfig, loadServers]);
+  }, [desktopConfigAvailable, jsonDirty, serverEditor, loadJsonConfig, loadServers]);
 
   useEffect(() => {
     if (!desktopConfigAvailable || mcpLoading) return;
@@ -547,7 +559,7 @@ const McpToolsConfig: React.FC = () => {
     requestSettingsDraftExit(['mcp-json-config'], () => setShowJsonEditor(false));
   };
 
-  const handleSaveJsonConfig = async (): Promise<boolean> => {
+  const persistJsonConfig = async (nextJson: string, fingerprint: string): Promise<boolean> => {
     const capabilityEpoch = currentCapabilityEpoch();
     if (capabilityEpoch === null || mcpSavingRef.current) return false;
     mcpSavingRef.current = true;
@@ -555,7 +567,7 @@ const McpToolsConfig: React.FC = () => {
     try {
       let parsedConfig;
       try {
-        parsedConfig = JSON.parse(jsonConfig);
+        parsedConfig = JSON.parse(nextJson);
       } catch (parseError) {
         throw new Error(
           tMcp('errors.jsonParseError', {
@@ -567,14 +579,15 @@ const McpToolsConfig: React.FC = () => {
       if (typeof parsedConfig.mcpServers !== 'object' || Array.isArray(parsedConfig.mcpServers))
         throw new Error(tMcp('errors.mcpServersMustBeObject'));
 
-      if (!jsonConfigFingerprint) {
+      if (!fingerprint) {
         throw new Error('MCP configuration snapshot is unavailable; reload before saving');
       }
-      const result = await MCPAPI.saveMCPJsonConfig(jsonConfig, jsonConfigFingerprint);
+      const result = await MCPAPI.saveMCPJsonConfig(nextJson, fingerprint);
       if (!capabilityIsCurrent(capabilityEpoch)) return false;
       // Persistence succeeded even if applying the runtime failed. Clear the
       // draft now, and invalidate the old fingerprint until read-back completes.
-      setJsonSavedConfig(jsonConfig);
+      setJsonSavedConfig(nextJson);
+      setJsonConfig(nextJson);
       setJsonConfigFingerprint('');
       if (result.runtimeApplied) {
         notification.success(tMcp('messages.saveSuccess'), {
@@ -588,6 +601,7 @@ const McpToolsConfig: React.FC = () => {
         });
       }
       setShowJsonEditor(false);
+      setServerEditor(null);
       await loadServers();
       if (capabilityIsCurrent(capabilityEpoch)) {
         await loadJsonConfig();
@@ -613,6 +627,18 @@ const McpToolsConfig: React.FC = () => {
       mcpSavingRef.current = false;
       setMcpSaving(false);
     }
+  };
+
+  const handleSaveJsonConfig = () => persistJsonConfig(jsonConfig, jsonConfigFingerprint);
+
+  const openServerEditor = (mode: McpEditorSession['mode'], serverId?: string) => {
+    if (!desktopConfigAvailable || !canEditConfig) return;
+    setServerEditor({ mode, serverId, jsonConfig: jsonSavedConfig, fingerprint: jsonConfigFingerprint });
+  };
+
+  const closeServerEditor = () => {
+    setServerEditor(null);
+    void loadJsonConfig();
   };
 
   useSettingsDraft({
@@ -1240,6 +1266,14 @@ const McpToolsConfig: React.FC = () => {
 
   const mcpSectionExtra = (
     <>
+      {!showJsonEditor && <>
+        <Button size="sm" variant="primary" data-testid="mcp-add-server" disabled={!canEditConfig} onClick={() => openServerEditor('new')}>
+          {tMcp('visual.addTitle')}
+        </Button>
+        <Button size="sm" variant="outline" data-testid="mcp-import-config" disabled={!canEditConfig} onClick={() => openServerEditor('import')}>
+          {tMcp('visual.importTitle')}
+        </Button>
+      </>}
       {serverLoadFailed && !showJsonEditor ? (
         <>
           {servers.length > 0 ? (
@@ -1290,6 +1324,11 @@ const McpToolsConfig: React.FC = () => {
 
     return (
       <>
+        {editableConfig && Object.prototype.hasOwnProperty.call(editableConfig.mcpServers, server.id) && (
+          <Button size="sm" variant="outline" data-testid="mcp-edit-server" disabled={!canEditConfig || lifecyclePending} onClick={() => openServerEditor('edit', server.id)}>
+            {tMcp('visual.edit')}
+          </Button>
+        )}
         {isRemoteServer(server) && (
           <Tooltip content={tMcp('actions.remoteAuth')}>
             <IconButton
@@ -1510,6 +1549,20 @@ const McpToolsConfig: React.FC = () => {
             </div>
           )}
 
+          {desktopConfigAvailable && !showJsonEditor && jsonLoadFailed && (
+            <div className="openbitfun-collection-empty" data-openbitfun-component="mcp-tools-config" data-openbitfun-part="empty" role="status">
+              <p>{tMcp('jsonEditor.loadFailed')}</p>
+              <Button size="sm" variant="outline" onClick={() => void loadJsonConfig()}>{tMcp('actions.refresh')}</Button>
+            </div>
+          )}
+
+          {desktopConfigAvailable && !showJsonEditor && !jsonLoading && !jsonLoadFailed && !editableConfig && (
+            <div className="openbitfun-collection-empty" data-openbitfun-component="mcp-tools-config" data-openbitfun-part="empty" role="status">
+              <p>{tMcp('visual.errors.invalidConfig')}</p>
+              <Button size="sm" variant="outline" onClick={() => setShowJsonEditor(true)}>{tMcp('actions.jsonConfig')}</Button>
+            </div>
+          )}
+
           {desktopConfigAvailable && showJsonEditor && !jsonLoading && !jsonLoadFailed && (
             <div className="openbitfun-mcp-tools__json-editor" data-openbitfun-component="mcp-tools-config" data-openbitfun-part="jsonEditor">
               <div className="openbitfun-mcp-tools__json-editor-header" data-openbitfun-component="mcp-tools-config" data-openbitfun-part="jsonHeader">
@@ -1570,7 +1623,7 @@ const McpToolsConfig: React.FC = () => {
                 </div>
                 <div className="openbitfun-mcp-tools__example" data-openbitfun-component="mcp-tools-config" data-openbitfun-part="example">
                   <h5>{tMcp('jsonEditor.remoteService')}</h5>
-                  <pre>{`{\n  "mcpServers": {\n    "remote-mcp": {\n      "url": "http://localhost:3000/sse"\n    }\n  }\n}`}</pre>
+                  <pre>{`{\n  "mcpServers": {\n    "remote-mcp": {\n      "url": "https://example.com/mcp",\n      "transport": "streamable-http"\n    }\n  }\n}`}</pre>
                 </div>
               </div>
             </div>
@@ -1593,9 +1646,9 @@ const McpToolsConfig: React.FC = () => {
           {desktopConfigAvailable && !showJsonEditor && !mcpLoading
             && !serverLoadFailed && servers.length === 0 && (
             <div className="openbitfun-collection-empty" data-openbitfun-component="mcp-tools-config" data-openbitfun-part="empty">
-              <Button variant="outline" size="sm" onClick={() => setShowJsonEditor(true)} leadingIcon={<FileJson size={14} />}>
-
-                {tMcp('actions.jsonConfig')}
+              <p>{tMcp('visual.emptyHint')}</p>
+              <Button variant="outline" size="sm" onClick={() => openServerEditor('new')} disabled={!canEditConfig}>
+                {tMcp('visual.addTitle')}
               </Button>
             </div>
           )}
@@ -1616,6 +1669,10 @@ const McpToolsConfig: React.FC = () => {
 
 
       </ConfigPageContent>
+
+      {desktopConfigAvailable && serverEditor && (
+        <MCPServerConfigDialog session={serverEditor} saving={mcpSaving} onSave={persistJsonConfig} onClose={closeServerEditor} />
+      )}
       <Dialog
         open={desktopConfigAvailable && authDialogOpen}
         onOpenChange={(nextOpen) => { if (!nextOpen) handleCloseAuthDialog(); }}

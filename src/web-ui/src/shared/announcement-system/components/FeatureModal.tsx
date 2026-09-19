@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Button, Icon, IconButton, ScrollArea } from '@openbitfun/ui';
+import { Button, Icon, IconButton, Portal, ScrollArea } from '@openbitfun/ui';
 import { useAnnouncementStore } from '../store/announcementStore';
 import FeatureModalPage from './FeatureModalPage';
 import { useAnnouncementI18n } from '../hooks/useAnnouncementI18n';
@@ -135,6 +135,8 @@ const FeatureModal: React.FC = () => {
   const sizeClass = `feature-modal--${modal.size ?? 'lg'}`;
 
   return (
+    <Portal modal open={!exiting} surfaceRef={backdropRef}
+      onDismiss={() => triggerClose()} dismissOnEscape={Boolean(modal.closable)}>
     <div
       ref={backdropRef}
       className={`feature-modal-backdrop${exiting ? ' feature-modal-backdrop--exiting' : ''}`}
@@ -142,6 +144,8 @@ const FeatureModal: React.FC = () => {
       data-openbitfun-part="modalBackdrop"
       onClick={handleBackdropClick}
       role="dialog"
+      tabIndex={-1}
+      data-openbitfun-native-webview-occlusion
       aria-modal="true"
       aria-hidden={exiting}
       {...(exiting ? { inert: '' } : {})}
@@ -221,6 +225,7 @@ const FeatureModal: React.FC = () => {
         </div>
       </div>
     </div>
+    </Portal>
   );
 };
 

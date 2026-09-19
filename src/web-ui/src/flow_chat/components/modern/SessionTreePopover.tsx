@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { MessageSquare, Square } from 'lucide-react';
-import { OverflowText, Spinner, Tooltip } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Spinner, Tooltip } from '@openbitfun/ui';
 import { RetainedMountBoundary } from '@/shared/presence';
 import { sessionAPI, type SessionLineageSnapshot } from '@/infrastructure/api/service-api/SessionAPI';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance';
@@ -198,6 +197,9 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
   }, [isOpen, refreshSnapshot]);
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
+    let removeOverlayMousedown1: (() => void) | undefined;
+    let removeOverlayKeydown2: (() => void) | undefined;
     if (!isOpen) return;
     if (embedded) {
       const handleEmbeddedPointerDown = (event: MouseEvent) => {
@@ -211,8 +213,8 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
           setActionMenuPosition(null);
         }
       };
-      document.addEventListener('mousedown', handleEmbeddedPointerDown);
-      return () => document.removeEventListener('mousedown', handleEmbeddedPointerDown);
+      removeOverlayMousedown0 = subscribeOverlayInteraction(actionMenuRef, 'mousedown', handleEmbeddedPointerDown);
+      return () => removeOverlayMousedown0?.();
     }
     const handlePointerDown = (event: MouseEvent) => {
       if (
@@ -229,11 +231,11 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
         closePopover('keyboard');
       }
     };
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
+    removeOverlayMousedown1 = subscribeOverlayInteraction(panelRef, 'mousedown', handlePointerDown);
+    removeOverlayKeydown2 = subscribeOverlayInteraction(panelRef, 'keydown', handleKeyDown);
     return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
+      removeOverlayMousedown1?.();
+      removeOverlayKeydown2?.();
     };
   }, [closePopover, embedded, isOpen, openActionSessionId]);
 
@@ -505,7 +507,7 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
                   icon={<Icon name="more" size="lg" style={{ width: 13, height: 13 }} aria-hidden="true" />}
                 />
               </Tooltip>
-              {openActionSessionId === node.sessionId && actionMenuPosition ? createPortal(
+              {openActionSessionId === node.sessionId && actionMenuPosition ? createOverlayPortal(
                 <Menu
                   ref={actionMenuRef}
                   className="session-tree-popover__action-menu"
@@ -540,6 +542,13 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
                   </MenuItem> : null}
                 </Menu>,
                 getAppearanceOverlayHost(),
+                null,
+                {
+                  ownerRef: actionMenuAnchorRef,
+                  surfaceRef: actionMenuRef,
+                  onDismiss: () => { setOpenActionSessionId(null); setActionMenuPosition(null); },
+                  dismissOnPointerOutside: true,
+                },
               ) : null}
             </div>
           ) : null}
@@ -676,7 +685,7 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
       </Tooltip>
 
       <RetainedMountBoundary present={isOpen}>
-        {createPortal(
+        {createOverlayPortal(
           <div
           ref={panelRef}
           className="session-tree-popover__panel"
@@ -706,6 +715,8 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
           {treeBody}
           </div>,
           getAppearanceOverlayHost(),
+          null,
+          { open: isOpen, ownerRef: containerRef },
         )}
       </RetainedMountBoundary>
     </div>

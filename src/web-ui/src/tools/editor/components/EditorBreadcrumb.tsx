@@ -2,7 +2,6 @@ import { useEditorDocument } from '../services/EditorDocument';
 /** File path breadcrumb with a dropdown for quick navigation. */
 
 import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { Code, Loader2 } from 'lucide-react';
 import { getFileIconType } from '@/tools/file-system/utils/fileIcons';
@@ -11,7 +10,7 @@ import { createLogger } from '@/shared/utils/logger';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
 
 import './EditorBreadcrumb.scss';
-import { OverflowText, Icon, Menu, MenuItem, MenuSection, Tooltip, type IconSize } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Icon, Menu, MenuItem, MenuSection, Tooltip, type IconSize } from '@openbitfun/ui';
 
 const log = createLogger('EditorBreadcrumb');
 
@@ -116,6 +115,8 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
   });
 
   useEffect(() => {
+    let removeOverlayMousedown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     if (!isOpen) return;
 
     const handleClickOutside = (event: MouseEvent) => {
@@ -136,14 +137,14 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
     };
 
     const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('keydown', handleKeyDown);
+      removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handleClickOutside);
+      removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
     }, 0);
 
     return () => {
       clearTimeout(timer);
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
+      removeOverlayMousedown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [isOpen, onClose, anchorEl]);
 
@@ -247,7 +248,7 @@ const DropdownMenu: React.FC<DropdownMenuProps> = ({
     </Menu>
   );
 
-  return createPortal(menuContent, getAppearanceOverlayHost());
+  return createOverlayPortal(menuContent, getAppearanceOverlayHost());
 };
 export const EditorBreadcrumb: React.FC<EditorBreadcrumbProps> = ({
   filePath,

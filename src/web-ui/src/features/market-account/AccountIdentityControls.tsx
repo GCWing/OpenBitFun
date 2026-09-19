@@ -1,4 +1,4 @@
-import { OverflowText,
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText,
   Avatar,
   Button,
   Icon,
@@ -12,7 +12,6 @@ import { OverflowText,
   DialogTitle,
 } from '@openbitfun/ui';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Github, Loader2, LogOut } from 'lucide-react';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useI18n } from '@/infrastructure/i18n';
@@ -101,6 +100,8 @@ export function AccountIdentityControls({
   }, [menuOpen, scheduleMenuPositionUpdate, updateMenuPosition]);
 
   useEffect(() => {
+    let removeOverlayPointerdown0: (() => void) | undefined;
+    let removeOverlayKeydown1: (() => void) | undefined;
     if (!menuOpen) return;
     const closeOnOutsideClick = (event: PointerEvent) => {
       const target = event.target as Node;
@@ -113,11 +114,11 @@ export function AccountIdentityControls({
       setMenuOpen(false);
       menuTriggerRef.current?.focus();
     };
-    document.addEventListener('pointerdown', closeOnOutsideClick);
-    document.addEventListener('keydown', closeOnEscape);
+    removeOverlayPointerdown0 = subscribeOverlayInteraction(menuPanelRef, 'pointerdown', closeOnOutsideClick);
+    removeOverlayKeydown1 = subscribeOverlayInteraction(menuPanelRef, 'keydown', closeOnEscape);
     return () => {
-      document.removeEventListener('pointerdown', closeOnOutsideClick);
-      document.removeEventListener('keydown', closeOnEscape);
+      removeOverlayPointerdown0?.();
+      removeOverlayKeydown1?.();
     };
   }, [menuOpen]);
 
@@ -198,7 +199,7 @@ export function AccountIdentityControls({
             <OverflowText className="market-account-controls__identity-name">{account.me.email ?? `@${account.me.user.login}`}</OverflowText>
             <Icon name="chevron-down" size="xs" aria-hidden="true" />
           </button>
-          {menuOpen && createPortal(
+          {menuOpen && createOverlayPortal(
             <Menu
               ref={menuPanelRef}
               className="market-account-controls__menu"

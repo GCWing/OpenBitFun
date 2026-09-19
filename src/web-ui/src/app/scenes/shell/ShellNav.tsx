@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { Play, Square } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
 import { configManager } from '@/infrastructure/config/services/ConfigManager';
@@ -16,7 +15,7 @@ import type { ShellInfo } from '@/tools/terminal/types/session';
 import { useShellEntries } from './hooks';
 import type { ShellEntry } from './hooks/shellEntryTypes';
 import { useShellNavMenuState } from './hooks/useShellNavMenuState';
-import {
+import { createOverlayPortal,
   Button,
   Icon,
   Menu,
@@ -301,7 +300,7 @@ const ShellNav: React.FC = () => {
             </Tooltip>
           </div>
 
-          {menuOpen ? createPortal(
+          {menuOpen ? createOverlayPortal(
             <Menu
               ref={menuPopoverRef}
               data-openbitfun-component="shell-nav"

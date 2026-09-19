@@ -9,9 +9,8 @@ import {
   type KeyboardEvent,
   type MutableRefObject,
 } from 'react';
-import { createPortal } from 'react-dom';
 import { Loader2 } from 'lucide-react';
-import { Icon, Menu, MenuItem } from '@openbitfun/ui';
+import { createOverlayPortal, Icon, Menu, MenuItem } from '@openbitfun/ui';
 
 import type { AcpClientInfo } from '@/infrastructure/api/service-api/ACPClientAPI';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
@@ -183,7 +182,7 @@ const WorkspaceAcpSessionSubmenu = forwardRef<HTMLDivElement, WorkspaceAcpSessio
           {label}
         </MenuItem>
 
-        {open && createPortal(
+        {open && createOverlayPortal(
           <Menu
             ref={setSubmenuRef}
             className="openbitfun-nav-panel__workspace-item-menu-popover openbitfun-nav-panel__workspace-acp-submenu"

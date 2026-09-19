@@ -386,6 +386,7 @@
     --openbitfun-overlay-menu-item-padding-inline: var(--openbitfun-space-2);
     --openbitfun-overlay-menu-item-radius: var(--openbitfun-radius-base);
     --openbitfun-overlay-menu-max-block-size: 480px;
+    --openbitfun-overlay-menu-row-gap: 2px;
     --openbitfun-overlay-menu-scrollbar-gap: 2px;
     --openbitfun-overlay-menu-section-gap: var(--openbitfun-space-2);
     --openbitfun-overlay-menu-surface-padding: var(--openbitfun-space-2);

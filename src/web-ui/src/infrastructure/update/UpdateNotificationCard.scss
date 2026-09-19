@@ -1,0 +1,146 @@
+@use './updateSurface';
+
+.openbitfun-update-notice {
+  box-sizing: border-box;
+  inline-size: 368px;
+  max-inline-size: calc(100vw - var(--openbitfun-space-6));
+  block-size: 224px;
+  animation: openbitfun-update-notice-enter var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-enter) both;
+
+  &__surface {
+    @include updateSurface.frosted-surface;
+
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    block-size: 100%;
+  }
+
+  &__title {
+    margin-inline-start: calc(-1 * var(--openbitfun-space-2));
+    max-inline-size: calc(100% + var(--openbitfun-space-2));
+  }
+
+  &__heading {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+
+  &__title-text {
+    font-family: var(--openbitfun-type-heading-panel-font-family);
+    font-size: var(--openbitfun-type-heading-panel-font-size);
+    font-weight: var(--openbitfun-type-heading-panel-font-weight);
+    line-height: var(--openbitfun-type-heading-panel-line-height);
+    letter-spacing: var(--openbitfun-type-heading-panel-letter-spacing);
+  }
+
+  &__body {
+    min-block-size: 0;
+    overflow: hidden;
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__introduction {
+    flex: 0 0 auto;
+    block-size: 3lh;
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-family: var(--openbitfun-type-body-md-font-family);
+    font-size: var(--openbitfun-type-body-md-font-size);
+    font-weight: var(--openbitfun-type-body-md-font-weight);
+    line-height: var(--openbitfun-type-body-md-line-height);
+    letter-spacing: var(--openbitfun-type-body-md-letter-spacing);
+
+    &[data-overflow-lines='1'] {
+      block-size: 1lh;
+    }
+  }
+
+  &__empty-introduction {
+    display: grid;
+    flex: 1 1 auto;
+    grid-template-columns: minmax(0, 1fr) 80px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: center;
+    min-block-size: 0;
+    gap: var(--openbitfun-space-4);
+    pointer-events: none;
+
+    &::before,
+    &::after {
+      block-size: var(--openbitfun-border-width-default);
+      background: linear-gradient(to right, transparent, var(--openbitfun-color-border-default));
+      content: '';
+    }
+
+    &::after { transform: scaleX(-1); }
+  }
+
+  &__brand-mark {
+    inline-size: 80px;
+    block-size: 100%;
+    max-block-size: 80px;
+    background: var(--openbitfun-color-content-muted);
+    mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
+  }
+
+  &__feedback {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: baseline;
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__message {
+    display: flex;
+    flex: 1;
+    align-items: flex-start;
+    gap: var(--openbitfun-space-2);
+    min-inline-size: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  &__status-icon {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    block-size: 1lh;
+  }
+
+  &__progress {
+    flex: 0 0 auto;
+    margin-block-start: auto;
+    min-inline-size: 0;
+    block-size: var(--openbitfun-space-1);
+  }
+
+  &__footer {
+    padding-block-start: var(--openbitfun-space-2);
+  }
+
+  &__actions {
+    flex-wrap: nowrap;
+  }
+
+  &__action {
+    flex: 1 1 0;
+    min-inline-size: 0;
+  }
+}
+
+@keyframes openbitfun-update-notice-enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--openbitfun-motion-distance-sm));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-update-notice {
+    animation: none;
+  }
+}

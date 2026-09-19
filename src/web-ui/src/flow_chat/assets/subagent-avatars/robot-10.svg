@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="-2.5714 0.4286 261.1429 261.1429" role="img" aria-labelledby="avatar-title-10">
+  <title id="avatar-title-10">matcha joystick avatar</title>
+  <rect x="116" y="70" width="24" height="30" rx="12" fill="#739857"/>
+  <path d="M82 84H174C218 84 240 110 240 160C240 210 218 236 174 236H82C38 236 16 210 16 160C16 110 38 84 82 84Z" transform="matrix(1.02 0 0 0.9737 -2.56 6.2105)" fill="#91B57B"/>
+  <circle cx="128" cy="52" r="26" fill="#536F3E"/>
+  <g fill="#34472D">
+    <ellipse cx="101" cy="164" rx="10.5" ry="16"/>
+    <ellipse cx="155" cy="164" rx="10.5" ry="16"/>
+  </g>
+  <path d="M119 186Q128 197 137 186" fill="none" stroke="#34472D" stroke-width="8" stroke-linecap="round"/>
+</svg>

@@ -35,10 +35,10 @@ const SKILL_REFERENCE_BADGE_ICON = renderToStaticMarkup(
   <Icon name="extension" size="xs" aria-hidden="true" />,
 );
 const SESSION_REFERENCE_BADGE_ICON = renderToStaticMarkup(
-  <MessageCircle size={12} strokeWidth={2.2} aria-hidden="true" />,
+  <Icon glyph={MessageCircle} size="xs" aria-hidden="true" />,
 );
 const MCP_REFERENCE_BADGE_ICON = renderToStaticMarkup(
-  <Plug size={12} strokeWidth={2.2} aria-hidden="true" />,
+  <Icon glyph={Plug} size="xs" aria-hidden="true" />,
 );
 const EMPTY_PENDING_LARGE_PASTES: Record<string, string> = Object.freeze({});
 const LARGE_PASTE_CARET_ANCHOR = '\u200B';

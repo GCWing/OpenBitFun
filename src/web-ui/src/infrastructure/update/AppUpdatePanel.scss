@@ -1,0 +1,217 @@
+@use './updateSurface';
+
+.openbitfun-update-dialog {
+  @include updateSurface.frosted-surface;
+
+  block-size: min(480px, calc(100dvh - 2 * var(--openbitfun-overlay-dialog-viewport-gutter)));
+}
+
+.openbitfun-update-details {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+
+  &__header,
+  &__body,
+  &__footer {
+    padding-inline: var(--openbitfun-overlay-dialog-content-padding-xl);
+  }
+
+  &__header {
+    align-items: center;
+    gap: var(--openbitfun-space-4);
+    padding-block-end: var(--openbitfun-space-8);
+  }
+
+  &__versions > span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--openbitfun-space-3);
+  }
+
+  &__version {
+    color: var(--openbitfun-color-content-secondary);
+    font-family: var(--openbitfun-type-label-lg-font-family);
+    font-size: var(--openbitfun-type-label-lg-font-size);
+    font-weight: var(--openbitfun-type-label-lg-font-weight);
+    line-height: var(--openbitfun-type-label-lg-line-height);
+    letter-spacing: var(--openbitfun-type-label-lg-letter-spacing);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__close { align-self: flex-start; }
+
+  &__footer { padding-block-start: var(--openbitfun-space-4); }
+}
+
+.openbitfun-update-panel {
+  display: flex;
+  flex: 1 0 auto;
+  flex-direction: column;
+  gap: var(--openbitfun-space-4);
+  min-inline-size: 0;
+  font-family: var(--openbitfun-type-body-md-font-family);
+  font-size: var(--openbitfun-type-body-md-font-size);
+  font-weight: var(--openbitfun-type-body-md-font-weight);
+  line-height: var(--openbitfun-type-body-md-line-height);
+  letter-spacing: var(--openbitfun-type-body-md-letter-spacing);
+
+  &__feedback {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-3);
+  }
+
+  &__status {
+    margin: 0;
+    color: var(--openbitfun-color-content-muted);
+    font-family: var(--openbitfun-type-support-font-family);
+    font-size: var(--openbitfun-type-support-font-size);
+    font-weight: var(--openbitfun-type-support-font-weight);
+    line-height: var(--openbitfun-type-support-line-height);
+    letter-spacing: var(--openbitfun-type-support-letter-spacing);
+  }
+
+  &__actions,
+  &__primary-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__actions {
+    inline-size: 100%;
+    min-block-size: var(--openbitfun-control-height-md);
+  }
+
+  &__primary-actions {
+    justify-content: flex-end;
+    margin-inline-start: auto;
+  }
+
+  &__progress {
+    inline-size: 100%;
+    block-size: var(--openbitfun-space-1);
+  }
+
+  &__empty {
+    display: grid;
+    flex: 1 1 auto;
+    place-items: center;
+    min-block-size: 192px;
+    pointer-events: none;
+
+    .openbitfun-update-details__mark {
+      grid-area: 1 / 1;
+      z-index: 1;
+      inline-size: min(60%, 192px);
+      aspect-ratio: 1;
+      background: linear-gradient(
+        145deg,
+        var(--openbitfun-color-content-secondary),
+        var(--openbitfun-color-content-muted)
+      );
+      mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
+    }
+  }
+
+  &__notes {
+    overflow-wrap: anywhere;
+    color: var(--openbitfun-color-content-secondary);
+
+    :where(p, ul, ol, blockquote, pre, h1, h2, h3, h4, h5, h6) { margin: 0; }
+
+    p { text-wrap: pretty; }
+
+    ul, ol { padding: 0; }
+    ul { list-style: none; }
+    ol { padding-inline-start: var(--openbitfun-space-5); }
+    ol > li { padding-inline-start: var(--openbitfun-space-1); }
+    ol > li::marker { color: var(--openbitfun-color-content-muted); }
+
+    li + li { margin-block-start: var(--openbitfun-space-3); }
+    li > * + * { margin-block-start: var(--openbitfun-space-2); }
+
+    ul > li {
+      position: relative;
+      padding-inline-start: var(--openbitfun-space-5);
+
+      &::before {
+        position: absolute;
+        inset-inline-start: var(--openbitfun-space-1);
+        inset-block-start: calc(0.5lh - var(--openbitfun-space-1) / 2);
+        inline-size: var(--openbitfun-space-1);
+        block-size: var(--openbitfun-space-1);
+        border-radius: var(--openbitfun-radius-pill);
+        background: var(--openbitfun-color-content-muted);
+        content: '';
+      }
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--openbitfun-color-content-primary);
+      font-family: var(--openbitfun-type-heading-section-font-family);
+      font-size: var(--openbitfun-type-heading-section-font-size);
+      font-weight: var(--openbitfun-type-heading-section-font-weight);
+      line-height: var(--openbitfun-type-heading-section-line-height);
+      letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
+    }
+
+    strong {
+      color: var(--openbitfun-color-content-primary);
+      font-weight: var(--openbitfun-type-heading-section-font-weight);
+    }
+
+    a {
+      color: var(--openbitfun-color-accent-default);
+      text-underline-offset: var(--openbitfun-space-1);
+
+      &:hover { text-decoration: underline; }
+      &:focus-visible {
+        outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+        outline-offset: var(--openbitfun-focus-offset);
+      }
+    }
+
+    blockquote {
+      padding-inline-start: var(--openbitfun-space-4);
+      border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
+      color: var(--openbitfun-color-content-muted);
+    }
+
+    pre {
+      padding: var(--openbitfun-space-3);
+      border-radius: var(--openbitfun-radius-base);
+      background: var(--openbitfun-color-surface-tertiary);
+      white-space: pre-wrap;
+    }
+
+    code {
+      font-family: var(--openbitfun-type-code-sm-font-family);
+      font-size: var(--openbitfun-type-code-sm-font-size);
+      font-weight: var(--openbitfun-type-code-sm-font-weight);
+      line-height: var(--openbitfun-type-code-sm-line-height);
+      letter-spacing: var(--openbitfun-type-code-sm-letter-spacing);
+    }
+
+    hr {
+      margin-block: var(--openbitfun-space-6);
+      border: 0;
+      border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    }
+  }
+
+  &__prose {
+    > * + * { margin-block-start: var(--openbitfun-space-4); }
+    > :is(h1, h2, h3, h4, h5, h6):not(:first-child) { margin-block-start: var(--openbitfun-space-6); }
+    > :is(h1, h2, h3, h4, h5, h6) + * { margin-block-start: var(--openbitfun-space-3); }
+
+    > p:first-child {
+      color: var(--openbitfun-color-content-primary);
+    }
+  }
+}

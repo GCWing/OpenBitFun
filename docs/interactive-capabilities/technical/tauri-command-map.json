@@ -2201,7 +2201,7 @@
       "visibility": "documented",
       "rustPath": "api::update_api::download_update",
       "sourceFile": "src/apps/desktop/src/api/update_api.rs",
-      "signature": "fn download_update( app: AppHandle, request: PendingUpdateRequest, ) -> Result<PendingUpdateResponse, String>",
+      "signature": "fn download_update( app: AppHandle, request: DownloadUpdateRequest, ) -> Result<PendingUpdateResponse, String>",
       "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {

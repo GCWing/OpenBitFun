@@ -366,15 +366,6 @@
     min-block-size: 0;
   }
 
-  .listbox [data-openbitfun-part="list"],
-  .listbox [data-openbitfun-part="group-options"] {
-    gap: calc(var(--openbitfun-space-1) / 2);
-  }
-
-  .listbox [data-openbitfun-part="group"] {
-    gap: var(--openbitfun-overlay-menu-section-gap);
-  }
-
   .listbox [data-openbitfun-listbox-option][data-selected="true"] [data-openbitfun-part="label"] {
     font-weight: var(--openbitfun-type-label-selected-font-weight);
   }

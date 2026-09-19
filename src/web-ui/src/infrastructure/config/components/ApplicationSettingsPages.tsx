@@ -150,8 +150,7 @@ function AutoUpdateSetting() {
     setLoading(true);
     setLoadFailed(false);
     try {
-      const value = await configManager.getOptionalConfig<boolean>('app.auto_update');
-      setEnabled(value !== false);
+      setEnabled(await systemAPI.getAutoUpdateEnabled());
     } catch (error) {
       log.error('Failed to load app.auto_update', error);
       setLoadFailed(true);
@@ -174,8 +173,7 @@ function AutoUpdateSetting() {
       setEnabled(next);
       setSaving(true);
       try {
-        await configManager.setConfig('app.auto_update', next);
-        configManager.clearCache();
+        await systemAPI.setAutoUpdateEnabled(next);
         showMessage('success', t('autoUpdate.messages.saved'));
       } catch (error) {
         setEnabled(previous);

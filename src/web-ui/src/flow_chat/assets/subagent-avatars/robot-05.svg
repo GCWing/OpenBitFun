@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="3.2857 4.4107 249.4286 249.4286" role="img" aria-labelledby="avatar-title-05">
+  <title id="avatar-title-05">peach joystick avatar</title>
+  <rect x="116" y="60" width="24" height="30" rx="12" fill="#DB9887"/>
+  <path d="M128 72C188 72 234 88 234 138V178C234 220 218 238 180 238H76C38 238 22 220 22 178V138C22 88 68 72 128 72Z" transform="matrix(1.02 0 0 0.9639 -2.56 8.6024)" fill="#F3B3A0"/>
+  <circle cx="128" cy="44" r="24" fill="#C87362"/>
+  <g fill="#78463D">
+    <ellipse cx="101" cy="163" rx="10" ry="16"/>
+    <ellipse cx="155" cy="163" rx="10" ry="16"/>
+  </g>
+  <path d="M119 185Q128 196 137 185" fill="none" stroke="#78463D" stroke-width="8" stroke-linecap="round"/>
+</svg>

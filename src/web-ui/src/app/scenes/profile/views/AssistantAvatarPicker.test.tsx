@@ -83,7 +83,7 @@ describe('AssistantAvatarPicker', () => {
       document.querySelectorAll<HTMLButtonElement>('.acp-avatar-picker__option'),
     ).find((option) => option.textContent === '🧭');
     expect(compassOption).toBeTruthy();
-    expect(document.querySelector('.acp-avatar-picker__popover')?.parentElement?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
+    expect(document.querySelector('.acp-avatar-picker__popover')?.closest('[data-openbitfun-overlay-host]')?.getAttribute('data-openbitfun-overlay-host')).toBe('true');
 
     act(() => compassOption?.click());
     expect(onChange).toHaveBeenCalledWith('🧭');

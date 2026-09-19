@@ -98,6 +98,12 @@ Primitive/reference 色值只存在于主题 authoring、明确的主题 preset 
 
 ## 普通 UI 的硬约束
 
+更新提醒与详情弹窗共用磨砂材质。暗色通过现有 surface、content、info 与 highlight Token 提亮底面，
+并用 `--openbitfun-component-update-material-cyan` 保留青色衬光；该组件 Token 复用公开浅色主题的
+accent，由 Web UI Appearance 提供默认值并接受皮肤覆盖。暗色全局 accent 为蓝色，无法同时表达
+青蓝两种材质色；其他组件的青色 Token 也不属于更新材质。该差异因此由更新组件的最小契约承载，
+不新增基础色。旧皮肤通过现有组合逻辑补齐默认值。
+
 普通应用组件和页面必须满足：
 
 - 颜色、阴影和 blur 只从 canonical Token 取得；允许用 `color-mix()`、gradient 等 CSS 运算组合 Token。

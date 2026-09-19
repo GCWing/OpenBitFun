@@ -85,6 +85,41 @@ describe('annotation editor ownership', () => {
     expect(original.content).toContain('Original comment');
   });
 
+  it('removes an annotation from its visible and stored drafts without changing other input', () => {
+    const other = { ...excerpt, id: 'other', annotationNumber: 3 };
+    sessionComposerStore.getState().setContexts('main', [file, excerpt, other]);
+    sessionComposerStore.getState().setContexts('side', [excerpt]);
+    sessionComposerStore.getState().setValue('main', 'Keep my question');
+    useContextStore.getState().replaceContexts([file, excerpt, other]);
+    const target = editableTarget();
+    expect(target.remove()).toBe('removed');
+    expect(useContextStore.getState().contexts).toEqual([file, other]);
+    expect(sessionComposerStore.getState().getDraft('main')).toMatchObject({ value: 'Keep my question', contexts: [file, other] });
+    expect(sessionComposerStore.getState().getDraft('side').contexts).toEqual([]);
+    expect(target.remove()).toBe('unavailable');
+    expect(target.save('Do not restore')).toBe('unavailable');
+  });
+
+  it('removes queued annotations from the actual prompt, fallback and attachments together', () => {
+    const original = pendingQueueManager.enqueue(queued());
+    sessionComposerStore.getState().setContexts('side', [excerpt]);
+    const target = editableTarget();
+    expect(target.remove()).toBe('removed');
+    const result = pendingQueueManager.list('main')[0];
+    const other = original.composerDraft!.contexts[2];
+    expect(result.content).toBe(original.content.replace(formatConversationExcerpt(excerpt), ''));
+    expect(result.displayMessage).toBe(original.displayMessage!.replace(formatConversationExcerpt(excerpt), ''));
+    expect(result.composerDraft).toEqual({ ...original.composerDraft, contexts: [file, other] });
+    expect(result.userMessageMetadata).toEqual({ ...original.userMessageMetadata,
+      composerPresentation: withConversationExcerpts(null, [other], 'Question'),
+    });
+    expect(result).toMatchObject({ id: original.id, timestamp: original.timestamp, status: original.status, retryCount: original.retryCount });
+    expect(result.imageContexts).toBe(original.imageContexts);
+    expect(result.imageDisplayData).toBe(original.imageDisplayData);
+    expect(sessionComposerStore.getState().getDraft('side').contexts).toEqual([]);
+    expect(original.content).toContain('Original comment');
+  });
+
   it('supports older unnumbered queue records with presentation metadata and no composer draft', () => {
     const legacy = { ...excerpt, annotationNumber: undefined };
     const original = queued(legacy);
@@ -95,12 +130,21 @@ describe('annotation editor ownership', () => {
     expect(result?.userMessageMetadata).toMatchObject({ composerPresentation: { segments: expect.arrayContaining([
       expect.objectContaining({ kind: 'context', context: { ...legacy, comment: 'Legacy revision' } }),
     ]) } });
+    const removed = reviseQueuedExcerpt(original, legacy, null);
+    expect(removed?.content).not.toContain(formatConversationExcerpt(legacy));
+    expect(removed?.composerDraft).toBeUndefined();
+    expect(removed?.userMessageMetadata).toEqual({ ...original.userMessageMetadata,
+      composerPresentation: withConversationExcerpts(null, [queued().composerDraft!.contexts[2]], 'Question'),
+    });
   });
 
   it.each(['unsupported legacy prompt', `${formatConversationExcerpt(excerpt)}\n${formatConversationExcerpt(excerpt)}`])(
     'retains a queue payload whose original annotation cannot be replaced uniquely (%#)', content => {
       const original = pendingQueueManager.enqueue({ ...queued(), content });
       expect(editableTarget().save('Revision')).toBe('queue-unavailable');
+      sessionComposerStore.getState().setContexts('side', [excerpt]);
+      expect(editableTarget().remove()).toBe('queue-unavailable');
+      expect(sessionComposerStore.getState().getDraft('side').contexts).toEqual([excerpt]);
       expect(pendingQueueManager.list('main')[0]).toBe(original);
     },
   );
@@ -111,9 +155,11 @@ describe('annotation editor ownership', () => {
     pendingQueueManager.setStatus('main', queuedMessage.id, 'sending');
     expect(conversationExcerptDialogTarget(excerpt, 'source').mode).toBe('view');
     expect(target.save('Too late')).toBe('queue-unavailable');
+    expect(target.remove()).toBe('queue-unavailable');
     expect(pendingQueueManager.list('main')[0].content).toBe(queuedMessage.content);
     pendingQueueManager.consumeNext('main');
     expect(target.save('Too late')).toBe('unavailable');
+    expect(target.remove()).toBe('unavailable');
     expect(conversationExcerptDialogTarget(excerpt, 'source').mode).toBe('view');
     expect(sessionComposerStore.getState().getDraft('main').contexts).toEqual([]);
   });
@@ -126,12 +172,14 @@ describe('annotation editor ownership', () => {
     activateSurface('peer');
     expect(local.isCurrent()).toBe(false);
     expect(local.save('Wrong device')).toBe('unavailable');
+    expect(local.remove()).toBe('unavailable');
     const peer = editableTarget(peerExcerpt);
     expect(peer.save('Peer revision')).toBe('saved');
     expect(sessionComposerStore.getState().getDraft('main', 'peer').contexts).toEqual([{ ...peerExcerpt, comment: 'Peer revision' }]);
     expect(sessionComposerStore.getState().getDraft('main', 'local').contexts).toEqual([excerpt]);
     activateSurface('peer');
     expect(peer.save('Old activation')).toBe('unavailable');
+    expect(peer.remove()).toBe('unavailable');
   });
 
   it('exposes no edit capability for sent snapshots, including ones that also appear in pending drafts', () => {
@@ -150,6 +198,7 @@ describe('annotation editor ownership', () => {
     expect(target.mode).toBe('view');
     expect(target.excerpt).toBe(excerpt);
     expect('save' in target).toBe(false);
+    expect('remove' in target).toBe(false);
     expect(useContextStore.getState().contexts).toEqual([draft]);
     expect(history).toEqual(snapshot);
   });

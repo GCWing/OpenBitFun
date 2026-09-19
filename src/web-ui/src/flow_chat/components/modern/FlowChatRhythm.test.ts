@@ -24,7 +24,7 @@ describe('FlowChat transcript rhythm', () => {
   function modelRound(
     turnId: string,
     roundId: string,
-    items: Array<'text' | 'thinking' | { toolName: string }>,
+    items: Array<'text' | 'thinking' | { toolName: string; input?: unknown }>,
   ): VirtualItem {
     return {
       type: 'model-round',
@@ -40,13 +40,26 @@ describe('FlowChat transcript rhythm', () => {
               id: `${roundId}-${index}`,
               type: 'tool',
               toolName: item.toolName,
-              toolCall: { id: `${roundId}-call-${index}`, input: {} },
+              toolCall: { id: `${roundId}-call-${index}`, input: item.input ?? {} },
             }),
       },
       isLastRound: false,
       isTurnComplete: false,
     } as unknown as VirtualItem;
   }
+
+  it('keeps control actions distinct from discovery across model rounds, including deferred calls', () => {
+    const read = modelRound('turn-1', 'read', [{ toolName: 'Read' }]);
+    const discovery = modelRound('turn-1', 'discovery', [{
+      toolName: 'OpenBitFunControl', input: { action: 'get' },
+    }]);
+    const control = modelRound('turn-1', 'control', [{
+      toolName: 'CallDeferredTool', input: { tool_name: 'OpenBitFunControl', args: { action: 'configure' } },
+    }]);
+    expect(isAmbientToolRunContinuationAfter(read, discovery)).toBe(true);
+    expect(isAmbientToolRunContinuationAfter(discovery, control)).toBe(false);
+    expect(isAmbientToolRunContinuationAfter(control, read)).toBe(false);
+  });
 
   it('treats collapsed ambient tool runs as text-like rows', () => {
     const toolStyles = readSource('../../_item-rhythm.scss');

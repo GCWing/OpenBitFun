@@ -3,9 +3,8 @@ import { File as LucideFile } from 'lucide-react';
  * Snapshot fullscreen diff viewer for all session file changes.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { OverflowText, Button, IconButton } from '@openbitfun/ui';
-import { createPortal } from 'react-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { subscribeOverlayInteraction, createOverlayPortal, OverflowText, Button, IconButton } from '@openbitfun/ui';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { XCircle, FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -13,7 +12,6 @@ import { Tooltip, Icon } from '@openbitfun/ui';
 import { DiffEditor } from '../../tools/editor';
 import type { SnapshotFile } from '../../tools/snapshot_system/core/SnapshotStateManager';
 import { createLogger } from '@/shared/utils/logger';
-import { isImeOwnedKeyboardEvent } from '@/shared/utils/ime';
 import './SnapshotFullscreenDiffViewer.css';
 
 const log = createLogger('SnapshotFullscreenDiffViewer');
@@ -42,26 +40,7 @@ export const SnapshotFullscreenDiffViewer: React.FC<SnapshotFullscreenDiffViewer
 }) => {
   const { t } = useTranslation('flow-chat');
   const [selectedFileIndex, setSelectedFileIndex] = useState(0);
-
-  // Close on Escape key.
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen && !isImeOwnedKeyboardEvent(e)) {
-        onClose();
-      }
-    };
-
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape);
-      // Prevent background scrolling while open.
-      document.body.style.overflow = 'hidden';
-    }
-
-    return () => {
-      document.removeEventListener('keydown', handleEscape);
-      document.body.style.overflow = '';
-    };
-  }, [isOpen, onClose]);
+  const surfaceRef = useRef<HTMLDivElement>(null);
 
   // Keyboard navigation across files.
   useEffect(() => {
@@ -77,13 +56,7 @@ export const SnapshotFullscreenDiffViewer: React.FC<SnapshotFullscreenDiffViewer
       }
     };
 
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyboard);
-    }
-
-    return () => {
-      document.removeEventListener('keydown', handleKeyboard);
-    };
+    if (isOpen) return subscribeOverlayInteraction(surfaceRef, 'keydown', handleKeyboard);
   }, [isOpen, files.length]);
 
   // Reset selection when opening.
@@ -150,7 +123,7 @@ export const SnapshotFullscreenDiffViewer: React.FC<SnapshotFullscreenDiffViewer
 
   const fullscreenContent = (
     <div data-overflow-trigger data-openbitfun-component="snapshot-fullscreen-diff-viewer" data-openbitfun-part="overlay" className="snapshot-fullscreen-overlay" onClick={handleBackdropClick}>
-      <div data-openbitfun-component="snapshot-fullscreen-diff-viewer" data-openbitfun-part="root" className="snapshot-fullscreen-container">
+      <div ref={surfaceRef} role="dialog" aria-modal="true" aria-label={t('toolCards.snapshot.fileDiff')} tabIndex={-1} data-openbitfun-component="snapshot-fullscreen-diff-viewer" data-openbitfun-part="root" className="snapshot-fullscreen-container">
         <div data-openbitfun-component="snapshot-fullscreen-diff-viewer" data-openbitfun-part="header" className="snapshot-fullscreen-header">
           <div data-openbitfun-component="snapshot-fullscreen-diff-viewer" data-openbitfun-part="sessionInfo" className="session-info">
             <div className="session-icon">
@@ -317,5 +290,5 @@ export const SnapshotFullscreenDiffViewer: React.FC<SnapshotFullscreenDiffViewer
     </div>
   );
 
-  return createPortal(fullscreenContent, getAppearanceOverlayHost());
+  return createOverlayPortal(fullscreenContent, getAppearanceOverlayHost(), null, { modal: true, surfaceRef, onDismiss: onClose });
 };

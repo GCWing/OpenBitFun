@@ -31,6 +31,8 @@ export interface MenuPopoverProps extends Omit<MenuProps, "children"> {
   open: boolean;
   onClose: () => void;
   anchorRef?: RefObject<HTMLElement | null>;
+  /** Logical owner for coordinate menus rendered outside their source tree. */
+  ownerRef?: RefObject<HTMLElement | null>;
   position?: { x: number; y: number };
   placement?: LayerPlacement;
   /** Stable wrappers must forward all props (and refs for root/item/separator). */
@@ -54,7 +56,7 @@ function ownItems(menu: HTMLElement) {
 }
 
 /** Anchored/coordinate menu with nested navigation, safe pointer corridors and focus return. */
-export function MenuPopover({ items, open, onClose, anchorRef, position, placement = "bottom", autoFocusFirstItem = true, ...props }: MenuPopoverProps) {
+export function MenuPopover({ items, open, onClose, anchorRef, ownerRef, position, placement = "bottom", autoFocusFirstItem = true, ...props }: MenuPopoverProps) {
   const markerRef = useRef<HTMLSpanElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const treeId = useId();
@@ -100,7 +102,7 @@ export function MenuPopover({ items, open, onClose, anchorRef, position, placeme
   return (
     <>
       <span ref={markerRef} hidden />
-      <Portal ownerDocument={markerRef.current?.ownerDocument}>{content}</Portal>
+      <Portal ownerDocument={markerRef.current?.ownerDocument} ownerRef={ownerRef ?? anchorRef} open={open}>{content}</Portal>
     </>
   );
 }
@@ -213,6 +215,10 @@ function MenuLevel({ items, open, phase, treeId, onClose, onBack, anchorRef, pos
         <Label>{item.label}</Label>
       </Item>)}
     </MenuSurface>
-    {submenu && <Portal ownerDocument={menuRef.current?.ownerDocument}>{submenu}</Portal>}
+    {submenu && <Portal ownerDocument={menuRef.current?.ownerDocument} ownerRef={menuRef} open={open}
+      surfaceRef={submenuRef} dismissOnPointerOutside onDismiss={reason => {
+        if (reason === "escape-key") { intent.closeNow(); submenuAnchor.current?.focus(); }
+        else onClose();
+      }}>{submenu}</Portal>}
   </>;
 }

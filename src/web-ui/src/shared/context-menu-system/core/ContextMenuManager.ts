@@ -79,10 +79,10 @@ export class ContextMenuManager {
     document.addEventListener('contextmenu', this.handleContextMenu);
 
     
-    document.addEventListener('click', this.handleDocumentClick);
+    // MenuPopover owns outside dismissal and Escape in the document overlay stack.
 
     
-    document.addEventListener('keydown', this.handleKeyDown);
+
 
     
     window.addEventListener('resize', this.handleResize);
@@ -194,35 +194,6 @@ export class ContextMenuManager {
     
     globalEventBus.emit('contextmenu:hide', {});
   }
-
-   
-  private handleDocumentClick = (event: MouseEvent): void => {
-    if (this.isShowing) {
-      
-      const target = event.target as HTMLElement;
-      const menuElement = target.closest('.context-menu');
-      
-      if (!menuElement) {
-        this.hide();
-      }
-    }
-  };
-
-   
-  private handleKeyDown = (event: KeyboardEvent): void => {
-    if (!this.isShowing) {
-      return;
-    }
-
-    switch (event.key) {
-      case 'Escape':
-        event.preventDefault();
-        this.hide();
-        break;
-      
-      
-    }
-  };
 
    
   private handleResize = (): void => {
@@ -349,8 +320,6 @@ export class ContextMenuManager {
    
   destroy(): void {
     document.removeEventListener('contextmenu', this.handleContextMenu);
-    document.removeEventListener('click', this.handleDocumentClick);
-    document.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('resize', this.handleResize);
 
     this.hide();

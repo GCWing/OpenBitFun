@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Notification } from '../types';
 import { useActiveNotifications } from '../hooks/useNotificationState';
 import { NotificationContainer } from './NotificationContainer';
+import { Dialog } from '@openbitfun/ui';
+import { notificationService } from '../services/NotificationService';
 
 vi.mock('../hooks/useNotificationState', () => ({
   useActiveNotifications: vi.fn(),
@@ -49,11 +51,12 @@ describe('NotificationContainer', () => {
   let root: Root;
 
   beforeEach(() => {
-    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', { pretendToBeVisual: true });
     globalThis.window = dom.window as unknown as Window & typeof globalThis;
     globalThis.document = dom.window.document;
     container = document.getElementById('root') as HTMLDivElement;
     root = createRoot(container);
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   });
 
   afterEach(() => {
@@ -61,6 +64,7 @@ describe('NotificationContainer', () => {
     vi.useRealTimers();
     vi.clearAllMocks();
     dom.window.close();
+    vi.unstubAllGlobals();
   });
 
   it('keeps task notifications in the notification center instead of the toast stack', () => {
@@ -72,9 +76,9 @@ describe('NotificationContainer', () => {
 
     act(() => root.render(<NotificationContainer />));
 
-    expect(container.querySelector('.notification-item')?.textContent).toContain('Saved');
-    expect(container.querySelector('[data-variant="progress"]')).toBeNull();
-    expect(container.querySelector('[data-variant="loading"]')).toBeNull();
+    expect(document.querySelector('.notification-item')?.textContent).toContain('Saved');
+    expect(document.querySelector('[data-variant="progress"]')).toBeNull();
+    expect(document.querySelector('[data-variant="loading"]')).toBeNull();
   });
 
   it('keeps silent notifications out of the toast stack', () => {
@@ -82,7 +86,7 @@ describe('NotificationContainer', () => {
 
     act(() => root.render(<NotificationContainer />));
 
-    expect(container.querySelector('.notification-container')).toBeNull();
+    expect(document.querySelector('.notification-container')).toBeNull();
   });
 
   it('retains a dismissed toast until its exit motion completes', () => {
@@ -90,16 +94,16 @@ describe('NotificationContainer', () => {
     vi.mocked(useActiveNotifications).mockReturnValue([notification('toast', 'Saved')]);
 
     act(() => root.render(<NotificationContainer />));
-    expect(container.querySelector('.notification-item')?.textContent).toContain('Saved');
+    expect(document.querySelector('.notification-item')?.textContent).toContain('Saved');
 
     vi.mocked(useActiveNotifications).mockReturnValue([]);
     act(() => root.render(<NotificationContainer />));
 
-    expect(container.querySelector('.notification-container__presence--exiting')).not.toBeNull();
-    expect(container.querySelector('.notification-item')?.textContent).toContain('Saved');
+    expect(document.querySelector('.notification-container__presence--exiting')).not.toBeNull();
+    expect(document.querySelector('.notification-item')?.textContent).toContain('Saved');
 
     act(() => vi.advanceTimersByTime(140));
-    expect(container.querySelector('.notification-container')).toBeNull();
+    expect(document.querySelector('.notification-container')).toBeNull();
   });
 
   it('removes focus before making an exiting real notification item inert', () => {
@@ -111,17 +115,59 @@ describe('NotificationContainer', () => {
     }]);
 
     act(() => root.render(<NotificationContainer />));
-    const action = container.querySelector('.notification-item__actions [data-openbitfun-component="button"]') as HTMLButtonElement;
+    const action = document.querySelector('.notification-item__actions [data-openbitfun-component="button"]') as HTMLButtonElement;
     action.focus();
     expect(document.activeElement).toBe(action);
 
     vi.mocked(useActiveNotifications).mockReturnValue([]);
     act(() => root.render(<NotificationContainer />));
 
-    const presence = container.querySelector('.notification-container__presence--exiting');
+    const presence = document.querySelector('.notification-container__presence--exiting');
     expect(document.activeElement).not.toBe(action);
     expect(presence?.getAttribute('aria-hidden')).toBe('true');
     expect(presence?.hasAttribute('inert')).toBe(true);
     expect(presence?.querySelector('.notification-item')).not.toBeNull();
+  });
+
+  it('starts toast expiry only when a queued notification is actually presented', () => {
+    vi.useFakeTimers();
+    const toast = { ...notification('toast', 'Saved'), duration: 1000 };
+    vi.mocked(useActiveNotifications).mockReturnValue([toast]);
+    const render = (modal: boolean) => act(() => root.render(<>
+      <NotificationContainer />
+      <Dialog open={modal} onOpenChange={() => undefined}><button>Confirm</button></Dialog>
+    </>));
+    render(true);
+    act(() => vi.advanceTimersByTime(5000));
+    expect(document.querySelector('.notification-item')).toBeNull();
+    expect(notificationService.dismiss).not.toHaveBeenCalled();
+    render(false);
+    act(() => vi.advanceTimersByTime(180));
+    expect(document.querySelector('.notification-item')).not.toBeNull();
+    act(() => vi.advanceTimersByTime(999));
+    expect(notificationService.dismiss).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(notificationService.dismiss).toHaveBeenCalledWith(toast.id);
+  });
+
+  it('preserves remaining display time while a later modal covers the toast', () => {
+    vi.useFakeTimers();
+    const toast = { ...notification('toast', 'Saved'), duration: 1000 };
+    vi.mocked(useActiveNotifications).mockReturnValue([toast]);
+    const render = (modal: boolean) => act(() => root.render(<>
+      <NotificationContainer />
+      <Dialog open={modal} onOpenChange={() => undefined}><button>Confirm</button></Dialog>
+    </>));
+    render(false);
+    act(() => vi.advanceTimersByTime(350));
+    render(true);
+    act(() => vi.advanceTimersByTime(5000));
+    expect(notificationService.dismiss).not.toHaveBeenCalled();
+    render(false);
+    act(() => vi.advanceTimersByTime(180));
+    act(() => vi.advanceTimersByTime(649));
+    expect(notificationService.dismiss).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(notificationService.dismiss).toHaveBeenCalledWith(toast.id);
   });
 });

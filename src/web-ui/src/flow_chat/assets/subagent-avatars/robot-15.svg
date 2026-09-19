@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 -2 256 256" role="img" aria-labelledby="avatar-title-15">
+  <title id="avatar-title-15">cocoa joystick avatar</title>
+  <rect x="116" y="52" width="24" height="30" rx="12" fill="#BA9170"/>
+  <path d="M128 72C188 72 234 88 234 138V178C234 220 218 238 180 238H76C38 238 22 220 22 178V138C22 88 68 72 128 72Z" transform="matrix(0.98 0 0 1.012 2.56 -2.8675)" fill="#956951"/>
+  <circle cx="128" cy="37" r="23" fill="#E8B88A"/>
+  <g fill="#FBF5EB">
+    <ellipse cx="103" cy="163" rx="10" ry="16"/>
+    <ellipse cx="153" cy="163" rx="10" ry="16"/>
+  </g>
+  <path d="M119 185Q128 196 137 185" fill="none" stroke="#FBF5EB" stroke-width="8" stroke-linecap="round"/>
+</svg>
