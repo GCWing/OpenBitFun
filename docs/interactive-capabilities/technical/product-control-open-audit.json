@@ -733,6 +733,7 @@
       },
       "evidence": [
         "command:get_clipboard_files",
+        "command:get_clipboard_image",
         "command:resolve_browser_dropped_file_paths",
         "command:set_file_drop_preview_target",
         "command:upload_image_contexts",

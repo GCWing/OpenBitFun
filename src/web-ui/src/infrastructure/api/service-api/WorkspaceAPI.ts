@@ -1121,6 +1121,23 @@ export class WorkspaceAPI {
     }
   }
 
+  /**
+   * Reads an image from the system clipboard, or null when the clipboard holds
+   * no image. WebKitGTK delivers paste events with empty DataTransfer items,
+   * so pasted images are only reachable through this host read.
+   */
+  async getClipboardImage(): Promise<{ base64: string; mimeType: string } | null> {
+    try {
+      const response = await api.invoke('get_clipboard_image');
+      if (response?.base64 && response?.mimeType) {
+        return { base64: response.base64, mimeType: response.mimeType };
+      }
+      return null;
+    } catch (error) {
+      throw createTauriCommandError('get_clipboard_image', error);
+    }
+  }
+
   async resolveBrowserDroppedFilePaths(token: string, fileCount: number): Promise<string[]> {
     try {
       return await api.invoke('resolve_browser_dropped_file_paths', {

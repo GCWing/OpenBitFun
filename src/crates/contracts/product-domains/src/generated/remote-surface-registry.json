@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:5fd9f0407289f440",
+  "digest": "fnv1a64:221007508a2b1fd6",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -2272,6 +2272,18 @@
     },
     {
       "id": "get_clipboard_files",
+      "surface": "tauri_command",
+      "remoteWorkspace": "LocalOnly",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "get_clipboard_image",
       "surface": "tauri_command",
       "remoteWorkspace": "LocalOnly",
       "peer": {

@@ -235,6 +235,7 @@ import {
   buildExternalFileContexts,
   partitionExternalDropFiles,
   resolveExternalFileIntakeAvailability,
+  shouldAttemptNativeClipboardImageRead,
   type ExternalFileSource,
 } from '../utils/externalFileIntake';
 import { selectInterruptedTurnRecovery } from '../utils/interruptedTurnRecovery';
@@ -4756,6 +4757,28 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     }
   }, [addContext, contextStore, isExternalFileIntakeRequestCurrent, t]);
 
+  /**
+   * Host-side clipboard image read for engines that deliver paste events with
+   * empty DataTransfer (WebKitGTK on Linux). Reuses the clipboard-image
+   * intake, so limits and error reporting stay identical to the in-page path.
+   */
+  const readPastedClipboardImage = useCallback(async (request: ExternalFileIntakeRequest) => {
+    try {
+      const image = await workspaceAPI.getClipboardImage();
+      if (!image || !isExternalFileIntakeRequestCurrent(request)) return;
+      const binary = atob(image.base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index++) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      const extension = image.mimeType === 'image/png' ? 'png' : 'jpg';
+      const file = new File([bytes], `clipboard-image.${extension}`, { type: image.mimeType });
+      await addClipboardImageFiles(request, [file]);
+    } catch (error) {
+      log.warn('Native clipboard image read failed', { error });
+    }
+  }, [addClipboardImageFiles, isExternalFileIntakeRequestCurrent]);
+
   const addExternalPaths = useCallback(async (
     request: ExternalFileIntakeRequest,
     source: ExternalFileSource,
@@ -4937,9 +4960,32 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         () => addClipboardImageFiles(request, [file]),
       );
     };
+    const handlePasteFallback = (event: Event) => {
+      // WebKitGTK fires paste with zero DataTransfer types; the in-page file
+      // branch can never run there, so ask the host to read the clipboard.
+      const clipboardData = (event as ClipboardEvent).clipboardData;
+      if (!clipboardData) return;
+      if (!shouldAttemptNativeClipboardImageRead(Array.from(clipboardData.types ?? []))) return;
+      if (!externalFileAvailability.supported) return;
+      const request = captureExternalFileIntakeRequest();
+      void enqueueExternalFileIntake(
+        request,
+        () => readPastedClipboardImage(request),
+      );
+    };
     inputElement.addEventListener('imagePaste', handleImagePaste);
-    return () => inputElement.removeEventListener('imagePaste', handleImagePaste);
-  }, [addClipboardImageFiles, captureExternalFileIntakeRequest, enqueueExternalFileIntake]);
+    inputElement.addEventListener('paste', handlePasteFallback);
+    return () => {
+      inputElement.removeEventListener('imagePaste', handleImagePaste);
+      inputElement.removeEventListener('paste', handlePasteFallback);
+    };
+  }, [
+    addClipboardImageFiles,
+    captureExternalFileIntakeRequest,
+    enqueueExternalFileIntake,
+    externalFileAvailability,
+    readPastedClipboardImage,
+  ]);
 
   useWindowsFileDropPreview({
     targetRef: fileDropTargetRef ?? externalFileDropTargetRef,
@@ -5710,16 +5756,38 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     input.type = 'file';
     input.accept = CHAT_INPUT_CONFIG.image.acceptedTypes.join(',');
     input.multiple = true;
-    
+
+    // WebKitGTK never fires `change` on a detached file input after the native
+    // chooser closes, so a detached picker silently dropped every selection on
+    // Linux. Mounting the element offscreen keeps WebKitGTK on the same path as
+    // WebView2 and WKWebView. `display: none` is deliberately avoided because
+    // some WebKit builds refuse to open a chooser for a display:none input.
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    input.style.top = '0';
+    input.style.width = '1px';
+    input.style.height = '1px';
+    input.style.opacity = '0';
+
+    const dismissPicker = () => {
+      window.removeEventListener('focus', dismissPicker);
+      input.onchange = null;
+      input.remove();
+    };
+    // Cancelling the chooser never fires `change`; reclaim the node the next
+    // time the window regains focus.
+    window.addEventListener('focus', dismissPicker);
+
     input.onchange = async (e) => {
+      dismissPicker();
       const files = (e.target as HTMLInputElement).files;
       if (!files || files.length === 0) return;
-      
+
       const fileArray = Array.from(files).slice(0, remaining);
       if (files.length > remaining) {
         notificationService.warning(t('input.maxImagesWarning', { count: CHAT_INPUT_CONFIG.image.maxCount }), { duration: 3000 });
       }
-      
+
       for (const file of fileArray) {
         try {
           const imageContext = await createImageContextFromFile(file);
@@ -5733,7 +5801,8 @@ export const ChatInput: React.FC<ChatInputProps> = ({
         }
       }
     };
-    
+
+    document.body.appendChild(input);
     input.click();
   }, [addContext, currentImageCount, t]);
   

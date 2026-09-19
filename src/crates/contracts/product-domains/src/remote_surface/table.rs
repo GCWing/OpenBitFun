@@ -272,6 +272,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("get_baseline_snapshot_diff",                                 Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_chat_mcp_catalog",                                       Unsupported, Proxied,          HANDLED),
     op("get_clipboard_files",                                        LocalOnly,   Proxied,          CLI_NOT_IMPLEMENTED),
+    op("get_clipboard_image",                                        LocalOnly,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_config",                                                 Unaudited,   Proxied,          HANDLED),
     op("get_configs",                                                Unaudited,   Proxied,          HANDLED),
     op("get_current_workspace",                                      Agnostic,    Proxied,          HANDLED),
