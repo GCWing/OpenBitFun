@@ -31,6 +31,24 @@
       "installedTooltip": "該 Skill 已安裝",
       "downloading": "下載中...",
       "downloadUser": "下載到使用者"
+    },
+    "settings": {
+      "provider": "API 格式",
+      "url": "市場位址",
+      "urlHint": "填寫市場根位址，可包含子路徑。僅預設官方來源保留 https://skills.sh 位址時，SKILLS_API_URL 可覆寫位址；改為自訂位址後使用填寫的位址。",
+      "token": "API Token（選填）",
+      "tokenHint": "填寫後作為 Bearer Token 傳送。儲存在目前主機的應用設定中。",
+      "save": "儲存市場來源",
+      "saving": "儲存中…",
+      "invalidUrl": "請填寫有效的 HTTP(S) 市場位址，不包含帳號、查詢參數或片段。",
+      "unsupported": "目前主機不支援設定多個市場來源，請升級主機。",
+      "title": "市場來源設定",
+      "name": "來源名稱",
+      "enabled": "啟用",
+      "remove": "刪除來源",
+      "add": "新增來源",
+      "newSource": "新市場來源",
+      "empty": "尚未設定市場來源。儲存後將停用市場搜尋。"
     }
   },
   "form": {

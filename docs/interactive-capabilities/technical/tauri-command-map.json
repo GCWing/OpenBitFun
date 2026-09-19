@@ -2185,7 +2185,7 @@
       "visibility": "documented",
       "rustPath": "download_skill_market",
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
-      "signature": "fn download_skill_market( _state: State<'_, AppState>, request: SkillMarketDownloadRequest, ) -> Result<SkillMarketDownloadResponse, String>",
+      "signature": "fn download_skill_market( state: State<'_, AppState>, request: SkillMarketDownloadRequest, ) -> Result<SkillMarketDownloadResponse, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -5121,7 +5121,7 @@
       "visibility": "documented",
       "rustPath": "list_skill_market",
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
-      "signature": "fn list_skill_market( _state: State<'_, AppState>, request: SkillMarketListRequest, ) -> Result<Vec<SkillMarketItem>, String>",
+      "signature": "fn list_skill_market( state: State<'_, AppState>, request: SkillMarketListRequest, ) -> Result<SkillMarketResponse, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {
@@ -8354,7 +8354,7 @@
       "visibility": "documented",
       "rustPath": "search_skill_market",
       "sourceFile": "src/apps/desktop/src/api/skill_api.rs",
-      "signature": "fn search_skill_market( _state: State<'_, AppState>, request: SkillMarketSearchRequest, ) -> Result<Vec<SkillMarketItem>, String>",
+      "signature": "fn search_skill_market( state: State<'_, AppState>, request: SkillMarketSearchRequest, ) -> Result<SkillMarketResponse, String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
     },
     {

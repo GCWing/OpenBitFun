@@ -25,7 +25,7 @@ openbitfun-relay-service = { path = "../../crates/services/relay-service" }
 openbitfun-agent-runtime = { path = "../../crates/execution/agent-runtime", features = ["agent-runtime"] }
 openbitfun-runtime-ports = { path = "../../crates/contracts/runtime-ports", features = ["agent-api", "permission", "workspace-ports"] }
 openbitfun-product-domains = { path = "../../crates/contracts/product-domains", features = ["appearance-market"] }
-openbitfun-services-integrations = { path = "../../crates/services/services-integrations", features = ["canvas-runtime", "miniapp-market", "remote-ssh-concrete", "speech-realtime"] }
+openbitfun-services-integrations = { path = "../../crates/services/services-integrations", features = ["canvas-runtime", "miniapp-market", "skillhub", "remote-ssh-concrete", "speech-realtime"] }
 openbitfun-core-types = { path = "../../crates/contracts/core-types" }
 openbitfun-agent-tools = { path = "../../crates/execution/tool-contracts", features = ["element-token"] }
 openbitfun-transport = { path = "../../crates/adapters/transport", features = ["tauri-adapter"] }

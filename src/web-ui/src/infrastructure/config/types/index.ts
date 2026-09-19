@@ -479,7 +479,26 @@ export interface SkillScanReport<T = SkillInfo> {
   diagnosticsAvailable: boolean;
 }
 
+export interface SkillMarketSource {
+  id: string;
+  name: string;
+  provider: string;
+  url: string;
+  enabled: boolean;
+  api_token: string;
+}
+
+export interface SkillMarketConfig {
+  sources: SkillMarketSource[];
+}
+
+export interface SkillMarketResults {
+  skills: SkillMarketItem[];
+  sourceErrors: string[];
+}
+
 export interface SkillMarketItem {
+  marketName?: string;
   id: string;
   name: string;
   description: string;

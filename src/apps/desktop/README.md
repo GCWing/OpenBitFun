@@ -154,3 +154,32 @@ pwsh -NoProfile -File scripts/ci/sign-windows.test.ps1
 
 The PowerShell test uses mocked signing results; a Windows build with the real
 certificate is still required to prove cloud signing and timestamp/trust validation.
+
+## Marketplace sources
+
+Open the **Skills** scene, choose **Skill Marketplace**, then **Marketplace sources**.
+The default source is the enabled official `https://skills.sh` marketplace. You can
+edit, disable or remove it, add sources, and save an empty list to stop searching.
+Each source has its own name, API format (**skills.sh** or **SkillHub**), deployment
+root URL, optional Bearer API token and enabled state. Include any deployment
+subpath, but do not append `/api/search` or `/api/v1` to the root URL.
+
+All enabled sources are searched concurrently. Results are interleaved, labelled
+with their market name, and retain their installation identity. Errors from one
+source are shown without hiding successful sources. The original `SKILLS_API_URL`
+environment override applies to the default official skills.sh URL; an explicitly
+configured custom URL takes precedence. Disabling or deleting the official source
+also disables its environment override.
+
+SkillHub uses its ClawHub-compatible search API and native ZIP download API, and
+installs supporting files into OpenBitFun's user or project Skills directory. An
+existing destination is preserved and reported as a conflict. skills.sh-compatible
+sources use the existing repository-based `npx skills` installer: a custom search
+API does not supply a custom ZIP download protocol.
+
+Tokens are stored in the serving host's application configuration; browser login
+sessions are not shared with OpenBitFun. The market is currently available in the
+local Desktop scene. Peer mode and older hosts show unsupported states. SSH/Docker
+project installation remains unsupported; choose user scope to install on the
+serving host. Mobile/bot controls, CLI peers and Detached Dispatch do not gain a
+marketplace configuration or installation entry point.

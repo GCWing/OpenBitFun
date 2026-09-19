@@ -31,6 +31,24 @@
       "installedTooltip": "This Skill is already installed",
       "downloading": "Downloading...",
       "downloadUser": "Download to User"
+    },
+    "settings": {
+      "provider": "API format",
+      "url": "Marketplace URL",
+      "urlHint": "Enter the marketplace root, including any subpath. SKILLS_API_URL overrides only the default official source while its URL remains https://skills.sh. An edited custom URL uses the entered address.",
+      "token": "API token (optional)",
+      "tokenHint": "Sent as a Bearer token when provided. Saved in this host’s application configuration.",
+      "save": "Save sources",
+      "saving": "Saving...",
+      "invalidUrl": "Enter valid HTTP(S) marketplace URLs without credentials, query parameters or fragments.",
+      "unsupported": "This host does not support multiple marketplace sources. Upgrade the host to configure sources.",
+      "title": "Marketplace sources",
+      "name": "Source name",
+      "enabled": "Enabled",
+      "remove": "Remove source",
+      "add": "Add source",
+      "newSource": "New marketplace source",
+      "empty": "No sources configured. Save to disable marketplace search."
     }
   },
   "form": {

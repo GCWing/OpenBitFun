@@ -13,6 +13,7 @@
     feature = "remote-ssh-concrete",
     feature = "review-platform",
     feature = "speech",
+    feature = "skillhub",
     feature = "web-tools",
 ))]
 pub(crate) fn reqwest_client_builder() -> reqwest::ClientBuilder {
@@ -119,3 +120,6 @@ unsafe extern "system" {}
 
 #[cfg(feature = "account-identity")]
 pub mod account_identity;
+
+#[cfg(feature = "skillhub")]
+pub mod skillhub;

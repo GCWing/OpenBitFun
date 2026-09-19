@@ -15,6 +15,7 @@ import type {
   SkillLevel,
   SkillMarketDownloadResult,
   SkillMarketItem,
+  SkillMarketResults,
   SkillValidationResult,
 } from '../../config/types';
 import type {
@@ -163,7 +164,7 @@ export class ConfigAPI {
         request: { path, value } 
       });
     } catch (error) {
-      throw createTauriCommandError('set_config', error, { path, value });
+      throw createTauriCommandError('set_config', error, { path, value: path === 'app.skill_market' ? '[redacted]' : value });
     }
   }
 
@@ -554,6 +555,23 @@ export class ConfigAPI {
       });
     } catch (error) {
       throw createTauriCommandError('search_skill_market', error, { query, limit });
+    }
+  }
+
+  async querySkillMarkets(query?: string, limit?: number): Promise<SkillMarketResults> {
+    const command = query?.trim() ? 'search_skill_market' : 'list_skill_market';
+    try {
+      const result = await api.invoke<SkillMarketResults | SkillMarketItem[]>(command, {
+        request: { query, limit, includeDiagnostics: true },
+      });
+      // Older hosts ignore the additive request flag and return the original array.
+      if (Array.isArray(result)) return { skills: result, sourceErrors: [] };
+      if (!result || !Array.isArray(result.skills) || !Array.isArray(result.sourceErrors)) {
+        throw new Error('Invalid marketplace response');
+      }
+      return result;
+    } catch (error) {
+      throw createTauriCommandError(command, error, { query, limit });
     }
   }
 

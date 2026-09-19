@@ -170,3 +170,12 @@ For the remote Flashgrep distribution gate and retained protocol helpers, use:
 ```bash
 cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-ssh,workspace-search --lib remote_ssh::workspace_search::service::tests::
 ```
+
+For SkillHub search, authentication, archive validation and installation, use:
+
+```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features skillhub --lib skillhub::tests
+```
+
+These loopback protocol fixtures exercise the serving host's HTTP and filesystem
+behavior; they do not establish real SSH, relay, peer or dispatch support.

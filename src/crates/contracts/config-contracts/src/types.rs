@@ -186,6 +186,9 @@ pub struct AppConfig {
     /// Global, user-defined groups used to organize Skill pickers.
     #[serde(default, skip_serializing_if = "UserSkillGroupsConfig::is_empty")]
     pub user_skill_groups: UserSkillGroupsConfig,
+    /// Marketplace used by the serving host for Skill discovery and installation.
+    #[serde(default)]
+    pub skill_market: SkillMarketConfig,
     /// What happens when the window close button is clicked on Windows / Linux.
     /// Allowed values: "quit" | "minimize_to_tray" | "ask".
     #[serde(default = "default_close_button_behavior")]
@@ -196,6 +199,88 @@ pub struct AppConfig {
     /// Defaults for opt-in managed Git worktrees.
     #[serde(default)]
     pub worktrees: WorktreeSettings,
+}
+
+/// An explicit empty source list stays empty; defaults apply only to absent settings.
+#[derive(Debug, Clone, Serialize)]
+pub struct SkillMarketConfig {
+    pub sources: Vec<SkillMarketSource>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SkillMarketSource {
+    pub id: String,
+    pub name: String,
+    pub provider: String,
+    pub url: String,
+    pub enabled: bool,
+    pub api_token: String,
+}
+
+impl Default for SkillMarketSource {
+    fn default() -> Self {
+        Self {
+            id: "skills-sh".into(),
+            name: "skills.sh".into(),
+            provider: "skills-sh".into(),
+            url: "https://skills.sh".into(),
+            enabled: true,
+            api_token: String::new(),
+        }
+    }
+}
+
+impl Default for SkillMarketConfig {
+    fn default() -> Self {
+        Self {
+            sources: vec![SkillMarketSource::default()],
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for SkillMarketConfig {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize, Default)]
+        #[serde(default)]
+        struct Wire {
+            sources: Option<Vec<SkillMarketSource>>,
+            provider: Option<String>,
+            skillhub_url: String,
+            api_token: String,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        if let Some(sources) = wire.sources {
+            return Ok(Self { sources });
+        }
+        // Read the earlier single-market shape without discarding its credentials.
+        match wire.provider.as_deref() {
+            None | Some("skills-sh") => Ok(Self::default()),
+            Some(provider) => Ok(Self {
+                sources: vec![SkillMarketSource {
+                    id: "legacy-market".into(),
+                    name: provider.into(),
+                    provider: provider.into(),
+                    url: wire.skillhub_url,
+                    api_token: wire.api_token,
+                    enabled: true,
+                }],
+            }),
+        }
+    }
+}
+
+impl std::fmt::Debug for SkillMarketSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SkillMarketSource")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("provider", &self.provider)
+            .field("url", &self.url)
+            .field("enabled", &self.enabled)
+            .field("api_token", &"[redacted]")
+            .finish()
+    }
 }
 
 /// Enablement gates for native agent hooks.
@@ -1810,6 +1895,7 @@ impl Default for AppConfig {
             keybindings: None,
             user_tool_groups: UserToolGroupsConfig::default(),
             user_skill_groups: UserSkillGroupsConfig::default(),
+            skill_market: SkillMarketConfig::default(),
             close_button_behavior: default_close_button_behavior(),
             hooks: AgentHooksConfig::default(),
             worktrees: WorktreeSettings::default(),
@@ -2487,6 +2573,51 @@ mod tests {
             serialized["app"]["user_tool_groups"]["groups"][0]["toolNames"],
             serde_json::json!(["Read", "Edit"])
         );
+    }
+
+    #[test]
+    fn skill_market_defaults_for_legacy_configs_and_round_trips() {
+        let mut value = serde_json::to_value(GlobalConfig::default()).unwrap();
+        value["app"].as_object_mut().unwrap().remove("skill_market");
+        let mut config: GlobalConfig = serde_json::from_value(value).unwrap();
+        assert_eq!(config.app.skill_market.sources.len(), 1);
+        assert_eq!(config.app.skill_market.sources[0].url, "https://skills.sh");
+        assert!(config.app.skill_market.sources[0].enabled);
+        config.app.skill_market = serde_json::from_value(serde_json::json!({
+            "provider": "skillhub", "skillhub_url": "https://skills.example/hub", "api_token": "test-token"
+        })).unwrap();
+        let serialized = serde_json::to_value(&config).unwrap();
+        let restored: GlobalConfig = serde_json::from_value(serialized.clone()).unwrap();
+        assert_eq!(
+            restored.app.skill_market.sources[0].url,
+            "https://skills.example/hub"
+        );
+        assert_eq!(restored.app.skill_market.sources[0].api_token, "test-token");
+        assert!(!format!("{:?}", restored.app.skill_market).contains("test-token"));
+        let empty: super::SkillMarketConfig =
+            serde_json::from_value(serde_json::json!({ "sources": [] })).unwrap();
+        assert!(empty.sources.is_empty());
+        let round_trip: super::SkillMarketConfig =
+            serde_json::from_value(serde_json::to_value(empty).unwrap()).unwrap();
+        assert!(round_trip.sources.is_empty());
+        let disabled: super::SkillMarketConfig = serde_json::from_value(serde_json::json!({ "sources": [
+            { "enabled": false }, { "id": "private", "provider": "skillhub", "url": "http://internal" }
+        ] })).unwrap();
+        assert!(!disabled.sources[0].enabled);
+        assert!(disabled.sources[1].enabled);
+        // An older reader can ignore the additive field and retain its existing preferences.
+        #[derive(serde::Deserialize, serde::Serialize)]
+        struct LegacyApp {
+            language: String,
+            telemetry: bool,
+        }
+        let legacy: LegacyApp = serde_json::from_value(serialized["app"].clone()).unwrap();
+        let old_payload = serde_json::json!({ "app": serde_json::to_value(legacy).unwrap() });
+        let upgraded: super::AppConfig =
+            serde_json::from_value(old_payload["app"].clone()).unwrap();
+        assert_eq!(upgraded.language, config.app.language);
+        assert_eq!(upgraded.telemetry, config.app.telemetry);
+        assert_eq!(upgraded.skill_market.sources[0].provider, "skills-sh");
     }
 
     #[test]

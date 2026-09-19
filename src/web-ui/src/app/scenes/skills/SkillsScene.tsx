@@ -51,6 +51,7 @@ import { isRemoteWorkspace } from '@/shared/types';
 import { createLogger } from '@/shared/utils/logger';
 import { useInstalledSkills } from './hooks/useInstalledSkills';
 import { useSkillMarket } from './hooks/useSkillMarket';
+import { SkillMarketSettings } from '@/infrastructure/config/components/SkillMarketSettings';
 import SkillCard from './components/SkillCard';
 import SkillGroupsView from './components/SkillGroupsView';
 import { useUserSkillGroups } from '@/features/skill-groups/useUserSkillGroups';
@@ -114,6 +115,7 @@ const CATEGORIES: CategoryInfo[] = [
 const SkillsScene: React.FC = () => {
   const { t, formatNumber } = useI18n('scenes/skills');
   const { t: tComponents } = useI18n('components');
+  const { t: tSettings } = useI18n('settings/skills');
   const { t: tCommon } = useI18n('common');
   const notification = useNotification();
   const peerDevice = usePeerDeviceModeOptional();
@@ -134,6 +136,8 @@ const SkillsScene: React.FC = () => {
     toggleAddForm,
   } = useSkillsSceneStore();
 
+  const [marketSettingsOpen, setMarketSettingsOpen] = useState(false);
+  useEffect(() => { if (!desktopConfigAvailable) setMarketSettingsOpen(false); }, [desktopConfigAvailable]);
   const [activeTab, setActiveTab] = useState<SkillTab>('installed');
   const [deleteTarget, setDeleteTarget] = useState<SkillInfo | null>(null);
   const [installedSearch, setInstalledSearch] = useState('');
@@ -782,9 +786,17 @@ const SkillsScene: React.FC = () => {
                   </p>
                 </div>
               </div>
+              <Button size="sm" variant="outline" onClick={() => setMarketSettingsOpen(true)}>
+                {tSettings('market.settings.title')}
+              </Button>
             </header>
 
             <ScrollArea className="skills-discover__content">
+              {!market.marketLoading && market.sourceErrors.length > 0 && (
+                <div className="skills-discover__state" role="alert">
+                  {market.sourceErrors.map(error => <p key={error}>{error}</p>)}
+                </div>
+              )}
               {!market.marketLoading && !market.marketError && marketQuery && market.totalLoaded > 0 && (
                 <div className="skills-discover__results-info" data-openbitfun-scene="skills" data-openbitfun-part="resultsInfo" role="status">
                   <OverflowText>{t('market.resultsInfo', { query: marketQuery, count: market.totalLoaded })}</OverflowText>
@@ -834,7 +846,7 @@ const SkillsScene: React.FC = () => {
                           data-skill-installed={isInstalled ? 'true' : 'false'}
                           name={skill.name}
                           description={skill.description || t('market.item.noDescription')}
-                          source={skill.source}
+                          source={skill.marketName ? `${skill.marketName} · ${skill.source}` : skill.source}
                           index={index}
                           accentSeed={skill.installId}
                           iconKind="market"
@@ -907,6 +919,16 @@ const SkillsScene: React.FC = () => {
           </div>
         )}
       </main>
+
+      <Dialog open={marketSettingsOpen && desktopConfigAvailable} onOpenChange={setMarketSettingsOpen} size="md">
+        <DialogHeader>
+          <DialogHeading><DialogTitle>{tSettings('market.settings.title')}</DialogTitle></DialogHeading>
+          <DialogClose />
+        </DialogHeader>
+        <DialogBody>
+          {marketSettingsOpen && desktopConfigAvailable && <SkillMarketSettings onSaved={() => setMarketSettingsOpen(false)} />}
+        </DialogBody>
+      </Dialog>
 
       <Dialog
         open={desktopConfigAvailable && Boolean(selectedDetail)}

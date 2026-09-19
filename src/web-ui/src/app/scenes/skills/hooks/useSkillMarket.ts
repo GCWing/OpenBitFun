@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { configManager } from '@/infrastructure/config/services/ConfigManager';
 import { configAPI } from '@/infrastructure/api';
 import { isSkillMarketItemInstalled } from '@/infrastructure/config/skillMarketInstallation';
 import type { SkillLevel, SkillMarketItem } from '@/infrastructure/config/types';
@@ -34,6 +35,7 @@ export function useSkillMarket({
   const [marketSkills, setMarketSkills] = useState<SkillMarketItem[]>([]);
   const [marketLoading, setMarketLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [sourceErrors, setSourceErrors] = useState<string[]>([]);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [downloadingPackage, setDownloadingPackage] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
@@ -62,9 +64,7 @@ export function useSkillMarket({
 
   const fetchSkills = useCallback(async (query: string | undefined, limit: number) => {
     const normalized = query?.trim();
-    return normalized
-      ? await configAPI.searchSkillMarket(normalized, limit)
-      : await configAPI.listSkillMarket(undefined, limit);
+    return await configAPI.querySkillMarkets(normalized || undefined, limit);
   }, []);
 
   const loadFirstPage = useCallback(async (query?: string) => {
@@ -76,12 +76,15 @@ export function useSkillMarket({
 
     setMarketLoading(true);
     setMarketError(null);
+    setSourceErrors([]);
     setCurrentPage(0);
     try {
-      const skillList = await fetchSkills(query, pageSize);
+      const result = await fetchSkills(query, pageSize);
       if (requestId !== marketRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) {
         return;
       }
+      const skillList = result.skills;
+      setSourceErrors(result.sourceErrors);
       setMarketSkills(skillList);
       setHasMore(skillList.length >= pageSize);
     } catch (err) {
@@ -104,6 +107,7 @@ export function useSkillMarket({
       setMarketLoading(false);
       setLoadingMore(false);
       setMarketError(null);
+      setSourceErrors([]);
       setDownloadingPackage(null);
       setCurrentPage(0);
       setHasMore(false);
@@ -111,6 +115,13 @@ export function useSkillMarket({
     }
     loadFirstPage(searchQuery || undefined);
   }, [capabilityKey, enabled, loadFirstPage, searchQuery]);
+
+  useEffect(() => configManager.onConfigChange((path) => {
+    if (path === 'app.skill_market' || path.startsWith('app.skill_market.')) {
+      setMarketSkills([]);
+      void loadFirstPage(searchQuery || undefined);
+    }
+  }), [loadFirstPage, searchQuery]);
 
   const refresh = useCallback(async () => {
     await loadFirstPage(searchQuery || undefined);
@@ -175,10 +186,12 @@ export function useSkillMarket({
 
     try {
       setLoadingMore(true);
-      const skillList = await fetchSkills(searchQuery || undefined, neededCount);
+      const result = await fetchSkills(searchQuery || undefined, neededCount);
       if (requestId !== marketRequestIdRef.current || !capabilityIsCurrent(capabilityEpoch)) {
         return;
       }
+      const skillList = result.skills;
+      setSourceErrors(result.sourceErrors);
       setMarketSkills(skillList);
       const hitCap = neededCount >= MAX_TOTAL_SKILLS;
       setHasMore(!hitCap && skillList.length >= neededCount);
@@ -240,6 +253,7 @@ export function useSkillMarket({
     marketLoading,
     loadingMore,
     marketError,
+    sourceErrors,
     downloadingPackage,
     hasMore,
     currentPage,

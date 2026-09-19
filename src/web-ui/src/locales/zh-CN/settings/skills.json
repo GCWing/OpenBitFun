@@ -31,6 +31,24 @@
       "installedTooltip": "该 Skill 已安装",
       "downloading": "下载中...",
       "downloadUser": "下载到用户"
+    },
+    "settings": {
+      "provider": "API 格式",
+      "url": "市场地址",
+      "urlHint": "填写市场根地址，可包含子路径。仅默认官方源保留 https://skills.sh 地址时，SKILLS_API_URL 可覆盖地址；修改为自定义地址后使用填写的地址。",
+      "token": "API Token（可选）",
+      "tokenHint": "填写后作为 Bearer Token 发送。保存在当前主机的应用配置中。",
+      "save": "保存市场源",
+      "saving": "保存中…",
+      "invalidUrl": "请填写有效的 HTTP(S) 市场地址，不包含账号、查询参数或片段。",
+      "unsupported": "当前主机不支持配置多个市场源，请升级主机。",
+      "title": "市场源设置",
+      "name": "源名称",
+      "enabled": "启用",
+      "remove": "删除源",
+      "add": "添加源",
+      "newSource": "新市场源",
+      "empty": "尚未配置市场源。保存后将停用市场检索。"
     }
   },
   "form": {

@@ -12,6 +12,7 @@ export const servicesReqwestOwnerFeatures = [
   'remote-ssh-concrete',
   'review-platform',
   'speech',
+  'skillhub',
   'web-tools',
 ];
 
@@ -305,6 +306,7 @@ export const optionalDependencyFeatureOwnerRules = [
           'remote-ssh-concrete',
           'review-platform',
           'speech',
+          'skillhub',
           'web-tools',
           'workspace-search',
         ],

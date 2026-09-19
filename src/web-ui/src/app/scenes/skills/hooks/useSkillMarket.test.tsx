@@ -16,11 +16,23 @@ const notificationMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
+const configChange = vi.hoisted(() => ({ listener: null as ((path: string) => void) | null }));
+vi.mock('@/infrastructure/config/services/ConfigManager', () => ({
+  configManager: { onConfigChange: (listener: (path: string) => void) => {
+    configChange.listener = listener;
+    return () => { configChange.listener = null; };
+  } },
+}));
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 vi.mock('@/infrastructure/api', () => ({
   configAPI: {
+    querySkillMarkets: async (query?: string, limit?: number) => {
+      const result = query ? await searchSkillMarketMock(query, limit) : await listSkillMarketMock(undefined, limit);
+      return Array.isArray(result) ? { skills: result, sourceErrors: [] } : result;
+    },
     listSkillMarket: listSkillMarketMock,
     searchSkillMarket: searchSkillMarketMock,
     downloadSkillMarket: downloadSkillMarketMock,
@@ -28,7 +40,7 @@ vi.mock('@/infrastructure/api', () => ({
 }));
 vi.mock('@/infrastructure/hooks/useWorkspaceManagerSync', () => ({
   useWorkspaceManagerSync: () => ({
-    workspacePath: 'D:/workspace/project',
+    workspace: { id: 'project-workspace-id', rootPath: 'D:/workspace/project' },
     hasWorkspace: true,
     isRemoteWorkspace: false,
   }),
@@ -71,6 +83,27 @@ describe('useSkillMarket', () => {
   afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
+  });
+
+  it('refreshes when marketplace configuration changes and ignores the old response', async () => {
+    let resolveOld: ((items: SkillMarketItem[]) => void) | undefined;
+    listSkillMarketMock.mockReturnValueOnce(new Promise<SkillMarketItem[]>((resolve) => { resolveOld = resolve; }));
+    await act(async () => { root.render(<Harness enabled />); });
+    const item = { id: 'review', installId: 'skillhub:https://corp#review', source: 'https://corp', name: 'Review', installs: 0 } as SkillMarketItem;
+    listSkillMarketMock.mockResolvedValueOnce([item]);
+    await act(async () => { configChange.listener?.('app.skill_market'); });
+    await act(async () => { resolveOld?.([{ ...item, installId: 'old@review' }]); });
+    expect(currentMarket?.marketSkills).toEqual([item]);
+    expect(listSkillMarketMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps successful sources visible when another source fails', async () => {
+    const item = { id: 'corp', installId: 'skills-sh:https://corp#team/skills@review', name: 'review', source: 'team/skills' } as SkillMarketItem;
+    listSkillMarketMock.mockResolvedValue({ skills: [item], sourceErrors: ['Private: SkillHub authentication failed'] });
+    await act(async () => root.render(<Harness enabled />));
+    expect(currentMarket?.marketSkills).toEqual([item]);
+    expect(currentMarket?.sourceErrors).toEqual(['Private: SkillHub authentication failed']);
+    expect(currentMarket?.marketError).toBeNull();
   });
 
   it('prioritizes only the installed repository when market skills share a name', async () => {
@@ -143,6 +176,22 @@ describe('useSkillMarket', () => {
 
     expect(currentMarket?.marketSkills).toEqual([]);
     expect(container.textContent).toBe('idle');
+  });
+
+  it('passes the workspace id when installing a project skill', async () => {
+    downloadSkillMarketMock.mockResolvedValue({ installedSkills: ['review'] });
+    const skill = {
+      id: 'review', name: 'review', installId: 'skillhub:https://corp#team/review',
+      source: 'https://corp', installs: 0, description: '', url: '',
+    } as SkillMarketItem;
+    await act(async () => root.render(<Harness enabled />));
+    await act(async () => currentMarket?.handleDownload(skill, 'project'));
+    expect(downloadSkillMarketMock).toHaveBeenCalledWith({
+      packageId: skill.installId,
+      level: 'project',
+      workspaceId: 'project-workspace-id',
+    });
+    expect(installedChangedMock).toHaveBeenCalledTimes(1);
   });
 
   it('does not notify or reload after a pending download loses desktop capability', async () => {
