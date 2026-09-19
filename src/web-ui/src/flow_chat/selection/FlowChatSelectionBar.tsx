@@ -42,9 +42,15 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
   editingRef.current = editing;
   const intentRef = useRef(onSelectionIntent);
   intentRef.current = onSelectionIntent;
+  const beginEditing = useCallback(() => {
+    // The transient selection toolbar can unmount while the dialog is open.
+    // Give the modal owner a durable focus target to restore after its exit.
+    rootRef.current?.focus({ preventScroll: true });
+    setEditing(true);
+  }, [rootRef]);
   const clear = useCallback(() => {
     const focused = rootRef.current?.ownerDocument.activeElement;
-    if (popupRef.current?.contains(focused ?? null) || editorRef.current?.contains(focused ?? null)) {
+    if (!editingRef.current && popupRef.current?.contains(focused ?? null)) {
       rootRef.current?.focus({ preventScroll: true });
     }
     setSelection(null); setEditing(false); setComment('');
@@ -134,7 +140,7 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
           { id: `${menuId}-annotate`, label: t(parentSessionId ? 'selection.addToMain' : 'selection.annotate'),
             icon: 'Pencil', onClick: () => {
               if (!scope.isCurrent()) return;
-              setSelection(next); setEditing(true); setPosition(null);
+              setSelection(next); beginEditing(); setPosition(null);
             } },
           { id: `${menuId}-ask`, label: t(child ? 'selection.askHere' : 'selection.askSide'),
             icon: 'MessageSquarePlus', disabled: !canAsk,
@@ -166,7 +172,7 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
       owner.removeEventListener('scroll', closeOnScroll, true);
       owner.defaultView?.removeEventListener('resize', closeOnResize);
     };
-  }, [active, sessionId, scope, rootRef, clear, t, parentSessionId, canAsk, child, menuId]);
+  }, [active, sessionId, scope, rootRef, clear, beginEditing, t, parentSessionId, canAsk, child, menuId]);
 
   useLayoutEffect(() => {
     if (!selection || editing || !popupRef.current) return;
@@ -216,7 +222,7 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
             role="group" aria-label={t('selection.actions')}>
             <Button size="sm" variant="text" className="conversation-excerpt__action"
               data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="action"
-              leadingIcon={<Icon name="edit" />} onClick={() => setEditing(true)} aria-haspopup="dialog">
+              leadingIcon={<Icon name="edit" />} onClick={beginEditing} aria-haspopup="dialog">
               {t('selection.annotate')}
             </Button>
             <ToolbarSeparator />
@@ -230,9 +236,11 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
         </Card>, getAppearanceOverlayHost(),
       )}
       <Dialog ref={editorRef} open={!!selection && editing && active} onOpenChange={clear} size="sm" className="conversation-excerpt__dialog"
-        initialFocusRef={commentRef} restoreFocus={false} data-flowchat-selection-ignore="true"
+        initialFocusRef={commentRef} data-flowchat-selection-ignore="true"
         data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="dialog"
-        onKeyDown={event => event.stopPropagation()}>
+        onKeyDown={event => {
+          if (event.key !== 'Escape' && event.key !== 'Tab') event.stopPropagation();
+        }}>
         <DialogHeader>
           <DialogHeading><DialogTitle>{t('selection.annotate')}</DialogTitle></DialogHeading>
           <DialogClose />

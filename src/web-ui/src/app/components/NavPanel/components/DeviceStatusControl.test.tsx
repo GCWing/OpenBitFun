@@ -173,7 +173,7 @@ describe('device status card', () => {
     const previousRefreshes = state.refresh.mock.calls.length;
     act(() => retry?.click());
     expect(state.refresh).toHaveBeenCalledTimes(previousRefreshes + 1);
-    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+    act(() => retry?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(document.activeElement).toBe(element('nav-footer-device-status'));
     onOpenChange.mockClear();

@@ -591,6 +591,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
   
   useEffect(() => {
     let removeOverlayMousedown0: (() => void) | undefined;
+    let removeSubmenuMousedown: (() => void) | undefined;
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
       if (dropdownRef.current && !dropdownRef.current.contains(target)
@@ -605,10 +606,12 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
 
     if (dropdownOpen) {
       removeOverlayMousedown0 = subscribeOverlayInteraction(portalDropdownRef, 'mousedown', handleClickOutside);
+      removeSubmenuMousedown = subscribeOverlayInteraction(nativeSubmenuRef, 'mousedown', handleClickOutside);
     }
 
     return () => {
       removeOverlayMousedown0?.();
+      removeSubmenuMousedown?.();
     };
   }, [dropdownOpen]);
 

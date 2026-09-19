@@ -42,6 +42,7 @@ describe('selection annotation dialog lifecycle', () => {
 
   beforeEach(() => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    vi.useFakeTimers();
     activateSurface('local');
     frames.clear();
     requests.length = 0;
@@ -63,6 +64,7 @@ describe('selection annotation dialog lifecycle', () => {
     window.getSelection()?.removeAllRanges();
     container.remove();
     document.querySelectorAll('[data-openbitfun-overlay-host]').forEach(host => host.remove());
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -123,6 +125,7 @@ describe('selection annotation dialog lifecycle', () => {
     expect(document.activeElement).toBe(buttons[0]);
     act(() => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })));
     expect(dialog()).toBeNull();
+    act(() => vi.advanceTimersByTime(180));
     expect(document.activeElement).toBe(container.querySelector('[data-flowchat-selection-root]'));
     expect(requests).toEqual([]);
   });
