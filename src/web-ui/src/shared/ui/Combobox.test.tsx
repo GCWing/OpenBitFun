@@ -55,7 +55,10 @@ describe('public Combobox product integration', () => {
 
     const popup = document.querySelector<HTMLElement>('[data-openbitfun-component="combobox-popup"]')!;
     const search = input();
-    expect(popup.parentElement).toBe(document.body);
+    const layer = popup.closest('[data-openbitfun-overlay-layer]');
+    expect(layer).not.toBeNull();
+    expect(layer?.parentElement).toBe(document.querySelector('[data-openbitfun-overlay-host="true"]'));
+    expect(layer?.parentElement?.parentElement).toBe(document.body);
     expect(popup.children[0]?.getAttribute('data-openbitfun-part')).toBe('search');
     expect(popup.children[1]?.getAttribute('data-openbitfun-part')).toBe('divider');
     expect(popup.children[2]?.getAttribute('data-openbitfun-part')).toBe('options');

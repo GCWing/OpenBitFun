@@ -19,9 +19,9 @@ import robot18 from '../assets/subagent-avatars/robot-18.svg';
 import robot19 from '../assets/subagent-avatars/robot-19.svg';
 import robot20 from '../assets/subagent-avatars/robot-20.svg';
 
-// Keep the authored SVG family order and seed stable so a session retains its
-// complete character across artwork updates and every Web UI surface.
-export const SUBAGENT_AVATAR_CATALOG_VERSION = 'subagent-identity-v2';
+// Keep the original session hash seed. This catalog maps sessions consistently
+// across Web UI surfaces, with each character's authored artwork and colors together.
+export const SUBAGENT_AVATAR_CATALOG_VERSION = 'subagent-identity-v1';
 
 export const SUBAGENT_AVATAR_CATALOG = [
   { id: 'robot-01', src: robot01 },

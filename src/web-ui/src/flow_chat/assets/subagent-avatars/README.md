@@ -26,11 +26,12 @@ The twenty SVG files total 13,781 bytes (13.5 KiB), replacing 125,440 bytes
 `2026-09-19-round-14-svg-family-20` keeps the previous WebPs, original SVG
 masters, 128px transparent lossless WebP exports, and rendering receipts.
 
-Legacy `robot-XX` IDs, catalog order, and the `subagent-identity-v2` seed in
-`subagent-identity/catalog.ts` remain unchanged. Existing sessions therefore
-retain the same character after the SVG update across all shared Web UI
-consumers. No avatar identity is persisted; lifecycle markers stay in the
-avatar component rather than being drawn into these assets.
+Legacy `robot-XX` IDs and the `subagent-identity-v1` seed in
+`subagent-identity/catalog.ts` remain unchanged. Expanding the catalog from
+fifteen to twenty characters can change an existing session's selected avatar;
+the mapping is deterministic across all shared Web UI consumers for this catalog.
+No avatar identity is persisted; lifecycle markers stay in the avatar component
+rather than being drawn into these assets.
 
 | Runtime ID | Character |
 | --- | --- |

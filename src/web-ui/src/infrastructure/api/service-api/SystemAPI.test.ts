@@ -31,6 +31,7 @@ describe('SystemAPI', () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
   });
 
   it.each([true, false])('allows explicit update checks with DEV=%s', async development => {
@@ -59,6 +60,21 @@ describe('SystemAPI', () => {
     expect(controllerInvoke).toHaveBeenCalledWith('product_control_invoke', {
       request: { action: 'get', capabilityId: 'setting.application.general' },
     });
+  });
+
+  it('writes the update preference on the controller and announces the saved value', async () => {
+    vi.stubGlobal('window', new EventTarget());
+    const changed = vi.fn();
+    const unsubscribe = systemAPI.onAutoUpdateEnabledChange(changed);
+
+    await systemAPI.setAutoUpdateEnabled(true);
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(controllerInvoke).toHaveBeenCalledWith('product_control_invoke', {
+      request: { action: 'configure', capabilityId: 'setting.application.general', optionId: 'auto-update', value: true },
+    });
+    expect(changed).toHaveBeenCalledWith(true);
+    unsubscribe();
   });
 
   it('passes the reviewed download version to the host', async () => {

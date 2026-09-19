@@ -13,6 +13,7 @@ import './UpdateNotificationCard.scss';
 function UpdateNoticeCard({ notice }: { notice: UpdateNotice }) {
   const { t } = useI18n('common');
   const state = useUpdateInstallStore();
+  const { noticeRevision, markNoticePresented } = state;
   const modalOpen = useHasModalOverlay();
   const version = notice === 'available' ? state.availableUpdate?.latestVersion
     : state.downloadVersion ?? state.availableUpdate?.latestVersion ?? state.version;
@@ -33,7 +34,7 @@ function UpdateNoticeCard({ notice }: { notice: UpdateNotice }) {
 
   useEffect(() => {
     const markPresented = () => {
-      if (!modalOpen && document.visibilityState !== 'hidden' && document.hasFocus()) state.markNoticePresented();
+      if (!modalOpen && document.visibilityState !== 'hidden' && document.hasFocus()) markNoticePresented();
     };
     markPresented();
     window.addEventListener('focus', markPresented);
@@ -42,7 +43,7 @@ function UpdateNoticeCard({ notice }: { notice: UpdateNotice }) {
       window.removeEventListener('focus', markPresented);
       document.removeEventListener('visibilitychange', markPresented);
     };
-  }, [modalOpen, notice, version, state.noticeRevision, state.markNoticePresented]);
+  }, [modalOpen, notice, version, noticeRevision, markNoticePresented]);
 
   const percent = state.progress.total && state.progress.total > 0
     ? Math.min(100, Math.round(state.progress.downloaded / state.progress.total * 100)) : null;

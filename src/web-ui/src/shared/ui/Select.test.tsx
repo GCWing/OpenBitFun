@@ -53,7 +53,10 @@ describe('public Select product integration', () => {
     const header = popup.querySelector<HTMLButtonElement>('[data-openbitfun-part="header"]')!;
     const listbox = document.querySelector<HTMLElement>('[role="listbox"]')!;
     const selected = listbox.querySelector<HTMLElement>('[role="option"][aria-selected="true"]')!;
-    expect(popup.parentElement).toBe(document.body);
+    const layer = popup.closest('[data-openbitfun-overlay-layer]');
+    expect(layer).not.toBeNull();
+    expect(layer?.parentElement).toBe(document.querySelector('[data-openbitfun-overlay-host="true"]'));
+    expect(layer?.parentElement?.parentElement).toBe(document.body);
     expect(host.querySelector('[role="listbox"]')).toBeNull();
     expect(popup.contains(header)).toBe(true);
     expect(popup.contains(listbox)).toBe(true);

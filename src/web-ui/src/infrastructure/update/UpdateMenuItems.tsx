@@ -11,10 +11,11 @@ import { formatUpdateInstallError } from './updateErrorMessage';
 export function UpdateMenuItems({ onCloseMenu }: { onCloseMenu: () => void }) {
   const { t } = useI18n('common');
   const state = useUpdateInstallStore();
+  const { initialize } = state;
   const mounted = useRef(false);
   const supported = canCheckForAppUpdates();
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  useEffect(() => { if (supported) void state.initialize(); }, [supported, state.initialize]);
+  useEffect(() => { if (supported) void initialize(); }, [supported, initialize]);
   if (!supported) return null;
 
   const checking = state.checkStatus === 'checking';
