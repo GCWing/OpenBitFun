@@ -287,8 +287,6 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
   }, [permissionMenuOpen, permissionMenuView]);
 
   useEffect(() => {
-    let removeOverlayPointerdown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!permissionMenuOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -313,8 +311,8 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
       }
     };
 
-    removeOverlayPointerdown0 = subscribeOverlayInteraction(permissionMenuRef, 'pointerdown', handlePointerDown);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(permissionMenuRef, 'keydown', handleKeyDown);
+    const removeOverlayPointerdown0 = subscribeOverlayInteraction(permissionMenuRef, 'pointerdown', handlePointerDown);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(permissionMenuRef, 'keydown', handleKeyDown);
     return () => {
       removeOverlayPointerdown0?.();
       removeOverlayKeydown1?.();
@@ -327,8 +325,6 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
   ]);
 
   useEffect(() => {
-    let removeOverlayPointerdown2: (() => void) | undefined;
-    let removeOverlayKeydown3: (() => void) | undefined;
     if (!workspaceMenuOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -346,8 +342,8 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
       }
     };
 
-    removeOverlayPointerdown2 = subscribeOverlayInteraction(workspaceMenuRef, 'pointerdown', handlePointerDown);
-    removeOverlayKeydown3 = subscribeOverlayInteraction(workspaceMenuRef, 'keydown', handleKeyDown);
+    const removeOverlayPointerdown2 = subscribeOverlayInteraction(workspaceMenuRef, 'pointerdown', handlePointerDown);
+    const removeOverlayKeydown3 = subscribeOverlayInteraction(workspaceMenuRef, 'keydown', handleKeyDown);
     return () => {
       removeOverlayPointerdown2?.();
       removeOverlayKeydown3?.();

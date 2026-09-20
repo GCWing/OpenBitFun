@@ -147,13 +147,12 @@ export const RemoteFileBrowser: React.FC<RemoteFileBrowserProps> = ({
 
   // Close context menu when clicking outside
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
     const handleClickOutside = (e: MouseEvent) => {
       if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
         setContextMenu({ show: false, x: 0, y: 0, entry: null });
       }
     };
-    removeOverlayMousedown0 = subscribeOverlayInteraction(contextMenuRef, 'mousedown', handleClickOutside);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(contextMenuRef, 'mousedown', handleClickOutside);
     return () => removeOverlayMousedown0?.();
   }, []);
 

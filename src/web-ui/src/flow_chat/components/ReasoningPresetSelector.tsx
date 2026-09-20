@@ -109,7 +109,6 @@ export const ReasoningPresetSelector: React.FC<ReasoningPresetSelectorProps> = (
   }, [presets.length]);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
     if (!open) return;
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -118,7 +117,7 @@ export const ReasoningPresetSelector: React.FC<ReasoningPresetSelectorProps> = (
         setKeyboardOpen(false);
       }
     };
-    removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handlePointerDown);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handlePointerDown);
     return () => removeOverlayMousedown0?.();
   }, [open]);
 

@@ -465,7 +465,6 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   }, []);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
     if (!menuOpen) return;
     const handleOutside = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -476,7 +475,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
         setMenuOpen(false);
       }
     };
-    removeOverlayMousedown0 = subscribeOverlayInteraction(menuPopoverRef, 'mousedown', handleOutside);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(menuPopoverRef, 'mousedown', handleOutside);
     return () => removeOverlayMousedown0?.();
   }, [menuOpen]);
 

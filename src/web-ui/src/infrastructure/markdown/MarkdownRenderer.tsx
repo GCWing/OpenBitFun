@@ -936,7 +936,6 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
   
   const syntaxTheme = useMemo(() => buildMarkdownPrismStyle(isLight), [isLight]);
   const syntaxThemeRef = useLiveValueRef(syntaxTheme);
-  const isLightRef = useLiveValueRef(isLight);
   
   const contentStr = typeof content === 'string' ? content : String(content || '');
   const renderTraceEnabled = isStartupRenderTraceEnabled();
@@ -1697,7 +1696,6 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
     currentWorkspacePathRef,
     expandDetailsByDefaultRef,
     fileActionsViaCallbackOnlyRef,
-    isLightRef,
     markdownContentRef,
     onHttpLinkClickRef,
     remoteConnectionIdRef,

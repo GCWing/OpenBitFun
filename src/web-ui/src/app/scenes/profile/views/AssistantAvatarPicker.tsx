@@ -57,8 +57,6 @@ const AssistantAvatarPicker: React.FC<AssistantAvatarPickerProps> = ({
   }, [displayedValue]);
 
   useEffect(() => {
-    let removeOverlayPointerdown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!isOpen) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -73,8 +71,8 @@ const AssistantAvatarPicker: React.FC<AssistantAvatarPickerProps> = ({
       triggerRef.current?.focus();
     };
 
-    removeOverlayPointerdown0 = subscribeOverlayInteraction(popoverRef, 'pointerdown', handlePointerDown);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(popoverRef, 'keydown', handleKeyDown);
+    const removeOverlayPointerdown0 = subscribeOverlayInteraction(popoverRef, 'pointerdown', handlePointerDown);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(popoverRef, 'keydown', handleKeyDown);
     return () => {
       removeOverlayPointerdown0?.();
       removeOverlayKeydown1?.();

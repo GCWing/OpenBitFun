@@ -484,3 +484,8 @@ export function buildEcosystemImportItems(
 export function totalDiscoveredAssets(counts: CompatibilityCapabilityCounts): number {
   return counts.command + counts.tool + counts.subagent + counts.mcp;
 }
+
+/** Native subscription connections are separate from external credential discovery. */
+export function ecosystemAccountProvider(product: EcosystemProductId): 'codex' | 'opencode' | undefined {
+  return product === 'codex' || product === 'opencode' ? product : undefined;
+}

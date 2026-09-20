@@ -100,8 +100,6 @@ export function AccountIdentityControls({
   }, [menuOpen, scheduleMenuPositionUpdate, updateMenuPosition]);
 
   useEffect(() => {
-    let removeOverlayPointerdown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!menuOpen) return;
     const closeOnOutsideClick = (event: PointerEvent) => {
       const target = event.target as Node;
@@ -114,8 +112,8 @@ export function AccountIdentityControls({
       setMenuOpen(false);
       menuTriggerRef.current?.focus();
     };
-    removeOverlayPointerdown0 = subscribeOverlayInteraction(menuPanelRef, 'pointerdown', closeOnOutsideClick);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(menuPanelRef, 'keydown', closeOnEscape);
+    const removeOverlayPointerdown0 = subscribeOverlayInteraction(menuPanelRef, 'pointerdown', closeOnOutsideClick);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(menuPanelRef, 'keydown', closeOnEscape);
     return () => {
       removeOverlayPointerdown0?.();
       removeOverlayKeydown1?.();

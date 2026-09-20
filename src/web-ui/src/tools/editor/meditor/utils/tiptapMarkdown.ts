@@ -1378,7 +1378,7 @@ function renderInlineSourceHtml(content: JSONContent[]): string {
   return content.map(node => {
     let value: string;
     if (node.type === 'text') {
-      value = Array.from(node.text ?? '', character => /[\s&<>"`*_~$\[\]\\]/.test(character)
+      value = Array.from(node.text ?? '', character => /[\s&<>"`*_~$[\]\\]/.test(character)
         ? `&#${character.codePointAt(0)};` : character).join('');
     } else if (node.type === 'hardBreak') {
       value = '<br>';

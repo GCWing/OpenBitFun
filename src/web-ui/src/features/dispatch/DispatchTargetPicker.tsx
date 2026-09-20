@@ -87,8 +87,6 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
     : t('chatInput.dispatch.current', { target: displayLabel });
 
   useEffect(() => {
-    let removeOverlayPointerdown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!open) return;
     const handlePointerDown = (event: PointerEvent) => {
       const targetNode = event.target as Node;
@@ -102,8 +100,8 @@ export const DispatchTargetPicker: React.FC<DispatchTargetPickerProps> = ({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
     };
-    removeOverlayPointerdown0 = subscribeOverlayInteraction(menuRef, 'pointerdown', handlePointerDown);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
+    const removeOverlayPointerdown0 = subscribeOverlayInteraction(menuRef, 'pointerdown', handlePointerDown);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
     return () => {
       removeOverlayPointerdown0?.();
       removeOverlayKeydown1?.();

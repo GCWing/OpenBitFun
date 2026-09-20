@@ -92,8 +92,6 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!open) return;
     updatePosition();
     requestAnimationFrame(updatePosition);
@@ -103,8 +101,8 @@ const WorkspaceSessionFilterMenu: React.FC = () => {
       close();
     };
     const handleKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && close();
-    removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handlePointerDown);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handlePointerDown);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
     window.addEventListener('resize', updatePosition);
     window.addEventListener('scroll', updatePosition, true);
     return () => {

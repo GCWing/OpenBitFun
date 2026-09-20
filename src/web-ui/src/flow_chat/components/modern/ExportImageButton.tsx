@@ -190,8 +190,6 @@ export const ExportImageButton: React.FC<ExportImageButtonProps> = ({
   });
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!isMenuOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -202,8 +200,8 @@ export const ExportImageButton: React.FC<ExportImageButtonProps> = ({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setIsMenuOpen(false);
     };
-    removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handleClickOutside);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handleClickOutside);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
     return () => {
       removeOverlayMousedown0?.();
       removeOverlayKeydown1?.();

@@ -688,7 +688,6 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   }, []);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
     if (!openMenuSessionId) return;
     const handleOutside = (event: MouseEvent) => {
       if (!sessionMenuPopoverRef.current?.contains(event.target as Node)
@@ -696,7 +695,7 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
         closeSessionMenu();
       }
     };
-    removeOverlayMousedown0 = subscribeOverlayInteraction(sessionMenuPopoverRef, 'mousedown', handleOutside);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(sessionMenuPopoverRef, 'mousedown', handleOutside);
     return () => removeOverlayMousedown0?.();
   }, [closeSessionMenu, openMenuSessionId]);
 

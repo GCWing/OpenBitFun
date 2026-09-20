@@ -375,7 +375,6 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     const renderTraceStartedAtMs = renderTraceEnabled ? performance.now() : null;
 
     useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
       if (!copied && !isCopyMenuOpen) return;
 
       const handleClickOutside = (event: MouseEvent) => {
@@ -387,14 +386,13 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
         setIsCopyMenuOpen(false);
       };
 
-      removeOverlayMousedown0 = subscribeOverlayInteraction(copyMenuRef, 'mousedown', handleClickOutside);
+      const removeOverlayMousedown0 = subscribeOverlayInteraction(copyMenuRef, 'mousedown', handleClickOutside);
       return () => {
         removeOverlayMousedown0?.();
       };
     }, [copied, isCopyMenuOpen]);
 
     useEffect(() => {
-    let removeOverlayKeydown1: (() => void) | undefined;
       if (!isCopyMenuOpen) return;
 
       const handleKeyDown = (event: KeyboardEvent) => {
@@ -403,7 +401,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
         }
       };
 
-      removeOverlayKeydown1 = subscribeOverlayInteraction(copyMenuRef, 'keydown', handleKeyDown);
+      const removeOverlayKeydown1 = subscribeOverlayInteraction(copyMenuRef, 'keydown', handleKeyDown);
       return () => {
         removeOverlayKeydown1?.();
       };

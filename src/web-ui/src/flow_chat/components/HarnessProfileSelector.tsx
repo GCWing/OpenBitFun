@@ -178,8 +178,6 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
   }, [finishSelection, onStartNewSession, t]);
 
   useEffect(() => {
-    let removeOverlayPointerdown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!open) return;
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -193,8 +191,8 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
       if (event.key === 'Escape') close();
     };
 
-    removeOverlayPointerdown0 = subscribeOverlayInteraction(menuRef, 'pointerdown', handlePointerDown);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
+    const removeOverlayPointerdown0 = subscribeOverlayInteraction(menuRef, 'pointerdown', handlePointerDown);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleKeyDown);
     return () => {
       removeOverlayPointerdown0?.();
       removeOverlayKeydown1?.();

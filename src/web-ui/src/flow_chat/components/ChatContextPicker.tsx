@@ -728,19 +728,17 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   }, [canNavigateBack, displayItems, enterDirectory, goBack, handleItemClick, handleSelect, isOpen, isSearchMode, onClose, openSource, selectedIndex]);
 
   useEffect(() => {
-    let removeOverlayKeydown0: (() => void) | undefined;
     if (!isOpen) return;
-    removeOverlayKeydown0 = subscribeOverlayInteraction(containerRef, 'keydown', handleKeyDown);
+    const removeOverlayKeydown0 = subscribeOverlayInteraction(containerRef, 'keydown', handleKeyDown);
     return () => removeOverlayKeydown0?.();
   }, [handleKeyDown, isOpen]);
 
   useEffect(() => {
-    let removeOverlayMousedown1: (() => void) | undefined;
     if (!isOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) onClose();
     };
-    removeOverlayMousedown1 = subscribeOverlayInteraction(containerRef, 'mousedown', handleClickOutside);
+    const removeOverlayMousedown1 = subscribeOverlayInteraction(containerRef, 'mousedown', handleClickOutside);
     return () => removeOverlayMousedown1?.();
   }, [isOpen, onClose]);
 

@@ -1,11 +1,5 @@
-import { canCheckForAppUpdates } from './tauriEnv';
-import { selectHasUpdateAttention, useUpdateInstallStore } from './updateInstallStore';
+import { useHasAppUpdate } from './useHasAppUpdate';
 import './UpdateIndicator.scss';
-
-export function useHasAppUpdate(): boolean {
-  const attention = useUpdateInstallStore(selectHasUpdateAttention);
-  return canCheckForAppUpdates() && attention;
-}
 
 export function UpdateIndicator() {
   const visible = useHasAppUpdate();

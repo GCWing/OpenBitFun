@@ -94,8 +94,6 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
   }, [anchorRef]);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
       if (!target) return;
@@ -107,8 +105,8 @@ const DateTimePickerPopover: React.FC<DateTimePickerPopoverProps> = ({
       if (event.key === 'Escape') onClose();
     };
 
-    removeOverlayMousedown0 = subscribeOverlayInteraction(popoverRef, 'mousedown', handlePointerDown);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(popoverRef, 'keydown', handleKeyDown);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(popoverRef, 'mousedown', handlePointerDown);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(popoverRef, 'keydown', handleKeyDown);
     return () => {
       removeOverlayMousedown0?.();
       removeOverlayKeydown1?.();

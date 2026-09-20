@@ -179,8 +179,6 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   }, [gitState, handleGitClick, t]);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!workspaceDropdownOpen) return;
     const handlePointerDown = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -198,8 +196,8 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
       setWorkspaceDropdownOpen(false);
       workspaceTriggerRef.current?.focus();
     };
-    removeOverlayMousedown0 = subscribeOverlayInteraction(workspaceMenuRef, 'mousedown', handlePointerDown);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(workspaceMenuRef, 'keydown', handleKeyDown);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(workspaceMenuRef, 'mousedown', handlePointerDown);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(workspaceMenuRef, 'keydown', handleKeyDown);
     return () => {
       removeOverlayMousedown0?.();
       removeOverlayKeydown1?.();

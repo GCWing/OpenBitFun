@@ -49,8 +49,6 @@ const AssistantSessionCreateMenu: React.FC<AssistantSessionCreateMenuProps> = ({
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!menuOpen) return;
 
     const handleMouseDown = (event: MouseEvent) => {
@@ -67,8 +65,8 @@ const AssistantSessionCreateMenu: React.FC<AssistantSessionCreateMenuProps> = ({
       if (event.key === 'Escape' && !isImeOwnedKeyboardEvent(event)) closeMenu();
     };
 
-    removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handleMouseDown);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleEscape);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handleMouseDown);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(menuRef, 'keydown', handleEscape);
     return () => {
       removeOverlayMousedown0?.();
       removeOverlayKeydown1?.();

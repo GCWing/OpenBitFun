@@ -100,7 +100,6 @@ export const ToolTimeoutIndicator: React.FC<ToolTimeoutIndicatorProps> = ({
 
   // Close popover on outside click.
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
     if (!isPopoverOpen) return;
     const handleClick = (e: MouseEvent) => {
       const target = e.target as Node;
@@ -111,18 +110,17 @@ export const ToolTimeoutIndicator: React.FC<ToolTimeoutIndicatorProps> = ({
         closePopover();
       }
     };
-    removeOverlayMousedown0 = subscribeOverlayInteraction(popoverRef, 'mousedown', handleClick);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(popoverRef, 'mousedown', handleClick);
     return () => removeOverlayMousedown0?.();
   }, [isPopoverOpen, closePopover]);
 
   // Close popover on Escape.
   useEffect(() => {
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!isPopoverOpen) return;
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') closePopover();
     };
-    removeOverlayKeydown1 = subscribeOverlayInteraction(popoverRef, 'keydown', handleKey);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(popoverRef, 'keydown', handleKey);
     return () => removeOverlayKeydown1?.();
   }, [isPopoverOpen, closePopover]);
 

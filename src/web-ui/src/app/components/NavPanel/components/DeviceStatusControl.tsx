@@ -179,7 +179,6 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
   });
 
   useEffect(() => {
-    let removeOverlayKeydown0: (() => void) | undefined;
     if (!open) return undefined;
     void refresh();
     const onKeyDown = (event: KeyboardEvent) => {
@@ -188,7 +187,7 @@ const DeviceStatusControl: React.FC<DeviceStatusControlProps> = ({
         triggerRef.current?.focus();
       }
     };
-    removeOverlayKeydown0 = subscribeOverlayInteraction(popoverRef, 'keydown', onKeyDown);
+    const removeOverlayKeydown0 = subscribeOverlayInteraction(popoverRef, 'keydown', onKeyDown);
     return () => removeOverlayKeydown0?.();
   }, [onOpenChange, open, refresh]);
 

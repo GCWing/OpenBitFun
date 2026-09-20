@@ -63,7 +63,6 @@ export const AcpModeSelector: React.FC<AcpModeSelectorProps> = ({
   }, [candidates.length]);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
     if (!open) return;
     const handlePointerDown = (event: MouseEvent) => {
       const target = event.target as Node;
@@ -72,7 +71,7 @@ export const AcpModeSelector: React.FC<AcpModeSelectorProps> = ({
         setKeyboardOpen(false);
       }
     };
-    removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handlePointerDown);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(menuRef, 'mousedown', handlePointerDown);
     return () => removeOverlayMousedown0?.();
   }, [open]);
 

@@ -197,9 +197,6 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
   }, [isOpen, refreshSnapshot]);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
-    let removeOverlayMousedown1: (() => void) | undefined;
-    let removeOverlayKeydown2: (() => void) | undefined;
     if (!isOpen) return;
     if (embedded) {
       const handleEmbeddedPointerDown = (event: MouseEvent) => {
@@ -213,7 +210,7 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
           setActionMenuPosition(null);
         }
       };
-      removeOverlayMousedown0 = subscribeOverlayInteraction(actionMenuRef, 'mousedown', handleEmbeddedPointerDown);
+      const removeOverlayMousedown0 = subscribeOverlayInteraction(actionMenuRef, 'mousedown', handleEmbeddedPointerDown);
       return () => removeOverlayMousedown0?.();
     }
     const handlePointerDown = (event: MouseEvent) => {
@@ -231,8 +228,8 @@ export const SessionTreePopover: React.FC<SessionTreePopoverProps> = ({
         closePopover('keyboard');
       }
     };
-    removeOverlayMousedown1 = subscribeOverlayInteraction(panelRef, 'mousedown', handlePointerDown);
-    removeOverlayKeydown2 = subscribeOverlayInteraction(panelRef, 'keydown', handleKeyDown);
+    const removeOverlayMousedown1 = subscribeOverlayInteraction(panelRef, 'mousedown', handlePointerDown);
+    const removeOverlayKeydown2 = subscribeOverlayInteraction(panelRef, 'keydown', handleKeyDown);
     return () => {
       removeOverlayMousedown1?.();
       removeOverlayKeydown2?.();

@@ -192,8 +192,6 @@ const MainNav: React.FC = () => {
   }, [sshRemote]);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!workspaceMenuOpen) return;
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node | null;
@@ -205,8 +203,8 @@ const MainNav: React.FC = () => {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !isImeOwnedKeyboardEvent(event)) closeWorkspaceMenu();
     };
-    removeOverlayMousedown0 = subscribeOverlayInteraction(workspaceMenuRef, 'mousedown', handleClickOutside);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(workspaceMenuRef, 'keydown', handleEscape);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(workspaceMenuRef, 'mousedown', handleClickOutside);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(workspaceMenuRef, 'keydown', handleEscape);
     return () => {
       removeOverlayMousedown0?.();
       removeOverlayKeydown1?.();

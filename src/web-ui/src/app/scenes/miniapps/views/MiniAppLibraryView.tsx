@@ -162,8 +162,6 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({ tabs }) => {
   const closeImportMenu = useCallback(() => setImportMenuOpen(false), []);
 
   useEffect(() => {
-    let removeOverlayMousedown0: (() => void) | undefined;
-    let removeOverlayKeydown1: (() => void) | undefined;
     if (!importMenuOpen) return;
 
     const handlePointerDown = (event: MouseEvent) => {
@@ -182,8 +180,8 @@ const MiniAppLibraryContent: React.FC<MiniAppLibraryViewProps> = ({ tabs }) => {
       requestAnimationFrame(() => importTriggerRef.current?.focus());
     };
 
-    removeOverlayMousedown0 = subscribeOverlayInteraction(importMenuRef, 'mousedown', handlePointerDown);
-    removeOverlayKeydown1 = subscribeOverlayInteraction(importMenuRef, 'keydown', handleEscape);
+    const removeOverlayMousedown0 = subscribeOverlayInteraction(importMenuRef, 'mousedown', handlePointerDown);
+    const removeOverlayKeydown1 = subscribeOverlayInteraction(importMenuRef, 'keydown', handleEscape);
     return () => {
       removeOverlayMousedown0?.();
       removeOverlayKeydown1?.();
