@@ -5,6 +5,66 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { resolveDevServerPorts } from './dev-server-ports.mjs';
 import { prepareSherpaDev } from './prepare-sherpa-dev.mjs';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { resolveCommandInvocation, runCommandPrefixed } = require('./dev.cjs');
+
+test('desktop preparation invokes pnpm without the Windows batch shim', () => {
+  const invocation = resolveCommandInvocation(
+    'pnpm',
+    ['run', 'plugin-host:prepare'],
+    { npm_execpath: 'E:\\repo\\node_modules\\pnpm\\bin\\pnpm.cjs' },
+    'win32',
+  );
+
+  assert.equal(invocation.cmd, process.execPath);
+  assert.deepEqual(invocation.args, [
+    'E:\\repo\\node_modules\\pnpm\\bin\\pnpm.cjs',
+    'run',
+    'plugin-host:prepare',
+  ]);
+  assert.equal(invocation.shell, false);
+});
+
+test('direct launcher supports spaces and shell metacharacters and preserves exit failures', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'dev launcher & spaces '));
+  const script = join(root, 'fake pnpm.cjs');
+  const argument = 'literal & value %PATH% "quoted"';
+  writeFileSync(script, `
+    if (process.argv[2] !== ${JSON.stringify(argument)}) process.exit(9);
+    process.exit(Number(process.argv[3]));
+  `);
+  // Keep fixtures in the configured temporary root for post-test inspection.
+  const command = process.platform === 'win32' ? 'pnpm' : 'node';
+  const args = process.platform === 'win32' ? [argument] : [script, argument];
+  const env = { npm_execpath: script };
+  const results = await Promise.all([0, 7].map(code =>
+    runCommandPrefixed('fixture', command, [...args, String(code)], root, env),
+  ));
+  assert.equal(results[0].ok, true);
+  assert.equal(results[1].ok, false);
+  assert.equal(results[1].code, 7);
+});
+
+test('Windows direct launches without npm_execpath use the installed pnpm entry', () => {
+  const invocation = resolveCommandInvocation('pnpm', ['--version'], {}, 'win32');
+  assert.match(invocation.args[0], /node_modules[\\/]pnpm[\\/]bin[\\/]pnpm\.cjs$/);
+  assert.equal(invocation.shell, false);
+  for (const platform of ['linux', 'darwin']) {
+    assert.deepEqual(resolveCommandInvocation('pnpm', ['--version'], {}, platform), {
+      cmd: 'pnpm', args: ['--version'], shell: false,
+    });
+  }
+});
+
+test('workspace installation finishes before parallel dependency consumers start', () => {
+  const source = readFileSync(new URL('./dev.cjs', import.meta.url), 'utf8');
+  const install = source.indexOf("await runCommandPrefixed('mobile-web'");
+  const consumers = source.indexOf('const prepTasks = [');
+  assert.ok(install > 0 && install < consumers);
+  assert.equal(source.match(/runCommandPrefixed\('mobile-web'/g).length, 1);
+});
 
 test('HTTP and HMR ports share one contract and reject conflicting overrides', () => {
   assert.deepEqual(resolveDevServerPorts({}), { port: 1422, hmrPort: 1421 });

@@ -144,6 +144,23 @@ function spawnCommand(cmd, args, cwd = ROOT_DIR, envOverrides = {}, shell = fals
   });
 }
 
+function resolveCommandInvocation(cmd, args, env = process.env, platform = process.platform) {
+  // Avoid the Windows batch shim, which workspace installs may rewrite while
+  // preparation is running. Keep paths and arguments out of shell parsing.
+  if (platform === 'win32' && cmd === 'pnpm') {
+    const entry = env.npm_execpath && /\.(?:c?js|mjs)$/i.test(env.npm_execpath)
+      ? env.npm_execpath
+      : path.join(ROOT_DIR, 'node_modules', 'pnpm', 'bin', 'pnpm.cjs');
+    return {
+      cmd: process.execPath,
+      args: [entry, ...args],
+      shell: false,
+    };
+  }
+
+  return { cmd: cmd === 'node' ? process.execPath : cmd, args, shell: false };
+}
+
 /**
  * Run a command asynchronously with piped output, prefixing every line so
  * parallel preparation steps stay distinguishable. Resolves (never rejects)
@@ -151,15 +168,14 @@ function spawnCommand(cmd, args, cwd = ROOT_DIR, envOverrides = {}, shell = fals
  */
 function runCommandPrefixed(prefix, cmd, args, cwd = ROOT_DIR, envOverrides = {}) {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, {
+    const env = { ...process.env, ...envOverrides };
+    const invocation = resolveCommandInvocation(cmd, args, env);
+    const child = spawn(invocation.cmd, invocation.args, {
       cwd,
-      shell: process.platform === 'win32',
+      shell: invocation.shell,
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        ...envOverrides,
-      },
+      env,
     });
 
     const forward = (stream, out) => {
@@ -613,19 +629,28 @@ async function main() {
   const totalSteps = 2;
   let currentStep = 1;
 
-  // Step 1: Run all independent preparation tasks in parallel.
-  // copy-monaco / generate-version / mobile-web / flashgrep / plugin-host have no
-  // dependencies on each other; each task's output is line-prefixed so the
-  // interleaved logs stay attributable. The DeepSeek bridge is not prepared
+  // mobile-web may install workspace dependencies and rewrite node_modules/.bin.
+  // Finish it before launching consumers of those shims and dependencies.
+  // The remaining preparations can run in parallel with prefixed output.
+  // The DeepSeek bridge is not prepared
   // here: it is not a compile-time Tauri resource. Official desktop:build
   // compiles it; local DeepSeek sessions run `pnpm run prepare:dsh-profile`.
   printStep(
     currentStep++,
     totalSteps,
     desktopMode
-      ? 'Prepare resources (parallel: monaco, version, mobile-web, flashgrep, plugin-host)'
+      ? 'Prepare resources (mobile-web first; then parallel: monaco, version, flashgrep, plugin-host)'
       : 'Prepare resources (parallel: monaco, version)'
   );
+
+  if (desktopMode) {
+    const result = await runCommandPrefixed('mobile-web', 'node', ['scripts/mobile-web-build.cjs', '--install']);
+    if (!result.ok) {
+      printError('Build mobile-web failed');
+      if (result.error?.message) printError(result.error.message);
+      process.exit(1);
+    }
+  }
 
   const prepTasks = [
     {
@@ -674,10 +699,6 @@ async function main() {
           return { ok: false, code: null, error };
         }
       })(),
-    });
-    prepTasks.push({
-      name: 'Build mobile-web',
-      promise: runCommandPrefixed('mobile-web', 'node', ['scripts/mobile-web-build.cjs', '--install']),
     });
   }
 
@@ -795,7 +816,11 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  printError('Startup failed: ' + error.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((error) => {
+    printError('Startup failed: ' + error.message);
+    process.exit(1);
+  });
+}
+
+module.exports = { resolveCommandInvocation, runCommandPrefixed };
