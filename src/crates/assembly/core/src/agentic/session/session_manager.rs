@@ -9,6 +9,7 @@ use crate::agentic::core::{
     SessionAgentRouteOwner, SessionConfig, SessionKind, SessionModelBindingPolicy, SessionState,
     SessionSummary, TurnStats,
 };
+use crate::agentic::fork_agent::normalize_incomplete_tool_calls;
 use crate::agentic::image_analysis::ImageContextData;
 use crate::agentic::keyed_lock::{KeyedAsyncLock, KeyedAsyncLockGuard};
 use crate::agentic::memories::db::{MemoryDatabase, MEMORY_PHASE2_GLOBAL_JOB_KEY};
@@ -8635,6 +8636,10 @@ impl SessionManager {
                     "Context snapshot is unavailable for interrupted turn: {turn_id}"
                 ))
             })?;
+        normalize_incomplete_tool_calls(
+            &mut messages,
+            "Tool execution was still in progress while resuming context; no result was available.",
+        );
         messages.retain(|message| {
             message.internal_reminder_kind() != Some(InternalReminderKind::InterruptedContinue)
         });
@@ -9282,6 +9287,47 @@ impl SessionManager {
         }
         self.persist_current_turn_context_snapshot_best_effort(session_id, "context_message_added")
             .await;
+        Ok(())
+    }
+
+    /// Append a complete model round atomically from the context store's point
+    /// of view.  In particular, an assistant tool-call message and its tool
+    /// results must not be observable by fork/snapshot readers separately.
+    pub async fn add_messages(
+        &self,
+        session_id: &str,
+        messages: Vec<Message>,
+    ) -> OpenBitFunResult<()> {
+        if messages.is_empty() {
+            return Ok(());
+        }
+        let _mutation_guard = self.acquire_session_mutation(session_id).await?;
+        for message in &messages {
+            if let Some(citation) = message.metadata.memory_citation.as_ref() {
+                if let Err(error) = self
+                    .memory_database
+                    .record_memory_citation(
+                        session_id,
+                        message.metadata.turn_id.as_deref(),
+                        message.metadata.round_id.as_deref(),
+                        &message.id,
+                        citation,
+                    )
+                    .await
+                {
+                    warn!(
+                        "Failed to record memory citation: session_id={}, message_id={}, error={}",
+                        session_id, message.id, error
+                    );
+                }
+            }
+        }
+        self.context_store.add_messages(session_id, messages);
+        self.persist_current_turn_context_snapshot_best_effort(
+            session_id,
+            "context_messages_added",
+        )
+        .await;
         Ok(())
     }
 
@@ -10509,6 +10555,23 @@ mod tests {
             )
             .await
             .expect("safe boundary should persist");
+        manager
+            .add_message(
+                &session.session_id,
+                Message::assistant_with_tools(
+                    String::new(),
+                    vec![ToolCall {
+                        tool_id: "in-flight-recovery-call".to_string(),
+                        tool_name: "Read".to_string(),
+                        arguments: json!({"path": "still-running.txt"}),
+                        ..ToolCall::default()
+                    }],
+                )
+                .with_turn_id(turn_id.clone())
+                .with_round_id("round-1".to_string()),
+            )
+            .await
+            .expect("in-flight tool call should persist");
 
         let interrupted = manager
             .mark_dialog_turn_interrupted(&session.session_id, &turn_id)
@@ -10554,6 +10617,18 @@ mod tests {
                 .content
                 .to_string()
                 .contains("previous work was interrupted")
+        }));
+        assert!(plan.messages.iter().any(|message| {
+            matches!(
+                &message.content,
+                MessageContent::ToolResult {
+                    tool_id,
+                    is_error: false,
+                    result,
+                    ..
+                } if tool_id == "in-flight-recovery-call"
+                    && result == &json!("Tool execution was still in progress while resuming context; no result was available.")
+            )
         }));
 
         let duplicate =

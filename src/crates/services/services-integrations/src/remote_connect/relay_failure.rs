@@ -65,8 +65,15 @@ const OUTDATED_MARKERS: &[&str] = &[
 ];
 
 /// Substrings that mean the account session must be re-established.
-const AUTH_MARKERS: &[&str] = &["sign in", "unauthorized", "invalid or expired token",
-    "expired token", "relay auth error", "http 401", "http 403"];
+const AUTH_MARKERS: &[&str] = &[
+    "sign in",
+    "unauthorized",
+    "invalid or expired token",
+    "expired token",
+    "relay auth error",
+    "http 401",
+    "http 403",
+];
 
 /// Transport failures with no HTTP status, as reported by reqwest and the
 /// socket stacks.
@@ -136,7 +143,11 @@ fn http_status(lower: &str) -> Option<u16> {
     let mut search = lower;
     while let Some(index) = search.find("http ") {
         let rest = &search[index + 5..];
-        let digits: String = rest.chars().take_while(char::is_ascii_digit).take(3).collect();
+        let digits: String = rest
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .take(3)
+            .collect();
         if digits.len() == 3 {
             if let Ok(status) = digits.parse() {
                 return Some(status);
@@ -154,12 +165,18 @@ mod tests {
 
     #[test]
     fn a_retired_version_is_an_update_not_a_network_fault() {
-        assert_eq!(classify_relay_failure("List devices failed: HTTP 410"), RelayFailureKind::RelayVersionRetired);
+        assert_eq!(
+            classify_relay_failure("List devices failed: HTTP 410"),
+            RelayFailureKind::RelayVersionRetired
+        );
         assert_eq!(
             classify_relay_failure("relay_version_retired: This Relay version has been retired."),
             RelayFailureKind::ClientOutdated
         );
-        assert_eq!(RelayFailureKind::RelayVersionRetired.action(), RelayFailureAction::CheckUpdates);
+        assert_eq!(
+            RelayFailureKind::RelayVersionRetired.action(),
+            RelayFailureAction::CheckUpdates
+        );
         assert!(!RelayFailureKind::RelayVersionRetired.is_retryable());
     }
 
@@ -178,32 +195,60 @@ mod tests {
     fn a_temporary_relay_fault_is_retryable() {
         for status in [408, 425, 429, 500, 502, 503, 504] {
             let message = format!("List devices failed: HTTP {status}");
-            assert_eq!(classify_relay_failure(&message), RelayFailureKind::RelayUnavailable, "{status}");
+            assert_eq!(
+                classify_relay_failure(&message),
+                RelayFailureKind::RelayUnavailable,
+                "{status}"
+            );
             assert!(RelayFailureKind::RelayUnavailable.is_retryable());
         }
     }
 
     #[test]
     fn authentication_failures_stay_on_the_sign_in_path() {
-        assert_eq!(classify_relay_failure("List devices failed: HTTP 401"), RelayFailureKind::Auth);
-        assert_eq!(classify_relay_failure("Invalid or expired token"), RelayFailureKind::Auth);
-        assert_eq!(classify_relay_failure("Sign in to continue"), RelayFailureKind::Auth);
+        assert_eq!(
+            classify_relay_failure("List devices failed: HTTP 401"),
+            RelayFailureKind::Auth
+        );
+        assert_eq!(
+            classify_relay_failure("Invalid or expired token"),
+            RelayFailureKind::Auth
+        );
+        assert_eq!(
+            classify_relay_failure("Sign in to continue"),
+            RelayFailureKind::Auth
+        );
         assert_eq!(RelayFailureKind::Auth.action(), RelayFailureAction::SignIn);
     }
 
     #[test]
     fn transport_failures_are_network_and_unknown_stays_retryable() {
-        assert_eq!(classify_relay_failure("error sending request: connection refused"), RelayFailureKind::Network);
-        assert_eq!(classify_relay_failure("Relay connection failed: tls handshake failed"), RelayFailureKind::Network);
-        assert_eq!(classify_relay_failure("List devices failed: HTTP 404"), RelayFailureKind::Unknown);
-        assert_eq!(classify_relay_failure("").action(), RelayFailureAction::Retry);
+        assert_eq!(
+            classify_relay_failure("error sending request: connection refused"),
+            RelayFailureKind::Network
+        );
+        assert_eq!(
+            classify_relay_failure("Relay connection failed: tls handshake failed"),
+            RelayFailureKind::Network
+        );
+        assert_eq!(
+            classify_relay_failure("List devices failed: HTTP 404"),
+            RelayFailureKind::Unknown
+        );
+        assert_eq!(
+            classify_relay_failure("").action(),
+            RelayFailureAction::Retry
+        );
     }
 
     #[test]
     fn the_configured_endpoint_of_another_official_release_counts_as_retired() {
         assert_eq!(classify_relay_endpoint(DEFAULT_RELAY_URL), None);
         let older = DEFAULT_RELAY_URL.replace("/v/1.0.2", "/v/1.0.1");
-        assert_eq!(classify_relay_endpoint(&older), Some(RelayFailureKind::RelayVersionRetired));
+        assert_eq!(
+            classify_relay_endpoint(&older),
+            Some(RelayFailureKind::RelayVersionRetired)
+        );
         assert_eq!(classify_relay_endpoint("https://example.com/relay"), None);
     }
 }

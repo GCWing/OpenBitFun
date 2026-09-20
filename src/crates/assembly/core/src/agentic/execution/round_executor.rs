@@ -1064,8 +1064,10 @@ impl RoundExecutor {
                 .with_memory_citation(parsed_memory_citation)
                 .with_model_response_replay(model_response_replay);
 
-        // Commit the complete provider response before any tool can block on IO,
-        // approval, or cancellation. Tool results remain separate semantic messages.
+        // Publish the semantic assistant response before tool execution so
+        // readers can observe the active tool call while it is running. Fork
+        // snapshots normalize this intentionally incomplete exchange before
+        // sending it to a provider.
         let assistant_message_committed = if let Some(session_manager) = session_manager {
             session_manager
                 .add_message(&context.session_id, assistant_message.clone())

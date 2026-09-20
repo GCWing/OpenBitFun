@@ -172,19 +172,33 @@ mod tests {
         // Retirement can only come from explicit operator configuration; a
         // relay started without it must never answer the retirement catch-all,
         // whatever prefix the edge proxy announces.
-        assert!(!is_retired_request("/api/devices", &headers(Some("/v/1.0.1"))));
+        assert!(!is_retired_request(
+            "/api/devices",
+            &headers(Some("/v/1.0.1"))
+        ));
         assert!(!is_retired_request("/v1/updates", &headers(None)));
     }
 
     #[test]
     fn a_retired_deployment_answers_every_managed_route() {
         let policy = RetirementPolicy::retired_deployment();
-        for path in ["/api/devices", "/api/info", "/v1/updates", "/v3/sessions/x", "/p"] {
+        for path in [
+            "/api/devices",
+            "/api/info",
+            "/v1/updates",
+            "/v3/sessions/x",
+            "/p",
+        ] {
             assert!(policy.is_retired(path, &headers(None)), "{path}");
         }
         // The health probe and the page that explains the update keep working.
         assert!(!policy.is_retired("/health", &headers(None)));
-        for path in ["/", "/index.html", "/assets/index-abc.js", "/brand/icon.png"] {
+        for path in [
+            "/",
+            "/index.html",
+            "/assets/index-abc.js",
+            "/brand/icon.png",
+        ] {
             assert!(!policy.is_retired(path, &headers(None)), "{path}");
         }
     }
@@ -203,10 +217,16 @@ mod tests {
     #[test]
     fn retirement_switches_read_truthy_values_and_ignore_noise() {
         for value in ["1", "true", "TRUE", " yes ", "on"] {
-            assert!(RetirementPolicy::from_values(Some(value), None).retired, "{value}");
+            assert!(
+                RetirementPolicy::from_values(Some(value), None).retired,
+                "{value}"
+            );
         }
         for value in ["0", "false", "off", ""] {
-            assert!(!RetirementPolicy::from_values(Some(value), None).retired, "{value}");
+            assert!(
+                !RetirementPolicy::from_values(Some(value), None).retired,
+                "{value}"
+            );
         }
         let malformed = RetirementPolicy::from_values(None, Some(" , ,"));
         assert!(malformed.prefixes.is_empty());

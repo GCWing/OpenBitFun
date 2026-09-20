@@ -10747,7 +10747,20 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     parent_session_id
                 ))
             })?;
-        let context_messages = self.load_session_context_messages(&parent_session).await?;
+        self.load_session_context_messages(&parent_session).await?;
+        // The restore path above may acquire the same lock, so take the
+        // snapshot lock only after restoration has completed.  This makes the
+        // final context read atomic with round-level context publication.
+        let _mutation_guard = self
+            .session_manager
+            .acquire_session_mutation(parent_session_id)
+            .await?;
+        let context_messages = self
+            .session_manager
+            .get_context_messages(parent_session_id)
+            .await?;
+        let context_messages =
+            crate::agentic::fork_agent::normalize_fork_context_messages(context_messages);
         ForkAgentContextSnapshot::from_parent_session(&parent_session, context_messages)
     }
 

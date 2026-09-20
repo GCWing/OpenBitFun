@@ -318,10 +318,9 @@ Publishing is an outward-facing action: only call this when the user explicitly 
             .map(str::to_string)
             .unwrap_or_else(|| suggest_market_slug(&app.name, &app.id));
 
-        let submissions = client
-            .list_submissions()
-            .await
-            .map_err(|e| OpenBitFunError::tool(format!("Could not load submission history: {e}")))?;
+        let submissions = client.list_submissions().await.map_err(|e| {
+            OpenBitFunError::tool(format!("Could not load submission history: {e}"))
+        })?;
         let release_target = match resolve_release_target(&submissions, &slug) {
             ReleaseTarget::NewListing if me.is_admin => match client.listing(&slug).await {
                 Ok(listing) => ReleaseTarget::ExistingListing {

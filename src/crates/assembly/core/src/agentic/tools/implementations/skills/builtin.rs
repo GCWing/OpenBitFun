@@ -120,7 +120,9 @@ async fn write_installed_manifest(root: &Path) -> OpenBitFunResult<()> {
     Ok(())
 }
 
-async fn acquire_install_lock(user_skills_root: &Path) -> OpenBitFunResult<BuiltinSkillsInstallLock> {
+async fn acquire_install_lock(
+    user_skills_root: &Path,
+) -> OpenBitFunResult<BuiltinSkillsInstallLock> {
     let lock_path = builtin_skills_install_lock_path(user_skills_root);
 
     // Use an OS-backed advisory file lock so parallel test processes and app

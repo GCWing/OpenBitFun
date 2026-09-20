@@ -3962,15 +3962,12 @@ impl ExecutionEngine {
                 &round_result.assistant_message,
             );
 
+            // Publish the assistant message and all tool results as one context
+            // mutation.  A fork must never observe the assistant tool calls
+            // without their corresponding results.
+            let mut committed_round_messages = Vec::new();
             if !round_result.assistant_message_committed {
-                // Update the in-memory message caches immediately so subsequent rounds see it.
-                if let Err(e) = self
-                    .session_manager
-                    .add_message(&context.session_id, round_result.assistant_message.clone())
-                    .await
-                {
-                    warn!("Failed to update assistant message in memory: {}", e);
-                }
+                committed_round_messages.push(round_result.assistant_message.clone());
             }
 
             // Add tool result messages to history
@@ -3981,15 +3978,14 @@ impl ExecutionEngine {
                     &context.dialog_turn_id,
                     tool_result_msg,
                 );
-
-                // Update the in-memory message caches immediately so subsequent rounds see it.
-                if let Err(e) = self
-                    .session_manager
-                    .add_message(&context.session_id, tool_result_msg.clone())
-                    .await
-                {
-                    warn!("Failed to update tool result message in memory: {}", e);
-                }
+                committed_round_messages.push(tool_result_msg.clone());
+            }
+            if let Err(e) = self
+                .session_manager
+                .add_messages(&context.session_id, committed_round_messages)
+                .await
+            {
+                warn!("Failed to update round messages in memory: {}", e);
             }
 
             #[cfg(feature = "agent-runtime")]
