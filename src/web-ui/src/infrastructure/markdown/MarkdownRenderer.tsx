@@ -807,6 +807,7 @@ const CodeBlockFallback: React.FC<FlowCodeBlockFallbackProps> = ({
             minWidth: '3em',
             paddingRight: '1em',
             textAlign: 'right',
+            fontStyle: 'italic',
             color: gutterColor,
             userSelect: 'none',
             whiteSpace: 'pre',
@@ -1307,10 +1308,11 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
       const codeTagStyle: React.CSSProperties = {
         fontFamily: 'var(--openbitfun-type-code-md-font-family)',
         fontWeight: 'var(--openbitfun-type-code-md-font-weight)',
+        color: syntaxThemeRef.current['code[class*="language-"]']?.color,
       };
-      const gutterColor = isLightRef.current
-        ? 'color-mix(in srgb, var(--openbitfun-color-content-on-light) 40%, var(--openbitfun-color-content-on-dark))'
-        : 'color-mix(in srgb, var(--openbitfun-color-content-on-dark) 40%, var(--openbitfun-color-content-on-light))';
+      // Prism's line-number nodes use the comment token, applied after
+      // lineNumberStyle. Reuse that final color in the fallback as well.
+      const gutterColor = syntaxThemeRef.current.comment.color as string;
 
       return (
         <div className={`code-block-wrapper${hasMultipleLines ? '' : ' code-block-wrapper--single-line'}`} data-openbitfun-component="markdown" data-openbitfun-part="codeBlock" data-openbitfun-state={streaming ? 'streaming' : undefined}>
@@ -1333,6 +1335,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
               codeTagProps={{ style: codeTagStyle }}
               lineNumberStyle={{
                 color: gutterColor,
+                fontStyle: 'italic',
                 paddingRight: '1em',
                 textAlign: 'right',
                 userSelect: 'none',
