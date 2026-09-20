@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import type { FlowToolItem } from '../types/flow-chat';
 import {
   LazyTerminalOutputRenderer,
-  type TerminalOutputRendererHandle,
 } from '@/tools/terminal/components/LazyTerminalOutputRenderer';
 import {
   CommandToolCard,
@@ -117,7 +116,6 @@ export const ExecProcessToolCardView: React.FC<ExecProcessToolCardViewProps> = (
   const [isExpanded, setIsExpandedState] = useState(() => getInitialExpandedState(status, hasLiveOutput));
   const userToggledRef = useRef(false);
   const autoExpandedAtRef = useRef<number | null>(null);
-  const outputRendererRef = useRef<TerminalOutputRendererHandle | null>(null);
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
     toolName: toolItem.toolName,
@@ -213,13 +211,9 @@ export const ExecProcessToolCardView: React.FC<ExecProcessToolCardViewProps> = (
     return '';
   }, [isRunning, liveOutput, model.resultOutput, status]);
 
-  const getVisibleOutputText = useCallback(() => {
-    return outputRendererRef.current?.getVisibleText() ?? getOutputText();
-  }, [getOutputText]);
-
   const renderCopyOutputButton = () => (
     <ToolCardCopyAction
-      getText={getVisibleOutputText}
+      getText={getOutputText}
       disabled={!getOutputText().trim()}
       tooltip={t('toolCards.execProcess.copyOutput')}
       copiedTooltip={t('toolCards.execProcess.outputCopied')}
@@ -329,7 +323,6 @@ export const ExecProcessToolCardView: React.FC<ExecProcessToolCardViewProps> = (
         onToggle={toggleExpanded}
         output={outputText ? (
           <LazyTerminalOutputRenderer
-            ref={outputRendererRef}
             content={outputText}
             maxRows={maxRows}
           />

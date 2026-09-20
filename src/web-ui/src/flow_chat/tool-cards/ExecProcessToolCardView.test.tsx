@@ -6,6 +6,11 @@ import { JSDOM } from 'jsdom';
 
 import { ExecProcessToolCardView, type ExecProcessCardModel } from './ExecProcessToolCardView';
 import type { FlowToolItem } from '../types/flow-chat';
+import { copyTextToClipboard } from '@/shared/utils/textSelection';
+
+vi.mock('@/shared/utils/textSelection', () => ({
+  copyTextToClipboard: vi.fn().mockResolvedValue(true),
+}));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -38,7 +43,7 @@ vi.mock('@/tools/terminal/components/LazyTerminalOutputRenderer', () => ({
     { getVisibleText: () => string },
     { content: string; className?: string; maxRows?: number }
   >(({ content, className, maxRows }, ref) => {
-    React.useImperativeHandle(ref, () => ({ getVisibleText: () => content }), [content]);
+    React.useImperativeHandle(ref, () => ({ getVisibleText: () => content.slice(-3) }), [content]);
     return <pre className={className} data-max-rows={maxRows}>{content}</pre>;
   }),
 }));
@@ -109,6 +114,26 @@ describe.each([
   });
 
   const expandedSurface = '[data-openbitfun-part="surface"][data-openbitfun-state~="expanded"]';
+
+  it.each(['completed', 'running', 'cancelled'] as const)('copies the complete %s output beyond the terminal viewport', async (status) => {
+    const output = `${'long output '.repeat(30)}\nlast line\r\n`;
+    act(() => {
+      root.render(<ExecProcessToolCardView
+        toolItem={{ ...toolItem(status), _progressLogs: [output] } as FlowToolItem}
+        model={{ ...model, resultOutput: output }}
+      />);
+    });
+    if (!container.querySelector(expandedSurface)) {
+      act(() => {
+        container.querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')!.click();
+      });
+    }
+    vi.mocked(copyTextToClipboard).mockClear();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button[aria-label="toolCards.execProcess.copyOutput"]')!.click();
+    });
+    expect(copyTextToClipboard).toHaveBeenCalledExactlyOnceWith(output);
+  });
 
   it.each(['_progressLogs', '_progressMessage'])('expands only when live output arrives through %s, then collapses on completion', (field) => {
     vi.useFakeTimers();
