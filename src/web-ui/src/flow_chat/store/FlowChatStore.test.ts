@@ -750,6 +750,135 @@ describe('FlowChatStore session removal active selection', () => {
   });
 });
 
+describe('FlowChatStore session deletion persistence', () => {
+  beforeEach(() => {
+    apiMocks.deleteSession.mockClear();
+  });
+
+  afterEach(() => {
+    resetStore();
+  });
+
+  it('deletes a session without any workspace path by workspace ID', async () => {
+    // Regression: invalid session projects (lost workspace directory) keep
+    // their workspace ID but have no path fields; the ID-first backend API
+    // must still be called instead of failing on the missing path.
+    const session = createSession({
+      sessionId: 'orphan-1',
+      title: 'Orphaned session',
+      workspacePath: undefined,
+      config: { agentType: 'Standard' },
+    });
+    expect(session.workspaceId).toBeTruthy();
+    expect(session.projectWorkspacePath).toBeUndefined();
+    expect(session.config.workspacePath).toBeUndefined();
+
+    flowChatStore.setState(() => ({
+      sessions: new Map([[session.sessionId, session]]),
+      activeSessionId: session.sessionId,
+    }));
+
+    await flowChatStore.deleteSession('orphan-1', { nextActiveSessionId: null });
+
+    expect(apiMocks.deleteSession).toHaveBeenCalledTimes(1);
+    expect(apiMocks.deleteSession).toHaveBeenCalledWith('orphan-1', session.workspaceId);
+    expect(flowChatStore.getState().sessions.has('orphan-1')).toBe(false);
+    expect(flowChatStore.getState().activeSessionId).toBeNull();
+  });
+
+  it('rejects with a session-scoped error when no workspace ID exists', async () => {
+    const session = createSession({
+      sessionId: 'pre-id-1',
+      title: 'Pre-ID session',
+      workspaceId: undefined,
+      workspacePath: undefined,
+      config: { agentType: 'Standard' },
+    });
+
+    flowChatStore.setState(() => ({
+      sessions: new Map([[session.sessionId, session]]),
+      activeSessionId: session.sessionId,
+    }));
+
+    await expect(flowChatStore.deleteSession('pre-id-1')).rejects.toThrow(
+      'Failed to delete session pre-id-1 on backend: '
+      + 'Session workspace ID is unavailable for session pre-id-1',
+    );
+    expect(apiMocks.deleteSession).not.toHaveBeenCalled();
+    expect(flowChatStore.getState().sessions.has('pre-id-1')).toBe(false);
+  });
+
+  it('keeps local cleanup and surfaces an error when the backend delete rejects', async () => {
+    apiMocks.deleteSession.mockRejectedValueOnce(new Error('backend unavailable'));
+    const session = createSession({
+      sessionId: 'reject-1',
+      title: 'Rejected session',
+      workspacePath: undefined,
+      config: { agentType: 'Standard' },
+    });
+
+    flowChatStore.setState(() => ({
+      sessions: new Map([[session.sessionId, session]]),
+      activeSessionId: session.sessionId,
+    }));
+
+    await expect(flowChatStore.deleteSession('reject-1', { nextActiveSessionId: null }))
+      .rejects.toThrow('Failed to delete session reject-1 on backend: backend unavailable');
+
+    expect(apiMocks.deleteSession).toHaveBeenCalledWith('reject-1', session.workspaceId);
+    expect(flowChatStore.getState().sessions.has('reject-1')).toBe(false);
+    expect(flowChatStore.getState().activeSessionId).toBeNull();
+  });
+
+  it('resolves without error when all backend deletes succeed', async () => {
+    const session = createSession({ sessionId: 'success-1', title: 'Success session' });
+
+    flowChatStore.setState(() => ({
+      sessions: new Map([[session.sessionId, session]]),
+      activeSessionId: session.sessionId,
+    }));
+
+    await expect(flowChatStore.deleteSession('success-1', { nextActiveSessionId: null }))
+      .resolves.toBeUndefined();
+
+    expect(apiMocks.deleteSession).toHaveBeenCalledTimes(1);
+    expect(apiMocks.deleteSession).toHaveBeenCalledWith('success-1', session.workspaceId);
+    expect(flowChatStore.getState().sessions.has('success-1')).toBe(false);
+    expect(flowChatStore.getState().activeSessionId).toBeNull();
+  });
+
+  it('deletes every cascade member by workspace ID even when children lack paths', async () => {
+    const parent = createSession({
+      sessionId: 'cascade-parent',
+      title: 'Cascade parent',
+      workspacePath: undefined,
+      config: { agentType: 'Standard' },
+    });
+    const child = createSession({
+      sessionId: 'cascade-child',
+      title: 'Cascade child',
+      parentSessionId: 'cascade-parent',
+      workspacePath: undefined,
+      config: { agentType: 'Standard' },
+    });
+
+    flowChatStore.setState(() => ({
+      sessions: new Map([
+        [parent.sessionId, parent],
+        [child.sessionId, child],
+      ]),
+      activeSessionId: parent.sessionId,
+    }));
+
+    await flowChatStore.deleteSession('cascade-parent', { nextActiveSessionId: null });
+
+    expect(apiMocks.deleteSession).toHaveBeenCalledTimes(2);
+    expect(apiMocks.deleteSession).toHaveBeenCalledWith('cascade-parent', parent.workspaceId);
+    expect(apiMocks.deleteSession).toHaveBeenCalledWith('cascade-child', child.workspaceId);
+    expect(Array.from(flowChatStore.getState().sessions.keys())).toEqual([]);
+  });
+});
+
 describe('FlowChatStore token usage', () => {
   afterEach(() => {
     resetStore();

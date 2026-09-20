@@ -145,15 +145,17 @@ export const localSessionDriver: SessionDriver = {
       sessionId,
       hasWorkspacePath: Boolean(session && sessionProjectWorkspacePath(session)),
     });
-    await context.flowChatStore.deleteSession(
-      sessionId,
-      removal.removedActiveSession ? { nextActiveSessionId: null } : undefined,
-    );
-
-    removal.removedSessionIds.forEach(id => {
-      context.processingManager.clearSessionStatus(id);
-      cleanupSaveState(context, id);
-    });
+    try {
+      await context.flowChatStore.deleteSession(
+        sessionId,
+        removal.removedActiveSession ? { nextActiveSessionId: null } : undefined,
+      );
+    } finally {
+      removal.removedSessionIds.forEach(id => {
+        context.processingManager.clearSessionStatus(id);
+        cleanupSaveState(context, id);
+      });
+    }
   },
 
   async archiveSession(

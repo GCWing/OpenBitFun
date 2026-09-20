@@ -1,4 +1,4 @@
-import { requireSessionWorkspaceId } from '../utils/sessionWorkspace';
+import { requireSessionWorkspaceId, sessionWorkspaceId } from '../utils/sessionWorkspace';
 import { workspaceManager } from '@/infrastructure/services/business/workspaceManager';
 import { resolveLegacySessionWorkspace } from '@/infrastructure/api/service-api/legacyWorkspaceCompatibility';
 import { projectUserQuestionTiming } from '../utils/userQuestionTiming';
@@ -5182,25 +5182,37 @@ export class FlowChatStore {
       this.pendingRemoveSessionOptions.set(sessionId, options);
     }
 
+    // Snapshot workspace IDs synchronously from the same state that produced
+    // the cascade list: backend deletion is workspace-ID-first and must not
+    // depend on the session still being present once awaited work resolves.
+    // Sessions whose workspace directory disappeared (invalid session
+    // projects) keep their workspace ID and stay deletable; only pre-ID
+    // sessions without any workspace ID fail explicitly instead of silently
+    // skipping the request.
+    const workspaceIdBySessionId = new Map<string, string>();
+    sessionIdsToDelete.forEach(id => {
+      const workspaceId = sessionWorkspaceId(this.state.sessions.get(id));
+      if (workspaceId) {
+        workspaceIdBySessionId.set(id, workspaceId);
+      }
+    });
+
     const { stateMachineManager } = await import('../state-machine');
     sessionIdsToDelete.forEach(id => {
       stateMachineManager.delete(id);
     });
 
+    const deleteFailures: { sessionId: string; reason: unknown }[] = [];
     try {
       const { agentAPI } = await import('@/infrastructure/api/service-api/AgentAPI');
       const deleteResults = await Promise.allSettled(
         sessionIdsToDelete.map(async id => {
-          const sess = this.state.sessions.get(id);
-          const workspacePath = sess ? sessionProjectWorkspacePath(sess) : undefined;
-          if (!workspacePath) {
-            throw new Error(`Workspace path not found for session ${id}`);
+          const workspaceId = workspaceIdBySessionId.get(id);
+          if (!workspaceId) {
+            throw new Error(`Session workspace ID is unavailable for session ${id}`);
           }
 
-          await agentAPI.deleteSession(
-            id,
-            requireSessionWorkspaceId(sess!)
-          );
+          await agentAPI.deleteSession(id, workspaceId);
         })
       );
 
@@ -5210,16 +5222,28 @@ export class FlowChatStore {
             sessionId: sessionIdsToDelete[index],
             error: result.reason,
           });
+          deleteFailures.push({ sessionId: sessionIdsToDelete[index], reason: result.reason });
         }
       });
     } catch (error) {
       log.error('Failed to delete session on backend', { sessionId, error });
+      deleteFailures.push({ sessionId, reason: error });
     }
 
     const removedSessionIds = this.removeSession(sessionId, options);
     sessionComposerStore.getState().removeDrafts(removedSessionIds);
     askUserQuestionDraftStore.getState().removeSessionDrafts(removedSessionIds);
     this.pendingRemoveSessionOptions.delete(sessionId);
+
+    if (deleteFailures.length > 0) {
+      const firstFailure = deleteFailures[0];
+      const reasonText = firstFailure.reason instanceof Error
+        ? firstFailure.reason.message
+        : String(firstFailure.reason);
+      throw new Error(
+        `Failed to delete session ${firstFailure.sessionId} on backend: ${reasonText}`
+      );
+    }
   }
 
   public removeSession(sessionId: string, options?: RemoveSessionOptions): string[] {
