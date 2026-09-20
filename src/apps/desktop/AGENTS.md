@@ -167,6 +167,12 @@ For peer system-info response compatibility, run
 `cargo test -p openbitfun-desktop --lib system_info_home_contract`.
 For window geometry recovery, legacy state compatibility, and snapshot persistence,
 run `cargo test -p openbitfun-desktop --lib window_state_support::tests`.
+For Windows main-WebView minimize/restore size filtering, run
+`cargo test -p openbitfun-desktop --no-default-features --lib window_webview_geometry::tests`.
+The desktop host owns main-WebView resizing on Windows so minimized client bounds
+do not trigger page reflow; embedded browser WebViews keep their existing owners.
+After rebuilding, manually compare taskbar minimize/restore with tray hide/show
+while a session is open, and check normal resize, maximize, and monitor DPI changes.
 For the matching startup wiring contract, run
 `pnpm --dir src/web-ui run test:run src/app/startup/startupPerformanceContract.test.ts`.
 For native sidebar material and appearance bootstrap, run

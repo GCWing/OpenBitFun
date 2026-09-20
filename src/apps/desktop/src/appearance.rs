@@ -668,6 +668,10 @@ pub fn create_main_window(
     let build_started_at = Instant::now();
     match builder.build() {
         Ok(window) => {
+            #[cfg(target_os = "windows")]
+            if let Err(error) = crate::window_webview_geometry::install(&window) {
+                error!("Failed to install main WebView geometry protection: {error}");
+            }
             let reapply_maximized = crate::restore_main_window_state(&window);
             crate::webview_recovery::install(&window);
             startup_trace.record_elapsed_step("native_window", "webview_build", build_started_at);

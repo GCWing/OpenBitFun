@@ -36,6 +36,8 @@ pub mod startup_trace;
 pub mod tray;
 mod webview_recovery;
 mod window_state_support;
+#[cfg(target_os = "windows")]
+mod window_webview_geometry;
 
 use openbitfun_agent_runtime::sdk::{attach_session_event_cursor, SessionEventJournal};
 use openbitfun_core::agentic::tools::computer_use_capability::set_computer_use_desktop_available;
@@ -1183,6 +1185,8 @@ pub async fn run() {
         })
         .on_window_event({
             move |window, event| {
+                #[cfg(target_os = "windows")]
+                window_webview_geometry::handle_event(window, event);
                 if window.label() == "main"
                     && !MAIN_WINDOW_USES_TRANSIENT_GEOMETRY.load(Ordering::SeqCst)
                     && matches!(event, tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_))
