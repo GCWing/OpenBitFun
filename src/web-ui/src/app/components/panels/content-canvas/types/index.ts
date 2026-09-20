@@ -46,5 +46,6 @@ export type {
 export {
   FILE_VIEWER_TYPES,
   isFileViewerType,
+  isCanvasTabVisibleForSession,
   TAB_EVENTS,
 } from './content';

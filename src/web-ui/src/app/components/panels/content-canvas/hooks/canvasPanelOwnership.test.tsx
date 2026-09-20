@@ -206,7 +206,7 @@ describe('canvas host panel ownership', () => {
     expect(appManager.getState().layout.rightPanelCollapsed).toBe(true);
   });
 
-  it('preserves manual collapse across content changes, workspace restore and host remount', async () => {
+  it('restores panel visibility when workspace content returns', async () => {
     switchAgentCanvasWorkspace(null, 'workspace-a');
     useAgentCanvasStore.getState().addTab(content('session'), 'active');
     await act(async () => root.render(<Hosts />));
@@ -222,10 +222,10 @@ describe('canvas host panel ownership', () => {
       root.render(<Hosts />);
     });
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
-    expect(appManager.getState().layout.rightPanelCollapsed).toBe(true);
+    expect(appManager.getState().layout.rightPanelCollapsed).toBe(false);
     await act(async () => root.render(null));
     await act(async () => root.render(<Hosts />));
-    expect(appManager.getState().layout.rightPanelCollapsed).toBe(true);
+    expect(appManager.getState().layout.rightPanelCollapsed).toBe(false);
   });
 
   it('keeps an explicitly opened empty panel and counts all editor groups when closing', async () => {
@@ -245,7 +245,7 @@ describe('canvas host panel ownership', () => {
     expect(appManager.getState().layout.rightPanelCollapsed).toBe(true);
   });
 
-  it('preserves an open panel when workspace snapshots change before the shell rerenders', async () => {
+  it('collapses when a workspace snapshot has no visible content before the shell rerenders', async () => {
     switchAgentCanvasWorkspace(null, 'workspace-a');
     useAgentCanvasStore.getState().addTab(content('workspace-a'), 'active');
     appManager.updateLayout({ rightPanelCollapsed: false });
@@ -253,7 +253,7 @@ describe('canvas host panel ownership', () => {
     await act(async () => switchAgentCanvasWorkspace('workspace-a', 'workspace-b'));
     expect(useAgentCanvasStore.getState().workspaceKey).toBe('workspace-b');
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(0);
-    expect(appManager.getState().layout.rightPanelCollapsed).toBe(false);
+    expect(appManager.getState().layout.rightPanelCollapsed).toBe(true);
     await act(async () => switchAgentCanvasWorkspace('workspace-b', 'workspace-a'));
     expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
     expect(appManager.getState().layout.rightPanelCollapsed).toBe(false);

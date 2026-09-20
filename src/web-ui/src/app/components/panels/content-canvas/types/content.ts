@@ -5,6 +5,17 @@
 
 export type { PanelContentType, PanelContent } from '../../base/types';
 import type { PanelContentType } from '../../base/types';
+import type { CanvasTab } from './tab';
+
+/** BTW and subagent tabs are scoped to the primary session that opened them. */
+export const isCanvasTabVisibleForSession = (
+  tab: Pick<CanvasTab, 'content'>,
+  activeSessionId?: string | null,
+): boolean => {
+  if (tab.content.type !== 'btw-session') return true;
+  const parentSessionId = tab.content.data?.parentSessionId;
+  return Boolean(activeSessionId && parentSessionId === activeSessionId);
+};
 
 /**
  * File viewer types (code, markdown, images, etc.).

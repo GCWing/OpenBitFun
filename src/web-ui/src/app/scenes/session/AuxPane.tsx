@@ -5,7 +5,7 @@
  * Renamed from panels/ContentPanel. All logic preserved.
  */
 
-import { forwardRef, useEffect, useRef, useImperativeHandle, useCallback } from 'react';
+import { forwardRef, useEffect, useRef, useImperativeHandle, useCallback, useSyncExternalStore } from 'react';
 import { ContentCanvas, useCanvasStore } from '../../components/panels/content-canvas';
 import { usePanelTabCoordinator } from '../../components/panels/content-canvas/hooks/usePanelTabCoordinator';
 import { TAB_EVENTS } from '../../components/panels/content-canvas/types';
@@ -20,6 +20,8 @@ import { useI18n } from '@/infrastructure/i18n';
 import type { PanelContent as OldPanelContent } from '../../components/panels/base/types';
 import type { PanelContent } from '../../components/panels/content-canvas/types';
 import { createLogger } from '@/shared/utils/logger';
+import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { isCanvasTabVisibleForSession } from '../../components/panels/content-canvas/types';
 
 import './AuxPane.scss';
 
@@ -44,6 +46,11 @@ const AuxPane = forwardRef<AuxPaneRef, AuxPaneProps>(
     const { t } = useI18n('components');
     const { workspace } = useCurrentWorkspace();
     const workspaceId = workspace?.id;
+    const activeSessionId = useSyncExternalStore(
+      flowChatStore.subscribe.bind(flowChatStore),
+      () => flowChatStore.getState().activeSessionId,
+      () => flowChatStore.getState().activeSessionId,
+    );
 
     // Fine-grained selectors so unrelated store changes do not re-render.
     const addTab = useCanvasStore(state => state.addTab);
@@ -57,7 +64,9 @@ const AuxPane = forwardRef<AuxPaneRef, AuxPaneProps>(
     const canvasWorkspaceKey = useCanvasStore(state => state.workspaceKey);
     const { expandPanel, collapsePanel } = usePanelTabCoordinator({
       visibleTabCount: [primaryGroup, secondaryGroup, tertiaryGroup]
-        .reduce((count, group) => count + group.tabs.filter(tab => !tab.isHidden).length, 0),
+        .reduce((count, group) => count + group.tabs.filter(tab =>
+          !tab.isHidden && isCanvasTabVisibleForSession(tab, activeSessionId),
+        ).length, 0),
       scopeKey: canvasWorkspaceKey,
       expandEventName: TAB_EVENTS.EXPAND_RIGHT_PANEL,
       onExpand: expandSessionAuxPane,

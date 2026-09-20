@@ -3,7 +3,7 @@
  * Shared content surface. The containing scene or panel owns its layout.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import { EditorArea } from './editor-area';
 import { AnchorZone } from './anchor-zone';
 import { MissionControl } from './mission-control';
@@ -17,6 +17,7 @@ import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext'
 import { openMainSession } from '@/flow_chat/services/sessionActivation';
 import { isSamePath } from '@/shared/utils/pathUtils';
 import './ContentCanvas.scss';
+import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
 export interface ContentCanvasProps {
   /** Workspace path */
   workspacePath?: string;
@@ -71,6 +72,11 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
   const activeBtwSessionTab = useCanvasStore(state => selectActiveBtwSessionTab(state as any));
   const activeBtwSessionData = activeBtwSessionTab?.content.data as BtwSessionPanelData | undefined;
   const { workspace: currentWorkspace } = useCurrentWorkspace();
+  const activeSessionId = useSyncExternalStore(
+    flowChatStore.subscribe.bind(flowChatStore),
+    () => flowChatStore.getState().activeSessionId,
+    () => flowChatStore.getState().activeSessionId,
+  );
   const currentWorkspaceId = currentWorkspace?.id;
   const lastSyncedBtwTabIdRef = useRef<string | null>(null);
   // Initialize hooks
@@ -131,9 +137,10 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
   const hasRenderableTabs = useMemo(() => {
     const groups = [primaryGroup, secondaryGroup, tertiaryGroup];
     return groups.some(group =>
-      group.tabs.some(tab => !tab.isHidden || tab.content.type === 'terminal')
+      group.tabs.some(tab => !tab.isHidden && (tab.content.type !== 'btw-session' || tab.content.data?.parentSessionId === activeSessionId)
+        || tab.content.type === 'terminal')
     );
-  }, [primaryGroup, secondaryGroup, tertiaryGroup]);
+  }, [primaryGroup, secondaryGroup, tertiaryGroup, activeSessionId]);
 
   // Handle anchor close
   const handleAnchorClose = useCallback(() => {
@@ -177,6 +184,7 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
         <div className="canvas-content-canvas__editor" data-openbitfun-component="content-canvas" data-openbitfun-part="editor">
           <EditorArea
             workspacePath={workspacePath}
+            activeSessionId={activeSessionId}
             isSceneActive={isSceneActive}
             onOpenMissionControl={missionControlEnabled ? handleOpenMissionControl : undefined}
             onInteraction={onInteraction}

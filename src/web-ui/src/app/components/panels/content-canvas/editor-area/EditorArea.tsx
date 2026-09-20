@@ -10,6 +10,7 @@ import type {
 } from '../types';
 import './EditorArea.scss';
 export interface EditorAreaProps {
+  activeSessionId?: string | null;
   workspacePath?: string;
   isSceneActive?: boolean;
   onOpenMissionControl?: () => void;
@@ -21,6 +22,7 @@ export interface EditorAreaProps {
 }
 
 export const EditorArea: React.FC<EditorAreaProps> = ({
+  activeSessionId,
   workspacePath,
   isSceneActive = true,
   onOpenMissionControl,
@@ -127,6 +129,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   const renderEditorGroup = (groupId: EditorGroupId, group: typeof primaryGroup) => (
     <EditorGroup
       groupId={groupId}
+      activeSessionId={activeSessionId}
       group={group}
       isActive={activeGroupId === groupId}
       isSceneActive={isSceneActive}
