@@ -1,10 +1,11 @@
 use crate::{LegacyMigrationError, LegacyMigrationResult};
-use openbitfun_services_core::product_identity::{data_namespace, hidden_data_directory};
+use openbitfun_services_core::product_identity::{
+    data_namespace, hidden_data_directory, legacy_hidden_data_directory,
+};
 use std::env;
 use std::path::{Path, PathBuf};
 
 pub const LEGACY_PRODUCT_ID: &str = "bitfun";
-const LEGACY_HIDDEN_DATA_DIRECTORY: &str = ".bitfun";
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,7 +47,7 @@ impl MigrationRoots {
             .unwrap_or_else(|| config_root.join(LEGACY_PRODUCT_ID));
         let legacy_home_root = env_path("BITFUN_HOME")
             .or_else(|| env_path("BITFUN_E2E_HOME"))
-            .unwrap_or_else(|| home.join(LEGACY_HIDDEN_DATA_DIRECTORY));
+            .unwrap_or_else(|| home.join(legacy_hidden_data_directory()));
         let target_user_root = env_path("OPENBITFUN_USER_ROOT")
             .or_else(|| env_path("OPENBITFUN_E2E_USER_ROOT"))
             .unwrap_or_else(|| config_root.join(data_namespace()));

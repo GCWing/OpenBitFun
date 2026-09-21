@@ -1563,6 +1563,38 @@ pub async fn set_primary_assistant_workspace(
     Ok(WorkspaceInfoDto::from_workspace_info(&workspace))
 }
 
+/// How deleting an assistant workspace record may touch its directory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AssistantWorkspaceDirectoryPlan {
+    /// Managed layout (current or legacy): delete the directory when present.
+    DeleteDirectoryWhenPresent,
+    /// The directory does not exist: remove the registry entry only.
+    RegistryEntryOnly,
+}
+
+/// Guards `delete_assistant_workspace` against deleting arbitrary directories.
+///
+/// Existing directories outside the managed assistant roots (the current
+/// OpenBitFun layout and the legacy BitFun layout left behind by the
+/// BitFun-to-OpenBitFun brand migration) are refused; a record whose
+/// directory is already gone resolves to a registry-only cleanup.
+fn assistant_workspace_directory_plan(
+    path: &Path,
+    is_managed_path: bool,
+) -> Result<AssistantWorkspaceDirectoryPlan, String> {
+    if is_managed_path {
+        return Ok(AssistantWorkspaceDirectoryPlan::DeleteDirectoryWhenPresent);
+    }
+    if path.exists() {
+        Err(format!(
+            "Workspace path is not a managed assistant workspace: {}",
+            path.display()
+        ))
+    } else {
+        Ok(AssistantWorkspaceDirectoryPlan::RegistryEntryOnly)
+    }
+}
+
 #[tauri::command]
 pub async fn delete_assistant_workspace(
     state: State<'_, AppState>,
@@ -1590,15 +1622,11 @@ pub async fn delete_assistant_workspace(
         return Err("Primary assistant workspace cannot be deleted".to_string());
     }
 
-    if !state
+    let is_managed_path = state
         .workspace_service
-        .is_assistant_workspace_path(&workspace_info.root_path)
-    {
-        return Err(format!(
-            "Workspace path is not a managed assistant workspace: {}",
-            workspace_info.root_path.display()
-        ));
-    }
+        .is_manageable_assistant_workspace_path(&workspace_info.root_path);
+    let directory_plan =
+        assistant_workspace_directory_plan(&workspace_info.root_path, is_managed_path)?;
 
     let is_active_workspace = state
         .workspace_service
@@ -1617,11 +1645,26 @@ pub async fn delete_assistant_workspace(
 
     let workspace_path = workspace_info.root_path.to_string_lossy().to_string();
 
-    state
-        .filesystem_service
-        .delete_directory(&workspace_path, true)
-        .await
-        .map_err(|e| format!("Failed to delete assistant workspace files: {}", e))?;
+    // Re-check presence so a directory that disappears between the guard and
+    // the deletion still resolves as a registry-only cleanup.
+    let delete_files = matches!(
+        directory_plan,
+        AssistantWorkspaceDirectoryPlan::DeleteDirectoryWhenPresent
+    ) && workspace_info.root_path.exists();
+
+    if delete_files {
+        state
+            .filesystem_service
+            .delete_directory(&workspace_path, true)
+            .await
+            .map_err(|e| format!("Failed to delete assistant workspace files: {}", e))?;
+    } else {
+        info!(
+            "Assistant workspace directory is missing; removed registry entry only: workspace_id={}, path={}",
+            request.workspace_id,
+            workspace_info.root_path.display()
+        );
+    }
 
     state
         .workspace_service
@@ -1711,6 +1754,47 @@ async fn clear_directory_contents(directory: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(test)]
+mod assistant_workspace_delete_tests {
+    use super::{assistant_workspace_directory_plan, AssistantWorkspaceDirectoryPlan};
+
+    #[test]
+    fn managed_paths_may_delete_even_when_the_directory_is_missing() {
+        let temp = tempfile::tempdir().expect("temp root");
+        let missing = temp.path().join("workspace-44e0e781");
+
+        assert_eq!(
+            assistant_workspace_directory_plan(&missing, true),
+            Ok(AssistantWorkspaceDirectoryPlan::DeleteDirectoryWhenPresent)
+        );
+    }
+
+    #[test]
+    fn unmanaged_existing_directories_are_refused() {
+        let temp = tempfile::tempdir().expect("temp root");
+        let unmanaged = temp.path().join("Documents").join("foo");
+        std::fs::create_dir_all(&unmanaged).expect("create unmanaged directory");
+
+        let error = assistant_workspace_directory_plan(&unmanaged, false)
+            .expect_err("an existing unmanaged directory must be refused");
+
+        assert!(error.starts_with("Workspace path is not a managed assistant workspace"));
+        assert!(error.contains(&unmanaged.to_string_lossy().to_string()));
+        assert!(unmanaged.exists(), "the guard must not delete anything");
+    }
+
+    #[test]
+    fn unmanaged_missing_records_resolve_to_registry_only_cleanup() {
+        let temp = tempfile::tempdir().expect("temp root");
+        let orphan = temp.path().join("missing-root").join("workspace-44e0e781");
+
+        assert_eq!(
+            assistant_workspace_directory_plan(&orphan, false),
+            Ok(AssistantWorkspaceDirectoryPlan::RegistryEntryOnly)
+        );
+    }
+}
+
 #[tauri::command]
 pub async fn reset_assistant_workspace(
     state: State<'_, AppState>,
@@ -1732,7 +1816,7 @@ pub async fn reset_assistant_workspace(
 
     if !state
         .workspace_service
-        .is_assistant_workspace_path(&workspace_info.root_path)
+        .is_manageable_assistant_workspace_path(&workspace_info.root_path)
     {
         return Err(format!(
             "Workspace path is not a managed assistant workspace: {}",
@@ -2965,7 +3049,7 @@ pub async fn reset_workspace_persona_files(
     };
 
     if workspace.workspace_kind != WorkspaceKind::Assistant
-        || !service.is_assistant_workspace_path(&workspace.root_path)
+        || !service.is_manageable_assistant_workspace_path(&workspace.root_path)
     {
         return Err(format!(
             "Workspace {} is not a managed assistant workspace",

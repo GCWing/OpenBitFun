@@ -24,7 +24,7 @@ pub const fn data_namespace() -> &'static str {
     }
 }
 
-/// Hidden directory name derived from [`data_namespace`] by the build adapter.
+/// Hidden directory name derived from [`hidden_data_directory`] by the build adapter.
 ///
 /// The same name is used for the product home and project-local product data.
 pub const fn hidden_data_directory() -> &'static str {
@@ -32,6 +32,16 @@ pub const fn hidden_data_directory() -> &'static str {
         Some(value) => value,
         None => DEFAULT_HIDDEN_DATA_DIRECTORY,
     }
+}
+
+/// Hidden directory name used by the legacy BitFun-branded artifacts.
+///
+/// Records written before the BitFun-to-OpenBitFun brand migration may still
+/// point at the legacy data root, so migration-aware code needs this name to
+/// keep reading (and to keep explicit deletion or reset of) those records
+/// working instead of rejecting them as unmanaged paths.
+pub const fn legacy_hidden_data_directory() -> &'static str {
+    ".bitfun"
 }
 
 #[cfg(test)]
@@ -43,5 +53,6 @@ mod tests {
         assert_eq!(product_id(), "openbitfun");
         assert_eq!(data_namespace(), "openbitfun");
         assert_eq!(hidden_data_directory(), ".openbitfun");
+        assert_eq!(legacy_hidden_data_directory(), ".bitfun");
     }
 }
