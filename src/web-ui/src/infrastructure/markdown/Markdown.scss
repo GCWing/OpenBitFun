@@ -716,8 +716,11 @@
 
 // Paint only the arriving glyph ranges. currentColor preserves links, syntax
 // colors and the active theme; no spans or layout-affecting row animations.
+// Global highlight rules cause pseudo-style work even with no registered ranges.
+// Scope to actual arriving text parents; the hook retains this marker only until
+// their final arrival settles, including the last 160 ms after streaming ends.
 @for $level from 0 through 31 {
-  ::highlight(openbitfun-stream-reveal-#{$level}) {
+  [data-stream-reveal-active]::highlight(openbitfun-stream-reveal-#{$level}) {
     color: color-mix(in srgb, currentColor #{20% + $level * 2.5%}, transparent);
   }
 }
