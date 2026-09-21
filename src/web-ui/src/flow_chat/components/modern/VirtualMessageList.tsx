@@ -524,6 +524,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
 
   const virtualizer = useFlowChatVirtualizer({
     items: virtualItems,
+    startAtTailOnMount: presentationMode !== 'history-window' && !shouldRestoreInitialSnapshot,
     scrollerRef: scrollerElementRef,
     headerRef: headerElementRef,
     getItemKey: getVirtualItemStableKey,

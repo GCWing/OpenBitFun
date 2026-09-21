@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   followsNow: false,
   scheduleFollowToLatest: vi.fn(),
   startAtTailOnMount: true,
+  virtualizerStartsAtTail: false,
   revealNewTurnTail: null as null | ((turnId: string) => boolean),
   /**
    * The register the list built, reached through the hook it hands it to.
@@ -127,7 +128,9 @@ vi.mock('./useFlowChatVirtualizer', async () => {
       items: Array<Record<string, unknown>>;
       getItemKey: (item: Record<string, unknown>) => string;
       scrollerRef: { current: HTMLElement | null };
+      startAtTailOnMount?: boolean;
     }) => {
+      mocks.virtualizerStartsAtTail = options.startAtTailOnMount === true;
       const rows = options.items.map((item, index) => ({
         index,
         key: options.getItemKey(item),
@@ -369,6 +372,7 @@ describe('VirtualMessageList natural scroll contract', () => {
 
   it('isolates the opening transcript at its boundary until reveal', async () => {
     act(() => root.render(<VirtualMessageList />));
+    expect(mocks.virtualizerStartsAtTail).toBe(true);
     const list = container.querySelector<HTMLElement>('[data-testid="flowchat-message-list"]')!;
     expect(list.getAttribute('data-open-viewport-settled')).toBe('false');
     expect(list.hasAttribute('inert')).toBe(false);
@@ -1531,6 +1535,7 @@ describe('VirtualMessageList natural scroll contract', () => {
       );
 
       expect(mocks.startAtTailOnMount).toBe(false);
+      expect(mocks.virtualizerStartsAtTail).toBe(false);
       expect(scroller.scrollTop).toBe(140);
       await settleOpenReveal();
       expect(container.querySelector('[data-open-viewport-settled="true"]')).not.toBeNull();

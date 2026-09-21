@@ -161,6 +161,8 @@ export interface UseFlowChatVirtualizerOptions<T> {
   estimateContext?: VirtualItemHeightEstimateContext;
   /** Stable identity for data that changes an unmeasured row's estimate. */
   estimateContextRevision?: string | number;
+  /** Seed the first window near the tail; subsequent positioning belongs to follow. */
+  startAtTailOnMount?: boolean;
   /** The host has temporarily withdrawn the scroller, such as window minimization. */
   isViewportSuspended?: () => boolean;
   /**
@@ -325,6 +327,7 @@ export function useFlowChatVirtualizer<T>({
   estimateItemHeightPx,
   estimateContext,
   estimateContextRevision,
+  startAtTailOnMount = false,
   isViewportSuspended = () => false,
   scrollPaddingStartPx,
   writeViewport,
@@ -332,6 +335,9 @@ export function useFlowChatVirtualizer<T>({
 }: UseFlowChatVirtualizerOptions<T>): FlowChatVirtualizer {
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  const initialTailRef = useRef(startAtTailOnMount);
+  const hasInitialItemsRef = useRef(items.length > 0);
+  if (items.length > 0) hasInitialItemsRef.current = true;
   const writeViewportRef = useRef(writeViewport);
   writeViewportRef.current = writeViewport;
   /**
@@ -405,6 +411,19 @@ export function useFlowChatVirtualizer<T>({
   }, [estimateContextRevision]);
 
   const virtualizer = useVirtualizer({
+    // A live-tail open previously mounted rows 0..13 before moving to 22..33;
+    // the first head measurement flushed 372.3ms of pending layout in a trace.
+    // Seed the last item's estimated start without reading DOM geometry. This
+    // avoids that head window; real measurement and follow still own settling.
+    // Same-session retest: rowRef total 377.3 -> 4.2ms; reveal probe completed
+    // at 1540.3 -> 806.7ms. These are single-trace timings, not paint guarantees.
+    // Keep an empty hydration from consuming the one-time initial offset.
+    enabled: !initialTailRef.current || hasInitialItemsRef.current,
+    initialOffset: () => initialTailRef.current
+      ? itemsRef.current.slice(0, -1).reduce((offset, item) => (
+        offset + estimateItemHeightRef.current(item, estimateContextRef.current)
+      ), 0)
+      : 0,
     count: items.length,
     getScrollElement: () => scrollerRef.current,
     observeElementRect: observeFlowChatViewportRect,

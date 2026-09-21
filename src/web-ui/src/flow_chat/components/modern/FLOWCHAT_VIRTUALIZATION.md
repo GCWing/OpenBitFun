@@ -48,6 +48,20 @@ than its content's.
 
 ## What Belongs to the Virtualizer
 
+On a tail-following open, the virtualizer seeds its initial offset at the last
+item's estimated start. A desktop trace previously mounted rows 0..13 before
+moving to 22..33, with 372.3ms charged to the first head-row measurement. The
+seed selects a tail window without first mounting the head; real heights and
+the existing follow owner still determine the settled position. This is a
+one-time seed, not an ongoing tail lock. Initial empty hydration waits for items
+before consuming it. History-window presentation and saved reading-position
+restoration retain the default initial window. Tests cover window selection
+using the real virtualizer with supplied DOM geometry. A same-session desktop
+retest started at rows 27..33: rowRef total fell from 377.3ms to 4.2ms and the
+post-reveal probe completed at 806.7ms instead of 1540.3ms. This is a single-trace
+comparison, not paint timing or remote validation. Tail-window contraction and
+expansion still occur and remain under investigation.
+
 FlowChat virtualizes with **TanStack Virtual**, behind `useFlowChatVirtualizer.ts`.
 Nothing else imports it. The rest of FlowChat asks for offsets in scroller
 coordinates and gets them back; there is no index space of the virtualizer's own

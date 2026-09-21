@@ -43,6 +43,7 @@ each missing what the other had.
 | `../../../infrastructure/diagnostics/flowChatViewportDiagnostics.test.ts` | coalescing, placement sampling, the switch |
 | `useFlowChatVirtualizer.test.ts` | the offsets-and-positions boundary |
 | `useFlowChatVirtualizer.measurement.test.tsx` | `measureRenderedItems` against a real virtualizer |
+| `useFlowChatVirtualizer.initial-window.test.tsx` | tail-first window, empty hydration, head default, one-time seed and user-scroll takeover; supplied DOM geometry, not performance validation |
 | `useFlowChatVirtualizer.aim.test.tsx` | the re-aim, and giving it up on takeover |
 | `VirtualMessageList.layout.test.ts` | the item-height estimate and the spacer |
 | `FlowChatTurnRail.test.tsx` | single-marker emphasis, neighboring hover fan, independent keyboard focus, reduced motion, and rail navigation |
