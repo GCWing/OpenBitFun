@@ -59,8 +59,25 @@ restoration retain the default initial window. Tests cover window selection
 using the real virtualizer with supplied DOM geometry. A same-session desktop
 retest started at rows 27..33: rowRef total fell from 377.3ms to 4.2ms and the
 post-reveal probe completed at 806.7ms instead of 1540.3ms. This is a single-trace
-comparison, not paint timing or remote validation. Tail-window contraction and
-expansion still occur and remain under investigation.
+comparison, not paint timing or remote validation. The remaining tail-window
+contraction led to the measurement reconciliation described below.
+
+Opening measurement reconciliation now runs after a row size enters TanStack's
+cache and before the queued render chooses its next window. Only an active,
+unsuspended, still-opening transcript whose current owner is `follow-output`
+asks the existing follow scheduler to reconcile. The offset observer then
+publishes the actual scroll position without a synchronous React flush. No
+displacement permission is broadened, and historical reading, user takeover,
+and post-reveal streaming keep their existing rules. A pending debounced native
+scroll-end sample must not overwrite this publication with its older offset.
+The motivating trace measured a 729px shrink of rows 22..26 followed by window
+contraction/remount and 113.8ms of removal-related style work. Tests reproduce
+the contraction with reconciliation disabled and retain the same row nodes
+with it enabled, including a delayed native scroll event and scroll-end timer.
+A same-session desktop retest kept rows 22..33 mounted: row cleanup calls fell
+from five to zero, and the post-reveal probe completed at 596.4ms instead of
+786.8ms. This single-trace comparison does not establish paint timing or remote
+behavior; other main-thread stalls remain.
 
 FlowChat virtualizes with **TanStack Virtual**, behind `useFlowChatVirtualizer.ts`.
 Nothing else imports it. The rest of FlowChat asks for offsets in scroller

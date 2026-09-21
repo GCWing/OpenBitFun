@@ -27,6 +27,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
+  observeElementOffset as observeTanStackElementOffset,
   observeElementRect as observeTanStackElementRect,
   useVirtualizer,
   type Rect,
@@ -163,6 +164,9 @@ export interface UseFlowChatVirtualizerOptions<T> {
   estimateContextRevision?: string | number;
   /** Seed the first window near the tail; subsequent positioning belongs to follow. */
   startAtTailOnMount?: boolean;
+  /** Reconcile an opening follow target after a measured size changes. True
+   * means the owner handled it and the actual offset can be published now. */
+  reconcileOpeningMeasurement?: () => boolean;
   /** The host has temporarily withdrawn the scroller, such as window minimization. */
   isViewportSuspended?: () => boolean;
   /**
@@ -328,6 +332,7 @@ export function useFlowChatVirtualizer<T>({
   estimateContext,
   estimateContextRevision,
   startAtTailOnMount = false,
+  reconcileOpeningMeasurement,
   isViewportSuspended = () => false,
   scrollPaddingStartPx,
   writeViewport,
@@ -338,6 +343,10 @@ export function useFlowChatVirtualizer<T>({
   const initialTailRef = useRef(startAtTailOnMount);
   const hasInitialItemsRef = useRef(items.length > 0);
   if (items.length > 0) hasInitialItemsRef.current = true;
+  const reconcileOpeningMeasurementRef = useRef(reconcileOpeningMeasurement);
+  reconcileOpeningMeasurementRef.current = reconcileOpeningMeasurement;
+  const pendingMeasurementRef = useRef(false);
+  const publishMeasuredOffsetRef = useRef<(() => void) | null>(null);
   const writeViewportRef = useRef(writeViewport);
   writeViewportRef.current = writeViewport;
   /**
@@ -427,6 +436,40 @@ export function useFlowChatVirtualizer<T>({
     count: items.length,
     getScrollElement: () => scrollerRef.current,
     observeElementRect: observeFlowChatViewportRect,
+    observeElementOffset: (instance, callback) => {
+      let synchronized = false;
+      const publish = () => {
+        const scroller = instance.scrollElement;
+        if (!scroller) return;
+        const actualOffset = scroller.scrollTop;
+        synchronized = true;
+        // false avoids a nested flushSync while React is attaching measured rows.
+        if (instance.scrollOffset !== actualOffset) callback(actualOffset, false);
+      };
+      publishMeasuredOffsetRef.current = publish;
+      const cleanup = observeTanStackElementOffset(instance, (offset, isScrolling) => {
+        // TanStack's debounced scroll-end callback captures the last native-event
+        // offset. It must not undo a newer synchronous measurement reconciliation.
+        if (synchronized && !isScrolling && instance.scrollElement) offset = instance.scrollElement.scrollTop;
+        if (isScrolling) synchronized = false;
+        callback(offset, isScrolling);
+      });
+      return () => {
+        cleanup?.();
+        if (publishMeasuredOffsetRef.current === publish) publishMeasuredOffsetRef.current = null;
+      };
+    },
+    onChange: (_instance, sync) => {
+      if (sync || !pendingMeasurementRef.current) return;
+      pendingMeasurementRef.current = false;
+      // A trace showed rows 22..26 shrinking by 729px while range selection
+      // still used 8669px. They unmounted, then remounted on the delayed 7940px
+      // scroll event (113.8ms style work on removal). Reconcile through follow,
+      // then publish the real offset before React selects the next window.
+      // Retest: five row cleanups became zero; post-reveal sampling advanced
+      // from 786.8ms to 596.4ms (single desktop trace, not paint timing).
+      if (reconcileOpeningMeasurementRef.current?.()) publishMeasuredOffsetRef.current?.();
+    },
     estimateSize,
     getItemKey: resolveItemKey,
     // Items carry their own index attribute already; measuring reads it back.
@@ -453,6 +496,7 @@ export function useFlowChatVirtualizer<T>({
   // An instance field rather than an option, so it is assigned here — before
   // any measurement callback can reach `resizeItem`.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta) => {
+    pendingMeasurementRef.current = true;
     const scroller = scrollerRef.current;
     if (!scroller) return false;
     if (isViewportSuspendedRef.current()) return false;

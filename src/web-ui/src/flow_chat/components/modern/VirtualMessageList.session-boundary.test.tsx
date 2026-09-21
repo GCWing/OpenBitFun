@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   scheduleFollowToLatest: vi.fn(),
   startAtTailOnMount: true,
   virtualizerStartsAtTail: false,
+  reconcileOpeningMeasurement: null as null | (() => boolean),
   revealNewTurnTail: null as null | ((turnId: string) => boolean),
   /**
    * The register the list built, reached through the hook it hands it to.
@@ -129,8 +130,10 @@ vi.mock('./useFlowChatVirtualizer', async () => {
       getItemKey: (item: Record<string, unknown>) => string;
       scrollerRef: { current: HTMLElement | null };
       startAtTailOnMount?: boolean;
+      reconcileOpeningMeasurement?: () => boolean;
     }) => {
       mocks.virtualizerStartsAtTail = options.startAtTailOnMount === true;
+      mocks.reconcileOpeningMeasurement = options.reconcileOpeningMeasurement ?? null;
       const rows = options.items.map((item, index) => ({
         index,
         key: options.getItemKey(item),
@@ -370,6 +373,21 @@ describe('VirtualMessageList natural scroll contract', () => {
     vi.unstubAllGlobals();
   });
 
+  it('reconciles opening measurements only while follow owns the active viewport', () => {
+    act(() => root.render(<VirtualMessageList />));
+    expect(mocks.reconcileOpeningMeasurement?.()).toBe(false);
+    mocks.followsNow = true;
+    mocks.viewportOwner!.claim('follow-output');
+    mocks.scheduleFollowToLatest.mockClear();
+    expect(mocks.reconcileOpeningMeasurement?.()).toBe(true);
+    expect(mocks.scheduleFollowToLatest).toHaveBeenCalledTimes(1);
+    mocks.viewportOwner!.claim('user-gesture');
+    expect(mocks.reconcileOpeningMeasurement?.()).toBe(false);
+    expect(mocks.scheduleFollowToLatest).toHaveBeenCalledTimes(1);
+    act(() => root.render(<VirtualMessageList isViewportActive={false} />));
+    expect(mocks.reconcileOpeningMeasurement?.()).toBe(false);
+  });
+
   it('isolates the opening transcript at its boundary until reveal', async () => {
     act(() => root.render(<VirtualMessageList />));
     expect(mocks.virtualizerStartsAtTail).toBe(true);
@@ -387,6 +405,9 @@ describe('VirtualMessageList natural scroll contract', () => {
     expect(list.hasAttribute('aria-hidden')).toBe(false);
     expect(container.querySelectorAll('[data-flowchat-opening-guard][tabindex="-1"]')).toHaveLength(2);
     expect(list.querySelector('.virtual-message-list__opening-shield')).toBeNull();
+    mocks.followsNow = true;
+    mocks.viewportOwner!.claim('follow-output');
+    expect(mocks.reconcileOpeningMeasurement?.()).toBe(false);
   });
 
   it('renders only the current input layout inset in the Footer', () => {

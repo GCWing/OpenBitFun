@@ -522,9 +522,11 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     searchNavigationRequestIdRef.current += 1;
   }, [activeSessionId]);
 
+  const reconcileOpeningMeasurementRef = useRef<() => boolean>(() => false);
   const virtualizer = useFlowChatVirtualizer({
     items: virtualItems,
     startAtTailOnMount: presentationMode !== 'history-window' && !shouldRestoreInitialSnapshot,
+    reconcileOpeningMeasurement: () => reconcileOpeningMeasurementRef.current(),
     scrollerRef: scrollerElementRef,
     headerRef: headerElementRef,
     getItemKey: getVirtualItemStableKey,
@@ -707,6 +709,14 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     viewportOwner,
     viewportId,
   });
+
+  reconcileOpeningMeasurementRef.current = () => {
+    if (isOpenViewportSettledRef.current || isViewportSuspendedRef.current
+      || !isViewportActive || !isFollowingOutputNow()
+      || viewportOwner.currentOwner() !== 'follow-output') return false;
+    scheduleFollowToLatest();
+    return true;
+  };
 
   /**
    * The anchor stands down for anyone aiming at a target of their own — and for

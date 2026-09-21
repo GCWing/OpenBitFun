@@ -2,11 +2,14 @@
 import React, { act, useLayoutEffect, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useFlowChatVirtualizer } from './useFlowChatVirtualizer';
+import { useFlowChatVirtualizer, type FlowChatVirtualizer } from './useFlowChatVirtualizer';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const windows: number[][] = [];
+let latestApi: FlowChatVirtualizer;
+let reconcileEnabled = false;
+let shortOverscan = false;
 function Harness({ count, tail }: { count: number; tail: boolean }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -16,6 +19,12 @@ function Harness({ count, tail }: { count: number; tail: boolean }) {
     getItemKey: String,
     estimateItemHeightPx: () => 100,
     startAtTailOnMount: tail,
+    reconcileOpeningMeasurement: () => {
+      const scroller = scrollerRef.current;
+      if (!reconcileEnabled || !scroller) return false;
+      scroller.scrollTop = Math.max(0, scroller.scrollHeight - 500);
+      return true;
+    },
     scrollPaddingStartPx: 0,
     writeViewport: ({ topPx }) => {
       const element = scrollerRef.current;
@@ -25,6 +34,7 @@ function Harness({ count, tail }: { count: number; tail: boolean }) {
       return true;
     },
   });
+  latestApi = api;
   useLayoutEffect(() => { windows.push(api.rows.map(row => row.index)); });
   return <div ref={scrollerRef} data-scroller>
     <div ref={headerRef} />
@@ -39,6 +49,11 @@ describe('initial virtual window with the real virtualizer', () => {
   let root: Root;
   beforeEach(() => {
     windows.length = 0;
+    reconcileEnabled = false;
+    shortOverscan = false;
+    vi.useFakeTimers();
+    vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
+    vi.stubGlobal('cancelAnimationFrame', vi.fn());
     vi.stubGlobal('ResizeObserver', class {
       observe() {}
       unobserve() {}
@@ -47,14 +62,16 @@ describe('initial virtual window with the real virtualizer', () => {
     // Explicit geometry supplies jsdom's missing layout, not performance proof.
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
       if (this.hasAttribute('data-scroller')) return 500;
-      return this.hasAttribute('data-virtual-index') ? 80 : 0;
+      if (!this.hasAttribute('data-virtual-index')) return 0;
+      return shortOverscan && Number(this.getAttribute('data-virtual-index')) < 27 ? 10 : 80;
     });
     vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(800);
     vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
     vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function () {
       const items = this.querySelector<HTMLElement>('[data-items]');
       return items ? Number.parseFloat(items.style.paddingTop || '0')
-        + Number.parseFloat(items.style.paddingBottom || '0') + items.childElementCount * 80 : 0;
+        + Number.parseFloat(items.style.paddingBottom || '0')
+        + [...items.children].reduce((sum, row) => sum + (row as HTMLElement).offsetHeight, 0) : 0;
     });
     host = document.createElement('div');
     document.body.append(host);
@@ -65,6 +82,7 @@ describe('initial virtual window with the real virtualizer', () => {
     host.remove();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
   const render = (count: number, tail: boolean) => act(() => root.render(<Harness count={count} tail={tail} />));
 
@@ -102,5 +120,33 @@ describe('initial virtual window with the real virtualizer', () => {
     windows.length = 0;
     render(34, true);
     expect(windows.find(window => window.length)?.[0]).toBe(0);
+  });
+
+  it.each([false, true])('reconciles measured overscan before delayed events (enabled=%s)', enabled => {
+    shortOverscan = true;
+    render(34, true);
+    reconcileEnabled = enabled;
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => {
+      latestApi.scrollToOffset(scroller.scrollHeight - 500, { owner: 'follow-output' });
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    const first = windows.at(-1)![0];
+    if (!enabled) {
+      // Control: the old cached offset contracts the window back to the last row.
+      expect(first).toBe(27);
+      return;
+    }
+    expect(first).toBeLessThan(27);
+    const overscanRow = host.querySelector(`[data-virtual-index="${first}"]`);
+    expect(overscanRow).not.toBeNull();
+    // Native scroll dispatch is intentionally withheld after reconciliation.
+    // The old scroll-end timeout must not restore its captured, outdated offset.
+    act(() => vi.advanceTimersByTime(200));
+    expect(windows.at(-1)![0]).toBe(first);
+    expect(host.querySelector(`[data-virtual-index="${first}"]`)).toBe(overscanRow);
+    act(() => scroller.dispatchEvent(new Event('scroll')));
+    expect(windows.at(-1)![0]).toBe(first);
+    expect(host.querySelector(`[data-virtual-index="${first}"]`)).toBe(overscanRow);
   });
 });
