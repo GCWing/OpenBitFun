@@ -89,6 +89,8 @@ export function useStreamingTextReveal(
     pruneEmptyBuckets(releaseRanges());
     updateActiveElements(new Set());
   };
+  const stopRef = useRef(stop);
+  stopRef.current = stop;
 
   useLayoutEffect(() => {
     const root = rootRef.current;
@@ -105,7 +107,7 @@ export function useStreamingTextReveal(
     previous.current = { source, text: current.text };
     const reduced = view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     if (!view || !registry || !Highlight || reduced || root.ownerDocument.hidden) {
-      stop();
+      stopRef.current();
       arrivals.current = [];
       return;
     }
@@ -144,7 +146,7 @@ export function useStreamingTextReveal(
     const paint = (now: number) => {
       cancelFrame();
       if (!root.isConnected || root.ownerDocument.hidden) {
-        stop();
+        stopRef.current();
         arrivals.current = [];
         return;
       }
@@ -187,7 +189,7 @@ export function useStreamingTextReveal(
   useLayoutEffect(() => {
     const document = rootRef.current?.ownerDocument;
     const media = document?.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)');
-    const clear = () => { stop(); arrivals.current = []; };
+    const clear = () => { stopRef.current(); arrivals.current = []; };
     const onPreference = () => { if (media?.matches) clear(); };
     const onVisibility = () => { if (document?.hidden) clear(); };
     media?.addEventListener?.('change', onPreference);

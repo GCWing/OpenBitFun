@@ -79,6 +79,18 @@ from five to zero, and the post-reveal probe completed at 596.4ms instead of
 786.8ms. This single-trace comparison does not establish paint timing or remote
 behavior; other main-thread stalls remain.
 
+Opening follow corrections also publish their immediate `scrollTop` readback
+through `syncViewportOffset`, including a target that is already reached. The
+list connects the follow callback to this adapter method; follow never imports
+the virtualizer. Only active, unsuspended opening follow with viewport ownership
+publishes, and refused writes publish nothing. Equal offsets do not notify React.
+This lets range selection proceed before the native scroll event without adding
+a synchronous flush or clearing measured sizes. Measurement reconciliation uses
+the same observer channel, with its pending flag cleared before calling follow
+to avoid recursive correction. Native events remain enabled. Tests withhold them
+and check window expansion, node retention, stale scroll-end delivery and user
+takeover; runtime savings and remote behavior still require separate validation.
+
 FlowChat virtualizes with **TanStack Virtual**, behind `useFlowChatVirtualizer.ts`.
 Nothing else imports it. The rest of FlowChat asks for offsets in scroller
 coordinates and gets them back; there is no index space of the virtualizer's own

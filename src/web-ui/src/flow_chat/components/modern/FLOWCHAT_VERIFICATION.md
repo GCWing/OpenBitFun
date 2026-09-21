@@ -31,19 +31,20 @@ each missing what the other had.
 | `modelRoundItemMemo.test.ts` | settled rows refresh continuation labels and tool grouping hints without invalidating equivalent hints |
 | `flowChatTailFollow.test.ts` | the three-quarter reservation and `hold-tail` geometry |
 | `flowChatCollapseMotion.test.ts` | collapse does not move earlier content |
-| `useFlowChatFollowOutput.test.tsx` | one-shot new-Turn reveal, frame loop, blank crossing, resize realign |
+| `useFlowChatFollowOutput.test.tsx` | one-shot new-Turn reveal, frame loop, blank crossing, resize realign, opening readback publication and ownership/lifecycle gates |
 | `../../tool-cards/useToolCardHeightContract.test.tsx` | tool cards reflow rather than compensate |
 | `flowChatHistoryBoundary.test.ts` | the screenful lead, and the latch's own predicate |
 | `flowChatLiveTailWindow.test.ts` | "does the transcript still reach the newest Turn" |
 | `flowChatViewportAnchor.test.ts` | anchor geometry and the DOM contract |
 | `useFlowChatViewportAnchor.test.tsx` | capture, restore, carry, the settle window |
 | `VirtualMessageList.session-boundary.test.tsx` | prepend compensation, the ask, navigation-target current Turn with gesture/follow/session handoff, and search placement only outside the readable viewport |
+| `FlowChatOpeningBoundary.test.tsx` | opening-only activation/scroll isolation, bidirectional focus skipping, programmatic focus return, and reveal cleanup; DOM contracts only |
 | `ModernFlowChatContainer.history-state.test.tsx` | history presentation and the submission event |
 | `flowChatViewportOwnership.test.ts` | the priority order, preemption, expiry |
 | `../../../infrastructure/diagnostics/flowChatViewportDiagnostics.test.ts` | coalescing, placement sampling, the switch |
 | `useFlowChatVirtualizer.test.ts` | the offsets-and-positions boundary |
 | `useFlowChatVirtualizer.measurement.test.tsx` | `measureRenderedItems` against a real virtualizer |
-| `useFlowChatVirtualizer.initial-window.test.tsx` | tail-first window, empty hydration, head default, one-time seed, user-scroll takeover, measured-window reconciliation with delayed scroll/scroll-end delivery; supplied DOM geometry, not performance validation |
+| `useFlowChatVirtualizer.initial-window.test.tsx` | tail-first window, empty hydration, head default, one-time seed, user-scroll takeover, opening readbacks before native events, suspended viewport, measured-window reconciliation with delayed scroll/scroll-end delivery; supplied DOM geometry, not performance validation |
 | `useFlowChatVirtualizer.aim.test.tsx` | the re-aim, and giving it up on takeover |
 | `VirtualMessageList.layout.test.ts` | the item-height estimate and the spacer |
 | `FlowChatTurnRail.test.tsx` | single-marker emphasis, neighboring hover fan, independent keyboard focus, reduced motion, and rail navigation |

@@ -10,6 +10,7 @@ const windows: number[][] = [];
 let latestApi: FlowChatVirtualizer;
 let reconcileEnabled = false;
 let shortOverscan = false;
+let viewportSuspended = false;
 function Harness({ count, tail }: { count: number; tail: boolean }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -19,10 +20,13 @@ function Harness({ count, tail }: { count: number; tail: boolean }) {
     getItemKey: String,
     estimateItemHeightPx: () => 100,
     startAtTailOnMount: tail,
+    isViewportSuspended: () => viewportSuspended,
     reconcileOpeningMeasurement: () => {
       const scroller = scrollerRef.current;
       if (!reconcileEnabled || !scroller) return false;
       scroller.scrollTop = Math.max(0, scroller.scrollHeight - 500);
+      // Opening follow publishes from inside measurement reconciliation too.
+      latestApi.syncViewportOffset(scroller.scrollTop);
       return true;
     },
     scrollPaddingStartPx: 0,
@@ -51,6 +55,7 @@ describe('initial virtual window with the real virtualizer', () => {
     windows.length = 0;
     reconcileEnabled = false;
     shortOverscan = false;
+    viewportSuspended = false;
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
@@ -120,6 +125,49 @@ describe('initial virtual window with the real virtualizer', () => {
     windows.length = 0;
     render(34, true);
     expect(windows.find(window => window.length)?.[0]).toBe(0);
+  });
+
+  it('expands the opening window from a readback before any native scroll arrives', () => {
+    shortOverscan = true;
+    render(34, true);
+    reconcileEnabled = true;
+    expect(windows.at(-1)![0]).toBe(27);
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => {
+      latestApi.scrollToOffset(scroller.scrollHeight - 500, { owner: 'follow-output' });
+      latestApi.syncViewportOffset(scroller.scrollTop);
+    });
+    const first = windows.at(-1)![0];
+    expect(first).toBeLessThan(27);
+    expect(windows.at(-1)!.at(-1)).toBe(33);
+    const row = host.querySelector(`[data-virtual-index="${first}"]`);
+    const commits = windows.length;
+    act(() => latestApi.syncViewportOffset(scroller.scrollTop));
+    expect(windows).toHaveLength(commits);
+    act(() => {
+      scroller.dispatchEvent(new Event('scroll'));
+      vi.advanceTimersByTime(200);
+    });
+    expect(windows.at(-1)![0]).toBe(first);
+    expect(host.querySelector(`[data-virtual-index="${first}"]`)).toBe(row);
+    reconcileEnabled = false;
+    act(() => {
+      scroller.scrollTop = 0;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    expect(windows.at(-1)![0]).toBe(0);
+  });
+
+  it('does not publish readbacks while the viewport is suspended', () => {
+    render(34, true);
+    const commits = windows.length;
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    viewportSuspended = true;
+    act(() => latestApi.syncViewportOffset(scroller.scrollTop));
+    expect(windows).toHaveLength(commits);
+    viewportSuspended = false;
+    act(() => latestApi.syncViewportOffset(scroller.scrollTop));
+    expect(windows.at(-1)![0]).toBe(0);
   });
 
   it.each([false, true])('reconciles measured overscan before delayed events (enabled=%s)', enabled => {

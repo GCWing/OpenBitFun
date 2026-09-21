@@ -212,6 +212,8 @@ export interface FlowChatVirtualizer {
    * the items, before the library's own measurement has caught up.
    */
   measureRenderedItems: () => void;
+  /** Publish an immediate DOM offset readback without moving the viewport. */
+  syncViewportOffset: (actualOffsetPx: number) => void;
   /**
    * The items intersecting the viewport right now, read from live geometry.
    *
@@ -346,7 +348,10 @@ export function useFlowChatVirtualizer<T>({
   const reconcileOpeningMeasurementRef = useRef(reconcileOpeningMeasurement);
   reconcileOpeningMeasurementRef.current = reconcileOpeningMeasurement;
   const pendingMeasurementRef = useRef(false);
-  const publishMeasuredOffsetRef = useRef<(() => void) | null>(null);
+  const publishMeasuredOffsetRef = useRef<((actualOffsetPx?: number) => void) | null>(null);
+  const syncViewportOffset = useCallback((actualOffsetPx: number) => {
+    if (Number.isFinite(actualOffsetPx)) publishMeasuredOffsetRef.current?.(actualOffsetPx);
+  }, []);
   const writeViewportRef = useRef(writeViewport);
   writeViewportRef.current = writeViewport;
   /**
@@ -438,10 +443,10 @@ export function useFlowChatVirtualizer<T>({
     observeElementRect: observeFlowChatViewportRect,
     observeElementOffset: (instance, callback) => {
       let synchronized = false;
-      const publish = () => {
-        const scroller = instance.scrollElement;
-        if (!scroller) return;
-        const actualOffset = scroller.scrollTop;
+        const publish = (actualOffsetPx?: number) => {
+          const scroller = instance.scrollElement;
+          if (!scroller || scroller !== scrollerRef.current || isViewportSuspendedRef.current()) return;
+          const actualOffset = actualOffsetPx ?? scroller.scrollTop;
         synchronized = true;
         // false avoids a nested flushSync while React is attaching measured rows.
         if (instance.scrollOffset !== actualOffset) callback(actualOffset, false);
@@ -705,6 +710,7 @@ export function useFlowChatVirtualizer<T>({
     measureRowElement,
     getItemBounds,
     measureRenderedItems,
+    syncViewportOffset,
     getVisibleItemRange,
     scrollItemIntoView,
     scrollToOffset,

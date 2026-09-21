@@ -84,6 +84,8 @@ interface UseFlowChatFollowOutputOptions {
   revealNewTurnTail: (turnId: string) => boolean;
   /** True while the transcript is still hidden for the opening reveal. */
   isOpeningViewport: () => boolean;
+  /** Immediate position readback after an opening follow correction. */
+  onOpeningOffset?: (actualOffsetPx: number) => void;
   /**
    * Who is moving the viewport. Every write below goes through it, so that
    * nothing else has to carry a private opinion about when this hook is busy.
@@ -210,6 +212,7 @@ export function useFlowChatFollowOutput({
   scrollToContentEnd,
   revealNewTurnTail,
   isOpeningViewport,
+  onOpeningOffset,
   viewportOwner,
   viewportId = 0,
 }: UseFlowChatFollowOutputOptions): UseFlowChatFollowOutputResult {
@@ -220,6 +223,8 @@ export function useFlowChatFollowOutput({
   const latestTurnIdRef = useRef(latestTurnId);
   const isViewportSuspendedRef = useRef(isViewportSuspended);
   isViewportSuspendedRef.current = isViewportSuspended;
+  const onOpeningOffsetRef = useRef(onOpeningOffset);
+  onOpeningOffsetRef.current = onOpeningOffset;
   const followFrameRef = useRef<number | null>(null);
   const previousSessionIdRef = useRef(activeSessionId);
   const previousLatestTurnIdRef = useRef<string | null>(latestTurnId);
@@ -589,7 +594,9 @@ export function useFlowChatFollowOutput({
       settleFramesRef.current = SETTLE_FRAMES;
     }
 
-    const onTarget = Math.abs(next.target - scroller.scrollTop) <= BOTTOM_EPSILON_PX;
+    let actualOffsetPx = scroller.scrollTop;
+    let writeGranted = true;
+    const onTarget = Math.abs(next.target - actualOffsetPx) <= BOTTOM_EPSILON_PX;
     /*
      * What the loop decided this frame, coalesced by the decision.
      *
@@ -690,7 +697,7 @@ export function useFlowChatFollowOutput({
       })
         ? nextEasedScrollTopPx(fromPx, next.target)
         : { offsetPx: next.target, outcome: 'snapped' as const };
-      viewportOwner.write({ owner: 'follow-output', topPx: step.offsetPx });
+      writeGranted = viewportOwner.write({ owner: 'follow-output', topPx: step.offsetPx });
       /*
        * Read back rather than taken from the step. The register can refuse
        * this write outright, and a refused follow moves nothing — believing
@@ -698,7 +705,8 @@ export function useFlowChatFollowOutput({
        * smoothest one in the session, and would book the frame below forever
        * over travel that never happens.
        */
-      const movedPx = scroller.scrollTop - fromPx;
+      actualOffsetPx = scroller.scrollTop;
+      const movedPx = actualOffsetPx - fromPx;
       /*
        * An ease in flight is a reason to run again, and the only one it has
        * once the target stops moving: the budget is refreshed by the *target*
@@ -718,6 +726,14 @@ export function useFlowChatFollowOutput({
           snapped: step.outcome === 'snapped',
         });
       }
+    }
+    // Native scroll delivery can lag a frame behind this write. Publish the
+    // DOM readback through the existing virtualizer observer channel so range
+    // selection catches up in the same task without a synchronous flush.
+    if (writeGranted && isOpeningViewport() && isFollowingOutputRef.current
+      && followPhaseRef.current === 'following-tail' && isViewportActiveRef.current
+      && !document.hidden && viewportOwner.currentOwner() === 'follow-output') {
+      onOpeningOffsetRef.current?.(actualOffsetPx);
     }
   }, [
     endSmoothScrollYield,

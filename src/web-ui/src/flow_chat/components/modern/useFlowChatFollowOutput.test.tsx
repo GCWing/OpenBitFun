@@ -59,6 +59,10 @@ interface HarnessProps {
   scrollToContentEnd?: (behavior: ScrollBehavior) => void;
   revealNewTurnTail?: (turnId: string) => boolean;
   isOpeningViewport?: boolean;
+  onOpeningOffset?: (actualOffsetPx: number) => void;
+  isViewportActive?: boolean;
+  isViewportSuspended?: boolean;
+  startAtTailOnMount?: boolean;
   onController: (controller: Controller) => void;
   /** The register the hook writes through, for a test that has to hold it. */
   onViewportOwner?: (owner: FlowChatViewportOwnerApi) => void;
@@ -72,6 +76,10 @@ function Harness({
   scrollToContentEnd = () => {},
   revealNewTurnTail = () => false,
   isOpeningViewport = false,
+  onOpeningOffset,
+  isViewportActive = true,
+  isViewportSuspended = false,
+  startAtTailOnMount = true,
   onController,
   onViewportOwner,
 }: HarnessProps) {
@@ -86,13 +94,16 @@ function Harness({
     dialogTurnCount,
     virtualItemCount: 2,
     isStreaming,
-    isViewportActive: true,
+    isViewportActive,
+    isViewportSuspended: () => isViewportSuspended,
+    startAtTailOnMount,
     scrollerRef,
     // Sized from live layout, exactly as the component's state does.
     getTailSpacerPx: () => tailSpacerPxForViewport(scroller.clientHeight, BOTTOM_INSET),
     scrollToContentEnd,
     revealNewTurnTail,
     isOpeningViewport: () => isOpeningViewport,
+    onOpeningOffset,
     viewportOwner,
   });
   onController(controller);
@@ -305,6 +316,92 @@ describe('useFlowChatFollowOutput', () => {
     scroller.scrollTop = 1000 + 380;
     runNextFrame();
     expect(scroller.scrollTop).toBe(1000);
+  });
+
+  describe('opening offset publication', () => {
+    const mountOpening = (props: Partial<HarnessProps> = {}) => {
+      act(() => root.render(<Harness
+        latestTurnId="turn-1"
+        scroller={scroller}
+        isOpeningViewport
+        onController={next => { controller = next; }}
+        {...props}
+      />));
+    };
+
+    beforeEach(() => {
+      setScrollerMetrics(scroller, {
+        scrollHeight: 1500 + TAIL_SPACER, clientHeight: VIEWPORT, scrollTop: 0,
+      });
+    });
+
+    it('publishes the clamped readback in the follow frame without a scroll event', () => {
+      let actualTop = 0;
+      Object.defineProperty(scroller, 'scrollTop', {
+        configurable: true,
+        get: () => actualTop,
+        set: (value: number) => { actualTop = Math.min(value, 900); },
+      });
+      const onOpeningOffset = vi.fn();
+      mountOpening({ onOpeningOffset });
+      expect(onOpeningOffset).toHaveBeenCalledWith(900);
+      onOpeningOffset.mockClear();
+      actualTop = 0;
+      runNextFrame();
+      expect(onOpeningOffset).toHaveBeenCalledExactlyOnceWith(900);
+      expect(scroller.scrollTop).toBe(900);
+    });
+
+    it('publishes an already-reached target and uses the latest callback', () => {
+      scroller.scrollTop = 1000;
+      const previous = vi.fn();
+      const current = vi.fn();
+      mountOpening({ onOpeningOffset: previous });
+      previous.mockClear();
+      mountOpening({ onOpeningOffset: current });
+      current.mockClear();
+      runNextFrame();
+      expect(previous).not.toHaveBeenCalled();
+      expect(current).toHaveBeenCalledExactlyOnceWith(1000);
+    });
+
+    it.each([0, 1000])('does not publish under a higher-priority owner at offset %s', offset => {
+      scroller.scrollTop = offset;
+      const onOpeningOffset = vi.fn();
+      let owner: FlowChatViewportOwnerApi;
+      mountOpening({ onOpeningOffset, onViewportOwner: next => { owner = next; } });
+      act(() => owner.claim('one-shot-navigation', { holdForMs: 1000 }));
+      expect(owner!.currentOwner()).toBe('one-shot-navigation');
+      scroller.scrollTop = offset;
+      onOpeningOffset.mockClear();
+      act(() => controller?.scheduleFollowToLatest());
+      expect(scroller.scrollTop).toBe(offset);
+      expect(onOpeningOffset).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      { isOpeningViewport: false },
+      { isViewportActive: false },
+      { isViewportSuspended: true },
+      { startAtTailOnMount: false },
+    ])('does not publish outside active opening follow: %j', boundary => {
+      const onOpeningOffset = vi.fn();
+      mountOpening({ onOpeningOffset, ...boundary });
+      act(() => controller?.scheduleFollowToLatest());
+      expect(onOpeningOffset).not.toHaveBeenCalled();
+    });
+
+    it('stops publishing when the reader takes over', () => {
+      const onOpeningOffset = vi.fn();
+      mountOpening({ onOpeningOffset });
+      runNextFrame();
+      onOpeningOffset.mockClear();
+      act(() => controller?.handleUserScrollIntent());
+      scroller.scrollTop = 100;
+      act(() => controller?.scheduleFollowToLatest());
+      expect(scroller.scrollTop).toBe(100);
+      expect(onOpeningOffset).not.toHaveBeenCalled();
+    });
   });
 
   it('does not strand the viewport inside the tail spacer after opening', () => {
