@@ -76,6 +76,7 @@ import {
   type HistoryBoundaryProximity,
 } from './flowChatHistoryBoundary';
 import { VirtualItemRenderer } from './VirtualItemRenderer';
+import { FlowChatOpeningBoundary } from './FlowChatOpeningBoundary';
 import { useFlowChatVolatileContext } from './FlowChatContext';
 import {
   estimateVirtualMessageItemHeightWithContext,
@@ -239,7 +240,7 @@ const FlowChatListHeader = forwardRef<HTMLDivElement, {
   previousHistoryBoundaryStatusNode: React.ReactNode;
 }>(({ previousHistoryBoundaryStatusNode }, ref) => (
   <div ref={ref} className="message-list-header-block">
-    <div
+    <FlowChatOpeningBoundary
       className="message-list-header"
       data-openbitfun-component="virtual-message-list"
       data-openbitfun-part="header"
@@ -2607,6 +2608,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       data-viewport-mode={viewportMode}
       data-streaming-output={isStreamingOutput ? 'true' : 'false'}
       data-open-viewport-settled={isOpenViewportSettled ? 'true' : 'false'}
+      opening={!isOpenViewportSettled}
     >
       <div
         ref={handleScrollerRef}
@@ -2672,7 +2674,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         focusReturnRef={scrollerElementRef}
         inputHeight={inputHeight}
       />
-    </div>
+    </FlowChatOpeningBoundary>
   );
 });
 

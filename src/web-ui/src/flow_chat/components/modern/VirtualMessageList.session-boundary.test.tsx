@@ -367,6 +367,24 @@ describe('VirtualMessageList natural scroll contract', () => {
     vi.unstubAllGlobals();
   });
 
+  it('isolates the opening transcript at its boundary until reveal', async () => {
+    act(() => root.render(<VirtualMessageList />));
+    const list = container.querySelector<HTMLElement>('[data-testid="flowchat-message-list"]')!;
+    expect(list.getAttribute('data-open-viewport-settled')).toBe('false');
+    expect(list.hasAttribute('inert')).toBe(false);
+    expect(container.querySelectorAll('[data-flowchat-opening-guard]')).toHaveLength(2);
+    expect(list.querySelector('.virtual-message-list__opening-shield')).not.toBeNull();
+    expect(list.getAttribute('aria-hidden')).toBe('true');
+
+    await settleOpenReveal();
+
+    expect(list.getAttribute('data-open-viewport-settled')).toBe('true');
+    expect(list.hasAttribute('inert')).toBe(false);
+    expect(list.hasAttribute('aria-hidden')).toBe(false);
+    expect(container.querySelectorAll('[data-flowchat-opening-guard][tabindex="-1"]')).toHaveLength(2);
+    expect(list.querySelector('.virtual-message-list__opening-shield')).toBeNull();
+  });
+
   it('renders only the current input layout inset in the Footer', () => {
     act(() => root.render(<VirtualMessageList />));
     const footer = container.querySelector<HTMLElement>('.message-list-footer');
@@ -903,21 +921,23 @@ describe('VirtualMessageList natural scroll contract', () => {
       });
     }
 
-    it('treats a scroll under a scrollbar press as intent', () => {
+    it('treats a scroll under a scrollbar press as intent', async () => {
       act(() => root.render(<VirtualMessageList />));
+      await settleOpenReveal();
       pressAt(CONTENT_BOX_WIDTH + 6);
       expect(mocks.handleUserScrollIntent).toHaveBeenCalled();
     });
 
-    it('leaves a scroll under a press on the transcript alone', () => {
+    it('leaves a scroll under a press on the transcript alone', async () => {
       // Layout growth and virtualizer remeasurement emit scroll events too, so
       // the press is what qualifies one — not the event itself.
       act(() => root.render(<VirtualMessageList />));
+      await settleOpenReveal();
       pressAt(CONTENT_BOX_WIDTH - 200);
       expect(mocks.handleUserScrollIntent).not.toHaveBeenCalled();
     });
 
-    it('gives up an aim still in flight, which the claim alone cannot reach', () => {
+    it('gives up an aim still in flight, which the claim alone cannot reach', async () => {
       /*
        * The register refuses the re-aim's writes only while the gesture's hold
        * is live — 200ms after the last notch, against a five-second re-aim —
@@ -926,12 +946,14 @@ describe('VirtualMessageList natural scroll contract', () => {
        * for 7784 12ms after that.
        */
       act(() => root.render(<VirtualMessageList />));
+      await settleOpenReveal();
       pressAt(CONTENT_BOX_WIDTH + 6);
       expect(mocks.cancelAim).toHaveBeenCalled();
     });
 
-    it('disarms on release, so a later scroll is not intent', () => {
+    it('disarms on release, so a later scroll is not intent', async () => {
       act(() => root.render(<VirtualMessageList />));
+      await settleOpenReveal();
       pressAt(CONTENT_BOX_WIDTH + 6);
       mocks.handleUserScrollIntent.mockClear();
 

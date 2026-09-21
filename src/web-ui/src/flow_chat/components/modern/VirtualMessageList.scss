@@ -102,11 +102,28 @@
 
   /*
    * The opening viewport settles over several frames as items measure and
-   * history pages in. Keep it laid out and measurable but unpainted until then;
-   * see the opening-reveal effect in VirtualMessageList.tsx.
+   * history pages in. Keep it measurable but transparent until then. Opacity
+   * does not inherit into every message. A local shield, focus guards, and
+   * aria-hidden isolate the opening transcript without toggling subtree inertness.
    */
   &[data-open-viewport-settled='false'] {
-    visibility: hidden;
+    opacity: 0;
+  }
+
+  &__opening-shield {
+    position: absolute;
+    inset: 0;
+    z-index: 11; // Above the scroller and the list's navigation buttons.
+    touch-action: none;
+  }
+
+  &__opening-guard {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    opacity: 0;
+    pointer-events: none;
   }
 
   &--empty {
