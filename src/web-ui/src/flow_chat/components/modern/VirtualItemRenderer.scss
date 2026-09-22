@@ -126,12 +126,12 @@
   }
 }
 
-::highlight(openbitfun-flowchat-search-current) {
+[data-flowchat-highlight-search-current]::highlight(openbitfun-flowchat-search-current) {
   color: inherit;
   background: var(--openbitfun-color-accent-border-subtle);
 }
 
-::highlight(openbitfun-flowchat-search-match) {
+[data-flowchat-highlight-search-match]::highlight(openbitfun-flowchat-search-match) {
   color: inherit;
   background: var(--openbitfun-color-selection-surface);
 }
@@ -145,12 +145,12 @@
     }
   }
 
-  ::highlight(openbitfun-flowchat-search-current) {
+  [data-flowchat-highlight-search-current]::highlight(openbitfun-flowchat-search-current) {
     color: HighlightText;
     background: Highlight;
   }
 
-  ::highlight(openbitfun-flowchat-search-match) {
+  [data-flowchat-highlight-search-match]::highlight(openbitfun-flowchat-search-match) {
     color: MarkText;
     background: Mark;
   }

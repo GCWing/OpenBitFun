@@ -4,6 +4,7 @@ import type { ConversationExcerptContext } from '@/shared/types/context';
 import { FLOWCHAT_FOCUS_ITEM_EVENT, type FlowChatFocusItemRequest } from '../events/flowchatNavigation';
 import { flowChatStore } from '../store/FlowChatStore';
 import { SELECTION_ROOT, findExcerptSource, resolveExcerptRange } from './flowChatSelection';
+import { createFlowChatHighlightOwner } from './flowChatHighlights';
 
 export function findExcerptTextRoot(excerpt: ConversationExcerptContext): HTMLElement | null {
   const root = Array.from(document.querySelectorAll<HTMLElement>(SELECTION_ROOT))
@@ -12,19 +13,18 @@ export function findExcerptTextRoot(excerpt: ConversationExcerptContext): HTMLEl
   return findExcerptSource(root, excerpt.fragments[0]);
 }
 
-let clearLastHighlight: (() => void) | undefined;
+const lastHighlights = new WeakMap<Document, () => void>();
 export function highlightExcerptRange(range: Range): () => void {
-  clearLastHighlight?.();
-  const css = globalThis.CSS as (typeof CSS & { highlights?: Map<string, unknown> }) | undefined;
-  const HighlightType = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
-  if (!css?.highlights || !HighlightType) return () => undefined;
-  const highlight = new HighlightType(range);
-  css.highlights.set('openbitfun-flowchat-excerpt', highlight);
+  const document = range.startContainer.ownerDocument;
+  if (!document) return () => undefined;
+  lastHighlights.get(document)?.();
+  const owner = createFlowChatHighlightOwner(document, 'excerpt');
+  owner.update([range]);
   const clear = () => {
-    if (css.highlights?.get('openbitfun-flowchat-excerpt') === highlight) css.highlights.delete('openbitfun-flowchat-excerpt');
-    if (clearLastHighlight === clear) clearLastHighlight = undefined;
+    owner.dispose();
+    if (lastHighlights.get(document) === clear) lastHighlights.delete(document);
   };
-  clearLastHighlight = clear;
+  lastHighlights.set(document, clear);
   return clear;
 }
 

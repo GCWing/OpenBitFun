@@ -1,19 +1,4 @@
-const SEARCH_HIGHLIGHT_CURRENT_NAME = 'openbitfun-flowchat-search-current';
-const SEARCH_HIGHLIGHT_MATCH_NAME = 'openbitfun-flowchat-search-match';
-
-type HighlightRegistryLike = {
-  set: (name: string, highlight: unknown) => void;
-  delete: (name: string) => void;
-};
-
-type HighlightConstructorLike = new (...ranges: Range[]) => unknown;
-
-interface SearchHighlightRanges {
-  current: Range | null;
-  matches: readonly Range[];
-}
-
-const documentHighlights = new WeakMap<Document, Map<object, SearchHighlightRanges>>();
+import { createFlowChatHighlightOwner } from '../../selection/flowChatHighlights';
 
 interface FoldedTextOffset {
   start: number;
@@ -134,62 +119,18 @@ export function findFlowChatSearchTextRange(root: HTMLElement, query: string): R
   return findFlowChatSearchTextRanges(root, query)[0] ?? null;
 }
 
-function publishSearchHighlights(ownerDocument: Document): void {
-  const view = ownerDocument.defaultView;
-  const cssWithHighlights = view?.CSS as (typeof CSS & {
-    highlights?: HighlightRegistryLike;
-  }) | undefined;
-  const HighlightConstructor = (view as (Window & {
-    Highlight?: HighlightConstructorLike;
-  }) | null)?.Highlight;
-
-  if (!cssWithHighlights?.highlights) {
-    return;
-  }
-
-  cssWithHighlights.highlights.delete(SEARCH_HIGHLIGHT_CURRENT_NAME);
-  cssWithHighlights.highlights.delete(SEARCH_HIGHLIGHT_MATCH_NAME);
-  if (!HighlightConstructor) {
-    return;
-  }
-  const owners = documentHighlights.get(ownerDocument)?.values() ?? [];
-  const current: Range[] = [];
-  const matches: Range[] = [];
-  for (const ranges of owners) {
-    if (ranges.current?.startContainer.isConnected) current.push(ranges.current);
-    matches.push(...ranges.matches.filter(range => range.startContainer.isConnected));
-  }
-  if (matches.length > 0) {
-    cssWithHighlights.highlights.set(
-      SEARCH_HIGHLIGHT_MATCH_NAME,
-      new HighlightConstructor(...matches),
-    );
-  }
-  // Register current last so it wins if two presentations share a text range.
-  if (current.length > 0) {
-    cssWithHighlights.highlights.set(SEARCH_HIGHLIGHT_CURRENT_NAME, new HighlightConstructor(...current));
-  }
-}
-
 /** Each mounted row releases only its own ranges, including across chat panes. */
 export function createFlowChatSearchHighlightOwner(ownerDocument: Document) {
-  const owner = {};
-  let disposed = false;
+  const currentOwner = createFlowChatHighlightOwner(ownerDocument, 'search-current');
+  const matchOwner = createFlowChatHighlightOwner(ownerDocument, 'search-match');
   return {
     update(current: Range | null, matches: readonly Range[]) {
-      if (disposed) return;
-      let owners = documentHighlights.get(ownerDocument);
-      if (!owners) {
-        owners = new Map();
-        documentHighlights.set(ownerDocument, owners);
-      }
-      owners.set(owner, { current, matches });
-      publishSearchHighlights(ownerDocument);
+      matchOwner.update(matches);
+      currentOwner.update(current ? [current] : []);
     },
     dispose() {
-      disposed = true;
-      documentHighlights.get(ownerDocument)?.delete(owner);
-      publishSearchHighlights(ownerDocument);
+      currentOwner.dispose();
+      matchOwner.dispose();
     },
   };
 }

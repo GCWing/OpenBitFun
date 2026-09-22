@@ -418,6 +418,32 @@ bounded Explore retains 8px bottom padding for its scroll fade. There is no
 negative adjacent-region margin. The resident runtime slot stays 24px high and
 continues to participate in the existing footer/reservation contract.
 
+## Selection and custom highlight paint
+
+Native transcript selections use the application selection style. Do not add
+descendant `::selection` overrides to the chat root: WebKitGTK reports show
+uncached highlight pseudo-style resolution during long-transcript repaint.
+
+Search, temporary excerpts and persistent annotations use `flowChatHighlights`
+to own both their CSS Highlight ranges and attributes on every intersecting text
+parent. A range can span Markdown links/emphasis; marking only its first parent
+loses paint. Each owner updates only its own parent set, shared parents are
+reference-counted per document and highlight kind, and disposal cannot clear
+another mounted row or pane. Attributes stay stable across unchanged updates
+and are outside the annotation geometry observer's attribute filter.
+
+The Appearance theme-token adapter projects the annotation accent's 30% tint
+and indirect mixes in search/native-selection color tokens to concrete colors
+when a theme is applied, including the chrome theme scope. Its renderer stylesheet supplies
+existing semantic colors for sparse/legacy themes and system colors in forced
+color mode; derived paint is not a persisted setting or a new theme token.
+Scoped highlight rules remain in place without an active range, as with streaming
+reveal. Moving color projection to its own stylesheet is an ownership decision,
+not evidence of WebKit stylesheet-matching isolation or a measured speedup.
+
+Linux/WebKitGTK long-session CPU and pseudo-style stacks still require runtime
+verification. DOM tests establish range/marker lifecycle, not renderer performance.
+
 ## Streaming glyph presentation
 
 The shared Markdown renderer paints newly appended text with

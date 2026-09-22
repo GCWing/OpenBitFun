@@ -229,34 +229,3 @@
     &:active::after { background: var(--openbitfun-component-conversation-excerpt-accent); }
   }
 }
-
-[data-flowchat-selection-root]::selection,
-[data-flowchat-selection-root] ::selection,
-[data-openbitfun-product-component='conversation-excerpt']::selection,
-[data-openbitfun-product-component='conversation-excerpt'] ::selection {
-  background-color: color-mix(in srgb, var(--openbitfun-component-conversation-excerpt-accent) 30%, transparent);
-  color: var(--openbitfun-component-conversation-excerpt-accent);
-}
-
-::highlight(openbitfun-flowchat-excerpt) {
-  background-color: color-mix(in srgb, var(--openbitfun-component-conversation-excerpt-accent) 30%, transparent);
-  color: var(--openbitfun-component-conversation-excerpt-accent);
-}
-
-::highlight(openbitfun-flowchat-annotations) {
-  background-color: color-mix(in srgb, var(--openbitfun-component-conversation-excerpt-accent) 30%, transparent);
-  color: var(--openbitfun-component-conversation-excerpt-accent);
-}
-
-@media (forced-colors: active) {
-  [data-flowchat-selection-root]::selection,
-  [data-flowchat-selection-root] ::selection,
-  [data-openbitfun-product-component='conversation-excerpt']::selection,
-  [data-openbitfun-product-component='conversation-excerpt'] ::selection {
-    background-color: Highlight;
-    color: HighlightText;
-  }
-
-  ::highlight(openbitfun-flowchat-excerpt) { background-color: Highlight; color: HighlightText; }
-  ::highlight(openbitfun-flowchat-annotations) { background-color: Highlight; color: HighlightText; }
-}

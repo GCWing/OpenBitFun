@@ -52,6 +52,8 @@ each missing what the other had.
 | `FlowChatTurnRail.test.tsx` | single-marker emphasis, neighboring hover fan, independent keyboard focus, reduced motion, and rail navigation |
 | `useFlowChatSearch.test.ts` | exact matching-block decoration, occurrence counting, and search navigation state |
 | `flowChatSearchDom.test.ts` | concrete text ranges and independent highlight ownership across rows and panes |
+| `../../selection/flowChatHighlights.test.ts` | exact text-parent scoping across Markdown nodes, shared markers, cleanup and document isolation |
+| `../../../infrastructure/appearance/adapters/ThemeTokenAppearanceAdapter.test.ts` | legacy accent projection, alpha preservation, theme changes and paint cleanup |
 | `../../selection/flowChatSelection.test.ts` | Markdown selection boundaries, source isolation, repeated text anchors, and changed sources |
 | `../../selection/FlowChatSelectionBar.test.tsx` | annotation Dialog focus containment and return, frozen excerpts during scroll/resize, and comment submission |
 | `../../selection/useExcerptComposerActions.test.tsx` | main/side draft routing, focus after activation, ordinary child ownership, and stale surface rejection |
