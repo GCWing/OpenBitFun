@@ -1099,7 +1099,7 @@ describe('VirtualMessageList natural scroll contract', () => {
        * the boundary never re-armed because the reader was still at the head.
        */
       withGrowingRange({ scrollHeightPx: 3000, growthPx: 80 }, scroller => {
-        act(() => { scroller.dispatchEvent(new Event('wheel')); });
+        act(() => { scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 })); });
         prependOlderTurns(2);
         expect(scroller.scrollTop).toBe(580);
       });
@@ -1239,8 +1239,9 @@ describe('VirtualMessageList natural scroll contract', () => {
         await act(async () => {
           root.render(
             <VirtualMessageList
-              onHistoryWindowBoundaryIntent={direction => {
+              onHistoryWindowBoundaryIntent={(direction, options) => {
                 asked.push(direction);
+                options?.prepareViewportForPresentationCommit?.();
                 return 'applied';
               }}
             />,
@@ -1261,29 +1262,93 @@ describe('VirtualMessageList natural scroll contract', () => {
       }
     }
 
-    it('asks again once the reader is off the boundary, still within the lead', async () => {
-      /*
-       * The latch re-arms on the reader being *off* the boundary, and the ask
-       * goes out a screenful before they reach it — so those cannot be the same
-       * predicate. When they were, one page landed and everything after it was
-       * refused as `not-rearmed`: measured, six minutes of refusals while the
-       * reader scrolled into a wall two Turns from the top of what was loaded.
-       */
+    it('asks again when the reader returns toward the boundary within the lead', async () => {
+      // Prefetch must not require reaching the physical head first. Moving
+      // away alone must also not ask for another older page.
       await withPagedTranscript(async (scroller, asked) => {
         // Rows 3..7 are on screen, so nothing is reached; the head is 120px up,
         // which is inside the one-screen lead.
+        await scrollTo(scroller, 300);
+        expect(asked).toEqual([]);
         await scrollTo(scroller, 120);
         expect(asked).toEqual(['before']);
       });
     });
 
     it('does not ask again while the reader is still on the head', async () => {
-      // The latch's own job, unchanged: after a prepend the visible range reads
-      // as the head for a commit, and that must not dispatch a second page.
+      // Moving away from the head is not demand for another older page.
       await withPagedTranscript(async (scroller, asked) => {
         await scrollTo(scroller, ROW_PX);
         expect(asked).toEqual([]);
       });
+    });
+
+    it.each([false, true])('continues after a real tail prepend (queued intent: %s)', async queued => {
+      mocks.items = Array.from({ length: 6 }, (_, index) => (
+        userMessage(`turn-${40 + index}`, `message-${40 + index}`, 'Body')
+      ));
+      const restoreLayout = fakeLayout({
+        clientHeight: VIEWPORT_PX,
+        scrollHeight: () => container.querySelectorAll('.virtual-item-wrapper[data-turn-id]').length * ROW_PX,
+        turnTopFromScrollerTop: 0,
+      });
+      let resolvePage!: (result: 'applied') => void;
+      let prepareCommit: (() => boolean | void | Promise<boolean | void>) | undefined;
+      const ask = vi.fn((direction: string, options?: {
+        prepareViewportForPresentationCommit?: () => boolean | void | Promise<boolean | void>;
+      }) => {
+        if (direction === 'after') return 'exhausted' as const;
+        prepareCommit = options?.prepareViewportForPresentationCommit;
+        return new Promise<'applied'>(resolve => { resolvePage = resolve; });
+      });
+      const beforeCount = () => ask.mock.calls.filter(([direction]) => direction === 'before').length;
+      const render = (history = false) => root.render(
+        <VirtualMessageList
+          presentationMode={history ? 'history-window' : 'tail'}
+          historyWindow={history ? {
+            startOrdinal: 36, endOrdinalExclusive: 46, targetTurnId: null, mode: 'history-window',
+          } : null}
+          onHistoryWindowBoundaryIntent={ask}
+        />,
+      );
+      try {
+        await act(async () => { render(); });
+        await settleOpenReveal();
+        expect(beforeCount()).toBe(1);
+        const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+        if (queued) {
+          await act(async () => {
+            for (let i = 0; i < 5; i++) scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
+          });
+          expect(beforeCount()).toBe(1);
+        }
+        await act(async () => {
+          expect(await prepareCommit?.()).toBe(true);
+          mocks.items = [
+            ...Array.from({ length: 4 }, (_, index) => userMessage(`turn-${36 + index}`, `message-${36 + index}`, 'Body')),
+            ...mocks.items,
+          ];
+          render(true);
+          resolvePage('applied');
+        });
+        expect(scroller.scrollTop).toBeGreaterThan(0);
+        expect(beforeCount()).toBe(queued ? 2 : 1);
+        // Delayed native events from compensation and another render are not
+        // reader demand, even though the new head is still within the lead.
+        await act(async () => {
+          scroller.dispatchEvent(new Event('scroll'));
+          render(true);
+        });
+        expect(beforeCount()).toBe(queued ? 2 : 1);
+        if (!queued) {
+          await act(async () => {
+            scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
+          });
+          expect(beforeCount()).toBe(2);
+        }
+      } finally {
+        restoreLayout();
+      }
     });
 
     it('asks on a gesture that moves nothing, because at the top none of them do', async () => {
@@ -1332,7 +1397,7 @@ describe('VirtualMessageList natural scroll contract', () => {
         // A wheel and nothing else: no scroll event, because there is nowhere
         // for the offset to go.
         await act(async () => {
-          scroller.dispatchEvent(new Event('wheel'));
+          scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
           await Promise.resolve();
           await Promise.resolve();
         });
@@ -1385,7 +1450,7 @@ describe('VirtualMessageList natural scroll contract', () => {
 
         const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
         await act(async () => {
-          scroller.dispatchEvent(new Event('wheel'));
+          scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
           await Promise.resolve();
           await Promise.resolve();
         });
@@ -1440,7 +1505,7 @@ describe('VirtualMessageList natural scroll contract', () => {
         // Latched: asking again from the same window changes nothing.
         const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
         await act(async () => {
-          scroller.dispatchEvent(new Event('wheel'));
+          scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
           await Promise.resolve();
           await Promise.resolve();
         });
@@ -1454,7 +1519,7 @@ describe('VirtualMessageList natural scroll contract', () => {
           await Promise.resolve();
         });
         await act(async () => {
-          scroller.dispatchEvent(new Event('wheel'));
+          scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
           await Promise.resolve();
           await Promise.resolve();
         });

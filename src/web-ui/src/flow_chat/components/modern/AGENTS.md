@@ -110,9 +110,9 @@ before reporting a defect as new.
 
 - Deciding *that* a history boundary is worth asking about belongs to
   `flowChatHistoryBoundary.ts` and reads only a visible item range and the
-  scroll distance to each end. Deciding whether the ask is honoured stays in the
-  container, which declines while follow-output owns the viewport and until the
-  visible range has left that boundary since the last page.
+  scroll distance to each end. `flowChatHistoryPager.ts` owns request eligibility;
+  the list feeds it reader intent and completed layout commits, and refuses asks
+  while opening or follow-output owns the viewport.
 - A page asks for what lies past the *rendered* transcript, never past the
   window the store cut. The continuous projection makes those differ, and the
   window's end is then an ordinal already on screen.
@@ -124,9 +124,18 @@ before reporting a defect as new.
 - The ask goes out a screenful before the boundary, so the junction lands off
   screen. Do not express that lead in items: one item here is anything from a
   38px user message to a 5012px model round.
-- The arming latch re-arms from `historyBoundariesReached`, never from the ask.
-  Sharing one predicate makes a boundary the reader can never be off, and the
-  direction stays disarmed for the rest of the session.
+- Request completion and presentation layout are separate events, in either
+  order. A page must pass both before another page can dispatch. Notify layout
+  only after measurement/prepend compensation; do not use timers as commit proof.
+- After the first ask, another page requires fresh directional reader demand.
+  Coalesce demand received during a request; clear it when the reader reverses
+  or the boundary leaves the prefetch lead. Layout/resize/compensation alone
+  must not create demand. Do not require a prefetch to reach the physical edge.
+- Bind async outcomes and pre-commit permission to request tickets. Navigation
+  invalidates old tickets; an old completion cannot clear or exhaust a new ask.
+- Derive native reader travel through the viewport register's accounting for
+  synchronous writes/shifts. Exclude owned smooth navigation/follow scrolls;
+  unowned inertia still counts. A gesture at the physical edge needs no travel.
 - A *visible* item range is `getVisibleItemRange`, never the rendered rows. The
   rendered window carries overscan and reports both ends present for any
   transcript short enough to render whole.

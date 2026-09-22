@@ -64,6 +64,7 @@ import {
   isUsableFlowChatViewportRect,
   useFlowChatVirtualizer,
 } from './useFlowChatVirtualizer';
+import { FlowChatHistoryPager, type HistoryPageResult } from './flowChatHistoryPager';
 import { useFlowChatViewportOwner } from './useFlowChatViewportOwner';
 import {
   ONE_SHOT_NAVIGATION_HOLD_MS,
@@ -72,7 +73,6 @@ import {
 import { USER_DRIVEN_SCROLL_WINDOW_MS } from './flowChatViewportAnchor';
 import {
   historyBoundariesForVisibleRange,
-  historyBoundariesReached,
   type HistoryBoundaryProximity,
 } from './flowChatHistoryBoundary';
 import { VirtualItemRenderer } from './VirtualItemRenderer';
@@ -87,7 +87,6 @@ import { resolveVisibleFlowChatTurnIds } from './flowChatVisibleTurns';
 import type { FlowChatViewportSnapshot } from './flowChatViewportSnapshot';
 import { getVirtualItemStableKey } from './virtualItemIdentity';
 import { isAmbientToolRunContinuationAfter } from './flowChatRhythm';
-import { warnHistoryPagingRefusedWithPendingTurns } from '../../services/historySessionDiagnostics';
 import {
   VIEWPORT_PLACEMENT_SETTLE_MS,
   roundViewportPx,
@@ -146,11 +145,7 @@ export interface TurnNavigationOptions {
   behavior?: ScrollBehavior;
 }
 
-export type HistoryWindowBoundaryIntentResult =
-  | 'applied'
-  | 'exhausted'
-  | 'not-ready'
-  | 'cancelled';
+export type HistoryWindowBoundaryIntentResult = HistoryPageResult;
 
 type HistoryWindowBoundaryIntentResponse =
   | HistoryWindowBoundaryIntentResult
@@ -463,62 +458,13 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   const preparedTurnNavigationRef = useRef<PreparedTurnNavigation | null>(null);
   // Selection identity only; this must never hold or reposition the viewport.
   const navigatedTurnIdRef = useRef<string | null>(null);
-  const boundaryRequestRef = useRef<Record<SessionHistoryWindowDirection, Promise<void> | null>>({
-    before: null,
-    after: null,
-  });
-  const exhaustedBoundaryRef = useRef<Record<SessionHistoryWindowDirection, boolean>>({
-    before: false,
-    after: false,
-  });
-  /** Re-arming is a transition out of a boundary, not a repeated level read. */
-  const boundaryReachedRef = useRef<Record<SessionHistoryWindowDirection, boolean>>({
-    before: false,
-    after: false,
-  });
-  /**
-   * `exhausted` describes the window that asked, not the session.
-   *
-   * "There is nothing before this" is true of a *start ordinal*. Navigate to
-   * the first Turn and the store answers `reached-start` for `targetOrdinal:
-   * -1`, correctly — and the latch then outlived the window by the rest of the
-   * session. Measured: 3 Turns of 43 loaded, `before` latched off from a visit
-   * to Turn 1, and after jumping back to the tail the reader could not page at
-   * all. The alarm fired (`latched-exhausted-while-partial`) and nothing acted
-   * on it.
-   *
-   * So the latch is cleared whenever the window moves. Only `applied` used to
-   * clear it, which is the one case where the window moves *because* of the
-   * page — every other way it moves left a stale answer behind.
-   */
+  const [historyPager] = useState(() => new FlowChatHistoryPager());
+  const [historyPageRevision, acknowledgeHistoryPage] = useState(0);
+  const readerScrollPositionRef = useRef<number | null>(null);
+  const pagingLayoutKeyRef = useRef<string | null>(null);
   const windowBoundsKey = historyWindow
     ? `${historyWindow.startOrdinal}:${historyWindow.endOrdinalExclusive}`
     : presentationMode;
-  const previousWindowBoundsKeyRef = useRef(windowBoundsKey);
-  if (previousWindowBoundsKeyRef.current !== windowBoundsKey) {
-    previousWindowBoundsKeyRef.current = windowBoundsKey;
-    exhaustedBoundaryRef.current = { before: false, after: false };
-    boundaryReachedRef.current = { before: false, after: false };
-  }
-  /**
-   * Whether a boundary may be asked about again.
-   *
-   * Prepend compensation puts the viewport back on the reader's content, but
-   * the virtualizer places its rows from a scroll offset it only refreshes on
-   * the next frame, so for one commit the visible range is still read against
-   * the head. Asking from that commit pages again and produces another one just
-   * like it: measured, a single junction paged a transcript back to its first
-   * Turn while the reader held still.
-   *
-   * A direction is armed by the visible range leaving it. react-virtuoso had
-   * this for free — the range it reported was absolute, so a prepend moved the
-   * local start index by the number of items added and the rule stopped
-   * applying by itself.
-   */
-  const boundaryArmedRef = useRef<Record<SessionHistoryWindowDirection, boolean>>({
-    before: true,
-    after: true,
-  });
   /** Assigned below, once the boundary evaluation it stands for exists. */
   const evaluateHistoryBoundariesRef = useRef<() => void>(() => {});
   const searchNavigationRequestIdRef = useRef(0);
@@ -526,7 +472,8 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
 
   useLayoutEffect(() => () => {
     searchNavigationRequestIdRef.current += 1;
-  }, [activeSessionId]);
+    historyPager.reset();
+  }, [activeSessionId, historyPager]);
 
   const reconcileOpeningMeasurementRef = useRef<() => boolean>(() => false);
   const virtualizer = useFlowChatVirtualizer({
@@ -1012,11 +959,13 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
 
   const setNavigatedTurn = useCallback((turnId: string | null) => {
     navigatedTurnIdRef.current = turnId;
+    if (turnId !== null) historyPager.reset();
     // Different tail Turns can land at the same offset, emitting no scroll.
     scheduleVisibleTurnInfoUpdate();
-  }, [scheduleVisibleTurnInfoUpdate]);
+  }, [historyPager, scheduleVisibleTurnInfoUpdate]);
 
-  const notifyUserScrollIntent = useCallback(() => {
+  const notifyUserScrollIntent = useCallback((direction?: SessionHistoryWindowDirection) => {
+    if (direction) historyPager.readerIntent(direction);
     /*
      * The reader outranks everything, and the claim is what makes that true of
      * writers that are already in flight rather than only of ones yet to
@@ -1057,6 +1006,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
      */
     evaluateHistoryBoundariesRef.current();
   }, [
+    historyPager,
     handleUserScrollIntent,
     onUserScrollIntent,
     setNavigatedTurn,
@@ -1567,6 +1517,17 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     if (!scrollerElement) return;
     const handleNativeScroll = () => {
       if (isViewportSuspendedRef.current) return;
+      const position = viewportOwner.readReaderScrollPosition();
+      const previous = readerScrollPositionRef.current;
+      readerScrollPositionRef.current = position;
+      const owner = viewportOwner.currentOwner();
+      const delta = previous === null ? 0 : position - previous;
+      const direction = delta < -0.5 ? 'before' : delta > 0.5 ? 'after' : undefined;
+      // Synchronous corrections are removed by the register. Smooth owned
+      // navigation/follow scrolls are excluded here; unowned momentum counts.
+      if (direction && (owner === null || owner === 'user-gesture')) {
+        historyPager.readerIntent(direction);
+      }
       /*
        * A scroll under a scrollbar press is the one case where a plain scroll
        * event does carry intent — the press is what qualifies it. Left
@@ -1575,7 +1536,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
        * oscillation, every frame, for as long as the drag lasted). Recognising
        * the drag transfers ownership to the reader and preserves where it ends.
        */
-      if (isScrollbarPressRef.current) notifyUserScrollIntent();
+      if (isScrollbarPressRef.current) notifyUserScrollIntent(direction);
       updateIsAtScrollStart();
       updateIsAtBottom();
       handleScroll();
@@ -1593,11 +1554,22 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
        */
       evaluateHistoryBoundariesRef.current();
     };
-    const handleWheel = () => notifyUserScrollIntent();
-    const handleTouchMove = () => notifyUserScrollIntent();
+    const handleWheel = (event: WheelEvent) => {
+      notifyUserScrollIntent(event.deltaY < 0 ? 'before' : event.deltaY > 0 ? 'after' : undefined);
+    };
+    let touchY: number | null = null;
+    const handleTouchStart = (event: TouchEvent) => { touchY = event.touches?.[0]?.clientY ?? null; };
+    const handleTouchMove = (event: TouchEvent) => {
+      const y = event.touches?.[0]?.clientY ?? null;
+      const delta = y !== null && touchY !== null ? touchY - y : 0;
+      touchY = y;
+      notifyUserScrollIntent(delta < 0 ? 'before' : delta > 0 ? 'after' : undefined);
+    };
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
       if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
-        notifyUserScrollIntent();
+        const before = ['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey);
+        notifyUserScrollIntent(before ? 'before' : 'after');
       }
     };
     /*
@@ -1614,6 +1586,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     };
     scrollerElement.addEventListener('scroll', handleNativeScroll, { passive: true });
     scrollerElement.addEventListener('wheel', handleWheel, { passive: true });
+    scrollerElement.addEventListener('touchstart', handleTouchStart, { passive: true });
     scrollerElement.addEventListener('touchmove', handleTouchMove, { passive: true });
     scrollerElement.addEventListener('keydown', handleKeyDown);
     scrollerElement.addEventListener('pointerdown', handlePointerDown, { passive: true });
@@ -1623,6 +1596,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     return () => {
       scrollerElement.removeEventListener('scroll', handleNativeScroll);
       scrollerElement.removeEventListener('wheel', handleWheel);
+      scrollerElement.removeEventListener('touchstart', handleTouchStart);
       scrollerElement.removeEventListener('touchmove', handleTouchMove);
       scrollerElement.removeEventListener('keydown', handleKeyDown);
       scrollerElement.removeEventListener('pointerdown', handlePointerDown);
@@ -1630,6 +1604,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       window.removeEventListener('pointercancel', handlePointerRelease);
     };
   }, [
+    historyPager,
     handleScroll,
     notifyUserScrollIntent,
     publishViewportSnapshot,
@@ -1995,13 +1970,14 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     options?: TurnNavigationOptions,
   ): FlowChatTurnNavigationStatus => {
     if (!turnId || !activeSessionId) return 'rejected';
+    historyPager.reset();
     exitFollowOutput('scroll-to-turn');
     preparedTurnNavigationRef.current = {
       turnId,
       behavior: options?.behavior ?? 'auto',
     };
     return 'pending';
-  }, [activeSessionId, exitFollowOutput]);
+  }, [activeSessionId, exitFollowOutput, historyPager]);
 
   useLayoutEffect(() => {
     const prepared = preparedTurnNavigationRef.current;
@@ -2204,156 +2180,53 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }, [clearSearchMatch, exitFollowOutput, inputOverlayInsetPx, setNavigatedTurn, viewportAnchor, virtualItems, virtualizer]);
 
   const requestHistoryBoundary = useCallback((direction: SessionHistoryWindowDirection) => {
-    /*
-     * Three refusals, all asking whether the ask describes the reader.
-     *
-     * The first is the opening reveal. Until it ends the transcript is hidden
-     * and still being placed — item heights are estimates and the viewport is
-     * walking down to the content end — so the offset a boundary would be
-     * judged from is not a position anybody chose, and on a session whose
-     * loaded tail is shorter than one viewport the head is trivially "reached"
-     * at offset 0. Worse, what the page then does is prepend history *above*
-     * that viewport, and the compensation for it is deliberately left to
-     * whoever holds a target; landing it in the middle of the opening
-     * placement puts those two in a race that the reader loses by eight Turns.
-     * Measured: a re-opened session paged 140ms after mount, from a viewport
-     * still at 0, and was revealed at the top of the window it had just pulled
-     * in. Deferred rather than dropped — the reveal settling asks again.
-     *
-     * While the follow rule owns the viewport, the position the ask was derived
-     * from is our own placement — as true of a history window being opened as
-     * of the live tail, so the test is ownership and not which presentation is
-     * on screen. Ownership ends the moment the reader scrolls, which is exactly
-     * when the ask starts meaning something. Measured on session open: five
-     * pages landed in 890ms, each one displacing the viewport and so requesting
-     * the next, until history ran out.
-     *
-     * The third is the arming latch; see `boundaryArmedRef`.
-     *
-     * All three are invisible when they fire: the boundary status stays idle,
-     * which is also what "there is no more history" looks like. The faults have
-     * been at either extreme — pages arriving in a chain because no refusal
-     * fired, and a boundary that never pages because the latch stayed shut — so
-     * the reason is recorded rather than inferred from what did not happen.
-     */
-    if (isOpeningViewport()) {
-      traceViewportRepeating(`paging|${direction}|opening`, {
+    const opening = isOpeningViewport();
+    const following = isFollowingOutputNow();
+    // Opening/follow placements are not reader demand. Keep the initial ask
+    // available until their ownership ends, as before.
+    if (opening || following || !onHistoryWindowBoundaryIntent) {
+      const reason = opening ? 'opening-reveal' : following ? 'follow-output-owns-the-viewport' : 'no-handler';
+      traceViewportRepeating(`paging|${direction}|${reason}`, {
         location: 'historyPaging.refused',
-        message: 'the transcript is still being placed, so the boundary is not the reader\'s',
-        data: () => ({
-          direction,
-          reason: 'opening-reveal',
-          viewportId,
-          scrollTopPx: roundViewportPx(scrollerElementRef.current?.scrollTop ?? 0),
-        }),
+        message: 'history paging is waiting for viewport ownership or a handler',
+        data: () => ({ direction, viewportId, reason }),
       });
       return;
     }
-    if (isFollowingOutputNow()) {
-      traceViewportRepeating(`paging|${direction}|following`, {
+    const ticket = historyPager.begin(direction);
+    if (!ticket) {
+      traceViewportRepeating(`paging|${direction}|${historyPager.snapshot(direction).phase}`, {
         location: 'historyPaging.refused',
-        message: 'the boundary was reached by our own placement, not by the reader',
-        data: () => ({ direction, reason: 'follow-output-owns-the-viewport' }),
+        message: 'history paging is waiting for its request, layout, or reader',
+        data: () => ({ direction, ...historyPager.snapshot(direction) }),
       });
       return;
     }
-    if (!boundaryArmedRef.current[direction]) {
-      traceViewportRepeating(`paging|${direction}|unarmed`, {
-        location: 'historyPaging.refused',
-        message: 'the boundary has not been left since the last page',
-        data: () => ({ direction, reason: 'not-rearmed' }),
-      });
-      return;
-    }
-    const latchedExhausted = exhaustedBoundaryRef.current[direction];
-    if (
-      !onHistoryWindowBoundaryIntent ||
-      boundaryRequestRef.current[direction] ||
-      latchedExhausted
-    ) {
-      /*
-       * The user has reached the head of the loaded window and we are declining
-       * to fetch more. That is correct once history really is exhausted, and a
-       * silent data loss when it is not — the boundary status stays idle either
-       * way, so the transcript looks like it simply has no earlier Turns.
-       *
-       * The head, and only the head. `after` latches the moment the reader
-       * reaches the newest Turn, which is every session that has ever been
-       * paged, and a partial session stays partial throughout — so raising this
-       * for it is a warning that fires on the ordinary case and means nothing.
-       * Measured: four of them in one recording, all `after`, all correct
-       * behaviour. `resolveHistoryBoundaryTarget` draws the same line one layer
-       * down, between `reached-latest` and `beyond-known-total`.
-       */
-      const session = activeSessionRef.current;
-      if (
-        direction === 'before'
-        && latchedExhausted
-        && session?.sessionId
-        && session.isPartial === true
-      ) {
-        warnHistoryPagingRefusedWithPendingTurns(session.sessionId, {
-          direction,
-          reason: 'latched-exhausted-while-partial',
-          isPartial: true,
-          latchedExhausted: true,
-          loadedTurnCount: session.dialogTurns.length,
-          totalTurnCount: session.totalTurnCount ?? 0,
-        });
-      }
-      return;
-    }
-    // Disarmed for as long as this page is the reason the window sits at the
-    // boundary. Only the window moving off it arms the direction again.
-    boundaryArmedRef.current[direction] = false;
-    /*
-     * The ask itself, and the viewport it was derived from.
-     *
-     * Every refusal above is recorded, and the one that goes through was not —
-     * so a page that arrives while the transcript is still opening, from a
-     * viewport nobody is following and at an offset the reader never chose,
-     * looked exactly like a page the reader asked for. That page prepends
-     * history above them, and the compensation for it is deliberately left to
-     * whoever holds a target; with nothing holding one, this line is where that
-     * chain starts.
-     */
     traceViewport({
       location: 'historyPaging.asked',
-      message: 'the boundary was reached by the reader, so history was asked for',
-      data: () => ({
-        direction,
-        viewportId,
-        isOpening: isOpeningViewport(),
-        presentationMode,
-        itemCount: virtualItems.length,
-        scrollTopPx: roundViewportPx(scrollerElementRef.current?.scrollTop ?? 0),
-      }),
+      message: 'reader demand dispatched a history page',
+      data: () => ({ direction, viewportId, requestId: ticket.id }),
     });
-    const request = Promise.resolve(onHistoryWindowBoundaryIntent(direction)).then(
-      normalizeBoundaryResult,
-    ).then(result => {
-      if (result === 'exhausted') {
-        exhaustedBoundaryRef.current[direction] = true;
-      } else if (result === 'applied') {
-        exhaustedBoundaryRef.current[direction] = false;
+    // Reserve the ticket before invoking: even a synchronous callback/re-entry
+    // cannot dispatch it twice. Rejections and synchronous throws share cleanup.
+    void Promise.resolve().then(() => historyPager.isCurrent(ticket)
+      ? onHistoryWindowBoundaryIntent(direction, {
+        prepareViewportForPresentationCommit: () => historyPager.prepareCommit(ticket),
+      })
+      : 'cancelled' as const).then(normalizeBoundaryResult).catch(() => 'not-ready' as const).then(result => {
+      const accepted = historyPager.finish(ticket, result);
+      traceViewport({
+        location: 'historyPaging.completed',
+        message: accepted ? 'history page result accepted' : 'obsolete history page result ignored',
+        data: () => ({ direction, completedRequestId: ticket.id, result, ...historyPager.snapshot(direction) }),
+      });
+      if (accepted && result === 'applied') {
+        // Also covers a page that was already projected: the acknowledgement
+        // commits after the parent's presentation updates, without a timer.
+        acknowledgeHistoryPage(revision => revision + 1);
       }
-      // Nothing was prepended, so the window sitting at the boundary is still
-      // the reader's own position rather than a consequence of this page.
-      if (result !== 'applied') {
-        boundaryArmedRef.current[direction] = true;
-      }
-    }).finally(() => {
-      boundaryRequestRef.current[direction] = null;
     });
-    boundaryRequestRef.current[direction] = request;
-  }, [
-    isFollowingOutputNow,
-    isOpeningViewport,
-    onHistoryWindowBoundaryIntent,
-    presentationMode,
-    viewportId,
-    virtualItems.length,
-  ]);
+  }, [historyPager, isFollowingOutputNow, isOpeningViewport, onHistoryWindowBoundaryIntent, viewportId]);
 
   /**
    * Whether either end of the loaded transcript is on screen, and act on it.
@@ -2406,47 +2279,42 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       });
       return;
     }
-    /*
-     * Two answers, and the latch takes the narrower one.
-     *
-     * `reached` is where the reader actually is; `asking` adds the screenful of
-     * lead. Arming from `asking` walls the latch shut, because a boundary that
-     * counts as reached from a screen away is one the reader is never off:
-     * measured, one page fetched and then `not-rearmed` for the next six
-     * minutes while they kept scrolling into it.
-     *
-     * Re-arming and asking in the same pass is the point rather than an
-     * oversight — "the reader is not on the boundary, and is a screen from it"
-     * is exactly the state the lead exists to serve.
-     */
-    const reached = new Set(historyBoundariesReached(
-      range,
-      virtualItems.length,
-      presentationMode,
-    ));
+    // Prefetch proximity decides the ask; geometry alone creates no demand.
+    const proximity = readHistoryBoundaryProximity();
     const asking = new Set(historyBoundariesForVisibleRange(
       range,
       virtualItems.length,
       presentationMode,
-      readHistoryBoundaryProximity(),
+      proximity,
     ));
+    historyPager.observeProximity(asking);
     for (const direction of HISTORY_WINDOW_DIRECTIONS) {
-      // Off the boundary: whatever the last page added has been absorbed, and
-      // arriving there again will be the reader's own doing.
-      const isReached = reached.has(direction);
-      if (!isReached && boundaryReachedRef.current[direction]) {
-        boundaryArmedRef.current[direction] = true;
-      }
-      boundaryReachedRef.current[direction] = isReached;
       if (asking.has(direction)) requestHistoryBoundary(direction);
     }
   }, [
+    historyPager,
     presentationMode,
     readHistoryBoundaryProximity,
     requestHistoryBoundary,
     virtualItems.length,
     virtualizer,
   ]);
+
+  // Deliberately after prepend compensation and prepared navigation effects.
+  // Run for every commit: request completion can follow the content commit.
+  useLayoutEffect(() => {
+    if (isViewportSuspendedRef.current) return;
+    historyPager.commitLayout(windowBoundsKey, {
+      before: virtualItems[0] ? getVirtualItemStableKey(virtualItems[0]) : null,
+      after: virtualItems.length ? getVirtualItemStableKey(virtualItems[virtualItems.length - 1]) : null,
+    });
+    // Content replacement can clamp native scrollTop. That is not user travel.
+    const layoutKey = `${windowBoundsKey}:${virtualItems.length}:${virtualItems[0] ? getVirtualItemStableKey(virtualItems[0]) : ''}`;
+    if (pagingLayoutKeyRef.current !== layoutKey) {
+      pagingLayoutKeyRef.current = layoutKey;
+      readerScrollPositionRef.current = viewportOwner.readReaderScrollPosition();
+    }
+  });
 
   evaluateHistoryBoundariesRef.current = evaluateHistoryBoundaries;
 
@@ -2455,6 +2323,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     evaluateHistoryBoundaries();
   }, [
     evaluateHistoryBoundaries,
+    historyPageRevision,
     /*
      * Follow-output releasing the viewport is a reason to ask again, not only a
      * reason the last ask was declined.
@@ -2507,19 +2376,21 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }, [updateIsAtScrollStart]);
 
   const scrollToPhysicalBottom = useCallback(() => {
+    historyPager.reset();
     setNavigatedTurn(null);
     enterFollowOutput('jump-to-latest');
     updateIsAtBottom();
-  }, [enterFollowOutput, setNavigatedTurn, updateIsAtBottom]);
+  }, [enterFollowOutput, historyPager, setNavigatedTurn, updateIsAtBottom]);
 
   const scrollToLatestEndPosition = useCallback(() => {
+    historyPager.reset();
     onUserScrollIntent?.();
     setNavigatedTurn(null);
     enterFollowOutput('jump-to-latest');
     // Entering follow can leave the viewport exactly where it is, which
     // produces no scroll event to recompute the band from.
     updateIsAtBottom();
-  }, [enterFollowOutput, onUserScrollIntent, setNavigatedTurn, updateIsAtBottom]);
+  }, [enterFollowOutput, historyPager, onUserScrollIntent, setNavigatedTurn, updateIsAtBottom]);
 
   useImperativeHandle(ref, () => ({
     scrollToTurn,

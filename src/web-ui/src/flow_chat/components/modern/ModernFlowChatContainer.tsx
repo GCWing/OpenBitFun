@@ -2287,7 +2287,11 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
         return 'not-ready';
       }
     })().finally(() => {
-      historyBoundaryRequestsRef.current[direction] = null;
+      // A session switch can install another request before this one settles.
+      // Only the request that owns the slot may release it.
+      if (historyBoundaryRequestsRef.current[direction] === request) {
+        historyBoundaryRequestsRef.current[direction] = null;
+      }
     });
     historyBoundaryRequestsRef.current[direction] = request;
     return request;

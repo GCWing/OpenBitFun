@@ -33,11 +33,13 @@ each missing what the other had.
 | `flowChatCollapseMotion.test.ts` | collapse does not move earlier content |
 | `useFlowChatFollowOutput.test.tsx` | one-shot new-Turn reveal, frame loop, blank crossing, resize realign, opening readback publication and ownership/lifecycle gates |
 | `../../tool-cards/useToolCardHeightContract.test.tsx` | tool cards reflow rather than compensate |
-| `flowChatHistoryBoundary.test.ts` | the screenful lead, and the latch's own predicate |
+| `flowChatHistoryBoundary.test.ts` | the screenful lead and physical boundary geometry |
+| `flowChatHistoryPager.test.ts` | request/layout ordering, coalesced demand, prefetch without physical arrival, stale tickets, exhaustion and retry eligibility |
+| `useFlowChatViewportOwner.test.tsx` | synchronous write/shift accounting preserves reader travel and actual clamping |
 | `flowChatLiveTailWindow.test.ts` | "does the transcript still reach the newest Turn" |
 | `flowChatViewportAnchor.test.ts` | anchor geometry and the DOM contract |
 | `useFlowChatViewportAnchor.test.tsx` | capture, restore, carry, the settle window |
-| `VirtualMessageList.session-boundary.test.tsx` | prepend compensation, the ask, navigation-target current Turn with gesture/follow/session handoff, and search placement only outside the readable viewport |
+| `VirtualMessageList.session-boundary.test.tsx` | prepend compensation, consecutive paging with/without queued input, passive scroll suppression, navigation-target current Turn with gesture/follow/session handoff, and search placement only outside the readable viewport |
 | `FlowChatOpeningBoundary.test.tsx` | opening-only activation/scroll isolation, bidirectional focus skipping, programmatic focus return, and reveal cleanup; DOM contracts only |
 | `ModernFlowChatContainer.history-state.test.tsx` | history presentation and the submission event |
 | `flowChatViewportOwnership.test.ts` | the priority order, preemption, expiry |
@@ -336,3 +338,20 @@ Keyboard focus has its own outline and does not navigate until activation.
     neither retains the old navigation selection.
 11. With reduced motion enabled, the hover fan changes without animation. Touch
     navigation must not leave a hover fan behind.
+
+### History paging demand
+
+1. Page upward at least three times from a long session's live tail, and page
+   downward again through a history window. Both directions must keep working.
+2. Trigger prefetch before reaching the physical head; stop while it loads.
+   Correction/measurement alone must not cascade through subsequent pages.
+3. Keep scrolling during a slow page; queued demand should continue once the
+   page commits if the new boundary is still near. Reverse or move away during
+   the fetch and verify the obsolete demand does not load another page.
+4. On a transcript shorter than one viewport, wheel upward at the hard top.
+   Test keyboard, touch/inertia and scrollbar dragging as well.
+5. Navigate elsewhere or switch sessions during a slow fetch. Its eventual
+   result must not block the new boundary or move the new presentation.
+6. Repeat on remote workspace and Peer Device surfaces with transport latency;
+   local unit fixtures do not establish those behaviors. Remote-control/mobile
+   and detached-dispatch surfaces do not use this list controller directly.

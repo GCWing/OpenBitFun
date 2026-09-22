@@ -7,19 +7,9 @@
  * to the container, and how the position was arrived at belongs to whatever is
  * placing the items.
  *
- * Two questions, deliberately two functions, because one predicate cannot serve
- * both and it was tried:
- *
- * - **Has the reader arrived?** `historyBoundariesReached`, from the item range
- *   alone. This is what the container's arming latch turns on.
- * - **Is it worth asking?** `historyBoundariesForVisibleRange`, which adds a
- *   screenful of lead so the page lands off screen.
- *
- * Serving the latch from the wider answer walls it shut. The latch disarms a
- * direction on dispatch and re-arms it when the reader is no longer at the
- * boundary, so a boundary that counts as reached from a screen away is one the
- * reader can never be off — measured: one page fetched, then `not-rearmed`
- * refusals for eleven seconds while the reader kept scrolling into a wall.
+ * Physical arrival and the one-screen prefetch lead are separate geometry
+ * questions. Neither creates demand or re-arms requests: FlowChatHistoryPager
+ * owns permission from reader intent, request results and committed layout.
  */
 
 import type { SessionHistoryWindowDirection } from '../../store/FlowChatStore';
@@ -94,9 +84,7 @@ export interface HistoryBoundaryProximity {
 /**
  * Directions the visible range is sitting on — the reader has arrived.
  *
- * The arming latch's question, and only ever this one. It has to be answerable
- * as false while the reader is still near the boundary, or a direction disarmed
- * on dispatch has no way back.
+ * This excludes the prefetch lead and is useful for describing actual arrival.
  *
  * `'after'` only applies to a history window. A tail presentation is already
  * anchored to the newest Turn, so there is nothing past its end to fetch.

@@ -71,12 +71,15 @@ export interface FlowChatViewportOwnerApi {
    * transcript, and this is what keeps that position meaning the same thing.
    */
   shift: (byPx: number) => boolean;
+  /** Offset with this register's synchronous writes removed, for reader travel. */
+  readReaderScrollPosition: () => number;
 }
 
 export function useFlowChatViewportOwner(
   scrollerRef: RefObject<HTMLElement | null>,
 ): FlowChatViewportOwnerApi {
   const claimRef = useRef<ViewportClaim | null>(null);
+  const writtenTravelRef = useRef(0);
 
   /**
    * Take the viewport and report who was holding it, which the register drops
@@ -171,7 +174,9 @@ export function useFlowChatViewportOwner(
       // Assigned rather than `scrollTo({behavior:'auto'})`: an assignment also
       // cancels any animation still running, which is what a writer taking the
       // viewport from an animated one means to do.
+      const before = scroller.scrollTop;
       scroller.scrollTop = request.topPx;
+      writtenTravelRef.current += scroller.scrollTop - before;
     }
     return true;
   }, [scrollerRef, takeViewport]);
@@ -197,9 +202,15 @@ export function useFlowChatViewportOwner(
       });
     }
     if (!allowed) return false;
+    const before = scroller.scrollTop;
     scroller.scrollTop += byPx;
+    writtenTravelRef.current += scroller.scrollTop - before;
     return true;
   }, [canShift, currentOwner, scrollerRef]);
+
+  const readReaderScrollPosition = useCallback(() => (
+    (scrollerRef.current?.scrollTop ?? 0) - writtenTravelRef.current
+  ), [scrollerRef]);
 
   return useMemo(() => ({
     claim,
@@ -208,5 +219,6 @@ export function useFlowChatViewportOwner(
     currentOwner,
     write,
     shift,
-  }), [canShift, claim, currentOwner, release, shift, write]);
+    readReaderScrollPosition,
+  }), [canShift, claim, currentOwner, release, shift, write, readReaderScrollPosition]);
 }

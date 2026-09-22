@@ -62,92 +62,69 @@ The pixel rule is a union with the item rule, not a replacement. A window short
 enough that its head is on screen has no screenful of lead to offer, and that
 case is the one the item slack was written for.
 
-**The lead widens the ask and nothing else.** `historyBoundariesReached` is a
-separate function for that reason: the arming latch below disarms a direction on
-dispatch and re-arms it when the reader is no longer at the boundary, so serving
-the latch from the wider answer leaves a boundary the reader can never be off.
-Measured, with the two sharing one predicate: a 43-Turn session loaded one
-window of five Turns, and every ask afterwards was refused as `not-rearmed` —
-39 refusals over six minutes, the reader scrolling into a wall two Turns from
-the top of what was loaded. The two questions look alike and are not: *has the
-reader arrived* is about them, *is it worth asking* is about the fetch.
+**The lead decides proximity, not permission.** `historyBoundariesReached`
+reports the physical item boundary; `historyBoundariesForVisibleRange` adds the
+one-screen prefetch lead. Permission belongs to `FlowChatHistoryPager`.
 
-A pass can therefore re-arm and ask in the same breath, which is the point
-rather than an oversight — "off the boundary, and a screen from it" is exactly
-the state the lead exists to serve.
+## Request, Layout, and Reader Demand
 
-The lead is one screen rather than several because it only has to outlast the
-fetch. At a brisk wheel scroll the reader covers a few hundred pixels in the
-time a page takes to arrive from local storage; a longer lead just loads history
-nobody reaches.
+The former implementation kept separate `armed`, `reached`, `pending`, and
+`exhausted` refs. A September 22 reproduction showed a successful first page,
+then a `tail -> 38:46` window change clearing `reached` while retaining
+`armed=false`. The prepend snapshot matched and compensation succeeded, but the
+first off-head observation was now false -> false. Re-arming required true ->
+false, so a second visit to the head was refused indefinitely. A prefetch that
+never reached the physical boundary had the same structural weakness.
 
-## Two Refusals Stand Between an Ask and a Page
+`flowChatHistoryPager.ts` now owns a state machine per direction:
 
-`flowChatHistoryBoundary.ts` decides that a boundary is worth asking about.
-Whether the ask is honoured is the container's, and it declines twice:
+- `ready`: an initial ask is available once opening/follow ownership permits it.
+- `requesting`: one ticket owns the asynchronous request; further reader demand
+  is coalesced into a boolean, never a queue of wheel events.
+- `awaiting-layout`: an applied result has arrived, but its presentation commit
+  has not yet been acknowledged.
+- `waiting-for-reader`: result and layout have both arrived; fresh demand can
+  dispatch another page while the boundary is within the lead.
+- `exhausted`: no more content at the window/boundary that answered.
 
-**While follow-output owns the viewport.** The position the ask was derived from
-is then our own placement, not the reader's — as true of a history window being
-opened as of the live tail, so the test is ownership and not presentation mode.
-Ownership ends the moment the reader scrolls, which is exactly when the ask
-starts meaning something.
+The list reserves a ticket before invoking the handler. Its existing
+`prepareViewportForPresentationCommit` callback checks that the ticket is still
+current. A layout effect **after** measurement, prepend compensation, and
+prepared navigation acknowledges the presentation. Layout can precede or follow
+the promise result. A completion acknowledgement also renders when the returned
+page was already projected. This acknowledges a commit, not convergence of all
+future row measurements; later measurement callbacks cannot create reader demand.
 
-**Until the visible range has left that boundary.** Prepend compensation puts
-the viewport back on the reader's content, but the virtualizer places its rows
-from a scroll offset it refreshes a frame later, so for one commit the visible
-range is still read against the head. A direction is disarmed on dispatch and
-armed again by the range leaving it — by `historyBoundariesReached`, never by
-the wider ask; an ask that resolves to anything other than `applied` re-arms
-immediately, because nothing was prepended and the range sitting at the boundary
-is still the reader's own position.
+Directional wheel/touch/key intent can ask even at scrollTop=0, where no native
+scroll event occurs. Native travel covers scrollbar dragging and inertia. The
+viewport register subtracts its actual synchronous writes/shifts (including
+clamping), so a delayed scroll event caused by compensation adds no demand.
+Owned smooth navigation/follow scrolls are excluded. Content commits rebaseline
+travel because replacing content can clamp the browser's scroll position.
 
-Both were free under react-virtuoso: `firstItemIndex` moved the reported range
-with the prepend, so the local start index jumped by the number of items added
-and the rule stopped applying by itself.
+Demand accumulated during a fetch survives until the new layout is evaluated.
+If the new boundary lies outside the lead, or the reader reverses direction, it
+is discarded. Repeated rendering, measurement, and correction never manufacture
+another page. A new gesture or travel toward the boundary can ask again without
+requiring the reader to first hit, leave, and revisit the physical edge.
 
-**A gesture that moves nothing still asks.** The evaluation used to hang off
-the `scroll` event, which is the one signal a reader at the top cannot produce:
-the wheel changes no offset, so no event fires, so nothing asks. Combined with
-the ownership refusal that is a closed loop, and it was measured as one. A tail
-window of three Turns fitted inside the viewport, which put the entire scroll
-range inside the reserved blank:
+Navigation invalidates request tickets. An old result cannot clear a newer
+request or attach exhaustion to a different window. Non-applied outcomes leave
+no pending ticket; errors/cancellation require a new reader action rather than
+a render-driven retry loop. Exhaustion is forgotten when its window/boundary
+changes. Session instances isolate the controller across session switches.
 
-- at the bottom of that range no row intersects the viewport at all, so
-  `getVisibleItemRange` returns nothing and there is no position to judge;
-- at offset 0, an evaluation may still be refused while follow-output owns the
-  opening placement;
-- and at offset 0 the reader's own gestures produced twenty `user-gesture`
-  claims over seven seconds with no scroll event, no anchor capture, and not
-  one evaluation.
+Opening and follow-output guards remain synchronous (`isFollowingOutputNow`),
+so the gesture that releases follow is evaluated against the new owner. Geometry
+with no visible range remains a diagnostic refusal. Request/refusal diagnostics
+report the phase and request identity without transcript content.
 
-Scrolling up did nothing, permanently. So `notifyUserScrollIntent` evaluates
-too, after it has cleared follow-output's ownership — which makes the ask the
-reader's rather than our placement's, and gives the top of the range a signal
-it can actually emit.
-
-The empty visible range is traced (`historyPaging.noVisibleRange`) rather than
-returned from in silence. Reading that session, the absence of an anchor
-capture was the only way to tell "nobody asked" from "the ask was refused".
-
-**The ask reads ownership as of now, not as of the last render.** A gesture
-releases follow-output synchronously and then asks, so a render-time mirror of
-`isFollowingOutput` reports the ownership the gesture has just ended.
-`isFollowingOutputNow` is the hook's own ref, and the refusal reads it — in the
-log, `followOutput.exit` and `historyPaging.refused:
-follow-output-owns-the-viewport` sat at the same millisecond, three entries
-apart, and the ask was refused for an ownership one line older than itself.
-
-**`exhausted` describes the window that asked, not the session.** "There is
-nothing before this" is a fact about a start ordinal. Navigating to the first
-Turn asks `before`, the store answers `reached-start` for `targetOrdinal: -1`,
-and that is correct — but only until the window moves. Only `applied` used to
-clear the latch, which is the single case where the window moves *because* of
-the page; every other way it moves left the old answer standing. Measured: 3
-Turns of 43 loaded, `before` latched from a visit to Turn 1, and after jumping
-back to the tail the reader could not page at all.
-`warnHistoryPagingRefusedWithPendingTurns` fired
-(`latched-exhausted-while-partial`) and nothing acted on it. The latch is now
-cleared whenever the window's ordinals change.
+Automated tests cover event ordering, consecutive real prepends, queued intent,
+passive layout repetition, stale completions, failed requests and registered
+scroll travel. The user confirmed that the original second-page failure was
+resolved in the September 22 reproduction. The broader input-device matrix and
+remote transports still require separate manual validation; unit geometry is
+not performance evidence.
 
 ## Keeping the Viewport on the Reader's Content
 
@@ -676,19 +653,17 @@ diagnostics turned on first. It warns once per session, so scrolling against a
 dead boundary cannot flood the log. Turn the flag on only when the trail's
 30-event cap is not enough.
 
-Two detectors raise it:
-
-- `exhausted` returned for `beyond-known-total`. That result **latches the
-  direction off for the rest of the session** and only `applied` clears it, so
-  reaching it on an unknown or contradictory total is how history goes
-  permanently missing rather than merely late.
-- A `before` request blocked by that latch while the session is still
-  `isPartial`. This fires at the moment the user scrolls up and nothing happens.
+The container raises this warning for an inconsistent `beyond-known-total`
+answer or a declined viewport preparation. The former session-wide
+`latched-exhausted-while-partial` detector in the list has been replaced by the
+pager's window-scoped exhaustion and request-phase diagnostics. A partial live
+tail alone does not prove that a particular rendered history boundary has more
+content.
 
 When the report is "scrolling up shows no history, but the Turn Rail can still
 load those Turns", search the log for `declined to page older Turns`. Turn Rail
 navigation goes through `loadSessionTurnWindow` directly and bypasses the
-boundary latch entirely, which is why it keeps working. The accompanying
+viewport paging controller, which is why it keeps working. The accompanying
 `FlowChat history paging trail` warning carries the preceding events, including
 `anchor_capture_failed` — `captureHistoryPrependAnchor` returning `false`
 cancels a window that was already fetched.
