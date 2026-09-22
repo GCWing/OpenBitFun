@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { remarkAutolinkBoundaries } from './remarkAutolinkBoundaries';
+import { remarkStreamingTableLinks } from './remarkStreamingTableLinks';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
@@ -14,6 +15,7 @@ import { rehypeSourceRange, type MarkdownSourceRange } from './rehypeSourceRange
 
 interface MarkdownMathRendererProps {
   markdownContent: string;
+  isStreaming?: boolean;
   components: Components;
   sanitizeSchema: RehypeSanitizeOptions;
   remarkAutolinkComputerFileLinks: Pluggable;
@@ -23,6 +25,7 @@ interface MarkdownMathRendererProps {
 
 export const MarkdownMathRenderer: React.FC<MarkdownMathRendererProps> = ({
   markdownContent,
+  isStreaming = false,
   components,
   sanitizeSchema,
   remarkAutolinkComputerFileLinks,
@@ -31,7 +34,7 @@ export const MarkdownMathRenderer: React.FC<MarkdownMathRendererProps> = ({
 }) => (
   <div data-openbitfun-component="markdown" data-openbitfun-part="math">
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkMath, remarkAutolinkBoundaries, remarkAutolinkComputerFileLinks]}
+      remarkPlugins={[remarkGfm, remarkMath, [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkComputerFileLinks]}
       rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], rehypeKatex]}
       urlTransform={urlTransform}
       components={components}

@@ -10,6 +10,7 @@ import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import { Tooltip } from '@openbitfun/ui';
 import remarkGfm from 'remark-gfm';
 import { remarkAutolinkBoundaries } from './remarkAutolinkBoundaries';
+import { remarkStreamingTableLinks } from './remarkStreamingTableLinks';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import { visit } from 'unist-util-visit';
@@ -1763,7 +1764,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
   const wrapperClassName = `markdown-renderer ${className}`.trim();
   const basicMarkdownRenderer = (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
+      remarkPlugins={[remarkGfm, [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
       rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange]]}
       urlTransform={markdownUrlTransform}
       components={components}
@@ -1789,6 +1790,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
           <React.Suspense fallback={basicMarkdownRenderer}>
             <MarkdownMathRenderer
               markdownContent={markdownContent}
+              isStreaming={isStreaming}
               components={components}
               sanitizeSchema={sanitizeSchema}
               remarkAutolinkComputerFileLinks={remarkAutolinkInternalLinks}

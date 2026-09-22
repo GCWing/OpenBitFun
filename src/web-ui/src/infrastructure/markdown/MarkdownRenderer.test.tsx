@@ -774,6 +774,42 @@ Second paragraph.
     expect(mocks.getCurrentWorkspacePath).not.toHaveBeenCalled();
   });
 
+  it('keeps streamed table link labels visible until the actual destination closes', async () => {
+    const prefix = 'Intro\n\n| File | Description |\n| --- | --- |\n| ';
+    const unfinished = `${prefix}[**Guide**](/srv/docs/long-directory/Guide.md`;
+    const render = async (content: string, isStreaming: boolean) => {
+      await act(async () => root.render(<MarkdownRenderer
+        content={content}
+        isStreaming={isStreaming}
+        sourceRange={{ start: 7, end: content.length, idPrefix: 'stream-table-' }}
+        fileActionsViaCallbackOnly
+        onFileViewRequest={onFileViewRequest}
+      />));
+    };
+
+    await render(unfinished, true);
+    const table = container.querySelector('table');
+    const cell = container.querySelector('td');
+    expect(cell?.textContent).toBe('Guide');
+    expect(cell?.querySelector('strong')?.textContent).toBe('Guide');
+    expect(cell?.querySelector('button, a')).toBeNull();
+    expect(mocks.readFileContent).not.toHaveBeenCalled();
+    expect(mocks.getCurrentWorkspacePath).not.toHaveBeenCalled();
+
+    await render(unfinished + ') | Explanation |', true);
+    expect(container.querySelector('table')).toBe(table);
+    expect(container.querySelector('td')).toBe(cell);
+    expect(cell?.textContent).toBe('Guide');
+    const link = cell?.querySelector<HTMLButtonElement>('button.file-link');
+    expect(link).not.toBeNull();
+    act(() => link?.click());
+    expect(onFileViewRequest).toHaveBeenCalledWith('/srv/docs/long-directory/Guide.md', 'Guide.md', undefined);
+
+    await render(unfinished, false);
+    expect(cell?.textContent).toContain('](/srv/docs/long-directory/Guide.md');
+    expect(cell?.querySelector('button, a')).toBeNull();
+  });
+
   it('preserves existing markdown nodes while streaming content is appended', async () => {
     const initialContent = [
       'Before image',
