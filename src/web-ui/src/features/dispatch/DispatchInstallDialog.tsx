@@ -479,6 +479,7 @@ export const DispatchInstallDialog: React.FC<DispatchInstallDialogProps> = ({
             {probe ? (
               <div className="dispatch-install-dialog__checks">
                 <div
+                  className="dispatch-install-dialog__check-row"
                   data-state={
                     cliReady ? 'ok' : installPending || preparationPhase ? 'pending' : 'blocked'
                   }

@@ -246,8 +246,8 @@ export const SessionUsageReportCard: React.FC<SessionUsageReportCardProps> = ({
         <div className="session-usage-report-card__header" data-openbitfun-component="session-usage-report-card" data-openbitfun-part="header">
           <div className="session-usage-report-card__title-block" data-openbitfun-component="session-usage-report-card" data-openbitfun-part="title">
             <div className="session-usage-report-card__meta">
-              <OverflowText>{formatUsageTimestamp(generatedAt ?? report.generatedAt, t)}</OverflowText>
-              <OverflowText>{t('usage.card.turns', { count: report.scope.turnCount })}</OverflowText>
+              <OverflowText className="session-usage-report-card__compact-meta-item">{formatUsageTimestamp(generatedAt ?? report.generatedAt, t)}</OverflowText>
+              <OverflowText className="session-usage-report-card__compact-meta-item">{t('usage.card.turns', { count: report.scope.turnCount })}</OverflowText>
             </div>
             <div className="session-usage-report-card__compact-workspace">
               <Icon name="folder" size="sm" />

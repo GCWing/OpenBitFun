@@ -17,6 +17,12 @@ This file applies to `design-system/**`. Repository-wide rules in the root `AGEN
 - Design Lab may alias `@openbitfun/ui` to source only during Vite development for HMR. Its production build must consume package exports.
 - `@openbitfun/ui/registry` is the source of truth for published components. Design Lab derives navigation, counts, token scopes, and detail routes from that registry; Lab-only previews or copy must never add, retain, or remove a package component.
 
+## CSS invalidation
+
+- Prefer component-owned classes for sibling rules in dynamic views; tag-only or universal sibling selectors can invalidate unrelated elements even under a scoped ancestor or CSS Module.
+- Use layout `gap` only where spacing semantics remain equivalent. Preserve adjacency, specificity, and state overrides when narrowing selectors; `:where()` can add class constraints without raising specificity.
+- Use Selector Stats for cause analysis and ordinary traces for performance comparisons. Invalidation records alone do not prove a scrolling speedup. See `src/web-ui/AGENTS.md` for generated-content guidance; do not blanket-ban sibling selectors.
+
 ## Publication boundary
 
 - Public manifests expose only `dist/`, README, and package metadata.

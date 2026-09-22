@@ -185,6 +185,37 @@ describe('Markdown file links', () => {
     vi.clearAllMocks();
   });
 
+  it('preserves same-tag sibling matches for generated and raw HTML content', async () => {
+    const content = `First paragraph.
+
+Second paragraph.
+
+- First item
+  - Nested item
+  - Next nested item
+- Second item
+
+| A | B |
+| - | - |
+| C | D |
+
+<div align="center"><p>One</p><!-- comment -->text<p>Two</p><hr><p>Three</p></div>
+<table><tbody><tr><th>A</th><td>B</td><td>C</td><th>D</th><th>E</th></tr></tbody></table>`;
+    await act(async () => root.render(<MarkdownRenderer content={content} />));
+    for (const [tag, className] of [
+      ['p', 'markdown-paragraph'], ['li', 'markdown-list-item'],
+      ['th', 'markdown-header-cell'], ['td', 'markdown-data-cell'],
+    ]) {
+      const oldMatches = [...container.querySelectorAll(`${tag} + ${tag}`)];
+      expect(oldMatches.length).toBeGreaterThan(0);
+      expect([...container.querySelectorAll(`${tag}:where(.${className}) + ${tag}:where(.${className})`)])
+        .toEqual(oldMatches);
+      expect([...container.querySelectorAll(tag)].every(node => node.classList.contains(className))).toBe(true);
+    }
+    expect([...container.querySelectorAll('div[align="center"] > p:where(.markdown-paragraph) + p:where(.markdown-paragraph)')]
+      .map(node => node.textContent)).toEqual(['Two']);
+  });
+
   it.each([false, true])('keeps fullwidth parentheses outside bare web links (escaped=%s)', async escaped => {
     const url = 'http://127.0.0.1:8000';
     const bare = escaped ? url.replace(':', '\\:') : url;

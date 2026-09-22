@@ -66,7 +66,20 @@
   margin-bottom: 0 !important;
 }
 
-.markdown-renderer > * + * {
+// Universal sibling selectors here and in the nested-list gap rule below caused
+// Chromium to invalidate the virtual-message-list__items subtree on row insertion
+// and removal (confirmed by StyleInvalidatorInvalidationTracking). Select the
+// same non-first element children without `* + *`; :where keeps specificity
+// unchanged so paragraph/heading overrides retain their existing precedence.
+// Desktop trace comparison (2026-09-22, selector stats OFF), at equal DOM counts:
+// - Add row 27 (37 added / 451 retained elements): style 53 -> 35ms,
+//   trace elementCount 3050 -> 2348.
+// - Add row 20 (53 added / 771 retained): 77 -> 59ms, 5061 -> 3867.
+// - Remove rows 29/30 (77 removed / 950 retained): 81 -> 46ms, 5789 -> 4301.
+// These are single-run samples, not a universal speedup; elementCount is the
+// trace's style calculation count, not a count of unique DOM nodes. Other costly
+// invalidations remained, so this change does not claim to eliminate scroll jank.
+.markdown-renderer > :where(:not(:first-child)) {
   margin-top: var(--markdown-block-gap);
 }
 
@@ -77,7 +90,12 @@
   line-height: inherit;
 }
 
-.markdown-renderer p + p {
+// Tag-only sibling rules caused unrelated elements to enter Chromium style
+// invalidation (93 paragraph, 70 list-item and 104 table-cell records in one
+// desktop trace). Owned classes narrow the candidates; :where() preserves
+// specificity and same-tag adjacency, including sanitized HTML and math output.
+// Overall scrolling improvement has not been measured for this change.
+.markdown-renderer p:where(.markdown-paragraph) + p:where(.markdown-paragraph) {
   margin-top: var(--markdown-paragraph-gap);
 }
 
@@ -156,7 +174,7 @@
   word-wrap: break-word;
 }
 
-.markdown-renderer li + li {
+.markdown-renderer li:where(.markdown-list-item) + li:where(.markdown-list-item) {
   margin-top: var(--markdown-list-item-gap);
 }
 
@@ -165,7 +183,8 @@
   margin-bottom: 0;
 }
 
-.markdown-renderer li > * + * {
+// Same universal-sibling invalidation fix as the block-gap rule above.
+.markdown-renderer li > :where(:not(:first-child)) {
   margin-top: var(--markdown-list-nested-gap);
 }
 
@@ -457,7 +476,7 @@
   vertical-align: middle;
 }
 
-.markdown-renderer div[align="center"] > p + p {
+.markdown-renderer div[align="center"] > p:where(.markdown-paragraph) + p:where(.markdown-paragraph) {
   margin-top: 0.2rem;
 }
 
@@ -556,8 +575,8 @@
   vertical-align: top;
 }
 
-.markdown-renderer .table-wrapper th + th,
-.markdown-renderer .table-wrapper td + td {
+.markdown-renderer .table-wrapper th:where(.markdown-header-cell) + th:where(.markdown-header-cell),
+.markdown-renderer .table-wrapper td:where(.markdown-data-cell) + td:where(.markdown-data-cell) {
   border-left: 1px solid var(--markdown-table-col-divider);
 }
 

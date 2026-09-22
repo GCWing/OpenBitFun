@@ -17,7 +17,11 @@
   .root[data-disabled="true"] .unit { color: var(--openbitfun-color-content-disabled); }
   .root[data-variant="default"] .buttons { grid-template-columns: 1fr; grid-template-rows: repeat(2, minmax(0, 1fr)); }
   .root[data-variant="default"] .buttons button { min-inline-size: 20px; font-size: var(--openbitfun-type-meta-font-size); line-height: var(--openbitfun-type-meta-line-height); }
-  .root[data-variant="default"] .buttons button + button { border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-field-border); }
+  /* Chromium's former button + button invalidation set also selected unrelated
+     transcript buttons. Scope sibling invalidation to this component's step
+     buttons. A desktop trace recorded 289 tag invalidations across 77 nodes
+     with zero final selector matches; an overall scroll speedup is unconfirmed. */
+  .root[data-variant="default"] .buttons .stepButton + .stepButton { border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-field-border); }
   @media (prefers-reduced-motion: reduce) { .control { transition: none; } }
   @media (forced-colors: active) { .control { border-color: ButtonText; } .root .control:focus-within { border-color: Highlight; } }
 }

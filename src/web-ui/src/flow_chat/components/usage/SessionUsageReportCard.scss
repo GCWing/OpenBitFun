@@ -469,7 +469,11 @@
   font-size: var(--openbitfun-type-support-font-size);
   line-height: var(--openbitfun-type-support-line-height);
 
-  span + span {
+  // Chromium associated the former span + span rule with unrelated transcript
+  // spans during virtual row changes. Use owned metadata classes to narrow the
+  // invalidation set. Equal-DOM trace sample: 53 added / 771 retained elements,
+  // style time 59 -> 31ms and elementCount 3867 -> 2027 (single desktop run).
+  > .session-usage-report-card__compact-meta-item + .session-usage-report-card__compact-meta-item {
     padding-inline-start: var(--openbitfun-space-2);
     border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
   }

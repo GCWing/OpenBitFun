@@ -56,6 +56,13 @@ workspace connections remain independent of Relay sign-in.
   namespace coverage.
 - Follow `src/web-ui/LOGGING.md`: English only, no emojis, structured logs
 
+## CSS invalidation in dynamic views
+
+- For component-owned sibling styles in frequently changing DOM, prefer dedicated classes over tag-only or universal sibling selectors. CSS Modules and an ancestor scope do not isolate browser invalidation work.
+- Use flex/grid `gap` when the existing layout and spacing semantics permit it. Do not mechanically replace same-tag adjacency with `:not(:first-child)` or change layout mode.
+- Generated content may retain semantic tag selectors. For measured hotspots, add renderer-owned classes; `:where(.owned-class)` can narrow a compound selector without increasing specificity. Preserve raw HTML, nested lists, mixed table cells, and math rendering behavior.
+- Check matching and cascade equivalence when rewriting selectors. Use short Selector Stats captures to identify invalidation causes and ordinary traces to measure speedups; invalidation counts alone do not establish user-visible gains. Do not impose a blanket ban on sibling selectors.
+
 ## Commands
 
 Keep development/build entry points here. Verification commands are maintained

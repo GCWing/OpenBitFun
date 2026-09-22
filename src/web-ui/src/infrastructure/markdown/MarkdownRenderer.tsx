@@ -1707,14 +1707,23 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
       return <ol {...props}>{children}</ol>;
     },
     
-    li({ children, ...props }: any) {
-      return <li {...props}>{children}</li>;
+    li({ node: _node, children, className, ...props }: any) {
+      return <li {...props} className={['markdown-list-item', className].filter(Boolean).join(' ')}>{children}</li>;
+    },
+
+    th({ node: _node, children, className, ...props }: any) {
+      return <th {...props} className={['markdown-header-cell', className].filter(Boolean).join(' ')}>{children}</th>;
+    },
+
+    td({ node: _node, children, className, ...props }: any) {
+      return <td {...props} className={['markdown-data-cell', className].filter(Boolean).join(' ')}>{children}</td>;
     },
     
-    p({ children, align, style, ...props }: any) {
+    p({ node: _node, children, align, style, className, ...props }: any) {
       return (
         <p
           {...props}
+          className={['markdown-paragraph', className].filter(Boolean).join(' ')}
           style={align ? { ...style, textAlign: align } : style}
         >
           {children}
