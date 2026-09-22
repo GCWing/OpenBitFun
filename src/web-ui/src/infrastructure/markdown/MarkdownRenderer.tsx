@@ -48,6 +48,8 @@ const CANVAS_LINK_PREFIX = 'openbitfun-canvas://';
 const WORKSPACE_FOLDER_PLACEHOLDER = '{{workspaceFolder}}';
 
 const MarkdownMathRenderer = React.lazy(() => import('./MarkdownMathRenderer'));
+const ThinkingMarkdown = React.lazy(() => import('./ThinkingMarkdown'));
+const InlineFragment = ({ children }: { children?: ReactNode }) => <>{children}</>;
 
 function markdownUrlTransform(value: string, key?: string): string {
   if (/^openbitfun:\/\/(?:runtime|current-session)\//.test(value)) return value;
@@ -795,8 +797,8 @@ export interface FlowCodeBlockFallbackProps {
 }
 
 /**
- * Lightweight, stable line-numbered code renderer used while the surrounding
- * markdown is still streaming. Its layout deliberately matches the
+ * Lightweight, stable line-numbered code renderer used for thinking at all
+ * times, and for response Markdown while streaming. Its layout matches the
  * `react-syntax-highlighter` `showLineNumbers` output: a fixed-width inline
  * line-number column followed by the line content, separated visually by the
  * same padding. This keeps the code block from visibly jumping when streaming
@@ -915,7 +917,8 @@ function useLiveValueRef<T>(value: T): React.MutableRefObject<T> {
   return ref;
 }
 
-export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
+const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean }>(({
+  thinking = false,
   content, 
   sourceRange,
   workspaceId,
@@ -990,7 +993,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
     // which unmounts/remounts the code block and shifts its position every
     // tick. Append a synthetic closing fence so the AST stays a stable code
     // block from the moment the opening fence appears.
-    if (isStreaming) {
+    if (isStreaming && !thinking) {
       const fenceMatches = body.match(/^[ \t]{0,3}(`{3,}|~{3,})/gm);
       if (fenceMatches && fenceMatches.length % 2 === 1) {
         const lastFence = fenceMatches[fenceMatches.length - 1].trim();
@@ -1000,7 +1003,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
     }
 
     return body;
-  }, [contentStr, isStreaming]);
+  }, [contentStr, isStreaming, thinking]);
   const markdownContentRef = useLiveValueRef(markdownContent);
 
   const needsWorkspacePathForLinks = useMemo(
@@ -1329,7 +1332,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
       
       const streaming = isStreamingRef.current;
 
-      if (language.toLowerCase().startsWith('mermaid')) {
+      if (!thinking && language.toLowerCase().startsWith('mermaid')) {
         return (
           <MermaidBlock
             code={code}
@@ -1361,39 +1364,46 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
             <CopyButton code={code} />
           </div>
           <div className="code-block-body" data-openbitfun-component="markdown" data-openbitfun-part="codeBody">
-            {/*
-              Always mount AsyncPrismSyntaxHighlighter. While streaming,
-              preferFallback keeps the lightweight line-numbered pre so we do
-              not remount Fallback ↔ Prism when the turn finishes (that remount
-              flashed the chat pane).
-            */}
-            <AsyncPrismSyntaxHighlighter
-              language={normalizedLang}
-              style={syntaxThemeRef.current}
-              showLineNumbers={true}
-              customStyle={codeBodyStyle}
-              codeTagProps={{ style: codeTagStyle }}
-              lineNumberStyle={{
-                color: gutterColor,
-                fontStyle: 'italic',
-                paddingRight: '1em',
-                textAlign: 'right',
-                userSelect: 'none',
-                minWidth: '3em'
-              }}
-              preferFallback={streaming}
-              fallback={CodeBlockFallback}
-              fallbackProps={{
-                code,
-                language: normalizedLang,
-                bodyStyle: codeBodyStyle,
-                codeTagStyle,
-                gutterColor,
-              }}
-              traceContext={traceContextRef.current}
-            >
-              {code}
-            </AsyncPrismSyntaxHighlighter>
+            {/* Thinking must never mount a syntax highlighter, even after completion
+                or reopening. Bulk highlighting caused measured completion stalls;
+                keep this lightweight path independent of streaming state. */}
+            {thinking ? (
+              <CodeBlockFallback
+                code={code}
+                language={normalizedLang}
+                bodyStyle={codeBodyStyle}
+                codeTagStyle={codeTagStyle}
+                gutterColor={gutterColor}
+              />
+            ) : (
+              <AsyncPrismSyntaxHighlighter
+                language={normalizedLang}
+                style={syntaxThemeRef.current}
+                showLineNumbers={true}
+                customStyle={codeBodyStyle}
+                codeTagProps={{ style: codeTagStyle }}
+                lineNumberStyle={{
+                  color: gutterColor,
+                  fontStyle: 'italic',
+                  paddingRight: '1em',
+                  textAlign: 'right',
+                  userSelect: 'none',
+                  minWidth: '3em'
+                }}
+                preferFallback={streaming}
+                fallback={CodeBlockFallback}
+                fallbackProps={{
+                  code,
+                  language: normalizedLang,
+                  bodyStyle: codeBodyStyle,
+                  codeTagStyle,
+                  gutterColor,
+                }}
+                traceContext={traceContextRef.current}
+              >
+                {code}
+              </AsyncPrismSyntaxHighlighter>
+            )}
           </div>
         </div>
       );
@@ -1732,6 +1742,7 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
       );
     }
   }), [
+    thinking,
     onFileDownloadRef,
     onImageReadRef,
     onImagePreviewRef,
@@ -1759,9 +1770,45 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
   ]);
   
   const textRevealRef = useRef<HTMLDivElement>(null);
-  useStreamingTextReveal(textRevealRef, sourceRange ? contentStr.slice(sourceRange.start, sourceRange.end) : contentStr, isStreaming);
+  // Do not re-enable arrival fading for thinking: its full-document DOM scan
+  // caused measured frame drops on long streams. This guard also applies to
+  // completed/remounted thinking; typewriter text advancement is independent.
+  useStreamingTextReveal(textRevealRef, sourceRange ? contentStr.slice(sourceRange.start, sourceRange.end) : contentStr, isStreaming, !thinking);
 
   const wrapperClassName = `markdown-renderer ${className}`.trim();
+  const thinkingEnvironment = useMemo(() => ({
+    fileAccess, surfaceScope, currentWorkspacePath, workspaceId, basePath,
+    remoteConnectionId, remoteSshHost, onImageRead, onFileDownload,
+    fileActionsViaCallbackOnly, expandDetailsByDefault,
+  }), [fileAccess, surfaceScope, currentWorkspacePath, workspaceId, basePath,
+    remoteConnectionId, remoteSshHost, onImageRead, onFileDownload,
+    fileActionsViaCallbackOnly, expandDetailsByDefault]);
+  // Rare HTML/math fragments retain the existing sanitizer and product renderers.
+  // Ordinary thinking text never enters the full-document remark/rehype pipeline.
+  const renderThinkingFragment = useCallback((fragment: string, inline: boolean, math: boolean) => {
+    const fragmentComponents = inline ? { ...components, p: InlineFragment } : components;
+    const basicFragment = (
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
+        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+        urlTransform={markdownUrlTransform}
+        components={fragmentComponents}
+      >{fragment}</ReactMarkdown>
+    );
+    return math ? (
+      <React.Suspense fallback={basicFragment}>
+        <MarkdownMathRenderer
+          markdownContent={fragment}
+          isStreaming={isStreaming}
+          components={fragmentComponents}
+          sanitizeSchema={sanitizeSchema}
+          remarkAutolinkComputerFileLinks={remarkAutolinkInternalLinks}
+          urlTransform={markdownUrlTransform}
+          inline={inline}
+        />
+      </React.Suspense>
+    ) : basicFragment;
+  }, [components, isStreaming]);
   const basicMarkdownRenderer = (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
@@ -1786,7 +1833,19 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
         />
       )}
       <MarkdownErrorBoundary fallbackContent={sourceRange ? markdownContent.slice(sourceRange.start, sourceRange.end) : markdownContent}>
-        {shouldUseMathRenderer ? (
+        {thinking ? (
+          <React.Suspense fallback={contentStr}>
+            <ThinkingMarkdown
+              content={contentStr}
+              isStreaming={isStreaming}
+              isDark={!isLight}
+              components={components}
+              urlTransform={markdownUrlTransform}
+              renderFragment={renderThinkingFragment}
+              environment={thinkingEnvironment}
+            />
+          </React.Suspense>
+        ) : shouldUseMathRenderer ? (
           <React.Suspense fallback={basicMarkdownRenderer}>
             <MarkdownMathRenderer
               markdownContent={markdownContent}
@@ -1805,3 +1864,8 @@ export const MarkdownRenderer = React.memo<MarkdownRendererProps>(({
     </div>
   );
 });
+
+export const MarkdownRenderer = React.memo<MarkdownRendererProps>(props => <MarkdownSurface {...props} />);
+
+/** Deliberately opt in only from the thinking surface, never from response bodies. */
+export const ThinkingMarkdownRenderer = React.memo<Omit<MarkdownRendererProps, 'sourceRange'>>(props => <MarkdownSurface {...props} thinking />);

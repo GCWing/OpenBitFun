@@ -12,7 +12,7 @@ vi.mock('@openbitfun/ui', () => ({
   Icon: () => null,
 }));
 vi.mock('@/infrastructure/markdown', () => ({
-  MarkdownRenderer: ({ content }: { content: string }) => <div data-testid="body">{content}</div>,
+  ThinkingMarkdownRenderer: ({ content }: { content: string }) => <div data-testid="body">{content}</div>,
 }));
 vi.mock('./useToolCardHeightContract', () => ({
   useToolCardHeightContract: () => ({

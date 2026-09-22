@@ -17,9 +17,9 @@ function cleanup() { cleanups.splice(0).forEach(fn => fn()); }
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { STREAMING_TEXT_REVEAL_MS, useStreamingTextReveal } from './useStreamingTextReveal';
 
-function Fixture({ text, streaming = true }: { text: string; streaming?: boolean }) {
+function Fixture({ text, streaming = true, enabled = true }: { text: string; streaming?: boolean; enabled?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
-  useStreamingTextReveal(ref, text, streaming);
+  useStreamingTextReveal(ref, text, streaming, enabled);
   return <div ref={ref}><p>{text}</p><button>Copy</button></div>;
 }
 let highlights: Map<string, Set<Range>>;
@@ -36,6 +36,31 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('streaming text arrival paint', () => {
+  it('skips DOM scanning while disabled and clears active paint without replay on re-enable', () => {
+    const scan = vi.spyOn(document, 'createTreeWalker');
+    try {
+      const view = render(<Fixture text="A" enabled={false} />);
+      view.rerender(<Fixture text="AB" enabled={false} />);
+      expect(scan).not.toHaveBeenCalled();
+      expect(visibleRanges()).toEqual([]);
+      view.rerender(<Fixture text="AB" />);
+      expect(visibleRanges()).toEqual([]);
+      view.rerender(<Fixture text="ABC" />);
+      expect(visibleRanges()).toEqual(['C']);
+      scan.mockClear();
+      view.rerender(<Fixture text="ABCD" enabled={false} />);
+      expect(scan).not.toHaveBeenCalled();
+      expect(highlights.size).toBe(0);
+      expect(view.container.querySelector('[data-stream-reveal-active]')).toBeNull();
+      view.rerender(<Fixture text="ABCDE" />);
+      expect(visibleRanges()).toEqual([]);
+      view.rerender(<Fixture text="ABCDEF" />);
+      expect(visibleRanges()).toEqual(['F']);
+    } finally {
+      scan.mockRestore();
+    }
+  });
+
   it('fades only appended glyphs without replacing text nodes or wrapping spans', () => {
     const view = render(<Fixture text="Already here" />);
     const textNode = view.container.querySelector('p')!.firstChild;

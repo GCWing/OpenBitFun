@@ -42,13 +42,13 @@ function readRuns(root: HTMLElement): { runs: TextRun[]; text: string } {
 }
 
 /**
- * Paint-only arrival treatment, shared by every streaming Markdown surface.
+ * Paint-only arrival treatment for streaming Markdown surfaces that opt in.
  * Ranges leave React's text nodes, selection, wrapping and virtualizer geometry
  * untouched. Each owner removes only its own ranges from the shared buckets.
  * Existing text on mount (including virtualized remounts) is already settled.
  */
 export function useStreamingTextReveal(
-  rootRef: RefObject<HTMLDivElement>, source: string, streaming: boolean,
+  rootRef: RefObject<HTMLDivElement>, source: string, streaming: boolean, enabled = true,
 ): void {
   const previous = useRef<{ source: string; text: string } | null>(null);
   const arrivals = useRef<Arrival[]>([]);
@@ -93,6 +93,12 @@ export function useStreamingTextReveal(
   stopRef.current = stop;
 
   useLayoutEffect(() => {
+    if (!enabled) {
+      stopRef.current();
+      arrivals.current = [];
+      previous.current = null;
+      return;
+    }
     const root = rootRef.current;
     if (!root) return;
     const view = root.ownerDocument.defaultView;
@@ -184,9 +190,10 @@ export function useStreamingTextReveal(
     };
     // Layout timing styles newly committed glyphs before their first paint.
     paint(view.performance.now());
-  }, [source, streaming, rootRef]);
+  }, [source, streaming, rootRef, enabled]);
 
   useLayoutEffect(() => {
+    if (!enabled) return;
     const document = rootRef.current?.ownerDocument;
     const media = document?.defaultView?.matchMedia?.('(prefers-reduced-motion: reduce)');
     const clear = () => { stopRef.current(); arrivals.current = []; };
@@ -199,5 +206,5 @@ export function useStreamingTextReveal(
       media?.removeEventListener?.('change', onPreference);
       document?.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [rootRef]);
+  }, [rootRef, enabled]);
 }

@@ -1,4 +1,4 @@
-export { MarkdownRenderer } from './MarkdownRenderer';
+export { MarkdownRenderer, ThinkingMarkdownRenderer } from './MarkdownRenderer';
 export type {
   MarkdownRendererProps,
   MarkdownTraceContext,

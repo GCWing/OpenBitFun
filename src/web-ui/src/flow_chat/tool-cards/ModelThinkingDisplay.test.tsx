@@ -45,7 +45,7 @@ vi.mock('./useToolCardHeightContract', () => ({
 }));
 
 vi.mock('@/infrastructure/markdown', () => ({
-  MarkdownRenderer: ({ content }: { content: string }) => {
+  ThinkingMarkdownRenderer: ({ content }: { content: string }) => {
     markdownRender(content);
     return <div data-testid="thinking-markdown">{content}</div>;
   },
