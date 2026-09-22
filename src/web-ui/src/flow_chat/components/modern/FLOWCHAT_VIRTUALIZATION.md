@@ -20,6 +20,18 @@ cancelled rounds precede it. That boundary prevents cross-round grouping from
 hiding the label; ordinary within-round tool folding remains available. Round ids
 and virtual row keys stay unchanged, with no viewport writes or mount animation.
 
+## Collapsed thinking content lifetime
+
+Thinking cards mount their Markdown body only while expanded or finishing a
+collapse transition. Initially collapsed rows therefore do not parse or build
+hidden Markdown when virtualization remounts them. Closing content is released
+when the actual grid transition finishes or is cancelled; without a transition
+(including reduced motion), it is released immediately. Reopening invalidates
+the pending release. The typewriter and reveal gate retain their existing
+lifetime. `ModelThinkingDisplay.test.tsx` covers this lifecycle with supplied
+animation promises; browser animation fidelity and scroll performance still
+require runtime verification.
+
 ## Embedded session lifetime
 
 `BtwSessionPanel` keeps a lightweight tab-owned wrapper while its content is

@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FlowThinkingItem } from '../types/flow-chat';
 import { ModelThinkingDisplay } from './ModelThinkingDisplay';
 
+const markdownRender = vi.hoisted(() => vi.fn());
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, values?: { count?: number }) => ({
@@ -40,9 +42,10 @@ vi.mock('./useToolCardHeightContract', () => ({
 }));
 
 vi.mock('@/infrastructure/markdown', () => ({
-  MarkdownRenderer: ({ content }: { content: string }) => (
-    <div data-testid="thinking-markdown">{content}</div>
-  ),
+  MarkdownRenderer: ({ content }: { content: string }) => {
+    markdownRender(content);
+    return <div data-testid="thinking-markdown">{content}</div>;
+  },
 }));
 
 function summaryItem(content: string): FlowThinkingItem {
@@ -72,6 +75,7 @@ describe('ModelThinkingDisplay reasoning summary', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
+    markdownRender.mockClear();
   });
 
   afterEach(() => {
@@ -92,7 +96,50 @@ describe('ModelThinkingDisplay reasoning summary', () => {
     expect(panel?.getAttribute('data-expanded')).toBe('false');
     expect(label?.textContent).toBe('Preparing the repair');
     expect(label?.textContent).not.toContain('characters');
+    expect(markdownRender).not.toHaveBeenCalled();
   });
+
+  it('does not render a large collapsed reasoning body, including content updates', async () => {
+    const item = { ...summaryItem('**Reasoning**\n\n'.repeat(6000)),
+      reasoningKind: 'reasoning' as const, isStreaming: false, status: 'completed' as const };
+    await act(async () => root.render(<ModelThinkingDisplay thinkingItem={item} isLastItem={false} />));
+    await act(async () => root.render(<ModelThinkingDisplay
+      thinkingItem={{ ...item, content: `${item.content}More` }} isLastItem={false} />));
+    expect(markdownRender).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="chat-thinking-content"]')).toBeNull();
+  });
+
+  it('mounts and releases content when forced expansion changes without an animation', async () => {
+    const item = summaryItem('**Full summary**');
+    await act(async () => root.render(<ModelThinkingDisplay thinkingItem={item} forceExpanded />));
+    expect(container.querySelector('[data-testid="thinking-markdown"]')?.textContent).toBe(item.content);
+    await act(async () => root.render(<ModelThinkingDisplay thinkingItem={item} />));
+    expect(container.querySelector('[data-testid="thinking-markdown"]')).toBeNull();
+  });
+
+  it.each(['finish', 'cancel', 'reopen'] as const)(
+    'retains closing content until the actual transition settles: %s', async outcome => {
+      await act(async () => root.render(<ModelThinkingDisplay thinkingItem={summaryItem('**Body**')} />));
+      const toggle = container.querySelector('[data-testid="chat-thinking-toggle"]') as HTMLElement;
+      await act(async () => toggle.click());
+      const body = container.querySelector('[data-testid="thinking-markdown"]');
+      let finish!: () => void;
+      let cancel!: () => void;
+      const finished = new Promise<void>((resolve, reject) => {
+        finish = resolve;
+        cancel = () => reject(new Error('Transition cancelled'));
+      });
+      const expandContainer = container.querySelector('[data-openbitfun-part="expandContainer"]') as HTMLElement;
+      Object.defineProperty(expandContainer, 'getAnimations', {
+        value: () => [{ transitionProperty: 'grid-template-rows', finished }],
+      });
+      await act(async () => toggle.click());
+      expect(container.querySelector('[data-testid="thinking-markdown"]')).toBe(body);
+      if (outcome === 'reopen') await act(async () => toggle.click());
+      await act(async () => { if (outcome === 'finish') finish(); else cancel(); });
+      expect(container.querySelector('[data-testid="thinking-markdown"]')).toBe(outcome === 'reopen' ? body : null);
+    },
+  );
 
   it('uses design-system thinking and disclosure icons in the header', async () => {
     await act(async () => {

@@ -71,6 +71,32 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
   ));
 
   const [isExpanded, setIsExpanded] = useState(shouldDefaultExpanded);
+  const [retainClosingContent, setRetainClosingContent] = useState(shouldDefaultExpanded);
+  const expandContainerRef = useRef<HTMLDivElement>(null);
+  const shouldMountContent = isExpanded || retainClosingContent;
+
+  // Keep the existing collapse transition, but never build a hidden Markdown
+  // tree on an initially collapsed virtual-row mount. Observe actual CSS
+  // transitions so reduced motion and cancelled transitions also release it.
+  useLayoutEffect(() => {
+    if (isExpanded) {
+      setRetainClosingContent(true);
+      return;
+    }
+    if (!retainClosingContent) return;
+    const transitions = expandContainerRef.current?.getAnimations?.().filter(animation => (
+      'transitionProperty' in animation && animation.transitionProperty === 'grid-template-rows'
+    )) ?? [];
+    if (transitions.length === 0) {
+      setRetainClosingContent(false);
+      return;
+    }
+    let cancelled = false;
+    void Promise.allSettled(transitions.map(animation => animation.finished)).then(() => {
+      if (!cancelled) setRetainClosingContent(false);
+    });
+    return () => { cancelled = true; };
+  }, [isExpanded, retainClosingContent]);
   const userToggledRef = useRef(false);
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId: thinkingItem.id,
@@ -400,6 +426,7 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
       </div>
 
       <div
+        ref={expandContainerRef}
         className={[
           'thinking-expand-container',
           isExpanded ? 'thinking-expand-container--open' : '',
@@ -407,7 +434,7 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
         data-openbitfun-component="model-thinking-display"
         data-openbitfun-part="expandContainer"
       >
-        <div className={`thinking-content-wrapper ${scrollState.hasScroll ? 'has-scroll' : ''} ${scrollState.atTop ? 'at-top' : ''} ${scrollState.atBottom ? 'at-bottom' : ''}`} data-openbitfun-component="model-thinking-display" data-openbitfun-part="contentWrapper">
+        {shouldMountContent && <div className={`thinking-content-wrapper ${scrollState.hasScroll ? 'has-scroll' : ''} ${scrollState.atTop ? 'at-top' : ''} ${scrollState.atBottom ? 'at-bottom' : ''}`} data-openbitfun-component="model-thinking-display" data-openbitfun-part="contentWrapper">
           <div
             ref={contentRef}
             data-openbitfun-component="model-thinking-display"
@@ -429,7 +456,7 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
               className="thinking-markdown"
             />
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );
