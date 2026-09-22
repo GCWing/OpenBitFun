@@ -15,7 +15,11 @@ describe('overflow text full-content access', () => {
   const resizeCallbacks = new Set<() => void>();
   const longLabel = 'Run independent tasks concurrently whenever possible';
 
-  const render = (content: React.ReactNode) => act(() => root.render(content));
+  const flushMeasurement = () => act(() => vi.advanceTimersByTime(1));
+  const render = (content: React.ReactNode) => {
+    act(() => root.render(content));
+    flushMeasurement();
+  };
   const hover = (element: Element) => act(() => {
     element.dispatchEvent(new MouseEvent('mouseenter'));
   });
@@ -75,6 +79,37 @@ describe('overflow text full-content access', () => {
     expect(button.getAttribute('aria-describedby')).toBe('help');
   });
 
+  it('defers mount reads and coalesces repeated resize notifications for all labels', () => {
+    const reads: string[] = [];
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      reads.push(this.textContent ?? '');
+      // No label may publish an overflow state while this batch is reading.
+      expect(host.querySelector('[data-overflow="true"]')).toBeNull();
+      return 500;
+    });
+    act(() => root.render(<><OverflowText>First</OverflowText><OverflowText>Second</OverflowText></>));
+    act(() => {
+      resizeCallbacks.forEach(callback => { callback(); callback(); });
+    });
+    expect(reads).toEqual([]);
+    flushMeasurement();
+    expect(reads).toEqual(['First', 'Second']);
+    expect(host.querySelectorAll('[data-overflow="true"]')).toHaveLength(2);
+  });
+
+  it('cancels pending measurements on unmount and measures the latest props only', () => {
+    const read = vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get');
+    act(() => root.render(<OverflowText>{longLabel}</OverflowText>));
+    act(() => root.render(null));
+    flushMeasurement();
+    expect(read).not.toHaveBeenCalled();
+    act(() => root.render(<OverflowText>{longLabel}</OverflowText>));
+    act(() => root.render(<OverflowText>Short</OverflowText>));
+    flushMeasurement();
+    expect(read).toHaveBeenCalledOnce();
+    expect(host.querySelector('[data-overflow]')?.getAttribute('data-overflow')).toBe('false');
+  });
+
   it('keeps interaction-only ellipsis idle on virtual selection and reveals full text on focus', () => {
     render(<button data-overflow-trigger data-overflow-active="true">
       <OverflowText overflowStyle="ellipsis" marqueeTrigger="interaction" marqueeActive>
@@ -93,6 +128,7 @@ describe('overflow text full-content access', () => {
       availableWidth = 1000;
       resizeCallbacks.forEach(callback => callback());
     });
+    flushMeasurement();
     expect(label.getAttribute('data-overflow')).toBe('false');
     expect(tooltip()).toBeNull();
   });
@@ -202,6 +238,7 @@ describe('overflow text full-content access', () => {
     expect(tooltip()?.textContent).toBe(updated);
     availableWidth = 1000;
     act(() => resizeCallbacks.forEach(callback => callback()));
+    flushMeasurement();
     expect(tooltip()).toBeNull();
     hover(host.querySelector('[data-overflow]')!);
     reveal();
@@ -276,6 +313,7 @@ describe('overflow text full-content access', () => {
     reveal();
     expect(tooltip()?.textContent).toBe(longLabel);
     act(() => trigger.click());
+    flushMeasurement();
     const option = document.querySelector<HTMLButtonElement>('[role="option"]')!;
     expect(host.contains(option)).toBe(false);
     hover(option);

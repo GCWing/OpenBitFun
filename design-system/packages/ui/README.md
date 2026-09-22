@@ -189,6 +189,18 @@ overrides that text; `title=""` opts out when a surrounding native title owns th
 content. An explicit enclosing `Tooltip` suppresses automatic nested tooltips.
 Do not use marquee as the sole way to access information on touch surfaces.
 
+Overflow measurement is deferred to a shared animation-frame queue per window.
+Mount, content, resize, and font notifications coalesce; all queued labels read
+geometry before publishing state. Unmounted labels cancel their pending work.
+Overflow indicators and automatic tooltips become available after that frame,
+while the complete accessible text is present immediately. This avoids forcing
+layout separately inside each label's React mount effect.
+Requests made during a batch survive for the next frame; cancellation also
+discards unpublished results. A failing label does not abort other labels,
+and its error is reported asynchronously. This scheduling contract does not
+claim an overall scrolling speedup; first-frame visual behavior requires
+browser validation.
+
 Multi-line descriptions should normally wrap. Editable fields, source code,
 structured paths that need to preserve their suffix, and native controls keep
 their appropriate text treatment instead of receiving a blanket fade rule.
