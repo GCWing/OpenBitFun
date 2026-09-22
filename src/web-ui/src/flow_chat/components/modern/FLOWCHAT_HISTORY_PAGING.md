@@ -1,5 +1,17 @@
 # FlowChat History Paging
 
+## Prepend geometry snapshot
+
+`FlowChatPrependSnapshot` captures the old DOM scroll height in React's
+`getSnapshotBeforeUpdate`, only when a new head precedes the previous first
+item. The parent layout effect consumes that snapshot after mutation using the
+existing compensation bounds and viewport register. Ordinary virtual-window
+updates, tail appends and head trims do not read scroll height for this baseline.
+This avoids a synchronous layout read on every scroll-driven commit while
+including geometry changes since the last React render. Tests model growth at
+DOM mutation and verify snapshot ordering; runtime performance and remote
+scenarios require separate validation.
+
 The anchor renews its settle budget only when a correction reduces its measured
 residual (or reaches tolerance), or while a missing Turn is still awaited.
 An ineffective correction is remembered for that exact anchor/viewport geometry;

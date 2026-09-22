@@ -76,6 +76,7 @@ import {
   type HistoryBoundaryProximity,
 } from './flowChatHistoryBoundary';
 import { VirtualItemRenderer } from './VirtualItemRenderer';
+import { FlowChatPrependSnapshot } from './FlowChatPrependSnapshot';
 import { FlowChatOpeningBoundary } from './FlowChatOpeningBoundary';
 import { useFlowChatVolatileContext } from './FlowChatContext';
 import {
@@ -780,11 +781,8 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
    * Turn — takes it the rest of the way.
    */
   const firstItemKeyRef = useRef<string | null>(null);
-  /**
-   * The scroll range as of the last render, so a prepend can be told what the
-   * transcript actually grew by rather than only what was reserved for it.
-   */
-  const previousScrollHeightRef = useRef(0);
+  const prependSnapshotRef = useRef<{ firstKey: string; scrollHeight: number } | null>(null);
+  const prependItemKeys = useMemo(() => virtualItems.map(getVirtualItemStableKey), [virtualItems]);
   useLayoutEffect(() => {
     const previousFirstKey = firstItemKeyRef.current;
     const nextFirstKey = virtualItems[0] ? getVirtualItemStableKey(virtualItems[0]) : null;
@@ -792,10 +790,12 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
 
     const scroller = scrollerElementRef.current;
     if (!scroller) return;
-    const previousScrollHeightPx = previousScrollHeightRef.current;
-    previousScrollHeightRef.current = scroller.scrollHeight;
+    const snapshot = prependSnapshotRef.current;
+    prependSnapshotRef.current = null;
     if (isViewportSuspendedRef.current) return;
     if (previousFirstKey === null || previousFirstKey === nextFirstKey) return;
+    if (!snapshot || snapshot.firstKey !== previousFirstKey) return;
+    const previousScrollHeightPx = snapshot.scrollHeight;
     // Absent means the head was trimmed rather than extended, and there is no
     // prepended height to account for.
     const movedTo = virtualItems.findIndex(
@@ -2616,6 +2616,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   }
 
   return (
+    <FlowChatPrependSnapshot itemKeys={prependItemKeys} scrollerRef={scrollerElementRef} snapshotRef={prependSnapshotRef}>
     <FlowChatOpeningBoundary
       data-openbitfun-component="virtual-message-list"
       data-openbitfun-part="root"
@@ -2692,6 +2693,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         inputHeight={inputHeight}
       />
     </FlowChatOpeningBoundary>
+    </FlowChatPrependSnapshot>
   );
 });
 

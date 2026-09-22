@@ -1002,17 +1002,19 @@ describe('VirtualMessageList natural scroll contract', () => {
       options: { scrollHeightPx: number; growthPx: number; scrollTopPx?: number },
       run: (scroller: HTMLElement) => void,
     ) {
-      let scrollHeightPx = options.scrollHeightPx;
       const restoreLayout = fakeLayout({
         clientHeight: 600,
-        scrollHeight: () => scrollHeightPx,
+        // DOM geometry grows at mutation, not when new props are prepared.
+        // The prepend snapshot must still see the old range before that point.
+        scrollHeight: () => options.scrollHeightPx + (
+          container.querySelector('[data-turn-id="turn-old-0"]') ? options.growthPx : 0
+        ),
         turnTopFromScrollerTop: 500,
       });
       try {
         act(() => root.render(<VirtualMessageList />));
         const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
         scroller.scrollTop = options.scrollTopPx ?? 500;
-        scrollHeightPx += options.growthPx;
         run(scroller);
       } finally {
         restoreLayout();
@@ -1028,6 +1030,55 @@ describe('VirtualMessageList natural scroll contract', () => {
       ];
       act(() => root.render(<VirtualMessageList />));
     }
+
+    it('consumes each consecutive prepend once', () => {
+      const restoreLayout = fakeLayout({
+        clientHeight: 600,
+        scrollHeight: () => 3000 + container.querySelectorAll('[data-turn-id^="batch-"]').length * 40,
+        turnTopFromScrollerTop: 500,
+      });
+      try {
+        act(() => root.render(<VirtualMessageList />));
+        const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+        scroller.scrollTop = 500;
+        for (const batch of ['batch-a', 'batch-b']) {
+          mocks.items = [userMessage(batch, `${batch}-message`, 'Older'), ...mocks.items];
+          act(() => root.render(<VirtualMessageList />));
+        }
+        expect(scroller.scrollTop).toBe(580);
+        act(() => root.render(<VirtualMessageList />));
+        expect(scroller.scrollTop).toBe(580);
+      } finally { restoreLayout(); }
+    });
+
+    it('does not replay a prepend received while the viewport is suspended', () => {
+      const layout = {
+        clientWidth: 1000, clientHeight: 600,
+        scrollHeight: () => 3000 + (container.querySelector('[data-turn-id="turn-old-0"]') ? 80 : 0),
+        turnTopFromScrollerTop: 500,
+      };
+      const restoreLayout = fakeLayout(layout);
+      try {
+        act(() => root.render(<VirtualMessageList />));
+        const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+        scroller.scrollTop = 500;
+        const observer = resizeObservers.find(candidate => candidate.targets.has(scroller))!;
+        layout.clientHeight = 0;
+        act(() => observer.notify());
+        mocks.items = [userMessage('turn-old-0', 'message-old-0', 'Older'), ...mocks.items];
+        act(() => root.render(<VirtualMessageList />));
+        expect(scroller.scrollTop).toBe(500);
+        animationFrames.clear();
+        layout.clientHeight = 600;
+        act(() => observer.notify());
+        const resume = [...animationFrames.values()][0];
+        expect(resume).toBeDefined();
+        act(() => resume(16));
+        const afterResume = scroller.scrollTop;
+        act(() => root.render(<VirtualMessageList />));
+        expect(scroller.scrollTop).toBe(afterResume);
+      } finally { restoreLayout(); }
+    });
 
     it('moves the viewport by the height that was prepended', () => {
       // Three 40px items arrived above, so the reader's content is 120px lower
