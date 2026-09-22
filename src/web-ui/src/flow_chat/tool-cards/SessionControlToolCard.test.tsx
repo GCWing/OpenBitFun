@@ -58,7 +58,9 @@ describe('SessionControlToolCard', () => {
   let root: Root;
 
   beforeEach(() => {
-    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>');
+    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
+      pretendToBeVisual: true,
+    });
     vi.stubGlobal('window', dom.window);
     vi.stubGlobal('document', dom.window.document);
     vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
@@ -71,6 +73,7 @@ describe('SessionControlToolCard', () => {
     act(() => {
       root.unmount();
     });
+    dom.window.close();
     vi.unstubAllGlobals();
   });
 
