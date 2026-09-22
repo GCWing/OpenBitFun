@@ -5,6 +5,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FlowThinkingItem } from '../types/flow-chat';
 import { ModelThinkingDisplay } from './ModelThinkingDisplay';
+import { latestReasoningSummaryPreview } from '../utils/reasoningSummaryPresentation';
+
+vi.mock('../utils/reasoningSummaryPresentation', { spy: true });
 
 const markdownRender = vi.hoisted(() => vi.fn());
 
@@ -76,12 +79,34 @@ describe('ModelThinkingDisplay reasoning summary', () => {
     document.body.appendChild(container);
     root = createRoot(container);
     markdownRender.mockClear();
+    vi.mocked(latestReasoningSummaryPreview).mockClear();
   });
 
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+  });
+
+  it.each(['reasoning', undefined] as const)(
+    'skips summary processing for streaming reasoning (kind=%s)', async reasoningKind => {
+      const item = { ...summaryItem('**Reasoning**\n\n'.repeat(7000)), reasoningKind };
+      await act(async () => root.render(<ModelThinkingDisplay thinkingItem={item} />));
+      const content = `${item.content}More`;
+      await act(async () => root.render(<ModelThinkingDisplay thinkingItem={{ ...item, content }} />));
+      expect(latestReasoningSummaryPreview).not.toHaveBeenCalled();
+      expect(container.querySelector('[data-testid="thinking-markdown"]')?.textContent).toBe(content);
+    },
+  );
+
+  it('computes the preview when the kind changes to summary with unchanged content', async () => {
+    const item = summaryItem('**Latest summary**');
+    await act(async () => root.render(<ModelThinkingDisplay
+      thinkingItem={{ ...item, reasoningKind: 'reasoning' }} isLastItem={false} />));
+    expect(latestReasoningSummaryPreview).not.toHaveBeenCalled();
+    await act(async () => root.render(<ModelThinkingDisplay thinkingItem={item} isLastItem={false} />));
+    expect(latestReasoningSummaryPreview).toHaveBeenCalledWith(item.content);
+    expect(container.querySelector('[data-openbitfun-part="label"]')?.textContent).toBe('Latest summary');
   });
 
   it('defaults to a collapsed single-line preview of the latest summary part', async () => {

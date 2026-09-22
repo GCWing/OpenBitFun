@@ -113,6 +113,10 @@ export const TYPEWRITER_MIN_PAINT_INTERVAL_MS = 16;
 export const TYPEWRITER_FINISH_MIN_PAINT_INTERVAL_MS = 8;
 
 export interface TypewriterOptions {
+  /** Skip playback and drain immediately, e.g. when the owning body is hidden.
+   * Unlike animate=false (stream finished), this does not animate the backlog.
+   */
+  revealImmediately?: boolean;
   /**
    * Replay the whole current text on mount. Defaults to false: mounting starts
    * from the current text and only reveals later appended content.
@@ -209,8 +213,9 @@ export function useTypewriter(
   options: TypewriterOptions = {}
 ): TypewriterResult {
   const replayOnMount = options.replayOnMount ?? false;
+  const revealImmediately = options.revealImmediately ?? false;
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(getPrefersReducedMotion);
-  const shouldReplayInitialText = animate && replayOnMount && !prefersReducedMotion;
+  const shouldReplayInitialText = animate && replayOnMount && !prefersReducedMotion && !revealImmediately;
   const [displayText, setDisplayText] = useState(shouldReplayInitialText ? '' : targetText);
   const revealedRef = useRef(shouldReplayInitialText ? 0 : targetText.length);
   const targetRef = useRef(targetText);
@@ -220,7 +225,7 @@ export function useTypewriter(
   const lastPaintMsRef = useRef(0);
   const fractionalCarryRef = useRef(0);
 
-  const isRevealing = !prefersReducedMotion
+  const isRevealing = !revealImmediately && !prefersReducedMotion
     && (animate || displayText.length < targetText.length);
 
   useEffect(() => {
@@ -229,7 +234,7 @@ export function useTypewriter(
 
     const pageIsHidden = typeof document !== 'undefined'
       && document.visibilityState === 'hidden';
-    if (prefersReducedMotion || pageIsHidden) {
+    if (revealImmediately || prefersReducedMotion || pageIsHidden) {
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
@@ -342,7 +347,7 @@ export function useTypewriter(
     if (rafRef.current === null && targetText.length > revealedRef.current) {
       rafRef.current = requestAnimationFrame(tick);
     }
-  }, [targetText, animate, prefersReducedMotion]);
+  }, [targetText, animate, prefersReducedMotion, revealImmediately]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
@@ -380,5 +385,5 @@ export function useTypewriter(
     };
   }, []);
 
-  return { displayText, isRevealing };
+  return { displayText: revealImmediately ? targetText : displayText, isRevealing };
 }

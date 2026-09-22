@@ -59,11 +59,6 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
   } | null>(null);
 
   const isActive = isStreaming || status === 'streaming';
-  const { displayText: displayContent, isRevealing } = useTypewriter(
-    isSummary ? '' : content,
-    isActive && !isSummary,
-  );
-  useReportTypewriterReveal(thinkingItem.id, isRevealing);
   const shouldDefaultExpanded = forceExpanded || (!isSummary && (
     displayContext === 'subagent-projection'
       ? isActive || isLastItem
@@ -74,6 +69,14 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
   const [retainClosingContent, setRetainClosingContent] = useState(shouldDefaultExpanded);
   const expandContainerRef = useRef<HTMLDivElement>(null);
   const shouldMountContent = isExpanded || retainClosingContent;
+  const { displayText: displayContent, isRevealing } = useTypewriter(
+    isSummary ? '' : content,
+    isActive && !isSummary,
+    // Keep playback through the closing transition, then release the reveal
+    // gate and track current content without animating an invisible backlog.
+    { revealImmediately: !shouldMountContent },
+  );
+  useReportTypewriterReveal(thinkingItem.id, isRevealing);
 
   // Keep the existing collapse transition, but never build a hidden Markdown
   // tree on an initially collapsed virtual-row mount. Observe actual CSS
@@ -325,8 +328,10 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
   }, [content, t]);
 
   const summaryPreview = useMemo(
-    () => latestReasoningSummaryPreview(content),
-    [content],
+    // Ordinary reasoning never displays this preview. Avoid splitting and
+    // stripping its potentially large body on every streaming update.
+    () => isSummary ? latestReasoningSummaryPreview(content) : '',
+    [content, isSummary],
   );
 
   const handleToggleClick = () => {
