@@ -348,6 +348,7 @@ export function useFlowChatVirtualizer<T>({
   const reconcileOpeningMeasurementRef = useRef(reconcileOpeningMeasurement);
   reconcileOpeningMeasurementRef.current = reconcileOpeningMeasurement;
   const pendingMeasurementRef = useRef(false);
+  const pendingMeasurementShiftRef = useRef(false);
   const publishMeasuredOffsetRef = useRef<((actualOffsetPx?: number) => void) | null>(null);
   const syncViewportOffset = useCallback((actualOffsetPx: number) => {
     if (Number.isFinite(actualOffsetPx)) publishMeasuredOffsetRef.current?.(actualOffsetPx);
@@ -467,13 +468,19 @@ export function useFlowChatVirtualizer<T>({
     onChange: (_instance, sync) => {
       if (sync || !pendingMeasurementRef.current) return;
       pendingMeasurementRef.current = false;
+      const shifted = pendingMeasurementShiftRef.current;
+      pendingMeasurementShiftRef.current = false;
       // A trace showed rows 22..26 shrinking by 729px while range selection
       // still used 8669px. They unmounted, then remounted on the delayed 7940px
       // scroll event (113.8ms style work on removal). Reconcile through follow,
       // then publish the real offset before React selects the next window.
       // Retest: five row cleanups became zero; post-reveal sampling advanced
       // from 786.8ms to 596.4ms (single desktop trace, not paint timing).
-      if (reconcileOpeningMeasurementRef.current?.()) publishMeasuredOffsetRef.current?.();
+      const reconciled = reconcileOpeningMeasurementRef.current?.();
+      // Ordinary reading also shifts the real viewport when measured rows above
+      // it shrink. Publish that readback after the size cache updates, before
+      // selecting a window from the old offset and unmounting those same rows.
+      if (reconciled || shifted) publishMeasuredOffsetRef.current?.();
     },
     estimateSize,
     getItemKey: resolveItemKey,
@@ -515,6 +522,7 @@ export function useFlowChatVirtualizer<T>({
     // move the reader's existing content and needs a viewport shift.
     const fullyAboveViewport = isItemFullyAboveViewport(item.end, beforeScrollTopPx);
     const applied = fullyAboveViewport ? shiftViewport(delta) : false;
+    if (applied) pendingMeasurementShiftRef.current = true;
     const virtualItem = itemsRef.current[item.index];
     if (isViewportDiagnosticsEnabled()) {
       const diagnosticItem = virtualItem as {

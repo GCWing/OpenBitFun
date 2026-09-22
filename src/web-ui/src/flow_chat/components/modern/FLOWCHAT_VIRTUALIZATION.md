@@ -20,6 +20,19 @@ cancelled rounds precede it. That boundary prevents cross-round grouping from
 hiding the label; ordinary within-round tool folding remains available. Round ids
 and virtual row keys stay unchanged, with no viewport writes or mount animation.
 
+## Measurement compensation and cached offsets
+
+When the viewport owner accepts a shift for a measured row wholly above the
+reader, the virtualizer publishes the actual scroll offset after updating its
+size cache, before selecting the next rendered window. This applies during
+ordinary reading as well as opening reconciliation. Waiting for the native
+scroll event leaves the old offset paired with new row positions and can remove
+newly measured rows, then mount them again on that event. A refused shift does
+not trigger this readback. All viewport writes remain with the existing owner.
+`useFlowChatVirtualizer.initial-window.test.tsx` covers delayed scroll and
+scroll-end delivery using the real virtualizer and supplied geometry; it does
+not establish browser performance.
+
 ## Collapsed thinking content lifetime
 
 Thinking cards mount their Markdown body only while expanded or finishing a

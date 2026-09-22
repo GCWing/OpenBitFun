@@ -11,6 +11,7 @@ let latestApi: FlowChatVirtualizer;
 let reconcileEnabled = false;
 let shortOverscan = false;
 let viewportSuspended = false;
+let shiftEnabled = false;
 function Harness({ count, tail }: { count: number; tail: boolean }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -21,6 +22,12 @@ function Harness({ count, tail }: { count: number; tail: boolean }) {
     estimateItemHeightPx: () => 100,
     startAtTailOnMount: tail,
     isViewportSuspended: () => viewportSuspended,
+    shiftViewport: delta => {
+      const scroller = scrollerRef.current;
+      if (!shiftEnabled || !scroller) return false;
+      scroller.scrollTop += delta;
+      return true;
+    },
     reconcileOpeningMeasurement: () => {
       const scroller = scrollerRef.current;
       if (!reconcileEnabled || !scroller) return false;
@@ -56,6 +63,7 @@ describe('initial virtual window with the real virtualizer', () => {
     reconcileEnabled = false;
     shortOverscan = false;
     viewportSuspended = false;
+    shiftEnabled = false;
     vi.useFakeTimers();
     vi.stubGlobal('requestAnimationFrame', vi.fn().mockReturnValue(1));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
@@ -168,6 +176,28 @@ describe('initial virtual window with the real virtualizer', () => {
     viewportSuspended = false;
     act(() => latestApi.syncViewportOffset(scroller.scrollTop));
     expect(windows.at(-1)![0]).toBe(0);
+  });
+
+  it('keeps the measured reading window stable before the compensation scroll event arrives', () => {
+    shortOverscan = true;
+    render(34, true);
+    shiftEnabled = true;
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => {
+      scroller.scrollTop = 2500;
+      scroller.dispatchEvent(new Event('scroll'));
+    });
+    act(() => latestApi.measureRenderedItems());
+    expect(scroller.scrollTop).toBeLessThan(2500);
+    const committedWindow = [...windows.at(-1)!];
+    const mountedRows = [...host.querySelectorAll('[data-virtual-index]')];
+    // Scroll-end still holds the offset from before the owner applied the shift.
+    act(() => vi.advanceTimersByTime(200));
+    expect(windows.at(-1)).toEqual(committedWindow);
+    expect([...host.querySelectorAll('[data-virtual-index]')]).toEqual(mountedRows);
+    act(() => scroller.dispatchEvent(new Event('scroll')));
+    expect(windows.at(-1)).toEqual(committedWindow);
+    expect([...host.querySelectorAll('[data-virtual-index]')]).toEqual(mountedRows);
   });
 
   it.each([false, true])('reconciles measured overscan before delayed events (enabled=%s)', enabled => {
