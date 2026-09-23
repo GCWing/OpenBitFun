@@ -5,6 +5,24 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { TerminalOutputFallback } from './LazyTerminalOutputRenderer';
+import { readTerminalOutputFontFamily } from './terminalOutputPresentation';
+import { getTypographyTokenValue } from '@/infrastructure/design-system/typographyRuntime';
+
+it('resolves the active output font at use time rather than module import time', () => {
+  const style = document.documentElement.style;
+  const property = '--openbitfun-font-family-mono';
+  const previous = style.getPropertyValue(property);
+  try {
+    const family = '"Fira Code", "OpenBitFun HarmonyOS Sans SC", monospace';
+    style.setProperty(property, family);
+    expect(readTerminalOutputFontFamily()).toBe(family);
+    style.removeProperty(property);
+    expect(readTerminalOutputFontFamily()).toBe(getTypographyTokenValue('font.family.mono'));
+  } finally {
+    if (previous) style.setProperty(property, previous);
+    else style.removeProperty(property);
+  }
+});
 
 describe('TerminalOutputFallback', () => {
   let container: HTMLDivElement;

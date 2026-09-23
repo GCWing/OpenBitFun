@@ -20,7 +20,7 @@ import { sendDebugProbe } from '@/shared/utils/debugProbe';
 import { nowMs } from '@/shared/utils/timing';
 import {
   getTypographyTokenNumber,
-  getTypographyTokenValue,
+  readActiveTypographyTokenValue,
   readActiveTypographyTokenPx,
 } from '@/infrastructure/design-system/typographyRuntime';
 import { fontPreferenceService } from '@/infrastructure/font-preference';
@@ -188,7 +188,6 @@ function readTerminalFontSize(): number {
 }
 
 const DEFAULT_OPTIONS: TerminalOptions = {
-  fontFamily: getTypographyTokenValue('font.family.mono'),
   lineHeight: getTypographyTokenNumber('lineHeight.tight'),
   minimumContrastRatio: DEFAULT_XTERM_MINIMUM_CONTRAST_RATIO,
   cursorStyle: 'block',
@@ -251,6 +250,7 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
   // the black-background flash that occurs when a light theme is active.
   const mergedOptions = {
     ...DEFAULT_OPTIONS,
+    fontFamily: readActiveTypographyTokenValue('font.family.mono'),
     fontSize,
     ...options,
     theme: getInitialXtermColors(),

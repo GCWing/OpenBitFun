@@ -1,12 +1,14 @@
 import {
   getTypographyTokenNumber,
   getTypographyTokenPx,
-  getTypographyTokenValue,
+  readActiveTypographyTokenValue,
 } from '@/infrastructure/design-system/typographyRuntime';
 
 export const TERMINAL_OUTPUT_FONT_SIZE = getTypographyTokenPx('font.size.xs');
 export const TERMINAL_OUTPUT_LINE_HEIGHT = getTypographyTokenNumber('lineHeight.ui');
-export const TERMINAL_OUTPUT_FONT_FAMILY = getTypographyTokenValue('font.family.mono');
+export function readTerminalOutputFontFamily(): string {
+  return readActiveTypographyTokenValue('font.family.mono');
+}
 export const TERMINAL_OUTPUT_FONT_WEIGHT = getTypographyTokenNumber('font.weight.regular');
 export const TERMINAL_OUTPUT_FONT_WEIGHT_BOLD = getTypographyTokenNumber('font.weight.bold');
 
@@ -16,6 +18,7 @@ const DEFAULT_OUTPUT_ROW_HEIGHT = Math.ceil(
 
 let cachedDevicePixelRatio = 0;
 let cachedRowHeight = 0;
+let cachedFontFamily = '';
 
 export function getEstimatedTerminalOutputRowHeight(): number {
   if (typeof window === 'undefined') {
@@ -23,7 +26,8 @@ export function getEstimatedTerminalOutputRowHeight(): number {
   }
 
   const devicePixelRatio = window.devicePixelRatio || 1;
-  if (cachedRowHeight > 0 && cachedDevicePixelRatio === devicePixelRatio) {
+  const fontFamily = readTerminalOutputFontFamily();
+  if (cachedRowHeight > 0 && cachedDevicePixelRatio === devicePixelRatio && cachedFontFamily === fontFamily) {
     return cachedRowHeight;
   }
 
@@ -37,7 +41,7 @@ export function getEstimatedTerminalOutputRowHeight(): number {
       return DEFAULT_OUTPUT_ROW_HEIGHT;
     }
 
-    context.font = `${TERMINAL_OUTPUT_FONT_SIZE}px ${TERMINAL_OUTPUT_FONT_FAMILY}`;
+    context.font = `${TERMINAL_OUTPUT_FONT_SIZE}px ${fontFamily}`;
     const metrics = context.measureText('W');
     const fontHeight = metrics.fontBoundingBoxAscent + metrics.fontBoundingBoxDescent;
     if (!Number.isFinite(fontHeight) || fontHeight <= 0) {
@@ -47,6 +51,7 @@ export function getEstimatedTerminalOutputRowHeight(): number {
     const deviceCharHeight = Math.ceil(fontHeight * devicePixelRatio);
     const deviceCellHeight = Math.floor(deviceCharHeight * TERMINAL_OUTPUT_LINE_HEIGHT);
     cachedDevicePixelRatio = devicePixelRatio;
+    cachedFontFamily = fontFamily;
     cachedRowHeight = deviceCellHeight / devicePixelRatio;
     return cachedRowHeight;
   } catch {

@@ -4,7 +4,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { xtermAppearanceAdapter } from '@/infrastructure/appearance/adapters/XtermAppearanceAdapter';
 import { registerTerminalActions, unregisterTerminalActions } from '@/tools/terminal/services/TerminalActionManager';
 import {
-  TERMINAL_OUTPUT_FONT_FAMILY, TERMINAL_OUTPUT_FONT_SIZE, TERMINAL_OUTPUT_FONT_WEIGHT,
+  readTerminalOutputFontFamily, TERMINAL_OUTPUT_FONT_SIZE, TERMINAL_OUTPUT_FONT_WEIGHT,
   TERMINAL_OUTPUT_FONT_WEIGHT_BOLD, TERMINAL_OUTPUT_LINE_HEIGHT,
 } from '@/tools/terminal/components/terminalOutputPresentation';
 import type { TerminalProjection } from './backgroundTerminalReplay';
@@ -26,7 +26,7 @@ export default function BackgroundTerminalProjection({ projection }: {
     const element = host.current!;
     const terminal = new Terminal({
       disableStdin: true, cursorBlink: false, cursorInactiveStyle: 'none',
-      fontFamily: TERMINAL_OUTPUT_FONT_FAMILY, fontSize: TERMINAL_OUTPUT_FONT_SIZE,
+      fontFamily: readTerminalOutputFontFamily(), fontSize: TERMINAL_OUTPUT_FONT_SIZE,
       fontWeight: TERMINAL_OUTPUT_FONT_WEIGHT, fontWeightBold: TERMINAL_OUTPUT_FONT_WEIGHT_BOLD,
       lineHeight: TERMINAL_OUTPUT_LINE_HEIGHT, scrollback: 5000, convertEol: true,
       theme: xtermAppearanceAdapter.getColors('output'),
