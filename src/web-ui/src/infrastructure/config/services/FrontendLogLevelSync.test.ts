@@ -99,4 +99,27 @@ describe('FrontendLogLevelSync startup reads', () => {
     expect(loggerMocks.setIncludeSensitiveDiagnostics).toHaveBeenCalledWith(true);
     expect(loggerMocks.setFlowChatDiagnosticsEnabled).toHaveBeenCalledWith(false);
   });
+
+  it('defaults sensitive diagnostics to off when no saved preference exists (#3213)', async () => {
+    configApiMocks.getConfigs.mockResolvedValueOnce({
+      [LOGGING_LEVEL_PATH]: 'warn',
+    });
+    configApiMocks.getRuntimeLoggingInfo.mockResolvedValueOnce({ effectiveLevel: 'warn' });
+
+    const { initializeFrontendLogLevelSync } = await importSyncModule();
+    await initializeFrontendLogLevelSync();
+
+    expect(loggerMocks.setIncludeSensitiveDiagnostics).toHaveBeenCalledWith(false);
+  });
+
+  it('falls back to runtime info with sensitive diagnostics off when no saved preference exists (#3213)', async () => {
+    configApiMocks.getConfigs.mockResolvedValueOnce({});
+    configApiMocks.getRuntimeLoggingInfo.mockResolvedValueOnce({ effectiveLevel: 'error' });
+
+    const { initializeFrontendLogLevelSync } = await importSyncModule();
+    await initializeFrontendLogLevelSync();
+
+    expect(loggerMocks.setLevel).toHaveBeenCalledWith(4);
+    expect(loggerMocks.setIncludeSensitiveDiagnostics).toHaveBeenCalledWith(false);
+  });
 });
