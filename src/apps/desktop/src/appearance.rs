@@ -672,6 +672,10 @@ pub fn create_main_window(
             if let Err(error) = crate::window_webview_geometry::install(&window) {
                 error!("Failed to install main WebView geometry protection: {error}");
             }
+            #[cfg(target_os = "windows")]
+            if let Err(error) = crate::window_shell::install_frame_handling(&window) {
+                error!("Failed to install main window frame handling: {error}");
+            }
             let reapply_maximized = crate::restore_main_window_state(&window);
             crate::webview_recovery::install(&window);
             startup_trace.record_elapsed_step("native_window", "webview_build", build_started_at);
