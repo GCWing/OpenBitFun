@@ -97,6 +97,25 @@ class RemoteSessionStoreTest {
     }
 
     @Test
+    fun unrelatedSessionWorkDoesNotDropInFlightGoalChange() = runTest {
+        val transport = FakeSessionTransport().apply { capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]" }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        transport.commandGates["thread_goal"] = gate
+        store.dispatch(RemoteSessionIntent.UpdateDraft("/goal ship it"))
+        store.dispatch(RemoteSessionIntent.SendMessage("s-code", "/goal ship it")); runCurrent()
+        store.dispatch(RemoteSessionIntent.SetPermissionMode(SessionPermissionMode.FULL_ACCESS)); runCurrent()
+        assertTrue(assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.busy)
+        gate.complete(Unit); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertFalse(ready.threadGoal.busy)
+        assertEquals("ship it", ready.threadGoal.objective)
+        assertEquals("", ready.draft)
+        store.stop()
+    }
+
+    @Test
     fun goalRefreshKeepsUnknownStatusAndCloseKeepsStripFresh() = runTest {
         val transport = FakeSessionTransport().apply {
             capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]"

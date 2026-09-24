@@ -613,9 +613,6 @@ public class RemoteSessionStore internal constructor(
 
     private fun beginWork(): Long {
         workGeneration += 1
-        goalJob?.cancel()
-        val ready = _state.value as? RemoteSessionUiState.Ready
-        if (ready?.threadGoal?.busy == true) _state.value = ready.copy(threadGoal = ready.threadGoal.copy(busy = false))
         work?.cancel()
         historyWork?.cancel()
         modelCatalogRefresh?.cancel()
@@ -630,6 +627,7 @@ public class RemoteSessionStore internal constructor(
         permissionMailbox.select(null)
         setForeground(false)
         goalWatch?.cancel()
+        cancelGoalWork()
         activeCreateGeneration?.let { generation ->
             val requestId = (_createOperation.value as? CreateSessionOperationState.InFlight)?.requestId
             if (requestId != null) {
@@ -1623,8 +1621,24 @@ public class RemoteSessionStore internal constructor(
 
     private var goalJob: Job? = null
     private var goalJobMutates: Boolean = false
+    private var goalJobSessionId: String? = null
+    // Goal requests are owned by their session, not by the list/timeline work
+    // generation: scrolling or stopping a turn must not drop a change the host
+    // may already have applied.
+    private var goalGeneration: Long = 0
     private var goalWatch: Job? = null
     private var goalForeground: Boolean = true
+
+    private fun isCurrentGoal(token: Long): Boolean = token == goalGeneration
+
+    private fun cancelGoalWork() {
+        goalGeneration += 1
+        goalJob?.cancel()
+        goalJob = null
+        goalJobSessionId = null
+        val ready = _state.value as? RemoteSessionUiState.Ready
+        if (ready?.threadGoal?.busy == true) _state.value = ready.copy(threadGoal = ready.threadGoal.copy(busy = false))
+    }
 
     private fun goalAction(intent: RemoteSessionIntent.Goal, submittedDraft: String? = null) {
         val ready = _state.value as? RemoteSessionUiState.Ready ?: return
@@ -1635,6 +1649,9 @@ public class RemoteSessionStore internal constructor(
             return
         }
         val read = intent.action == ThreadGoalAction.OPEN || intent.action == ThreadGoalAction.READ
+        // A request for a session that is no longer open cannot publish; it
+        // must not hold back the newly opened session's goal either.
+        if (goalJob?.isActive == true && goalJobSessionId != intent.sessionId) cancelGoalWork()
         val inFlight = goalJob?.takeIf { it.isActive }
         // Any in-flight request already refreshes the goal; a user change never
         // waits behind a refresh, and runs after an earlier change instead of
@@ -1645,29 +1662,30 @@ public class RemoteSessionStore internal constructor(
         }
         val priorChange = inFlight?.takeIf { goalJobMutates }
         if (inFlight != null && priorChange == null) inFlight.cancel()
-        val generation = workGeneration
+        val generation = goalGeneration
         val draftVersion = draftRevision
         // Background refreshes of a loaded goal keep the panel interactive.
         val showsProgress = !read || !previous.loaded
         val visible = previous.visible || intent.action == ThreadGoalAction.OPEN
         _state.value = ready.copy(threadGoal = if (showsProgress) previous.copy(visible = visible, busy = true, failure = null) else previous.copy(visible = visible))
         goalJobMutates = !read
+        goalJobSessionId = intent.sessionId
         goalJob = scope.launch {
             try {
                 if (priorChange != null) {
                     priorChange.join()
                     val latest = _state.value as? RemoteSessionUiState.Ready ?: return@launch
-                    if (latest.selectedSessionId != intent.sessionId || !isCurrentWork(generation)) return@launch
+                    if (latest.selectedSessionId != intent.sessionId || !isCurrentGoal(generation)) return@launch
                     _state.value = latest.copy(threadGoal = latest.threadGoal.copy(busy = true, failure = null))
                 }
                 if (!hostCapabilitiesKnown) {
                     val info = transport.send<WorkspaceInfoResponse>(RemoteCommand(cmd = "get_workspace_info"))
-                    if (!isCurrentWork(generation)) return@launch
+                    if (!isCurrentGoal(generation)) return@launch
                     recordHostCapabilities(info.capabilities)
                 }
                 if ("thread_goal_v1" !in hostCapabilities) {
                     val latest = _state.value as? RemoteSessionUiState.Ready ?: return@launch
-                    if (latest.selectedSessionId == intent.sessionId && isCurrentWork(generation)) {
+                    if (latest.selectedSessionId == intent.sessionId && isCurrentGoal(generation)) {
                         _state.value = latest.copy(threadGoal = previous.copy(visible = latest.threadGoal.visible || intent.action != ThreadGoalAction.READ, failure = ThreadGoalFailure.UNSUPPORTED))
                     }
                     return@launch
@@ -1678,7 +1696,7 @@ public class RemoteSessionStore internal constructor(
                 ))
                 check(response.resp == "thread_goal") { response.message ?: "Invalid goal response" }
                 val latest = _state.value as? RemoteSessionUiState.Ready ?: return@launch
-                if (latest.selectedSessionId != intent.sessionId || !isCurrentWork(generation)) return@launch
+                if (latest.selectedSessionId != intent.sessionId || !isCurrentGoal(generation)) return@launch
                 val goal = response.goal
                 check(goal == null || goal.sessionId == intent.sessionId) { "Goal session mismatch" }
                 _state.value = latest.copy(threadGoal = ThreadGoalUiState(intent.sessionId).copy(
@@ -1700,7 +1718,7 @@ public class RemoteSessionStore internal constructor(
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Throwable) {
                 val latest = _state.value as? RemoteSessionUiState.Ready ?: return@launch
-                if (latest.selectedSessionId == intent.sessionId && isCurrentWork(generation)) {
+                if (latest.selectedSessionId == intent.sessionId && isCurrentGoal(generation)) {
                     _state.value = latest.copy(threadGoal = latest.threadGoal.copy(busy = false, visible = latest.threadGoal.visible || !read,
                         failure = if (read) ThreadGoalFailure.LOAD else ThreadGoalFailure.SAVE))
                 }

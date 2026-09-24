@@ -2080,12 +2080,23 @@ impl CoreServiceAgentRuntime {
                     .map(Some)
             }
             RemoteGoalAction::Pause | RemoteGoalAction::Resume => {
-                if *action == RemoteGoalAction::Resume {
-                    let existing = coordinator
-                        .get_thread_goal(session_id, &storage)
-                        .await
-                        .map_err(|e| e.to_string())?
-                        .ok_or("No goal to resume")?;
+                let existing = coordinator
+                    .get_thread_goal(session_id, &storage)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                // Clients act on a polled snapshot: a goal that finished in the
+                // meantime must not be paused and then revived through resume.
+                let status = if *action == RemoteGoalAction::Pause {
+                    let existing = existing.ok_or("No goal to pause")?;
+                    if existing.status == ThreadGoalStatus::Paused {
+                        return Ok(Some(existing));
+                    }
+                    if existing.status != ThreadGoalStatus::Active {
+                        return Err("Only an active goal can be paused".into());
+                    }
+                    ThreadGoalStatus::Paused
+                } else {
+                    let existing = existing.ok_or("No goal to resume")?;
                     if existing.status == ThreadGoalStatus::Active {
                         return Ok(Some(existing));
                     }
@@ -2099,10 +2110,6 @@ impl CoreServiceAgentRuntime {
                             "This goal cannot be resumed; edit its objective to start again".into(),
                         );
                     }
-                }
-                let status = if *action == RemoteGoalAction::Pause {
-                    ThreadGoalStatus::Paused
-                } else {
                     ThreadGoalStatus::Active
                 };
                 coordinator
