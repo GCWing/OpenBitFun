@@ -77,6 +77,26 @@ class RemoteSessionStoreTest {
     }
 
     @Test
+    fun goalRefreshStaysInteractiveAndChangesAreNeverDropped() = runTest {
+        val transport = FakeSessionTransport().apply { capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]" }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.Goal("s-code", ThreadGoalAction.OPEN)); runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        transport.commandGates["thread_goal"] = gate
+        advanceTimeBy(5001); runCurrent()
+        assertEquals("read", transport.commands.last { it.cmd == "thread_goal" }.action)
+        assertFalse(assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.busy)
+        store.dispatch(RemoteSessionIntent.SendMessage("s-code", "/goal pause")); runCurrent()
+        assertTrue(assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.busy)
+        store.dispatch(RemoteSessionIntent.SendMessage("s-code", "/goal resume")); runCurrent()
+        gate.complete(Unit); runCurrent()
+        assertEquals(listOf("read", "pause", "resume"), transport.commands.filter { it.cmd == "thread_goal" }.takeLast(3).map { it.action })
+        assertFalse(assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.busy)
+        store.stop()
+    }
+
+    @Test
     fun goalRefreshKeepsUnknownStatusAndCloseKeepsStripFresh() = runTest {
         val transport = FakeSessionTransport().apply {
             capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]"

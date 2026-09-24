@@ -53,7 +53,6 @@ for (const change of ['session', 'target']) test(`late goal response cannot publ
   const pending = f.controller.dispatch(new goal.GoalRequest(goal.GoalAction.Open));
   if (change === 'session') f.remote.activeSession = { sessionId: 'other' };
   if (change === 'target') f.manager.generation++;
-  if (change === 'close') await f.controller.dispatch(new goal.GoalRequest(goal.GoalAction.Close));
   resolve({ goal: { sessionId: 's', objective: 'stale', status: 'active' } }); await pending;
   assert.equal(f.remote.threadGoal.goal, undefined);
 });
@@ -87,4 +86,23 @@ test('background observation waits for foreground', async () => {
   assert.equal(f.commands.length, 1);
   f.controller.setForeground(true);
   assert.equal(f.commands.length, 2);
+});
+test('background refresh stays interactive and changes are never dropped', async () => {
+  const f = fixture();
+  await f.controller.dispatch(new goal.GoalRequest(goal.GoalAction.Open));
+  const pending = [];
+  f.manager.threadGoal = (...args) => { f.commands.push(args); return new Promise(done => pending.push(done)); };
+  const refresh = f.controller.dispatch(new goal.GoalRequest(goal.GoalAction.Read));
+  assert.equal(f.remote.threadGoal.busy, false);
+  const pause = f.controller.dispatch(new goal.GoalRequest(goal.GoalAction.Pause));
+  assert.equal(f.remote.threadGoal.busy, true);
+  const resume = f.controller.dispatch(new goal.GoalRequest(goal.GoalAction.Resume));
+  pending.shift()({ goal: { sessionId: 's', objective: 'stale refresh', status: 'active' } }); await refresh;
+  assert.equal(f.remote.threadGoal.goal.objective, 'ship it');
+  pending.shift()({ goal: { sessionId: 's', objective: 'ship it', status: 'paused' } });
+  await new Promise(done => setImmediate(done));
+  pending.shift()({ goal: { sessionId: 's', objective: 'ship it', status: 'active' } }); await Promise.all([pause, resume]);
+  assert.deepEqual(f.commands.slice(-3).map(command => command[1]), ['read', 'pause', 'resume']);
+  assert.equal(f.remote.threadGoal.goal.status, 'active');
+  assert.equal(f.remote.threadGoal.busy, false);
 });

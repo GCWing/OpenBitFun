@@ -4266,6 +4266,106 @@ mod tests {
         );
     }
 
+    async fn interrupt_new_turn(session_manager: &SessionManager, session_id: &str, turn_id: &str) {
+        session_manager
+            .start_dialog_turn(
+                session_id,
+                "Standard".to_string(),
+                "original work".to_string(),
+                Some(turn_id.to_string()),
+                None,
+                None,
+            )
+            .await
+            .expect("start turn");
+        session_manager
+            .mark_dialog_turn_interrupted(session_id, turn_id)
+            .await
+            .expect("interrupt turn");
+        session_manager
+            .update_session_state_for_turn_if_processing(session_id, turn_id, SessionState::Idle)
+            .await
+            .expect("settle idle");
+    }
+
+    #[tokio::test]
+    async fn goal_commands_abandon_interrupted_turn_only_after_changing_the_goal() {
+        let (scheduler, session_manager, _, root) = test_scheduler_with_persistence(true);
+        crate::agentic::coordination::coordinator::test_goal_scheduler::set(Some(
+            scheduler.clone(),
+        ));
+        let session_id = "goal-supersedes-interrupted";
+        let workspace = fixture_workspace_dir(root.path().join("workspace-goal-supersede"));
+        session_manager
+            .create_session_with_id(
+                Some(session_id.to_string()),
+                "Goal supersedes interrupted".to_string(),
+                "Standard".to_string(),
+                SessionConfig {
+                    workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create session");
+        let holds = || async {
+            session_manager
+                .latest_dialog_turn_holds_dispatch(session_id)
+                .await
+                .expect("hold check")
+        };
+        interrupt_new_turn(&session_manager, session_id, "turn-1").await;
+
+        // A rejected command must keep the recovery point.
+        scheduler
+            .coordinator
+            .update_thread_goal_objective(session_id, &workspace, "edit nothing".into())
+            .await
+            .expect_err("editing without a goal fails");
+        assert!(holds().await);
+
+        scheduler
+            .coordinator
+            .activate_session_goal(session_id.to_string(), Some("ship it".into()))
+            .await
+            .expect("activate goal");
+        assert!(!holds().await, "a new goal supersedes the interrupted turn");
+
+        // Pausing, and re-activating a goal that is not resumable, change no
+        // steering and keep the recovery point.
+        scheduler
+            .coordinator
+            .set_thread_goal_status(session_id, &workspace, ThreadGoalStatus::Paused)
+            .await
+            .expect("pause goal");
+        interrupt_new_turn(&session_manager, session_id, "turn-2").await;
+        scheduler
+            .coordinator
+            .set_thread_goal_status(session_id, &workspace, ThreadGoalStatus::Complete)
+            .await
+            .expect("complete goal");
+        scheduler
+            .coordinator
+            .set_thread_goal_status(session_id, &workspace, ThreadGoalStatus::Active)
+            .await
+            .expect("reactivate completed goal");
+        assert!(holds().await);
+
+        scheduler
+            .coordinator
+            .set_thread_goal_status(session_id, &workspace, ThreadGoalStatus::Paused)
+            .await
+            .expect("pause goal again");
+        scheduler
+            .coordinator
+            .set_thread_goal_status(session_id, &workspace, ThreadGoalStatus::Active)
+            .await
+            .expect("resume goal");
+        assert!(!holds().await, "resuming supersedes the interrupted turn");
+
+        crate::agentic::coordination::coordinator::test_goal_scheduler::set(None);
+    }
+
     #[tokio::test]
     async fn maintenance_does_not_release_parent_while_background_child_is_still_running() {
         let (scheduler, session_manager, _, root) = test_scheduler();

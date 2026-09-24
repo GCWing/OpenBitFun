@@ -2050,22 +2050,11 @@ impl CoreServiceAgentRuntime {
                 .ensure_session_runtime_ownership(session_id, None)
                 .map_err(|e| e.to_string())?;
         }
-        // Starting, editing or resuming a goal supersedes a pending interrupted
-        // turn; otherwise the goal's steering turn stays held behind it.
-        let abandon_interrupted_turn = || async {
-            let scheduler = get_global_scheduler().ok_or("Scheduler is unavailable")?;
-            scheduler
-                .abandon_interrupted_turn_for_goal(session_id)
-                .await
-                .map(|_| ())
-                .map_err(|e| e.to_string())
-        };
         let result = match action {
             RemoteGoalAction::Read => coordinator.get_thread_goal(session_id, &storage).await,
             RemoteGoalAction::Start => {
                 let value = objective.as_deref().unwrap_or("").trim();
                 openbitfun_runtime_ports::validate_thread_goal_objective(value)?;
-                abandon_interrupted_turn().await?;
                 let existing = coordinator
                     .get_thread_goal(session_id, &storage)
                     .await
@@ -2085,7 +2074,6 @@ impl CoreServiceAgentRuntime {
             RemoteGoalAction::Edit => {
                 let objective = objective.as_deref().unwrap_or("").trim();
                 openbitfun_runtime_ports::validate_thread_goal_objective(objective)?;
-                abandon_interrupted_turn().await?;
                 coordinator
                     .update_thread_goal_objective(session_id, &storage, objective.to_string())
                     .await
@@ -2098,7 +2086,6 @@ impl CoreServiceAgentRuntime {
                         .await
                         .map_err(|e| e.to_string())?
                         .ok_or("No goal to resume")?;
-                    abandon_interrupted_turn().await?;
                     if existing.status == ThreadGoalStatus::Active {
                         return Ok(Some(existing));
                     }

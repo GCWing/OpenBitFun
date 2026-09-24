@@ -1622,6 +1622,7 @@ public class RemoteSessionStore internal constructor(
     private var draftRevision: Long = 0
 
     private var goalJob: Job? = null
+    private var goalJobMutates: Boolean = false
     private var goalWatch: Job? = null
     private var goalForeground: Boolean = true
 
@@ -1633,16 +1634,32 @@ public class RemoteSessionStore internal constructor(
             _state.value = ready.copy(threadGoal = previous.copy(visible = false))
             return
         }
-        if (goalJob?.isActive == true) {
+        val read = intent.action == ThreadGoalAction.OPEN || intent.action == ThreadGoalAction.READ
+        val inFlight = goalJob?.takeIf { it.isActive }
+        // Any in-flight request already refreshes the goal; a user change never
+        // waits behind a refresh, and runs after an earlier change instead of
+        // being dropped.
+        if (read && inFlight != null) {
             if (intent.action == ThreadGoalAction.OPEN) _state.value = ready.copy(threadGoal = previous.copy(visible = true))
             return
         }
+        val priorChange = inFlight?.takeIf { goalJobMutates }
+        if (inFlight != null && priorChange == null) inFlight.cancel()
         val generation = workGeneration
         val draftVersion = draftRevision
-        val read = intent.action == ThreadGoalAction.OPEN || intent.action == ThreadGoalAction.READ
-        _state.value = ready.copy(threadGoal = previous.copy(visible = previous.visible || intent.action == ThreadGoalAction.OPEN, busy = true, failure = null))
+        // Background refreshes of a loaded goal keep the panel interactive.
+        val showsProgress = !read || !previous.loaded
+        val visible = previous.visible || intent.action == ThreadGoalAction.OPEN
+        _state.value = ready.copy(threadGoal = if (showsProgress) previous.copy(visible = visible, busy = true, failure = null) else previous.copy(visible = visible))
+        goalJobMutates = !read
         goalJob = scope.launch {
             try {
+                if (priorChange != null) {
+                    priorChange.join()
+                    val latest = _state.value as? RemoteSessionUiState.Ready ?: return@launch
+                    if (latest.selectedSessionId != intent.sessionId || !isCurrentWork(generation)) return@launch
+                    _state.value = latest.copy(threadGoal = latest.threadGoal.copy(busy = true, failure = null))
+                }
                 if (!hostCapabilitiesKnown) {
                     val info = transport.send<WorkspaceInfoResponse>(RemoteCommand(cmd = "get_workspace_info"))
                     if (!isCurrentWork(generation)) return@launch
