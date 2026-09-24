@@ -283,6 +283,7 @@ public class RemoteSessionStore internal constructor(
                 intent.sessionId,
                 RemoteCommand(cmd = "cancel_tool", toolId = intent.toolId, reason = intent.reason),
             )
+            is RemoteSessionIntent.Goal -> goalAction(intent)
             is RemoteSessionIntent.SetPermissionMode -> setPermissionMode(intent)
             is RemoteSessionIntent.RefreshPermissionMode -> refreshPermissionMode()
             RemoteSessionIntent.RefreshModelCatalog -> refreshModelCatalog()
@@ -612,6 +613,9 @@ public class RemoteSessionStore internal constructor(
 
     private fun beginWork(): Long {
         workGeneration += 1
+        goalJob?.cancel()
+        val ready = _state.value as? RemoteSessionUiState.Ready
+        if (ready?.threadGoal?.busy == true) _state.value = ready.copy(threadGoal = ready.threadGoal.copy(busy = false))
         work?.cancel()
         historyWork?.cancel()
         modelCatalogRefresh?.cancel()
@@ -625,6 +629,7 @@ public class RemoteSessionStore internal constructor(
         catalogSubscription?.cancel(); catalogRefresh?.cancel()
         permissionMailbox.select(null)
         setForeground(false)
+        goalWatch?.cancel()
         activeCreateGeneration?.let { generation ->
             val requestId = (_createOperation.value as? CreateSessionOperationState.InFlight)?.requestId
             if (requestId != null) {
@@ -1616,12 +1621,90 @@ public class RemoteSessionStore internal constructor(
 
     private var draftRevision: Long = 0
 
+    private var goalJob: Job? = null
+    private var goalWatch: Job? = null
+    private var goalForeground: Boolean = true
+
+    private fun goalAction(intent: RemoteSessionIntent.Goal, submittedDraft: String? = null) {
+        val ready = _state.value as? RemoteSessionUiState.Ready ?: return
+        if (ready.selectedSessionId != intent.sessionId) return
+        val previous = ready.threadGoal.takeIf { it.sessionId == intent.sessionId } ?: ThreadGoalUiState(intent.sessionId)
+        if (intent.action == ThreadGoalAction.CLOSE) {
+            _state.value = ready.copy(threadGoal = previous.copy(visible = false))
+            return
+        }
+        if (goalJob?.isActive == true) {
+            if (intent.action == ThreadGoalAction.OPEN) _state.value = ready.copy(threadGoal = previous.copy(visible = true))
+            return
+        }
+        val generation = workGeneration
+        val draftVersion = draftRevision
+        val read = intent.action == ThreadGoalAction.OPEN || intent.action == ThreadGoalAction.READ
+        _state.value = ready.copy(threadGoal = previous.copy(visible = previous.visible || intent.action == ThreadGoalAction.OPEN, busy = true, failure = null))
+        goalJob = scope.launch {
+            try {
+                if (!hostCapabilitiesKnown) {
+                    val info = transport.send<WorkspaceInfoResponse>(RemoteCommand(cmd = "get_workspace_info"))
+                    if (!isCurrentWork(generation)) return@launch
+                    recordHostCapabilities(info.capabilities)
+                }
+                if ("thread_goal_v1" !in hostCapabilities) {
+                    val latest = _state.value as? RemoteSessionUiState.Ready ?: return@launch
+                    if (latest.selectedSessionId == intent.sessionId && isCurrentWork(generation)) {
+                        _state.value = latest.copy(threadGoal = previous.copy(visible = latest.threadGoal.visible || intent.action != ThreadGoalAction.READ, failure = ThreadGoalFailure.UNSUPPORTED))
+                    }
+                    return@launch
+                }
+                val response = transport.send<com.openbitfun.mobile.core.protocol.RemoteGoalResponse>(RemoteCommand(
+                    cmd = "thread_goal", sessionId = intent.sessionId,
+                    action = if (read) "read" else intent.action.name.lowercase(), objective = intent.objective,
+                ))
+                check(response.resp == "thread_goal") { response.message ?: "Invalid goal response" }
+                val latest = _state.value as? RemoteSessionUiState.Ready ?: return@launch
+                if (latest.selectedSessionId != intent.sessionId || !isCurrentWork(generation)) return@launch
+                val goal = response.goal
+                check(goal == null || goal.sessionId == intent.sessionId) { "Goal session mismatch" }
+                _state.value = latest.copy(threadGoal = ThreadGoalUiState(intent.sessionId).copy(
+                    sessionId = intent.sessionId, visible = latest.threadGoal.visible, loaded = true,
+                    objective = goal?.objective, status = goal?.status ?: "unknown",
+                    tokensUsed = goal?.tokensUsed ?: 0, tokenBudget = goal?.tokenBudget,
+                ))
+                if (submittedDraft != null && draftRevision == draftVersion && latest.draft == submittedDraft) updateDraft("")
+                if (goalWatch?.isActive != true) {
+                    goalWatch = scope.launch {
+                        while (true) {
+                            delay(5000)
+                            val current = _state.value as? RemoteSessionUiState.Ready ?: break
+                            val selected = current.selectedSessionId ?: continue
+                            if (goalForeground && _connectionPhase.value == ConnectionPhase.CONNECTED) goalAction(RemoteSessionIntent.Goal(selected, ThreadGoalAction.READ))
+                        }
+                    }
+                }
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (_: Throwable) {
+                val latest = _state.value as? RemoteSessionUiState.Ready ?: return@launch
+                if (latest.selectedSessionId == intent.sessionId && isCurrentWork(generation)) {
+                    _state.value = latest.copy(threadGoal = latest.threadGoal.copy(busy = false, visible = latest.threadGoal.visible || !read,
+                        failure = if (read) ThreadGoalFailure.LOAD else ThreadGoalFailure.SAVE))
+                }
+            }
+        }
+    }
+
     private fun sendMessage(intent: RemoteSessionIntent.SendMessage, plan: RemoteSessionIntent.BuildPlan? = null) {
         val sessionId = intent.sessionId.trim()
         val content = intent.content
         if (sessionId.isEmpty() || (content.trim().isEmpty() && intent.images.isNullOrEmpty())) return
         val current = _state.value as? RemoteSessionUiState.Ready ?: return
         if (current.busy || current.selectedSessionId != sessionId || _connectionPhase.value != ConnectionPhase.CONNECTED) return
+        if (plan == null) {
+            parseThreadGoalCommand(content)?.let { (action, objective) ->
+                if (!intent.images.isNullOrEmpty()) {
+                    _state.value = current.copy(threadGoal = ThreadGoalUiState(sessionId).copy(visible = true, failure = ThreadGoalFailure.ATTACHMENTS))
+                } else goalAction(RemoteSessionIntent.Goal(sessionId, action, objective), content)
+                return
+            }
+        }
         val submittedDraftRevision = draftRevision
         val activeTurnId = current.timeline?.activeTurn?.turnId?.takeIf { it.isNotBlank() }
         val steering = plan == null && activeTurnId != null && "dialog_steer_v1" in hostCapabilities
@@ -2136,6 +2219,13 @@ public class RemoteSessionStore internal constructor(
     /** Relay replay proves log availability, not that the controlled host is online.
      * Keep foreground host probes for idle open conversations as well as lists. */
     private fun setForeground(active: Boolean) {
+        goalForeground = active
+        if (active) {
+            val ready = _state.value as? RemoteSessionUiState.Ready
+            if (ready?.selectedSessionId != null && ready.selectedSessionId == ready.threadGoal.sessionId) {
+                goalAction(RemoteSessionIntent.Goal(ready.threadGoal.sessionId, ThreadGoalAction.READ))
+            }
+        }
         if (active && healthWork?.isActive == true) return
         val generation = ++healthGeneration
         healthWork?.cancel()

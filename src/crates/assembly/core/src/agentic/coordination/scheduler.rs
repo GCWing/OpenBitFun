@@ -1644,6 +1644,46 @@ impl DialogScheduler {
             .await
     }
 
+    /// An explicit goal start/edit/resume supersedes interrupted-turn recovery,
+    /// like a new user message does; otherwise the goal's `AgentSession`
+    /// steering stays held behind the interrupted turn indefinitely.
+    pub(crate) async fn abandon_interrupted_turn_for_goal(
+        &self,
+        session_id: &str,
+    ) -> OpenBitFunResult<Option<String>> {
+        let _operation_guard = self.lock_session_operation(session_id).await;
+        if self.active_turns.contains(session_id)
+            || !self
+                .session_manager
+                .latest_dialog_turn_holds_dispatch(session_id)
+                .await?
+        {
+            return Ok(None);
+        }
+        let Some(turn_id) = self
+            .session_manager
+            .abandon_interrupted_dialog_turn(session_id, None)
+            .await?
+        else {
+            return Ok(None);
+        };
+        self.round_injection_buffer
+            .drain_for_turn(session_id, &turn_id);
+        self.coordinator
+            .emit_event(AgenticEvent::DialogTurnCancelled {
+                session_id: session_id.to_string(),
+                turn_id: turn_id.clone(),
+            })
+            .await;
+        if let Err(error) = self.try_start_next_queued_locked(session_id).await {
+            warn!(
+                "Failed to dispatch held queue after goal abandoned interrupted recovery: session_id={}, turn_id={}, error={}",
+                session_id, turn_id, error
+            );
+        }
+        Ok(Some(turn_id))
+    }
+
     async fn cancel_queued_or_active_turn_with_descendant_policy(
         &self,
         session_id: &str,
@@ -4167,6 +4207,63 @@ mod tests {
 
         assert!(started.is_none());
         assert_eq!(scheduler.queue_depth(session_id), 1);
+    }
+
+    #[tokio::test]
+    async fn goal_activation_abandons_interrupted_turn_hold() {
+        let (scheduler, session_manager, _, root) = test_scheduler_with_persistence(true);
+        let session_id = "goal-interrupted-hold";
+        let turn_id = "turn-interrupted";
+        let workspace = fixture_workspace_dir(root.path().join("workspace-goal-hold"));
+        session_manager
+            .create_session_with_id(
+                Some(session_id.to_string()),
+                "Goal interrupted hold".to_string(),
+                "Standard".to_string(),
+                SessionConfig {
+                    workspace_path: Some(workspace.to_string_lossy().into_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("create session");
+        session_manager
+            .start_dialog_turn(
+                session_id,
+                "Standard".to_string(),
+                "original work".to_string(),
+                Some(turn_id.to_string()),
+                None,
+                None,
+            )
+            .await
+            .expect("start turn");
+        session_manager
+            .mark_dialog_turn_interrupted(session_id, turn_id)
+            .await
+            .expect("interrupt turn");
+        session_manager
+            .update_session_state_for_turn_if_processing(session_id, turn_id, SessionState::Idle)
+            .await
+            .expect("settle idle");
+
+        let abandoned = scheduler
+            .abandon_interrupted_turn_for_goal(session_id)
+            .await
+            .expect("abandon should succeed");
+
+        assert_eq!(abandoned.as_deref(), Some(turn_id));
+        assert!(!session_manager
+            .latest_dialog_turn_holds_dispatch(session_id)
+            .await
+            .expect("hold check"));
+        assert_eq!(
+            scheduler
+                .abandon_interrupted_turn_for_goal(session_id)
+                .await
+                .expect("second abandon should be a no-op"),
+            None
+        );
     }
 
     #[tokio::test]

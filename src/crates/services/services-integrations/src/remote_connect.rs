@@ -554,6 +554,7 @@ where
 
 pub const REMOTE_FILE_MAX_READ_BYTES: u64 = 30 * 1024 * 1024;
 pub const REMOTE_FILE_MAX_CHUNK_BYTES: u64 = 3 * 1024 * 1024;
+pub const REMOTE_CAPABILITY_THREAD_GOAL_V1: &str = "thread_goal_v1";
 pub const REMOTE_CAPABILITY_HARNESS_PROFILES_V1: &str = "harness_profiles_v1";
 pub const REMOTE_CAPABILITY_DIALOG_STEER_V1: &str = "dialog_steer_v1";
 pub const REMOTE_CAPABILITY_USER_QUESTION_INTERACTION_V1: &str = "user_question_interaction_v1";
@@ -565,6 +566,7 @@ fn remote_host_capabilities() -> Vec<String> {
     vec![
         "workspace_id_references_v1".to_string(),
         REMOTE_CAPABILITY_HARNESS_PROFILES_V1.to_string(),
+        REMOTE_CAPABILITY_THREAD_GOAL_V1.to_string(),
         REMOTE_CAPABILITY_DIALOG_STEER_V1.to_string(),
         "dialog_queue_v1".to_string(),
         REMOTE_CAPABILITY_PLAN_BUILD_V1.to_string(),
@@ -2636,6 +2638,12 @@ pub struct RemoteControlClient {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum RemoteCommand {
+    ThreadGoal {
+        session_id: String,
+        action: RemoteGoalAction,
+        #[serde(default)]
+        objective: Option<String>,
+    },
     DialogQueue {
         request: openbitfun_runtime_ports::DialogQueueRequest,
     },
@@ -2887,10 +2895,25 @@ pub enum RemoteCommand {
     },
 }
 
+/// Explicit goal operations; clients must negotiate `thread_goal_v1` first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RemoteGoalAction {
+    Read,
+    Start,
+    Edit,
+    Pause,
+    Resume,
+    Clear,
+}
+
 /// Responses sent from desktop back to remote clients.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "resp", rename_all = "snake_case")]
 pub enum RemoteResponse {
+    ThreadGoal {
+        goal: Option<openbitfun_runtime_ports::ThreadGoal>,
+    },
     DialogQueue {
         snapshot: openbitfun_runtime_ports::DialogQueueSnapshot,
     },
@@ -3145,6 +3168,11 @@ pub enum RemoteResponse {
 pub trait RemoteCommandRuntimeHost: Send + Sync {
     type ImageContext: Send + Sync + 'static;
 
+    async fn handle_goal_command(&self, _command: &RemoteCommand) -> RemoteResponse {
+        RemoteResponse::Error {
+            message: "thread_goal_v1 is unsupported by this host".into(),
+        }
+    }
     async fn handle_workspace_command(&self, command: &RemoteCommand) -> RemoteResponse;
     async fn handle_session_command(&self, command: &RemoteCommand) -> RemoteResponse;
     async fn handle_poll_command(&self, command: &RemoteCommand) -> RemoteResponse;
@@ -3194,6 +3222,7 @@ where
     H: RemoteCommandRuntimeHost + ?Sized,
 {
     match command {
+        RemoteCommand::ThreadGoal { .. } => host.handle_goal_command(command).await,
         RemoteCommand::DialogQueue { request } => {
             match host.manage_dialog_queue(request.clone()).await {
                 Ok(snapshot) => RemoteResponse::DialogQueue { snapshot },
@@ -4487,6 +4516,33 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
+
+    #[test]
+    fn thread_goal_wire_round_trip_and_capability() {
+        for action in ["read", "start", "edit", "pause", "resume", "clear"] {
+            let wire = serde_json::json!({"cmd":"thread_goal", "session_id":"s1", "action":action});
+            let parsed: RemoteCommand = serde_json::from_value(wire).unwrap();
+            let round_trip: RemoteCommand =
+                serde_json::from_value(serde_json::to_value(&parsed).unwrap()).unwrap();
+            assert_eq!(parsed, round_trip);
+        }
+        assert!(remote_host_capabilities().contains(&REMOTE_CAPABILITY_THREAD_GOAL_V1.to_string()));
+        let empty: RemoteResponse =
+            serde_json::from_str(r#"{"resp":"thread_goal","goal":null}"#).unwrap();
+        assert_eq!(empty, RemoteResponse::ThreadGoal { goal: None });
+        // An older host's workspace response still has no new requirements.
+        let old: RemoteResponse = serde_json::from_str(
+            r#"{"resp":"workspace_info","has_workspace":false,"path":null,"project_name":null}"#,
+        )
+        .unwrap();
+        let round_trip: RemoteResponse =
+            serde_json::from_value(serde_json::to_value(&old).unwrap()).unwrap();
+        assert_eq!(old, round_trip);
+        assert!(serde_json::from_str::<RemoteCommand>(
+            r#"{"cmd":"thread_goal","session_id":"s1","action":"execute"}"#
+        )
+        .is_err());
+    }
 
     struct FakeWorkspaceHost;
 

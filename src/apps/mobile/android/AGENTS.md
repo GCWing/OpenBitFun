@@ -68,3 +68,8 @@ Run instrumented Gradle tests on a dedicated test emulator, not an authenticated
 manual-acceptance device. The test runner can uninstall the target application
 after the suite and remove its local account state. Use `adb install -r` for
 manual acceptance updates to preserve that state.
+
+For the native Goal panel, use `:app:connectedDebugAndroidTest
+-Pandroid.testInstrumentationRunnerArguments.class=com.openbitfun.mobile.app.ThreadGoalPanelTest`
+on a dedicated test emulator. Shared command/state coverage is documented in the
+mobile README.

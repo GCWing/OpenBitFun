@@ -1,3 +1,5 @@
+import { GoalRequest, parseGoalCommand, ThreadGoalState } from '../../model/ThreadGoal';
+import { RemoteGoalController } from './RemoteGoalController';
 import {
   REMOTE_CAPABILITY_DIALOG_STEER_V1,
   REMOTE_CAPABILITY_PLAN_BUILD_V1,
@@ -23,6 +25,7 @@ import {
 const REMOTE_TRANSCRIPT_CACHE_INTERVAL_MS: number = 400;
 
 export class RemoteTranscriptController {
+  readonly goals: RemoteGoalController;
   private readonly remote: RemotePageState;
   private readonly remoteRuntime?: RemoteConversationDependencies;
   private readonly notify: (message: string) => void;
@@ -47,6 +50,7 @@ export class RemoteTranscriptController {
     this.remote = remote;
     this.remoteRuntime = remoteRuntime;
     this.notify = notify;
+    this.goals = new RemoteGoalController(remote, remoteRuntime?.sessionManager);
   }
 
   knownPollVersion(): number {
@@ -54,6 +58,7 @@ export class RemoteTranscriptController {
   }
 
   resetKnownRemoteState(): void {
+    this.goals.reset();
     this.knownPollVersionValue = 0;
     this.knownModelCatalogVersion = 0;
     this.knownRemoteMessageCount = 0;
@@ -111,6 +116,17 @@ export class RemoteTranscriptController {
     const sessionId = this.remote.activeSession.sessionId || '';
     if ((!text && images.length === 0) || !sessionId || this.remote.isBusy || this.remote.connectionState !== 'connected' ||
       !runtime.connection.ensureAvailable()) {
+      return;
+    }
+    const goalCommand = parseGoalCommand(text);
+    if (goalCommand) {
+      if (images.length > 0) {
+        const state = new ThreadGoalState();
+        state.sessionId = sessionId;
+        state.visible = true;
+        state.failure = 'attachments';
+        this.remote.threadGoal = state;
+      } else await this.goals.dispatch(goalCommand, this.remote.chatInput);
       return;
     }
     const queuedBehindRunningTurn = this.hasRunningRemoteTurn();

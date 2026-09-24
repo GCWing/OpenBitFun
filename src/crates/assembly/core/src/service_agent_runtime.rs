@@ -2014,6 +2014,124 @@ impl CoreServiceAgentRuntime {
     }
 
     #[cfg(feature = "remote-connect")]
+    pub(crate) async fn remote_thread_goal(
+        dispatcher: &RemoteExecutionDispatcher,
+        command: &openbitfun_services_integrations::remote_connect::RemoteCommand,
+    ) -> Result<Option<openbitfun_runtime_ports::ThreadGoal>, String> {
+        use openbitfun_runtime_ports::ThreadGoalStatus;
+        use openbitfun_services_integrations::remote_connect::{RemoteCommand, RemoteGoalAction};
+        let RemoteCommand::ThreadGoal {
+            session_id,
+            action,
+            objective,
+        } = command
+        else {
+            return Err("expected thread_goal".into());
+        };
+        openbitfun_core_types::validate_session_id(session_id)?;
+        let host = Self::remote_dialog_host(dispatcher)?;
+        // Resolve only the session's authoritative host binding, never the
+        // controller's current directory or the host's selected workspace.
+        if !host.remote_session_exists(session_id).await? {
+            let binding = host
+                .resolve_binding_workspace(session_id)
+                .await
+                .ok_or_else(|| "Goal session workspace binding is unavailable".to_string())?;
+            host.restore_remote_session(session_id, binding).await?;
+        }
+        let coordinator = get_global_coordinator().ok_or("Runtime is unavailable")?;
+        let storage = coordinator
+            .get_session_manager()
+            .effective_session_storage_path(session_id)
+            .await
+            .ok_or_else(|| "Goal session storage is unavailable".to_string())?;
+        if *action != RemoteGoalAction::Read {
+            coordinator
+                .ensure_session_runtime_ownership(session_id, None)
+                .map_err(|e| e.to_string())?;
+        }
+        // Starting, editing or resuming a goal supersedes a pending interrupted
+        // turn; otherwise the goal's steering turn stays held behind it.
+        let abandon_interrupted_turn = || async {
+            let scheduler = get_global_scheduler().ok_or("Scheduler is unavailable")?;
+            scheduler
+                .abandon_interrupted_turn_for_goal(session_id)
+                .await
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        };
+        let result = match action {
+            RemoteGoalAction::Read => coordinator.get_thread_goal(session_id, &storage).await,
+            RemoteGoalAction::Start => {
+                let value = objective.as_deref().unwrap_or("").trim();
+                openbitfun_runtime_ports::validate_thread_goal_objective(value)?;
+                abandon_interrupted_turn().await?;
+                let existing = coordinator
+                    .get_thread_goal(session_id, &storage)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                // Re-delivery of the same active objective must not reset usage.
+                if existing
+                    .as_ref()
+                    .is_some_and(|goal| goal.is_active() && goal.objective == value)
+                {
+                    return Ok(existing);
+                }
+                coordinator
+                    .activate_session_goal(session_id.clone(), Some(value.to_string()))
+                    .await
+                    .map(Some)
+            }
+            RemoteGoalAction::Edit => {
+                let objective = objective.as_deref().unwrap_or("").trim();
+                openbitfun_runtime_ports::validate_thread_goal_objective(objective)?;
+                abandon_interrupted_turn().await?;
+                coordinator
+                    .update_thread_goal_objective(session_id, &storage, objective.to_string())
+                    .await
+                    .map(Some)
+            }
+            RemoteGoalAction::Pause | RemoteGoalAction::Resume => {
+                if *action == RemoteGoalAction::Resume {
+                    let existing = coordinator
+                        .get_thread_goal(session_id, &storage)
+                        .await
+                        .map_err(|e| e.to_string())?
+                        .ok_or("No goal to resume")?;
+                    abandon_interrupted_turn().await?;
+                    if existing.status == ThreadGoalStatus::Active {
+                        return Ok(Some(existing));
+                    }
+                    if !matches!(
+                        existing.status,
+                        ThreadGoalStatus::Paused
+                            | ThreadGoalStatus::Blocked
+                            | ThreadGoalStatus::UsageLimited
+                    ) {
+                        return Err(
+                            "This goal cannot be resumed; edit its objective to start again".into(),
+                        );
+                    }
+                }
+                let status = if *action == RemoteGoalAction::Pause {
+                    ThreadGoalStatus::Paused
+                } else {
+                    ThreadGoalStatus::Active
+                };
+                coordinator
+                    .set_thread_goal_status(session_id, &storage, status)
+                    .await
+                    .map(Some)
+            }
+            RemoteGoalAction::Clear => coordinator
+                .clear_thread_goal(session_id, &storage)
+                .await
+                .map(|_| None),
+        };
+        result.map_err(|e| e.to_string())
+    }
+
+    #[cfg(feature = "remote-connect")]
     pub(crate) fn remote_interaction_host() -> CoreRemoteInteractionRuntimeHost {
         CoreRemoteInteractionRuntimeHost::new()
     }
