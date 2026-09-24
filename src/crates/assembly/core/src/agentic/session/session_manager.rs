@@ -7978,8 +7978,14 @@ impl SessionManager {
         let generated_rounds =
             Self::build_model_rounds_from_messages(new_messages, turn_id, timestamp);
         let generated_count = generated_rounds.len();
+        // Rounds missing from the checkpoint (e.g. it was projected only after
+        // the Turn had already run for a while) must keep their generation
+        // order: hold them until the next matched round and insert them before
+        // it instead of appending them after the final answer.
+        let mut pending_rounds: Vec<ModelRoundData> = Vec::new();
+        let mut inserted_before_existing = false;
         for mut round in generated_rounds {
-            if let Some(existing_index) = turn
+            if let Some(mut existing_index) = turn
                 .model_rounds
                 .iter()
                 .position(|existing| existing.id == round.id)
@@ -8089,12 +8095,28 @@ impl SessionManager {
                 if existing.status != "streaming" {
                     round.status = existing.status.clone();
                 }
+                if !pending_rounds.is_empty() {
+                    let pending_count = pending_rounds.len();
+                    turn.model_rounds
+                        .splice(existing_index..existing_index, pending_rounds.drain(..));
+                    existing_index += pending_count;
+                    inserted_before_existing = true;
+                }
                 turn.model_rounds[existing_index] = round;
             } else {
-                round.round_index = next_round_index;
-                next_round_index = next_round_index.saturating_add(1);
-                turn.model_rounds.push(round);
+                pending_rounds.push(round);
             }
+        }
+        if inserted_before_existing {
+            for (index, round) in turn.model_rounds.iter_mut().enumerate() {
+                round.round_index = index;
+            }
+            next_round_index = turn.model_rounds.len();
+        }
+        for mut round in pending_rounds {
+            round.round_index = next_round_index;
+            next_round_index = next_round_index.saturating_add(1);
+            turn.model_rounds.push(round);
         }
         generated_count
     }
@@ -9929,6 +9951,48 @@ mod tests {
         assert!(!result.success);
         assert_eq!(result.error.as_deref(), Some("[guidance] Inputs are equal"));
         assert_eq!(result.result["error_detail"]["code"], "edit_no_change");
+    }
+
+    #[test]
+    fn generation_rounds_missing_from_checkpoint_keep_generation_order() {
+        let round = |round_id: &str, text: &str| {
+            let mut message = Message::assistant(text.to_string());
+            message.metadata.round_id = Some(round_id.to_string());
+            message
+        };
+        let early = [round("early-1", "explore"), round("early-2", "commit")];
+        let late = [round("late-1", "verify"), round("final", "done")];
+        let mut turn = DialogTurnData::new(
+            "turn-1".to_string(),
+            1,
+            "session-1".to_string(),
+            UserMessageData {
+                id: "user-1".to_string(),
+                content: "ship it".to_string(),
+                timestamp: 1,
+                metadata: None,
+            },
+        );
+        // A controller that attached mid-Turn only checkpointed the later rounds.
+        turn.model_rounds = SessionManager::build_model_rounds_from_messages(&late, "turn-1", 2);
+
+        let generation = [
+            early[0].clone(),
+            early[1].clone(),
+            late[0].clone(),
+            late[1].clone(),
+        ];
+        SessionManager::append_generation_rounds(&mut turn, "turn-1", &generation, 3);
+
+        let order = turn
+            .model_rounds
+            .iter()
+            .map(|round| (round.id.as_str(), round.round_index))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            order,
+            vec![("early-1", 0), ("early-2", 1), ("late-1", 2), ("final", 3)]
+        );
     }
 
     #[tokio::test]
