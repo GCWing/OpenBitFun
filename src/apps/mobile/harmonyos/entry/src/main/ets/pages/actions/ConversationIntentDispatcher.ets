@@ -1,3 +1,4 @@
+import { GoalRequest } from '../../model/ThreadGoal';
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { RemoteQuestionAnswerPayload, RemoteSession } from '../../model/RemoteModels';
 import { AppRoute, AppRouteContract } from '../navigation/AppRouteContract';
@@ -6,6 +7,7 @@ import { toRemoteQuestionAnswer } from '../state/ConversationUiModels';
 import { FilePreviewRequest } from '../../model/FilePreviewTarget';
 
 export interface ConversationIntentDispatcherHooks {
+  readonly goal?: (request: GoalRequest) => Promise<void>;
   readonly mailbox: (action: InteractionMailboxAction) => Promise<void>;
   readonly openSidebar: () => void;
   readonly back: () => void;
@@ -40,6 +42,9 @@ export class ConversationIntentDispatcher {
 
   dispatch(route: AppRoute, intent: ConversationIntent): void {
     switch (intent.type) {
+      case ConversationIntentType.Goal:
+        if (route === AppRoute.RemoteChat && intent.goalRequest) void this.hooks.goal?.(intent.goalRequest);
+        return;
       case ConversationIntentType.Mailbox: if (intent.mailboxAction) void this.hooks.mailbox(intent.mailboxAction); return;
       case ConversationIntentType.OpenSidebar: this.hooks.openSidebar(); return;
       case ConversationIntentType.Back: this.hooks.back(); return;

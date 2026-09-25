@@ -1,11 +1,11 @@
 use super::manager::PersistenceManager;
 use crate::agentic::core::{MessageContent, Session, SessionKind};
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
-use openbitfun_services_core::session::SessionBranchBoundary;
 use openbitfun_services_core::session::{
     build_branched_session_metadata, format_branch_session_name, resolve_branch_session_lineage,
     BranchSessionMetadataFacts,
 };
+use openbitfun_services_core::session::{SessionBranchBoundary, TurnStatus};
 pub use openbitfun_services_core::session::{SessionBranchRequest, SessionBranchResult};
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -112,6 +112,17 @@ impl PersistenceManager {
                     let mut branched_turn = turn.clone();
                     branched_turn.session_id = target_session_id.clone();
                     branched_turn.turn_index = new_index;
+                    // Recovery points and execution generations belong to the
+                    // source Session's runtime. A copied interrupted turn is
+                    // history in the branch, like an abandoned one; otherwise
+                    // it would hold dispatch there and resume in the wrong
+                    // context.
+                    if branched_turn.recovery.take().is_some()
+                        && branched_turn.status == TurnStatus::Cancelled
+                    {
+                        branched_turn.finish_reason = Some("cancelled".to_string());
+                    }
+                    branched_turn.recovery_epoch = None;
                     for tool in branched_turn
                         .model_rounds
                         .iter_mut()
@@ -817,6 +828,69 @@ mod tests {
                 "baseTitle": "Source Title"
             })
         );
+    }
+
+    #[tokio::test]
+    async fn branch_session_does_not_inherit_a_pending_interrupted_turn() {
+        use openbitfun_services_core::session::{
+            DialogTurnRecoveryData, DialogTurnRecoveryStatus, TurnStatus,
+        };
+
+        let workspace = TestWorkspace::new();
+        let manager =
+            PersistenceManager::new(workspace.path_manager()).expect("persistence manager");
+        let source_session = Session::new(
+            "Source Title".to_string(),
+            "Standard".to_string(),
+            Default::default(),
+        );
+        manager
+            .save_session(workspace.path(), &source_session)
+            .await
+            .expect("source session should save");
+        let mut interrupted = build_turn(&source_session.session_id, "turn-0", 0, "prompt");
+        interrupted.status = TurnStatus::Cancelled;
+        interrupted.finish_reason = Some("interrupted".to_string());
+        interrupted.recovery = Some(DialogTurnRecoveryData {
+            status: DialogTurnRecoveryStatus::Interrupted,
+            execution_generation: 2,
+            resume_count: 1,
+            interrupted_at: Some(1),
+            model_id: Some("model-a".to_string()),
+        });
+        interrupted.recovery_epoch = Some(2);
+        manager
+            .save_dialog_turn(workspace.path(), &interrupted)
+            .await
+            .expect("source turn should save");
+
+        let result = manager
+            .branch_session(
+                workspace.path(),
+                &SessionBranchRequest {
+                    source_session_id: source_session.session_id.clone(),
+                    source_turn_id: "turn-0".to_string(),
+                    boundary: SessionBranchBoundary::ThroughTurn,
+                },
+            )
+            .await
+            .expect("branch should succeed");
+
+        let turns = manager
+            .load_session_turns(workspace.path(), &result.session_id)
+            .await
+            .expect("branched turns should load");
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].status, TurnStatus::Cancelled);
+        assert_eq!(turns[0].recovery, None);
+        assert_eq!(turns[0].recovery_epoch, None);
+        assert_eq!(turns[0].finish_reason.as_deref(), Some("cancelled"));
+
+        let source_turns = manager
+            .load_session_turns(workspace.path(), &source_session.session_id)
+            .await
+            .expect("source turns should load");
+        assert!(source_turns[0].recovery.is_some());
     }
 
     #[tokio::test]

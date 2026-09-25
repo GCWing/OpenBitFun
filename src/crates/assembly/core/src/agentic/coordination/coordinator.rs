@@ -5016,6 +5016,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .await;
         drop(goal_guard);
         if objective_changed && result.goal.is_active() {
+            self.supersede_interrupted_turn_for_goal(session_id).await;
             self.apply_objective_updated_steering(session_id, &result.goal)
                 .await;
         }
@@ -5062,10 +5063,42 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .await;
         drop(goal_guard);
         if objective_changed && result.goal.is_active() {
+            self.supersede_interrupted_turn_for_goal(session_id).await;
             self.apply_objective_updated_steering(session_id, &result.goal)
                 .await;
         }
         Ok(result.goal)
+    }
+
+    /// A goal change that is about to steer the session supersedes a pending
+    /// interrupted turn, like a new user message does; otherwise the steering
+    /// stays held behind it. Runs only after the goal change has been
+    /// committed, so a rejected or no-op goal command keeps the recovery point.
+    ///
+    /// Returns a boxed future because abandoning re-enters the scheduler, whose
+    /// futures already await this coordinator's goal methods.
+    fn supersede_interrupted_turn_for_goal<'a>(
+        &'a self,
+        session_id: &'a str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+        #[cfg(test)]
+        let scheduler = test_goal_scheduler::current().or_else(get_global_scheduler);
+        #[cfg(not(test))]
+        let scheduler = get_global_scheduler();
+        Box::pin(async move {
+            let Some(scheduler) = scheduler else {
+                return;
+            };
+            if let Err(error) = scheduler
+                .abandon_interrupted_turn_for_goal(session_id)
+                .await
+            {
+                warn!(
+                    "Failed to abandon interrupted turn for goal steering: session_id={}, error={}",
+                    session_id, error
+                );
+            }
+        })
     }
 
     async fn apply_objective_updated_steering(&self, session_id: &str, goal: &ThreadGoal) {
@@ -5200,6 +5233,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             .await;
         drop(goal_guard);
         if resuming && result.goal.is_active() {
+            self.supersede_interrupted_turn_for_goal(session_id).await;
             clear_thread_goal_continuation_abort(session_id);
             self.schedule_thread_goal_resumed_steering(session_id, &result.goal);
         }
@@ -15438,6 +15472,27 @@ async fn new_btw_session_memory_mode_from_global_config() -> SessionMemoryMode {
 }
 
 // Global coordinator singleton
+/// Lets scheduler tests route goal-driven interrupted-turn abandonment to
+/// their own scheduler without touching the process-wide one.
+#[cfg(test)]
+pub(crate) mod test_goal_scheduler {
+    use super::super::scheduler::DialogScheduler;
+    use std::cell::RefCell;
+    use std::sync::Arc;
+
+    thread_local! {
+        static SCHEDULER: RefCell<Option<Arc<DialogScheduler>>> = const { RefCell::new(None) };
+    }
+
+    pub(crate) fn set(scheduler: Option<Arc<DialogScheduler>>) {
+        SCHEDULER.with(|slot| *slot.borrow_mut() = scheduler);
+    }
+
+    pub(super) fn current() -> Option<Arc<DialogScheduler>> {
+        SCHEDULER.with(|slot| slot.borrow().clone())
+    }
+}
+
 static GLOBAL_COORDINATOR: OnceLock<Arc<ConversationCoordinator>> = OnceLock::new();
 
 /// Get global coordinator

@@ -1,3 +1,4 @@
+import { GoalRequest } from '../../model/ThreadGoal';
 import { InteractionMailboxPanel } from './InteractionMailboxPanel';
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
@@ -366,6 +367,10 @@ export struct ConversationView {
   Composer() {
     Column() {
       ComposerBar({
+      goalEnabled: this.surface === ChatSurface.Remote,
+      goalState: this.state.threadGoal,
+      goalSessionId: this.state.activeSession.sessionId,
+      onGoal: (request: GoalRequest): void => this.onIntent(ConversationIntents.goal(request)),
       presentation: this.composerPresentation,
       capabilities: this.composerCapabilities,
       inputId: this.composerInputId,

@@ -173,3 +173,9 @@ node --test src/apps/mobile/harmonyos/tools/tests/workspace-editor.test.cjs
 
 The Chrome renderer test does not replace Harmony device-level keyboard and
 sheet-layout checks.
+
+For Goal parsing, host capability gating, stale responses and failed mutations,
+run `node --test tools/tests/thread-goal.test.cjs` plus `assembleHap`. Use the
+`thread-goal` and `thread-goal-dark` previews to check pause/resume/clear in
+compact and wide postures without sending remote commands. Restore normal
+`EntryAbility` afterward.

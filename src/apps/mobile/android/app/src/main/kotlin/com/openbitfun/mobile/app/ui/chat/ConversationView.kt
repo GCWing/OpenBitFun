@@ -344,6 +344,9 @@ internal fun ConversationView(
                     }
                 }
                 ComposerBar(
+                    goalContent = { ThreadGoalPanel(state.threadGoal, sessionId, phase == ConnectionPhase.CONNECTED, onIntent) },
+                    onGoal = { onIntent(RemoteSessionIntent.Goal(sessionId, com.openbitfun.mobile.core.feature.session.ThreadGoalAction.OPEN)) },
+                    hasGoal = state.threadGoal.sessionId == sessionId && state.threadGoal.objective != null,
                     draft = draft,
                     images = images,
                     // An empty session id would send nowhere, so it reads as busy.

@@ -1,3 +1,4 @@
+import { ThreadGoalState } from '../../model/ThreadGoal';
 import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { ObservableChatTimelineItem } from '../../model/ChatTimelineModels';
 import {
@@ -25,6 +26,7 @@ import { RemotePageState } from './RemotePageState';
 
 /** Immutable presentation state consumed by ConversationView. */
 export class ConversationViewState {
+  threadGoal: ThreadGoalState = new ThreadGoalState();
   interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   activeSession: ConversationUiSession = ConversationViewState.emptySession();
   surface: ChatSurface = ChatSurface.General;
@@ -86,6 +88,7 @@ export class ConversationViewState {
     state.downloadedFilePath = remote.downloadedFilePath;
     state.fileDownloadStatus = remote.fileDownloadStatus;
     state.interactionMailbox = remote.interactionMailbox;
+    state.threadGoal = remote.threadGoal;
     return state;
   }
 

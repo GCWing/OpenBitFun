@@ -247,6 +247,9 @@ final class MobileCoreAdapter {
     func respondPermission(_ requestID: String, approve: Bool, updatedInput: String?) {
         remoteSession?.dispatch(intent: RemoteSessionIntentRespondPermission(requestId: requestID, approve: approve, updatedInput: updatedInput))
     }
+    func goalAction(_ sessionID: String, action: ThreadGoalAction, objective: String?) {
+        remoteSession?.dispatch(intent: RemoteSessionIntentGoal(sessionId: sessionID, action: action, objective: objective))
+    }
     func refreshPermissionMailbox() {
         remoteSession?.dispatch(intent: RemoteSessionIntentRefreshPermissionMailbox.shared)
     }

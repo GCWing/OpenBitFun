@@ -1,3 +1,4 @@
+import { GoalRequest } from '../../model/ThreadGoal';
 import {
   RemoteQuestionAnswerPayload,
   RemoteSession,
@@ -121,6 +122,9 @@ export class ConversationController {
   }
 
   knownPollVersion(): number { return this.transcript.knownPollVersion(); }
+  setGoalForeground(active: boolean): void { this.transcript.goals.setForeground(active); }
+
+  async goalAction(request: GoalRequest): Promise<void> { await this.transcript.goals.dispatch(request); }
   resetKnownRemoteState(): void { this.transcript.resetKnownRemoteState(); }
   updateKnownMessageCount(pollVersion: number, knownMessageCount: number): void {
     this.transcript.updateKnownMessageCount(pollVersion, knownMessageCount);

@@ -1,3 +1,4 @@
+import { GoalRequest } from '../../model/ThreadGoal';
 import { InteractionMailboxAction, InteractionMailboxState } from '../../model/InteractionMailbox';
 import { HostCatalogChange, HostCatalogObserver } from '../../services/HostCatalogObserver';
 import { WorkspaceToolsViewModel } from '../viewmodel/WorkspaceToolsViewModel';
@@ -767,6 +768,7 @@ export abstract class AppRootRuntimeComposition {
     );
   readonly conversationIntentDispatcher: ConversationIntentDispatcher =
     new ConversationIntentDispatcher({
+      goal: async (request: GoalRequest): Promise<void> => { await this.conversationController.goalAction(request); },
       mailbox: async (action: InteractionMailboxAction): Promise<void> => { await this.remoteChatPollingLifecycleController.dispatchMailbox(action); },
       openSidebar: (): void => this.openAppSidebar(),
       back: (): void => this.exitActiveChat(),
