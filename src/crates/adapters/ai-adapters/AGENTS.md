@@ -87,6 +87,13 @@ For the auth/discovery path, use `cargo test -p openbitfun-ai-adapters --feature
 subscription-auth --lib`. Device-grant timing tests use the dev-only Tokio
 test clock and synthetic tokens; they do not authorize real accounts.
 
+xAI OAuth resolves device and token endpoints from its OpenID discovery document
+at the start of each login or refresh. Keep the issuer and endpoint origin pinned
+to `https://auth.x.ai`; discovery failure must remain explicit. A pending device
+grant retains its discovered token endpoint throughout polling. Discovery uses
+the host's subscription HTTP proxy options and does not change inference routes
+or persisted credential shapes.
+
 ```bash
 cargo test -p openbitfun-agent-stream
 cargo test -p openbitfun-ai-adapters
