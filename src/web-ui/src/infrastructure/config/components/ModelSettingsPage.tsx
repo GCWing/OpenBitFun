@@ -96,6 +96,7 @@ import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurfac
 import { LONG_CONTEXT_WARNING_THRESHOLD_TOKENS } from '@/shared/constants/modelContext';
 import {
   preferredSubscriptionLoginMethod,
+  subscriptionLoginMethodsForSurface,
   settleSubscriptionLoginStart,
   subscriptionLoginRequiresLocalDevice,
   SubscriptionLoginCoordinator,
@@ -1185,7 +1186,10 @@ const ModelSettingsPage: React.FC = () => {
     };
   }, []);
 
-  const handleSubscriptionLogin = useCallback(async (provider: SubscriptionProvider) => {
+  const handleSubscriptionLogin = useCallback(async (
+    provider: SubscriptionProvider,
+    method?: SubscriptionLoginMethod,
+  ) => {
     if ((!isTauriRuntime() || isPeerDeviceModeActive()) && subscriptionLoginRequiresLocalDevice(provider)) {
       notification.error(t('subscriptionAuth.peerLoginRequiresLocalDevice'));
       return;
@@ -1195,7 +1199,7 @@ const ModelSettingsPage: React.FC = () => {
     // newer provider's state or leaving an undiscoverable backend session.
     const operation = loginCoordinatorRef.current.begin(provider);
     if (!operation) return;
-    const requestedMethod = preferredSubscriptionLoginMethod(
+    const requestedMethod = method ?? preferredSubscriptionLoginMethod(
       provider,
       isTauriRuntime() && !isPeerDeviceModeActive(),
     );
@@ -3629,6 +3633,12 @@ const ModelSettingsPage: React.FC = () => {
               const isRefreshing = refreshingSubscriptionProviders.has(account.provider);
               const isLoggingIn = loggingInProvider === account.provider;
               const anyLoginInProgress = loggingInProvider !== null;
+              const loginMethods = subscriptionLoginMethodsForSurface(
+                account.provider,
+                account.login_methods,
+                isTauriRuntime() && !isPeerDeviceModeActive(),
+              );
+              const loginChoices = loginMethods.length ? loginMethods : [undefined];
               const loginPanel = subscriptionLoginPanel?.provider === account.provider
                 ? subscriptionLoginPanel
                 : null;
@@ -3693,17 +3703,26 @@ const ModelSettingsPage: React.FC = () => {
                           {t('subscriptionAuth.retryVault')}
                         </Button>
                       ) : (
-                        <Button
-                          size="sm"
-                          variant="primary"
-                          loading={isLoggingIn}
-                          disabled={anyLoginInProgress}
-                          onClick={() => void handleSubscriptionLogin(account.provider)}
-                        >
-                          {t(loginPanel?.status === 'failed'
-                            ? 'subscriptionAuth.retryLogin'
-                            : 'subscriptionAuth.login')}
-                        </Button>
+                        <>
+                          {loginChoices.map((method, index) => (
+                            <Button
+                              key={method ?? 'default'}
+                              size="sm"
+                              variant={index === 0 ? 'primary' : 'outline'}
+                              loading={isLoggingIn && subscriptionLoginPanel?.method === method}
+                              disabled={anyLoginInProgress}
+                              onClick={() => void handleSubscriptionLogin(account.provider, method)}
+                            >
+                              {t(method === 'device'
+                                ? 'subscriptionAuth.deviceLogin'
+                                : method === 'browser'
+                                  ? 'subscriptionAuth.browserLogin'
+                                  : loginPanel?.status === 'failed'
+                                    ? 'subscriptionAuth.retryLogin'
+                                    : 'subscriptionAuth.login')}
+                            </Button>
+                          ))}
+                        </>
                       )}
                       {isLoggingIn && (
                         <Button
