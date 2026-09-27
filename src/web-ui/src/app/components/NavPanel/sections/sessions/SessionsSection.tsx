@@ -106,6 +106,7 @@ import {
 } from './sessionNavExpand';
 import { useSessionRowRemovalTransition } from './sessionRowShift';
 import { SessionStatusIndicator } from './SessionStatusIndicator';
+import { createSessionsNavSelector } from './sessionsNavSelector';
 import './SessionsSection.scss';
 
 const log = createLogger('SessionsSection');
@@ -339,29 +340,10 @@ const SessionsSection: React.FC<SessionsSectionProps> = ({
   const bufferPrefetchSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
-    const selector = (s: FlowChatState): string => {
-      const parts: string[] = [s.activeSessionId ?? ''];
-      for (const session of s.sessions.values()) {
-        const latestTurn = session.dialogTurns[session.dialogTurns.length - 1];
-        const dispatchTarget = session.config.dispatchTarget;
-        const dispatchTargetSnapshot = dispatchTarget?.kind === 'ssh'
-          ? `ssh:${dispatchTarget.connectionId}:${dispatchTarget.workspacePath}:${dispatchTarget.displayName}`
-          : dispatchTarget?.kind === 'device'
-            ? `device:${dispatchTarget.deviceId}:${dispatchTarget.workspacePath}:${dispatchTarget.displayName}`
-            : 'local';
-        parts.push(
-          `${session.sessionId}|${session.isTransient ? '1':'0'}|${session.sessionKind}|` +
-          `${session.parentSessionId ?? ''}|${session.parentToolCallId ?? ''}|${session.subagentType ?? ''}|` +
-          `${session.workspacePath ?? ''}|${session.mode ?? ''}|${session.needsUserAttention ?? ''}|` +
-          `${session.hasUnreadCompletion ?? ''}|${latestTurn?.status ?? ''}|` +
-          `${session.title ?? ''}|${dispatchTargetSnapshot}|${session.config.dispatchJobState ?? ''}`
-        );
-      }
-      return parts.join(';');
-    };
+    const selector = createSessionsNavSelector();
     const unsub = flowChatStore.subscribeSelector(selector, (() => {
       setFlowChatState(flowChatStore.getState());
-    }), { isEqual: (a, b) => a === b });
+    }));
     return () => unsub();
   }, []);
 
