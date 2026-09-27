@@ -7,11 +7,20 @@ export interface ThinkingDisclosureInput {
   isLastItem: boolean;
   forceExpanded?: boolean;
   displayContext?: 'default' | 'subagent-projection';
+  /** Embedded subagent transcripts stay compact until the reader opens them. */
+  compactByDefault?: boolean;
 }
 
-export function defaultThinkingExpanded({ isSummary, isActive, isRevealing = false, isLastItem, forceExpanded = false }: ThinkingDisclosureInput): boolean {
+export function defaultThinkingExpanded({
+  isSummary,
+  isActive,
+  isRevealing = false,
+  isLastItem,
+  forceExpanded = false,
+  compactByDefault = false,
+}: ThinkingDisclosureInput): boolean {
   // A successor can arrive before the reasoning stream/typewriter has drained.
-  return forceExpanded || (!isSummary && (isActive || isRevealing || isLastItem));
+  return forceExpanded || (!compactByDefault && !isSummary && (isActive || isRevealing || isLastItem));
 }
 
 /** Stream/reveal and the inner/outer scroll owners stay outside this hook. */

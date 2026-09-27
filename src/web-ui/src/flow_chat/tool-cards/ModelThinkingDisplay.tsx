@@ -51,12 +51,19 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
   sourceSessionId,
 }) => {
   const { t } = useTranslation('flow-chat');
-  const { sessionId, workspaceId, workspacePath, remoteConnectionId } = useFlowChatContext();
+  const { sessionId, workspaceId, workspacePath, remoteConnectionId, activeSessionOverride } = useFlowChatContext();
   const { content, isStreaming, status } = thinkingItem;
   const isSummary = thinkingItem.reasoningKind === 'summary';
   const isActive = isStreaming || status === 'streaming';
+  const isSubagentSurface = displayContext === 'subagent-projection'
+    || activeSessionOverride?.sessionKind === 'subagent';
   const shouldDefaultExpanded = defaultThinkingExpanded({
-    isSummary, isActive, isLastItem: !withinGroup && isLastItem, forceExpanded, displayContext,
+    isSummary,
+    isActive,
+    isLastItem: !withinGroup && isLastItem,
+    forceExpanded,
+    displayContext,
+    compactByDefault: isSubagentSurface,
   });
   const [retainClosingContent, setRetainClosingContent] = useState(shouldDefaultExpanded);
   const expandContainerRef = useRef<HTMLDivElement>(null);
@@ -74,7 +81,13 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
   });
   const { expanded: isExpanded } = useThinkingDisclosure({
     // Opening a collection does not open its completed reasoning, including its tail.
-    isSummary, isActive, isRevealing, isLastItem: !withinGroup && isLastItem, forceExpanded, displayContext,
+    isSummary,
+    isActive,
+    isRevealing,
+    isLastItem: !withinGroup && isLastItem,
+    forceExpanded,
+    displayContext,
+    compactByDefault: isSubagentSurface,
   }, dispatchToolCardToggle);
   const shouldMountContent = isExpanded || retainClosingContent;
 
