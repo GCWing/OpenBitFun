@@ -853,7 +853,9 @@ const FlowItemRenderer: React.FC<FlowItemRendererProps> = ({
     onFileViewRequest,
     onTabOpen,
     sessionId,
+    activeSessionOverride,
   } = useFlowChatContext();
+  const isSubagentSurface = activeSessionOverride?.sessionKind === 'subagent';
 
   switch (item.type) {
     case 'text':
@@ -879,7 +881,9 @@ const FlowItemRenderer: React.FC<FlowItemRendererProps> = ({
         <ModelThinkingDisplay
           thinkingItem={item as FlowThinkingItem}
           isLastItem={isLastItem}
-          forceExpanded={expandedThinkingItemIds.includes(item.id)}
+          // The embedded panel owns the compact default, including persisted
+          // expansion state from the primary session.
+          forceExpanded={!isSubagentSurface && expandedThinkingItemIds.includes(item.id)}
         />
       );
 
