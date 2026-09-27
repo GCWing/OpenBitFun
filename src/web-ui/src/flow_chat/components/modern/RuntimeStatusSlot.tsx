@@ -6,6 +6,7 @@ import { submittedMessageStatusDelay } from '../../services/submittedMessagePres
 import './RuntimeStatusSlot.scss';
 
 const EMPTY_HINTS: readonly string[] = [];
+const FALLBACK_I18N_CACHE_OWNER = {};
 const translatedHintsCache = new WeakMap<object, Map<string, readonly string[]>>();
 
 // Status labels supplied by the runtime do not need the generated hint list;
@@ -56,12 +57,13 @@ export const RuntimeStatusSlot: React.FC<RuntimeStatusSlotProps> = ({
   ));
   const { t, i18n, ready } = useTranslation('flow-chat/processing-hints');
   const needsGeneratedHint = Boolean(status && !status.label);
-  const language = i18n.resolvedLanguage ?? i18n.language ?? 'default';
+  const language = i18n?.resolvedLanguage ?? i18n?.language ?? 'default';
+  const cacheOwner = i18n ?? FALLBACK_I18N_CACHE_OWNER;
   const hints = React.useMemo(
     () => needsGeneratedHint
-      ? getTranslatedHints(i18n, t, language, ready)
+      ? getTranslatedHints(cacheOwner, t, language, ready)
       : EMPTY_HINTS,
-    [i18n, language, needsGeneratedHint, ready, t],
+    [cacheOwner, language, needsGeneratedHint, ready, t],
   );
   const hint = status
     ? status.label

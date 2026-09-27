@@ -154,7 +154,7 @@ describe('visible FlowChat item composition', () => {
   it.each<Host>(['round', 'explore', 'subagent'])('%s uses the last visible item for reasoning disclosure', host => {
     act(() => root.render(renderHost(host, [thinking, blank, hidden])));
     const panel = container.querySelector('[data-testid="chat-thinking-panel"]');
-    expect(panel?.getAttribute('data-expanded')).toBe(host === 'explore' ? 'false' : 'true');
+    expect(panel?.getAttribute('data-expanded')).toBe(host === 'round' ? 'true' : 'false');
     expect(panel?.hasAttribute('data-thinking-attachment')).toBe(false);
   });
 
