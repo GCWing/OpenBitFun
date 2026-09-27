@@ -9,6 +9,17 @@ Do not substitute clipping overflow: user-message decorations and controls can
 extend outside the reading column. The rhythm test protects this stylesheet
 contract; it does not prove browser layout or end-to-end scroll stability.
 
+Embedded panels must preserve that shared formatting context. The Btw sidebar
+previously overrode the wrapper with `display: block`, allowing trailing child
+margins to escape measurement. Removing a boundary row then removed space not
+represented by virtual padding; tail follow could bring the row back, restoring
+the space and removing it again. `BtwSessionPanelLayout.test.ts` protects the
+cascade contract. `BtwVirtualSessionList.test.tsx` reproduces the feedback with
+supplied contained/escaping margin geometry, the real virtualizer, and delayed
+resize/scroll delivery. This isolates a window-churn mechanism; native WebView2
+memory savings and the fraction of observed runtime churn it explains still
+require a retest.
+
 ## Interrupted turn continuity
 
 Cancelled rounds remain in the ordinary transcript. The display projection removes

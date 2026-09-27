@@ -17,6 +17,16 @@ function extractBlock(stylesheet: string, selector: string): string {
 }
 
 describe('BtwSessionPanel layout styles', () => {
+  it('preserves the shared virtual row margin containment', () => {
+    const stylesheet = readBtwSessionPanelStylesheet();
+    const shared = readFileSync(
+      fileURLToPath(new URL('../modern/VirtualItemRenderer.scss', import.meta.url)), 'utf8',
+    );
+    expect(extractBlock(shared, '.virtual-item-wrapper')).toContain('display: flow-root;');
+    // A more specific sidebar rule must not undo the measured row boundary.
+    expect(extractBlock(stylesheet, '.virtual-item-wrapper')).not.toMatch(/display\s*:/);
+  });
+
   it('keeps the review action bar wrapper bounded inside the panel viewport', () => {
     const stylesheet = readBtwSessionPanelStylesheet();
     const wrapper = extractBlock(stylesheet, '&__action-bar-wrapper');

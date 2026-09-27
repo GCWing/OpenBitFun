@@ -82,7 +82,7 @@
 
     .virtual-item-wrapper {
       width: 100%;
-      display: block;
+      // Preserve the shared flow-root: virtual padding must include child margins.
     }
   }
 
