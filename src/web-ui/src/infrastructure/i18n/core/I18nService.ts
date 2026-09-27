@@ -36,6 +36,76 @@ import { logDuration, measureSync, nowMs, elapsedMs } from '@/shared/utils/timin
 
 const log = createLogger('I18nService');
 
+// Streaming transcript updates can format the same timestamps and counters
+// many times. Keep a small locale-scoped cache so those renders do not create
+// a new ICU formatter for every update.
+const FORMATTER_CACHE_CAPACITY = 64;
+const DATE_FORMATTER_CACHE_TTL_MS = 30_000;
+
+type FormatterOptions = Intl.DateTimeFormatOptions | Intl.NumberFormatOptions;
+
+function formatterOptionsKey(options?: FormatterOptions): string | null {
+  if (options === undefined) return '{}';
+  try {
+    if (options === null || typeof options !== 'object') return null;
+
+    const prototype = Object.getPrototypeOf(options);
+    if (prototype !== Object.prototype && prototype !== null) return null;
+
+    const entries: Array<[string, string | number | boolean | null | undefined]> = [];
+    for (const key of Object.getOwnPropertyNames(options)) {
+      const descriptor = Object.getOwnPropertyDescriptor(options, key);
+      if (!descriptor || !('value' in descriptor)) return null;
+      const value = descriptor.value;
+      if (value === undefined) continue;
+      if (typeof value === 'number' && !Number.isFinite(value)) return null;
+      if (
+        value !== null &&
+        typeof value !== 'string' &&
+        typeof value !== 'number' &&
+        typeof value !== 'boolean'
+      ) {
+        return null;
+      }
+      entries.push([key, value]);
+    }
+
+    entries.sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+    const key = entries.length === 0 ? '{}' : JSON.stringify(entries);
+    return key.length <= 128 ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+class BoundedFormatterCache<T> {
+  private readonly entries = new Map<string, { formatter: T; createdAt: number }>();
+
+  get(key: string, now: number, ttlMs?: number): T | undefined {
+    const entry = this.entries.get(key);
+    if (!entry) return undefined;
+    if (ttlMs !== undefined && now - entry.createdAt >= ttlMs) {
+      this.entries.delete(key);
+      return undefined;
+    }
+    this.entries.delete(key);
+    this.entries.set(key, entry);
+    return entry.formatter;
+  }
+
+  set(key: string, formatter: T, now: number): void {
+    this.entries.delete(key);
+    this.entries.set(key, { formatter, createdAt: now });
+    while (this.entries.size > FORMATTER_CACHE_CAPACITY) {
+      this.entries.delete(this.entries.keys().next().value as string);
+    }
+  }
+
+  clear(): void {
+    this.entries.clear();
+  }
+}
+
 const lazyLocaleModules = import.meta.glob('../../../locales/**/*.json', {
   import: 'default',
 }) as Record<string, () => Promise<Record<string, unknown>>>;
@@ -140,6 +210,8 @@ export class I18nService {
   private initialized: boolean = false;
   // Monotonic counter to detect mid-flight locale changes and avoid racey overrides.
   private localeChangeSeq: number = 0;
+  private readonly dateFormatterCache = new BoundedFormatterCache<Intl.DateTimeFormat>();
+  private readonly numberFormatterCache = new BoundedFormatterCache<Intl.NumberFormat>();
 
   constructor() {
     this.i18nInstance = i18next.createInstance();
@@ -191,6 +263,7 @@ export class I18nService {
         await this.loadNamespacesForLocale(WEB_UI_BOOTSTRAP_NAMESPACES, localeToUse);
         await this.i18nInstance.changeLanguage(localeToUse);
         this.currentLocaleId = localeToUse;
+        this.clearFormatterCaches();
       }
       
       
@@ -375,6 +448,7 @@ export class I18nService {
 
       await this.i18nInstance.changeLanguage(locale);
       this.currentLocaleId = locale;
+      this.clearFormatterCaches();
 
       
       this.updateHtmlLang(locale);
@@ -482,7 +556,20 @@ export class I18nService {
   private createDateTimeFormatter(
     options?: Intl.DateTimeFormatOptions,
   ): Intl.DateTimeFormat {
-    return new Intl.DateTimeFormat(this.currentLocaleId, options);
+    const key = formatterOptionsKey(options);
+    if (key === null) {
+      return new Intl.DateTimeFormat(this.currentLocaleId, options);
+    }
+
+    const now = Date.now();
+    const cached = this.dateFormatterCache.get(`${this.currentLocaleId}|${key}`, now, DATE_FORMATTER_CACHE_TTL_MS);
+    if (cached) {
+      return cached;
+    }
+
+    const formatter = new Intl.DateTimeFormat(this.currentLocaleId, options);
+    this.dateFormatterCache.set(`${this.currentLocaleId}|${key}`, formatter, now);
+    return formatter;
   }
 
   formatDate(date: Date | number, options?: Intl.DateTimeFormatOptions): string {
@@ -495,7 +582,26 @@ export class I18nService {
 
    
   formatNumber(number: number, options?: Intl.NumberFormatOptions): string {
-    return new Intl.NumberFormat(this.currentLocaleId, options).format(number);
+    const key = formatterOptionsKey(options);
+    if (key === null) {
+      return new Intl.NumberFormat(this.currentLocaleId, options).format(number);
+    }
+
+    const now = Date.now();
+    const cacheKey = `${this.currentLocaleId}|${key}`;
+    const cached = this.numberFormatterCache.get(cacheKey, now);
+    if (cached) {
+      return cached.format(number);
+    }
+
+    const formatter = new Intl.NumberFormat(this.currentLocaleId, options);
+    this.numberFormatterCache.set(cacheKey, formatter, now);
+    return formatter.format(number);
+  }
+
+  private clearFormatterCaches(): void {
+    this.dateFormatterCache.clear();
+    this.numberFormatterCache.clear();
   }
 
    
