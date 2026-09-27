@@ -12,6 +12,9 @@ extension MobileAppModel {
     func respondPermission(_ requestID: String, approve: Bool, updatedInput: String?) {
         coreAdapter?.respondPermission(requestID, approve: approve, updatedInput: updatedInput)
     }
+    func goalAction(_ action: ThreadGoalAction, objective: String? = nil) {
+        coreAdapter?.goalAction(selectedSessionID, action: action, objective: objective)
+    }
     func refreshPermissionMailbox() { coreAdapter?.refreshPermissionMailbox() }
 
     func apply(remoteTargetBound targetKey: String, epoch: UInt64, accountGeneration generation: UInt64) {
@@ -77,6 +80,7 @@ extension MobileAppModel {
         workspaceSelectionBusy = false
         completionNotifier.reset()
         remoteHostCapabilities = []
+        threadGoal = nil
         remoteCreateWorkspacePhase = targetKey.isEmpty ? .unavailable : .loading
         let clearingVisibleRemoteConversation = surface == .remote || remoteSessionSelected
         remoteSessionSelected = false
@@ -1016,6 +1020,7 @@ extension MobileAppModel {
             lastApplied: remoteLastAppliedAuthority
         ) else { return }
         setPublishedIfChanged(\.remoteOpenedSessionID, to: ready.timeline?.sessionId)
+        threadGoal = ready.threadGoal
         permissionMailbox = ready.permissionMailbox
         completionNotifier.observe(state, target: "\(targetKey):\(epoch)")
         remoteLastAppliedAuthority = RemoteAuthorityGate.updatedScope(

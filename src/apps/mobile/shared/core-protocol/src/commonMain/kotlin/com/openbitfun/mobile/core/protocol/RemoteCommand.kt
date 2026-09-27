@@ -56,6 +56,8 @@ public object RemotePermissionModeSerializer : KSerializer<RemotePermissionMode>
 @Serializable
 public data class RemoteCommand(
     @SerialName("cmd") val cmd: String,
+    @SerialName("action") val action: String? = null,
+    @SerialName("objective") val objective: String? = null,
     @SerialName("command") val command: String? = null,
     @SerialName("args") val args: JsonElement? = null,
     @SerialName("_request_id") val requestId: String? = null,

@@ -152,3 +152,40 @@ Account sign-in on Android, iOS and HarmonyOS opens the shared authorization pag
 with separate GitHub and email-code options. Email users need no password and are
 not automatically linked to GitHub users. Sign in with the same method and account
 on the phone and the controlled desktop/CLI.
+
+## Persistent goals
+
+Android, iOS, and HarmonyOS expose **Set goal** in the remote composer **+** menu.
+An existing goal appears as a compact strip above the text input. Tap it to read the host's goal, token usage and status, start or edit
+an objective, pause automatic continuation, resume a paused/blocked/usage-limited
+goal, or clear it. Pausing a goal does not cancel the current turn; use Stop for
+that. Budget-limited and completed goals can be edited, but cannot be resumed.
+
+The composer accepts `/goal <objective>`, `/goal`, `/goal edit`, `/goal pause`,
+`/goal resume`, and `/goal clear`. Bare `/goal` and `/goal edit` open goal management (the creation editor when no goal exists).
+Goal commands do not accept attachments and do not become ordinary chat messages.
+A newer draft entered while a command is pending is retained.
+
+The controlled Desktop or CLI must advertise `thread_goal_v1` in its live
+workspace capabilities. Unsupported hosts show an upgrade message. Clients use
+`thread_goal` with a session ID and an explicit action; the host resolves that
+session's workspace and storage, including SSH workspace bindings. No
+controller filesystem path participates in goal operations. Goal execution and
+persistence stay on the host when the phone disconnects. Opening a connected conversation reads
+the current snapshot; the goal strip refreshes every five seconds while foregrounded,
+even with details closed. Returning to the foreground reloads it. Failed changes
+retain the last confirmed state. Switching sessions/devices discards late replies.
+
+Focused checks:
+
+```bash
+# From shared/
+./gradlew :core-feature:jvmTest --tests '*RemoteSessionStoreTest.goal*' --tests '*ThreadGoalCommandTest*'
+# From the repository root
+node --test src/apps/mobile/harmonyos/tools/tests/thread-goal.test.cjs
+```
+
+The HarmonyOS `thread-goal` / `thread-goal-dark` native preview exercises the
+production panel using in-memory state and no host requests. Android's
+`ThreadGoalPanelTest` checks pause/resume and unsupported presentation in an
+isolated Compose activity. Neither replaces a live remote-host acceptance test.

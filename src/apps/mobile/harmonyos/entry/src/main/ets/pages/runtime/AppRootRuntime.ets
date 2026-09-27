@@ -83,6 +83,7 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
   }
 
   onPageShow(): void {
+    this.conversationController.setGoalForeground(true);
     RemoteLogger.info(`page show state=${(this.remotePageState.connectionState as ConnectionState)} route=${this.appShellViewModel.currentRoute()}`);
     this.taskCompletionNotificationController.onForeground();
     this.remoteActivityViewModel.resume();
@@ -93,6 +94,7 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
   }
 
   onPageHide(): void {
+    this.conversationController.setGoalForeground(false);
     RemoteLogger.info(`page hide state=${(this.remotePageState.connectionState as ConnectionState)} route=${this.appShellViewModel.currentRoute()}`);
     this.settingsController.stopPresencePolling();
     const activeRemoteTurn = this.remotePageState.activeTurnMessage;
@@ -111,6 +113,7 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
   }
 
   aboutToDisappear(): void {
+    this.conversationController.setGoalForeground(false);
     this.miniAppViewModel.close();
     this.settingsController.stopPresencePolling();
     this.watchProvisionController.stop();

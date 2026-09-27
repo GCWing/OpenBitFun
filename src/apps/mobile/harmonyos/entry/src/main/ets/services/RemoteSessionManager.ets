@@ -1,3 +1,4 @@
+import { GoalAction, ThreadGoalResponse } from '../model/ThreadGoal';
 import { WorkspaceCatalog, projectWorkspaceCatalog } from './WorkspaceCatalog';
 import { RuntimeFileLocation } from '../model/RemoteModels';
 import { HostSessionCallbacks, HostSessionStream, REMOTE_CAPABILITY_HOST_STREAM_V1 } from './HostSessionStream';
@@ -52,6 +53,20 @@ export class RemoteSessionManager implements RemoteChatCommandClient, RemoteFile
    * the message the user can act on instead of probing it with a command it
    * does not know.
    */
+  goalTargetGeneration(): number { return this.transportGeneration; }
+
+  async threadGoal(sessionId: string, action: GoalAction, objective?: string): Promise<ThreadGoalResponse> {
+    if (this.hostCapabilities.indexOf('thread_goal_v1') < 0) {
+      throw new Error('thread_goal_v1 is unsupported');
+    }
+    const response = await this.send<ThreadGoalResponse>({ cmd: 'thread_goal', session_id: sessionId,
+      action: action === GoalAction.Open ? 'read' : action, objective: objective });
+    if (response.resp !== 'thread_goal' || (response.goal && response.goal.sessionId !== sessionId)) {
+      throw new Error('Invalid thread goal response');
+    }
+    return response;
+  }
+
   subscribeSession(logicalId: string, callbacks: HostSessionCallbacks): HostSessionStream {
     const transport = this.transport;
     if (!transport?.subscribeSession) throw new Error('Remote session streaming is unavailable');

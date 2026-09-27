@@ -294,7 +294,18 @@ public sealed interface RemoteSessionUiState {
         public val lastSentMessage: SentChatMessage?,
         public val permissionMailbox: PermissionMailboxUiState,
         public val historyLoadState: HistoryLoadState,
+        public val threadGoal: ThreadGoalUiState,
     ) : RemoteSessionUiState {
+        public constructor(
+            sessions: List<RemoteSession>, selectedSessionId: String?, timeline: ChatTimelineState?, busy: Boolean,
+            permissionMode: SessionPermissionMode?, permissionModeFailure: PermissionModeFailure?, query: String,
+            agentFilter: SessionAgentFilter, hasMore: Boolean, hasMoreMessages: Boolean,
+            modelCatalog: RemoteModelCatalog?, modelCatalogFailure: ModelCatalogFailure?, draft: String,
+            revision: Long, lastSentMessage: SentChatMessage?, permissionMailbox: PermissionMailboxUiState,
+            historyLoadState: HistoryLoadState,
+        ) : this(sessions, selectedSessionId, timeline, busy, permissionMode, permissionModeFailure, query,
+            agentFilter, hasMore, hasMoreMessages, modelCatalog, modelCatalogFailure, draft, revision,
+            lastSentMessage, permissionMailbox, historyLoadState, ThreadGoalUiState())
         public constructor(
             sessions: List<RemoteSession>, selectedSessionId: String?, timeline: ChatTimelineState?, busy: Boolean,
             permissionMode: SessionPermissionMode?, permissionModeFailure: PermissionModeFailure?, query: String,
@@ -396,6 +407,10 @@ public sealed interface RemoteSessionUiState {
 }
 
 public sealed interface RemoteSessionIntent {
+    public data class Goal(val sessionId: String, val action: ThreadGoalAction, val objective: String?) : RemoteSessionIntent {
+        public constructor(sessionId: String, action: ThreadGoalAction) : this(sessionId, action, null)
+    }
+
     public data class StartQuestionInteraction(public val toolId: String) : RemoteSessionIntent
     public data class RespondPermission(public val requestId: String, public val approve: Boolean, public val updatedInput: String?) : RemoteSessionIntent
     public data object RefreshPermissionMailbox : RemoteSessionIntent

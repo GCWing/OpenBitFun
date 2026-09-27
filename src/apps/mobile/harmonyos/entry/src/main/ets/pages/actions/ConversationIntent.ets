@@ -1,8 +1,10 @@
+import { GoalRequest } from '../../model/ThreadGoal';
 import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { ConversationUiQuestionAnswer } from '../state/ConversationUiModels';
 import { FilePreviewRequest } from '../../model/FilePreviewTarget';
 
 export enum ConversationIntentType {
+  Goal = 'goal',
   Mailbox = 'mailbox',
   OpenSidebar = 'open_sidebar',
   Back = 'back',
@@ -50,6 +52,7 @@ export class ConversationIntent {
   readonly filePreviewRequest?: FilePreviewRequest;
   readonly planBuildRequest?: PlanBuildRequest;
   mailboxAction?: InteractionMailboxAction;
+  goalRequest?: GoalRequest;
 
   constructor(
     type: ConversationIntentType,
@@ -71,6 +74,11 @@ export class ConversationIntent {
 }
 
 export class ConversationIntents {
+  static goal(request: GoalRequest): ConversationIntent {
+    const intent = new ConversationIntent(ConversationIntentType.Goal);
+    intent.goalRequest = request;
+    return intent;
+  }
   static mailbox(action: InteractionMailboxAction): ConversationIntent {
     const intent = new ConversationIntent(ConversationIntentType.Mailbox);
     intent.mailboxAction = action;

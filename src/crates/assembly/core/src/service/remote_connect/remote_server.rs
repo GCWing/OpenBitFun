@@ -171,6 +171,13 @@ impl<'a> CoreRemoteCommandRuntimeHost<'a> {
 impl RemoteCommandRuntimeHost for CoreRemoteCommandRuntimeHost<'_> {
     type ImageContext = crate::agentic::image_analysis::ImageContextData;
 
+    async fn handle_goal_command(&self, command: &RemoteCommand) -> RemoteResponse {
+        match CoreServiceAgentRuntime::remote_thread_goal(self.dispatcher, command).await {
+            Ok(goal) => RemoteResponse::ThreadGoal { goal },
+            Err(message) => RemoteResponse::Error { message },
+        }
+    }
+
     async fn handle_workspace_command(&self, command: &RemoteCommand) -> RemoteResponse {
         let host = CoreServiceAgentRuntime::remote_workspace_host();
         handle_remote_workspace_command(&host, command).await

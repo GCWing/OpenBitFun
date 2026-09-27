@@ -55,8 +55,11 @@ struct ComposerBar: View {
         hasContent && !speech.isListening && !model.isSending
     }
 
+    private var hasGoal: Bool { model.surface == .remote && model.threadGoal?.sessionId == model.selectedSessionID && model.threadGoal?.objective != nil }
+
     var body: some View {
         VStack(spacing: 2) {
+            ThreadGoalPanel(model: model)
             if !model.composerImages.isEmpty {
                 attachmentStrip
             }
@@ -69,7 +72,7 @@ struct ComposerBar: View {
             }
         }
         .padding(.horizontal, 8)
-        .padding(.top, expanded ? 4 : 0)
+        .padding(.top, expanded || hasGoal ? 4 : 0)
         .padding(.bottom, expanded ? 2 : 0)
         .frame(minHeight: expanded
             ? MobileDesignGeometry.composerExpandedHeight
@@ -80,7 +83,7 @@ struct ComposerBar: View {
         .background(.ultraThinMaterial)
         .overlay(
             RoundedRectangle(
-                cornerRadius: expanded || !model.composerImages.isEmpty
+                cornerRadius: expanded || !model.composerImages.isEmpty || hasGoal
                     ? MobileDesignGeometry.composerExpandedRadius
                     : MobileDesignGeometry.composerCollapsedRadius
             )
@@ -88,7 +91,7 @@ struct ComposerBar: View {
         )
         .clipShape(
             RoundedRectangle(
-                cornerRadius: expanded || !model.composerImages.isEmpty
+                cornerRadius: expanded || !model.composerImages.isEmpty || hasGoal
                     ? MobileDesignGeometry.composerExpandedRadius
                     : MobileDesignGeometry.composerCollapsedRadius
             )
@@ -279,14 +282,22 @@ struct ComposerBar: View {
 
     @ViewBuilder
     private var attachmentAction: some View {
-        if model.composerImages.count < 4 {
-            Button { photoPickerOpen = true } label: { plusGlyph }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text(model.localized("添加图片")))
+        if model.surface == .remote {
+            Menu {
+                Button(model.localized("添加图片")) { photoPickerOpen = true }
+                    .disabled(model.composerImages.count >= 4)
+                Divider()
+                Button(model.localized(hasGoal ? "goal.manage" : "goal.set")) {
+                    focused = false
+                    model.goalAction(.open)
+                }.disabled(model.selectedSessionID.isEmpty)
+            } label: { plusGlyph }
+            .accessibilityLabel(Text(model.localized("goal.manage")))
         } else {
-            Button { model.showToast(model.localized("最多添加 4 张图片")) } label: { plusGlyph }
+            Button { photoPickerOpen = true } label: { plusGlyph }
                 .buttonStyle(.plain)
-                .accessibilityLabel(Text(model.localized("已达到图片上限")))
+                .disabled(model.composerImages.count >= 4)
+                .accessibilityLabel(Text(model.localized("添加图片")))
         }
     }
 

@@ -1,3 +1,5 @@
+import { ThreadGoalPanel } from './ThreadGoalPanel';
+import { GoalAction, GoalRequest, ThreadGoalState } from '../../model/ThreadGoal';
 import { KeyboardReleaseService } from '../../services/KeyboardReleaseService';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { MobileDesignGeometry, MobileDesignMotion, MobileDesignTypography } from '../../generated/MobileDesignTokens';
@@ -49,6 +51,11 @@ const COMPOSER_IMAGE_STRIP_BLOCK: number =
 
 @ComponentV2
 export struct ComposerBar {
+  @Param goalEnabled: boolean = false;
+  @Param goalState: ThreadGoalState = new ThreadGoalState();
+  @Param goalSessionId: string = '';
+  @Event onGoal: (request: GoalRequest) => void = () => {};
+  @Local addMenuOpen: boolean = false;
   @Param presentation: ComposerPresentation = ComposerPresentation.Compact;
   @Param capabilities: ChatComposerCapabilities = REMOTE_CHAT_COMPOSER_CAPABILITIES;
   @Param inputId: string = 'conversation-composer-input';
@@ -130,19 +137,20 @@ export struct ComposerBar {
   @Builder
   AdaptiveComposer() {
     Column({ space: 2 }) {
+      if (this.goalEnabled) {
+        ThreadGoalPanel({ state: this.goalState, sessionId: this.goalSessionId,
+          connected: this.connectionState === 'connected', onAction: this.onGoal })
+      }
       if (this.selectedImages.length > 0) {
         this.SelectedImageStrip()
       }
       Row({ space: this.isComposerExpanded() ? 0 : 5 }) {
-        if (this.shouldShowAddButton()) {
+        if (this.shouldShowAddButton() && !this.isComposerExpanded()) {
           Row() {
             this.AddButton()
           }
-          .width(this.isComposerExpanded() ? 0 : COMPOSER_ACTION_SIZE)
+          .width(COMPOSER_ACTION_SIZE)
           .height(COMPOSER_ACTION_SIZE)
-          .opacity(this.isComposerExpanded() ? 0 : 1)
-          .visibility(this.isComposerExpanded() ? Visibility.None : Visibility.Visible)
-          .clip(true)
         }
         this.InputField()
         Row() {
@@ -190,7 +198,7 @@ export struct ComposerBar {
     .padding({
       left: 8,
       right: 8,
-      top: this.isComposerExpanded() ? 4 : 0,
+      top: this.isComposerExpanded() || (this.goalEnabled && this.goalState.goal !== undefined) ? 4 : 0,
       bottom: this.isComposerExpanded() ? 2 : 0
     })
     // The transcript now runs underneath the pill, so the fill is translucent
@@ -222,7 +230,7 @@ export struct ComposerBar {
       Stack({ alignContent: Alignment.Center }) {
         SymbolGlyph(this.isModelSelectorExpanded() ?
           $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
-          .fontSize(13)
+          .fontSize(MobileDesignTypography.bodySmall.size)
           .fontColor([INK])
           .opacity(0.68)
       }
@@ -339,10 +347,42 @@ export struct ComposerBar {
       if (this.isVoiceListening) {
         return;
       }
-      // Images are the only thing a message can carry, so a menu in front of the
-      // picker would be a menu of one. Straight to the album, same as local chat.
-      this.onPickImages();
+      if (this.goalEnabled) this.addMenuOpen = !this.addMenuOpen;
+      else this.onPickImages();
     })
+    .bindPopup(this.addMenuOpen, { builder: this.AddMenu(), placement: Placement.TopLeft,
+      popupColor: CARD, enableArrow: false,
+      onStateChange: (event) => { this.addMenuOpen = event.isVisible; } })
+  }
+
+  private async openGoal(): Promise<void> {
+    await this.releaseComposerKeyboard();
+    this.onGoal(new GoalRequest(GoalAction.Open));
+  }
+
+  @Builder
+  AddMenu() {
+    Column({ space: 2 }) {
+      Button() {
+        Row({ space: 12 }) {
+          SymbolGlyph($r('sys.symbol.square_grid_2x2')).fontSize(14).fontColor([INK])
+          Text(RemoteI18n.t('chat.addImage')).fontSize(MobileDesignTypography.bodySmall.size).fontColor(INK).layoutWeight(1).textAlign(TextAlign.Start)
+        }.width('100%').height(32)
+      }.type(ButtonType.Normal).width('100%').height(32).padding({ left: 10, right: 10 })
+        .backgroundColor(TRANSPARENT).borderRadius(10)
+        .onClick(() => { this.addMenuOpen = false; this.onPickImages(); })
+      Divider().color(LINE).height(1).margin({ left: 6, right: 6, top: 4, bottom: 4 })
+      Button() {
+        Row({ space: 12 }) {
+          SymbolGlyph($r('sys.symbol.checkmark_circle')).fontSize(14).fontColor([INK])
+          Text(RemoteI18n.t(this.goalState.goal ? 'goal.manage' : 'goal.set')).fontSize(MobileDesignTypography.bodySmall.size).fontColor(INK).layoutWeight(1).textAlign(TextAlign.Start)
+          Text('/goal').fontSize(MobileDesignTypography.labelSmall.size).fontColor(MUTED)
+        }.width('100%').height(32)
+      }.type(ButtonType.Normal).width('100%').height(32).padding({ left: 10, right: 10 })
+        .backgroundColor(TRANSPARENT).borderRadius(10)
+        .enabled(this.goalSessionId.length > 0)
+        .onClick(() => { this.addMenuOpen = false; void this.openGoal(); })
+    }.width(220).padding(8).backgroundColor(CARD).border({ width: 1, color: LINE }).borderRadius(16)
   }
 
   @Builder
@@ -635,7 +675,7 @@ export struct ComposerBar {
   }
 
   private shouldShowAddButton(): boolean {
-    return ChatComposerPolicy.shouldShowAddButton(
+    return this.goalEnabled || ChatComposerPolicy.shouldShowAddButton(
       this.capabilities.showAddButton,
       this.capabilities.supportsAttachments
     );
@@ -654,7 +694,7 @@ export struct ComposerBar {
 
   // The pill radius only reads as a pill while the card is one row tall.
   private composerRadius(): number {
-    if (this.isComposerExpanded() || this.selectedImages.length > 0) {
+    if (this.isComposerExpanded() || this.selectedImages.length > 0 || (this.goalEnabled && this.goalState.goal !== undefined)) {
       return MobileDesignGeometry.composerExpandedRadius;
     }
     return MobileDesignGeometry.composerCollapsedRadius;

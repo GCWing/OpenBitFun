@@ -438,6 +438,40 @@ export const mobileTokens = {
 export const mobileComponents = {
   "version": 1,
   "components": {
+    "thread_goal": {
+      "purpose": "Manage the executing host's persistent goal from each native conversation.",
+      "anatomy": [
+        "composer_plus_menu",
+        "goal_context_strip",
+        "goal_details",
+        "objective_editor",
+        "clear_confirmation",
+        "status",
+        "token_usage",
+        "goal_actions",
+        "retry",
+        "close"
+      ],
+      "states": [
+        "loading",
+        "empty",
+        "active",
+        "paused",
+        "blocked",
+        "usage_limited",
+        "budget_limited",
+        "complete",
+        "unsupported",
+        "failed",
+        "offline"
+      ],
+      "tokens": [
+        "ink",
+        "muted",
+        "page_bg"
+      ],
+      "platformNotes": "Keep identical actions in compact and wide layouts. Present the multi-step objective editor in a native modal with scrollable content, keyboard handling and outside dismissal. Only a live thread_goal_v1 host enables mutations; a failed request retains the last confirmed objective and requires refresh. Create through the composer plus menu or /goal. An existing goal appears as a compact status and single-line objective strip inside the composer. Tapping it opens details; editing and clear confirmation are separate steps. Closing details keeps the strip observing the selected session; background suspends reads, foreground reloads, and session or host changes invalidate stale responses. Native controls inherit semantic appearance tokens."
+    },
     "shell_header_alignment": {
       "purpose": "Keep sidebar search and conversation menu controls on one horizontal centerline.",
       "anatomy": [

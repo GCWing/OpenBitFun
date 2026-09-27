@@ -39,6 +39,150 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class RemoteSessionStoreTest {
     @Test
+    fun goalUnsupportedHostNeverReceivesGoalOrChatCommand() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.UpdateDraft("/goal ship it"))
+        store.dispatch(RemoteSessionIntent.SendMessage("s-code", "/goal ship it")); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(ThreadGoalFailure.UNSUPPORTED, ready.threadGoal.failure)
+        assertEquals("/goal ship it", ready.draft)
+        assertFalse(transport.commands.any { it.cmd in listOf("thread_goal", "send_message", "steer_turn") })
+        store.stop()
+    }
+
+    @Test
+    fun goalCommandsUseHostManagementAndPreserveNewDraft() = runTest {
+        val transport = FakeSessionTransport().apply { capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]" }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        transport.commandGates["thread_goal"] = gate
+        store.dispatch(RemoteSessionIntent.UpdateDraft("/goal ship it"))
+        store.dispatch(RemoteSessionIntent.SendMessage("s-code", "/goal ship it")); runCurrent()
+        store.dispatch(RemoteSessionIntent.UpdateDraft("new draft"))
+        gate.complete(Unit); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("new draft", ready.draft)
+        assertTrue(ready.threadGoal.loaded)
+        assertEquals("ship it", ready.threadGoal.objective)
+        assertEquals("start", transport.commands.last { it.cmd == "thread_goal" }.action)
+        assertFalse(transport.commands.any { it.cmd in listOf("send_message", "steer_turn") })
+        for ((text, action) in listOf("/goal pause" to "pause", "/goal resume" to "resume", "/goal clear" to "clear")) {
+            store.dispatch(RemoteSessionIntent.SendMessage("s-code", text)); runCurrent()
+            assertEquals(action, transport.commands.last { it.cmd == "thread_goal" }.action)
+        }
+        store.stop()
+    }
+
+    @Test
+    fun goalRefreshStaysInteractiveAndChangesAreNeverDropped() = runTest {
+        val transport = FakeSessionTransport().apply { capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]" }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.Goal("s-code", ThreadGoalAction.OPEN)); runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        transport.commandGates["thread_goal"] = gate
+        advanceTimeBy(5001); runCurrent()
+        assertEquals("read", transport.commands.last { it.cmd == "thread_goal" }.action)
+        assertFalse(assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.busy)
+        store.dispatch(RemoteSessionIntent.SendMessage("s-code", "/goal pause")); runCurrent()
+        assertTrue(assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.busy)
+        store.dispatch(RemoteSessionIntent.SendMessage("s-code", "/goal resume")); runCurrent()
+        gate.complete(Unit); runCurrent()
+        assertEquals(listOf("read", "pause", "resume"), transport.commands.filter { it.cmd == "thread_goal" }.takeLast(3).map { it.action })
+        assertFalse(assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.busy)
+        store.stop()
+    }
+
+    @Test
+    fun unrelatedSessionWorkDoesNotDropInFlightGoalChange() = runTest {
+        val transport = FakeSessionTransport().apply { capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]" }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        val gate = CompletableDeferred<Unit>()
+        transport.commandGates["thread_goal"] = gate
+        store.dispatch(RemoteSessionIntent.UpdateDraft("/goal ship it"))
+        store.dispatch(RemoteSessionIntent.SendMessage("s-code", "/goal ship it")); runCurrent()
+        store.dispatch(RemoteSessionIntent.SetPermissionMode(SessionPermissionMode.FULL_ACCESS)); runCurrent()
+        assertTrue(assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.busy)
+        gate.complete(Unit); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertFalse(ready.threadGoal.busy)
+        assertEquals("ship it", ready.threadGoal.objective)
+        assertEquals("", ready.draft)
+        store.stop()
+    }
+
+    @Test
+    fun goalRefreshKeepsUnknownStatusAndCloseKeepsStripFresh() = runTest {
+        val transport = FakeSessionTransport().apply {
+            capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]"
+            goalResponse = """{"resp":"thread_goal","goal":{"sessionId":"s-code","objective":"future","status":"future_status","tokensUsed":42}}"""
+        }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.Goal("s-code", ThreadGoalAction.OPEN)); runCurrent()
+        assertEquals("future_status", assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.status)
+        transport.goalResponse = """{"resp":"thread_goal","goal":null}"""
+        advanceTimeBy(5001); runCurrent()
+        assertNull(assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.objective)
+        store.dispatch(RemoteSessionIntent.Goal("s-code", ThreadGoalAction.CLOSE)); runCurrent()
+        val count = transport.commands.count { it.cmd == "thread_goal" }
+        advanceTimeBy(10000); runCurrent()
+        assertTrue(transport.commands.count { it.cmd == "thread_goal" } > count)
+        assertFalse(assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal.visible)
+        store.stop()
+    }
+
+    @Test
+    fun goalObservationPausesInBackgroundAndReloadsOnReturn() = runTest {
+        val transport = FakeSessionTransport().apply { capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]" }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.Goal("s-code", ThreadGoalAction.OPEN)); runCurrent()
+        store.dispatch(RemoteSessionIntent.SetForeground(false)); runCurrent()
+        val count = transport.commands.count { it.cmd == "thread_goal" }
+        advanceTimeBy(10001); runCurrent()
+        assertEquals(count, transport.commands.count { it.cmd == "thread_goal" })
+        store.dispatch(RemoteSessionIntent.SetForeground(true)); runCurrent()
+        assertEquals(count + 1, transport.commands.count { it.cmd == "thread_goal" })
+        store.stop()
+    }
+
+    @Test
+    fun goalLateReplyCannotOverwriteAnotherSession() = runTest {
+        val transport = FakeSessionTransport().apply { capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]" }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        transport.nonCancellableCommands += "thread_goal"
+        store.dispatch(RemoteSessionIntent.Goal("s-code", ThreadGoalAction.OPEN)); runCurrent()
+        store.dispatch(RemoteSessionIntent.Open("s-cowork")); runCurrent()
+        transport.lateCommandContinuations.remove("thread_goal")!!.resume(Unit); runCurrent()
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals("s-cowork", ready.selectedSessionId)
+        assertNull(ready.threadGoal.objective)
+        assertFalse(ready.threadGoal.visible)
+        store.stop()
+    }
+
+    @Test
+    fun goalFailureRetainsObjectiveAndDoesNotPretendSuccess() = runTest {
+        val transport = FakeSessionTransport().apply { capabilitiesJson = "[\"host_stream_v1\",\"thread_goal_v1\"]" }
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Open("s-code")); runCurrent()
+        store.dispatch(RemoteSessionIntent.Goal("s-code", ThreadGoalAction.OPEN)); runCurrent()
+        transport.goalResponse = """{"resp":"error","message":"offline"}"""
+        store.dispatch(RemoteSessionIntent.SendMessage("s-code", "/goal pause")); runCurrent()
+        val goal = assertIs<RemoteSessionUiState.Ready>(store.state.value).threadGoal
+        assertEquals(ThreadGoalFailure.SAVE, goal.failure)
+        assertEquals("ship it", goal.objective)
+        assertEquals("active", goal.status)
+        store.stop()
+    }
+
+    @Test
     fun firstHistoryReadDoesNotPublishAnEmptyOrPartialConversation() = runTest {
         val transport = FakeSessionTransport().apply {
             initialHistoryGate = CompletableDeferred()
@@ -2212,6 +2356,7 @@ private class FakeSessionTransport : RemoteCommandTransport, RemoteSessionStream
     val commands = mutableListOf<RemoteCommand>()
     var workspacePath: String = "/repo"
     /** Every fake host streams on demand; tests that model an older host override this. */
+    var goalResponse: String = """{"resp":"thread_goal","goal":{"sessionId":"s-code","objective":"ship it","status":"active"}}"""
     var capabilitiesJson: String = "[\"host_stream_v1\"]"
 
     /** When set, the permission commands fail while everything else works. */
@@ -2306,6 +2451,7 @@ private class FakeSessionTransport : RemoteCommandTransport, RemoteSessionStream
             modelCatalogFailure?.let { throw RelayTransportException(it) }
         }
         val json = when (command.cmd) {
+            "thread_goal" -> goalResponse
             "get_workspace_info" ->
                 """{"resp":"ok","has_workspace":${workspacePath.isNotEmpty()},"path":"$workspacePath","capabilities":$capabilitiesJson}"""
             "get_model_catalog" -> """{

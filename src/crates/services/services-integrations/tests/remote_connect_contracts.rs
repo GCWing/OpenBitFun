@@ -50,7 +50,7 @@ use openbitfun_services_integrations::remote_connect::{
     RemoteWorkspaceKind, RemoteWorkspaceUpdate, TrackerEvent, REMOTE_CAPABILITY_DIALOG_STEER_V1,
     REMOTE_CAPABILITY_HARNESS_PROFILES_V1, REMOTE_CAPABILITY_HOST_STREAM_V1,
     REMOTE_CAPABILITY_PLAN_BUILD_V1, REMOTE_CAPABILITY_SESSION_ROLLBACK_V1,
-    REMOTE_FILE_MAX_CHUNK_BYTES, REMOTE_FILE_MAX_READ_BYTES,
+    REMOTE_CAPABILITY_THREAD_GOAL_V1, REMOTE_FILE_MAX_CHUNK_BYTES, REMOTE_FILE_MAX_READ_BYTES,
 };
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -2222,6 +2222,7 @@ fn remote_connect_workspace_response_helpers_own_wire_shape() {
         serde_json::json!([
             "workspace_id_references_v1",
             REMOTE_CAPABILITY_HARNESS_PROFILES_V1,
+            REMOTE_CAPABILITY_THREAD_GOAL_V1,
             REMOTE_CAPABILITY_DIALOG_STEER_V1,
             "dialog_queue_v1",
             REMOTE_CAPABILITY_PLAN_BUILD_V1,
@@ -2469,6 +2470,7 @@ fn remote_connect_session_response_helpers_own_pagination_and_timestamps() {
         serde_json::json!([
             "workspace_id_references_v1",
             REMOTE_CAPABILITY_HARNESS_PROFILES_V1,
+            REMOTE_CAPABILITY_THREAD_GOAL_V1,
             REMOTE_CAPABILITY_DIALOG_STEER_V1,
             "dialog_queue_v1",
             REMOTE_CAPABILITY_PLAN_BUILD_V1,

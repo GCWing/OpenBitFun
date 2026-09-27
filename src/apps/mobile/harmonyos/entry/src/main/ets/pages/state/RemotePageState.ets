@@ -1,3 +1,4 @@
+import { ThreadGoalState } from '../../model/ThreadGoal';
 import { TimeFormat } from '../../services/TimeFormat';
 import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { WorkspaceToolsState } from './WorkspaceToolsState';
@@ -22,6 +23,7 @@ import { ConversationCoreState } from './ConversationCoreState';
  */
 @ObservedV2
 export class RemotePageState {
+  @Trace threadGoal: ThreadGoalState = new ThreadGoalState();
   @Trace interactionMailbox: InteractionMailboxState = new InteractionMailboxState();
   readonly workspaceTools: WorkspaceToolsState = new WorkspaceToolsState();
   @Trace conversation: ConversationCoreState = new ConversationCoreState('code');

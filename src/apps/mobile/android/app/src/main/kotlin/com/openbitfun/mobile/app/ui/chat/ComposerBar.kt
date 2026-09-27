@@ -56,6 +56,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -122,6 +123,9 @@ private val ExpandedActionRowHeight = MobileDesignGeometry.ComposerExpandedActio
  */
 @Composable
 internal fun ComposerBar(
+    goalContent: @Composable () -> Unit = {},
+    onGoal: (() -> Unit)? = null,
+    hasGoal: Boolean = false,
     draft: String,
     images: List<ComposerImage>,
     busy: Boolean,
@@ -180,7 +184,7 @@ internal fun ComposerBar(
         easing = OpenBitFunEaseOut,
     )
     val radius by animateDpAsState(
-        if (expanded || images.isNotEmpty()) {
+        if (expanded || images.isNotEmpty() || hasGoal) {
             MobileDesignGeometry.ComposerExpandedRadius
         } else {
             MobileDesignGeometry.ComposerCollapsedRadius
@@ -189,7 +193,7 @@ internal fun ComposerBar(
         label = "composer-radius",
     )
     val contentTopPadding by animateDpAsState(
-        if (expanded) 4.dp else 0.dp,
+        if (expanded || hasGoal) 4.dp else 0.dp,
         structureSpec,
         label = "composer-top-padding",
     )
@@ -246,6 +250,7 @@ internal fun ComposerBar(
                     ),
                 ),
             ) {
+                goalContent()
                 if (capabilities.supportsAttachments && images.isNotEmpty()) {
                     AttachmentStrip(
                         images = images,
@@ -264,11 +269,11 @@ internal fun ComposerBar(
                     // While expanded both side controls move to the row below,
                     // so the field gets the full width for what is being typed.
                     AnimatedVisibility(
-                        visible = !expanded && capabilities.supportsAttachments && capabilities.showAddButton,
+                        visible = !expanded && ((capabilities.supportsAttachments && capabilities.showAddButton) || onGoal != null),
                         enter = compactControlEnter,
                         exit = compactControlExit,
                     ) {
-                        AddButton(
+                        AddButton(onGoal = onGoal, hasGoal = hasGoal,
                             enabled = !busy && images.size < MAX_COMPOSER_IMAGES,
                             onClick = onAttach,
                         )
@@ -313,8 +318,8 @@ internal fun ComposerBar(
                             .height(ExpandedActionRowHeight)
                             .padding(start = 2.dp),
                     ) {
-                        if (capabilities.supportsAttachments && capabilities.showAddButton) {
-                            AddButton(
+                        if ((capabilities.supportsAttachments && capabilities.showAddButton) || onGoal != null) {
+                            AddButton(onGoal = onGoal, hasGoal = hasGoal,
                                 enabled = !busy && images.size < MAX_COMPOSER_IMAGES,
                                 onClick = onAttach,
                             )
@@ -410,19 +415,25 @@ private fun ComposerField(
 
 /** The attachment control: a plain glyph, sized to match the primary action. */
 @Composable
-private fun AddButton(enabled: Boolean, onClick: () -> Unit) {
+private fun AddButton(enabled: Boolean, onClick: () -> Unit, onGoal: (() -> Unit)? = null, hasGoal: Boolean = false) {
+    val keyboard = LocalSoftwareKeyboardController.current
+    var expanded by remember { mutableStateOf(false) }
     Box(
         contentAlignment = Alignment.Center,
         modifier = Modifier
             .size(ActionSize)
             .clip(CircleShape)
-            .clickable(role = Role.Button, enabled = enabled, onClick = onClick),
+            .clickable(role = Role.Button, enabled = enabled || onGoal != null, onClick = { if (onGoal != null) expanded = true else onClick() }),
     ) {
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            androidx.compose.material3.DropdownMenuItem(text = { Text(stringResource(R.string.message_attach_image)) }, enabled = enabled, onClick = { expanded = false; onClick() })
+            androidx.compose.material3.DropdownMenuItem(text = { Text(stringResource(if (hasGoal) R.string.goal_manage else R.string.goal_set)) }, onClick = { expanded = false; keyboard?.hide(); onGoal?.invoke() })
+        }
         Icon(
             painterResource(R.drawable.ic_symbol_plus),
             contentDescription = stringResource(R.string.message_attach_image),
             tint = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.size(22.dp).alpha(if (enabled) 1f else DimmedAlpha),
+            modifier = Modifier.size(22.dp).alpha(if (enabled || onGoal != null) 1f else DimmedAlpha),
         )
     }
 }

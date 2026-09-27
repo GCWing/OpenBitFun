@@ -187,3 +187,9 @@ cargo test --locked -p openbitfun-services-integrations --no-default-features --
 
 These loopback protocol fixtures exercise the serving host's HTTP and filesystem
 behavior; they do not establish real SSH, relay, peer or dispatch support.
+
+For negotiated mobile Goal commands and wire compatibility:
+
+```bash
+cargo test --locked -p openbitfun-services-integrations --no-default-features --features remote-connect --lib thread_goal_wire
+```

@@ -26,6 +26,7 @@ final class MobileAppModel: ObservableObject {
     /// transcript: a reopened session shows them at once, and the host has not
     /// answered for it yet. See `ChatTranscriptOrigin`.
     @Published var remoteTranscriptUnconfirmed = false
+    @Published var threadGoal: ThreadGoalUiState?
     @Published var permissionMailbox: PermissionMailboxUiState?
     @Published var remoteConversationLoading = false
     @Published var remotePermissionMode = "ASK"
