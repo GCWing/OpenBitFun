@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  cancelWorkspaceTransfer,
   decodeBase64FileChunk,
   writeAllToLocalFile,
   readPeerFileChunks,
@@ -7,7 +8,10 @@ import {
   joinWorkspaceTargetPath,
   normalizeClipboardLocalPaths,
   resolvePasteTargetDirectory,
+  uploadLocalPathsToWorkspaceDirectory,
 } from "./workspaceFileTransfer";
+import { WorkspaceKind, WorkspaceType, type WorkspaceInfo } from "@/shared/types";
+import { i18nService } from "@/infrastructure/i18n";
 
 describe("workspaceFileTransfer", () => {
   it("decodes peer file chunks without corrupting binary bytes", () => {
@@ -156,5 +160,127 @@ describe("fixed peer download identity", () => {
     const stream = readPeerFileChunks(adapter, "/workspace/file", vi.fn(), {workspace_path: "/workspace"});
     await stream.next();
     await expect(stream.next()).rejects.toThrow("changed during download");
+  });
+
+  it("stops a peer download when the controller-side stop request arrives", async () => {
+    const requestPeerCommand = vi.fn()
+      .mockResolvedValueOnce({ resp: "file_info", size: 4 })
+      .mockImplementationOnce(async () => {
+        // The user pressed stop while the first chunk was in flight.
+        cancelWorkspaceTransfer("peer-transfer");
+        return { resp: "file_chunk", offset: 0, chunk_size: 1, total_size: 4, chunk_base64: "AQ==", revision: "r1" };
+      });
+    const adapter = { requestPeerCommand } as unknown as Parameters<typeof readPeerFileChunks>[0];
+    const stream = readPeerFileChunks(
+      adapter,
+      "/workspace/file",
+      vi.fn(),
+      { workspace_path: "/workspace" },
+      "peer-transfer",
+    );
+    expect((await stream.next()).value).toEqual(new Uint8Array([1]));
+    await expect(stream.next()).rejects.toThrow(
+      i18nService.t("panels/files:transfer.cancelled"),
+    );
+    expect(requestPeerCommand).toHaveBeenCalledTimes(2);
+
+    // The id is only stopped once: a later chunk read for another transfer of
+    // the same file must proceed.
+    const retry = vi.fn()
+      .mockResolvedValueOnce({ resp: "file_info", size: 1 })
+      .mockResolvedValueOnce({ resp: "file_chunk", offset: 0, chunk_size: 1, total_size: 1, chunk_base64: "AQ==", revision: "r1" });
+    const retryAdapter = { requestPeerCommand: retry } as unknown as Parameters<typeof readPeerFileChunks>[0];
+    const chunks: number[] = [];
+    for await (const chunk of readPeerFileChunks(
+      retryAdapter,
+      "/workspace/file",
+      vi.fn(),
+      { workspace_path: "/workspace" },
+      "another-transfer",
+    )) {
+      chunks.push(...chunk);
+    }
+    expect(chunks).toEqual([1]);
+  });
+});
+
+describe("remote workspace uploads report their cancellable transfer id", () => {
+  const uploadFromLocalPath = vi.fn();
+
+  beforeEach(() => {
+    vi.resetModules();
+    vi.resetAllMocks();
+    uploadFromLocalPath.mockResolvedValue({ wasDirectory: false });
+    (globalThis as { window?: unknown }).window = globalThis;
+    (globalThis as unknown as { __TAURI__: unknown }).__TAURI__ = {};
+  });
+
+  const remoteWorkspace: WorkspaceInfo = {
+    id: "workspace-1",
+    name: "remote",
+    rootPath: "/workspace",
+    workspaceType: WorkspaceType.SingleProject,
+    workspaceKind: WorkspaceKind.Remote,
+    connectionId: "saved-ssh",
+    languages: [],
+    openedAt: "2024-01-01T00:00:00.000Z",
+    lastAccessed: "2024-01-01T00:00:00.000Z",
+    tags: [],
+  };
+
+  async function loadTransferModule() {
+    vi.doMock("@/features/ssh-remote/sshApi", () => ({
+      sshApi: { uploadFromLocalPath },
+    }));
+    return await import("./workspaceFileTransfer");
+  }
+
+  it("passes one id to the backend command and to every progress state", async () => {
+    const { uploadLocalPathsToWorkspaceDirectory: upload } =
+      await loadTransferModule();
+    const states: Array<{ transferId?: string }> = [];
+    const result = await upload(
+      ["/local/a.txt"],
+      "/workspace",
+      remoteWorkspace,
+      (state) => states.push(state ?? {}),
+      undefined,
+      "transfer-42",
+    );
+
+    expect(result.successCount).toBe(1);
+    expect(uploadFromLocalPath).toHaveBeenCalledTimes(1);
+    const [, , , , forwardedId] = uploadFromLocalPath.mock.calls[0]!;
+    expect(forwardedId).toBe("transfer-42");
+    expect(states.filter((state) => state.transferId).length).toBeGreaterThan(0);
+    for (const state of states) {
+      if (state.transferId) {
+        expect(state.transferId).toBe("transfer-42");
+      }
+    }
+  });
+
+  it("stops the remaining items of a multi-file upload after a stop request", async () => {
+    const { cancelWorkspaceTransfer, uploadLocalPathsToWorkspaceDirectory: upload } =
+      await loadTransferModule();
+    // The first item is stopped while it is being sent, which the backend
+    // reports as a failure. The remaining items must not start new transfers.
+    uploadFromLocalPath.mockImplementation(async () => {
+      cancelWorkspaceTransfer("transfer-multi");
+      throw new Error("Transfer cancelled");
+    });
+    const states: Array<{ transferId?: string }> = [];
+
+    await expect(
+      upload(
+        ["/local/a.txt", "/local/b.txt", "/local/c.txt"],
+        "/workspace",
+        remoteWorkspace,
+        (state) => states.push(state ?? {}),
+        undefined,
+        "transfer-multi",
+      ),
+    ).rejects.toThrow(/a\.txt/);
+    expect(uploadFromLocalPath).toHaveBeenCalledTimes(1);
   });
 });

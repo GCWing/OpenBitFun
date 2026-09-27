@@ -23,6 +23,20 @@ import type {
 // API adapter for Tauri/Server Mode compatibility
 import { api } from '@/infrastructure/api/service-api/ApiClient';
 
+/**
+ * Deadline override for the remote file transfers that expose a stop action.
+ *
+ * These commands are already bounded where the work happens: every SFTP request
+ * has its own response timeout, the SSH transport drops a stalled connection,
+ * and the transfer itself can be stopped from its card. A wall-clock deadline
+ * here only guaranteed failure for slow-but-healthy links, which is how a
+ * completed transfer used to surface as "Request timeout".
+ *
+ * Commands without a progress or stop surface keep the default deadline: it is
+ * what keeps an unresponsive host from freezing the UI with no way out.
+ */
+const NO_REQUEST_DEADLINE = { timeout: 0 } as const;
+
 export const sshApi = {
   // === Connection Management ===
 
@@ -234,7 +248,7 @@ export const sshApi = {
         remotePath,
         localPath,
         transferId: tid,
-      });
+      }, NO_REQUEST_DEADLINE);
     } finally {
       unlisten?.();
     }
@@ -280,7 +294,7 @@ export const sshApi = {
         localPath,
         remotePath,
         transferId: tid,
-      });
+      }, NO_REQUEST_DEADLINE);
     } finally {
       unlisten?.();
     }

@@ -128,6 +128,7 @@
     "downloading": "正在下载",
     "uploading": "正在上传",
     "missingConnection": "远程工作区缺少 SSH 连接信息。",
+    "cancelled": "传输已取消",
     "failed": "文件传输失败：{{error}}",
     "dropHint": "将文件拖放到此处以上传",
     "stop": "停止"

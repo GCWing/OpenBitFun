@@ -4,6 +4,7 @@
 
 use crate::remote_ssh::types::{RemoteDirEntry, RemoteFileEntry, RemoteTreeNode};
 use anyhow::anyhow;
+use openbitfun_services_core::product_identity::hidden_data_directory;
 use std::sync::Arc;
 
 /// Names skipped when listing workspace root for system-prompt preview (still lazy: no descent).
@@ -39,6 +40,38 @@ fn remote_posix_basename(path: &str) -> String {
         .filter(|name| !name.is_empty())
         .unwrap_or(path)
         .to_string()
+}
+
+/// Sibling staging path used to publish an upload without truncating the
+/// current destination.
+///
+/// Remote paths are POSIX on every client platform, so the parent directory is
+/// split without host `std::path` semantics.
+fn staged_upload_path(destination: &str, token: &str) -> String {
+    let name = format!("{}-upload-{}.tmp", hidden_data_directory(), token);
+    match destination.rsplit_once('/') {
+        None => name,
+        Some(("", _)) => format!("/{name}"),
+        Some((parent, _)) => format!("{parent}/{name}"),
+    }
+}
+
+/// Best-effort removal of a staged upload that never replaced its destination.
+///
+/// The transfer already failed, so a failed cleanup only leaves one orphaned
+/// temporary beside the destination and must not replace the real error.
+async fn discard_staged_upload(
+    manager: &crate::remote_ssh::manager::SSHConnectionManager,
+    connection_id: &str,
+    staging: &str,
+) {
+    if let Err(error) = manager.sftp_remove(connection_id, staging).await {
+        log::warn!(
+            "Failed to remove staged remote upload '{}': {}",
+            staging,
+            error
+        );
+    }
 }
 
 /// Remote file service using SFTP protocol
@@ -244,6 +277,60 @@ impl RemoteFileService {
         manager
             .sftp_write_with_progress(connection_id, path, content, 262_144, on_progress)
             .await
+    }
+
+    /// Stream a local file to a remote upload destination.
+    ///
+    /// The bytes land in a sibling temporary file and replace the destination
+    /// only after the transfer completed, so a cancelled or failed upload never
+    /// truncates a valid destination with partial content. The temporary name
+    /// follows the same shape as the container upload staging, so both
+    /// providers leave identically named temporaries beside the destination.
+    ///
+    /// Container workspaces run their own staging command, which verifies the
+    /// received size and publishes the destination itself, so they stream
+    /// straight into that command instead of through SFTP.
+    pub async fn write_file_from_local_path_with_progress(
+        &self,
+        connection_id: &str,
+        path: &str,
+        local_path: &std::path::Path,
+        on_progress: &mut impl FnMut(u64, u64) -> bool,
+    ) -> anyhow::Result<u64> {
+        let manager = self.get_manager(connection_id).await?;
+        if manager.is_shell_workspace(connection_id).await {
+            return manager
+                .container_write_file_from_path_with_progress(
+                    connection_id,
+                    path,
+                    local_path,
+                    on_progress,
+                )
+                .await;
+        }
+
+        let staging = staged_upload_path(path, &uuid::Uuid::new_v4().to_string());
+        let written = match manager
+            .sftp_write_from_file_with_progress(
+                connection_id,
+                &staging,
+                local_path,
+                u64::MAX,
+                on_progress,
+            )
+            .await
+        {
+            Ok(written) => written,
+            Err(error) => {
+                discard_staged_upload(&manager, connection_id, &staging).await;
+                return Err(error);
+            }
+        };
+        if let Err(error) = self.atomic_replace(connection_id, &staging, path).await {
+            discard_staged_upload(&manager, connection_id, &staging).await;
+            return Err(error);
+        }
+        Ok(written)
     }
 
     /// Check if a remote path exists
@@ -692,10 +779,34 @@ fn format_permissions(mode: Option<u32>) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        remote_file_entry_from_metadata, remote_file_entry_from_stat_result, remote_posix_basename,
+        hidden_data_directory, remote_file_entry_from_metadata, remote_file_entry_from_stat_result,
+        remote_posix_basename, staged_upload_path,
     };
     use russh_sftp::client::error::Error as SftpError;
     use russh_sftp::protocol::{Status, StatusCode};
+
+    #[test]
+    fn staged_upload_stays_beside_its_destination_directory() {
+        let hidden = hidden_data_directory();
+        assert_eq!(
+            staged_upload_path("/workspace/目录/name.txt", "token"),
+            format!("/workspace/目录/{hidden}-upload-token.tmp")
+        );
+        assert_eq!(
+            staged_upload_path("relative/name.txt", "token"),
+            format!("relative/{hidden}-upload-token.tmp")
+        );
+        // A workspace-root and a bare filename must not gain a parent the
+        // destination never had, or the publish would move across directories.
+        assert_eq!(
+            staged_upload_path("/name.txt", "token"),
+            format!("/{hidden}-upload-token.tmp")
+        );
+        assert_eq!(
+            staged_upload_path("name.txt", "token"),
+            format!("{hidden}-upload-token.tmp")
+        );
+    }
 
     #[test]
     fn remote_basename_never_uses_host_path_separators() {

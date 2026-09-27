@@ -183,6 +183,27 @@ through the destination to preserve existing links and permissions. The final
 write is not an atomic transaction against other writers; interruption during
 that phase can have a partial or unknown outcome.
 
+Both providers publish an upload only after the transfer completed: the SFTP
+path streams into a same-directory `<hidden data dir>-upload-<id>.tmp` sibling
+and renames it over the destination, the container command does the same after
+its size check, and a downloaded file is staged beside its local destination
+the same way. A failed or cancelled transfer therefore leaves any previous
+destination unchanged, and staging temporaries are removed when the owning side
+can still reach the path. Because a published upload replaces its destination
+rather than writing through it, the result takes the staging file's mode and
+ownership, and a replaced symlink or hard link is not followed; that is what
+distinguishes a transfer from a workspace tool write above. A hard kill between
+staging and commit can leave one orphaned temporary, which the container
+commands sweep by age and the SFTP path leaves to the user.
+
+The controller applies no wall-clock deadline to commands whose duration scales
+with file size or entry count (file read and write, directory listing, tree,
+upload, download). Those operations are bounded where the work happens — every
+SFTP request has its own response timeout and the SSH transport drops a stalled
+connection — and a transfer ends when it completes, fails, or is stopped. A
+short controller deadline only reported a slow-but-healthy transfer as a failure
+while the host kept transferring it.
+
 Directory and stat records use NUL-separated fields. File names containing
 newlines or the delimiters used by older implementations remain round-trippable.
 The records are decoded only after the full byte stream is assembled; invalid
