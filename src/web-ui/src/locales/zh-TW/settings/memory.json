@@ -24,6 +24,55 @@
       "description": "控制抽取結果進入長期記憶前的整理範圍"
     }
   },
+  "status": {
+    "title": "記憶狀態",
+    "description": "以下內容描述執行 OpenBitFun 這台裝置上的記憶儲存。記憶不屬於工作區，因此這些資料不會隨遠端工作區遷移。",
+    "enabled": "已開啟",
+    "disabled": "已關閉",
+    "unknown": "未知",
+    "bytes": "{{size}} 位元組",
+    "actions": {
+      "runNow": "立即執行記憶流程"
+    },
+    "phase2Status": {
+      "never": "尚未執行"
+    },
+    "fields": {
+      "memoryRoot": "記憶目錄",
+      "memoryRootHint": "存放記憶檔案的本機目錄。",
+      "generateMemories": "自動生成",
+      "useMemories": "會話中使用記憶",
+      "storedOutputs": "已存記憶筆數",
+      "storedOutputsHint": "目前保留在記憶儲存中的抽取結果數量。",
+      "pendingPromotion": "等待整理",
+      "pendingPromotionHint": "尚未被任何一次整理合併的記憶筆數。",
+      "phase2": "最近整理",
+      "phase2LastRun": "完成於 {{time}}",
+      "phase2NeverRun": "尚未執行過整理。",
+      "phase2LastError": "最近整理錯誤",
+      "memoryIndex": "MEMORY.md",
+      "memoryIndexHint": "長期記憶索引檔案的大小。",
+      "memorySummary": "memory_summary.md",
+      "memorySummaryHint": "注入會話的摘要檔案大小。",
+      "rolloutSummaries": "會話抽取檔案數",
+      "rolloutSummariesHint": "記憶目錄中依會話儲存的抽取檔案數量。"
+    },
+    "failed": {
+      "title": "抽取失敗的會話",
+      "description": "這些會話未能完成抽取。在抽取成功或重試次數恢復之前會持續列出。",
+      "none": "沒有抽取失敗的會話。",
+      "retryExhausted": "重試次數已用盡"
+    },
+    "messages": {
+      "loading": "正在讀取記憶狀態…",
+      "loadFailed": "讀取記憶狀態失敗",
+      "unavailable": "記憶狀態無法使用：{{error}}",
+      "pipelineStarted": "已啟動記憶流程",
+      "pipelineDisabled": "自動記憶生成已關閉，未啟動任何工作",
+      "startFailed": "啟動記憶流程失敗",
+      "pollTimedOut": "流程已執行超過 10 分鐘，已停止更新狀態。重新開啟本頁可再次更新。"
+    }
+  },
   "fields": {
     "memoryEnabled": {
       "label": "記憶",
@@ -79,7 +128,7 @@
     },
     "maxUnusedDays": {
       "label": "候選保留天數",
-      "description": "未被使用的抽取結果超過該天數後不再參與整理，需不小於會話最大年齡"
+      "description": "未被使用的抽取結果超過該天數後會被永久刪除，由其整理進 MEMORY.md 的內容會在下一次整理時移除。需不小於會話最大年齡"
     },
     "consolidationModel": {
       "label": "整理模型",

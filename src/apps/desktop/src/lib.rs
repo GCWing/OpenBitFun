@@ -1303,6 +1303,8 @@ pub async fn run() {
             api::agentic_api::reset_memory,
             api::agentic_api::get_memory_paths,
             api::agentic_api::set_session_memory_mode,
+            api::memory_api::get_memory_status,
+            api::memory_api::run_memory_pipeline_now,
             webdriver_bridge_result,
             get_startup_native_trace,
             api::agentic_api::list_sessions,

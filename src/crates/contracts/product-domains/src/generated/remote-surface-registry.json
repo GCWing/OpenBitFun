@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:6ef0dc2e94b7c19e",
+  "digest": "fnv1a64:514a6cfb879e33fb",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -2724,7 +2724,19 @@
     {
       "id": "get_memory_paths",
       "surface": "tauri_command",
-      "remoteWorkspace": "LegacyUnaudited",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "get_memory_status",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
       "peer": {
         "kind": "proxied"
       },
@@ -6296,6 +6308,18 @@
       "id": "run_init_agents_md",
       "surface": "tauri_command",
       "remoteWorkspace": "LegacyUnaudited",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "run_memory_pipeline_now",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
       "peer": {
         "kind": "proxied"
       },

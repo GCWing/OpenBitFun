@@ -286,6 +286,45 @@ export interface MemoryPathsResponse {
   memoriesRootDir: string;
 }
 
+/**
+ * One stage-1 extraction that failed and has not produced output yet.
+ * Optional fields tolerate older/newer hosts.
+ */
+export interface MemoryStage1FailureInfo {
+  sessionId?: string;
+  lastError?: string;
+  retryExhausted?: boolean;
+}
+
+/** Byte/count statistics of the host memory root. `null` means "unreadable". */
+export interface MemoryFileStatsInfo {
+  memoryIndexBytes?: number | null;
+  memorySummaryBytes?: number | null;
+  rolloutSummaryCount?: number | null;
+}
+
+/**
+ * Host-local memory pipeline status. The memory store belongs to the OpenBitFun host
+ * that runs the agent, not to the workspace, so these numbers describe that host.
+ */
+export interface MemoryStatusResponse {
+  generateMemories?: boolean;
+  useMemories?: boolean;
+  memoryRootDir?: string;
+  stage1OutputCount?: number;
+  stage1PendingPromotionCount?: number;
+  stage1Failed?: MemoryStage1FailureInfo[];
+  phase2Status?: string | null;
+  phase2LastFinishedAtUnixSecs?: number | null;
+  phase2LastError?: string | null;
+  files?: MemoryFileStatsInfo;
+}
+
+export interface RunMemoryPipelineNowResponse {
+  /** `false` when the pipeline gate is off and nothing was scheduled. */
+  started?: boolean;
+}
+
 export interface RestoreSessionWithTurnsResponse {
   session: SessionInfo;
   turns: DialogTurnData[];
@@ -1219,6 +1258,30 @@ export class AgentAPI {
       return await api.invoke<MemoryPathsResponse>('get_memory_paths');
     } catch (error) {
       throw createTauriCommandError('get_memory_paths', error);
+    }
+  }
+
+  /**
+   * Reads the memory pipeline status of the current OpenBitFun host. Throws when the
+   * host cannot report the state; callers must surface that instead of guessing.
+   */
+  async getMemoryStatus(): Promise<MemoryStatusResponse> {
+    try {
+      return await api.invoke<MemoryStatusResponse>('get_memory_status');
+    } catch (error) {
+      throw createTauriCommandError('get_memory_status', error);
+    }
+  }
+
+  /**
+   * Schedules one memory pipeline pass on the current OpenBitFun host and returns
+   * immediately. Overlapping triggers are deduplicated by the pipeline itself.
+   */
+  async runMemoryPipelineNow(): Promise<RunMemoryPipelineNowResponse> {
+    try {
+      return await api.invoke<RunMemoryPipelineNowResponse>('run_memory_pipeline_now');
+    } catch (error) {
+      throw createTauriCommandError('run_memory_pipeline_now', error);
     }
   }
 

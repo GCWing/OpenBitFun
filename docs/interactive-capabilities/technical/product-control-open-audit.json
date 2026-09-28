@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "d2710a9488e6f021e11ece435e8d067a9285903c26f20f5bc0b586ac46d67e6d",
-  "count": 212,
+  "catalogDigest": "ac7e3c1d53321bca6759cbc9128938dda18521f0842bc709163d67c86473537c",
+  "count": 213,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
-    "unstructuredInteraction": 185,
+    "unstructuredInteraction": 186,
     "visualSelection": 18
   },
   "entries": [
@@ -2848,6 +2848,23 @@
       },
       "evidence": [
         "source:src/web-ui/src/locales/zh-CN/settings/memory.json#fields.consolidationModel.label"
+      ]
+    },
+    {
+      "capabilityId": "setting.ai.memory",
+      "itemId": "pipeline-status",
+      "titleZh": "查看宿主记忆管线状态并手动运行一次提取与整理",
+      "titleEn": "Inspect the host memory pipeline status and run one extraction and consolidation pass manually",
+      "reasonCode": "unstructuredInteraction",
+      "reasonZh": "记忆状态来自当前宿主的实时管线数据（数据库行、记忆目录文件与有效配置），手动运行也是异步后台任务，目前没有绑定到产品控制 operation 的结构化动作；智能体会打开精确入口，把查看状态与手动运行保留在用户可见界面。",
+      "reasonEn": "The memory status comes from the current host's live pipeline data (database rows, memory-root files, and effective config), and a manual run is an asynchronous background pass with no product-control operation bound yet; the Agent opens the exact entry and keeps status inspection and the manual run in the visible UI.",
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "ai.memory"
+      },
+      "evidence": [
+        "command:get_memory_status",
+        "command:run_memory_pipeline_now"
       ]
     },
     {

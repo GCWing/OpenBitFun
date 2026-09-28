@@ -33,6 +33,8 @@ Control whether OpenBitFun extracts and uses long-term memory from sessions, inc
   - Set how long unused memories are retained
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 选择记忆整理模型并让它跟随主模型或提取模型
   - Choose the consolidation model or make it follow the primary or extraction model
+- **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看宿主记忆管线状态并手动运行一次提取与整理
+  - Inspect the host memory pipeline status and run one extraction and consolidation pass manually
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 打开记忆目录、恢复默认设置或显式清空全部记忆
   - Open the memory directory, restore defaults, or explicitly erase all memories
 

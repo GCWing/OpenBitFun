@@ -6,6 +6,7 @@ Notes:
 - Custom subagents do not currently support independent exposure overrides and inherit the default behavior.
 - Dynamically registered MCP tools default to `Deferred`; they are discovered at runtime and are not enumerated in the built-in table below.
 - Global `ai.enable_deferred_tool_loading=false` overrides all allowed tools to `Direct` and removes `GetToolSpec` and `CallDeferredTool` from the model-visible manifest.
+- Exposure is separate from context availability. `Tool::is_available_in_context()` additionally removes a tool from the manifest for a session: `MemorySearch` and `MemoryFetch` when `memories.use_memories=false` or the workspace is remote, `MemorySave` when `memories.generate_memories=false` or the workspace is remote, and `ComputerUse` when the local desktop capability or `ai.computer_use_enabled` is off. A direct call to a hidden tool is rejected by execution admission with an explicit not-in-allowed-list error; each tool's own gate error is the fallback for disagreement cases (a manifest built without session context, or a config change between listing and call).
 
 **Tool Exposure Table**
 
@@ -22,6 +23,9 @@ Notes:
 | `WriteStdin` | Direct | None | - |
 | `ExecControl` | Direct | None | - |
 | `GetTime` | Direct | None | - |
+| `MemorySearch` | Direct | None | - |
+| `MemoryFetch` | Direct | None | - |
+| `MemorySave` | Direct | None | - |
 | `Task` | Direct | None | - |
 | `Skill` | Direct | None | - |
 | `AskUserQuestion` | Direct | None | - |

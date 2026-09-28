@@ -12,13 +12,13 @@ import {
   Tooltip,
 } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { FolderOpen, RotateCcw } from 'lucide-react';
+import { FolderOpen, Play, RotateCcw } from 'lucide-react';
 import { ConfigLoadingState, ConfigMessage, ConfigRetryState } from '@/infrastructure/config/components/common';
 
 import { useNotification } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
-import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
+import { useI18n } from '@/infrastructure/i18n';
+import { agentAPI, type MemoryStatusResponse } from '@/infrastructure/api/service-api/AgentAPI';
 import { workspaceAPI } from '@/infrastructure/api/service-api/WorkspaceAPI';
 import { configManager } from '../services/ConfigManager';
 import { getModelDisplayName } from '../services/modelConfigs';
@@ -33,15 +33,24 @@ import {
 
 const log = createLogger('MemorySettings');
 
+/**
+ * Mirrors `MemoriesConfig::default()` in
+ * `src/crates/contracts/config-contracts/src/types.rs`.
+ *
+ * The backend persists only non-default keys (`prune_default_memories_config`),
+ * so a value that differs here is not a harmless UI default: it would render a
+ * state the host does not have, and the next save would persist it. Keep this
+ * object field-for-field identical to the Rust defaults.
+ */
 const DEFAULT_MEMORIES_CONFIG: MemoriesConfigShape = {
-  generate_memories: true,
+  generate_memories: false,
   generate_for_btw_sessions: false,
-  use_memories: true,
+  use_memories: false,
   external_context_policy: 'clear_tool_results',
   max_raw_memories_for_consolidation: 64,
   max_unused_days: 30,
   max_rollout_age_days: 10,
-  max_rollouts_per_startup: 5,
+  max_rollouts_per_startup: 2,
   max_rollouts_scan_limit: 2000,
   min_rollout_idle_hours: 6,
   phase1_max_concurrency: 1,
@@ -54,11 +63,37 @@ const DEFAULT_MEMORIES_CONFIG: MemoriesConfigShape = {
   consolidation_model: null,
 };
 
+/** Edits that change the Phase-1/Phase-2 window and must not invert it. */
+const MEMORY_WINDOW_KEYS: readonly (keyof MemoriesConfigShape)[] = [
+  'max_rollout_age_days',
+  'max_unused_days',
+];
+
+const STATUS_POLL_INTERVAL_MS = 5_000;
+const STATUS_POLL_MAX_DURATION_MS = 10 * 60 * 1_000;
+
+type MemoryStatusState =
+  | { kind: 'loading' }
+  | { kind: 'ready'; data: MemoryStatusResponse }
+  | { kind: 'unavailable'; error: string };
+
+type PipelineRunState = 'idle' | 'running' | 'timed-out';
+
 function normalizeSelectValue(value: string | number | (string | number)[]): string {
   const resolved = Array.isArray(value) ? value[0] : value;
   return resolved == null ? '' : String(resolved);
 }
 
+/**
+ * Applies host defaults for keys the backend omitted.
+ *
+ * There is deliberately no cross-field rewrite here. `max_rollout_age_days`
+ * (Phase-1 source age) and `max_unused_days` (Phase-2 candidate retention) are
+ * independent in the backend: `MemoriesConfig` keeps both exactly as stored,
+ * even when the source age exceeds the retention. Clamping one to the other
+ * would silently persist a value the user never chose. An inverted window is
+ * refused at edit time with a visible hint instead (see `updateConfig`).
+ */
 function normalizeMemoriesConfig(config: Partial<MemoriesConfigShape> | null | undefined): MemoriesConfigShape {
   const normalized = {
     ...DEFAULT_MEMORIES_CONFIG,
@@ -71,7 +106,7 @@ function normalizeMemoriesConfig(config: Partial<MemoriesConfigShape> | null | u
     external_context_policy: normalized.external_context_policy,
     max_raw_memories_for_consolidation: normalized.max_raw_memories_for_consolidation,
     max_unused_days: normalized.max_unused_days,
-    max_rollout_age_days: Math.min(normalized.max_rollout_age_days, normalized.max_unused_days),
+    max_rollout_age_days: normalized.max_rollout_age_days,
     max_rollouts_per_startup: normalized.max_rollouts_per_startup,
     max_rollouts_scan_limit: normalized.max_rollouts_scan_limit,
     min_rollout_idle_hours: normalized.min_rollout_idle_hours,
@@ -90,9 +125,17 @@ function isValidMemoryWindowConfig(config: MemoriesConfigShape): boolean {
   return config.max_rollout_age_days <= config.max_unused_days;
 }
 
+function shortSessionId(sessionId: string | undefined): string {
+  const value = (sessionId ?? '').trim();
+  if (!value) {
+    return '';
+  }
+  return value.length > 8 ? `${value.slice(0, 8)}…` : value;
+}
+
 const MemorySettingsPage: React.FC = () => {
-  const { t } = useTranslation('settings/memory');
-  const { error: notifyError, success: notifySuccess } = useNotification();
+  const { t, formatDate, formatNumber } = useI18n(['settings/memory', 'shared']);
+  const { error: notifyError, info: notifyInfo, success: notifySuccess } = useNotification();
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [config, setConfig] = useState<MemoriesConfigShape>(DEFAULT_MEMORIES_CONFIG);
@@ -104,28 +147,88 @@ const MemorySettingsPage: React.FC = () => {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const actionMenuAnchorRef = useRef<HTMLButtonElement>(null);
+  const [memoryStatus, setMemoryStatus] = useState<MemoryStatusState>({ kind: 'loading' });
+  const [pipelineRun, setPipelineRun] = useState<PipelineRunState>('idle');
+  const pipelineBaselineFinishedAtRef = useRef<number | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setLoadFailed(false);
+
     try {
-      const [loadedConfig, loadedModels] = await Promise.all([
-        configManager.getConfig<Partial<MemoriesConfigShape>>('memories'),
-        configManager.getConfig<AIModelConfig[]>('ai.models'),
-      ]);
+      const loadedConfig = await configManager.getConfig<Partial<MemoriesConfigShape>>('memories');
+      // Do not fall through to the default object: the backend stores only
+      // non-default keys, so rendering the defaults would claim a host state
+      // that was never read.
       setConfig(normalizeMemoriesConfig(loadedConfig));
-      setModels(Array.isArray(loadedModels) ? loadedModels : []);
     } catch (error) {
       log.error('Failed to load memories config', error);
       setLoadFailed(true);
-    } finally {
-      setLoading(false);
     }
+
+    try {
+      const loadedModels = await configManager.getConfig<AIModelConfig[]>('ai.models');
+      setModels(Array.isArray(loadedModels) ? loadedModels : []);
+    } catch (error) {
+      // The model list only feeds the two model selectors; a failure here must
+      // not mark the memory settings themselves as unavailable.
+      log.error('Failed to load AI models for the memory model selectors', error);
+      setModels([]);
+    }
+
+    setLoading(false);
   }, []);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const refreshMemoryStatus = useCallback(async (): Promise<MemoryStatusResponse | null> => {
+    try {
+      const data = await agentAPI.getMemoryStatus();
+      setMemoryStatus({ kind: 'ready', data });
+      return data;
+    } catch (error) {
+      log.error('Failed to load memory status', error);
+      setMemoryStatus({
+        kind: 'unavailable',
+        error: error instanceof Error ? error.message : t('status.messages.loadFailed'),
+      });
+      return null;
+    }
+  }, [t]);
+
+  useEffect(() => {
+    void refreshMemoryStatus();
+  }, [refreshMemoryStatus]);
+
+  useEffect(() => {
+    if (pipelineRun !== 'running') {
+      return undefined;
+    }
+
+    const deadline = Date.now() + STATUS_POLL_MAX_DURATION_MS;
+    const timer = window.setInterval(() => {
+      if (Date.now() >= deadline) {
+        setPipelineRun('timed-out');
+        return;
+      }
+
+      void refreshMemoryStatus().then((data) => {
+        if (!data) {
+          return;
+        }
+        // Phase 2 stamps `finished_at` on every pass it runs, including a no-op
+        // one, so a changed value means the triggered pass reached its end.
+        const finishedAt = data.phase2LastFinishedAtUnixSecs ?? null;
+        if (finishedAt !== null && finishedAt !== pipelineBaselineFinishedAtRef.current) {
+          setPipelineRun('idle');
+        }
+      });
+    }, STATUS_POLL_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [pipelineRun, refreshMemoryStatus]);
 
   const enabledModels = useMemo(() => models.filter((model) => model.enabled && model.id), [models]);
 
@@ -163,7 +266,10 @@ const MemorySettingsPage: React.FC = () => {
       ...config,
       [key]: value,
     };
-    if (!isValidMemoryWindowConfig(next)) {
+    // Only a window edit is validated against the other window field. A window
+    // stored by the host that the backend accepts must not block an unrelated
+    // setting, and the UI must never rewrite it silently.
+    if (MEMORY_WINDOW_KEYS.includes(key) && !isValidMemoryWindowConfig(next)) {
       notifyError(t('messages.rolloutAgeExceedsRetention'));
       return;
     }
@@ -177,7 +283,7 @@ const MemorySettingsPage: React.FC = () => {
             ...normalizeMemoriesConfig(current),
             [key]: value,
           };
-          if (!isValidMemoryWindowConfig(latest)) {
+          if (MEMORY_WINDOW_KEYS.includes(key) && !isValidMemoryWindowConfig(latest)) {
             throw new Error(t('messages.rolloutAgeExceedsRetention'));
           }
           return latest;
@@ -265,13 +371,41 @@ const MemorySettingsPage: React.FC = () => {
     try {
       await agentAPI.resetMemory();
       notifySuccess(t('messages.memoryReset'));
+      await refreshMemoryStatus();
     } catch (error) {
       log.error('Failed to reset memory', error);
       notifyError(error instanceof Error ? error.message : t('messages.memoryResetFailed'));
     } finally {
       setActionBusy(null);
     }
-  }, [notifyError, notifySuccess, t]);
+  }, [notifyError, notifySuccess, refreshMemoryStatus, t]);
+
+  const handleRunPipelineNow = useCallback(async () => {
+    const baseline = memoryStatus.kind === 'ready'
+      ? memoryStatus.data.phase2LastFinishedAtUnixSecs ?? null
+      : null;
+    pipelineBaselineFinishedAtRef.current = baseline;
+    setPipelineRun('running');
+
+    try {
+      const result = await agentAPI.runMemoryPipelineNow();
+      if (!result.started) {
+        setPipelineRun('idle');
+        notifyInfo(t('status.messages.pipelineDisabled'));
+        return;
+      }
+      notifySuccess(t('status.messages.pipelineStarted'));
+      const data = await refreshMemoryStatus();
+      const finishedAt = data?.phase2LastFinishedAtUnixSecs ?? null;
+      if (finishedAt !== null && finishedAt !== baseline) {
+        setPipelineRun('idle');
+      }
+    } catch (error) {
+      log.error('Failed to start the memory pipeline', error);
+      setPipelineRun('idle');
+      notifyError(error instanceof Error ? error.message : t('status.messages.startFailed'));
+    }
+  }, [memoryStatus, notifyError, notifyInfo, notifySuccess, refreshMemoryStatus, t]);
 
   const actionMenuItems = useMemo<MenuEntry[]>(() => [
     {
@@ -328,6 +462,46 @@ const MemorySettingsPage: React.FC = () => {
 
   const memoryEnabled = config.generate_memories && config.use_memories;
   const memoryWorkDisabled = !memoryEnabled;
+  const statusData = memoryStatus.kind === 'ready' ? memoryStatus.data : null;
+  // Run-now enablement follows the memory config this page manages, never the
+  // status fetch: a status read that fails (or reports a stale gate) must not
+  // leave the user with a dead end after they enable generation right here.
+  // When the config itself is unreadable there is no trustworthy value to enable
+  // from, so the action stays blocked until the user retries the settings read.
+  const pipelineCanRun = !loadFailed && config.generate_memories;
+  const failedSessions = statusData?.stage1Failed ?? [];
+  const phase2Status = statusData?.phase2Status ?? null;
+  const phase2FinishedAt = typeof statusData?.phase2LastFinishedAtUnixSecs === 'number'
+    ? formatDate(new Date(statusData.phase2LastFinishedAtUnixSecs * 1000), {
+      dateStyle: 'short',
+      timeStyle: 'short',
+    })
+    : null;
+
+  const formatEnabled = (enabled: boolean | undefined): string => (
+    enabled ? t('status.enabled') : t('status.disabled')
+  );
+
+  const formatBytes = (bytes: number | null | undefined): string => (
+    typeof bytes === 'number' ? t('status.bytes', { size: formatNumber(bytes) }) : t('status.unknown')
+  );
+
+  const formatPhase2Status = (status: string | null): string => {
+    switch (status) {
+      case null:
+      case '':
+        return t('status.phase2Status.never');
+      case 'running':
+        return t('shared:statuses.running');
+      case 'done':
+        return t('shared:statuses.done');
+      case 'error':
+        return t('shared:statuses.failed');
+      default:
+        // An unknown value from a newer host is shown verbatim instead of hidden.
+        return status;
+    }
+  };
 
   return (
     <ConfigPageLayout
@@ -338,6 +512,153 @@ const MemorySettingsPage: React.FC = () => {
       <ConfigPageHeader title={t('title')} subtitle={t('subtitle')} />
       <ConfigPageContent>
         <ConfigMessage message={{ type: 'info', text: t('scopeNotice') }} />
+        <ConfigPageSection
+          data-testid="memories-status-card"
+          title={t('status.title')}
+          description={t('status.description')}
+          extra={(
+            <Button
+              data-testid="memories-run-now-btn"
+              type="button"
+              variant="outline"
+              size="sm"
+              leadingIcon={<Play size={16} />}
+              onClick={() => void handleRunPipelineNow()}
+              loading={pipelineRun === 'running'}
+              disabled={pipelineRun === 'running' || !pipelineCanRun}
+            >
+              {t('status.actions.runNow')}
+            </Button>
+          )}
+        >
+          {memoryStatus.kind === 'loading' && (
+            <ConfigMessage message={{ type: 'info', text: t('status.messages.loading') }} />
+          )}
+          {memoryStatus.kind === 'unavailable' && (
+            <ConfigMessage
+              message={{
+                type: 'error',
+                text: t('status.messages.unavailable', { error: memoryStatus.error }),
+              }}
+            />
+          )}
+          {statusData && (
+            <>
+              <ConfigPageRow
+                label={t('status.fields.memoryRoot')}
+                description={t('status.fields.memoryRootHint')}
+                align="center"
+                multiline
+              >
+                <span data-testid="memories-status-memory-root">{statusData.memoryRootDir || t('status.unknown')}</span>
+              </ConfigPageRow>
+
+              <ConfigPageRow
+                label={t('status.fields.generateMemories')}
+                description={t('fields.generateMemories.description')}
+                align="center"
+              >
+                <span data-testid="memories-status-generate">{formatEnabled(statusData.generateMemories)}</span>
+              </ConfigPageRow>
+
+              <ConfigPageRow
+                label={t('status.fields.useMemories')}
+                description={t('fields.useMemories.description')}
+                align="center"
+              >
+                <span data-testid="memories-status-use">{formatEnabled(statusData.useMemories)}</span>
+              </ConfigPageRow>
+
+              <ConfigPageRow
+                label={t('status.fields.storedOutputs')}
+                description={t('status.fields.storedOutputsHint')}
+                align="center"
+              >
+                <span data-testid="memories-status-stored-outputs">{formatNumber(statusData.stage1OutputCount ?? 0)}</span>
+              </ConfigPageRow>
+
+              <ConfigPageRow
+                label={t('status.fields.pendingPromotion')}
+                description={t('status.fields.pendingPromotionHint')}
+                align="center"
+              >
+                <span data-testid="memories-status-pending-promotion">{formatNumber(statusData.stage1PendingPromotionCount ?? 0)}</span>
+              </ConfigPageRow>
+
+              <ConfigPageRow
+                label={t('status.fields.phase2')}
+                description={phase2FinishedAt
+                  ? t('status.fields.phase2LastRun', { time: phase2FinishedAt })
+                  : t('status.fields.phase2NeverRun')}
+                align="center"
+              >
+                <span data-testid="memories-status-phase2">{formatPhase2Status(phase2Status)}</span>
+              </ConfigPageRow>
+
+              {statusData.phase2LastError ? (
+                <ConfigPageRow
+                  label={t('status.fields.phase2LastError')}
+                  align="center"
+                  multiline
+                >
+                  <span>{statusData.phase2LastError}</span>
+                </ConfigPageRow>
+              ) : null}
+
+              <ConfigPageRow
+                label={t('status.fields.memoryIndex')}
+                description={t('status.fields.memoryIndexHint')}
+                align="center"
+              >
+                <span>{formatBytes(statusData.files?.memoryIndexBytes)}</span>
+              </ConfigPageRow>
+
+              <ConfigPageRow
+                label={t('status.fields.memorySummary')}
+                description={t('status.fields.memorySummaryHint')}
+                align="center"
+              >
+                <span>{formatBytes(statusData.files?.memorySummaryBytes)}</span>
+              </ConfigPageRow>
+
+              <ConfigPageRow
+                label={t('status.fields.rolloutSummaries')}
+                description={t('status.fields.rolloutSummariesHint')}
+                align="center"
+              >
+                <span data-testid="memories-status-rollout-summaries">
+                  {typeof statusData.files?.rolloutSummaryCount === 'number'
+                    ? formatNumber(statusData.files.rolloutSummaryCount)
+                    : t('status.unknown')}
+                </span>
+              </ConfigPageRow>
+
+              <ConfigPageRow
+                label={t('status.failed.title')}
+                description={t('status.failed.description')}
+                multiline
+              >
+                {failedSessions.length === 0 ? (
+                  <span>{t('status.failed.none')}</span>
+                ) : (
+                  <div>
+                    {failedSessions.map((failure, index) => (
+                      <div key={failure.sessionId ?? index}>
+                        <span>{shortSessionId(failure.sessionId)}</span>
+                        <span>{failure.lastError}</span>
+                        {failure.retryExhausted ? <span>{t('status.failed.retryExhausted')}</span> : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </ConfigPageRow>
+            </>
+          )}
+          {pipelineRun === 'timed-out' && (
+            <ConfigMessage message={{ type: 'warning', text: t('status.messages.pollTimedOut') }} />
+          )}
+        </ConfigPageSection>
+
         <ConfigPageSection title={t('sections.basic.title')} description={t('sections.basic.description')}>
           <ConfigPageRow
             label={t('fields.memoryEnabled.label')}
@@ -345,6 +666,7 @@ const MemorySettingsPage: React.FC = () => {
             align="center"
           >
             <Switch
+              data-testid="memories-enabled-toggle"
               checked={memoryEnabled}
               onChange={(event) => void updateMemoryEnabled(event.target.checked)}
               disabled={savingKey === 'generate_memories' || savingKey === 'use_memories'}
@@ -492,7 +814,7 @@ const MemorySettingsPage: React.FC = () => {
                   value={config.max_rollout_age_days}
                   onValueChange={(value) => void updateConfig('max_rollout_age_days', value)}
                   min={0}
-                  max={config.max_unused_days}
+                  max={365}
                   step={1}
                   unit={t('units.days')}
                   size="sm"
@@ -571,7 +893,7 @@ const MemorySettingsPage: React.FC = () => {
                 <NumberInput
                   value={config.max_unused_days}
                   onValueChange={(value) => void updateConfig('max_unused_days', value)}
-                  min={config.max_rollout_age_days}
+                  min={1}
                   max={365}
                   step={1}
                   unit={t('units.days')}

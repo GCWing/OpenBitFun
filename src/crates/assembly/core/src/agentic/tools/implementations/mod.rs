@@ -45,6 +45,7 @@ pub mod list_models_tool;
 pub mod ls_tool;
 #[cfg(feature = "tools-mcp")]
 pub mod mcp_tools;
+pub mod memory_tools;
 #[cfg(feature = "tools-miniapp")]
 pub mod miniapp_finalize_tool;
 #[cfg(feature = "tools-miniapp")]
@@ -117,6 +118,7 @@ pub use ls_tool::LSTool;
 pub use mcp_tools::{
     GetMCPPromptTool, ListMCPPromptsTool, ListMCPResourcesTool, ReadMCPResourceTool,
 };
+pub use memory_tools::{MemoryFetchTool, MemorySaveTool, MemorySearchTool};
 #[cfg(feature = "tools-miniapp")]
 pub use miniapp_finalize_tool::FinalizeMiniAppTool;
 #[cfg(feature = "tools-miniapp")]

@@ -313,7 +313,13 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("get_mcp_server_status",                                      Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_mcp_servers",                                            Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_mcp_tool_ui_uri",                                        Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
-    op("get_memory_paths",                                           Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
+    // Memory paths/status/trigger read and mutate this host's own memory store
+    // (host data dir: database, workspace files, global memory config). That
+    // store is not workspace-scoped and never follows the workspace filesystem
+    // to an SSH host, so a remote workspace session must never route these to
+    // the remote host or present remote memory as the controller's.
+    op("get_memory_paths",                                           Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
+    op("get_memory_status",                                          Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_miniapp",                                                Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_miniapp_draft_storage",                                  Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_miniapp_storage",                                        Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
@@ -616,6 +622,9 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("rollback_session",                                           Unsupported, Proxied,          CLI_NOT_IMPLEMENTED),
     op("rollback_session_to_turn",                                   Unsupported, Proxied,          HANDLED),
     op("run_init_agents_md",                                         Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
+    // Same host-local memory store as `get_memory_status`: the pass runs in this
+    // machine, not on the remote workspace host.
+    op("run_memory_pipeline_now",                                    Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("run_system_command",                                         Unsupported, Proxied,          CLI_NOT_IMPLEMENTED),
     op("save_acp_json_config",                                       Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("save_canvas_state",                                          Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
