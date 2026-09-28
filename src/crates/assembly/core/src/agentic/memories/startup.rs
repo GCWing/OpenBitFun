@@ -54,14 +54,15 @@ pub async fn start_memory_startup_task(request: MemoryStartupRequest) {
                 return;
             }
         };
+        let max_unused_days = config.memories.max_unused_days.clamp(1, 365);
         match phase1
-            .prune_stage1_outputs_for_retention(config.memories.max_unused_days)
+            .prune_stage1_outputs_for_retention(max_unused_days)
             .await
         {
             Ok(pruned) if pruned > 0 => {
                 info!(
                     "Memory startup pruned stale stage1 output rows: pruned={}, max_unused_days={}",
-                    pruned, config.memories.max_unused_days
+                    pruned, max_unused_days
                 );
             }
             Ok(_) => {}

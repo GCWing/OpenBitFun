@@ -1302,6 +1302,19 @@ impl ConversationCoordinator {
             return;
         };
 
+        // The memory workspace is an internal store, not a user workspace. It is
+        // registered so internal Agent requests can carry a workspace ID, but
+        // tracking its activity would add it to the recent-workspace list and
+        // re-ensure a workspace runtime that writes tool state under the memory
+        // root.
+        if Self::workspace_is_memory_root(&workspace_service, workspace_id).await {
+            debug!(
+                "Skipping session workspace activity for the memory root: reason={}, workspace_id={}",
+                reason, workspace_id
+            );
+            return;
+        }
+
         if let Err(error) = workspace_service
             .track_workspace_activity_by_id(workspace_id, mode)
             .await
@@ -1311,6 +1324,22 @@ impl ConversationCoordinator {
                 reason, workspace_id, error
             );
         }
+    }
+
+    /// True when a workspace ID names the internal memory root.
+    ///
+    /// The memory root is registered as a workspace so the internal phase-2
+    /// consolidation Agent can carry a workspace ID instead of a path, so this is
+    /// an identity check on the resolved record and not a path heuristic.
+    async fn workspace_is_memory_root(
+        workspace_service: &WorkspaceService,
+        workspace_id: &str,
+    ) -> bool {
+        let memories_root = crate::infrastructure::get_path_manager_arc().memories_root_dir();
+        workspace_service
+            .get_workspace(workspace_id)
+            .await
+            .is_some_and(|workspace| workspace.root_path == memories_root)
     }
 
     /// Build a workspace binding that is remote-aware.

@@ -170,14 +170,37 @@ Incremental update and forgetting mechanism:
   evidence, task placement, or conflict resolution.
   - When scanning a raw-memory section, read the task-level `Preference signals:` subsections
     first, then the rest of the task blocks.
+- Deleting is mandatory, not optional. Every deleted input in `phase2_workspace_diff.md`
+  (deleted `rollout_summaries/*.md`, deleted or removed `raw_memories.md` sections, deleted
+  `extensions/*` resources) REQUIRES removing the memory content that depended on it from
+  `MEMORY.md` and `memory_summary.md` in the same run.
 - For deleted `rollout_summaries/*.md` or `extensions/*/resources/*.md` files, search their
   filenames, paths, and session ids (when present) in `MEMORY.md`. Delete only memory supported
   by deleted inputs.
+- Renames are NOT deletions. A `rollout_summaries/` file name is
+  `<session-timestamp>-<4-char-hash>-<slug>.md`; for UUID session ids only the trailing `-<slug>`
+  part changes when a session is re-extracted with a different slug, while for non-UUID session
+  ids the timestamp prefix can change too — in that case the `session_id:` header is the deciding
+  signal. If a deleted summary file is paired, in the same diff, with an added summary file that
+  keeps the same `<session-timestamp>-<4-char-hash>` prefix (or the added file carries the same
+  `session_id:` header, which you can read, and appears exactly once in the added files), it is
+  the same session under a new file name: re-point every reference to the new file name and keep
+  the memory content. Treat a deleted summary as evidence loss only when no added file shares its
+  identity and the session is absent from `raw_memories.md`.
+- Never leave a placeholder where deleted memory used to be. Annotations such as
+  `[summary not in store]`, `[missing]`, `[deleted]`, `[unavailable]`, `TODO`, or any other
+  "evidence unavailable" marker are NOT an acceptable terminal state. A reference to a deleted
+  input must be removed from the block, not annotated in place.
 - If a `MEMORY.md` block contains both deleted and still-present evidence, do not delete the whole
   block. Remove only stale references and stale local guidance, preserve shared or still-supported
   content, and split or rewrite the block only if needed.
+- If all evidence behind a task group is deleted, delete the whole `# Task Group` block, and its
+  topics and learnings in `memory_summary.md`, instead of leaving an empty or annotated shell.
 - After `MEMORY.md` cleanup is done, revisit `memory_summary.md` and remove or rewrite stale
-  summary/index content that was only supported by deleted files.
+  summary/index content that was only supported by deleted files. Apply the same rule there:
+  remove the stale topic, learning, or reference; never annotate it as unavailable.
+- Before you finish, re-read `phase2_workspace_diff.md` and confirm that every deleted input has a
+  corresponding removal in `MEMORY.md` and `memory_summary.md`.
 
 Outputs:
 Under `{MEMORY_ROOT}/`:
@@ -789,6 +812,9 @@ WORKFLOW
      - added/modified `raw_memories.md` and `rollout_summaries/*.md` = ingestion queue
      - deleted `rollout_summaries/*.md` and `extensions/*/resources/*.md` = forgetting /
        stale-cleanup queue
+     - a deleted `rollout_summaries/*.md` paired with an added one that shares the
+       `<session-timestamp>-<4-char-hash>` prefix = the same session renamed; re-point references
+       instead of forgetting anything
    - Build an index of rollout references already present in existing `MEMORY.md` before
      scanning raw memories so you can route net-new evidence into the right blocks.
    - Work in this order:
@@ -797,7 +823,11 @@ WORKFLOW
         necessary.
      2. Route the new signal into existing `MEMORY.md` blocks or create new ones when needed.
      3. For deleted inputs, search `MEMORY.md` and surgically delete or rewrite only the
-        unsupported memory.
+        unsupported memory. Deleting the dependent content is mandatory: never replace it with a
+        `[summary not in store]`-style placeholder, and delete a `# Task Group` block entirely when
+        none of its evidence remains. Exception: when the deletion is a rename (same identity
+        prefix as an added summary file), re-point the reference to the new file name and keep the
+        content.
      4. If a block mixes deleted and still-present evidence, preserve the still-supported content;
         split or rewrite the block if that is the cleanest way to delete only the stale part.
      5. After `MEMORY.md` is correct, revisit `memory_summary.md` and remove or rewrite stale
@@ -833,7 +863,8 @@ WORKFLOW
     - decide which of them add up to block-level `## User preferences`
     - only then compress the procedural knowledge underneath
    - If raw memory mentions a rollout summary file that is missing on disk, do not invent or
-     guess the file path in `MEMORY.md`; treat it as missing evidence and low confidence.
+     guess the file path in `MEMORY.md`; treat it as missing evidence and low confidence, and
+     drop the reference instead of annotating it as unavailable.
   - When a task family is important, ambiguous, or duplicated across multiple rollouts,
     open the relevant `rollout_summaries/*.md` files and extract richer user preference
     evidence, procedural detail, validation signals, and user feedback before finalizing
@@ -859,7 +890,8 @@ WORKFLOW
      preferences, compact general tips, and a routing index rather than a second handbook
    - remove stale or low-signal blocks that are less likely to be useful in the future
    - remove or rewrite blocks/task sections whose supporting rollout references point only to
-     deleted inputs or missing rollout summary files
+     deleted inputs or missing rollout summary files; removing them is required, not optional, and
+     no "evidence unavailable" placeholder may remain in their place
    - run a global rollout-reference audit on final `MEMORY.md` and fix accidental duplicate
      entries / redundant repetition, while preserving intentional multi-task or multi-block
      reuse when it adds distinct task-local value

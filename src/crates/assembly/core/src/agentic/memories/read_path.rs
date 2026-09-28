@@ -105,7 +105,11 @@ Quick memory pass:
 4. If there are no relevant hits, stop memory lookup and continue normally.
 
 Tool access:
-- When deeper memory lookup is needed, use the normal local file/search tools available in this session, such as Read, Grep, Glob, or ExecCommand, against the memory folder above.
+- Prefer the built-in memory tools when this session exposes them:
+  - MemorySearch finds relevant memory entries in the memory folder.
+  - MemoryFetch reads one specific memory file and updates the memory usage statistics automatically.
+  - MemorySave writes an ad-hoc memory note when the user asks to update, save, or remember memory.
+- When those memory tools are not available, use the normal local file/search tools available in this session, such as Read, Grep, Glob, or ExecCommand, against the memory folder above.
 - The memory folder path above is an authorized local memory root for this read path. Do not use it to inspect unrelated user files.
 - If file/search tools are unavailable, rely only on MEMORY_SUMMARY and say when a useful deeper lookup could not be performed.
 
@@ -125,10 +129,11 @@ rollout-or-session-id
 - Use tight, non-blank line ranges.
 - Include rollout_ids only when the referenced memory file exposes stable rollout or session ids.
 - Do not include memory citations inside pull-request messages or other user-requested generated artifacts.
+- MemoryFetch records usage on its own, so no citation block is needed for memory read through that tool. The citation block is still required for memory read through the direct file tools (Read, Grep, Glob, ExecCommand).
 
 Updating memories:
 - Write ad hoc memory notes only when the user explicitly asks to update, save, or remember memory.
-- Write one small note under {base_path}/extensions/ad_hoc/notes/.
+- Prefer MemorySave when it is available; otherwise write one small note under {base_path}/extensions/ad_hoc/notes/.
 - Name it YYYY-MM-DDTHH-MM-SS-<short-slug>.md using only lowercase ASCII letters, digits, and hyphens in the slug.
 - Use the normal Write tool for this exact path when an ad hoc note is needed.
 - Do not edit MEMORY.md or memory_summary.md directly for ad hoc updates.
@@ -170,6 +175,29 @@ mod tests {
         assert!(reminder.contains("<openbitfun-mem-citation>"));
         assert!(reminder.contains("Memory summary body"));
         assert!(reminder.contains(&memory_root.display().to_string()));
+    }
+
+    #[tokio::test]
+    async fn memory_read_path_prefers_builtin_memory_tools() {
+        let temp = tempfile::tempdir().unwrap();
+        let memory_root = temp.path().join("memories");
+        tokio::fs::create_dir_all(&memory_root).await.unwrap();
+        tokio::fs::write(
+            crate::agentic::memories::workspace::memory_summary_file(&memory_root),
+            "Memory summary body",
+        )
+        .await
+        .unwrap();
+
+        let reminder = build_memory_read_path_reminder(&memory_root)
+            .await
+            .expect("memory summary should load");
+
+        assert!(reminder.contains("MemorySearch"));
+        assert!(reminder.contains("MemoryFetch"));
+        assert!(reminder.contains("MemorySave"));
+        assert!(reminder.contains("updates the memory usage statistics automatically"));
+        assert!(reminder.contains("The citation block is still required"));
     }
 
     #[tokio::test]

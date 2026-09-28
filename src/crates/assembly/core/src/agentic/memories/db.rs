@@ -1,6 +1,7 @@
-use crate::agentic::core::message::MemoryCitation;
+use crate::agentic::core::message::{MemoryCitation, MemoryCitationEntry};
 use crate::infrastructure::PathManager;
 use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
+use log::info;
 use openbitfun_services_core::memory_store::{
     decode_memory_job, decode_memory_record, initialize_memory_schema, upsert_memory_record,
 };
@@ -25,6 +26,15 @@ const JOB_STATUS_RUNNING: &str = "running";
 const JOB_STATUS_DONE: &str = "done";
 const JOB_STATUS_ERROR: &str = "error";
 const DEFAULT_RETRY_REMAINING: i64 = 3;
+/// How long a session with an exhausted phase-1 retry budget is quarantined
+/// before its attempt budget is restored once. Transient provider failures (for
+/// example a temporary 403 model outage) must not permanently discard a session.
+const PHASE1_RETRY_EXHAUSTION_QUARANTINE_SECONDS: i64 = 24 * 60 * 60;
+
+/// How long a phase-2 lease may go without a heartbeat before the owning run is
+/// considered dead. The phase-2 heartbeat fires every 30 seconds, so four missed
+/// beats mean the process that held the job is gone and a new run may reclaim it.
+const PHASE2_HEARTBEAT_STALE_SECONDS: i64 = 120;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryPhase2CandidateRow {
@@ -46,6 +56,38 @@ pub struct MemoryPhase2CandidateRow {
 pub struct MemoryPhase2SelectionRow {
     pub job_key: String,
     pub input_watermark: i64,
+}
+
+/// Persisted identity of a live stage-1 row.
+///
+/// The memory workspace derives a rollout-summary file name from these fields,
+/// so the database exposes them without owning the naming rule.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MemoryRolloutSummaryIdentity {
+    pub session_id: String,
+    pub source_updated_at_unix_secs: i64,
+    pub rollout_slug: Option<String>,
+}
+
+/// A stage-1 extraction that failed and has not produced output yet.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct MemoryStage1Failure {
+    pub session_id: String,
+    pub last_error: String,
+    pub retry_exhausted: bool,
+}
+
+/// Read-only view of the memory pipeline state for status surfaces.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct MemoryStatusSnapshot {
+    pub stage1_output_count: u64,
+    pub stage1_pending_promotion_count: u64,
+    pub stage1_failed: Vec<MemoryStage1Failure>,
+    pub phase2_status: Option<String>,
+    pub phase2_last_finished_at_unix_secs: Option<i64>,
+    pub phase2_last_error: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -532,6 +574,234 @@ impl MemoryDatabase {
             .await
     }
 
+    /// Identity of every stage-1 row that still exists in the database.
+    ///
+    /// The memory workspace uses this as the rollout-summary keep-set: a summary
+    /// file is deleted only when its stage-1 row is gone, never merely because
+    /// the row fell outside the current phase-2 selection.
+    pub async fn list_live_rollout_summary_identities(
+        &self,
+    ) -> OpenBitFunResult<Vec<MemoryRolloutSummaryIdentity>> {
+        let db_path = self.db_path.clone();
+        task::spawn_blocking(
+            move || -> OpenBitFunResult<Vec<MemoryRolloutSummaryIdentity>> {
+                let conn = open_connection(&db_path)?;
+                initialize_schema(&conn)?;
+                live_rollout_summary_identities_in_conn(&conn)
+            },
+        )
+        .await
+        .map_err(|error| {
+            OpenBitFunError::service(format!("Memories read task failed: {}", error))
+        })?
+    }
+
+    /// Counts how many of the given `(session_id, finished_at)` sources still
+    /// need phase-1 extraction. Used for aggregate age-gate diagnostics.
+    pub async fn count_phase1_sources_needing_update(
+        &self,
+        sources: &[(String, i64)],
+    ) -> OpenBitFunResult<usize> {
+        if sources.is_empty() {
+            return Ok(0);
+        }
+
+        let db_path = self.db_path.clone();
+        let sources = sources.to_vec();
+        task::spawn_blocking(move || -> OpenBitFunResult<usize> {
+            let conn = open_connection(&db_path)?;
+            initialize_schema(&conn)?;
+            let mut needing_update = 0usize;
+            for (session_id, session_finished_at_unix_secs) in &sources {
+                if phase1_source_needs_update_in_conn(
+                    &conn,
+                    session_id,
+                    *session_finished_at_unix_secs,
+                )? {
+                    needing_update += 1;
+                }
+            }
+            Ok(needing_update)
+        })
+        .await
+        .map_err(|error| {
+            OpenBitFunError::service(format!("Memories read task failed: {}", error))
+        })?
+    }
+
+    /// Read-only pipeline status for status surfaces.
+    ///
+    /// A status read must be read-only-safe: on a fresh profile the database file
+    /// does not exist yet, and the settings surface expects an empty snapshot
+    /// instead of an IO error. Reading status never creates the database.
+    pub async fn status_snapshot(&self) -> OpenBitFunResult<MemoryStatusSnapshot> {
+        if !self.db_path.exists() {
+            return Ok(MemoryStatusSnapshot::default());
+        }
+
+        let db_path = self.db_path.clone();
+        task::spawn_blocking(move || -> OpenBitFunResult<MemoryStatusSnapshot> {
+            let conn = open_connection(&db_path)?;
+            initialize_schema(&conn)?;
+
+            let stage1_output_count = conn
+                .query_row("SELECT COUNT(*) FROM stage1_outputs", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .map_err(|error| {
+                    OpenBitFunError::io(format!("Failed to count memory stage1 outputs: {}", error))
+                })?;
+            let stage1_pending_promotion_count = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM stage1_outputs WHERE selected_for_phase2 = 0",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .map_err(|error| {
+                    OpenBitFunError::io(format!(
+                        "Failed to count pending memory stage1 outputs: {}",
+                        error
+                    ))
+                })?;
+
+            let mut failures_stmt = conn
+                .prepare(
+                    r#"
+                    SELECT job_key, COALESCE(last_error, ''), retry_remaining
+                    FROM jobs
+                    WHERE kind = ?1 AND status = ?2
+                    ORDER BY COALESCE(finished_at, 0) DESC, job_key ASC
+                    "#,
+                )
+                .map_err(|error| {
+                    OpenBitFunError::io(format!(
+                        "Failed to prepare memory failure query: {}",
+                        error
+                    ))
+                })?;
+            let failures = failures_stmt
+                .query_map(params![JOB_KIND_MEMORY_STAGE1, JOB_STATUS_ERROR], |row| {
+                    Ok(MemoryStage1Failure {
+                        session_id: row.get(0)?,
+                        last_error: row.get(1)?,
+                        retry_exhausted: row.get::<_, i64>(2)? <= 0,
+                    })
+                })
+                .map_err(|error| {
+                    OpenBitFunError::io(format!("Failed to query memory failures: {}", error))
+                })?;
+            let stage1_failed = collect_rows(failures, "memory stage1 failure")?;
+
+            let phase2_job =
+                get_job_in_connection(&conn, JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL, "global")?;
+
+            Ok(MemoryStatusSnapshot {
+                stage1_output_count: stage1_output_count.max(0) as u64,
+                stage1_pending_promotion_count: stage1_pending_promotion_count.max(0) as u64,
+                stage1_failed,
+                phase2_status: phase2_job.as_ref().map(|job| job.status.clone()),
+                phase2_last_finished_at_unix_secs: phase2_job
+                    .as_ref()
+                    .and_then(|job| job.finished_at_unix_secs),
+                phase2_last_error: phase2_job.as_ref().and_then(|job| job.last_error.clone()),
+            })
+        })
+        .await
+        .map_err(|error| {
+            OpenBitFunError::service(format!("Memories read task failed: {}", error))
+        })?
+    }
+
+    /// Bumps `usage_count` / `last_usage` for stage-1 rows referenced by a
+    /// memory read.
+    ///
+    /// `rollout_ids` are matched against session ids. `summary_file_names` are
+    /// matched against the rollout-summary file name derived from each live
+    /// stage-1 row, with or without the `rollout_summaries/` prefix. Returns the
+    /// number of rows updated.
+    pub async fn record_memory_usage(
+        &self,
+        rollout_ids: &[String],
+        summary_file_names: &[String],
+    ) -> OpenBitFunResult<u64> {
+        let db_path = self.db_path.clone();
+        let rollout_ids = rollout_ids.to_vec();
+        let summary_file_names = summary_file_names.to_vec();
+        task::spawn_blocking(move || -> OpenBitFunResult<u64> {
+            let mut conn = open_connection(&db_path)?;
+            initialize_schema(&conn)?;
+
+            let citation = MemoryCitation {
+                entries: summary_file_names
+                    .iter()
+                    .map(|name| MemoryCitationEntry {
+                        path: name.clone(),
+                        line_start: 0,
+                        line_end: 0,
+                        note: None,
+                    })
+                    .collect(),
+                rollout_ids: rollout_ids.clone(),
+            };
+            let mut resolved = resolve_citation_session_ids(&conn, &citation)?;
+            for identity in live_rollout_summary_identities_in_conn(&conn)? {
+                let file_name =
+                    crate::agentic::memories::workspace::rollout_summary_file_name_for_parts(
+                        &identity.session_id,
+                        identity.source_updated_at_unix_secs,
+                        identity.rollout_slug.as_deref(),
+                    );
+                if summary_file_names
+                    .iter()
+                    .any(|name| summary_file_name_matches(name, &file_name))
+                {
+                    push_unique(&mut resolved, &identity.session_id);
+                }
+            }
+            if resolved.is_empty() {
+                return Ok(0);
+            }
+
+            let tx = conn.transaction().map_err(|error| {
+                OpenBitFunError::io(format!(
+                    "Failed to begin memory usage transaction: {}",
+                    error
+                ))
+            })?;
+            let now = current_unix_secs();
+            let mut updated = 0u64;
+            for session_id in resolved {
+                updated += tx
+                    .execute(
+                        r#"
+                        UPDATE stage1_outputs
+                        SET usage_count = COALESCE(usage_count, 0) + 1,
+                            last_usage = CASE
+                                WHEN last_usage IS NULL OR last_usage < ?2 THEN ?2
+                                ELSE last_usage
+                            END
+                        WHERE thread_id = ?1
+                        "#,
+                        params![session_id, now],
+                    )
+                    .map_err(|error| {
+                        OpenBitFunError::io(format!("Failed to update memory usage: {}", error))
+                    })? as u64;
+            }
+            tx.commit().map_err(|error| {
+                OpenBitFunError::io(format!(
+                    "Failed to commit memory usage transaction: {}",
+                    error
+                ))
+            })?;
+            Ok(updated)
+        })
+        .await
+        .map_err(|error| {
+            OpenBitFunError::service(format!("Memories write task failed: {}", error))
+        })?
+    }
+
     pub async fn prune_stage1_outputs_for_retention(
         &self,
         max_unused_days: i64,
@@ -541,11 +811,18 @@ impl MemoryDatabase {
             return Ok(0);
         }
 
+        // Retention never prunes "everything right now": the configured window has a
+        // one-day floor, so a misconfigured zero cannot delete live memory input.
+        let max_unused_days = max_unused_days.max(1);
         let db_path = self.db_path.clone();
         task::spawn_blocking(move || -> OpenBitFunResult<usize> {
             let conn = open_connection(&db_path)?;
             initialize_schema(&conn)?;
-            let cutoff = current_unix_secs() - max_unused_days.max(0) * 24 * 60 * 60;
+            let cutoff = current_unix_secs() - max_unused_days * 24 * 60 * 60;
+            // Retention uses one clock for every row. Phase-2 selection is not an
+            // exemption: a row that is never read again must eventually be pruned
+            // so its rollout summary is deleted and the memory workspace forgets
+            // the content it no longer has evidence for.
             let pruned = conn
                 .execute(
                     r#"
@@ -553,8 +830,7 @@ impl MemoryDatabase {
                     WHERE thread_id IN (
                         SELECT thread_id
                         FROM stage1_outputs
-                        WHERE selected_for_phase2 = 0
-                          AND COALESCE(last_usage, source_updated_at) < ?1
+                        WHERE COALESCE(last_usage, source_updated_at) < ?1
                         ORDER BY
                           COALESCE(last_usage, source_updated_at) ASC,
                           source_updated_at ASC,
@@ -592,7 +868,8 @@ impl MemoryDatabase {
         task::spawn_blocking(move || -> OpenBitFunResult<Vec<MemoryPhase2CandidateRow>> {
             let conn = open_connection(&db_path)?;
             initialize_schema(&conn)?;
-            let cutoff = current_unix_secs() - max_unused_days.max(0) * 24 * 60 * 60;
+            // The usage window shares the retention clock floor of one day.
+            let cutoff = current_unix_secs() - max_unused_days.max(1) * 24 * 60 * 60;
             let mut sql = String::from(
                 r#"
                 SELECT thread_id, workspace_path, rollout_path, source_updated_at, raw_memory,
@@ -705,11 +982,19 @@ impl MemoryDatabase {
         })?
     }
 
+    /// Persists the phase-2 input watermark for a non-empty selection.
+    ///
+    /// Returns `Ok(None)` when nothing was selected: an empty selection has no
+    /// input to record, and callers must not treat it as a consolidation input.
     pub async fn upsert_phase2_selection(
         &self,
         job_key: &str,
         selected_rows: &[MemoryPhase2CandidateRow],
     ) -> OpenBitFunResult<Option<MemoryPhase2SelectionRow>> {
+        if selected_rows.is_empty() {
+            return Ok(None);
+        }
+
         let db_path = self.db_path.clone();
         let job_key = job_key.to_string();
         let max_source_updated_at = selected_rows
@@ -883,6 +1168,30 @@ impl MemoryDatabase {
         })?
     }
 
+    /// True while a phase-2 consolidation run owns the global job and is
+    /// heartbeat-live.
+    ///
+    /// This applies the same rule `claim_phase2_job` uses before refusing a claim
+    /// with `SkippedRunning`, exposed as a read-only query so status surfaces and
+    /// trigger paths do not reimplement the stale-lease logic. The lease length
+    /// comes from the same helper the claim path uses, so both always judge the
+    /// same job with the same window.
+    ///
+    /// Returns false when the global job is missing, released or finished
+    /// (`ownership_token` cleared), or when its owner stopped heartbeating long
+    /// enough for the lease to drain past the stale window.
+    pub async fn phase2_has_live_run(&self) -> OpenBitFunResult<bool> {
+        let Some(job) = self.get_phase2_job(MEMORY_PHASE2_GLOBAL_JOB_KEY).await? else {
+            return Ok(false);
+        };
+        Ok(phase2_owner_is_live(
+            job.ownership_token.as_deref(),
+            job.lease_until_unix_secs,
+            super::runner::phase2_lease_seconds().await?,
+            current_unix_secs(),
+        ))
+    }
+
     pub async fn claim_phase2_job(
         &self,
         job_key: &str,
@@ -908,11 +1217,12 @@ impl MemoryDatabase {
             if let Some(existing) =
                 get_job_in_tx(&tx, JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL, &job_key)?
             {
-                if existing.ownership_token.is_some()
-                    && existing
-                        .lease_until_unix_secs
-                        .is_some_and(|lease_until| lease_until > now)
-                {
+                if phase2_owner_is_live(
+                    existing.ownership_token.as_deref(),
+                    existing.lease_until_unix_secs,
+                    lease_seconds,
+                    now,
+                ) {
                     tx.commit().map_err(|error| {
                         OpenBitFunError::io(format!(
                             "Failed to commit memory phase2 running skip transaction: {}",
@@ -920,6 +1230,21 @@ impl MemoryDatabase {
                         ))
                     })?;
                     return Ok(MemoryPhase2ClaimOutcome::SkippedRunning);
+                }
+                if existing.ownership_token.is_some() {
+                    // The previous owner stopped refreshing its lease, so it died or
+                    // was killed mid-consolidation. Reclaiming here is what keeps a
+                    // crashed run from blocking the pipeline until the full lease
+                    // expires.
+                    info!(
+                        "Memory phase2 job claim reclaiming an abandoned lease: job_key={}, previous_ownership_token={:?}, lease_until_unix_secs={:?}, lease_seconds={}, now={}, stale_after_seconds={}",
+                        job_key,
+                        existing.ownership_token,
+                        existing.lease_until_unix_secs,
+                        lease_seconds,
+                        now,
+                        PHASE2_HEARTBEAT_STALE_SECONDS
+                    );
                 }
                 if existing
                     .retry_at_unix_secs
@@ -1334,7 +1659,9 @@ fn try_claim_phase1_job_in_tx(
             return Ok(MemoryPhase1ClaimOutcome::SkippedRunning);
         }
         if existing.input_watermark == Some(session_finished_at_unix_secs) {
-            if existing.retry_remaining <= 0 {
+            if existing.retry_remaining <= 0
+                && !phase1_retry_exhaustion_quarantine_elapsed(existing, now)
+            {
                 return Ok(MemoryPhase1ClaimOutcome::SkippedRetryExhausted);
             }
             if existing
@@ -1348,9 +1675,14 @@ fn try_claim_phase1_job_in_tx(
 
     let ownership_token = Uuid::new_v4().to_string();
     let lease_until = now.saturating_add(lease_seconds.max(0));
+    // An exhausted budget is restored to the default attempt budget once the
+    // quarantine window has passed, so a transient failure cannot dead-end a
+    // session forever.
     let retry_remaining = existing
         .as_ref()
-        .filter(|job| job.input_watermark == Some(session_finished_at_unix_secs))
+        .filter(|job| {
+            job.input_watermark == Some(session_finished_at_unix_secs) && job.retry_remaining > 0
+        })
         .map(|job| job.retry_remaining)
         .unwrap_or(DEFAULT_RETRY_REMAINING);
     tx.execute(
@@ -1433,6 +1765,120 @@ fn phase1_source_needs_update_in_tx(
         })?
         .flatten();
     Ok(last_success_watermark.is_none_or(|watermark| watermark < session_finished_at_unix_secs))
+}
+
+fn phase1_retry_exhaustion_quarantine_elapsed(job: &MemoryJobRow, now: i64) -> bool {
+    job.finished_at_unix_secs.is_some_and(|finished_at| {
+        now.saturating_sub(finished_at) >= PHASE1_RETRY_EXHAUSTION_QUARANTINE_SECONDS
+    })
+}
+
+/// Cooldown that keeps a clean, finished phase-2 run from being repeated.
+///
+/// The predicate is owned here rather than by the shared memory store because the
+/// freshness decision belongs to the runner: a completion only reports a cooldown
+/// when the last run finished cleanly, and the runner decides whether the run has
+/// work by comparing its evaluated `input_watermark` and the workspace diff.
+/// An idle completion advances `input_watermark` without stamping
+/// `last_success_watermark`, so comparing those two watermarks would disarm the
+/// cooldown after every no-op run and let each later pass redo the whole
+/// evaluation.
+pub(crate) fn phase2_success_cooldown_until_unix_secs(
+    job: &MemoryJobRow,
+    cooldown_seconds: i64,
+) -> Option<i64> {
+    if job.kind != JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL
+        || job.status != JOB_STATUS_DONE
+        || job.last_error.is_some()
+        || job.input_watermark.is_none()
+    {
+        return None;
+    }
+
+    job.finished_at_unix_secs
+        .map(|finished_at| finished_at.saturating_add(cooldown_seconds.max(0)))
+}
+
+/// Whether the incumbent phase-2 owner is still alive.
+///
+/// A live owner refreshes its lease on every heartbeat (every 30 seconds), so its
+/// remaining lease stays close to the configured length. A process that died or
+/// was killed mid-consolidation stops refreshing and its remaining lease drains
+/// past the stale window within roughly `PHASE2_HEARTBEAT_STALE_SECONDS`, which
+/// makes the job claimable again long before the full lease expires.
+///
+/// The comparison is relative to the configured lease length rather than a stored
+/// heartbeat timestamp, so it stays correct for a lease written by an older build
+/// that keeps refreshing: a live old-version run also holds a fresh lease.
+///
+/// Precondition: the incumbent claimed the job with the same `lease_seconds` this
+/// caller passes. Raising `memories.phase2_lease_seconds` while a run is in flight
+/// makes that run's remaining lease look short relative to the new, longer lease,
+/// so it can be judged stale even though it is still heartbeating. Lowering the
+/// setting is safe (the incumbent then only looks fresher). A configuration change
+/// therefore must not be treated as a liveness signal on its own, and the cost of
+/// the wrong call is bounded: a second run starts, and the ownership-token
+/// compare-and-swap keeps exactly one of them able to complete the job.
+fn phase2_owner_is_live(
+    ownership_token: Option<&str>,
+    lease_until_unix_secs: Option<i64>,
+    lease_seconds: i64,
+    now_unix_secs: i64,
+) -> bool {
+    if ownership_token.is_none() {
+        return false;
+    }
+    let Some(lease_until) = lease_until_unix_secs else {
+        return false;
+    };
+    if lease_until <= now_unix_secs {
+        return false;
+    }
+    // Remaining lease that still proves a recent heartbeat. A lease shorter than
+    // the stale window falls back to plain expiry, because a heartbeat every 30
+    // seconds cannot keep such a lease meaningfully fresh.
+    let fresh_lease_seconds = (lease_seconds - PHASE2_HEARTBEAT_STALE_SECONDS).max(0);
+    lease_until > now_unix_secs.saturating_add(fresh_lease_seconds)
+}
+
+fn live_rollout_summary_identities_in_conn(
+    conn: &Connection,
+) -> OpenBitFunResult<Vec<MemoryRolloutSummaryIdentity>> {
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT thread_id, source_updated_at, rollout_slug
+            FROM stage1_outputs
+            ORDER BY thread_id ASC
+            "#,
+        )
+        .map_err(|error| {
+            OpenBitFunError::io(format!(
+                "Failed to prepare live memory stage1 identity query: {}",
+                error
+            ))
+        })?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(MemoryRolloutSummaryIdentity {
+                session_id: row.get(0)?,
+                source_updated_at_unix_secs: row.get(1)?,
+                rollout_slug: row.get(2)?,
+            })
+        })
+        .map_err(|error| {
+            OpenBitFunError::io(format!(
+                "Failed to query live memory stage1 identities: {}",
+                error
+            ))
+        })?;
+    collect_rows(rows, "memory stage1 identity")
+}
+
+fn summary_file_name_matches(candidate: &str, file_name: &str) -> bool {
+    let normalized = candidate.replace('\\', "/");
+    let normalized = normalized.trim_start_matches("./");
+    normalized == file_name || normalized.strip_prefix("rollout_summaries/") == Some(file_name)
 }
 
 fn phase1_owned_input_watermark(
@@ -1845,7 +2291,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prune_stage1_outputs_for_retention_prunes_stale_unselected_rows_only() {
+    async fn prune_stage1_outputs_for_retention_uses_one_clock_for_every_row() {
         let temp = tempdir().unwrap();
         let path_manager = Arc::new(PathManager::with_user_root_for_tests(
             temp.path().to_path_buf(),
@@ -1871,7 +2317,7 @@ mod tests {
             db.prune_stage1_outputs_for_retention(30, 100)
                 .await
                 .unwrap(),
-            1
+            2
         );
 
         let remaining = db
@@ -1881,7 +2327,7 @@ mod tests {
             .into_iter()
             .map(|row| row.session_id)
             .collect::<Vec<_>>();
-        assert_eq!(remaining, vec!["fresh-unselected", "stale-selected"]);
+        assert_eq!(remaining, vec!["fresh-unselected"]);
     }
 
     #[tokio::test]
@@ -1908,6 +2354,342 @@ mod tests {
             2
         );
         assert_eq!(db.list_recent(10).await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn retention_keeps_a_one_day_floor_for_a_zero_window() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        let now = current_unix_secs();
+        let mut recently_used = test_memory_row("recently-used", now - 60 * 60);
+        recently_used.last_usage_unix_secs = Some(now - 60);
+        db.upsert_memory(&recently_used).await.unwrap();
+
+        assert_eq!(
+            db.prune_stage1_outputs_for_retention(0, 100).await.unwrap(),
+            0,
+            "a zero window must not prune everything immediately"
+        );
+        assert_eq!(
+            db.prune_stage1_outputs_for_retention(1, 100).await.unwrap(),
+            0
+        );
+
+        let mut long_unused = test_memory_row("long-unused", now - 10 * 24 * 60 * 60);
+        long_unused.last_usage_unix_secs = Some(now - 2 * 24 * 60 * 60);
+        db.upsert_memory(&long_unused).await.unwrap();
+
+        assert_eq!(
+            db.prune_stage1_outputs_for_retention(1, 100).await.unwrap(),
+            1
+        );
+        let remaining = db
+            .list_recent(10)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|row| row.session_id)
+            .collect::<Vec<_>>();
+        assert_eq!(remaining, vec!["recently-used"]);
+    }
+
+    #[test]
+    fn success_cooldown_survives_an_idle_watermark_advance() {
+        let mut job = MemoryJobRow {
+            kind: JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL.to_string(),
+            job_key: "global".to_string(),
+            status: JOB_STATUS_DONE.to_string(),
+            worker_id: None,
+            ownership_token: None,
+            started_at_unix_secs: Some(1_000),
+            finished_at_unix_secs: Some(1_000),
+            lease_until_unix_secs: None,
+            retry_at_unix_secs: None,
+            retry_remaining: DEFAULT_RETRY_REMAINING,
+            last_error: None,
+            input_watermark: Some(2_000),
+            last_success_watermark: Some(1_500),
+        };
+        assert_eq!(
+            phase2_success_cooldown_until_unix_secs(&job, 600),
+            Some(1_600)
+        );
+
+        job.last_error = Some("boom".to_string());
+        assert_eq!(phase2_success_cooldown_until_unix_secs(&job, 600), None);
+        job.last_error = None;
+
+        job.status = JOB_STATUS_RUNNING.to_string();
+        assert_eq!(phase2_success_cooldown_until_unix_secs(&job, 600), None);
+        job.status = JOB_STATUS_DONE.to_string();
+
+        job.input_watermark = None;
+        assert_eq!(phase2_success_cooldown_until_unix_secs(&job, 600), None);
+    }
+
+    #[tokio::test]
+    async fn upsert_phase2_selection_returns_none_for_empty_selection() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        assert!(db
+            .upsert_phase2_selection("global", &[])
+            .await
+            .unwrap()
+            .is_none());
+        assert!(db.get_phase2_job("global").await.unwrap().is_none());
+
+        let row = test_memory_row("session-a", 100);
+        let selection = db
+            .upsert_phase2_selection(
+                "global",
+                &[MemoryPhase2CandidateRow {
+                    session_id: row.session_id.clone(),
+                    workspace_path: row.workspace_path.clone(),
+                    rollout_path: row.rollout_path.clone(),
+                    source_updated_at_unix_secs: row.source_updated_at_unix_secs,
+                    raw_memory: row.raw_memory.clone(),
+                    rollout_summary: row.rollout_summary.clone(),
+                    rollout_slug: row.rollout_slug.clone(),
+                    generated_at_unix_secs: row.generated_at_unix_secs,
+                    usage_count: row.usage_count,
+                    last_usage_unix_secs: row.last_usage_unix_secs,
+                    selected_for_phase2: row.selected_for_phase2,
+                    selected_for_phase2_source_updated_at: row
+                        .selected_for_phase2_source_updated_at,
+                }],
+            )
+            .await
+            .unwrap()
+            .expect("non-empty selection must persist");
+        assert_eq!(selection.input_watermark, 100);
+    }
+
+    #[tokio::test]
+    async fn phase1_retry_exhausted_session_is_requeued_after_quarantine() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        let token = claim_token(
+            db.try_claim_phase1_job("session-a", "worker", 100, 60, 2)
+                .await
+                .unwrap(),
+        );
+        let conn = open_connection(db.path()).unwrap();
+        let mut token = token;
+        for remaining in (1..=DEFAULT_RETRY_REMAINING).rev() {
+            assert!(db
+                .mark_phase1_job_failed("session-a", &token, 0, "boom".to_string())
+                .await
+                .unwrap());
+            let job = get_job_in_connection(&conn, JOB_KIND_MEMORY_STAGE1, "session-a")
+                .unwrap()
+                .unwrap();
+            assert_eq!(job.retry_remaining, remaining - 1);
+            if remaining == 1 {
+                break;
+            }
+            token = claim_token(
+                db.try_claim_phase1_job("session-a", "worker", 100, 60, 2)
+                    .await
+                    .unwrap(),
+            );
+        }
+
+        let exhausted = db
+            .try_claim_phase1_job("session-a", "worker", 100, 60, 2)
+            .await
+            .unwrap();
+        assert_eq!(exhausted, MemoryPhase1ClaimOutcome::SkippedRetryExhausted);
+
+        // Simulate the quarantine window having elapsed.
+        conn.execute(
+            "UPDATE jobs SET finished_at = ?1 WHERE kind = ?2 AND job_key = ?3",
+            params![
+                current_unix_secs() - PHASE1_RETRY_EXHAUSTION_QUARANTINE_SECONDS - 1,
+                JOB_KIND_MEMORY_STAGE1,
+                "session-a"
+            ],
+        )
+        .unwrap();
+
+        let requeued = db
+            .try_claim_phase1_job("session-a", "worker", 100, 60, 2)
+            .await
+            .unwrap();
+        assert!(
+            matches!(requeued, MemoryPhase1ClaimOutcome::Claimed { .. }),
+            "an exhausted session must be requeued once the quarantine window passes, got {requeued:?}"
+        );
+        let job = get_job_in_connection(&conn, JOB_KIND_MEMORY_STAGE1, "session-a")
+            .unwrap()
+            .unwrap();
+        assert_eq!(job.retry_remaining, DEFAULT_RETRY_REMAINING);
+    }
+
+    #[tokio::test]
+    async fn status_snapshot_reports_pipeline_state() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        let snapshot = db.status_snapshot().await.unwrap();
+        assert_eq!(snapshot.stage1_output_count, 0);
+        assert_eq!(snapshot.stage1_pending_promotion_count, 0);
+        assert!(snapshot.stage1_failed.is_empty());
+        assert!(snapshot.phase2_status.is_none());
+
+        db.upsert_memory(&test_memory_row("session-a", 100))
+            .await
+            .unwrap();
+        db.upsert_memory(&test_memory_row("session-b", 90))
+            .await
+            .unwrap();
+        db.mark_phase2_candidates_selected(&["session-a".to_string()], 100)
+            .await
+            .unwrap();
+        let token = claim_token(
+            db.try_claim_phase1_job("session-c", "worker", 50, 60, 2)
+                .await
+                .unwrap(),
+        );
+        db.mark_phase1_job_failed("session-c", &token, 60, "model outage".to_string())
+            .await
+            .unwrap();
+        assert_eq!(
+            db.claim_phase2_job("global", "phase2-token", 100, 60)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::Claimed
+        );
+        db.complete_phase2_job_failure(
+            "global",
+            "phase2-token",
+            current_unix_secs() + 60,
+            "consolidation failed".to_string(),
+        )
+        .await
+        .unwrap();
+
+        let snapshot = db.status_snapshot().await.unwrap();
+        assert_eq!(snapshot.stage1_output_count, 2);
+        assert_eq!(snapshot.stage1_pending_promotion_count, 1);
+        assert_eq!(snapshot.stage1_failed.len(), 1);
+        assert_eq!(snapshot.stage1_failed[0].session_id, "session-c");
+        assert_eq!(snapshot.stage1_failed[0].last_error, "model outage");
+        assert!(!snapshot.stage1_failed[0].retry_exhausted);
+        assert_eq!(snapshot.phase2_status.as_deref(), Some(JOB_STATUS_ERROR));
+        assert!(snapshot.phase2_last_finished_at_unix_secs.is_some());
+        assert_eq!(
+            snapshot.phase2_last_error.as_deref(),
+            Some("consolidation failed")
+        );
+    }
+
+    #[tokio::test]
+    async fn record_memory_usage_matches_rollout_ids_and_summary_file_names() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        let row_a = test_memory_row("session-a", 100);
+        let row_b = test_memory_row("session-b", 90);
+        for row in [&row_a, &row_b] {
+            db.upsert_memory(row).await.unwrap();
+        }
+        let summary_b = crate::agentic::memories::workspace::rollout_summary_file_name(&row_b);
+
+        let updated = db
+            .record_memory_usage(
+                &["session-a".to_string(), "unknown-session".to_string()],
+                &[
+                    format!("rollout_summaries/{summary_b}"),
+                    "missing.md".to_string(),
+                ],
+            )
+            .await
+            .unwrap();
+        assert_eq!(updated, 2);
+
+        let rows = db.list_recent(10).await.unwrap();
+        let row_a = rows
+            .iter()
+            .find(|row| row.session_id == "session-a")
+            .expect("session-a row");
+        let row_b = rows
+            .iter()
+            .find(|row| row.session_id == "session-b")
+            .expect("session-b row");
+        assert_eq!(row_a.usage_count, 1);
+        assert!(row_a.last_usage_unix_secs.is_some());
+        assert_eq!(row_b.usage_count, 1);
+        assert!(row_b.last_usage_unix_secs.is_some());
+
+        assert_eq!(
+            db.record_memory_usage(&[], &["missing.md".to_string()])
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn list_live_rollout_summary_identities_covers_every_row() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        let row_a = test_memory_row("session-a", 100);
+        let row_b = test_memory_row("session-b", 90);
+        for row in [&row_a, &row_b] {
+            db.upsert_memory(row).await.unwrap();
+        }
+
+        let identities = db.list_live_rollout_summary_identities().await.unwrap();
+        assert_eq!(
+            identities
+                .iter()
+                .map(|identity| identity.session_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["session-a", "session-b"]
+        );
+        assert_eq!(
+            identities[0].rollout_slug.as_deref(),
+            row_a.rollout_slug.as_deref()
+        );
+        assert_eq!(
+            identities[1].source_updated_at_unix_secs,
+            row_b.source_updated_at_unix_secs
+        );
+
+        db.prune_stage1_outputs_for_retention(0, 10).await.unwrap();
+        assert!(db
+            .list_live_rollout_summary_identities()
+            .await
+            .unwrap()
+            .is_empty());
     }
 
     #[tokio::test]
@@ -1941,5 +2723,193 @@ mod tests {
         assert_eq!(job.input_watermark, Some(11));
         assert_eq!(job.last_success_watermark, Some(11));
         assert!(job.ownership_token.is_none());
+    }
+
+    #[tokio::test]
+    async fn status_snapshot_returns_default_without_creating_a_missing_database() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        let db_path = db.path().to_path_buf();
+        assert!(!db_path.exists());
+
+        let snapshot = db.status_snapshot().await.unwrap();
+
+        assert_eq!(snapshot.stage1_output_count, 0);
+        assert_eq!(snapshot.stage1_pending_promotion_count, 0);
+        assert!(snapshot.stage1_failed.is_empty());
+        assert!(snapshot.phase2_status.is_none());
+        assert!(snapshot.phase2_last_finished_at_unix_secs.is_none());
+        assert!(snapshot.phase2_last_error.is_none());
+        // A status read must never create the database as a side effect.
+        assert!(!db_path.exists());
+    }
+
+    fn set_phase2_lease_until(db: &MemoryDatabase, lease_until_unix_secs: i64) {
+        let conn = open_connection(db.path()).unwrap();
+        conn.execute(
+            "UPDATE jobs SET lease_until = ?1 WHERE kind = ?2 AND job_key = ?3",
+            params![
+                lease_until_unix_secs,
+                JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL,
+                MEMORY_PHASE2_GLOBAL_JOB_KEY
+            ],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn phase2_owner_liveness_uses_a_heartbeat_window() {
+        let now = 1_000_000;
+        assert!(!phase2_owner_is_live(None, Some(now + 3600), 3600, now));
+        assert!(!phase2_owner_is_live(Some("token"), None, 3600, now));
+        assert!(!phase2_owner_is_live(Some("token"), Some(now), 3600, now));
+        // A live owner refreshed its lease within the heartbeat cadence.
+        assert!(phase2_owner_is_live(
+            Some("token"),
+            Some(now + 3570),
+            3600,
+            now
+        ));
+        // A dead owner stopped refreshing: the lease drained past the window.
+        assert!(!phase2_owner_is_live(
+            Some("token"),
+            Some(now + 3480),
+            3600,
+            now
+        ));
+        assert!(!phase2_owner_is_live(
+            Some("token"),
+            Some(now + 3000),
+            3600,
+            now
+        ));
+        // A lease shorter than the stale window keeps plain expiry semantics.
+        assert!(phase2_owner_is_live(Some("token"), Some(now + 59), 60, now));
+        assert!(!phase2_owner_is_live(Some("token"), Some(now), 60, now));
+    }
+
+    #[tokio::test]
+    async fn phase2_claim_keeps_a_live_heartbeat_contending() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        assert_eq!(
+            db.claim_phase2_job("global", "token-a", 10, 3600)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::Claimed
+        );
+        // The owner heartbeated 30 seconds ago, so the job is still owned.
+        set_phase2_lease_until(&db, current_unix_secs() + 3600 - 30);
+        assert_eq!(
+            db.claim_phase2_job("global", "token-b", 10, 3600)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::SkippedRunning
+        );
+        let job = db.get_phase2_job("global").await.unwrap().unwrap();
+        assert_eq!(job.ownership_token.as_deref(), Some("token-a"));
+    }
+
+    #[tokio::test]
+    async fn phase2_claim_reclaims_a_stale_heartbeat_lease() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        assert_eq!(
+            db.claim_phase2_job("global", "token-a", 10, 3600)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::Claimed
+        );
+        // The owner died mid-consolidation ten minutes ago. Its lease has not
+        // expired yet, but it stopped heartbeating, so a new run must reclaim the
+        // job instead of waiting out the full lease.
+        set_phase2_lease_until(&db, current_unix_secs() + 3600 - 600);
+        assert_eq!(
+            db.claim_phase2_job("global", "token-b", 10, 3600)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::Claimed
+        );
+
+        let job = db.get_phase2_job("global").await.unwrap().unwrap();
+        assert_eq!(job.ownership_token.as_deref(), Some("token-b"));
+        assert_eq!(job.status, JOB_STATUS_RUNNING);
+        assert!(job.lease_until_unix_secs.unwrap() > current_unix_secs());
+    }
+
+    #[tokio::test]
+    async fn phase2_claim_reclaims_an_expired_lease() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        assert_eq!(
+            db.claim_phase2_job("global", "token-a", 10, 3600)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::Claimed
+        );
+        set_phase2_lease_until(&db, current_unix_secs() - 1);
+        assert_eq!(
+            db.claim_phase2_job("global", "token-b", 10, 3600)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::Claimed
+        );
+    }
+
+    #[tokio::test]
+    async fn phase2_has_live_run_tracks_the_heartbeat_window() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        let lease_seconds = crate::agentic::memories::runner::phase2_lease_seconds()
+            .await
+            .unwrap();
+
+        // No job row at all.
+        assert!(!db.phase2_has_live_run().await.unwrap());
+
+        assert_eq!(
+            db.claim_phase2_job("global", "token-a", 10, lease_seconds)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::Claimed
+        );
+        // Heartbeated within the cadence: the run is live.
+        set_phase2_lease_until(&db, current_unix_secs() + lease_seconds - 30);
+        assert!(db.phase2_has_live_run().await.unwrap());
+
+        // Stopped heartbeating long enough for the lease to drain past the stale
+        // window, even though the lease has not expired: no live run.
+        set_phase2_lease_until(&db, current_unix_secs() + lease_seconds - 600);
+        assert!(!db.phase2_has_live_run().await.unwrap());
+
+        // A clean completion releases ownership, so the job is no longer live.
+        set_phase2_lease_until(&db, current_unix_secs() + lease_seconds - 30);
+        assert!(db
+            .complete_phase2_job_success("global", "token-a", 11)
+            .await
+            .unwrap());
+        assert!(!db.phase2_has_live_run().await.unwrap());
     }
 }
