@@ -137,6 +137,16 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
     val accountPhase by accountViewModel.connectionPhase.collectAsStateWithLifecycle()
     val accountWorkspaceDirectory by accountViewModel.workspaceDirectory.collectAsStateWithLifecycle()
     val readyAccount = accountState as? AccountUiState.Ready
+    LaunchedEffect(accountPhase, shell.remoteCreating) {
+        // A create failure is terminal for the creation route. The shared
+        // store keeps the last valid session projection so returning to the
+        // remote home here restores the same pre-create route as Harmony and
+        // iOS, while the store's typed create error remains available to the
+        // surface-level error/toast handling.
+        if (shell.remoteCreating && accountPhase == ConnectionPhase.FAILED) {
+            shell.closeRemoteSession()
+        }
+    }
     LaunchedEffect(accountState) {
         if (accountState !is AccountUiState.Idle && accountState !is AccountUiState.Restoring) {
             onAccountRestored(readyAccount?.userId?.isNotBlank() == true)
@@ -188,6 +198,13 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
         RemoteControlSource.ACCOUNT_DEVICE -> accountRemoteState
         RemoteControlSource.NONE -> RemoteSessionUiState.Idle
     }
+    val committedRemoteSessions = (activeRemoteState as? RemoteSessionUiState.Ready)?.sessions.orEmpty()
+    // Shell navigation is only a transient request while the shared store
+    // catches up. Once a delete succeeds the row disappears, which invalidates
+    // a stale shell request and lets the store's selection take over.
+    val routedSessionId = shell.remoteSessionId
+        ?.takeIf { requested -> committedRemoteSessions.any { it.id == requested } }
+        ?: (activeRemoteState as? RemoteSessionUiState.Ready)?.selectedSessionId
     val activeWorkspaceDirectory = when (controlSummary.source) {
         RemoteControlSource.ACCOUNT_DEVICE -> accountWorkspaceDirectory
         RemoteControlSource.NONE -> WorkspaceSessionDirectoryUiState(emptyList())
@@ -330,7 +347,10 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
             workspaceState = activeWorkspaceState,
             workspaceDirectory = activeWorkspaceDirectory,
             remoteActive = shell.surface == MobileSurface.REMOTE,
-            remoteSelectedSessionId = shell.remoteSessionId,
+            // The session store owns selection. The shell only owns the
+            // container route, so deleting the active row clears this value
+            // without leaving a stale requested session behind.
+            remoteSelectedSessionId = routedSessionId,
             query = shell.sidebarQuery,
             searchOpen = shell.searchOpen,
             onQueryChange = shell::search,
@@ -361,6 +381,11 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
                 dispatchActiveSession(RemoteSessionIntent.Open(sessionId))
             },
             onCreateRemoteInWorkspace = { workspace, agentType ->
+                // Workspace quick-create used to dispatch directly while the
+                // shell still rendered the home surface, so its committed
+                // session had no creation route callback. Enter the same
+                // creation route as the global new-session action first.
+                shell.createRemoteSession()
                 // With an ID the create carries only the ID; the legacy triple is for pre-ID rows.
                 dispatchActiveSession(
                     RemoteSessionIntent.CreateSession(
@@ -374,7 +399,6 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
                         workspaceId = workspace.workspaceId,
                     ),
                 )
-                shell.show(MobileSurface.REMOTE)
                 closeDrawer()
             },
             onWorkspaceTool = { path, connectionId, terminal ->
@@ -467,9 +491,13 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
                                 null
                             },
                             compact = !wide,
-                            requestedSessionId = shell.remoteSessionId,
+                            requestedSessionId = routedSessionId,
                             creatingSession = shell.remoteCreating,
                             onOpenSession = shell::openRemoteSession,
+                            onCreatedSession = { id ->
+                                shell.openRemoteSession(id)
+                                closeDrawer()
+                            },
                             onCreateSession = shell::createRemoteSession,
                             onRemoteHome = shell::closeRemoteSession,
                             modifier = Modifier,

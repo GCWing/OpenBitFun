@@ -1,6 +1,6 @@
 import { OverflowText } from '../../primitives/OverflowText';
+import { Icon } from '../../components/Icon/Icon';
 import type { HTMLAttributes, ReactNode } from "react";
-import { Hourglass, Info, Terminal, Zap } from "lucide-react";
 import {
   AmbientToolCard,
   AmbientToolCardHeader,
@@ -11,13 +11,23 @@ import {
   type ToolCardStatusSlotProps,
 } from "./ToolCardStatusSlot";
 import styles from "./ActivityToolCards.module.css";
+import type { ToolCardInteraction } from './ToolCardInteraction';
+import { ToolRelationRow } from './ToolRelationRow';
+import { AgentWaitTargetRail, type AgentWaitTargets } from './AgentWaitTargetRail';
 
 interface ActivityToolCardBaseProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "children" | "onClick"> {
   action?: ReactNode;
   defaultIcon?: ToolCardStatusSlotProps["defaultIcon"];
+  extra?: ReactNode;
   icon: ReactNode;
+  interaction?: ToolCardInteraction;
   status: FlowChatToolStatus;
+  statusDescription?: string;
+  resultSummary?: ReactNode;
+  details?: ReactNode;
+  detailsTitle?: ReactNode;
+  resultLabel?: string;
   summary?: ReactNode;
   summaryTitle?: string;
   toolCard: string;
@@ -26,13 +36,29 @@ interface ActivityToolCardBaseProps
 function ActivityToolCardBase({
   action,
   defaultIcon,
+  extra,
   icon,
+  interaction,
   status,
+  statusDescription,
+  resultSummary,
+  details,
+  detailsTitle,
+  resultLabel,
   summary,
   summaryTitle,
   toolCard,
   ...props
 }: ActivityToolCardBaseProps) {
+  const summaryContent = summary !== undefined && summary !== null ? (
+    <OverflowText className={styles.summary} data-openbitfun-part="summary"
+      title={summaryTitle}>
+      {summary}
+    </OverflowText>
+  ) : undefined;
+  if (interaction) return <ToolRelationRow {...props} data-openbitfun-tool-card={toolCard}
+    interaction={interaction} status={status} result={resultSummary ?? summary ?? action}
+    details={details} detailsTitle={detailsTitle ?? action} resultLabel={resultLabel} />;
   return (
     <AmbientToolCard
       {...props}
@@ -40,16 +66,10 @@ function ActivityToolCardBase({
       header={(
         <AmbientToolCardHeader
           action={action}
-          content={summary !== undefined && summary !== null ? (
-            <OverflowText
-              className={styles.summary}
-              data-openbitfun-part="summary"
-              data-tone={status === "error" ? "danger" : "neutral"}
-              title={summaryTitle}
-            >
-              {summary}
-            </OverflowText>
-          ) : undefined}
+          content={summaryContent}
+          result={resultSummary}
+          statusDescription={statusDescription ?? summaryTitle}
+          extra={extra}
           icon={(
             <ToolCardStatusSlot
               size={14}
@@ -70,11 +90,15 @@ export type ActivityToolCardProps = Omit<
   "icon" | "toolCard"
 >;
 
-export function AgentWaitToolCard(props: ActivityToolCardProps) {
+export function AgentWaitToolCard({ agents, ...props }: ActivityToolCardProps & { agents?: AgentWaitTargets }) {
   return (
     <ActivityToolCardBase
       {...props}
-      icon={<Hourglass aria-hidden="true" />}
+      interaction={props.interaction && agents?.items.length ? { ...props.interaction,
+        targets: agents.items.map(item => ({ id: item.id, label: item.name, kind: 'agent',
+          avatar: item.avatar, openLabel: item.openLabel, onOpen: item.onOpen })) } : props.interaction}
+      extra={!props.interaction && agents?.items.length ? <AgentWaitTargetRail {...agents} /> : props.extra}
+      icon={<Icon name="users" size="sm" />}
       toolCard="agent-wait"
     />
   );
@@ -84,7 +108,7 @@ export function GetToolSpecToolCard(props: ActivityToolCardProps) {
   return (
     <ActivityToolCardBase
       {...props}
-      icon={<Info aria-hidden="true" />}
+      icon={<Icon name="book-search" size="sm" />}
       toolCard="get-tool-spec"
     />
   );
@@ -94,7 +118,8 @@ export function SkillToolCard(props: ActivityToolCardProps) {
   return (
     <ActivityToolCardBase
       {...props}
-      icon={<Zap aria-hidden="true" />}
+      defaultIcon={props.status === "completed" || props.status === "confirmed" ? "tool" : props.defaultIcon}
+      icon={<Icon name="book-open" size="sm" />}
       toolCard="skill"
     />
   );
@@ -104,7 +129,7 @@ export function TerminalControlToolCard(props: ActivityToolCardProps) {
   return (
     <ActivityToolCardBase
       {...props}
-      icon={<Terminal aria-hidden="true" />}
+      icon={<Icon name="square-terminal" size="sm" />}
       toolCard="terminal-control"
     />
   );

@@ -29,6 +29,7 @@ import { resolveThreadGoalUserMessageDisplay } from '../../utils/threadGoalDispl
 import { cleanRemoteUserInput } from '../../utils/userInputText';
 import { getEffectiveToolName } from '../../utils/toolInvocationIdentity';
 import { absoluteSessionTurnIndexForId } from '../../utils/flowChatTurnOrdinal';
+import { normalizeSessionContinuationPolicy } from '../../utils/sessionMetadata';
 import type {
   DeepReviewQueueStateChangedEvent,
   ImageAnalysisEvent,
@@ -613,6 +614,12 @@ function handleSubagentSessionLinked(
     agentType,
     focusedReviewDisplayLabel,
   );
+  const continuationPolicy = normalizeSessionContinuationPolicy(
+    event.continuationPolicy ?? (event as any).continuation_policy,
+  );
+  if (continuationPolicy) {
+    FlowChatStore.getInstance().updateSessionRelationship(childSessionId, { continuationPolicy });
+  }
   if (typeof modelId === 'string' && modelId.trim()) {
     FlowChatStore.getInstance().updateSessionModelName(childSessionId, modelId.trim());
   }

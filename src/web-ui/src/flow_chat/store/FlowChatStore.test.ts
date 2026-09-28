@@ -3277,6 +3277,27 @@ describe('FlowChatStore historical session hydration state', () => {
     });
   });
 
+  it.each(['fresh_only', undefined] as const)('hydrates continuation policy even when the child workspace is already known: %s', async policy => {
+    const workspaceId = fixtureWorkspaceId('/conversation-project');
+    const child = createSession({ sessionId: 'continuation-child', sessionKind: 'subagent',
+      workspaceId, workspacePath: '/conversation-project', config: { workspaceId },
+      historyState: 'ready', title: 'Live child title', dialogTurns: [{ id: 'live-turn' } as any],
+    });
+    flowChatStore.setState(() => ({ sessions: new Map([[child.sessionId, child]]) }));
+    apiMocks.loadSessionMetadata.mockResolvedValueOnce({
+      sessionId: child.sessionId, sessionName: 'Stored title', status: 'active',
+      workspaceId, workspacePath: '/conversation-project', agentType: 'Standard',
+      relationship: { kind: 'subagent', parentSessionId: 'parent', continuationPolicy: policy },
+      createdAt: 1, lastActiveAt: 2,
+    });
+    expect(await flowChatStore.ensurePersistedSessionMetadata(child.sessionId, workspaceId)).toBe(true);
+    const hydrated = flowChatStore.getState().sessions.get(child.sessionId)!;
+    expect(hydrated.continuationPolicy).toBe(policy ?? 'reusable');
+    expect(hydrated.title).toBe('Live child title');
+    expect(hydrated.dialogTurns).toBe(child.dialogTurns);
+    expect(hydrated.historyState).toBe('ready');
+  });
+
   it('loads model config once while processing multiple persisted sessions', async () => {
     configManagerMock.getConfig.mockImplementation(async (path: string) => {
       if (path === 'ai.models') return [{ id: 'primary-model', context_window: 256000 }];

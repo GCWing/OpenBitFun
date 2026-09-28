@@ -1,4 +1,5 @@
-import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import { lazyWithRecovery, type RecoverableLazyComponent } from '@/shared/utils/lazyWithRecovery';
+import type { ComponentType } from 'react';
 import { i18nService } from '@/infrastructure/i18n/core/I18nService';
 import type { I18nNamespace } from '@/infrastructure/i18n/types';
 import type {
@@ -32,15 +33,17 @@ export interface SettingsPageManifest {
   searchPhrases: readonly SettingsSearchPhrase[];
   views?: readonly SettingsViewManifest[];
   load: () => Promise<SettingsPageModule>;
-  component: LazyExoticComponent<ComponentType<SettingsPageProps>>;
+  component: RecoverableLazyComponent<ComponentType<SettingsPageProps>>;
 }
 
 type SettingsPageDefinition = Omit<SettingsPageManifest, 'component'>;
 
 function definePage(definition: SettingsPageDefinition): SettingsPageManifest {
+  const component = lazyWithRecovery(definition.load);
   return {
     ...definition,
-    component: lazy(definition.load),
+    load: component.preload,
+    component,
   };
 }
 

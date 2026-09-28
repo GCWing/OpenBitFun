@@ -1,6 +1,9 @@
 import type { FlowChatFocusItemRequest } from '../../events/flowchatNavigation';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
 import type { Session } from '../../types/flow-chat';
+import { getProjectedModelRoundGroups } from '../../grouping/roundGroups';
+import { indexFlowGroups } from '../../grouping/selectors';
+import { findElementWithDataValue } from './flowChatSearchDom';
 import {
   absoluteSessionTurnIndexForId,
   absoluteSessionTurnIndexForLocalIndex,
@@ -14,6 +17,16 @@ export interface ResolvedFocusTarget {
   focusItemId?: string;
   expandExploreGroupId?: string;
   preferTurnNavigation: boolean;
+}
+
+/** Settled thinking shares the visible row of its successor; its own box is empty. */
+export function findFlowChatFocusElement(container: HTMLElement, itemId: string): HTMLElement | null {
+  const element = findElementWithDataValue(container, 'data-flow-item-id', itemId)
+    ?? findElementWithDataValue(container, 'data-tool-card-id', itemId);
+  const successor = element?.nextElementSibling;
+  return element?.dataset.thinkingAttachment === 'side'
+    && successor instanceof HTMLElement && successor.hasAttribute('data-thinking-continuation')
+    ? successor : element;
 }
 
 export function resolveFlowChatFocusTarget(
@@ -47,21 +60,21 @@ export function resolveFlowChatFocusTarget(
       }
     }
 
-    for (let i = 0; i < currentVirtualItems.length; i += 1) {
+    const owner = indexFlowGroups(currentVirtualItems).byMemberId.get(itemId);
+    if (owner) {
+      resolvedVirtualIndex = owner.virtualIndex;
+      resolvedTurnId = resolvedTurnId ?? owner.turnId;
+      expandExploreGroupId = owner.group.groupId;
+    }
+    for (let i = 0; !owner && i < currentVirtualItems.length; i += 1) {
       const item = currentVirtualItems[i];
       if (item.type === 'model-round') {
-        const hit = item.data?.items?.some(flowItem => flowItem?.id === itemId);
+        const group = getProjectedModelRoundGroups(item).find(candidate => candidate.type === 'critical'
+          && candidate.item.id === itemId);
+        const hit = group || item.canvasArtifactItems?.some(member => member.id === itemId);
         if (hit) {
           resolvedVirtualIndex = i;
           resolvedTurnId = resolvedTurnId ?? item.turnId;
-          break;
-        }
-      } else if (item.type === 'explore-group') {
-        const hit = item.data?.allItems?.some(flowItem => flowItem?.id === itemId);
-        if (hit) {
-          resolvedVirtualIndex = i;
-          resolvedTurnId = resolvedTurnId ?? item.turnId;
-          expandExploreGroupId = item.data.groupId;
           break;
         }
       }

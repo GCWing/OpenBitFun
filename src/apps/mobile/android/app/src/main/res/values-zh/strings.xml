@@ -526,4 +526,6 @@
     <string name="workspace_file_conflict">电脑上的文件已被修改，当前草稿仍保留。请先复制草稿，再重新打开文件以读取最新内容。</string>
     <string name="chat_load_older_failed">加载更早消息失败，点按重试。</string>
     <string name="chat_loading_older_messages">正在加载更早消息…</string>
+    <string name="tool_todo_fallback">任务列表</string>
+    <string name="tool_todo_all_completed">全部任务已完成</string>
 </resources>

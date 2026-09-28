@@ -2,6 +2,19 @@
   "version": 1,
   "entries": [
     {
+      "id": "web-flow-chat-subagent-names",
+      "surface": "web-ui",
+      "namespace": "flow-chat",
+      "owner": "src/web-ui/src/flow_chat/subagent-identity/nameResolver.ts",
+      "description": "A fixed pool of 30 localized companion names is selected by stable subagent identity, independently of the current locale.",
+      "sourceReferences": [
+        "SUBAGENT_NAME_KEYS",
+        "resolveSubagentNameKey",
+        "subagentIdentity.names.bouncyBean"
+      ],
+      "keyPrefixes": ["subagentIdentity.names."]
+    },
+    {
       "id": "installer-install-path-errors",
       "surface": "installer",
       "owner": "OpenBitFun-Installer/src/utils/installPathErrors.ts",

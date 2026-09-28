@@ -1,0 +1,44 @@
+@layer openbitfun.components {
+  .artwork {
+    display: block;
+    flex: 0 0 auto;
+    width: var(--openbitfun-control-height-lg);
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    user-select: none;
+  }
+
+  .mark {
+    display: inline-block;
+    flex: 0 0 auto;
+    width: 120px;
+    height: 120px;
+    background: currentColor;
+    -webkit-mask: url('./assets/openbitfun-mark.svg') center / contain no-repeat;
+    mask: url('./assets/openbitfun-mark.svg') center / contain no-repeat;
+    user-select: none;
+  }
+
+  .flow {
+    display: block;
+    flex: 0 0 auto;
+    max-width: 100%;
+    height: auto;
+    stroke-width: 0.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  .iconMotion {
+    /* Match small Icon strokes, capped at the md size to keep double contours light. */
+    stroke-width: calc(var(--openbitfun-control-icon-stroke-width) * min(var(--_brand-motion-size), var(--openbitfun-control-icon-size-md)) / 24);
+  }
+
+  .counterRotor {
+    transform-box: view-box;
+    transform-origin: 50% 50%;
+  }
+}

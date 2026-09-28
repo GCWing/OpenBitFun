@@ -1,4 +1,5 @@
 import { agentAPI, btwAPI } from '@/infrastructure/api';
+import { i18nService } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
 import { flowChatStore } from '../store/FlowChatStore';
 import { stateMachineManager } from '../state-machine';
@@ -13,6 +14,7 @@ import type { ImagePayload } from '../utils/imagePayload';
 import { absoluteSessionTurnIndexForId } from '../utils/flowChatTurnOrdinal';
 import { requireSessionWorkspaceId, sessionWorkspaceId } from '../utils/sessionWorkspace';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { assertSessionConversationCanSubmit } from '../session-drivers/conversationCapability';
 
 export function createBtwRequestId(prefix = 'btw'): string {
   try {
@@ -309,6 +311,8 @@ export async function sendMessageToBtwSession(params: {
   if (childSession.sessionKind !== 'btw' || childSession.isTransient) {
     throw new Error(`Session is not a persistent /btw session: ${params.childSessionId}`);
   }
+  assertSessionConversationCanSubmit(params.childSessionId, childSession,
+    i18nService.t('flow-chat:chatInput.targetUnavailable'));
 
   const scope = getActiveSurfaceScope();
   const requestId = params.requestId ?? createBtwRequestId('btw');

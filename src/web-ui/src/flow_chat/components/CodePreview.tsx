@@ -16,6 +16,7 @@ import { getPrismLanguage } from '@/infrastructure/language-detection';
 import { useAppearance } from '@/infrastructure/appearance';
 import { getLoadedPrismSyntaxHighlighter, loadPrismSyntaxHighlighter } from '@/shared/utils/syntaxHighlighterLoader';
 import { buildCodePreviewPrismStyle } from './codePreviewPrismTheme';
+import { ScrollArea, type ScrollAreaEdgeFade, type ScrollbarVisibility } from '@openbitfun/ui';
 import './CodePreview.scss';
 
 export interface CodePreviewProps {
@@ -29,12 +30,18 @@ export interface CodePreviewProps {
   isStreaming?: boolean;
   /** Whether to show line numbers */
   showLineNumbers?: boolean;
+  /** Add the preview inset when the owning tool card uses a flush body. */
+  inset?: boolean;
   /** Custom class name */
   className?: string;
   /** Auto-scroll to bottom while streaming */
   autoScrollToBottom?: boolean;
   /** Max height (px) */
   maxHeight?: number;
+  /** Fade scrollable preview edges. */
+  edgeFade?: ScrollAreaEdgeFade;
+  /** Native scrollbar visibility and idle track behavior. */
+  scrollbarVisibility?: ScrollbarVisibility;
   /** Line click callback (line numbers start at 1) */
   onLineClick?: (lineNumber: number, filePath?: string) => void;
 }
@@ -123,8 +130,11 @@ export const CodePreview: React.FC<CodePreviewProps> = memo(({
   isStreaming = false,
   showLineNumbers = true,
   className = '',
+  inset = false,
   autoScrollToBottom = true,
   maxHeight = 400,
+  edgeFade = 'vertical',
+  scrollbarVisibility = 'auto',
   onLineClick,
 }) => {
   const { current: appearance } = useAppearance();
@@ -210,10 +220,10 @@ export const CodePreview: React.FC<CodePreviewProps> = memo(({
         backgroundColor: isHighlighted
           ? 'color-mix(in srgb, var(--openbitfun-color-accent-default) 15%, transparent)'
           : 'transparent',
-        borderLeft: isHighlighted ? '3px solid var(--openbitfun-color-accent-default)' : '3px solid transparent',
-        marginLeft: '-3px',
-        paddingLeft: '3px',
-        transition: 'background-color 0.15s ease, border-color 0.15s ease',
+        // Paint the rail outside the text without adding to the line's inset.
+        boxShadow: isHighlighted ? '-3px 0 var(--openbitfun-color-accent-default)' : 'none',
+        padding: 0,
+        transition: 'background-color 0.15s ease',
       },
       onClick: () => handleLineClick(actualLineNumber),
       className: isHighlighted ? 'code-line--highlighted' : '',
@@ -234,12 +244,18 @@ export const CodePreview: React.FC<CodePreviewProps> = memo(({
   
   return (
     <div data-openbitfun-component="code-preview" data-openbitfun-part="root" data-openbitfun-state={isStreaming ? 'streaming' : undefined} className={`code-preview ${isStreaming ? 'code-preview--streaming' : ''} ${className}`}>
-      <div 
+      <ScrollArea
+        edgeFade={edgeFade}
+        scrollbarVisibility={scrollbarVisibility}
+        orientation="both"
+        overscrollBehaviorY="auto"
         ref={containerRef}
         data-openbitfun-component="code-preview"
         data-openbitfun-part="content"
         className="code-preview__content"
+        data-inset={inset ? "true" : undefined}
         style={containerStyle}
+        tabIndex={0}
       >
         {SyntaxHighlighter ? (
           <SyntaxHighlighter
@@ -248,7 +264,7 @@ export const CodePreview: React.FC<CodePreviewProps> = memo(({
             showLineNumbers={showLineNumbers}
             startingLineNumber={displayContentInfo.startingLineNumber}
             wrapLines={true}
-            wrapLongLines={true}
+            wrapLongLines={false}
             lineProps={lineProps}
             customStyle={{
               margin: 0,
@@ -301,7 +317,7 @@ export const CodePreview: React.FC<CodePreviewProps> = memo(({
         {isStreaming && (
           <span data-openbitfun-component="code-preview" data-openbitfun-part="cursor" className="code-preview__cursor" />
         )}
-      </div>
+      </ScrollArea>
     </div>
   );
 });

@@ -1,5 +1,4 @@
 import { requireSessionOwningWorkspaceId } from '../../utils/sessionOrdering';
-import { requireSessionWorkspaceId } from '../../utils/sessionWorkspace';
 /**
  * Session management module
  * Handles session creation, switching, deletion, and other operations
@@ -850,7 +849,9 @@ export async function ensureBackendSession(
   }
 
   const latestSession = context.flowChatStore.getState().sessions.get(sessionId) ?? session;
-  const workspaceId = requireSessionWorkspaceId(latestSession);
+  // Coordinator state belongs to the project; a managed worktree's execution
+  // record need not be in the opened/recent workspace catalog after first send.
+  const workspaceId = requireSessionOwningWorkspaceId(latestSession);
   const workspace = resolveSessionWorkspace({ workspaceId });
   const workspacePath = workspace.rootPath;
   const projectWorkspacePath = requireSessionProjectWorkspacePath(latestSession, sessionId);
@@ -984,7 +985,7 @@ export async function ensureBackendSession(
               worktreeId: latestSession.config.executionTarget.worktreeId,
             }
           : { kind: 'local' },
-      workspaceId: latestSession.workspaceId,
+      workspaceId,
       remoteConnectionId: effectiveConnectionId,
       remoteSshHost: effectiveSshHost,
       relationship: buildCreateSessionRelationship(latestSession),
@@ -1036,7 +1037,7 @@ export async function retryCreateBackendSession(
             worktreeId: session.config.executionTarget.worktreeId,
           }
         : { kind: 'local' },
-    workspaceId: session.workspaceId,
+    workspaceId: requireSessionOwningWorkspaceId(session),
     remoteConnectionId: session.remoteConnectionId,
     remoteSshHost: session.remoteSshHost,
     relationship: buildCreateSessionRelationship(session),

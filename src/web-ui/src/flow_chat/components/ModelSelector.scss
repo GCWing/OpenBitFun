@@ -18,10 +18,10 @@
   &__trigger {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    height: 20px;
-    padding: 0 8px;
-    border-radius: 10px;
+    gap: var(--openbitfun-space-1);
+    height: var(--openbitfun-space-5);
+    padding: 0 var(--openbitfun-space-2);
+    border-radius: var(--openbitfun-radius-pill);
     border: none;
     background: transparent;
     color: var(--openbitfun-color-content-secondary);
@@ -35,7 +35,7 @@
       opacity 140ms ease,
       transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
     outline: none;
-    opacity: 0.72;
+    opacity: var(--openbitfun-control-flow-chat-model-idle-opacity);
     white-space: nowrap;
     letter-spacing: var(--openbitfun-type-modifier-tracking-wide-letter-spacing);
 
@@ -69,7 +69,7 @@
   }
 
   &__name {
-    max-width: 100px;
+    max-width: var(--openbitfun-control-flow-chat-model-name-max-width);
   }
 
   &__trigger-reasoning {

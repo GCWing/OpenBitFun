@@ -14,6 +14,7 @@ import { useRuntimeStatusStore } from '../store/runtimeStatusStore';
 import type { Session } from '../types/flow-chat';
 import { isAcpFlowSession } from '../utils/acpSession';
 import { resolveSessionDriverId, type SessionDriverId } from './resolve';
+import { deriveSessionConversationCapability, type SessionConversationCapability } from './conversationCapability';
 
 export const DISPATCH_TRANSFER_ROUND_PREFIX = 'dispatch-transfer:';
 
@@ -30,6 +31,7 @@ const LOCAL_SLASH_OPS_WITHOUT_THREAD_GOAL: ReadonlySet<ComposerSlashOp> = new Se
 const DISPATCH_SLASH_OPS: ReadonlySet<ComposerSlashOp> = new Set(['compact', 'usage']);
 
 export interface ComposerCapabilities {
+  conversation: SessionConversationCapability;
   driverId: SessionDriverId;
   /**
    * Raw flag for residual plumbing (reload-context support, picker guards).
@@ -96,6 +98,7 @@ export function useComposerCapabilities(input: ComposerCapabilityInput): Compose
     );
 
   return {
+    conversation: deriveSessionConversationCapability(session, driverId),
     driverId,
     dispatchTransport,
     localSlashCommands: !dispatchTransport,

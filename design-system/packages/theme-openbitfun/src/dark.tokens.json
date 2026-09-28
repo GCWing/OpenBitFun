@@ -233,6 +233,36 @@
       "added": { "$type": "color", "$value": "{ref.color.green.550}" },
       "removed": { "$type": "color", "$value": "{ref.color.red.650}" }
     },
+    "codeDiff": {
+      "$description": "Read-only diff colors retain their turquoise/coral identity with brighter syntax and layered dark surfaces.",
+      "foreground": { "$type": "color", "$value": "{color.content.primary}" },
+      "lineNumber": { "$type": "color", "$value": "{ref.color.neutral.350}" },
+      "gutterBorder": { "$type": "color", "$value": "{color.surface.panel}" },
+      "added": {
+        "marker": { "$type": "color", "$value": "{ref.color.green.450}" },
+        "line": { "$type": "color", "$value": "color-mix(in srgb, {color.codeDiff.added.marker} 8%, {color.surface.panel})" },
+        "gutter": { "$type": "color", "$value": "color-mix(in srgb, {color.codeDiff.added.marker} 5%, {color.surface.panel})" },
+        "word": { "$type": "color", "$value": "color-mix(in srgb, {color.codeDiff.added.marker} 22%, {color.surface.panel})" }
+      },
+      "removed": {
+        "marker": { "$type": "color", "$value": "{ref.color.red.450}" },
+        "line": { "$type": "color", "$value": "color-mix(in srgb, {color.codeDiff.removed.marker} 8%, {color.surface.panel})" },
+        "gutter": { "$type": "color", "$value": "color-mix(in srgb, {color.codeDiff.removed.marker} 5%, {color.surface.panel})" },
+        "word": { "$type": "color", "$value": "color-mix(in srgb, {color.codeDiff.removed.marker} 22%, {color.surface.panel})" }
+      },
+      "syntax": {
+        "comment": { "$type": "color", "$value": "{ref.color.neutral.450}" },
+        "punctuation": { "$type": "color", "$value": "{ref.color.neutral.350}" },
+        "keyword": { "$type": "color", "$value": "{ref.color.pink.450}" },
+        "declaration": { "$type": "color", "$value": "{ref.color.purple.410}" },
+        "function": { "$type": "color", "$value": "{ref.color.purple.425}" },
+        "string": { "$type": "color", "$value": "{ref.color.green.400}" },
+        "number": { "$type": "color", "$value": "{ref.color.cyan.300}" },
+        "property": { "$type": "color", "$value": "{ref.color.amber.450}" },
+        "variable": { "$type": "color", "$value": "{ref.color.amber.400}" },
+        "operator": { "$type": "color", "$value": "{ref.color.cyan.425}" }
+      }
+    },
     "status": {
       "info": {
         "emphasis": { "$description": "Clear blue status emphasis, sharing the existing creative-action blue anchor.", "$type": "color", "$value": "{ref.color.blue.550}" },

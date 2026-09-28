@@ -76,10 +76,10 @@ $track-item-gap: 10px;
 
   // One glyph size for the whole track, enforced here so component-owned
   // icons land on the same rhythm without the strip reaching into them.
-  > svg {
+  > :is(svg, [data-openbitfun-component='icon']) {
     flex: none;
-    width: 12px;
-    height: 12px;
+    width: var(--openbitfun-control-icon-size-xs);
+    height: var(--openbitfun-control-icon-size-xs);
   }
 }
 

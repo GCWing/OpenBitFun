@@ -1,9 +1,7 @@
 @use '../../flat-markdown-surfaces' as flatMarkdownSurfaces;
-@use '../../markdown-typography' as markdownTypography;
 
 .session-usage-report-card {
   @include flatMarkdownSurfaces.apply;
-  @include markdownTypography.apply;
 
   display: flex;
   flex-direction: column;
@@ -217,8 +215,7 @@
     border-radius: 6px;
     background: color-mix(in srgb, var(--openbitfun-color-action-quiet-hover) 58%, transparent);
 
-    svg,
-    [data-openbitfun-component='icon'] {
+    > :is(svg, [data-openbitfun-component='icon']) {
       flex: 0 0 auto;
       color: var(--openbitfun-color-content-secondary);
     }

@@ -5041,7 +5041,7 @@ mod tests {
             .result_for_assistant
             .as_deref()
             .unwrap_or_default()
-            .contains("Call GetToolSpec first"));
+            .contains("Call GetToolSpec with {\"tool_name\":\"get_weather\"}"));
     }
 
     #[tokio::test]
@@ -5289,7 +5289,7 @@ mod tests {
         assert_failed_task_contains(
             &pipeline,
             "tool_1",
-            "Call GetToolSpec first with {\"tool_name\":\"WebFetch\"}",
+            "Call GetToolSpec with {\"tool_name\":\"WebFetch\"}",
         );
     }
 
@@ -5714,7 +5714,7 @@ mod tests {
 
         assert!(err
             .to_string()
-            .contains("Call GetToolSpec first with {\"tool_name\":\"WebFetch\"}"));
+            .contains("Call GetToolSpec with {\"tool_name\":\"WebFetch\"}"));
     }
 
     #[test]

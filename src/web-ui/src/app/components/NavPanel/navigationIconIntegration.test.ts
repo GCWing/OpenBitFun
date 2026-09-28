@@ -33,7 +33,7 @@ describe('navigation icon integration', () => {
     expect(sublistStart).toBeGreaterThanOrEqual(0);
     expect(sublistEnd).toBeGreaterThan(sublistStart);
     expect(sublistMarkup).toContain('<Icon glyph={Users} size="sm" />');
-    expect(sublistMarkup).toContain('<Icon name="extension" size="sm" />');
+    expect(sublistMarkup).toContain('<Icon name="book-open" size="sm" />');
     expect(sublistMarkup).toContain('<Icon glyph={Network} size="sm" />');
     expect(sublistMarkup).not.toContain('strokeWidth');
   });

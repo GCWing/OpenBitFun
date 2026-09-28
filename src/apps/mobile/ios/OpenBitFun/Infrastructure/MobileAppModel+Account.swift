@@ -189,6 +189,10 @@ extension MobileAppModel {
         }
     }
 
+    func notifyAuthorizationCallback() {
+        coreAdapter?.notifyAuthorizationCallback()
+    }
+
     func retryAccountFailure() {
         guard accountFailureStage == "DEVICE_LIST", accountFailureCanRetry, !accountBusy else { return }
         accountBusy = true
@@ -219,6 +223,7 @@ extension MobileAppModel {
             if components.scheme == "https", components.host == "auth.openbitfun.com" {
                 var items = (components.queryItems ?? []).filter { $0.name != "locale" }
                 items.append(URLQueryItem(name: "locale", value: appLanguage.rawValue))
+                items.append(URLQueryItem(name: "returnTo", value: "openbitfun://auth/callback"))
                 components.queryItems = items
             }
             return components.url
@@ -266,7 +271,14 @@ extension MobileAppModel {
                 if pairingError != nil { pairingSheetOpen = true }
                 return
             }
-            if ready.selectedDeviceId == nil,
+            // A persisted target is only a preference. If it is no longer in
+            // the directory or has gone offline, recover to the first online
+            // controllable device instead of leaving the user on the empty
+            // "选择设备和工作区" gate indefinitely.
+            let selectedDeviceIsOnline = ready.selectedDeviceId.flatMap { selectedID in
+                ready.devices.first(where: { $0.id == selectedID })?.online
+            } ?? false
+            if !selectedDeviceIsOnline,
                let target = ready.devices.first(where: { $0.online }) {
                 accountBusy = true
                 coreAdapter?.selectAccountDevice(id: target.id)

@@ -52,6 +52,7 @@ import largeFileExpansionLabels from './largeFileExpansionLabels.json';
 import {
   DEFAULT_EDITOR_CONFIG,
   DEFAULT_EDITOR_FONT_FAMILY,
+  resolveEditorFontFamily,
   DEFAULT_EDITOR_FONT_SIZE,
   DEFAULT_EDITOR_FONT_WEIGHT,
   DEFAULT_EDITOR_INLAY_FONT_SIZE,
@@ -529,7 +530,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     const fs = editorConfig.font_size ?? DEFAULT_EDITOR_FONT_SIZE;
     editorRef.current.updateOptions({
       fontSize: fs,
-      fontFamily: editorConfig.font_family || DEFAULT_EDITOR_FONT_FAMILY,
+      fontFamily: resolveEditorFontFamily(editorConfig.font_family),
       fontWeight: editorConfig.font_weight || DEFAULT_EDITOR_FONT_WEIGHT,
       lineHeight: editorConfig.line_height ? Math.round(fs * editorConfig.line_height) : 0,
     });
@@ -556,7 +557,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       if (editorRef.current) {
         editorRef.current.updateOptions({
           fontSize: appliedFontSize,
-          fontFamily: config.font_family || DEFAULT_EDITOR_FONT_FAMILY,
+          fontFamily: resolveEditorFontFamily(config.font_family),
           fontWeight: config.font_weight || DEFAULT_EDITOR_FONT_WEIGHT,
           lineHeight: config.line_height 
             ? Math.round(appliedFontSize * config.line_height)
@@ -676,12 +677,12 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         }
         
         let createFontSize = DEFAULT_EDITOR_FONT_SIZE;
-        let createFontFamily = editorConfigRuntimeRef.current.font_family || DEFAULT_EDITOR_FONT_FAMILY;
+        let createFontFamily = resolveEditorFontFamily(editorConfigRuntimeRef.current.font_family);
         let createFontWeight = editorConfigRuntimeRef.current.font_weight || DEFAULT_EDITOR_FONT_WEIGHT;
         let createLineHeight = 0;
         const applyFontConfig = (c: Partial<EditorConfigType>) => {
           createFontSize = c.font_size ?? DEFAULT_EDITOR_FONT_SIZE;
-          createFontFamily = c.font_family || createFontFamily;
+          createFontFamily = resolveEditorFontFamily(c.font_family);
           createFontWeight = c.font_weight || createFontWeight;
           createLineHeight = c.line_height ? Math.round(createFontSize * c.line_height) : 0;
         };
@@ -773,7 +774,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           inlayHints: {
             enabled: initialLargeFileMode ? 'off' : 'on',
             fontSize: DEFAULT_EDITOR_INLAY_FONT_SIZE,
-            fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+            fontFamily: resolveEditorFontFamily(),
             padding: false
           },
 
@@ -857,7 +858,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           const fs = c.font_size ?? DEFAULT_EDITOR_FONT_SIZE;
           editor!.updateOptions({
             fontSize: fs,
-            fontFamily: c.font_family || DEFAULT_EDITOR_FONT_FAMILY,
+            fontFamily: resolveEditorFontFamily(c.font_family),
             fontWeight: c.font_weight || DEFAULT_EDITOR_FONT_WEIGHT,
             lineHeight: c.line_height ? Math.round(fs * c.line_height) : 0,
           });

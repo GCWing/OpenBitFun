@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, type ReactElement } from 'react';
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
+import { Suspense, useEffect, type ReactElement } from 'react';
 import { systemAPI } from '@/infrastructure/api/service-api/SystemAPI';
 import { createLogger } from '@/shared/utils/logger';
 import { scheduleAfterStartupSignal } from '@/shared/utils/startupTaskScheduling';
@@ -8,7 +9,7 @@ import { UpdateInstallProgressModal } from './UpdateInstallProgressModal';
 import { APP_UPDATE_CHECK_INTERVAL, useUpdateInstallStore } from './updateInstallStore';
 import { RetainedMountBoundary } from '@/shared/presence';
 
-const AppUpdateDetailsDialog = lazy(() => import('./AppUpdateDetailsDialog'));
+const AppUpdateDetailsDialog = lazyWithRecovery(() => import('./AppUpdateDetailsDialog'));
 
 const log = createLogger('DailyAppUpdate');
 

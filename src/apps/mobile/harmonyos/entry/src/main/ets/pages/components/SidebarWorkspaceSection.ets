@@ -94,7 +94,7 @@ export struct SidebarWorkspaceSection {
           .onClick(() => { void this.onRefreshDevices(); })
       }
       Row() {}.height(0)
-        .bindSheet($$this.workspaceTools.visible, this.WorkspaceTools(), { height: SheetSize.LARGE, onWillDismiss: (action: DismissSheetAction): void => {
+        .bindSheet($$this.workspaceTools.visible, this.WorkspaceTools(), { height: SheetSize.LARGE, showClose: false, onWillDismiss: (action: DismissSheetAction): void => {
           if (this.workspaceTools.dirty) this.onWorkspaceTools({ type: 'close' });
           else { this.onWorkspaceTools({ type: 'close' }); action.dismiss(); }
         }, onDisappear: () => this.onWorkspaceTools({ type: 'close' }) })

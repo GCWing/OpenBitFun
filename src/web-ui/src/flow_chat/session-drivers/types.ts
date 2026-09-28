@@ -44,6 +44,8 @@ export interface SendMessageOptions {
    * Callers should not set this directly.
    */
   bypassPendingQueue?: boolean;
+  /** Use the existing send-now path to steer running work when supported. */
+  sendImmediately?: boolean;
   userMessageMetadata?: Record<string, unknown>;
   execution?: import('@/infrastructure/api/service-api/AgentAPI').AgentDialogTurnExecution;
   turnId?: string;
@@ -162,6 +164,11 @@ export interface SessionDriverNavigationStatusSource {
   getSnapshot: (sessionId: string) => SessionDriverNavigationStatus;
 }
 
+/** Driver-owned changes that can affect conversation ownership before session metadata arrives. */
+export interface SessionDriverOwnershipSource {
+  subscribe: (listener: () => void) => () => void;
+}
+
 /**
  * Structural stand-in for AgentAPI's PermissionRequest wire shape. `object`
  * so both the typed interface and raw store records assign without casts.
@@ -206,6 +213,9 @@ export interface SessionDriver {
 
   /** Optional driver-owned facts used by the shared session navigation UI. */
   readonly navigationStatusSource?: SessionDriverNavigationStatusSource;
+
+  /** Notify shared composer selection when a driver's ownership facts change. */
+  readonly ownershipSource?: SessionDriverOwnershipSource;
 
   /** Create the flavor's session and return its id. */
   createSession(context: FlowChatContext, seed: SessionCreationSeed): Promise<string>;

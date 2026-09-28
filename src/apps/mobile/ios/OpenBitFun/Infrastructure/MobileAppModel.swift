@@ -77,6 +77,10 @@ final class MobileAppModel: ObservableObject {
     @Published var pairingSheetOpen = false
     @Published var pairingScanRequested = false
     var pendingDeviceLink: String?
+    /// Session ids awaiting the authoritative delete result. The directory
+    /// sidebar has its own cached projection, so it must be reconciled when a
+    /// delete succeeds even if the deleted session was not the open one.
+    var pendingRemoteSessionDeletions: Set<String> = []
     @Published var pairingBusy = false
     @Published var pairingError: String?
     @Published var coreErrorMessage: String?

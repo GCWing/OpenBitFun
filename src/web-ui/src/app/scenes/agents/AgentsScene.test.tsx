@@ -101,7 +101,7 @@ vi.mock('@/infrastructure/confirm-dialog', async (importOriginal) => ({
   confirmDanger: vi.fn(async () => false),
 }));
 
-vi.mock('@/app/components', () => ({
+vi.mock('@/app/components/GalleryLayout', () => ({
   GalleryEmpty: () => <div />,
   GalleryGrid: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   GalleryLayout: ({ children, className }: { children: React.ReactNode; className?: string }) => (

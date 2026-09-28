@@ -12,6 +12,7 @@
 
   .root[data-size="sm"] { --_radio-size: 14px; }
   .root[data-size="lg"] { --_radio-size: 18px; }
+  .root[data-readonly="true"] { cursor: default; }
 
   .control {
     position: relative;

@@ -29,11 +29,15 @@ import {
 import { isSessionInUseError } from '@/infrastructure/api/errors/TauriCommandError';
 import { i18nService } from '@/infrastructure/i18n';
 import { driverForSession } from '../../session-drivers/registry';
+import { assertSessionConversationCanSubmit, getSessionConversationCapability } from '../../session-drivers/conversationCapability';
 import type { SendMessageOptions, SubmissionDraft, TurnTracker } from '../../session-drivers/types';
 import { assertSessionSubmissionAllowed } from '../../store/sessionMutationStore';
 import { hasInterruptedTurnHoldingQueue } from '../../utils/interruptedTurnRecovery';
 import { interruptedTurnRecoveryGate } from '../interruptedTurnRecoveryGate';
 import { hasPendingVoiceExchanges, replayVoiceExchanges } from '../controlConversation';
+import { submitSteeringMessage } from '../steeringSubmission';
+import { promoteAcceptedHostMessage } from '../hostQueueSubmission';
+import { isAcpFlowSession } from '../../utils/acpSession';
 
 export { syncSessionModelSelection } from '../../utils/modelSync';
 export { markCurrentTurnItemsAsCancelled } from '../../utils/turnCancellation';
@@ -224,11 +228,32 @@ export async function sendMessage(
   switchToMode?: string,
   options?: SendMessageOptions
 ): Promise<void> {
-  const session = context.flowChatStore.getState().sessions.get(sessionId);
+  let session = context.flowChatStore.getState().sessions.get(sessionId);
   if (!session) {
     throw new Error(`Session does not exist: ${sessionId}`);
   }
   const surfaceScopeAtSend = getActiveSurfaceScope();
+  if (session.sessionKind === 'subagent'
+    && getSessionConversationCapability(sessionId, session).reason === 'metadata_pending') {
+    const parent = session.parentSessionId
+      ? context.flowChatStore.getState().sessions.get(session.parentSessionId) : undefined;
+    const ownerId = session.projectWorkspaceId ?? session.config.projectWorkspaceId
+      ?? parent?.projectWorkspaceId ?? parent?.config.projectWorkspaceId
+      ?? parent?.workspaceId ?? parent?.config.workspaceId
+      ?? session.workspaceId ?? session.config.workspaceId;
+    if (ownerId) {
+      await context.flowChatStore.ensurePersistedSessionMetadata(sessionId, ownerId);
+      surfaceScopeAtSend.assertCurrent('resolve conversation capability');
+    }
+    session = context.flowChatStore.getState().sessions.get(sessionId);
+  }
+  const assertConversation = () => assertSessionConversationCanSubmit(
+    sessionId, context.flowChatStore.getState().sessions.get(sessionId),
+    i18nService.t('flow-chat:chatInput.targetUnavailable'),
+  );
+  // Reject before either queue owns the message or any mode/draft changes occur.
+  assertConversation();
+  if (!session) throw new Error(`Session does not exist: ${sessionId}`);
   const sendCoordinationKey = surfaceScopeAtSend.key(
     'session-send',
     surfaceScopeAtSend.epoch,
@@ -273,11 +298,32 @@ export async function sendMessage(
         beginSubmission();
         try {
           const queue = hostDialogQueue(sessionId);
-          await queue.submit({ content: message, displayContent: displayMessage,
+          const accepted = await queue.submit({ content: message, displayContent: displayMessage,
             agentType: agentType?.trim() || session.mode || 'Standard',
             attachments: queueImageAttachments(options?.imageContexts), metadata: options?.userMessageMetadata ?? {} },
             { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData });
           surfaceScopeAtSend.assertCurrent('accept queued message');
+          if (options?.sendImmediately) {
+            await promoteAcceptedHostMessage(queue, accepted);
+            surfaceScopeAtSend.assertCurrent('accept immediate message');
+          }
+          completeSessionSend(sendCoordinationKey, sendAttempt);
+          return;
+        } finally { endSubmission(); }
+      }
+      const dialogTurnId = stateMachineManager.get(sessionId)?.getContext().currentDialogTurnId;
+      if (options?.sendImmediately && dialogTurnId && !isAcpFlowSession(session)
+        && driverForSession(sessionId, session).id === 'local') {
+        beginSubmission();
+        try {
+          await submitSteeringMessage({
+            sessionId,
+            dialogTurnId,
+            content: message,
+            displayContent: displayMessage ?? message,
+            imageContexts: options.imageContexts,
+            userMessageMetadata: options.userMessageMetadata,
+          }, options.imageDisplayData);
           completeSessionSend(sendCoordinationKey, sendAttempt);
           return;
         } finally { endSubmission(); }
@@ -342,6 +388,7 @@ export async function sendMessage(
       surfaceScopeAtSend.assertCurrent('restore conversation history before submission');
     }
     const refreshedSession = context.flowChatStore.getState().sessions.get(sessionId) ?? session;
+    assertConversation();
     const currentAgentType = (agentType?.trim() || refreshedSession.mode || 'Standard').trim();
     const acpClientId = acpClientIdFromMode(currentAgentType);
     const driver = driverForSession(sessionId, refreshedSession);
@@ -383,6 +430,7 @@ export async function sendMessage(
     if (!readySession) {
       throw new Error(`Session lost before starting dialog turn: ${sessionId}`);
     }
+    assertConversation();
 
     const isFirstMessage = isProjectedSessionEmpty(readySession)
       && readySession.titleStatus !== 'generated';

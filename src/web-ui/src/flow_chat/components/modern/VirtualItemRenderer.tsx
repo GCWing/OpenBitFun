@@ -8,7 +8,7 @@ import { Loader2 } from 'lucide-react';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
 import { UserMessageItem } from './UserMessageItem';
 import { ModelRoundItem } from './ModelRoundItem';
-import { ExploreGroupRenderer } from './ExploreGroupRenderer';
+import { FlowGroupRenderer } from './FlowGroupRenderer';
 import { AmbientToolCard, AmbientToolCardHeader } from '@openbitfun/ui/flow-chat';
 import { useFlowChatVolatileContext } from './FlowChatContext';
 import { TurnCompletionNoticeItem } from './TurnCompletionNoticeItem';
@@ -17,6 +17,8 @@ import './VirtualItemRenderer.scss';
 import { getVirtualItemStableKey } from './virtualItemIdentity';
 import { useFlowChatSearchPresentation } from './useFlowChatSearchPresentation';
 import { ConversationExcerptMarkers } from '../../selection/ConversationExcerptMarkers';
+import { getKnownVirtualItemHeightPx } from './virtualItemHeightEstimators';
+import { Icon } from '@openbitfun/ui';
 
 interface VirtualItemRendererProps {
   item: VirtualItem;
@@ -40,6 +42,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
     const currentMatch = searchCurrentMatch?.virtualItemIndex === index ? searchCurrentMatch : undefined;
     const isSearchMatch = Boolean(matches?.length);
     const isSearchCurrent = Boolean(currentMatch);
+    const isCollectedEmpty = getKnownVirtualItemHeightPx(item) === 0;
     const [wrapper, setWrapper] = React.useState<HTMLDivElement | null>(null);
     const rowRef = React.useCallback((element: HTMLDivElement | null) => {
       setWrapper(element);
@@ -72,6 +75,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
           return (
             <ModelRoundItem 
               round={item.data} 
+              projectedGroups={item.projectedGroups}
               turnId={item.turnId} 
               isLastRound={item.isLastRound}
               isTurnComplete={item.isTurnComplete}
@@ -86,7 +90,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
         
         case 'explore-group':
           return (
-            <ExploreGroupRenderer
+            <FlowGroupRenderer
               data={item.data}
               turnId={item.turnId}
             />
@@ -105,7 +109,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
                 status="running"
                 header={
                   <AmbientToolCardHeader
-                    icon={<Loader2 className="animate-spin" size={16} />}
+                    icon={<Icon glyph={Loader2} size="md" className="animate-spin" />}
                     content="Analyzing image with image understanding model..."
                   />
                 }
@@ -119,7 +123,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
     })();
     
     // A4-like layout: wrap with a max-width container.
-    // Render the container even when content is empty to avoid zero-size issues.
+    // Keep the keyed wrapper; only collected rows with no visible content collapse to zero.
     // data-turn-id is used for long-image export.
     return (
       <div
@@ -131,6 +135,7 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
         data-testid="flowchat-message-item"
         data-turn-id={item.turnId}
         data-item-type={item.type}
+        data-collected-empty={isCollectedEmpty ? 'true' : undefined}
         data-turn-boundary-after={endsBeforeUserTurn ? 'true' : undefined}
         data-ambient-tool-run-continuation-after={continuesAmbientToolRunAfter ? 'true' : undefined}
         data-virtual-item-key={getVirtualItemStableKey(item)}

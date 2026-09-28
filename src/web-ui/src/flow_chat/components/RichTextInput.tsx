@@ -37,6 +37,9 @@ import {
 import './RichTextInput.scss';
 
 const SKILL_REFERENCE_BADGE_ICON = renderToStaticMarkup(
+  <Icon name="book-open" size="xs" aria-hidden="true" />,
+);
+const ADDITIONAL_MODE_REFERENCE_BADGE_ICON = renderToStaticMarkup(
   <Icon name="extension" size="xs" aria-hidden="true" />,
 );
 const SESSION_REFERENCE_BADGE_ICON = renderToStaticMarkup(
@@ -587,6 +590,7 @@ export const RichTextInput = React.forwardRef<HTMLDivElement, RichTextInputProps
           title: `Additional mode: ${payload.displayText}`,
           displayText: payload.displayText,
           modifierClass: 'rich-text-tag-pill--additional-mode-ref',
+          badgeIcon: ADDITIONAL_MODE_REFERENCE_BADGE_ICON,
         })
       : null;
   }, [createSkillStyledReferenceElement]);

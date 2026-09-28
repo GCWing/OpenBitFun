@@ -243,11 +243,21 @@ export class CloudAccountClient {
     if (!start.authorizationUrl.startsWith('https://github.com/login/oauth/authorize?') && !/^https:\/\/auth\.openbitfun\.com\/sign-in#ticket=[A-Za-z0-9_-]+$/.test(start.authorizationUrl)) {
       throw new Error('Untrusted account authorization URL.');
     }
-    if (!await openAuthorization(start.authorizationUrl)) throw new Error('Could not open account sign-in.');
+    const authorizationUrl = start.authorizationUrl.replace(
+      '/sign-in#',
+      '/sign-in?returnTo=openbitfun%3A%2F%2Fauth%2Fcallback#'
+    );
+    if (!await openAuthorization(authorizationUrl)) throw new Error('Could not open account sign-in.');
     const deadline = Math.min(start.expiresAt * 1000, Date.now() + 600000);
     let lastTransient: Error | undefined = undefined;
+    let firstPoll = true;
     while (Date.now() < deadline && generation === this.authorizationGeneration) {
-      await new Promise<void>((resolve) => setTimeout(resolve, Math.min(30, Math.max(1, start.pollIntervalSeconds)) * 1000));
+      if (!firstPoll) {
+        // Keep the return-to-app handoff responsive even when the relay's
+        // conservative interval is large; the next poll is bounded to 2s.
+        await new Promise<void>((resolve) => setTimeout(resolve, Math.min(2, Math.max(1, start.pollIntervalSeconds)) * 1000));
+      }
+      firstPoll = false;
       if (generation !== this.authorizationGeneration) break;
       const request: GitHubPollRequest = { transactionId: start.transactionId, transactionSecret: start.transactionSecret };
       let poll: GitHubPoll;

@@ -1,7 +1,40 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import fs from 'node:fs';
 import ts from 'typescript';
-import { collectForwardedTabProps, collectForwardedOverlayProps, findDomAttribute } from './appearance-dom-contracts.mjs';
+import { collectForwardedTabProps, collectForwardedOverlayProps, collectForwardedFlowGroupParts, findDomAttribute, collectFlowChatAppearanceHostTags } from './appearance-dom-contracts.mjs';
+
+test('FlowChat host evidence follows exact public imports, including aliases, but rejects local lookalikes', () => {
+  const parse = source => [...collectFlowChatAppearanceHostTags(ts.createSourceFile('fixture.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX))];
+  assert.deepEqual(parse(`import { ThinkingBlock as Reasoning, ExploreGroup, ToolDuration } from '@openbitfun/ui/flow-chat';`), ['Reasoning', 'ExploreGroup', 'ToolDuration']);
+  assert.deepEqual(parse(`import { ThinkingBlock } from './fake'; import { Unknown } from '@openbitfun/ui/flow-chat';`), []);
+});
+
+const flowGroupSource = fs.readFileSync(new URL('../design-system/packages/ui/src/flow-chat/conversation/FlowGroup.tsx', import.meta.url), 'utf8');
+const parseTsx = source => ts.createSourceFile('fixture.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+
+test('FlowGroup forwards literal identities to the actual public parts and state source', () => {
+  const [parts] = collectForwardedFlowGroupParts(parseTsx(`import { FlowGroup as Group } from '@openbitfun/ui/flow-chat';
+    <Group {...props} data-openbitfun-component="explore-group" data-openbitfun-part="root" />;`), parseTsx(flowGroupSource)).values();
+  assert.deepEqual(parts.map(node => findDomAttribute(node, 'data-openbitfun-part').initializer.text),
+    ['root', 'header', 'summary', 'controls', 'contentWrapper', 'content']);
+  assert.match(findDomAttribute(parts[0], 'data-openbitfun-state').getText(), /expanded/);
+  // Removing forwarding at the owner removes the proof; an inventory is not DOM evidence.
+  const changedOwner = flowGroupSource.replace('data-openbitfun-part="summary"', 'data-other-part="summary"');
+  const [changedParts] = collectForwardedFlowGroupParts(parseTsx(`import { FlowGroup } from '@openbitfun/ui/flow-chat';
+    <FlowGroup data-openbitfun-component="context-load-group" data-openbitfun-part="root" />;`), parseTsx(changedOwner)).values();
+  assert.equal(changedParts.length, parts.length - 1);
+});
+
+test('FlowGroup forwarding rejects local lookalikes, dynamic identities and overriding spreads', () => {
+  for (const source of [
+    `import { FlowGroup } from './fake'; <FlowGroup data-openbitfun-component="x" data-openbitfun-part="root" />;`,
+    `import { Button as FlowGroup } from '@openbitfun/ui/flow-chat'; <FlowGroup data-openbitfun-component="x" data-openbitfun-part="root" />;`,
+    `import { FlowGroup } from '@openbitfun/ui/flow-chat'; <FlowGroup data-openbitfun-component={dynamic} data-openbitfun-part="root" />;`,
+    `import { FlowGroup } from '@openbitfun/ui/flow-chat'; <FlowGroup data-openbitfun-component="x" data-openbitfun-part="root" {...unknown} />;`,
+    `import { FlowGroup } from '@openbitfun/ui/flow-chat'; <FlowGroup data-openbitfun-component="x" data-openbitfun-part="invented" />;`,
+  ]) assert.equal(collectForwardedFlowGroupParts(parseTsx(source), parseTsx(flowGroupSource)).size, 0, source);
+});
 
 function collect(source) {
   return [...collectForwardedTabProps(ts.createSourceFile('fixture.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX))];

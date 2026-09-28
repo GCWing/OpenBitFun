@@ -1,0 +1,29 @@
+@layer openbitfun.components {
+  .details {
+    display: flex;
+    min-inline-size: 0;
+    flex-direction: column;
+    gap: var(--openbitfun-space-3);
+    color: var(--openbitfun-color-content-secondary);
+    font-family: var(--openbitfun-type-body-sm-font-family);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+    container: runtime-tool-details / inline-size;
+  }
+
+  .viewport { max-block-size: 20rem; min-inline-size: 0; }
+  .list { display: flex; flex-direction: column; gap: var(--openbitfun-space-3); margin: 0; padding: 0; list-style: none; }
+  .model { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: var(--openbitfun-space-4); }
+  .identity, .modelId, .record { display: flex; min-inline-size: 0; flex-direction: column; gap: var(--openbitfun-space-1); }
+  .name { color: var(--openbitfun-color-content-primary); font-weight: var(--openbitfun-type-label-lg-font-weight); }
+  .secondary { color: var(--openbitfun-color-content-muted); }
+  .description { overflow-wrap: anywhere; white-space: pre-wrap; }
+  .error { color: var(--openbitfun-color-status-danger-content); }
+  .image { display: block; max-inline-size: 100%; max-block-size: 24rem; object-fit: contain; object-position: left top; border-radius: var(--openbitfun-radius-sm); }
+
+  @container runtime-tool-details (max-width: 24rem) {
+    .model { grid-template-columns: minmax(0, 1fr); gap: var(--openbitfun-space-1); }
+    .modelId { flex-direction: row; align-items: baseline; gap: var(--openbitfun-space-2); }
+  }
+}

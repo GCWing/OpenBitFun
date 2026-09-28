@@ -91,7 +91,7 @@ impl fmt::Display for DeferredToolUsageError {
                 get_tool_spec_tool_name,
             } => write!(
                 formatter,
-                "Tool '{tool_name}' is deferred. Call {get_tool_spec_tool_name} first with {{\"tool_name\":\"{tool_name}\"}} to read its full usage instructions and input schema before invoking it."
+                "Tool '{tool_name}' has no loaded definition in the current context. Call {get_tool_spec_tool_name} with {{\"tool_name\":\"{tool_name}\"}} to read its full usage instructions and input schema before invoking it. If compaction removed an earlier definition, reload it even if the summary says it was loaded."
             ),
             Self::StaleSpec {
                 tool_name,
@@ -371,7 +371,8 @@ pub fn get_tool_spec_short_description() -> String {
 pub fn build_get_tool_spec_description() -> String {
     r#"Read the full schema before first calling a deferred tool through CallDeferredTool.
 
-Do not call GetToolSpec again for a tool whose definition is already loaded in the current conversation."#
+Do not call GetToolSpec again while its successful result with the full definition is still visible in the current context.
+If compaction or truncation removed that result, call GetToolSpec again before using CallDeferredTool. A summary mentioning a previously loaded tool or a past successful call does not load its definition. Reload also when the runtime reports a stale definition."#
         .to_string()
 }
 
@@ -439,7 +440,7 @@ pub fn validate_get_tool_spec_input(input: &Value) -> ValidationResult {
 
 pub fn build_get_tool_spec_duplicate_load_hint(tool_name: &str) -> String {
     format!(
-        "Tool '{}' is already loaded in the current conversation. Do not call GetToolSpec again for it. Use CallDeferredTool with tool_name '{}' and put the tool arguments inside args.",
+        "Tool '{}' is already loaded in the current context. Use CallDeferredTool with tool_name '{}' and put the tool arguments inside args. Reload with GetToolSpec only if its full definition leaves the context or the runtime reports it stale.",
         tool_name, tool_name
     )
 }
@@ -2688,6 +2689,10 @@ mod tests {
 
         assert!(description.contains("Read the full schema"));
         assert!(description.contains("Do not call GetToolSpec again"));
+        assert!(description.contains("full definition is still visible in the current context"));
+        assert!(description
+            .contains("If compaction or truncation removed that result, call GetToolSpec again"));
+        assert!(description.contains("does not load its definition"));
     }
 
     #[test]

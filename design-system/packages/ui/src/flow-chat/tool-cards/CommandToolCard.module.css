@@ -3,6 +3,68 @@
     min-inline-size: 0;
   }
 
+  .root > .expandedCard {
+    overflow: hidden;
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    border-radius: var(--openbitfun-radius-lg);
+    color: var(--openbitfun-color-content-primary);
+    background: transparent;
+    transition: border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  .root > .expandedCard:is(:hover, :focus-within),
+  .root[data-openbitfun-preview-state="hover"] > .expandedCard,
+  :global([data-openbitfun-preview-state="hover"]) .root > .expandedCard {
+    border-color: var(--openbitfun-color-border-subtle);
+  }
+
+  .root > .expandedCard[data-openbitfun-state~="confirmation"] {
+    border-color: var(--openbitfun-color-status-warning-border);
+  }
+
+  .expandedCard > [data-openbitfun-part="surface"] {
+    border-block-end: 0;
+    background: var(--openbitfun-color-surface-tertiary);
+  }
+
+  .expandedCard > [data-openbitfun-part="surface"][data-openbitfun-attention="ambient"],
+  .expandedCard [data-openbitfun-part="summary"],
+  .footerRow {
+    box-sizing: border-box;
+    min-block-size: calc(var(--openbitfun-control-height-sm) + 2 * var(--openbitfun-space-1));
+    gap: var(--openbitfun-space-2);
+    padding: var(--openbitfun-space-1) var(--openbitfun-control-flow-chat-card-padding-inline);
+  }
+
+  .expandedCard [data-openbitfun-part="extra"],
+  .expandedCard [data-openbitfun-part="actions"],
+  .outputActions {
+    gap: var(--openbitfun-space-2);
+  }
+
+  /* Expanded header actions use the same control size as the footer, instead
+     of inheriting the smaller ambient row controls. */
+  .root > .expandedCard > [data-openbitfun-part="surface"][data-openbitfun-attention="ambient"] [data-openbitfun-part="actions"] [data-openbitfun-component="icon-button"] {
+    inline-size: var(--openbitfun-control-height-sm);
+    block-size: var(--openbitfun-control-height-sm);
+  }
+
+  .expandedCard [data-openbitfun-part="extra"] {
+    margin-inline-start: auto;
+  }
+
+  .expandedCard [data-openbitfun-part="expanded"] {
+    margin-block-start: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .root > .expandedCard [data-openbitfun-part="actionRegion"] {
+    padding-inline-start: 0;
+    border-inline-start: 0;
+  }
+
   .command {
     display: block;
     overflow: hidden;
@@ -16,23 +78,79 @@
     white-space: nowrap;
   }
 
+  .root .expandedCommand {
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-flow-code-font-family);
+    font-size: var(--openbitfun-type-flow-code-font-size);
+    font-weight: var(--openbitfun-type-flow-code-font-weight);
+    line-height: var(--openbitfun-type-flow-code-line-height);
+    letter-spacing: var(--openbitfun-type-flow-code-letter-spacing);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
   .command[data-empty="true"] {
     color: var(--openbitfun-color-content-muted);
     font-style: italic;
+  }
+
+  .commandRow {
+    display: flex;
+    min-inline-size: 0;
+    align-items: flex-start;
+    gap: var(--openbitfun-space-2);
+  }
+
+  .commandPreview {
+    flex: 0 1 auto;
+  }
+
+  .commandActions {
+    block-size: calc(var(--openbitfun-type-flow-code-font-size) * var(--openbitfun-type-flow-code-line-height));
+  }
+
+  .commandPreview,
+  .commandText {
+    display: block;
+    min-inline-size: 0;
+  }
+
+  .commandPreview[data-expanded="false"] .expandedCommand {
+    max-block-size: 3lh;
+  }
+
+  .commandPreview[data-expanded="false"][data-overflow="true"] .expandedCommand {
+    -webkit-mask-image: linear-gradient(to bottom, currentColor calc(100% - min(var(--openbitfun-layout-overflow-text-fade-extent), 1lh)), transparent 100%);
+    mask-image: linear-gradient(to bottom, currentColor calc(100% - min(var(--openbitfun-layout-overflow-text-fade-extent), 1lh)), transparent 100%);
+  }
+
+  .commandPreview[role="button"] {
+    cursor: pointer;
+  }
+
+  .commandPreview:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: var(--openbitfun-focus-offset);
+    border-radius: var(--openbitfun-radius-xs);
   }
 
   .statusSummary {
     display: inline-flex;
     min-inline-size: 0;
     align-items: center;
-    gap: var(--openbitfun-space-1);
+    gap: var(--openbitfun-space-2);
     color: var(--openbitfun-color-content-muted);
     font-size: var(--openbitfun-type-body-sm-font-size);
+  }
+
+  .expandedCard .statusSummary {
+    color: var(--openbitfun-color-content-primary);
   }
 
   .statusLabel {
     display: inline-flex;
     align-items: center;
+    gap: var(--openbitfun-space-1);
     padding-block: var(--openbitfun-space-1);
     padding-inline: var(--openbitfun-space-2);
     border-radius: var(--openbitfun-radius-sm);
@@ -40,6 +158,21 @@
     font-size: var(--openbitfun-type-body-sm-font-size);
     font-weight: var(--openbitfun-type-label-selected-font-weight);
     white-space: nowrap;
+  }
+
+  .expandedCard .statusLabel:is([data-tone="neutral"], [data-tone="success"]) {
+    padding: 0;
+    background: transparent;
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+  }
+
+  .resultIcon {
+    flex: 0 0 auto;
+    color: var(--openbitfun-color-status-success-emphasis);
+  }
+
+  .root > [data-openbitfun-attention="prominent"] .statusLabel {
+    padding-block: 0;
   }
 
   .statusLabel[data-tone="warning"] {
@@ -60,15 +193,23 @@
     display: flex;
     min-inline-size: 0;
     flex-direction: column;
-    gap: var(--openbitfun-space-2);
+  }
+
+  .contentSection {
+    display: flex;
+    min-inline-size: 0;
+    flex-direction: column;
+    gap: var(--openbitfun-space-3);
+    padding: var(--openbitfun-space-3) var(--openbitfun-control-flow-chat-card-padding-inline);
+    color: var(--openbitfun-color-content-secondary);
   }
 
   .outputFrame {
     position: relative;
     overflow: hidden;
     min-block-size: 0;
-    border-radius: var(--openbitfun-radius-sm);
-    background: var(--openbitfun-color-surface-scene);
+    border-radius: 0;
+    background: transparent;
   }
 
   .outputFrame[data-density="compact"] {
@@ -108,43 +249,28 @@
   .waiting {
     display: flex;
     align-items: center;
-    justify-content: center;
-    padding: var(--openbitfun-space-3);
-    color: var(--openbitfun-color-content-muted);
+    justify-content: flex-start;
+    padding: 0;
+    color: var(--openbitfun-color-content-secondary);
     font-size: var(--openbitfun-type-body-sm-font-size);
     font-style: italic;
-    text-align: center;
-  }
-
-  .outputActions {
-    position: absolute;
-    z-index: 1;
-    inset-block-start: var(--openbitfun-space-1);
-    inset-inline-end: var(--openbitfun-space-1);
-    display: inline-flex;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-  }
-
-  .outputFrame:is(:hover, :focus-within) .outputActions,
-  .outputFrame[data-openbitfun-preview-state="hover"] .outputActions {
-    opacity: 1;
-    pointer-events: auto;
+    text-align: start;
   }
 
   .footer {
+    color: var(--openbitfun-color-content-secondary);
+    background: var(--openbitfun-color-surface-tertiary);
+    font-family: var(--openbitfun-type-body-sm-font-family);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+  }
+
+  .footerRow {
     display: flex;
     min-inline-size: 0;
     flex-wrap: wrap;
     align-items: center;
-    gap: var(--openbitfun-space-2);
-    padding-block: var(--openbitfun-space-2);
-    padding-inline: var(--openbitfun-space-3);
-    border-radius: var(--openbitfun-radius-sm);
-    color: var(--openbitfun-color-content-muted);
-    background: transparent;
-    font-size: var(--openbitfun-type-body-sm-font-size);
   }
 
   .footerItem {
@@ -164,14 +290,13 @@
   }
 
   .footerLabel {
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
+    color: inherit;
+    font-weight: var(--openbitfun-type-label-lg-font-weight);
   }
 
   .footerValue {
     overflow: hidden;
-    color: var(--openbitfun-color-content-secondary);
+    color: inherit;
   }
 
   .footerItem[data-tone="success"] .footerValue {
@@ -194,9 +319,28 @@
     overflow-wrap: anywhere;
   }
 
+  .root[data-openbitfun-preview-state="hover"] > .expandedCard > [data-openbitfun-part="surface"],
+  :global([data-openbitfun-preview-state="hover"]) .root > .expandedCard > [data-openbitfun-part="surface"] {
+    background: var(--openbitfun-color-action-quiet-hover);
+  }
+
+  @media (hover: hover) {
+    .expandedCard > [data-openbitfun-part="surface"]:hover {
+      background: var(--openbitfun-color-action-quiet-hover);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .root > .expandedCard,
+    .root .copyAction,
     .outputActions {
       transition: none;
+    }
+  }
+
+  @media (forced-colors: active) {
+    .root > .expandedCard {
+      border-color: CanvasText;
     }
   }
 }

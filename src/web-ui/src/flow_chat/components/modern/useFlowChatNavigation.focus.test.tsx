@@ -34,7 +34,8 @@ vi.mock('../../store/modernFlowChatStore', () => ({
     getState: () => ({ activeSession: { sessionId: mocks.activeSessionId } }),
   }),
 }));
-vi.mock('./flowChatFocusTarget', () => ({
+vi.mock('./flowChatFocusTarget', async importOriginal => ({
+  ...await importOriginal<typeof import('./flowChatFocusTarget')>(),
   resolveFlowChatFocusTarget: mocks.resolveFlowChatFocusTarget,
 }));
 
@@ -79,6 +80,7 @@ describe('useFlowChatNavigation focus placement', () => {
   let listRef: React.RefObject<any>;
   let focusFlowItem: ReturnType<typeof vi.fn>;
   let scrollIntoView: ReturnType<typeof vi.fn>;
+  let focusLine: ReturnType<typeof vi.fn>;
 
   function renderItem() {
     const element = document.createElement('div');
@@ -116,6 +118,9 @@ describe('useFlowChatNavigation focus placement', () => {
     }));
     vi.stubGlobal('cancelAnimationFrame', vi.fn());
     container = document.createElement('div');
+    container.className = 'virtual-item-wrapper';
+    focusLine = vi.fn();
+    container.addEventListener('flowchat:focus-line', focusLine);
     document.body.append(container);
     root = createRoot(container);
     act(() => root.render(<Harness listRef={listRef} containerRef={{ current: container }} />));
@@ -152,19 +157,43 @@ describe('useFlowChatNavigation focus placement', () => {
     document.body.prepend(other);
     const owned = renderItem();
     await dispatchFocusRequest();
-    expect(owned.classList.contains('flowchat-flow-item--focused')).toBe(true);
+    expect(focusLine.mock.lastCall?.[0].detail).toEqual({ element: owned, active: true });
+    expect(owned.classList.contains('flowchat-flow-item--focused')).toBe(false);
     expect(other.classList.contains('flowchat-flow-item--focused')).toBe(false);
   });
 
   it('asks again on the next frame while the item is still unrendered', async () => {
+    focusFlowItem.mockReturnValueOnce(false);
     await dispatchFocusRequest();
-    expect(focusFlowItem).not.toHaveBeenCalled();
+    // Materialization must be attempted even before a deferred member has DOM.
+    expect(focusFlowItem).toHaveBeenCalledTimes(1);
     expect(frames).toHaveLength(1);
 
     renderItem();
     await act(async () => { frames.shift()?.(16); });
 
     expect(focusFlowItem).toHaveBeenCalledWith(FOCUS_ITEM_ID);
+    expect(focusFlowItem).toHaveBeenCalledTimes(2);
+  });
+
+  it('highlights the visible successor of a docked thought without opening its inline body', async () => {
+    const thought = renderItem();
+    thought.dataset.thinkingAttachment = 'side';
+    const successor = document.createElement('div');
+    successor.dataset.thinkingContinuation = '';
+    container.append(successor);
+    await dispatchFocusRequest();
+    expect(thought.classList.contains('flowchat-flow-item--focused')).toBe(false);
+    expect(focusLine.mock.lastCall?.[0].detail).toEqual({ element: successor, active: true });
+    expect(successor.classList.contains('flowchat-flow-item--focused')).toBe(false);
+    expect(thought.dataset.thinkingAttachment).toBe('side');
+  });
+
+  it('releases the passive search-line marker on reader interaction', async () => {
+    const element = renderItem();
+    await dispatchFocusRequest();
+    window.dispatchEvent(new Event('wheel'));
+    expect(focusLine.mock.lastCall?.[0].detail).toEqual({ element, active: false });
   });
 
   it('delegates exact excerpts to the text navigator and cancels on reader intent', async () => {

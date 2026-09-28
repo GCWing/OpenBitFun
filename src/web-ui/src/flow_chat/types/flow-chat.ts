@@ -6,6 +6,7 @@
 import type {
   DialogTurnKind,
   SessionKind,
+  SessionContinuationPolicy,
   SessionContextUsageSource,
   SessionTitleSource,
   SessionTurnCatalog,
@@ -519,6 +520,9 @@ export interface Session {
   /** Logical subagent id / type used to launch this hidden subagent session. */
   subagentType?: string;
 
+  /** Runtime-owned continuation policy. Undefined until child metadata is known. */
+  continuationPolicy?: SessionContinuationPolicy;
+
   /** Whether `/goal` mode is active for this session. */
   goalModeActive?: boolean;
 
@@ -721,7 +725,7 @@ export interface ParsedChunk {
 
 export interface ToolCardConfig {
   attention: 'ambient' | 'prominent';
-  presentation: 'standard' | 'dedicated';
+  presentation: 'standard' | 'dedicated' | 'relation';
   toolName: string;
   displayName: string;
   icon: string;

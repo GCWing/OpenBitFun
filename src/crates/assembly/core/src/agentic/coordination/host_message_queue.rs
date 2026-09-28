@@ -417,6 +417,14 @@ impl DialogScheduler {
                 drop(state);
                 return Ok(self.queue_snapshot(session, Some(&message.turn_id)));
             }
+            // Accepted duplicates remain readable/idempotent. A new message
+            // must be rejected before creating a durable queue receipt.
+            let binding = self
+                .session_manager
+                .get_session(session)
+                .ok_or_else(|| error("Session was removed"))?;
+            ensure_session_accepts_conversation(&binding)
+                .map_err(|failure| error(failure.to_string()))?;
             if s.entries.len() + s.operations.len() >= RECEIPT_LIMIT {
                 return Err(error("Queue receipt budget exhausted; start a new session"));
             }

@@ -10,6 +10,7 @@
 import React, { useEffect, useCallback, useMemo, useState, useRef, useLayoutEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import path from 'path-browserify';
+import { getToolCardStatus } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import {
   FileOperationToolCard as FileOperationCardView,
@@ -37,6 +38,7 @@ import { i18nService } from '@/infrastructure/i18n';
 import { WritePlanDisplay } from './WritePlanDisplay';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { hasSessionFileProvider, openFileThroughSession } from '../session-drivers/sessionFileNavigation';
+import { useFlowChatContext } from '../components/modern/FlowChatContext';
 
 const log = createLogger('FileOperationToolCard');
 const FILE_OPERATION_STREAMING_MAX_HEIGHT = 4 * 22; // 88px – compact while streaming
@@ -126,6 +128,7 @@ interface FileOperationToolCardProps extends ToolCardProps {
 const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   toolItem,
   config,
+  displayContext,
   sessionId,
   onOpenInEditor,
   isLastItem,
@@ -134,16 +137,23 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   const {
     toolCall,
     toolResult,
-    status,
     isParamsStreaming,
     partialParams,
     requiresConfirmation,
     userConfirmed,
   } = toolItem;
   const toolId = toolItem.id ?? toolCall?.id;
-  const isFailed = status === 'error' || (toolResult && 'success' in toolResult && !toolResult.success);
+  const status = getToolCardStatus(toolItem);
+  const isFailed = status === 'error';
   
-  const [isContentExpanded, setIsContentExpanded] = useState(status !== 'completed' && !isFailed);
+  const { activeSessionOverride } = useFlowChatContext();
+  const isSubagentProjection = displayContext === 'subagent-projection';
+  const isSubagentSurface = isSubagentProjection || activeSessionOverride?.sessionKind === 'subagent';
+  // Tool payloads can keep arriving while an embedded subagent is hidden;
+  // avoid mounting the full preview until the reader expands the card.
+  const [isContentExpanded, setIsContentExpanded] = useState(
+    !isSubagentSurface && status !== 'completed' && !isFailed,
+  );
   const [isFailureExpanded, setIsFailureExpanded] = useState(false);
   const [retainLiveCompletionPreview, setRetainLiveCompletionPreview] = useState(false);
   const [operationDiffStats, setOperationDiffStats] = useState<{ surfaceEpoch: number; additions: number; deletions: number } | null>(null);
@@ -250,10 +260,12 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   const writeTypewriter = useTypewriter(
     toolItem.toolName === 'Write' ? contentPreview : '',
     isWriteContentAnimating,
+    { revealImmediately: !isContentExpanded },
   );
   const editTypewriter = useTypewriter(
     toolItem.toolName === 'Edit' ? newStringContent : '',
     isEditContentAnimating,
+    { revealImmediately: !isContentExpanded },
   );
   useReportTypewriterReveal(`${toolId ?? 'file-op'}:write`, writeTypewriter.isRevealing);
   useReportTypewriterReveal(`${toolId ?? 'file-op'}:edit`, editTypewriter.isRevealing);
@@ -389,6 +401,12 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   }, [isFailed, isFailureExpanded]);
 
   useLayoutEffect(() => {
+    if (isSubagentSurface && !userToggledContentRef.current) {
+      setRetainLiveCompletionPreview(false);
+      applyContentExpandedState(false, 'auto');
+      return;
+    }
+
     if (isFailed) {
       setRetainLiveCompletionPreview(false);
       applyContentExpandedState(false, 'auto');
@@ -421,6 +439,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
     isContentExpanded,
     isFailed,
     isLastItem,
+    isSubagentSurface,
     status,
   ]);
 
@@ -698,10 +717,13 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
         return (
           <div data-testid="chat-file-change-preview">
             <CodePreview
+              inset
+              edgeFade="none"
+              scrollbarVisibility="hover"
               content={editDisplayContent}
               filePath={currentFilePath}
               isStreaming={editVisuallyStreaming}
-              showLineNumbers={isContentExpanded}
+              showLineNumbers={false}
               maxHeight={previewMaxHeight}
               autoScrollToBottom={false}
               onLineClick={handleCodeLineClick}
@@ -714,12 +736,13 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
         return (
           <div data-testid="chat-file-change-preview">
             <InlineDiffPreview
+              edgeFade="none"
+              scrollbarVisibility="hover"
               originalContent={oldStringContent}
               modifiedContent={newStringContent}
               filePath={currentFilePath}
               maxHeight={previewMaxHeight}
-              showLineNumbers={isContentExpanded}
-              lineNumberMode="dual"
+              showLineNumbers={false}
               showPrefix={false}
               contextLines={-1}
             />
@@ -733,10 +756,13 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
         return (
           <div data-testid="chat-file-change-preview">
             <CodePreview
+              inset
+              edgeFade="none"
+              scrollbarVisibility="hover"
               content={writeDisplayContent}
               filePath={currentFilePath}
               isStreaming={writeVisuallyStreaming}
-              showLineNumbers={isContentExpanded}
+              showLineNumbers={false}
               maxHeight={previewMaxHeight}
               autoScrollToBottom={false}
               onLineClick={handleCodeLineClick}
@@ -749,13 +775,14 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
         return (
           <div data-testid="chat-file-change-preview">
             <InlineDiffPreview
+              edgeFade="none"
+              scrollbarVisibility="hover"
               originalContent=""
               modifiedContent={contentPreview}
               filePath={currentFilePath}
               maxHeight={previewMaxHeight}
-              showLineNumbers={isContentExpanded}
-              lineNumberMode="single"
-              showPrefix={true}
+              showLineNumbers={false}
+              showPrefix={false}
               contextLines={-1}
             />
           </div>
@@ -778,12 +805,10 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
 
   const expandedContent = renderExpandedContent();
   const hasExpandableContent =
-    !isDeleteTool &&
-    (isFailed || Boolean(expandedContent));
+    isFailed || (!isDeleteTool && Boolean(expandedContent));
 
   const isCardContentExpanded =
-    !isDeleteTool &&
-    (isFailed ? isFailureExpanded : isContentExpanded);
+    isFailed ? isFailureExpanded : !isDeleteTool && isContentExpanded;
 
   const operation = isDeleteTool
     ? 'delete'
@@ -792,7 +817,9 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
       : 'write';
   const hasDiffStats =
     currentFileDiffStats.additions > 0 || currentFileDiffStats.deletions > 0;
-  const headerStatusText = status === 'completed'
+  const headerStatusText = status === 'cancelled' ? t('toolCards.default.cancelled')
+    : status === 'rejected' ? t('toolCards.default.rejected')
+      : status === 'completed'
     ? undefined
     : writeContentStatusText ?? (
       isParamsStreaming && (status === 'preparing' || status === 'streaming')
@@ -833,7 +860,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
             deletions: formattedDeletions,
           }),
         } : undefined}
-        error={isFailed && !isDeleteTool ? {
+        error={isFailed ? {
           guidance: isFileGuidanceBlocked,
           message: getDisplayMessage(),
           title: isFileGuidanceBlocked

@@ -19,6 +19,8 @@ import React, {
 } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { requestDeferredContentItem } from '@openbitfun/flow-chat-presentation/deferred-content';
+import { findFlowChatFocusElement } from './flowChatFocusTarget';
 import { useActiveSessionState } from '../../hooks/useActiveSessionState';
 import { useSessionReadOnOpen } from '../../hooks/useSessionReadOnOpen';
 import { useScrollToTurnHeader } from '../../hooks/useScrollToTurnHeader';
@@ -45,6 +47,7 @@ import { ScrollToLatestBar } from '../ScrollToLatestBar';
 import { ScrollToTurnHeaderButton } from '../ScrollToTurnHeaderButton';
 import {
   findElementWithDataValue,
+  findFlowChatFocusTextRange,
   findFlowChatSearchTextRanges,
   getFlowChatSearchTextRoot,
 } from './flowChatSearchDom';
@@ -77,16 +80,18 @@ import {
 } from './flowChatHistoryBoundary';
 import { VirtualItemRenderer } from './VirtualItemRenderer';
 import { FlowChatPrependSnapshot } from './FlowChatPrependSnapshot';
+import { revealContainedRange } from '@openbitfun/flow-chat-presentation/scroll';
 import { FlowChatOpeningBoundary } from './FlowChatOpeningBoundary';
 import { useFlowChatVolatileContext } from './FlowChatContext';
 import {
   estimateVirtualMessageItemHeightWithContext,
   type VirtualItemHeightEstimateContext,
 } from './virtualMessageListLayout';
+import { getKnownVirtualItemHeightPx } from './virtualItemHeightEstimators';
 import { resolveVisibleFlowChatTurnIds } from './flowChatVisibleTurns';
 import type { FlowChatViewportSnapshot } from './flowChatViewportSnapshot';
 import { getVirtualItemStableKey } from './virtualItemIdentity';
-import { isAmbientToolRunContinuationAfter } from './flowChatRhythm';
+import { getNextVisibleVirtualItemIndexes, isAmbientToolRunContinuationAfter } from './flowChatRhythm';
 import {
   VIEWPORT_PLACEMENT_SETTLE_MS,
   roundViewportPx,
@@ -99,6 +104,7 @@ import type { ConversationExcerptContext } from '@/shared/types/context';
 import { findExcerptSource, resolveExcerptRange } from '../../selection/flowChatSelection';
 import { highlightExcerptRange } from '../../selection/locateConversationExcerpt';
 import './VirtualMessageList.scss';
+import { Icon } from '@openbitfun/ui';
 
 const SEARCH_NAVIGATION_MAX_ATTEMPTS = 24;
 /** Consecutive quiet frames that mark the opening viewport as settled. */
@@ -111,6 +117,17 @@ const OPEN_REVEAL_MAX_FRAMES = 40;
  * top, which would otherwise make the edge fade flicker back on.
  */
 const FLOWCHAT_SCROLL_START_THRESHOLD_PX = 1;
+
+function readableViewportBounds(scroller: HTMLElement, inputOverlayInsetPx: number) {
+  const top = scroller.getBoundingClientRect().top;
+  const edgeFadePx = Number.parseFloat(
+    getComputedStyle(scroller).getPropertyValue('--openbitfun-space-12'),
+  ) || 0;
+  return {
+    top: top + (scroller.scrollTop <= FLOWCHAT_SCROLL_START_THRESHOLD_PX ? 0 : edgeFadePx),
+    bottom: top + scroller.clientHeight - inputOverlayInsetPx - edgeFadePx,
+  };
+}
 /**
  * Resize callbacks over which a viewport resting at the end is re-aligned after
  * the scroller's own box changes.
@@ -189,7 +206,7 @@ export interface VirtualMessageListRef {
     options?: TurnNavigationOptions,
   ) => FlowChatTurnNavigationStatus;
   /**
-   * Centre a flow item inside its Turn, through the register.
+   * Place a flow item in the readable viewport, clear of fades and the composer.
    * `false` means it is not rendered yet, so the caller should ask again.
    */
   focusFlowItem: (flowItemId: string) => boolean;
@@ -311,7 +328,7 @@ const FlowChatHistoryPagingSentinel = ({
     aria-live={state === 'idle' ? undefined : 'polite'}
   >
     {state === 'loading' ? (
-      <Loader2 size={14} aria-hidden className="virtual-message-list__history-paging-spinner" />
+      <Icon glyph={Loader2} size="sm" aria-hidden className="virtual-message-list__history-paging-spinner" />
     ) : null}
     <span>{label}</span>
   </div>
@@ -384,7 +401,8 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   const modernStore = useModernFlowChatStoreApi();
   const canonicalVirtualItems = useVirtualItems();
   const virtualItems = items ?? canonicalVirtualItems;
-  const { exploreGroupStates } = useFlowChatVolatileContext();
+  const nextVisibleItemIndexes = useMemo(() => getNextVisibleVirtualItemIndexes(virtualItems), [virtualItems]);
+  const { exploreGroupStates, pendingPermissionToolCallIds } = useFlowChatVolatileContext();
   const activeSession = useActiveSession();
   const activeSessionState = useActiveSessionState();
   const activeSessionId = activeSession?.sessionId ?? null;
@@ -484,6 +502,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
     headerRef: headerElementRef,
     getItemKey: getVirtualItemStableKey,
     estimateItemHeightPx: estimateVirtualMessageItemHeightWithContext,
+    getKnownItemHeightPx: getKnownVirtualItemHeightPx,
     estimateContext: {
       availableWidthPx: viewportWidthPx > 0 ? viewportWidthPx : scrollerElement?.clientWidth,
       isHistorical: activeSession?.isHistorical === true,
@@ -1944,26 +1963,40 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
   const focusFlowItem = useCallback((flowItemId: string): boolean => {
     const scroller = scrollerElementRef.current;
     if (!scroller || !flowItemId) return false;
-    const element = scroller.querySelector<HTMLElement>(
-      `[data-flow-item-id="${CSS.escape(flowItemId)}"]`,
-    );
+    if (requestDeferredContentItem(scroller, flowItemId)) return false;
+    const element = findFlowChatFocusElement(scroller, flowItemId);
     if (!element) return false;
 
     exitFollowOutput('scroll-to-index');
     setNavigatedTurn(
       element.closest<HTMLElement>('.virtual-item-wrapper[data-turn-id]')?.dataset.turnId ?? null,
     );
-    const scrollerRect = scroller.getBoundingClientRect();
+    const range = findFlowChatFocusTextRange(element);
+    if (range) revealContainedRange(range, scroller);
+    const line = range && Array.from(range.getClientRects()).find(rect => rect.width > 0 && rect.height > 0);
+    if (range && !line) return false;
+    const readable = readableViewportBounds(scroller, inputOverlayInsetPx);
+    const readableHeight = readable.bottom - readable.top;
+    if (readableHeight <= 0) return false;
     const elementRect = element.getBoundingClientRect();
-    const centred = scroller.scrollTop + elementRect.top - scrollerRect.top
-      - Math.max(0, (scroller.clientHeight - elementRect.height) / 2);
-    viewportOwner.write({
+    // Long sources need reading room below their opening line. Short items can
+    // fit at the center, but both use the same fade/input-safe area as search.
+    const longSource = elementRect.height > readableHeight;
+    const sourceTop = longSource ? line?.top ?? elementRect.top : elementRect.top;
+    const targetTop = readable.top + (longSource
+      ? readableHeight / 3
+      : (readableHeight - elementRect.height) / 2);
+    const topPx = Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight,
+      scroller.scrollTop + sourceTop - targetTop));
+    viewportAnchor.reanchorAfterNavigation();
+    // Replace any earlier Turn/item aim so later measurements cannot pull the
+    // opening line back beneath the top fade.
+    virtualizer.scrollToOffset(topPx, {
       owner: 'one-shot-navigation',
       holdForMs: ONE_SHOT_NAVIGATION_HOLD_MS,
-      topPx: Math.max(0, Math.min(scroller.scrollHeight - scroller.clientHeight, centred)),
     });
     return true;
-  }, [exitFollowOutput, setNavigatedTurn, viewportOwner]);
+  }, [exitFollowOutput, inputOverlayInsetPx, setNavigatedTurn, viewportAnchor, virtualizer]);
 
   const prepareTurnNavigation = useCallback((
     turnId: string,
@@ -2113,14 +2146,24 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         return;
       }
       for (const expandableId of target.expandableIds ?? []) {
+        if (requestDeferredContentItem(wrapper, expandableId)) {
+          retry('source-not-mounted');
+          return;
+        }
         const expandable = findElementWithDataValue(wrapper, 'data-tool-card-id', expandableId);
         if (expandable?.dataset.expanded === 'false') {
           expandable.querySelector<HTMLElement>(
-            '[data-testid="chat-explore-group-toggle"], [data-testid="chat-thinking-toggle"]',
+            expandable.hasAttribute('data-flow-group')
+              ? '[data-openbitfun-part="header"][role="button"]'
+              : '[data-testid="chat-thinking-toggle"]',
           )?.click();
           retry('source-not-expanded');
           return;
         }
+      }
+      if (requestDeferredContentItem(wrapper, target.flowItemId ?? target.excerpt?.fragments[0]?.flowItemId)) {
+        retry('source-not-mounted');
+        return;
       }
       const root = target.excerpt
         ? findExcerptSource(wrapper, target.excerpt.fragments[0])
@@ -2132,6 +2175,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
       const ranges = target.excerpt ? [] : findFlowChatSearchTextRanges(root, target.query);
       const rangeIndex = Math.min(target.occurrenceIndex ?? 0, Math.max(0, ranges.length - 1));
       const range = target.excerpt ? resolveExcerptRange(root, target.excerpt.fragments[0]) : ranges[rangeIndex] ?? null;
+      if (range) revealContainedRange(range, wrapper);
       // Use the same first painted line as the passive current-line marker.
       const rangeRect = range && Array.from(range.getClientRects())
         .find(rect => rect.width > 0 && rect.height > 0);
@@ -2139,15 +2183,9 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         retry('text-not-painted');
         return;
       }
-      const scrollerRect = scroller.getBoundingClientRect();
       // Read the design-system spacing used by the scroller's edge masks.
       // The floating input and its fade are outside the readable viewport.
-      const edgeFadePx = Number.parseFloat(
-        getComputedStyle(scroller).getPropertyValue('--openbitfun-space-12'),
-      ) || 0;
-      const readableTop = scrollerRect.top
-        + (scroller.scrollTop <= FLOWCHAT_SCROLL_START_THRESHOLD_PX ? 0 : edgeFadePx);
-      const readableBottom = scrollerRect.top + scroller.clientHeight - inputOverlayInsetPx - edgeFadePx;
+      const { top: readableTop, bottom: readableBottom } = readableViewportBounds(scroller, inputOverlayInsetPx);
       if (readableBottom <= readableTop) {
         if (materializing) virtualizer.cancelAim();
         traceSkipped('no-readable-area');
@@ -2504,6 +2542,7 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         className="virtual-message-list__scroller"
         data-flowchat-scroller="true"
         data-testid="flowchat-scroller"
+        data-openbitfun-viewport-inset-bottom={inputOverlayInsetPx}
         style={{
           '--_flow-chat-input-overlay-inset': `${inputOverlayInsetPx}px`,
         } as React.CSSProperties}
@@ -2529,14 +2568,14 @@ const VirtualMessageListSession = forwardRef<VirtualMessageListRef, VirtualMessa
         >
           {virtualizer.rows.map(row => {
             const item = virtualItems[row.index];
-            const nextItem = virtualItems[row.index + 1];
+            const nextItem = virtualItems[nextVisibleItemIndexes[row.index]];
             return (
               <VirtualItemRenderer
                 key={row.key}
                 item={item}
                 index={row.index}
                 endsBeforeUserTurn={nextItem?.type === 'user-message'}
-                continuesAmbientToolRunAfter={isAmbientToolRunContinuationAfter(item, nextItem)}
+                continuesAmbientToolRunAfter={isAmbientToolRunContinuationAfter(item, nextItem, pendingPermissionToolCallIds)}
                 measureRef={virtualizer.measureRowElement}
               />
             );

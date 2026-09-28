@@ -12,6 +12,7 @@ export type SessionKind = 'normal' | 'btw' | 'review' | 'deep_review' | 'miniapp
 export type PersistedSessionKind = 'standard' | 'subagent';
 export type SessionTitleSource = 'text' | 'i18n';
 export type SessionRelationshipKind = 'btw' | 'review' | 'deep_review' | 'miniapp' | 'subagent';
+export type SessionContinuationPolicy = 'reusable' | 'fresh_only';
 
 export interface SessionRelationship {
   kind?: SessionRelationshipKind;
@@ -21,6 +22,7 @@ export interface SessionRelationship {
   parentTurnIndex?: number | null;
   parentToolCallId?: string | null;
   subagentType?: string | null;
+  continuationPolicy?: SessionContinuationPolicy | null;
 }
 
 export interface SessionCustomMetadata extends Record<string, unknown> {
@@ -31,6 +33,7 @@ export interface SessionCustomMetadata extends Record<string, unknown> {
   parentTurnIndex?: number | null;
   parentToolCallId?: string | null;
   subagentType?: string | null;
+  continuationPolicy?: SessionContinuationPolicy | null;
   forkOrigin?: {
     sessionId?: string | null;
     turnId?: string | null;

@@ -5,6 +5,7 @@ export const modelThinkingDisplayAppearanceDescriptor: AppearanceSurfaceDescript
   parts: [
     { id: 'root' }, { id: 'header' }, { id: 'leadingIcon' }, { id: 'label' },
     { id: 'expandContainer' }, { id: 'contentWrapper' }, { id: 'content' },
+    { id: 'details' }, { id: 'detailsActions' },
   ],
   facets: [{ id: 'context', attribute: 'data-openbitfun-context', values: ['default', 'subagent-projection'] }],
   states: [

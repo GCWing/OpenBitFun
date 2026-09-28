@@ -1,6 +1,6 @@
 import { OverflowText } from '../../primitives/OverflowText';
 import type { HTMLAttributes, ReactNode } from "react";
-import { Archive } from "lucide-react";
+import { Icon } from "../../components/Icon/Icon";
 import { classNames } from "../../internal/classNames";
 import {
   ProminentToolCard,
@@ -61,7 +61,7 @@ export function ContextCompressionToolCard({
                 {content}
               </OverflowText>
             ) : undefined}
-            icon={<Archive aria-hidden="true" />}
+            icon={<Icon name="session" size="sm" />}
             statusIcon={loading ? <ToolProcessingDots size={16} /> : undefined}
           />
         )}

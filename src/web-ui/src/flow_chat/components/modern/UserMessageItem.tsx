@@ -693,7 +693,7 @@ export const UserMessageItem = React.memo<UserMessageItemProps>(
               closeOnPointerOutside={false}
               onClick={event => { if (event.target === event.currentTarget) setLightboxImage(null); }}
             >
-              <DialogClose className="user-message-item__lightbox-close" icon={<Icon name="xmark" size="lg" style={{ width: 20, height: 20 }} />} />
+              <DialogClose className="user-message-item__lightbox-close" icon={<Icon name="xmark" size="md" />} />
               <img src={lightboxImage} alt="Preview" onClick={(e) => e.stopPropagation()} />
             </Dialog>
           )}

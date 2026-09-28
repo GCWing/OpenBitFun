@@ -21,6 +21,7 @@
   },
   "appearance": {
     "font": "字體",
+    "fontDefault": "跟隨應用程式碼字體",
     "fontWeight": "字體粗細",
     "fontWeightNormal": "正常",
     "fontWeightBold": "粗體",

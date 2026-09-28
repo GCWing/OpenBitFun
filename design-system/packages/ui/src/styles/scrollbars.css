@@ -4,8 +4,9 @@
  * under a document-level design-system root. Each element gets its own color:
  * an ancestor's hover must never reveal an idle nested viewport's scrollbar.
  *
- * Only the paint changes on interaction. Width, overflow, and gutter geometry
- * stay fixed so virtualized lists do not remeasure when the pointer moves.
+ * By default only paint changes on interaction, so virtualized lists do not
+ * remeasure when the pointer moves. Hover visibility opts into removing idle
+ * tracks for edge-to-edge content.
  */
 @layer openbitfun.base {
   :where([data-openbitfun-design-system-root], [data-openbitfun-design-system-root] *, [data-openbitfun-scrollbar-visibility])::-webkit-scrollbar {
@@ -59,6 +60,18 @@
       :where([data-openbitfun-design-system-root], [data-openbitfun-design-system-root] *, [data-openbitfun-scrollbar-visibility]):where(:not(:hover, :focus-visible, :has(:focus-visible), [data-openbitfun-scrollbar-visibility="always"])) {
         scrollbar-color: transparent transparent;
       }
+    }
+  }
+
+  /* Opt-in hover viewports release idle tracks instead of only hiding paint.
+     Native overflow still owns whether a track is needed when revealed. */
+  @media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+    [data-openbitfun-scrollbar-visibility="hover"]:not(:hover, :focus-visible, :has(:focus-visible)) {
+      scrollbar-width: none;
+    }
+
+    [data-openbitfun-scrollbar-visibility="hover"]:not(:hover, :focus-visible, :has(:focus-visible))::-webkit-scrollbar {
+      display: none;
     }
   }
 

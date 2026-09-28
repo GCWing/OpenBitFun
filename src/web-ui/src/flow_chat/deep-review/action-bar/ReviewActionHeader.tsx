@@ -1,17 +1,14 @@
 import React from 'react';
 import { Minus } from 'lucide-react';
 import { CodeReviewReportExportActions } from '../../tool-cards/CodeReviewReportExportActions';
+import { Icon, type IconSource } from '@openbitfun/ui';
 
 type ExportableReviewData = React.ComponentProps<typeof CodeReviewReportExportActions>['reviewData'];
 
 interface ReviewActionHeaderProps {
   reviewData?: ExportableReviewData | null;
   isReviewRunning?: boolean;
-  PhaseIcon: React.ComponentType<{
-    size?: number | string;
-    style?: React.CSSProperties;
-    className?: string;
-  }>;
+  phaseIcon: IconSource;
   phaseIconClass: string;
   phaseTitle: string;
   errorMessage?: string | null;
@@ -24,7 +21,7 @@ interface ReviewActionHeaderProps {
 export const ReviewActionHeader: React.FC<ReviewActionHeaderProps> = ({
   reviewData,
   isReviewRunning = false,
-  PhaseIcon,
+  phaseIcon,
   phaseIconClass,
   phaseTitle,
   errorMessage,
@@ -48,13 +45,13 @@ export const ReviewActionHeader: React.FC<ReviewActionHeaderProps> = ({
         onClick={onMinimize}
         aria-label={minimizeLabel}
       >
-        <Minus size={14} />
+        <Icon glyph={Minus} size="sm" />
       </button>
     </div>
 
     <div className="deep-review-action-bar__status" role="status" aria-live="polite">
-      <PhaseIcon
-        size={18}
+      <Icon {...phaseIcon}
+        size="md"
         className={`deep-review-action-bar__icon ${phaseIconClass}`}
       />
       <span className="deep-review-action-bar__status-title">{phaseTitle}</span>

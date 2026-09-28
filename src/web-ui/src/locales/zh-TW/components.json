@@ -329,6 +329,7 @@
     }
   },
   "tooltip": {
+    "openDetails": "開啟詳情",
     "copy": "複製",
     "copied": "已複製",
     "close": "關閉",

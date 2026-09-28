@@ -77,6 +77,10 @@ internal class AccountViewModel(application: Application) : AndroidViewModel(app
         store.dispatch(intent)
     }
 
+    fun notifyAuthorizationCallback() {
+        store.notifyAuthorizationCallback()
+    }
+
     /** The handle General Chat reads the account's synced models through. */
 
     fun dispatchSession(intent: RemoteSessionIntent) {

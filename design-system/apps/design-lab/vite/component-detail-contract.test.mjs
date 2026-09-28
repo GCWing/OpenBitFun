@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { componentRegistry } from "@openbitfun/ui/registry";
 
 const detailSource = new URL("../src/pages/ComponentDetailPage.tsx", import.meta.url);
 const catalogSource = new URL("../src/pages/ComponentsPage.tsx", import.meta.url);
@@ -20,10 +21,12 @@ test("NumberBadge inspector updates both the preview value and copyable example"
 
 test("copyable examples and color-page controls use the same catalog as previews", async () => {
   const source = await readFile(detailSource, "utf8");
-  const styles = await readFile(stylesSource, "utf8");
+  const colors = await readFile(new URL("../src/pages/ColorsPage.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(source, /<(MessageCircle|MoreHorizontal|SearchIcon|Check|Copy|Download|Terminal|Settings|ChevronDown)(?:\s|\/>)/);
-  assert.match(styles, /\.colors-select-field > :is\(svg, \[data-openbitfun-component="icon"\]\)/);
-  assert.match(styles, /\.colors-expand-button :is\(svg, \[data-openbitfun-component="icon"\]\)\[data-expanded\]/);
+  assert.match(colors, /<Select\b/);
+  assert.match(colors, /<SearchField\b/);
+  assert.match(colors, /trailingIcon=\{<Icon name=\{expanded \? "chevron-up" : "chevron-down"\}/);
+  assert.doesNotMatch(colors, /<(?:select|input|button)\b/);
 });
 
 test("every preview matrix declares its state-column count", async () => {
@@ -72,12 +75,13 @@ test("FlowChat component details are registry-driven and stack every state verti
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(detail, /if \(flowChatPreview\) \{\s*return component\.states;/);
+  assert.match(detail, /const states = component\.states/);
   assert.match(detail, /className="flow-chat-state-list"/);
   assert.match(detail, /className="flow-chat-state-list__item"/);
   assert.match(detail, /data-component-name=\{component\.name\}/);
   assert.doesNotMatch(detail, /component-preview-matrix[^]*data-component="flow-chat-tool-card"/);
-  assert.match(catalog, /definition\.section === "framework"/);
+  assert.match(catalog, /const catalogComponents = componentRegistry\.filter/);
+  assert.doesNotMatch(catalog, /definition\.section === "framework"/);
   assert.match(preview, /flowChatPreviewDefinitions/);
   assert.match(preview, /AmbientToolCard/);
   assert.match(preview, /ProminentToolCard/);
@@ -95,113 +99,35 @@ test("FlowChat component details are registry-driven and stack every state verti
   assert.doesNotMatch(styles, /\.component-preview-matrix\[data-component="flow-chat-tool-card"\]/);
 });
 
-test("FlowChat gallery renders only the real migrated tool-card components", async () => {
-  const [app, catalog, gallery, preview] = await Promise.all([
+test("FlowChat gallery consumes the production inventory and shared lifecycle presenter", async () => {
+  const [app, catalog, gallery, preview, scenarios] = await Promise.all([
     readFile(appSource, "utf8"),
     readFile(catalogSource, "utf8"),
     readFile(flowChatGallerySource, "utf8"),
     readFile(flowChatPreviewSource, "utf8"),
+    readFile(new URL("../src/preview/FlowChatScenarios.tsx", import.meta.url), "utf8"),
   ]);
-  const specimenNames = [...preview.matchAll(/\{ tool: "([^"]+)" \}/g)]
-    .map((match) => match[1]);
-  const productOwnedDeclaration = /const productOwnedToolExamples = \[([^\]]+)\] as const;/.exec(gallery);
-  const productOwnedNames = productOwnedDeclaration
-    ? [...productOwnedDeclaration[1].matchAll(/"([^"]+)"/g)].map((match) => match[1])
-    : [];
-  const migratedToolNames = [
-    "AgentSpawn",
-    "AgentSendInput",
-    "Task",
-    "LaunchReviewAgent",
-    "AgentWait",
-    "AskUserQuestion",
-    "Bash",
-    "ExecCommand",
-    "WriteStdin",
-    "ExecControl",
-    "ContextCompression",
-    "Cron",
-    "ControlHub",
-    "FinalizeMiniApp",
-    "PublishMiniApp",
-    "PublishAppearance",
-    "UnregisteredTool",
-    "LS",
-    "GetFileDiff",
-    "Write",
-    "Edit",
-    "Delete",
-    "GetToolSpec",
-    "Git",
-    "Glob",
-    "Grep",
-    "PageDeploy",
-    "PagePublish",
-    "Read",
-    "ReviewSessionSummary",
-    "RunCode",
-    "SessionControl",
-    "SessionMessage",
-    "Skill",
-    "TerminalControl",
-    "TodoWrite",
-    "view_image",
-    "WebFetch",
-    "WebSearch",
-  ];
-  const productOwnedToolNames = [
-    "CreatePlan",
-    "submit_code_review",
-    "MCP",
-    "InitMiniApp",
-    "GenerativeUI",
-    "ComputerUse",
-    "CreateCanvas",
-    "ReadCanvas",
-    "UpdateCanvas",
-    "PatchCanvas",
-  ];
 
   assert.match(app, /const flowChatComponents = componentRegistry\.filter/);
   assert.match(app, /route === "flow-chat"/);
-  assert.match(app, /<ComponentsPage\s+category="flow-chat"/);
+  assert.match(app, /\["components", "component", "mobile", "flow-chat"\]\.includes\(route\.page\)/);
+  assert.match(app, /route\.page === "flow-chat" \? "flow-chat" : undefined/);
   assert.match(catalog, /category === "flow-chat"/);
   assert.match(catalog, /<FlowChatToolGallery onOpenComponent=\{onOpenComponent\} \/>/);
   assert.match(gallery, /<FlowChatComponentPreview/);
   assert.match(gallery, /definition\.section === "tool-card"/);
-  assert.deepEqual(specimenNames, migratedToolNames);
-  assert.deepEqual(productOwnedNames, productOwnedToolNames);
-  assert.equal(new Set(specimenNames).size, specimenNames.length);
-  assert.equal(new Set(productOwnedNames).size, productOwnedNames.length);
-  assert.equal(
-    specimenNames.some((toolName) => productOwnedNames.includes(toolName)),
-    false,
-  );
-  assert.match(gallery, /const productOwnedToolExamples/);
-});
-
-test("CommandToolCard previews follow the runtime command-state presentation", async () => {
-  const preview = await readFile(flowChatPreviewSource, "utf8");
-  const commandPreview =
-    /function CommandPreview[\s\S]*?\r?\n}\r?\n\r?\nfunction resolveFileOperation/.exec(preview)?.[0];
-
-  assert.ok(commandPreview);
-  assert.match(
-    commandPreview,
-    /state === "expanded" \|\| state === "loading"/,
-  );
-  assert.match(commandPreview, /outputDensity=\{loading \? "compact" : "expanded"}/);
-  assert.match(
-    commandPreview,
-    /statusLabel=\{state === "error"[\s\S]*?: undefined}/,
-  );
-  assert.match(commandPreview, /action=\{t\(sample\.actionKey\)\}/);
-  assert.match(commandPreview, /<Timer aria-hidden="true" \/>/);
-  assert.doesNotMatch(
-    commandPreview,
-    /statusLabel=\{[\s\S]*?components\.preview\.flowChat\.completed/,
-  );
-  assert.match(commandPreview, /const footerItems = completed \?/);
+  assert.match(gallery, /productOwnedToolNames/);
+  assert.match(gallery, /<FlowChatScenarios/);
+  assert.match(preview, /toolsForComponent/);
+  assert.match(preview, /toolsForComponent\("CronToolCard"\)/);
+  assert.doesNotMatch(preview, /COMMAND_SAMPLES|tool: "Bash"|tool: "Task"|tool: "TerminalControl"|tool: "Cron"/);
+  assert.match(preview, /<ScenarioCommand/);
+  assert.match(scenarios, /<ExecProcessPresentation/);
+  assert.match(scenarios, /<LazyTerminalOutputRenderer/);
+  assert.match(scenarios, /useThinkingDisclosure/);
+  assert.match(scenarios, /<ExploreGroup/);
+  assert.match(scenarios, /<FlowChatRuntimeStatus/);
+  // Inventory equivalence and every public state are exercised by the shared package's catalog tests.
 });
 
 test("Button preview exposes the public presentation variants", async () => {
@@ -231,8 +157,6 @@ test("Card preview exposes generic surface and slot composition contracts", asyn
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "Card"/);
-  assert.match(detail, /case "Card":\s*return \["raised", "subtle", "media"\] as const/);
   assert.match(detail, /CardHeader/);
   assert.match(detail, /CardBody/);
   assert.match(detail, /CardFooter/);
@@ -244,15 +168,11 @@ test("Card preview exposes generic surface and slot composition contracts", asyn
   assert.match(styles, /\.component-card-command-grid\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/s);
 });
 
-test("Button matrix is limited to the four reference interaction states", async () => {
+test("Button and IconButton previews preserve all public interaction states", async () => {
   const source = await readFile(detailSource, "utf8");
-  const declaration = /case "Button":\s*case "IconButton":\s*return \[([^\]]+)\] as const;/.exec(source);
-
-  assert.ok(declaration);
-  assert.deepEqual(
-    [...declaration[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]),
-    ["default", "hover", "active", "disabled"],
-  );
+  assert.match(source, /const states = component\.states/);
+  assert.deepEqual(componentRegistry.find(item => item.name === "Button").states, ["default", "hover", "active", "disabled"]);
+  assert.deepEqual(componentRegistry.find(item => item.name === "IconButton").states, ["default", "hover", "active", "focus-visible", "disabled", "loading"]);
 });
 
 test("Button matrix uses the Session icon composition from the reference", async () => {
@@ -297,8 +217,9 @@ test("Icon preview exposes the complete named catalog and semantic controls", as
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "Icon"/);
-  assert.match(detail, /canonicalIconNames\.map\(\(name\)/);
+  const overview = await readFile(new URL("../src/preview/ComponentOverview.tsx", import.meta.url), "utf8");
+  assert.match(overview, /canonicalIconNames\.filter/);
+  assert.match(overview, /onSelectIcon\(name\)/);
   assert.match(detail, /setIconName/);
   assert.match(detail, /setIconSize/);
   assert.match(detail, /setIconTone/);
@@ -312,8 +233,6 @@ test("StatusPill preview exposes compact indicator anatomy and semantic tones", 
     readFile(detailSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "StatusPill"/);
-  assert.match(detail, /case "StatusPill":\s*return \["neutral", "info", "success", "warning", "danger"\] as const/);
   assert.match(detail, /<StatusPill/);
   assert.match(detail, /leading=\{<Icon name="unselected" \/>\}/);
   assert.match(detail, /tone=\{state as StatusPillTone\}/);
@@ -325,13 +244,11 @@ test("Select preview exposes the unified open surface and independent states", a
     readFile(detailSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "Select"/);
-  assert.match(detail, /case "Select":\s*return \["default", "hover", "focus-visible", "open", "invalid", "disabled"\] as const/);
   assert.match(detail, /onValueChange=\{\(value\) => setSelectValue\(String\(value\)\)\}/);
   assert.match(detail, /leading=\{<Icon name="unselected" \/>\}/);
   assert.match(detail, /disabled=\{state === "disabled"\}/);
   assert.match(detail, /invalid=\{state === "invalid"\}/);
-  assert.match(detail, /open=\{state === "open" \? true : undefined\}/);
+  assert.match(detail, /defaultOpen=\{state === "open"\}/);
 });
 
 test("ActionItem preview keeps its trigger and end actions as separate contracts", async () => {
@@ -351,10 +268,8 @@ test("ActivityItem preview exposes inline and surfaced anatomy without product b
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "ActivityItem"/);
   assert.match(detail, /const activityItemAppearances = \["inline", "surface"\] as const/);
-  assert.match(detail, /case "ActivityItem":\s*return \["default", "hover", "active", "focus-visible", "disabled"\] as const/);
-  assert.match(detail, /appearance=\{activityItemAppearance\}/);
+  assert.match(detail, /appearance=\{appearance\}/);
   assert.match(detail, /label=\{surface \? t\("components\.preview\.activityAction"\) : undefined\}/);
   assert.match(detail, /metadata=\{surface \? <ChangeCount additions=\{6\} deletions=\{0\} \/> : undefined\}/);
   assert.match(detail, /actions=\{surface \? \[/);
@@ -383,11 +298,10 @@ test("Dialog and Sheet previews exercise provider-owned overlays and compound an
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "Dialog":\s*case "Sheet":/);
   assert.match(detail, /component\.name === "Dialog"/);
   assert.match(detail, /component\.name === "Sheet"/);
-  assert.match(detail, /renderDialogExample\(\)/);
-  assert.match(detail, /renderSheetExample\(\)/);
+  assert.match(detail, /renderDialogExample\(state\)/);
+  assert.match(detail, /renderSheetExample\(state\)/);
   assert.match(detail, /<DialogHeader>/);
   assert.match(detail, /<DialogBody>/);
   assert.match(detail, /<DialogFooter>/);
@@ -405,11 +319,10 @@ test("ConfirmDialog preview exposes semantic, destructive, preview, and pending 
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "ConfirmDialog"/);
-  assert.match(detail, /case "ConfirmDialog":\s*return \["info", "warning", "error", "success", "pending"\] as const/);
   assert.match(detail, /<ConfirmDialog/);
   assert.match(detail, /confirmDanger=\{confirmType === "error"\}/);
-  assert.match(detail, /pendingAction=\{state === "pending" \? "confirm" : null\}/);
+  assert.match(detail, /pendingAction=\{state === "pending" && previewPending \? "confirm" : null\}/);
+  assert.match(detail, /setTimeout\(\(\) => setPreviewPending\(false\)/);
   assert.match(detail, /preview="\/workspace\/project"/);
   assert.match(detail, /open=\{overlayOpen\}/);
   assert.match(detail, /onOpenChange=\{\(\) => setOverlayOpen\(false\)\}/);
@@ -420,8 +333,6 @@ test("ConfirmDialog preview exposes semantic, destructive, preview, and pending 
 test("Input, KeyHint, and SearchField previews expose composable slot and state contracts", async () => {
   const source = await readFile(detailSource, "utf8");
 
-  assert.match(source, /case "Input":\s*case "SearchField":\s*return \["default", "filled", "hover", "focus-visible", "read-only", "invalid", "disabled"\] as const/);
-  assert.match(source, /case "Select":\s*return \["default", "hover", "focus-visible", "open", "invalid", "disabled"\] as const/);
   assert.match(source, /component\.name === "Input"/);
   assert.match(source, /component\.name === "KeyHint"/);
   assert.match(source, /component\.name === "SearchField"/);
@@ -448,9 +359,7 @@ test("ScrollArea preview exposes direction and native scrollbar visibility contr
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "ScrollArea"/);
   assert.match(detail, /const scrollAreaOrientations = \["vertical", "horizontal", "both"\] as const/);
-  assert.match(detail, /case "ScrollArea":\s*return \["auto", "always", "hidden"\] as const/);
   assert.match(detail, /orientation=\{scrollAreaOrientation\}/);
   assert.match(detail, /scrollbarVisibility=\{state as ScrollbarVisibility\}/);
   assert.match(styles, /\.component-scroll-area-example\s*\{[^}]*block-size:\s*160px/s);
@@ -463,10 +372,8 @@ test("Menu preview exposes grouped anatomy, item states, and scrollbar control",
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "Menu"/);
   assert.match(detail, /MenuSection/);
   assert.match(detail, /MenuSeparator/);
-  assert.match(detail, /"scrolling", "focus-within", "disabled-item", "checked-item"/);
   assert.match(detail, /scrollbarVisibility=\{menuShowScrollbar \? "auto" : "hidden"\}/);
   assert.match(detail, /role=\{state === "checked-item"/);
   assert.match(styles, /\[data-openbitfun-component="action-item"\]\.lab-force-focus/);
@@ -479,10 +386,8 @@ test("NavigationPanel preview exposes header, grouped navigation, selected items
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "NavigationPanel"/);
   assert.match(detail, /NavigationPanelSection/);
   assert.match(detail, /NavigationPanelSeparator/);
-  assert.match(detail, /"default", "selected-item", "disabled-item", "scrolling"/);
   assert.match(detail, /<NavigationPanelFooter>/);
   assert.match(detail, /<NavigationPanelHeader>/);
   assert.match(detail, /selected=\{state === "selected-item"/);
@@ -497,11 +402,9 @@ test("Composer preview exposes context, editor, and action regions independently
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "Composer"/);
   assert.match(detail, /ComposerContextBar/);
   assert.match(detail, /ComposerDivider/);
   assert.match(detail, /ComposerToolbar/);
-  assert.match(detail, /"default", "focus-within", "with-context", "invalid", "disabled"/);
   assert.match(detail, /contextBar=\{showContext \? \(/);
   assert.match(detail, /toolbar=\{composerShowToolbar \? \(/);
   assert.match(detail, /<textarea/);
@@ -519,7 +422,7 @@ test("Field preview exposes label and control composition independently from lay
 
   assert.match(source, /const fieldOrientations = \["vertical", "horizontal"\] as const/);
   assert.match(source, /description=\{t\("components\.preview\.fieldDescription"\)\}/);
-  assert.match(source, /orientation=\{fieldOrientation\}/);
+  assert.match(source, /orientation=\{applyInspectorControls \? fieldOrientation : "vertical"\}/);
   assert.match(source, /component\.name === "Field"/);
   assert.match(source, /labelAction=\{fieldShowLabelAction \? \(/);
   assert.match(source, /controlLeading=\{fieldShowControlLeading \? \(/);
@@ -536,7 +439,6 @@ test("FieldGroup preview exposes section, surface, row, and field composition co
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(source, /case "FieldGroup":\s*return \["subtle", "plain", "divided"\] as const/);
   assert.match(source, /component\.name === "FieldGroup"/);
   assert.match(source, /<FormSection/);
   assert.match(source, /leading=\{<Icon name="gear" size="lg" aria-hidden="true" \/>\}/);
@@ -559,21 +461,15 @@ test("PageHeader preview decouples semantic level from visual size and alignment
   assert.match(source, /leading=\{<Icon name="gear" size="lg" aria-hidden="true" \/>\}/);
 });
 
-test("TabGroup preview carries the selected and outline reference composition", async () => {
-  const source = await readFile(detailSource, "utf8");
-  const declaration = /case "TabGroup":\s*return \[([^\]]+)\] as const;/.exec(source);
-
-  assert.ok(declaration);
-  assert.deepEqual(
-    [...declaration[1].matchAll(/"([^"]+)"/g)].map((match) => match[1]),
-    ["selected", "unselected", "hover", "disabled"],
-  );
-  assert.match(source, /name="session"/);
-  assert.match(source, /components\.preview\.welcome/);
-  assert.match(source, /components\.preview\.settings/);
-  assert.match(source, /data-component="tab-group"/);
-  assert.match(source, /<TabGroup/);
-  assert.match(source, /setTabGroupSize/);
+test("TabGroup preview connects selection to its content panels", async () => {
+  const [source, live] = await Promise.all([
+    readFile(detailSource, "utf8"),
+    readFile(new URL("../src/preview/LiveComponentExamples.tsx", import.meta.url), "utf8"),
+  ]);
+  assert.match(source, /<NavigationExample name=\{component.name\}/);
+  assert.match(live, /onValueChange=\{setValue\}/);
+  assert.match(live, /hidden=\{value !== option.value\}/);
+  assert.match(live, /"tabpanel"/);
   assert.match(source, /size=\{tabGroupSize\}/);
 });
 
@@ -584,11 +480,9 @@ test("Toolbar preview keeps leading, centered, trailing, and overflow compositio
     readFile(stylesSource, "utf8"),
   ]);
 
-  assert.match(catalog, /case "Toolbar"/);
   assert.match(detail, /ToolbarBadge/);
   assert.match(detail, /ToolbarGroup/);
   assert.match(detail, /ToolbarSeparator/);
-  assert.match(detail, /case "Toolbar":\s*return \["default", "with-center", "overflow"\] as const/);
   assert.match(detail, /leadingOverflow=\{state === "overflow" \? "scroll" : "visible"\}/);
   assert.match(detail, /center=\{state === "with-center"/);
   assert.match(detail, /items=\{tabItems\}\s+size="sm"/);
@@ -598,7 +492,7 @@ test("Toolbar preview keeps leading, centered, trailing, and overflow compositio
 
 test("Combobox details render their own live state and menus include nested interaction", async () => {
   const detail = await readFile(detailSource, "utf8");
-  assert.match(detail, /data-component="combobox"/);
+  assert.match(detail, /<Combobox/);
   assert.match(detail, /defaultOpen=\{state === "open" \|\| state === "searching" \|\| state === "loading" \|\| state === "empty"\}/);
   assert.match(detail, /onCreateValue=\{state === "custom"/);
   assert.match(detail, /component\.name === "MultiSelect"/);
@@ -608,15 +502,10 @@ test("Combobox details render their own live state and menus include nested inte
 });
 
 test("wide surfaces stack independently and compact pickers do not reserve empty canvas", async () => {
-  const [detail, styles] = await Promise.all([readFile(detailSource, "utf8"), readFile(stylesSource, "utf8")]);
-  assert.match(detail, /component.name === "Menu" \|\| component.name === "NavigationPanel" \|\| component.name === "FieldGroup" \? \(/);
-  assert.match(detail, /className="component-surface-state-list__preview"/);
-  assert.match(styles, /\.component-surface-state-list\s*\{[^}]*display: grid/);
-  assert.match(styles, /\.component-surface-state-list__preview\s*\{[^}]*overflow: auto/);
-  const picker = styles.match(/\.component-combobox-preview\s*\{[^}]*\}/)?.[0] ?? "";
-  assert.match(picker, /padding:/);
-  assert.doesNotMatch(picker, /min-block-size: 280px/);
-  assert.match(styles, /\.component-inspector-preview\s*\{[^}]*overflow: auto/);
+  const styles = await readFile(new URL("../src/preview/ComponentShowcase.css", import.meta.url), "utf8");
+  assert.match(styles, /data-presentation="stack"[^}]+grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(styles, /data-component-name="Combobox"[^}]+max-width: 360px/);
+  assert.match(styles, /component-field-group-example[^}]+min-inline-size: 0/);
 });
 
 test("form previews preserve specimen width and their simulated field states", async () => {

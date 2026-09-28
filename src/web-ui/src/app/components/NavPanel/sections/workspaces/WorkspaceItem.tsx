@@ -1,3 +1,4 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { subscribeOverlayInteraction, createOverlayPortal, ActionItem } from '@openbitfun/ui';
 import {
   Button,
@@ -15,7 +16,7 @@ import {
   DialogTitle,
   OverflowText,
 } from '@openbitfun/ui';
-import React, { lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import React, { Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { FolderOpen, FolderSearch, RotateCcw, FileText, ListChecks, ShieldCheck, Network, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { RetainedMountBoundary } from '@/shared/presence';
@@ -65,15 +66,15 @@ import {
   WORKSPACE_GIT_PENDING_CANCEL_SOURCES,
 } from './workspaceGitRefreshOptions';
 
-const WorkspaceRelatedPathsDialog = lazy(() => import('./WorkspaceRelatedPathsDialog'));
-const WorkspaceProjectPermissionsDialog = lazy(() => import('./WorkspaceProjectPermissionsDialog'));
-const PortForwardDialog = lazy(() =>
+const WorkspaceRelatedPathsDialog = lazyWithRecovery(() => import('./WorkspaceRelatedPathsDialog'));
+const WorkspaceProjectPermissionsDialog = lazyWithRecovery(() => import('./WorkspaceProjectPermissionsDialog'));
+const PortForwardDialog = lazyWithRecovery(() =>
   import('@/features/ssh-remote/PortForwardDialog').then((module) => ({
     default: module.PortForwardDialog,
   }))
 );
-const WorkspaceSessionBatchModal = lazy(() => import('./WorkspaceSessionBatchModal'));
-const ScheduledJobsModal = lazy(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
+const WorkspaceSessionBatchModal = lazyWithRecovery(() => import('./WorkspaceSessionBatchModal'));
+const ScheduledJobsModal = lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'));
 
 const MAX_WORKSPACE_NAME_CHARS = 80;
 

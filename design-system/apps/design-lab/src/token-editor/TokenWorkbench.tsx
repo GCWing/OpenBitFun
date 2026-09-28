@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { themes } from "@openbitfun/theme-openbitfun";
-import { Icon } from "@openbitfun/ui";
+import { Button, Icon, Input, SearchField, Select, TabGroup, StatusPill } from "@openbitfun/ui";
 import { Clipboard, RotateCcw, Save } from "lucide-react";
 import { componentRegistry } from "@openbitfun/ui/registry";
 import { useI18n, type MessageKey } from "../i18n";
@@ -38,7 +38,7 @@ const categoryFilters: readonly {
   id: CategoryFilter;
 }[] = [
   { categories: [], id: "all" },
-  { categories: ["font", "lineHeight"], id: "typography" },
+  { categories: ["type", "font", "lineHeight", "letterSpacing"], id: "typography" },
   { categories: ["space", "control"], id: "spacing" },
   { categories: ["radius", "border", "layout"], id: "radius" },
   { categories: ["shadow"], id: "shadows" },
@@ -57,6 +57,8 @@ const categoryFilterKeys: Readonly<Record<CategoryFilter, MessageKey>> = {
 };
 
 const tokenCategoryKeys: Readonly<Record<string, MessageKey>> = {
+  type: "tokens.category.font",
+  letterSpacing: "tokens.category.font",
   border: "tokens.category.border",
   color: "tokens.category.color",
   control: "tokens.category.control",
@@ -142,10 +144,9 @@ function TokenValueControl({
             : String(themes.light["color.content.onLight"])}
         />
       )}
-      <input
-        aria-invalid={Boolean(error)}
+      <Input
+        invalid={Boolean(error)}
         aria-label={t("tokens.valueInput", { name: token.name })}
-        className="token-value-input"
         onChange={(event) => onChange(event.target.value)}
         step={token.type === "number" ? "0.01" : undefined}
         type={inputType}
@@ -344,9 +345,7 @@ export function TokenWorkbench({
     <main className="lab-page lab-page--tokens" id="tokens">
       <header className="page-heading page-heading--split token-page-heading">
         <div>
-          <span className="page-kicker">{t("tokens.kicker")}</span>
           <h1>{t("tokens.title")}</h1>
-          <p>{t("tokens.description")}</p>
         </div>
         <div className="token-page-actions">
           <div className="token-source-status" role="status">
@@ -366,74 +365,36 @@ export function TokenWorkbench({
           )}
           <div className="token-action-row">
             <span className="token-edit-count">{t("tokens.editCount", { count: changes.length })}</span>
-            <button disabled={changes.length === 0} onClick={onResetAll} type="button">
-              <RotateCcw aria-hidden="true" size={14} />
+            <Button size="sm" disabled={changes.length === 0} onClick={onResetAll} leadingIcon={<Icon glyph={RotateCcw} size="sm" />}>
               {t("tokens.reset")}
-            </button>
-            <button disabled={changes.length === 0} onClick={exportDraft} type="button">
-              <Icon name="arrow-down" size="sm" aria-hidden="true" />
+            </Button>
+            <Button size="sm" disabled={changes.length === 0} onClick={exportDraft} leadingIcon={<Icon name="arrow-down" size="sm" />}>
               {t("tokens.export")}
-            </button>
-            <button
-              className="token-save-button"
-              disabled={!sourceWritable || saving || changes.length === 0 || invalidChanges.length > 0}
-              onClick={saveToSource}
-              type="button"
-            >
-              <Save aria-hidden="true" size={14} />
+            </Button>
+            <Button size="sm" variant="primary" loading={saving}
+              disabled={!sourceWritable || changes.length === 0 || invalidChanges.length > 0}
+              onClick={saveToSource} leadingIcon={<Icon glyph={Save} size="sm" />}>
               {saving ? t("tokens.saving") : t("tokens.saveSource")}
-            </button>
+            </Button>
           </div>
         </div>
       </header>
 
-      <div className="token-category-tabs" role="tablist" aria-label={t("tokens.categoriesLabel")}>
-        {categoryFilters.map((filter) => (
-          <button
-            aria-selected={category === filter.id}
-            data-active={category === filter.id || undefined}
-            key={filter.id}
-            onClick={() => setCategory(filter.id)}
-            role="tab"
-            type="button"
-          >
-            {t(categoryFilterKeys[filter.id])}
-          </button>
-        ))}
-      </div>
+      <TabGroup className="token-category-navigation" aria-label={t("tokens.categoriesLabel")}
+        value={category} onValueChange={value => setCategory(value as CategoryFilter)}
+        items={categoryFilters.map(filter => ({ value: filter.id, label: t(categoryFilterKeys[filter.id]) }))} />
 
       <section className="token-workspace" aria-label={t("tokens.catalogLabel")}>
         <div className="token-catalog-panel">
           <div className="token-tools">
-            <label className="token-search-field">
-              <Icon name="search" size="lg" aria-hidden="true" style={{ width: 15, height: 15 }} />
-              <input
-                aria-label={t("tokens.searchLabel")}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={t("tokens.searchPlaceholder")}
-                type="search"
-                value={query}
-              />
-            </label>
-            <select
-              aria-label={t("tokens.collectionFilter")}
-              onChange={(event) => setCollection(event.target.value as CollectionFilter)}
-              value={collection}
-            >
-              <option value="all">{t("tokens.collection.all")}</option>
-              <option value="system">{t("tokens.collection.system")}</option>
-              <option value="theme">{t("tokens.collection.theme")}</option>
-            </select>
-            <select
-              aria-label={t("tokens.componentFilter")}
-              onChange={(event) => onComponentScopeChange(event.target.value)}
-              value={componentScope}
-            >
-              <option value="all">{t("tokens.components.all")}</option>
-              {componentRegistry.map((component) => (
-                <option key={component.name} value={component.name}>{component.name}</option>
-              ))}
-            </select>
+            <SearchField aria-label={t("tokens.searchLabel")} placeholder={t("tokens.searchPlaceholder")}
+              onChange={event => setQuery(event.target.value)} value={query} leadingIcon={<Icon name="search" />} />
+            <Select aria-label={t("tokens.collectionFilter")} size="sm" value={collection}
+              onValueChange={value => setCollection(value as CollectionFilter)}
+              options={(["all", "system", "theme"] as const).map(value => ({ value, label: t(`tokens.collection.${value}`) }))} />
+            <Select aria-label={t("tokens.componentFilter")} size="sm" value={componentScope}
+              onValueChange={value => onComponentScopeChange(String(value))}
+              options={[{ value: "all", label: t("tokens.components.all") }, ...componentRegistry.map(component => ({ value: component.name, label: component.name }))]} />
           </div>
 
           <div className="token-table">
@@ -503,9 +464,7 @@ export function TokenWorkbench({
                   <h2>{selectedToken.name}</h2>
                 </div>
                 {selectedEdited && (
-                  <span className="edited-indicator">
-                    <Icon name="check-line" size="lg" aria-hidden="true" style={{ width: 13, height: 13 }} />{t("tokens.edited")}
-                  </span>
+                  <StatusPill>{t("tokens.edited")}</StatusPill>
                 )}
               </div>
 
@@ -521,9 +480,9 @@ export function TokenWorkbench({
                   value={selectedValue}
                 />
                 {selectedEdited && (
-                  <button className="text-action" onClick={() => onResetToken(selectedToken)} type="button">
+                  <Button variant="text" size="sm" onClick={() => onResetToken(selectedToken)}>
                     {t("tokens.inspector.resetToken")}
-                  </button>
+                  </Button>
                 )}
               </div>
 
@@ -538,7 +497,7 @@ export function TokenWorkbench({
                   <code>{selectedToken.cssVariable}</code>
                   {copyStatus === "variable"
                     ? <Icon name="check-line" size="lg" aria-hidden="true" style={{ width: 15, height: 15 }} />
-                    : <Clipboard aria-hidden="true" size={15} />}
+                    : <Icon glyph={Clipboard} size="sm" />}
                 </button>
               </div>
 

@@ -15,6 +15,8 @@ export interface RadioProps
   invalid?: boolean;
   label?: ReactNode;
   onCheckedChange?: (checked: boolean) => void;
+  /** Preserve the selection's contrast while preventing user input. */
+  readOnly?: boolean;
   size?: RadioSize;
 }
 
@@ -29,6 +31,7 @@ export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio({
   label,
   onChange,
   onCheckedChange,
+  readOnly = false,
   size = "md",
   ...props
 }, ref) {
@@ -40,6 +43,7 @@ export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio({
       data-openbitfun-component="radio"
       data-disabled={disabled ? "true" : "false"}
       data-invalid={invalid ? "true" : "false"}
+      data-readonly={readOnly ? "true" : "false"}
       data-size={size}
     >
       <span className={styles.control} data-openbitfun-part="control">
@@ -49,7 +53,7 @@ export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio({
           checked={checked}
           className={styles.input}
           defaultChecked={defaultChecked}
-          disabled={disabled}
+          disabled={disabled || readOnly}
           onChange={(event) => {
             onChange?.(event);
             if (!event.defaultPrevented) onCheckedChange?.(event.currentTarget.checked);

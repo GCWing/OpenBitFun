@@ -3,12 +3,10 @@
  * A4-like reading width with centered content.
  */
 @use '../../flat-markdown-surfaces' as flatMarkdownSurfaces;
-@use '../../markdown-typography' as markdownTypography;
 @use '../../transcript-layout' as transcriptLayout;
 
 .virtual-item-wrapper {
   @include flatMarkdownSurfaces.apply;
-  @include markdownTypography.apply;
   @include transcriptLayout.reading-column;
 
   // Keep descendant margins inside the border box measured by the virtualizer.
@@ -27,6 +25,11 @@
   min-height: 1px;
   padding: 0;
   position: relative;
+
+  // Collected model rounds retain their virtual key without stacking blank pixels.
+  &[data-collected-empty='true'] {
+    min-height: 0;
+  }
 
   // A regular user message starts a new Turn. Give it a clear boundary from
   // the preceding Turn, balancing the reserved action row below its bubble.
@@ -61,33 +64,21 @@
       margin-bottom: 0;
     }
 
-    > .model-round-item
-      > .task-with-subagent-wrapper:is(
-        :last-child,
-        :has(+ .model-round-item__footer)
-      ),
-    > .model-round-item
-      > .task-with-subagent-wrapper:is(
-        :last-child,
-        :has(+ .model-round-item__footer)
-      )
-      > .flowchat-flow-item {
-      margin-bottom: 0;
-    }
+
   }
 
   /* Adjacent model rounds are runtime structure, not visual sections. The
    * projection marks ambient-to-ambient boundaries from the full list so this rule
    * remains stable when either virtual row enters or leaves the rendered
-   * window. Only collapsed, line-like tools lose their trailing item gap;
+   * window. Collapsed ambient tools use the same gap as body paragraphs;
    * expanded cards keep section spacing. */
   &[data-ambient-tool-run-continuation-after='true']
     > .model-round-item
     > .flowchat-flow-item:last-child:has(
-      > .flow-tool-card-wrapper[data-openbitfun-attention='ambient']
+      > .flow-tool-card-wrapper[data-openbitfun-attention='ambient']:not([data-tool-capsule='true']):not(.flow-tool-card-wrapper--permission-pending)
         [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='root'][data-openbitfun-expanded-shell='false']
     ) {
-    margin-bottom: 0;
+    margin-bottom: var(--openbitfun-control-flow-chat-paragraph-gap);
   }
 
   /*

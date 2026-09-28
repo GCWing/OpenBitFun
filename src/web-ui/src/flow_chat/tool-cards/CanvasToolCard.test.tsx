@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => ({
   openCanvasArtifactTab: vi.fn(),
 }));
 
+vi.mock('@/infrastructure/i18n', async () => {
+  const { createTestI18nT } = await import('@/test/i18nTestUtils');
+  return { useI18n: () => ({ t: createTestI18nT('flow-chat'), formatNumber: String }) };
+});
+
 vi.mock('../store/FlowChatStore', () => ({
   flowChatStore: {
     getState: () => ({
@@ -98,8 +103,8 @@ describe('CanvasToolCard', () => {
       );
     });
 
-    expect(container.textContent).toContain('Patch Canvas');
-    expect(container.textContent).not.toContain('Create Canvas');
+    expect(container.textContent).toContain('Edit canvas');
+    expect(container.textContent).not.toContain('Create canvas');
     expect(container.textContent).toContain('Architecture Map');
   });
 
@@ -114,11 +119,20 @@ describe('CanvasToolCard', () => {
       );
     });
 
-    const card = container.querySelector<HTMLElement>(
-      '[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="surface"]',
+    const subject = container.querySelector<HTMLElement>(
+      '[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="content"]',
     );
-    act(() => card?.click());
+    const actionRegion = container.querySelector<HTMLElement>(
+      '[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="actionRegion"]',
+    );
+    const openButton = actionRegion?.querySelector<HTMLButtonElement>('[data-openbitfun-part="affordanceButton"]');
+    expect(subject?.textContent).toContain('Architecture Map');
+    expect(subject?.querySelector('button')).toBeNull();
+    expect(openButton).not.toBeNull();
+    expect(actionRegion?.parentElement?.lastElementChild).toBe(actionRegion);
+    act(() => openButton?.click());
 
+    expect(mocks.openCanvasArtifactTab).toHaveBeenCalledTimes(1);
     expect(mocks.openCanvasArtifactTab).toHaveBeenCalledWith(expect.objectContaining({
       artifactReference: 'openbitfun-canvas://session/test/canvas/canvas_123',
       title: 'Architecture Map',
@@ -128,5 +142,15 @@ describe('CanvasToolCard', () => {
       }),
       metadata: expect.objectContaining({ fromTool: true }),
     }));
+  });
+
+  it('keeps a failed completed tool from reporting a ready preview and shows its error', () => {
+    const call = canvasToolItem('CreateCanvas');
+    call.toolResult = { success: false, error: 'Canvas compilation failed' };
+    act(() => root.render(<CanvasToolCard toolItem={call} config={{} as ToolCardConfig} />));
+    expect(container.textContent).toContain('Canvas compilation failed');
+    expect(container.textContent).not.toContain('Preview ready');
+    expect(container.textContent).not.toContain('Saved');
+    expect(container.querySelector('[data-openbitfun-status="error"]')).not.toBeNull();
   });
 });

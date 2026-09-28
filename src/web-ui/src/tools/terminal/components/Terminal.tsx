@@ -250,9 +250,9 @@ const Terminal = forwardRef<TerminalRef, TerminalProps>(({
   // the black-background flash that occurs when a light theme is active.
   const mergedOptions = {
     ...DEFAULT_OPTIONS,
-    fontFamily: readActiveTypographyTokenValue('font.family.mono'),
     fontSize,
     ...options,
+    fontFamily: options?.fontFamily?.trim() || readActiveTypographyTokenValue('font.family.mono'),
     theme: getInitialXtermColors(),
   };
   const mergedOptionsRef = useRef(mergedOptions);

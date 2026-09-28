@@ -1391,10 +1391,14 @@ $_section-header-height: 22px;
   > svg {
     flex-shrink: 0;
     // A line box is split by the font's ascent and descent, not by the glyphs
-    // drawn in it, so centring the mark on that box leaves its ink about a pixel
-    // above the text's own ink centre. One pixel, measured in the browser, puts
-    // the two on one optical centre.
-    transform: translateY(1px);
+    // drawn in it, so the mark was once pushed down a pixel to follow the text.
+    // Measured against the face this row actually renders (HarmonyOS Sans:
+    // 92.8%/24.4% against a cap ink of 74.5%/1.5%), centring the mark on that box
+    // already leaves it 0.03em below a caps label's ink centre and 0.05em below a
+    // Chinese one, and a device name is one of those two. The nudge therefore read
+    // as the mark sitting low. A mark whose own mass is off-centre still states its
+    // correction in `deviceSystemMarks`, which moves the drawn mass rather than the
+    // box.
   }
 
   &:hover,
@@ -1618,7 +1622,9 @@ $_section-header-height: 22px;
 .openbitfun-device-overview {
   position: fixed;
   z-index: var(--openbitfun-layer-popover);
-  width: min(280px, calc(100vw - 16px));
+  width: min(340px, calc(100vw - 16px));
+  aspect-ratio: 1.41 / 1;
+  min-height: 0;
   max-height: calc(100vh - 16px);
   display: flex;
   flex-direction: column;
@@ -1627,6 +1633,7 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__scroll {
+  display: grid;
   min-height: 0;
   flex: 1 1 auto;
 }
@@ -1775,7 +1782,7 @@ $_section-header-height: 22px;
   flex-direction: column;
   flex-shrink: 0;
   gap: var(--openbitfun-space-2);
-  padding: var(--openbitfun-space-5);
+  padding: var(--openbitfun-space-2) var(--openbitfun-space-4) var(--openbitfun-space-3);
 }
 
 .openbitfun-device-overview__action {
@@ -1790,7 +1797,7 @@ $_section-header-height: 22px;
 
 .openbitfun-device-overview__header {
   flex-shrink: 0;
-  padding: var(--openbitfun-space-5) var(--openbitfun-space-5) var(--openbitfun-space-1);
+  padding: var(--openbitfun-space-3) var(--openbitfun-space-4) var(--openbitfun-space-1);
 
   .openbitfun-device-overview__title {
     color: var(--openbitfun-color-content-primary);
@@ -1805,15 +1812,21 @@ $_section-header-height: 22px;
 
 .openbitfun-device-overview__body {
   min-width: 0;
+  // Fill the scroll viewport and balance spare height above and below the
+  // device, rather than leaving all of it between the status and the footer.
+  justify-content: center;
 }
 
 .openbitfun-device-overview__summary {
   position: relative;
+  display: grid;
   min-width: 0;
   text-align: center;
 }
 
 .openbitfun-device-overview__carousel-viewport {
+  grid-area: 1 / 1;
+  min-width: 0;
   overflow: hidden;
   width: 100%;
 }
@@ -1840,7 +1853,7 @@ $_section-header-height: 22px;
 .openbitfun-device-overview__carousel-controls {
   position: absolute;
   inset: 0 0 auto;
-  aspect-ratio: 2 / 1;
+  aspect-ratio: 3.25 / 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1854,17 +1867,17 @@ $_section-header-height: 22px;
   .openbitfun-device-overview__carousel-track { transition: none; }
 }
 
-// The action sits under the artwork, in the flow, for the same reason it is not
-// centred on it: the system mark owns the screen. Nothing is layered here, so it
-// needs no frosted surface — there is no artwork behind it to separate from.
-// Height comes from the button the card always renders here, never from the
-// state, so this machine and a peer keep one card height (see
-// DeviceStatusControl's connect action).
+// A preview's activity line is empty, so the connection action shares that slot
+// below the device name. Reserve its height in the activity line to keep browsing
+// stable without adding an empty action row to the compact card.
 .openbitfun-device-overview__connect-action {
+  grid-area: 1 / 1;
+  align-self: end;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: var(--openbitfun-space-2) var(--openbitfun-space-4) 0;
+  padding-inline: var(--openbitfun-space-4);
 }
 
 .openbitfun-device-overview__connect-reserved {
@@ -1876,7 +1889,7 @@ $_section-header-height: 22px;
   display: grid;
   position: relative;
   width: 100%;
-  aspect-ratio: 2 / 1;
+  aspect-ratio: 3.25 / 1;
   flex-shrink: 0;
   overflow: hidden;
   place-items: center;
@@ -1885,8 +1898,8 @@ $_section-header-height: 22px;
 
   > img {
     position: absolute;
-    width: 202px;
-    height: 202px;
+    width: 54%;
+    height: auto;
     max-width: none;
     object-fit: contain;
     mix-blend-mode: multiply;
@@ -1894,7 +1907,7 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__artwork-glyph {
-  width: 58.333333%;
+  width: 45%;
   aspect-ratio: 140 / 78;
   background: var(--openbitfun-color-content-primary);
   mask: url('./assets/device.svg') center / contain no-repeat;
@@ -1903,9 +1916,9 @@ $_section-header-height: 22px;
 // A headless host is drawn, not a system: the row mark's three rack units, which
 // are a tall stack where every other artwork here is a landscape laptop. It takes
 // less of the width and more of the height instead, so it carries the same weight
-// in the 2:1 artwork as the silhouettes beside it.
+// in the compact artwork as the silhouettes beside it.
 .openbitfun-device-overview__artwork[data-artwork='server'] .openbitfun-device-overview__artwork-glyph {
-  width: 30%;
+  width: 22.5%;
   aspect-ratio: 24 / 29.4629;
   mask-image: url('./assets/server.svg');
 }
@@ -1942,6 +1955,7 @@ $_section-header-height: 22px;
 }
 
 .openbitfun-device-overview__activity {
+  min-height: var(--openbitfun-control-height-sm);
   max-width: 100%;
   box-sizing: border-box;
   padding: var(--openbitfun-space-1) var(--openbitfun-space-5) 0;

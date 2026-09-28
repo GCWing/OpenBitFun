@@ -17,9 +17,9 @@ import type { CronJob } from '@/infrastructure/api';
 const log = createLogger('CronJobCountsStore');
 
 export interface CronJobCountsSnapshot {
-  /** Count per workspace id. */
+  /** Enabled job count per workspace id. */
   byWorkspaceId: ReadonlyMap<string, number>;
-  /** Count per session id (session-targeted jobs only). */
+  /** Enabled job count per session id (session-targeted jobs only). */
   bySessionId: ReadonlyMap<string, number>;
 }
 
@@ -31,6 +31,7 @@ const EMPTY_SNAPSHOT: CronJobCountsSnapshot = {
 let snapshot: CronJobCountsSnapshot = EMPTY_SNAPSHOT;
 const listeners = new Set<() => void>();
 let loadInFlight = false;
+let reloadPending = false;
 let listenerRegistered = false;
 
 function publish(): void {
@@ -55,14 +56,14 @@ function countsEqual(
 }
 
 /**
- * Counts per workspace and per session. Mirrors what the scheduled-jobs views
- * list, disabled jobs included: a paused job the agent just created must still
- * be visible in the nav.
+ * Navigation clocks indicate enabled schedules. Paused jobs remain available
+ * in the scheduled-job views, but do not keep a workspace/session clock active.
  */
 export function computeCronJobCounts(jobs: CronJob[]): CronJobCountsSnapshot {
   const byWorkspaceId = new Map<string, number>();
   const bySessionId = new Map<string, number>();
   for (const job of jobs) {
+    if (!job.enabled) continue;
     const workspaceId = job.target.workspace.workspaceId;
     if (workspaceId) {
       byWorkspaceId.set(workspaceId, (byWorkspaceId.get(workspaceId) ?? 0) + 1);
@@ -82,15 +83,22 @@ function applyJobs(jobs: CronJob[]): void {
 }
 
 async function reload(): Promise<void> {
+  reloadPending = true;
   if (loadInFlight) return;
   loadInFlight = true;
   try {
-    const jobs = await cronAPI.listJobs({});
-    applyJobs(jobs);
-  } catch (error) {
-    // Badges are a hint; keep the previous counts and let the next change
-    // signal retry.
-    log.warn('Failed to load scheduled job counts', { error });
+    do {
+      reloadPending = false;
+      try {
+        const jobs = await cronAPI.listJobs({});
+        // A change during this read may have made its result stale. Drain the
+        // queued refresh before publishing counts instead of losing the hint.
+        if (!reloadPending) applyJobs(jobs);
+      } catch (error) {
+        // Keep the previous counts and retry any change queued during the read.
+        log.warn('Failed to load scheduled job counts', { error });
+      }
+    } while (reloadPending);
   } finally {
     loadInFlight = false;
   }

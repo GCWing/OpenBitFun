@@ -1,4 +1,5 @@
 import { hostQueueSupported, hostDialogQueue, queueImageAttachments } from '../../services/hostDialogQueue';
+import { promoteAcceptedHostMessage } from '../../services/hostQueueSubmission';
 import { requireSessionOwningWorkspaceId, sessionOwningWorkspaceId } from '../../utils/sessionOrdering';
 /**
  * Local session driver: the default flavor backed by this machine's (or the
@@ -372,12 +373,17 @@ export const localSessionDriver: SessionDriver = {
       await inheritReviewPermissionMode(readySession, context.flowChatStore.getState().sessions,
         () => surfaceScope.assertCurrent('inherit review session permission mode'));
       tracker.hostSubmitStarted = true;
-      await hostDialogQueue(sessionId).submit({ content: message, displayContent: displayMessage,
+      const queue = hostDialogQueue(sessionId);
+      const accepted = await queue.submit({ content: message, displayContent: displayMessage,
         agentType: currentAgentType, attachments: queueImageAttachments(options?.imageContexts),
         metadata: options?.userMessageMetadata ?? {} },
         { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, options?.turnId);
       tracker.hostAcceptedTurn = true;
       surfaceScope.assertCurrent('accept host message');
+      if (options?.sendImmediately) {
+        await promoteAcceptedHostMessage(queue, accepted);
+        surfaceScope.assertCurrent('accept immediate host message');
+      }
       context.flowChatStore.updateSessionLastSubmittedMode(sessionId, currentAgentType);
       if (isFirstMessage) await updateSessionMetadata(context, sessionId, ['titleMetadata']);
       return 'completed';

@@ -225,7 +225,7 @@ describe('Markdown file links', () => {
     expect(container.querySelector('.code-block-toolbar')).toBe(toolbar);
     expect(container.querySelector('.code-block-wrapper')?.hasAttribute('data-openbitfun-state')).toBe(false);
     expect(container.querySelector('pre')).toBe(lightweight);
-    expect(container.querySelector('pre code > span:last-child')?.textContent).toBe('const value = 1;');
+    expect(container.querySelector('pre code')?.textContent).toBe('const value = 1;');
     expect(mocks.renderHighlighter).not.toHaveBeenCalled();
     expect(mocks.readFileContent).toHaveBeenCalledTimes(1);
   });
@@ -236,8 +236,8 @@ describe('Markdown file links', () => {
     for (let mount = 0; mount < 2; mount++) {
       await act(async () => root.render(<ThinkingMarkdownRenderer content={content} />));
       expect(container.querySelector('pre.code-block-fallback')).not.toBeNull();
-      expect(container.querySelector('pre code > span:last-child')?.textContent).toBe(code);
-      expect(container.querySelectorAll('pre code span')).toHaveLength(2);
+      expect(container.querySelector('pre code')?.textContent).toBe(code);
+      expect(container.querySelectorAll('pre code span')).toHaveLength(0);
       expect(container.querySelector('.code-block-toolbar button')).not.toBeNull();
       expect(mocks.renderHighlighter).not.toHaveBeenCalled();
       await act(async () => root.render(null));
@@ -251,6 +251,29 @@ describe('Markdown file links', () => {
     await act(async () => root.render(<MarkdownRenderer content={content} />));
     expect(container.querySelector('pre[data-fallback]')?.getAttribute('data-fallback')).toBe('false');
     expect(mocks.renderHighlighter).toHaveBeenCalled();
+  });
+
+  it('copies the original code with the public named control and success feedback', async () => {
+    const clipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+
+    try {
+      const code = 'const value = 1;\n  value + 1;';
+      await act(async () => root.render(<MarkdownRenderer content={`\`\`\`ts\n${code}\n\`\`\``} />));
+      const button = container.querySelector<HTMLButtonElement>('.code-block-toolbar button');
+      expect(button?.getAttribute('data-openbitfun-component')).toBe('icon-button');
+      expect(button?.getAttribute('aria-label')).toBe('components:markdown.copyCode');
+      expect(button?.type).toBe('button');
+
+      await act(async () => button!.click());
+      expect(writeText).toHaveBeenCalledExactlyOnceWith(code);
+      expect(button?.getAttribute('aria-label')).toBe('components:markdown.copySuccess');
+      expect(button?.classList.contains('copy-success')).toBe(true);
+    } finally {
+      if (clipboard) Object.defineProperty(navigator, 'clipboard', clipboard);
+      else Reflect.deleteProperty(navigator, 'clipboard');
+    }
   });
 
   it('keeps thinking file navigation and latest HTTP callbacks', async () => {
@@ -269,13 +292,13 @@ describe('Markdown file links', () => {
   it.each(['', 'd2', 'infographic'])('keeps thinking fences on the product code renderer: %s', async language => {
     await act(async () => root.render(<ThinkingMarkdownRenderer content={`\`\`\`${language}\none line\n\`\`\``} />));
     expect(container.querySelector('.code-block-toolbar button')).not.toBeNull();
-    expect(container.querySelector('pre code > span:last-child')?.textContent).toBe('one line');
+    expect(container.querySelector('pre code')?.textContent).toBe('one line');
   });
 
   it('shows thinking Mermaid as lightweight source while preserving response diagrams', async () => {
     await act(async () => root.render(<ThinkingMarkdownRenderer content={'```mermaid\ngraph TD; A-->B\n```'} />));
     expect(container.querySelector('[data-testid="mermaid-block"]')).toBeNull();
-    expect(container.querySelector('pre code > span:last-child')?.textContent).toBe('graph TD; A-->B');
+    expect(container.querySelector('pre code')?.textContent).toBe('graph TD; A-->B');
     expect(mocks.renderHighlighter).not.toHaveBeenCalled();
     await act(async () => root.render(<MarkdownRenderer content={'```mermaid\ngraph TD; A-->B\n```'} />));
     expect(container.querySelector('[data-testid="mermaid-block"]')).not.toBeNull();

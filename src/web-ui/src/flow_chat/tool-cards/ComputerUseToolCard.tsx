@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Button, Icon } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Camera, ChevronsUpDown, Clipboard, Keyboard, Monitor, Move, MousePointer2, MousePointerClick } from 'lucide-react';
+import { AlertTriangle, Camera, Clipboard, Keyboard, MousePointerClick } from 'lucide-react';
 
 import { notificationService } from '@/shared/notification-system';
 import { createLogger } from '@/shared/utils/logger';
 import { api } from '@/infrastructure/api/service-api/ApiClient';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import { AmbientToolCard, AmbientToolCardHeader, ToolCardStatusSlot } from '@openbitfun/ui/flow-chat';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
@@ -37,7 +38,11 @@ function firstNonEmptyString(...values: unknown[]): string | null {
  */
 function parseComputerUseResult(toolItem: ToolCardProps['toolItem']): ParsedComputerUseResult {
   const input = (toolItem.toolCall?.input ?? {}) as Record<string, unknown>;
-  const result = (toolItem.toolResult?.result ?? {}) as Record<string, unknown>;
+  let result = toolItem.toolResult?.result;
+  if (typeof result === 'string') {
+    try { result = JSON.parse(result); } catch { result = undefined; }
+  }
+  if (!result || typeof result !== 'object') result = {};
   const action = firstNonEmptyString(input.action, result.action) ?? 'computer_use';
 
   const context = result.computer_use_context as Record<string, unknown> | undefined;
@@ -51,6 +56,10 @@ function parseComputerUseResult(toolItem: ToolCardProps['toolItem']): ParsedComp
     : null;
   const target = firstNonEmptyString(
     input.target_text,
+    input.url,
+    input.path,
+    input.app_name,
+    input.bundle_id,
     input.text_query,
     input.text,
     keys && keys.length > 0 ? keys.join(' + ') : null,
@@ -63,7 +72,7 @@ function parseComputerUseResult(toolItem: ToolCardProps['toolItem']): ParsedComp
     appName,
     target,
     loopWarningSuggestion: loopWarning?.detected ? loopWarning.suggestion ?? null : null,
-    errorMessage: toolItem.toolResult?.error ?? null,
+    errorMessage: firstNonEmptyString(toolItem.toolResult?.error, result.error),
   };
 }
 
@@ -81,13 +90,13 @@ async function openComputerUseSettings(pane: 'accessibility' | 'screen_capture')
 
 /** Groups the ~40 ComputerUse actions into a handful of recognizable icons instead of one icon per action. */
 function actionIcon(action: string): React.ReactNode {
-  if (action.includes('screenshot') || action === 'describe_screen') return <Camera size={16} />;
-  if (action.includes('click')) return <MousePointerClick size={16} />;
-  if (action.includes('scroll')) return <ChevronsUpDown size={16} />;
-  if (action === 'drag') return <Move size={16} />;
-  if (action.includes('move') || action === 'locate') return <MousePointer2 size={16} />;
-  if (action === 'key_chord' || action === 'type_text' || action === 'paste') return <Keyboard size={16} />;
-  if (action === 'wait') return <Icon name="clock" size="md" />;
+  if (action.includes('screenshot') || action === 'describe_screen') return <Icon glyph={Camera} size="md" />;
+  if (action.includes('click')) return <Icon glyph={MousePointerClick} size="md" />;
+  if (action.includes('scroll') || action === 'drag' || action.includes('move') || action === 'locate') {
+    return <Icon name="mouse-pointer" size="md" />;
+  }
+  if (action === 'key_chord' || action === 'type_text' || action === 'paste') return <Icon glyph={Keyboard} size="md" />;
+  if (action === 'wait') return <Icon name="device-mac" size="md" />;
   if (
     action === 'list_apps'
     || action === 'get_app_state'
@@ -101,16 +110,16 @@ function actionIcon(action: string): React.ReactNode {
   ) {
     return <Icon name="floating-window" size="md" />;
   }
-  if (action.startsWith('open_')) return <Icon name="arrow-up-right" size="md" />;
-  if (action.startsWith('clipboard_')) return <Clipboard size={16} />;
-  if (action === 'run_script' || action === 'run_apple_script') return <Icon name="terminal" size="md" />;
-  if (action === 'get_os_info') return <Icon name="info" size="md" />;
-  return <Monitor size={16} />;
+  if (action.startsWith('open_')) return <Icon name="floating-window" size="md" />;
+  if (action.startsWith('clipboard_')) return <Icon glyph={Clipboard} size="md" />;
+  if (action === 'run_script' || action === 'run_apple_script') return <Icon name="square-terminal" size="md" />;
+  if (action === 'get_os_info') return <Icon name="device-mac" size="md" />;
+  return <Icon name="device-mac" size="md" />;
 }
 
 export const ComputerUseToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand }) => {
   const { t } = useTranslation('flow-chat');
-  const { status } = toolItem;
+  const status = getToolCardStatus(toolItem);
   const [isExpanded, setIsExpanded] = useState(false);
   const toolId = toolItem.id ?? toolItem.toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
@@ -119,6 +128,41 @@ export const ComputerUseToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpan
   });
 
   const parsed = useMemo(() => parseComputerUseResult(toolItem), [toolItem]);
+  const actionLabels: Record<string, string> = {
+    click: t('toolCards.computerUse.actions.click'),
+    click_element: t('toolCards.computerUse.actions.click_element'),
+    mouse_move: t('toolCards.computerUse.actions.mouse_move'),
+    pointer_move_rel: t('toolCards.computerUse.actions.pointer_move_rel'),
+    mouse_down: t('toolCards.computerUse.actions.mouse_down'),
+    mouse_up: t('toolCards.computerUse.actions.mouse_up'),
+    scroll: t('toolCards.computerUse.actions.scroll'),
+    drag: t('toolCards.computerUse.actions.drag'),
+    key_chord: t('toolCards.computerUse.actions.key_chord'),
+    type_text: t('toolCards.computerUse.actions.type_text'),
+    paste: t('toolCards.computerUse.actions.paste'),
+    wait: t('toolCards.computerUse.actions.wait'),
+    screenshot: t('toolCards.computerUse.actions.screenshot'),
+    describe_screen: t('toolCards.computerUse.actions.describe_screen'),
+    locate: t('toolCards.computerUse.actions.locate'),
+    move_to_target: t('toolCards.computerUse.actions.move_to_target'),
+    move_to_text: t('toolCards.computerUse.actions.move_to_text'),
+    list_apps: t('toolCards.computerUse.actions.list_apps'),
+    get_app_state: t('toolCards.computerUse.actions.get_app_state'),
+    get_app_shortcuts: t('toolCards.computerUse.actions.get_app_shortcuts'),
+    list_displays: t('toolCards.computerUse.actions.list_displays'),
+    focus_display: t('toolCards.computerUse.actions.focus_display'),
+    app_launch: t('toolCards.computerUse.actions.app_launch'),
+    app_focus: t('toolCards.computerUse.actions.app_focus'),
+    app_close: t('toolCards.computerUse.actions.app_close'),
+    open_url: t('toolCards.computerUse.actions.open_url'),
+    open_path: t('toolCards.computerUse.actions.open_path'),
+    clipboard_read: t('toolCards.computerUse.actions.clipboard_read'),
+    clipboard_write: t('toolCards.computerUse.actions.clipboard_write'),
+    run_script: t('toolCards.computerUse.actions.run_script'),
+    run_apple_script: t('toolCards.computerUse.actions.run_apple_script'),
+    get_os_info: t('toolCards.computerUse.actions.get_os_info'),
+  };
+  const actionLabel = actionLabels[parsed.action] ?? parsed.action;
   const errorMessage = parsed.errorMessage || t('toolCards.computerUse.actionFailed');
   const permissionDenied = status === 'error' && isPermissionDeniedError(parsed.errorMessage);
   const isExpandable = status === 'completed' || status === 'error';
@@ -142,19 +186,7 @@ export const ComputerUseToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpan
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded, { onExpand });
   };
 
-  const renderContent = () => {
-    if (status === 'error') {
-      if (permissionDenied) return t('toolCards.computerUse.permissionDenied');
-      return errorMessage;
-    }
-    if (status === 'completed') {
-      if (parsed.appName) return t('toolCards.computerUse.controllingApp', { app: parsed.appName });
-      return parsed.target ?? t('toolCards.computerUse.done');
-    }
-    return parsed.appName
-      ? t('toolCards.computerUse.runningOnApp', { app: parsed.appName })
-      : t('toolCards.computerUse.running');
-  };
+  const subject = [...new Set([parsed.target, parsed.appName].filter(Boolean))].join(' · ');
 
   const renderExpandedContent = () => {
     if (status === 'error') {
@@ -201,7 +233,7 @@ export const ComputerUseToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpan
         )}
         {parsed.loopWarningSuggestion && (
           <div data-openbitfun-component="computer-use-tool-card" data-openbitfun-part="loopWarning" className="computer-use-tool-card__loop-warning">
-            <AlertTriangle size={12} />
+            <Icon glyph={AlertTriangle} size="xs" />
             <span>{parsed.loopWarningSuggestion}</span>
           </div>
         )}
@@ -222,11 +254,12 @@ export const ComputerUseToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpan
               <ToolCardStatusSlot
                 status={status}
                 toolIcon={actionIcon(parsed.action)}
-                defaultIcon={status === 'completed' || status === 'error' ? 'tool' : 'status'}
               />
             )}
-            action={<code data-openbitfun-component="computer-use-tool-card" data-openbitfun-part="actionCode" className="computer-use-tool-card__action-code">{parsed.action}</code>}
-            content={renderContent()}
+            action={actionLabel}
+            content={subject}
+            statusDescription={getToolCardStatusDescription(status, t, permissionDenied
+              ? t('toolCards.computerUse.permissionDenied') : errorMessage)}
           />
         )}
         expandedContent={isExpandable ? renderExpandedContent() : undefined}

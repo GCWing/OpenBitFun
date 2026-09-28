@@ -125,8 +125,19 @@ describe('DefaultToolCard', () => {
       );
     });
 
-    expect(container.textContent).toContain('toolCards.default.completed');
+    expect(container.textContent).toContain('large fetched page content');
+    expect(container.textContent).not.toContain('toolCards.default.completed');
     expect(toJSON).not.toHaveBeenCalled();
+  });
+
+  it('keeps missing error payloads accessible and hidden results out of the summary', () => {
+    const failed = { ...completedWebFetchItem(undefined), status: 'error' as const, toolResult: undefined };
+    act(() => root.render(<DefaultToolCard toolItem={failed} config={config} />));
+    expect(container.querySelector('[aria-label^="toolCards.default.failed"]')).not.toBeNull();
+    act(() => root.render(<DefaultToolCard toolItem={completedWebFetchItem({ title: 'Hidden result' })}
+      config={{ ...config, resultDisplayType: 'hidden' }} />));
+    expect(container.textContent).not.toContain('Hidden result');
+    expect(container.querySelector('[data-openbitfun-part="resultSummary"]')).toBeNull();
   });
 
   it('stringifies detailed result payloads after the card is expanded', () => {

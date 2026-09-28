@@ -3,13 +3,21 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DesignSystemProvider } from '@openbitfun/ui';
+import { FileOperationToolCard } from '@openbitfun/ui/flow-chat';
 import type { FlowThinkingItem } from '../types/flow-chat';
 import { ModelThinkingDisplay } from './ModelThinkingDisplay';
 import { latestReasoningSummaryPreview } from '../utils/reasoningSummaryPresentation';
+import { openThinkingPanel } from '../services/openThinkingPanel';
+import { FlowChatContext } from '../components/modern/FlowChatContext';
 
 vi.mock('../utils/reasoningSummaryPresentation', { spy: true });
+vi.mock('../services/openThinkingPanel', () => ({ openThinkingPanel: vi.fn() }));
+beforeEach(() => vi.mocked(openThinkingPanel).mockClear());
 
 const markdownRender = vi.hoisted(() => vi.fn());
+
+const revealState = vi.hoisted(() => ({ isRevealing: false }));
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -24,7 +32,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 vi.mock('../hooks/useTypewriter', () => ({
-  useTypewriter: (content: string) => ({ displayText: content, isRevealing: false }),
+  useTypewriter: (content: string) => ({ displayText: content, isRevealing: revealState.isRevealing }),
 }));
 
 vi.mock('../hooks/typewriterRevealGateContext', () => ({
@@ -144,9 +152,8 @@ describe('ModelThinkingDisplay reasoning summary', () => {
 
   it.each(['finish', 'cancel', 'reopen'] as const)(
     'retains closing content until the actual transition settles: %s', async outcome => {
-      await act(async () => root.render(<ModelThinkingDisplay thinkingItem={summaryItem('**Body**')} />));
-      const toggle = container.querySelector('[data-testid="chat-thinking-toggle"]') as HTMLElement;
-      await act(async () => toggle.click());
+      const item = summaryItem('**Body**');
+      await act(async () => root.render(<ModelThinkingDisplay thinkingItem={item} forceExpanded />));
       const body = container.querySelector('[data-testid="thinking-markdown"]');
       let finish!: () => void;
       let cancel!: () => void;
@@ -158,23 +165,24 @@ describe('ModelThinkingDisplay reasoning summary', () => {
       Object.defineProperty(expandContainer, 'getAnimations', {
         value: () => [{ transitionProperty: 'grid-template-rows', finished }],
       });
-      await act(async () => toggle.click());
+      await act(async () => root.render(<ModelThinkingDisplay thinkingItem={item} />));
       expect(container.querySelector('[data-testid="thinking-markdown"]')).toBe(body);
-      if (outcome === 'reopen') await act(async () => toggle.click());
+      if (outcome === 'reopen') await act(async () => root.render(<ModelThinkingDisplay thinkingItem={item} forceExpanded />));
       await act(async () => { if (outcome === 'finish') finish(); else cancel(); });
       expect(container.querySelector('[data-testid="thinking-markdown"]')).toBe(outcome === 'reopen' ? body : null);
     },
   );
 
-  it('uses design-system thinking and disclosure icons in the header', async () => {
+  it('uses a design-system thinking icon without modal or inline disclosure semantics', async () => {
     await act(async () => {
       root.render(<ModelThinkingDisplay thinkingItem={summaryItem('**Inspecting**')} />);
     });
 
     const leadingIcon = container.querySelector('[data-openbitfun-part="leadingIcon"]');
     expect(leadingIcon?.querySelector('[data-openbitfun-name="thinking"]')).not.toBeNull();
-    expect(leadingIcon?.querySelector('[data-openbitfun-name="chevron-right"]')).not.toBeNull();
-    expect(leadingIcon?.querySelector('[data-openbitfun-name="chevron-down"]')).not.toBeNull();
+    expect(leadingIcon?.querySelector('[data-openbitfun-name="chevron-right"]')).toBeNull();
+    expect(leadingIcon?.querySelector('[data-openbitfun-name="chevron-down"]')).toBeNull();
+    expect(container.querySelector('[data-testid="chat-thinking-toggle"]')?.hasAttribute('aria-haspopup')).toBe(false);
   });
 
   it('replaces the collapsed preview when a new summary part arrives', async () => {
@@ -191,38 +199,453 @@ describe('ModelThinkingDisplay reasoning summary', () => {
     expect(container.querySelector('[data-openbitfun-part="label"]')?.textContent).toBe('Second part');
   });
 
-  it('keeps user expansion and renders the complete summary Markdown', async () => {
+  it('opens the complete summary in the panel while keeping its live inline preview', async () => {
     const content = '**First part**\n\n**Second part**';
     await act(async () => {
-      root.render(<ModelThinkingDisplay thinkingItem={summaryItem(content)} />);
+      root.render(<FlowChatContext.Provider value={{ sessionId: 'source-session', workspaceId: 'workspace', workspacePath: '/srv/project', remoteConnectionId: 'ssh-1' }}>
+        <div data-turn-id="source-turn"><ModelThinkingDisplay thinkingItem={summaryItem(content)} /></div>
+      </FlowChatContext.Provider>);
     });
     const leadingIcon = container.querySelector('[data-openbitfun-part="leadingIcon"]');
     const label = container.querySelector('[data-openbitfun-part="label"]');
 
     await act(async () => {
-      (container.querySelector('[data-testid="chat-thinking-toggle"]') as HTMLElement).click();
+      (container.querySelector('.thinking-label-target') as HTMLElement).click();
     });
+    expect(openThinkingPanel).toHaveBeenCalledWith({
+      title: 'Thinking Summary', thinkingItem: summaryItem(content), sessionId: 'source-session',
+      workspaceId: 'workspace', workspacePath: '/srv/project', remoteConnectionId: 'ssh-1',
+      navigationTarget: { sessionId: 'source-session', turnId: 'source-turn', itemId: 'summary-1' },
+    });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(container.querySelector('[data-testid="chat-thinking-panel"]')
-      ?.getAttribute('data-expanded')).toBe('true');
+      ?.getAttribute('data-expanded')).toBe('false');
     expect(container.querySelector('[data-openbitfun-part="label"]')?.textContent)
-      .toBe('Thinking Summary');
-    expect(container.querySelector('[data-testid="thinking-markdown"]')?.textContent)
-      .toBe(content);
+      .toBe('Second part');
+    expect(container.querySelector('[data-testid="thinking-markdown"]')).toBeNull();
     expect(container.querySelector('[data-openbitfun-part="leadingIcon"]')).toBe(leadingIcon);
     expect(container.querySelector('[data-openbitfun-part="label"]')).toBe(label);
 
     await act(async () => {
-      root.render(<ModelThinkingDisplay thinkingItem={summaryItem(
-        `${content}\n\n**Third part**`,
-      )} />);
+      root.render(<FlowChatContext.Provider value={{ sessionId: 'source-session' }}>
+        <div data-turn-id="source-turn"><ModelThinkingDisplay thinkingItem={summaryItem(`${content}\n\n**Third part**`)} /></div>
+      </FlowChatContext.Provider>);
     });
     expect(container.querySelector('[data-testid="chat-thinking-panel"]')
-      ?.getAttribute('data-expanded')).toBe('true');
+      ?.getAttribute('data-expanded')).toBe('false');
+    expect(container.querySelector('[data-openbitfun-part="label"]')?.textContent).toBe('Third part');
+    expect(openThinkingPanel).toHaveBeenCalledTimes(1);
     expect(container.querySelector('[data-openbitfun-part="leadingIcon"]')).toBe(leadingIcon);
+  });
+
+  it('keeps projected reasoning bound to its child stream and locates its parent task', async () => {
+    await act(async () => root.render(<FlowChatContext.Provider value={{ sessionId: 'parent-session' }}>
+      <div data-turn-id="parent-turn" data-flow-item-id="parent-task">
+        <ModelThinkingDisplay thinkingItem={summaryItem('Child reasoning')} sourceSessionId="child-session"
+          displayContext="subagent-projection" />
+      </div>
+    </FlowChatContext.Provider>));
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="chat-thinking-toggle"]')!.click());
+    expect(openThinkingPanel).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'child-session',
+      navigationTarget: { sessionId: 'parent-session', turnId: 'parent-turn', itemId: 'parent-task' },
+    }));
   });
 });
 
-describe('ModelThinkingDisplay scroll ownership', () => {
+describe('ModelThinkingDisplay side completion', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  let resizeCallbacks: Map<Element, () => void>;
+  const panelSelector = '[data-testid="chat-thinking-panel"]';
+  const toggleSelector = '[data-testid="chat-thinking-toggle"]';
+
+  beforeEach(() => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    revealState.isRevealing = false;
+    resizeCallbacks = new Map();
+    vi.stubGlobal('ResizeObserver', class {
+      private targets = new Set<Element>();
+      constructor(private callback: () => void) {}
+      observe(target: Element) { this.targets.add(target); resizeCallbacks.set(target, this.callback); }
+      unobserve(target: Element) { this.targets.delete(target); resizeCallbacks.delete(target); }
+      disconnect() { this.targets.forEach(target => resizeCallbacks.delete(target)); }
+    });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    revealState.isRevealing = false;
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  function render({ active = false, last = false, force = false, summary = false, withinGroup = false, content = 'A complete reasoning record', continuation = <p>The following answer</p> } = {}) {
+    const item: FlowThinkingItem = {
+      ...summaryItem(content),
+      reasoningKind: summary ? 'summary' : 'reasoning',
+      isStreaming: active,
+      status: active ? 'streaming' : 'completed',
+    };
+    act(() => root.render(<>
+      <ModelThinkingDisplay thinkingItem={item} isLastItem={last} forceExpanded={force} withinGroup={withinGroup} />
+      {!last && <div data-thinking-continuation="">{continuation}</div>}
+    </>));
+    return container.querySelector(panelSelector)!;
+  }
+
+  it.each([false, true])('waits for stream/reveal before side docking, retaining the disclosure (within group: %s)', withinGroup => {
+    const panel = render({ active: true, last: true, withinGroup });
+    const toggle = container.querySelector(toggleSelector);
+    const content = container.querySelector('[data-testid="thinking-markdown"]');
+    render({ active: true, withinGroup });
+    const answer = container.querySelector('[data-thinking-continuation]');
+    expect(panel.getAttribute('data-expanded')).toBe('true');
+    expect(panel.getAttribute('data-thinking-attachment')).toBe('block');
+    revealState.isRevealing = true;
+    render({ withinGroup });
+    expect(panel.getAttribute('data-expanded')).toBe('true');
+    revealState.isRevealing = false;
+    render({ withinGroup });
+    expect(panel.getAttribute('data-thinking-attachment')).toBe('side');
+    expect(panel.getAttribute('data-expanded')).toBe('false');
+    expect(container.querySelector(panelSelector)).toBe(panel);
+    expect(container.querySelector(toggleSelector)).toBe(toggle);
+    expect(content).not.toBeNull();
+    expect(container.querySelector('[data-testid="thinking-markdown"]')).toBeNull();
+    expect(container.querySelector('[data-thinking-continuation]')).toBe(answer);
+  });
+
+  it.each([false, true])('mounts completed history in its side state (within group: %s)', withinGroup => {
+    const panel = render({ withinGroup });
+    expect(panel.getAttribute('data-thinking-attachment')).toBe('side');
+    expect(panel.getAttribute('data-expanded')).toBe('false');
+    expect(panel.getAttribute('data-scroll-owner')).toBe('self');
+    const toggle = container.querySelector<HTMLElement>(toggleSelector)!;
+    expect(toggle.getAttribute('aria-label')).toContain('Thought');
+    expect(toggle.hasAttribute('title')).toBe(false);
+    expect(toggle.querySelector('.thinking-capsule-label')).toBeNull();
+    expect(toggle.tagName).toBe('BUTTON');
+    expect(toggle.getAttribute('type')).toBe('button');
+    expect(toggle.getAttribute('data-openbitfun-component')).toBe('icon-button');
+    expect(toggle.getAttribute('data-openbitfun-variant')).toBe('quiet');
+    expect(toggle.getAttribute('data-openbitfun-shape')).toBe('square');
+    expect(toggle.getAttribute('data-size')).toBe('xs');
+    expect(toggle.closest('[role="button"]')).toBeNull();
+    expect(container.querySelector('[data-thinking-continuation]')?.getAttribute('style')).toBeNull();
+    expect(toggle.tabIndex).toBe(0);
+    expect(toggle.hasAttribute('aria-haspopup')).toBe(false);
+    expect(toggle.hasAttribute('aria-expanded')).toBe(false);
+    expect(container.querySelector('[data-openbitfun-part="expandContainer"]')?.hasAttribute('inert')).toBe(true);
+  });
+
+  it('keeps the reasoning count in the accessible icon name, including Unicode and summaries', () => {
+    render({ content: '\u60f3\u{1f642}abc' });
+    expect(container.querySelector(toggleSelector)?.getAttribute('aria-label')).toBe('Thought 5 characters');
+    render({ summary: true, content: 'Summary' });
+    expect(container.querySelector(toggleSelector)?.getAttribute('aria-label')).toBe('Thought 7 characters');
+  });
+
+  it.each([false, true])('opens the panel from keyboard activation without changing the chat (within group: %s)', async withinGroup => {
+    const panel = render({ withinGroup });
+    const toggle = container.querySelector<HTMLElement>(toggleSelector)!;
+    expect(container.querySelector('[data-testid="thinking-markdown"]')).toBeNull();
+    const successor = container.querySelector('[data-thinking-continuation]');
+    toggle.focus();
+    // Native keyboard activation emits a click with detail=0.
+    await act(async () => toggle.dispatchEvent(new MouseEvent('click', { detail: 0, bubbles: true })));
+    expect(openThinkingPanel).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Thinking Process', thinkingItem: expect.objectContaining({ content: 'A complete reasoning record' }),
+    }));
+    expect(container.querySelector('[data-testid="thinking-markdown"]')).toBeNull();
+    expect(panel.getAttribute('data-thinking-attachment')).toBe('side');
+    expect(panel.getAttribute('data-expanded')).toBe('false');
+    expect(toggle.hasAttribute('aria-controls')).toBe(false);
+    render({ withinGroup });
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(container.querySelector('[data-thinking-continuation]')).toBe(successor);
+    expect(panel.getAttribute('data-thinking-attachment')).toBe('side');
+    expect(document.activeElement).toBe(toggle);
+    expect(container.querySelector('[data-testid="thinking-markdown"]')).toBeNull();
+  });
+
+  it.each([false, true])('keeps the tail accessible and honors forced expansion (within group: %s)', withinGroup => {
+    const tail = render({ last: true, withinGroup });
+    expect(tail.hasAttribute('data-thinking-attachment')).toBe(false);
+    expect(tail.getAttribute('data-expanded')).toBe(withinGroup ? 'false' : 'true');
+    const panel = render({ force: true, withinGroup });
+    expect(panel.getAttribute('data-expanded')).toBe('true');
+    expect(panel.hasAttribute('data-thinking-attachment')).toBe(false);
+  });
+
+  it('retains a live summary label until it settles into the side button', () => {
+    const panel = render({ active: true, summary: true });
+    expect(panel.getAttribute('data-expanded')).toBe('false');
+    expect(panel.getAttribute('data-thinking-attachment')).toBe('block');
+    render({ summary: true });
+    expect(panel.getAttribute('data-thinking-attachment')).toBe('side');
+  });
+
+  it.each(['edit', 'write'] as const)('centers on the %s header independently of expanded content', (operation) => {
+    const panel = render({ continuation: <FileOperationToolCard
+      actionLabel="Edit file" operation={operation} path="demo.html" pathLabel="demo.html"
+      status="completed" isExpanded preview={<pre>File changes</pre>} onToggle={() => {}}
+    /> }) as HTMLElement;
+    const successor = container.querySelector<HTMLElement>('[data-thinking-continuation]')!;
+    const header = successor.querySelector<HTMLElement>('[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="surface"]')!;
+    let headerHeight = 36;
+    let cardHeight = 44;
+    vi.spyOn(successor, 'getBoundingClientRect').mockImplementation(() => ({ top: 100, height: cardHeight } as DOMRect));
+    vi.spyOn(header, 'getBoundingClientRect').mockImplementation(() => ({ top: 108, height: headerHeight } as DOMRect));
+    act(() => resizeCallbacks.get(header)!());
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('26px');
+
+    cardHeight = 600;
+    act(() => resizeCallbacks.get(successor)!());
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('26px');
+
+    headerHeight = 52;
+    act(() => resizeCallbacks.get(header)!());
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('34px');
+    expect(successor.getAttribute('style')).toBeNull();
+    expect(header.getAttribute('style')).toBeNull();
+
+    render();
+    act(() => resizeCallbacks.get(successor)!());
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('');
+    expect(resizeCallbacks.has(header)).toBe(false);
+  });
+
+  it('rebinds header alignment when a preceding card hides without remounting thinking', async () => {
+    const item: FlowThinkingItem = {
+      ...summaryItem('Reasoning'), reasoningKind: 'reasoning', isStreaming: false, status: 'completed',
+    };
+    const tree = (showRead: boolean, showEdit = true) => <>
+      <ModelThinkingDisplay key="thinking" thinkingItem={item} isLastItem={false} />
+      {showRead && <div key="read" data-thinking-continuation="" data-card="read"><p>Read file</p></div>}
+      {showEdit && <div key="edit" data-thinking-continuation="" data-card="edit">
+        <FileOperationToolCard actionLabel="Edit file" operation="edit" path="demo.html"
+          pathLabel="demo.html" status="completed" />
+      </div>}
+      <div key="answer" data-thinking-continuation=""><p>Answer</p></div>
+    </>;
+    act(() => root.render(tree(true)));
+    const panel = container.querySelector<HTMLElement>(panelSelector)!;
+    const toggle = container.querySelector(toggleSelector);
+    const oldSuccessor = container.querySelector<HTMLElement>('[data-card="read"]')!;
+    const successor = container.querySelector<HTMLElement>('[data-card="edit"]')!;
+    const header = successor.querySelector<HTMLElement>('[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="surface"]')!;
+    vi.spyOn(successor, 'getBoundingClientRect').mockReturnValue({ top: 100, height: 44 } as DOMRect);
+    vi.spyOn(header, 'getBoundingClientRect').mockReturnValue({ top: 108, height: 36 } as DOMRect);
+    expect(resizeCallbacks.has(oldSuccessor)).toBe(true);
+    expect(resizeCallbacks.has(header)).toBe(false);
+
+    await act(async () => { root.render(tree(false)); });
+    expect(container.querySelector(panelSelector)).toBe(panel);
+    expect(container.querySelector(toggleSelector)).toBe(toggle);
+    expect(panel.nextElementSibling).toBe(successor);
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('26px');
+    expect(resizeCallbacks.has(oldSuccessor)).toBe(false);
+    expect(resizeCallbacks.has(header)).toBe(true);
+
+    await act(async () => { root.render(tree(false, false)); });
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('');
+    expect(resizeCallbacks.has(header)).toBe(false);
+    expect(resizeCallbacks.has(successor)).toBe(false);
+  });
+
+  it.each([
+    { name: 'paragraph', continuation: <p>Leading text</p>, top: 104, height: 16 },
+    { name: 'bold heading', continuation: <h3><strong>Leading heading</strong></h3>, top: 100, height: 18 },
+    { name: 'multiline text', continuation: <div>{'  Leading line\nSecond line\nThird line'}</div>, top: 106, height: 14 },
+  ])('centers on the first rendered line of $name, independently of block height', ({ continuation, top, height }) => {
+    const createRange = document.createRange.bind(document);
+    const samples: string[] = [];
+    vi.spyOn(document, 'createRange').mockImplementation(() => {
+      const range = createRange();
+      range.getBoundingClientRect = () => {
+        samples.push(range.toString());
+        return { top, height, width: 8 } as DOMRect;
+      };
+      return range;
+    });
+    const panel = render({ continuation }) as HTMLElement;
+    const successor = container.querySelector<HTMLElement>('[data-thinking-continuation]')!;
+    let blockHeight = 60;
+    vi.spyOn(successor, 'getBoundingClientRect').mockImplementation(() => ({ top: 100, height: blockHeight } as DOMRect));
+    act(() => resizeCallbacks.get(successor)!());
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe(`${top - 100 + height / 2}px`);
+
+    blockHeight = 600;
+    act(() => resizeCallbacks.get(successor)!());
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe(`${top - 100 + height / 2}px`);
+    expect(samples.length).toBeGreaterThan(0);
+    expect(samples.every(sample => Array.from(sample).length === 1)).toBe(true);
+    expect(successor.getAttribute('style')).toBeNull();
+  });
+
+  it('updates the first-line anchor when streaming Markdown changes or replaces its leading text', async () => {
+    const createRange = document.createRange.bind(document);
+    vi.spyOn(document, 'createRange').mockImplementation(() => {
+      const range = createRange();
+      range.getBoundingClientRect = () => (
+        range.startContainer.parentElement?.closest('h3')
+          ? { top: 100, height: 18, width: 8 }
+          : { top: 104, height: 20, width: 8 }
+      ) as DOMRect;
+      return range;
+    });
+    const panel = render({ continuation: <p>Paragraph</p> }) as HTMLElement;
+    const successor = container.querySelector<HTMLElement>('[data-thinking-continuation]')!;
+    const paragraph = successor.querySelector('p')!;
+    const toggle = container.querySelector(toggleSelector);
+    vi.spyOn(successor, 'getBoundingClientRect').mockReturnValue({ top: 100, height: 300 } as DOMRect);
+    act(() => resizeCallbacks.get(successor)!());
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('14px');
+
+    await act(async () => { render({ continuation: <h3><strong>Heading</strong></h3> }); });
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('9px');
+    expect(resizeCallbacks.has(paragraph)).toBe(false);
+    expect(container.querySelector(toggleSelector)).toBe(toggle);
+
+    const text = successor.querySelector('strong')!.firstChild as Text;
+    await act(async () => { text.data = ''; });
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('');
+    await act(async () => { text.data = 'Heading'; });
+    expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('9px');
+  });
+});
+
+describe('ModelThinkingDisplay tooltip lifecycle', () => {
+  let container: HTMLDivElement;
+  let root: Root;
+  let resizeCallbacks: Map<Element, () => void>;
+  const popup = () => document.querySelector('[role="tooltip"]');
+  const reveal = () => {
+    act(() => vi.advanceTimersByTime(500));
+    act(() => vi.advanceTimersByTime(30));
+  };
+  const enter = (element: Element) => act(() => {
+    element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: document.body }));
+    element.dispatchEvent(new MouseEvent('mouseenter'));
+    element.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 10, clientY: 10 }));
+  });
+  const leave = (element: Element) => act(() => {
+    element.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 20, clientY: 20 }));
+    element.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }));
+    element.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }));
+  });
+
+  beforeEach(() => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    revealState.isRevealing = false;
+    vi.useFakeTimers();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(0), 0));
+    vi.stubGlobal('cancelAnimationFrame', clearTimeout);
+    resizeCallbacks = new Map();
+    vi.stubGlobal('ResizeObserver', class {
+      private targets = new Set<Element>();
+      constructor(private callback: () => void) {}
+      observe(target: Element) { this.targets.add(target); resizeCallbacks.set(target, this.callback); }
+      unobserve(target: Element) { this.targets.delete(target); resizeCallbacks.delete(target); }
+      disconnect() { this.targets.forEach(target => resizeCallbacks.delete(target)); }
+    });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  async function render(summary = false) {
+    await act(async () => root.render(<DesignSystemProvider nativeTooltipPolicy="application">
+      <ModelThinkingDisplay isLastItem={false} thinkingItem={{
+        ...summaryItem('A complete reasoning record'),
+        reasoningKind: summary ? 'summary' : 'reasoning',
+        isStreaming: false,
+        status: 'completed',
+      }} />
+      <div data-thinking-continuation=""><p>The following answer</p></div>
+    </DesignSystemProvider>));
+    return container.querySelector<HTMLButtonElement>('[data-testid="chat-thinking-toggle"]')!;
+  }
+
+  it.each([false, true])('does not revive a clicked tooltip after opening details or scrolling (summary: %s)', async (summary) => {
+    const toggle = await render(summary);
+    const body = container.querySelector('[data-testid="chat-thinking-content"]');
+    enter(toggle);
+    reveal();
+    await act(async () => { toggle.focus(); toggle.click(); });
+    leave(toggle);
+    reveal();
+    expect(popup()).toBeNull();
+    expect(openThinkingPanel).toHaveBeenCalledTimes(1);
+
+    act(() => container.dispatchEvent(new Event('scroll')));
+    reveal();
+    expect(popup()).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    expect(container.querySelector('[data-testid="chat-thinking-content"]')).toBe(body);
+
+    enter(toggle);
+    reveal();
+    expect(popup()?.textContent).toBe('Thought 27 characters');
+    leave(toggle);
+    reveal();
+    expect(popup()).toBeNull();
+  });
+
+  it('cancels a pending hover hint when clicked before its delay finishes', async () => {
+    const toggle = await render();
+    enter(toggle);
+    await act(async () => { toggle.focus(); toggle.click(); });
+    leave(toggle);
+    act(() => container.dispatchEvent(new Event('scroll')));
+    reveal();
+    expect(popup()).toBeNull();
+    expect(openThinkingPanel).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps retained label overflow separate from button focus and the side icon hint', async () => {
+    const toggle = await render();
+    const label = container.querySelector<HTMLElement>('.thinking-label')!;
+    Object.defineProperty(label, 'clientWidth', { value: 12 });
+    Object.defineProperty(label.firstElementChild, 'scrollWidth', { value: 160 });
+    await act(async () => resizeCallbacks.get(label)!());
+    act(() => container.dispatchEvent(new Event('scroll')));
+    reveal();
+    expect(popup()).toBeNull();
+
+    const labelTarget = label.closest('label')!;
+    enter(labelTarget);
+    reveal();
+    expect(popup()).toBeNull();
+    leave(labelTarget);
+    reveal();
+    expect(popup()).toBeNull();
+
+    await act(async () => { toggle.focus(); toggle.click(); });
+    reveal();
+    enter(toggle);
+    reveal();
+    expect(container.querySelector('.thinking-label')).toBe(label);
+    expect(label.hasAttribute('data-overflow-tooltip')).toBe(false);
+    expect(document.querySelectorAll('[role="tooltip"]')).toHaveLength(1);
+    expect(popup()?.textContent).toBe('Thought 27 characters');
+  });
+});
+
+describe.each([false, true])('ModelThinkingDisplay scroll ownership (within group: %s)', withinGroup => {
   let container: HTMLDivElement;
   let root: Root;
   let frames: Map<number, FrameRequestCallback>;
@@ -264,7 +687,7 @@ describe('ModelThinkingDisplay scroll ownership', () => {
   function render(content = 'Thinking') {
     act(() => root.render(<ModelThinkingDisplay thinkingItem={{
       ...summaryItem(content), reasoningKind: 'reasoning',
-    }} />));
+    }} withinGroup={withinGroup} />));
   }
 
   function nextFrame() {

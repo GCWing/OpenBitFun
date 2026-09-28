@@ -4227,6 +4227,7 @@ export class FlowChatStore {
         sessionKind: relationship.sessionKind,
         parentToolCallId: relationship.parentToolCallId,
         subagentType: relationship.subagentType,
+        continuationPolicy: relationship.continuationPolicy,
         btwThreads: [],
         btwOrigin: relationship.btwOrigin,
         isTransient: false,
@@ -4258,6 +4259,7 @@ export class FlowChatStore {
       btwOrigin?: Session['btwOrigin'];
       parentToolCallId?: string;
       subagentType?: string;
+      continuationPolicy?: Session['continuationPolicy'];
       isTransient?: boolean;
       agentBackedTransient?: boolean;
       deepReviewRunManifest?: Session['deepReviewRunManifest'];
@@ -4321,6 +4323,7 @@ export class FlowChatStore {
         sessionKind: relationship.sessionKind,
         parentToolCallId: relationship.parentToolCallId,
         subagentType: relationship.subagentType,
+        continuationPolicy: relationship.continuationPolicy,
         btwThreads: [],
         btwOrigin: relationship.btwOrigin,
         deepReviewRunManifest: meta?.deepReviewRunManifest,
@@ -5045,6 +5048,7 @@ export class FlowChatStore {
       sessionKind?: SessionKind;
       parentToolCallId?: string;
       subagentType?: string;
+      continuationPolicy?: Session['continuationPolicy'];
     }
   ): void {
     this.setState(prev => {
@@ -5063,6 +5067,7 @@ export class FlowChatStore {
           updates.subagentType !== undefined
             ? updates.subagentType
             : session.subagentType,
+        continuationPolicy: updates.continuationPolicy ?? session.continuationPolicy,
       });
       const next: Session = {
         ...session,
@@ -5070,6 +5075,7 @@ export class FlowChatStore {
         sessionKind: relationship.sessionKind,
         parentToolCallId: relationship.parentToolCallId,
         subagentType: relationship.subagentType,
+        continuationPolicy: relationship.continuationPolicy,
         btwOrigin: relationship.btwOrigin,
       };
 
@@ -7171,7 +7177,8 @@ export class FlowChatStore {
         logPersistedDispatchMetadataOverlap(metadata, 'metadata-page');
         scope.assertCurrent('processPersistedSessionMetadata');
         const existingSession = this.state.sessions.get(metadata.sessionId);
-        if (existingSession?.workspaceId || existingSession?.config.workspaceId) {
+        if ((existingSession?.workspaceId || existingSession?.config.workspaceId)
+          && !(existingSession?.sessionKind === 'subagent' && existingSession.continuationPolicy === undefined)) {
           return;
         }
         if (!includeArchived && metadata.status === 'archived') {
@@ -7222,10 +7229,16 @@ export class FlowChatStore {
           if (!scope.isCurrent()) return prev;
           const existing = prev.sessions.get(metadata.sessionId);
           if (existing) {
-            if (existing.workspaceId || existing.config.workspaceId || !workspaceId) return prev;
+            const continuationPolicy = existing.continuationPolicy ?? relationship.continuationPolicy;
+            if (existing.workspaceId || existing.config.workspaceId || !workspaceId) {
+              if (continuationPolicy === existing.continuationPolicy) return prev;
+              const sessions = new Map(prev.sessions);
+              sessions.set(metadata.sessionId, { ...existing, continuationPolicy });
+              return { ...prev, sessions };
+            }
             const sessions = new Map(prev.sessions);
             sessions.set(metadata.sessionId, {
-              ...existing, workspaceId, projectWorkspaceId,
+              ...existing, workspaceId, projectWorkspaceId, continuationPolicy,
               workspacePath: metadata.workspacePath || workspacePath,
               projectWorkspacePath: metadata.projectWorkspacePath || workspacePath,
               ...remoteScope,
@@ -7289,6 +7302,7 @@ export class FlowChatStore {
             sessionKind: relationship.sessionKind,
             parentToolCallId: relationship.parentToolCallId,
             subagentType: relationship.subagentType,
+            continuationPolicy: relationship.continuationPolicy,
             btwThreads: [],
             btwOrigin: relationship.btwOrigin,
             hasUnreadCompletion: metadata.unreadCompletion,
@@ -7352,7 +7366,8 @@ export class FlowChatStore {
   ): Promise<boolean> {
     const scope = getActiveSurfaceScope();
     const existing = this.state.sessions.get(sessionId);
-    if (existing?.workspaceId || existing?.config.workspaceId) {
+    if ((existing?.workspaceId || existing?.config.workspaceId)
+      && !(existing?.sessionKind === 'subagent' && existing.continuationPolicy === undefined)) {
       return true;
     }
 
@@ -7738,6 +7753,7 @@ export class FlowChatStore {
               sessionKind: relationship.sessionKind,
               parentToolCallId: relationship.parentToolCallId,
               subagentType: relationship.subagentType,
+              continuationPolicy: relationship.continuationPolicy,
               btwThreads: [],
               btwOrigin: relationship.btwOrigin,
               hasUnreadCompletion: metadata.unreadCompletion,

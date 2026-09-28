@@ -4,16 +4,21 @@
  */
 
 import React from 'react';
+import { ToolCapsulePresentationProvider } from '@openbitfun/ui/flow-chat';
 import { getToolCardComponent } from '../tool-cards';
-import { getToolItemCardConfig } from '../tool-cards/toolCardMetadata';
+import { getToolItemCardConfig, isToolCapsule } from '../tool-cards/toolCardMetadata';
+import { getToolCapsuleSummary, toolCapsuleStateKey } from '../tool-cards/toolCapsuleModel';
+import { ToolCapsuleRecord } from '../tool-cards/ToolCapsuleRecord';
+import { useToolCardHeightContract } from '../tool-cards/useToolCardHeightContract';
 import type { FlowToolItem, ToolCardDisplayContext, ToolRejectOptions } from '../types/flow-chat';
 import { createLogger } from '@/shared/utils/logger';
 import { FlowToolCardErrorBoundary } from './FlowToolCardErrorBoundary';
-import { useTranslation } from 'react-i18next';
+import { useI18n } from '@/infrastructure/i18n';
 import { getToolInterruptionNote } from '../utils/toolInterruption';
 import { ToolApprovalBar } from './ToolApprovalBar';
 import { projectEffectiveToolItem } from '../utils/toolInvocationIdentity';
-import { useFlowChatVolatileContext } from './modern/FlowChatContext';
+import { isToolCardVisible } from '../utils/flowItemVisibility';
+import { useFlowChatContext, useFlowChatVolatileContext } from './modern/FlowChatContext';
 import './FlowToolCard.scss';
 
 const log = createLogger('FlowToolCard');
@@ -30,6 +35,8 @@ interface FlowToolCardProps {
   className?: string;
   displayContext?: ToolCardDisplayContext;
   isLastItem?: boolean;
+  /** Set by transcript composition only when execution timing supports a shared row. */
+  parallel?: boolean;
 }
 
 export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
@@ -40,13 +47,24 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
   onOpenInPanel,
   onExpand,
   sessionId,
+  turnId,
   className = '',
   displayContext = 'default',
   isLastItem,
+  parallel = false,
 }) => {
-  const { t } = useTranslation('flow-chat');
-  const effectiveToolItem = projectEffectiveToolItem(toolItem);
-  const { pendingPermissionToolCallIds } = useFlowChatVolatileContext();
+  const { t, formatNumber } = useI18n('flow-chat');
+  const projectedToolItem = projectEffectiveToolItem(toolItem);
+  const effectiveToolItem = isToolCapsule(projectedToolItem.toolName)
+    && projectedToolItem.status === 'completed' && projectedToolItem.toolResult?.success === false
+    ? { ...projectedToolItem, status: 'error' as const } : projectedToolItem;
+  const { pendingPermissionToolCallIds, expandedToolCapsules } = useFlowChatVolatileContext();
+  const { onToolCapsuleExpandedChange } = useFlowChatContext();
+  const [localExpanded, setLocalExpanded] = React.useState(false);
+  const capsuleKey = toolCapsuleStateKey(sessionId, turnId, toolItem.id);
+  const capsuleExpanded = expandedToolCapsules && onToolCapsuleExpandedChange
+    ? expandedToolCapsules.has(capsuleKey) : localExpanded;
+  const { cardRootRef, applyExpandedState } = useToolCardHeightContract({ toolId: toolItem.id, toolName: effectiveToolItem.toolName });
   const config = getToolItemCardConfig(effectiveToolItem);
   const CardComponent = getToolCardComponent(effectiveToolItem.toolName);
   const interruptionNote = getToolInterruptionNote(effectiveToolItem, t);
@@ -59,11 +77,10 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
         : undefined;
   const permissionPending =
     effectiveToolItem.status === 'pending_confirmation' ||
+    (effectiveToolItem.requiresConfirmation === true && !effectiveToolItem.userConfirmed && !['completed', 'error', 'cancelled', 'rejected'].includes(effectiveToolItem.status)) ||
     pendingPermissionToolCallIds?.has(toolItem.toolCall.id) === true;
-  const attention =
-    effectiveToolItem.toolName === 'Task' && effectiveToolItem.status === 'cancelled'
-      ? 'ambient'
-      : config.attention;
+  const capsuleEligible = isToolCapsule(effectiveToolItem.toolName) && !permissionPending;
+  const staticAgentWaitCapsule = capsuleEligible && effectiveToolItem.toolName === 'AgentWait';
 
   const handleConfirm = React.useCallback((permissionOptionId?: string, approve?: boolean) => {
     log.debug('handleConfirm called', {
@@ -83,8 +100,30 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
     onExpand?.(toolItem.id);
   }, [toolItem.id, onExpand]);
 
+  const handleCapsuleExpandedChange = React.useCallback((expanded: boolean) => {
+    applyExpandedState(capsuleExpanded, expanded, next => {
+      if (onToolCapsuleExpandedChange) onToolCapsuleExpandedChange(capsuleKey, next);
+      else setLocalExpanded(next);
+    }, { onExpand: handleExpand });
+  }, [applyExpandedState, capsuleExpanded, capsuleKey, handleExpand, onToolCapsuleExpandedChange]);
+
+  const capsuleSummary = capsuleEligible ? getToolCapsuleSummary(effectiveToolItem, t) : undefined;
+  const countLabel = capsuleSummary?.resultCount !== undefined ? formatNumber(capsuleSummary.resultCount) : undefined;
+  const capsule = capsuleSummary ? {
+    ...capsuleSummary,
+    countLabel,
+    description: countLabel === undefined ? capsuleSummary.description : `${capsuleSummary.description} · ${t('toolCapsule.resultCount', { value: countLabel })}`,
+    status: effectiveToolItem.status,
+    expanded: staticAgentWaitCapsule ? false : capsuleExpanded,
+    onExpandedChange: handleCapsuleExpandedChange,
+    fallbackContent: staticAgentWaitCapsule ? undefined : <ToolCapsuleRecord item={effectiveToolItem} />,
+  } : undefined;
+
+  if (!isToolCardVisible(effectiveToolItem)) return null;
+
   return (
     <div
+      ref={cardRootRef}
       className={`flow-tool-card-wrapper ${permissionPending ? 'flow-tool-card-wrapper--permission-pending' : ''} ${className}`.trim()}
       data-openbitfun-component="flow-tool-card"
       data-openbitfun-part="root"
@@ -92,7 +131,11 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
       data-testid={toolCardTestId}
       data-tool-name={effectiveToolItem.toolName}
       data-tool-card-id={toolItem.id}
-      data-openbitfun-attention={attention}
+      data-tool-capsule={capsuleEligible ? 'true' : undefined}
+      data-capsule-expanded={capsuleEligible ? String(staticAgentWaitCapsule ? false : capsuleExpanded) : undefined}
+      data-capsule-parallel={capsuleEligible && !staticAgentWaitCapsule && parallel ? 'true' : undefined}
+      data-capsule-row={capsuleEligible && !staticAgentWaitCapsule && !capsuleExpanded && !interruptionNote && !['error', 'cancelled', 'rejected'].includes(effectiveToolItem.status) ? 'true' : undefined}
+      data-openbitfun-attention={config.attention}
       data-openbitfun-presentation={config.presentation}
     >
       <FlowToolCardErrorBoundary
@@ -100,17 +143,19 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
         displayName={config.displayName}
         sessionId={sessionId}
       >
-        <CardComponent
-          toolItem={effectiveToolItem}
-          config={config}
-          interruptionNote={interruptionNote}
-          onOpenInEditor={onOpenInEditor}
-          onOpenInPanel={onOpenInPanel}
-          onExpand={handleExpand}
-          sessionId={sessionId}
-          displayContext={displayContext}
-          isLastItem={isLastItem}
-        />
+        <ToolCapsulePresentationProvider value={capsule}>
+          <CardComponent
+            toolItem={effectiveToolItem}
+            config={config}
+            interruptionNote={interruptionNote}
+            onOpenInEditor={onOpenInEditor}
+            onOpenInPanel={onOpenInPanel}
+            onExpand={handleExpand}
+            sessionId={sessionId}
+            displayContext={displayContext}
+            isLastItem={isLastItem}
+          />
+        </ToolCapsulePresentationProvider>
       </FlowToolCardErrorBoundary>
       <ToolApprovalBar
         toolItem={effectiveToolItem}
@@ -141,10 +186,18 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
     prevProps.toolItem.toolName === nextProps.toolItem.toolName &&
     prevProps.toolItem.toolCall === nextProps.toolItem.toolCall &&
     prevProps.sessionId === nextProps.sessionId &&
+    prevProps.turnId === nextProps.turnId &&
+    prevProps.className === nextProps.className &&
+    prevProps.onConfirm === nextProps.onConfirm &&
+    prevProps.onReject === nextProps.onReject &&
+    prevProps.onOpenInEditor === nextProps.onOpenInEditor &&
+    prevProps.onOpenInPanel === nextProps.onOpenInPanel &&
+    prevProps.onExpand === nextProps.onExpand &&
     prevProps.toolItem.status === nextProps.toolItem.status &&
     prevProps.toolItem.interruptionReason === nextProps.toolItem.interruptionReason &&
     prevProps.toolItem.terminalSessionId === nextProps.toolItem.terminalSessionId &&
     prevProps.toolItem.userConfirmed === nextProps.toolItem.userConfirmed &&
+    prevProps.toolItem.requiresConfirmation === nextProps.toolItem.requiresConfirmation &&
     prevProps.toolItem.acpPermission === nextProps.toolItem.acpPermission &&
     prevProps.toolItem.isParamsStreaming === nextProps.toolItem.isParamsStreaming &&
     prevProps.toolItem.subagentSessionId === nextProps.toolItem.subagentSessionId &&
@@ -153,6 +206,7 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
     prevProps.toolItem.subagentModelDisplayName === nextProps.toolItem.subagentModelDisplayName &&
     prevProps.displayContext === nextProps.displayContext &&
     prevProps.isLastItem === nextProps.isLastItem &&
+    prevProps.parallel === nextProps.parallel &&
     prevProgress === nextProgress &&
     prevProgressLogs === nextProgressLogs &&
     prevProps.toolItem.partialParams === nextProps.toolItem.partialParams &&

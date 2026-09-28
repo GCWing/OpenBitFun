@@ -91,6 +91,12 @@ class MainActivity : ComponentActivity() {
         if (!intent.getBooleanExtra(DESIGN_PREVIEW_EXTRA, false)) accountModel().setBackground(false)
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        accountModel().notifyAuthorizationCallback()
+    }
+
     override fun onStop() {
         showStartupBrand = false
         showColdStart = false

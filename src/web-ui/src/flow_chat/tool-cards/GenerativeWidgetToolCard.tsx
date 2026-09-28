@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
-import { subscribeOverlayInteraction, Tooltip, Icon } from '@openbitfun/ui';
+import { subscribeOverlayInteraction, Tooltip, Icon, IconButton } from '@openbitfun/ui';
 import type { ToolCardProps } from '../types/flow-chat';
 import { ProminentToolCard, ProminentToolCardSummary, ToolProcessingDots } from '@openbitfun/ui/flow-chat';
 import { useTranslation } from 'react-i18next';
@@ -54,6 +53,7 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
   const resultData = useMemo(() => parseWidgetResult(toolResult?.result), [toolResult?.result]);
   const openPromptMenu = useGenerativeWidgetPromptMenu('tool-card');
   const hideMenu = useContextMenuStore(state => state.hideMenu);
+  const [readyCode, setReadyCode] = useState<string | null>(null);
   const [selectionRevision, setSelectionRevision] = useState(0);
   const [menuSelectionActive, setMenuSelectionActive] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -99,9 +99,9 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
 
   const isLoading =
     status === 'preparing' || status === 'streaming' || status === 'running' || status === 'pending';
-  const isFailed = status === 'error' || toolResult?.success === false;
+  const isFailed = status === 'error' || (status === 'completed' && toolResult?.success === false);
   const widgetId = resultData?.widget_id || toolCall?.id || toolItem.id;
-  const isClickable = status === 'completed' && widgetCode.trim().length > 0;
+  const isClickable = status === 'completed' && !isFailed && widgetCode.trim().length > 0;
   const hasRenderableWidget = widgetCode.trim().length > 0 && !isFailed;
 
   useEffect(() => {
@@ -168,15 +168,18 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
       hideMenu();
       return;
     }
+    if (event.type === 'openbitfun-widget:ready') {
+      setReadyCode(widgetCode);
+      return;
+    }
     if (
-      event.type === 'openbitfun-widget:ready' ||
       event.type === 'openbitfun-widget:resize' ||
       event.type === 'openbitfun-widget:clear-selection'
     ) {
       return;
     }
     handleWidgetBridgeEvent(event, 'tool-card');
-  }, [hideMenu, openPromptMenu]);
+  }, [hideMenu, openPromptMenu, widgetCode]);
 
   useEffect(() => {
     if (!menuSelectionActive) {
@@ -199,6 +202,7 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
     async (event: React.MouseEvent<HTMLButtonElement>) => {
       event.preventDefault();
       event.stopPropagation();
+      if (!isClickable || readyCode !== widgetCode || isExporting) return;
       const fallbackRoot = captureRootRef.current;
       if (!fallbackRoot) {
         notificationService.error(t('exportImage.containerNotFound'));
@@ -207,19 +211,11 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
 
       setIsExporting(true);
       try {
-        let target = fallbackRoot;
-
-        if (hasRenderableWidget) {
-          const nextWidth = captureRootRef.current?.clientWidth || 720;
-          setExportWidth(nextWidth);
-          setShouldRenderExportClone(true);
-          await new Promise((resolve) => setTimeout(resolve, 180));
-          if (exportPreviewRef.current) {
-            target = exportPreviewRef.current;
-          }
-        } else {
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
+        setExportWidth(fallbackRoot.clientWidth || 720);
+        setShouldRenderExportClone(true);
+        await new Promise((resolve) => setTimeout(resolve, 180));
+        const target = exportPreviewRef.current;
+        if (!target) throw new Error('Widget export preview is unavailable');
 
         await captureElementToDownloadsPng(
           target,
@@ -233,18 +229,21 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
         setIsExporting(false);
       }
     },
-    [hasRenderableWidget, t],
+    [isClickable, readyCode, widgetCode, isExporting, t],
   );
 
-  const statusText = isFailed
-    ? t('toolCards.default.failed')
-    : isLoading
-      ? t('toolCards.generativeUI.streamingPreview')
-      : t('toolCards.generativeUI.openSource');
+  const statusText = status === 'cancelled' ? t('toolCards.default.cancelled')
+    : status === 'rejected' ? t('toolCards.default.rejected')
+      : isFailed ? t('toolCards.default.failed')
+        : isLoading ? t('toolCards.generativeUI.streamingPreview')
+          : status === 'completed'
+            ? hasRenderableWidget && readyCode === widgetCode ? t('toolCards.generativeUI.ready')
+              : t('toolCards.generativeUI.finished')
+            : t('toolCards.default.preparing');
 
   const summary = (
     <ProminentToolCardSummary
-      icon={<span className="generative-widget-card__icon"><Icon name="spark" size="md" /></span>}
+      icon={<span className="generative-widget-card__icon"><Icon name="panels-top-left" size="md" /></span>}
       action={t('toolCards.generativeUI.action')}
       content={<span data-openbitfun-component="generative-widget-tool-card" data-openbitfun-part="title" className="generative-widget-card__title">{title}</span>}
       extra={(
@@ -258,25 +257,27 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
           </span>
         </div>
       )}
-      actions={(
+      actions={isClickable && readyCode === widgetCode ? (
         <Tooltip
           content={isExporting ? t('exportImage.exporting') : t('exportImage.exportToImage')}
           placement="top"
         >
-          <button
+          <span
             data-openbitfun-component="generative-widget-tool-card"
             data-openbitfun-part="exportAction"
             data-openbitfun-state={isExporting ? 'exporting' : undefined}
-            type="button"
-            className="generative-widget-card__export-image-btn"
-            onClick={handleExportImage}
-            disabled={isExporting}
-            aria-label={t('exportImage.exportToImage')}
           >
-            {isExporting ? <Loader2 size={14} className="spinning" /> : <Icon name="image" size="sm" />}
-          </button>
+            <IconButton
+              onClick={handleExportImage}
+              loading={isExporting}
+              size="sm"
+              variant="quiet"
+              aria-label={t('exportImage.exportToImage')}
+              icon={<Icon name="image" size="sm" />}
+            />
+          </span>
         </Tooltip>
-      )}
+      ) : undefined}
       statusIcon={isLoading ? <ToolProcessingDots size={16} /> : null}
     />
   );
@@ -312,12 +313,14 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
     <>
       <div data-openbitfun-component="generative-widget-tool-card" data-openbitfun-part="root" data-openbitfun-state={isFailed ? 'failed' : undefined}>
         <ProminentToolCard
-        status={status}
+        title={isClickable ? t('toolCards.generativeUI.openSource') : undefined}
+        status={isFailed ? 'error' : status}
         isExpanded={isCardExpanded}
         onToggle={isFailed || isClickable ? handleCardClick : undefined}
         className={`generative-widget-card ${isClickable || isFailed ? 'clickable' : ''}`.trim()}
         summary={summary}
         expandedContent={expandedBody}
+        expandedContentLayout="flush"
         errorContent={showFailedErrorPanel ? expandedBody : undefined}
         isFailed={isFailed}
         summaryExpandAffordance={isClickable || isFailed}

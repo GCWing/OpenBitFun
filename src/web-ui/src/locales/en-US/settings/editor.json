@@ -21,6 +21,7 @@
   },
   "appearance": {
     "font": "Font",
+    "fontDefault": "Follow application code font",
     "fontWeight": "Font Weight",
     "fontWeightNormal": "Normal",
     "fontWeightBold": "Bold",

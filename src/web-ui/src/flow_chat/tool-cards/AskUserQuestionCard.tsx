@@ -22,8 +22,7 @@ import React, {
   useSyncExternalStore,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button, Tooltip } from '@openbitfun/ui';
-import { X } from 'lucide-react';
+import { Button, Icon, Tooltip } from '@openbitfun/ui';
 import { i18nService } from '@/infrastructure/i18n';
 import { toolAPI } from '@/infrastructure/api/service-api/ToolAPI';
 import {
@@ -35,8 +34,10 @@ import { canSubmitUserQuestionsOnSurface } from '@/infrastructure/peer-device/pe
 import { usePeerDeviceModeOptional } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { createLogger } from '@/shared/utils/logger';
 import type { FlowToolItem, ToolCardProps } from '../types/flow-chat';
+import { FlowChatManager } from '../services/FlowChatManager';
 import {
   askUserQuestionDraftKey,
+  askUserQuestionFollowUpDraftKey,
   askUserQuestionDraftStore,
   createEmptyAskUserQuestionDraft,
   useAskUserQuestionDraftStore,
@@ -132,7 +133,6 @@ function isAwaitingQuestionPayload(
 
 export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
   toolItem,
-  isLastItem,
   sessionId,
 }) => {
   const { t } = useTranslation('flow-chat');
@@ -143,7 +143,6 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
     getActiveSurfaceScope,
   );
   const { status, toolCall, toolResult, isParamsStreaming, partialParams } = toolItem;
-  const paramsSource = isParamsStreaming ? partialParams || toolCall?.input : toolCall?.input;
   const normalizedResult = useMemo(
     () => normalizeToolResult(toolResult?.result),
     [toolResult?.result],
@@ -154,6 +153,8 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
   const failed = status === 'error' || toolResult?.success === false;
   const endedWithoutAnswer = timedOut || cancelled || rejected || failed;
   const finished = status === 'completed' || endedWithoutAnswer;
+  const paramsSource = isParamsStreaming && !finished
+    ? partialParams || toolCall?.input : toolCall?.input;
   const questions = useMemo(
     () => normalizeQuestionsFromParams(paramsSource),
     [paramsSource],
@@ -171,6 +172,10 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
     peerDevice?.currentPeerCapabilities ?? null,
   );
   const canAnswer = !finished && !awaitingPayload && canSubmitUserAnswers;
+  const canFollowUp = timedOut && !cancelled && !rejected && !failed
+    && toolItem.interruptionReason !== 'retry_superseded'
+    && questions.length > 0 && Boolean(sessionId);
+  const canEditAnswers = canAnswer || canFollowUp;
   const deadline = toolItem.userQuestionWait?.deadlineMs;
   const [interactionAcknowledged, setInteractionAcknowledged] = useState(false);
   const [clockNow, setClockNow] = useState(() => performance.now());
@@ -194,16 +199,23 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
     i18nService.formatNumber(remainingSeconds % 60, { minimumIntegerDigits: 2, useGrouping: false })
   }`;
   const submissionScope = useRef(0);
-  const draftKey = useMemo(
+  const submissionInFlight = useRef<number | null>(null);
+  const pendingDraftKey = useMemo(
     () => sessionId && draftToolId
       ? askUserQuestionDraftKey(sessionId, draftToolId, activeSurfaceId)
       : null,
     [activeSurfaceId, draftToolId, sessionId],
   );
+  const draftKey = useMemo(
+    () => canFollowUp && sessionId && draftToolId
+      ? askUserQuestionFollowUpDraftKey(sessionId, draftToolId, activeSurfaceId)
+      : pendingDraftKey,
+    [activeSurfaceId, canFollowUp, draftToolId, pendingDraftKey, sessionId],
+  );
   useLayoutEffect(() => {
     submissionScope.current += 1;
     return () => { submissionScope.current += 1; };
-  }, [draftKey, canAnswer]);
+  }, [draftKey, canEditAnswers]);
   const storedDraft = useAskUserQuestionDraftStore((state) => (
     draftKey ? state.drafts[draftKey] : undefined
   ));
@@ -212,6 +224,16 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
   const { answers, otherInputs, submissionPhase } = draft;
   const isSubmitting = submissionPhase === 'submitting';
   const isSubmitted = submissionPhase === 'submitted';
+  const responseUnsupported = !canFollowUp && status !== 'completed' && !canSubmitUserAnswers;
+  const componentState: AskUserState = !canFollowUp && status === 'completed'
+    ? 'completed'
+    : responseUnsupported
+      ? 'error'
+      : isSubmitting
+        ? 'submitting'
+        : isSubmitted
+          ? 'submitted'
+          : 'asking';
   const [submissionFailed, setSubmissionFailed] = useState(false);
   const [interactionFailed, setInteractionFailed] = useState(false);
   const interactionAttempt = useRef<number | null>(null);
@@ -239,29 +261,19 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
       startInteraction();
     }
   }, [startInteraction]);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [showCompletedSummary, setShowCompletedSummary] = useState(status === 'completed');
-  const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
+  const { cardRootRef, dispatchToolCardToggle } = useToolCardHeightContract({
     toolId,
     toolName: toolItem.toolName,
   });
-
+  const showAnswerMessage = (!endedWithoutAnswer || canFollowUp) && !awaitingPayload && questions.length > 0
+    && (componentState === 'submitted' || componentState === 'completed');
+  const previousAnswerMessage = useRef(showAnswerMessage);
   useLayoutEffect(() => {
-    const shouldCompactCompleted = status === 'completed'
-      && isLastItem !== true
-      && !showCompletedSummary;
-
-    if (shouldCompactCompleted) {
-      applyExpandedState(true, false, (nextExpanded) => {
-        setShowCompletedSummary(!nextExpanded);
-      });
-      return;
+    if (previousAnswerMessage.current !== showAnswerMessage) {
+      previousAnswerMessage.current = showAnswerMessage;
+      dispatchToolCardToggle();
     }
-
-    if (status !== 'completed' && showCompletedSummary) {
-      setShowCompletedSummary(false);
-    }
-  }, [applyExpandedState, isLastItem, showCompletedSummary, status]);
+  }, [dispatchToolCardToggle, showAnswerMessage]);
 
   useEffect(() => {
     setSubmissionFailed(false);
@@ -270,12 +282,12 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
 
   useEffect(() => {
     if (
-      draftKey
+      pendingDraftKey
       && finished
     ) {
-      askUserQuestionDraftStore.getState().clearDraft(draftKey);
+      askUserQuestionDraftStore.getState().clearDraft(pendingDraftKey);
     }
-  }, [draftKey, finished]);
+  }, [pendingDraftKey, finished]);
 
   const setSubmissionPhase = useCallback((phase: AskUserQuestionSubmissionPhase) => {
     if (draftKey) {
@@ -401,8 +413,12 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
   }, [draftKey]);
 
   const handleSubmit = useCallback(async () => {
-    if (!canAnswer || !isAllAnswered() || isSubmitting || isSubmitted) return;
+    if (!canEditAnswers || !isAllAnswered() || isSubmitting || isSubmitted
+      || submissionInFlight.current === submissionScope.current) return;
+    const storedPhase = draftKey && askUserQuestionDraftStore.getState().drafts[draftKey]?.submissionPhase;
+    if (storedPhase === 'submitting' || storedPhase === 'submitted') return;
     const scope = submissionScope.current;
+    submissionInFlight.current = scope;
 
     setSubmissionFailed(false);
     setSubmissionPhase('submitting');
@@ -427,11 +443,30 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
         }
       }
 
-      await toolAPI.submitUserAnswers(toolId, processedAnswers, sessionId);
+      if (canFollowUp && sessionId) {
+        const message = questions.map((question, index) => {
+          const answer = processedAnswers[String(index)];
+          const values = Array.isArray(answer) ? answer : [answer];
+          return `${question.question}\n${values.join('\n')}`;
+        }).join('\n\n');
+        await FlowChatManager.getInstance().sendMessage(
+          message, sessionId, message, undefined, undefined, { sendImmediately: true },
+        );
+      } else {
+        await toolAPI.submitUserAnswers(toolId, processedAnswers, sessionId);
+      }
       activeSurfaceScope.assertCurrent('submitUserAnswers');
+      // Follow-up drafts outlive virtualization. Settle the captured draft,
+      // even if its card unmounted while this session accepted the message.
+      if (canFollowUp && draftKey) {
+        askUserQuestionDraftStore.getState().setSubmissionPhase(draftKey, 'submitted');
+      }
       if (scope !== submissionScope.current) return;
       setSubmissionPhase('submitted');
     } catch (error) {
+      if (canFollowUp && draftKey) {
+        askUserQuestionDraftStore.getState().setSubmissionPhase(draftKey, 'idle');
+      }
       if (scope !== submissionScope.current) return;
       setSubmissionPhase('idle');
       if (isSurfaceChangedError(error)) {
@@ -439,16 +474,20 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
       }
       setSubmissionFailed(true);
       log.error('Failed to submit answers', { toolId, sessionId, error });
+    } finally {
+      if (submissionInFlight.current === scope) submissionInFlight.current = null;
     }
   }, [
     activeSurfaceScope,
     answers,
-    canAnswer,
+    canEditAnswers,
+    canFollowUp,
+    draftKey,
     isAllAnswered,
     isSubmitted,
     isSubmitting,
     otherInputs,
-    questions.length,
+    questions,
     setSubmissionPhase,
     sessionId,
     toolId,
@@ -519,6 +558,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
         value: OTHER_OPTION_VALUE,
       },
       id: String(questionIndex),
+      label: question.header,
       options: question.options.map((option) => ({
         description: option.description,
         label: option.label,
@@ -552,31 +592,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
     }
   }, [answers, handleMultiChange, handleSingleChange, questions]);
 
-  const getAnswerDisplay = useCallback((questionIndex: number): string => {
-    const answer = getEffectiveAnswer(questionIndex);
-    const otherInput = otherInputs[questionIndex] || '';
-    if (!answer) return '';
-    if (Array.isArray(answer)) {
-      return answer.map((value) => (
-        value === OTHER_OPTION_VALUE ? otherInput || OTHER_OPTION_VALUE : value
-      )).join(', ');
-    }
-    return answer === OTHER_OPTION_VALUE
-      ? otherInput || OTHER_OPTION_VALUE
-      : String(answer);
-  }, [getEffectiveAnswer, otherInputs]);
-
-  const answersSummary = useMemo(
-    () => questions.map((question, questionIndex) => {
-      const answerText = getAnswerDisplay(questionIndex);
-      const label = question.header || question.question;
-      return `${label}: ${answerText || t('toolCards.askUser.notAnswered')}`;
-    }).join(' | '),
-    [getAnswerDisplay, questions, t],
-  );
-
-  const responseUnsupported = status !== 'completed' && !canSubmitUserAnswers;
-  const statusText = status === 'completed'
+  const statusText = !canFollowUp && status === 'completed'
     ? t('toolCards.askUser.completed')
     : responseUnsupported
       ? t('toolCards.askUser.unsupportedOnPeer')
@@ -590,7 +606,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
             ? t('toolCards.askUser.submitFailed')
             : t('toolCards.askUser.waitingAnswer');
 
-  if (endedWithoutAnswer) {
+  if (endedWithoutAnswer && !canFollowUp) {
     const terminalLabel = timedOut
       ? t('toolCards.askUser.timeout')
       : cancelled
@@ -603,7 +619,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
         data-tool-card-id={toolId ?? ''}
         questions={[]}
         ref={cardRootRef}
-        state="error"
+        state={timedOut ? 'timeout' : 'error'}
         statusLabel={terminalLabel}
       />
     );
@@ -633,30 +649,38 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
     );
   }
 
-  const componentState: AskUserState = status === 'completed'
-    ? 'completed'
-    : responseUnsupported
-      ? 'error'
-      : isSubmitting
-        ? 'submitting'
-        : isSubmitted
-          ? 'submitted'
-          : 'asking';
   const showSubmit = componentState === 'asking'
-    || componentState === 'submitting'
-    || componentState === 'submitted';
+    || componentState === 'submitting';
 
   return (
     <AskUser
+      key={draftKey}
       answers={presentation.answers}
       aria-label={t('toolCards.askUser.questionsCount', { count: questions.length })}
       customAnswers={presentation.customAnswers}
       data-tool-card-id={toolId ?? ''}
-      disabled={!canAnswer}
-      expanded={showCompletedSummary ? isExpanded : undefined}
-      header={showCompletedSummary
-        ? undefined
-        : t('toolCards.askUser.questionsCount', { count: questions.length })}
+      disabled={!canEditAnswers}
+      defaultExpanded={!canFollowUp}
+      disclosure={{
+        label: canFollowUp
+          ? t('toolCards.askUser.skippedAnswer')
+          : t('toolCards.askUser.questionsCount', { count: questions.length }),
+        collapseLabel: t('toolCards.askUser.collapseQuestions'),
+        skipped: canFollowUp,
+      }}
+      onExpandedChange={dispatchToolCardToggle}
+      navigation={{
+        backLabel: t('toolCards.askUser.back'),
+        nextLabel: t('toolCards.askUser.next'),
+        progressLabel: (current, total) => t('toolCards.askUser.questionProgress', {
+          current: i18nService.formatNumber(current),
+          total: i18nService.formatNumber(total),
+        }),
+        selectionLabel: (selected, total) => t('toolCards.askUser.selectionCount', {
+          selected: i18nService.formatNumber(selected),
+          total: i18nService.formatNumber(total),
+        }),
+      }}
       onClickCapture={handleInteraction}
       headerTrailing={showTimer && !isSubmitted ? (
         <Tooltip content={t('toolCards.askUser.timeoutSettingsHint')} placement="top">
@@ -666,7 +690,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
             labelBehavior="static"
             aria-label={t('toolCards.askUser.cancelCountdown')}
             disabled={!sessionId}
-            trailingIcon={<X aria-hidden="true" />}
+            trailingIcon={<Icon name="xmark" size="xs" />}
             onClick={startInteraction}
           >
             <span role="timer">{countdown}</span>
@@ -678,29 +702,25 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
       onCustomAnswerChange={(questionId, value, meta) => {
         handleOtherInputChange(Number(questionId), value, meta.isComposing);
       }}
-      onExpandedChange={showCompletedSummary
-        ? (nextExpanded) => {
-            applyExpandedState(isExpanded, nextExpanded, setIsExpanded);
-          }
-        : undefined}
       onSubmit={handleSubmit}
       questions={designQuestions}
       ref={cardRootRef}
       state={componentState}
-      statusLabel={showCompletedSummary ? undefined : statusText}
+      statusLabel={showAnswerMessage
+        || (componentState === 'asking' && !interactionFailed && !submissionFailed)
+        ? undefined
+        : statusText}
       submitDisabled={
         !isAllAnswered()
         || isSubmitted
-        || !canAnswer
+        || !canEditAnswers
       }
-      submitLabel={showSubmit ? t('toolCards.askUser.submit') : undefined}
+      submitLabel={showSubmit
+        ? canFollowUp ? t('toolCards.askUser.sendFollowUp') : t('toolCards.askUser.submit')
+        : undefined}
       submittingLabel={t('toolCards.askUser.submitting')}
       submitTitle={!isAllAnswered()
         ? t('toolCards.askUser.answerAllBeforeSubmit')
-        : undefined}
-      summaryDetail={showCompletedSummary ? answersSummary : undefined}
-      summaryLabel={showCompletedSummary
-        ? t('toolCards.askUser.questionsAnswered', { count: questions.length })
         : undefined}
     />
   );

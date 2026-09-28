@@ -1,14 +1,14 @@
 import { Fragment, useRef, type ReactNode } from 'react';
-import { Button, DialogBody, Icon } from '@openbitfun/ui';
-import { Package, Server, Webhook } from 'lucide-react';
+import { Button, DialogBody, Icon, type IconSource } from '@openbitfun/ui';
+import { Server, Webhook } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n';
 
 type ImportKind = 'skill' | 'mcp' | 'hook';
 const GROUPS = [
-  { kind: 'skill', glyph: Package },
-  { kind: 'mcp', glyph: Server },
-  { kind: 'hook', glyph: Webhook },
-] as const;
+  { kind: 'skill', icon: { name: 'book-open' } },
+  { kind: 'mcp', icon: { glyph: Server } },
+  { kind: 'hook', icon: { glyph: Webhook } },
+] as const satisfies readonly { kind: ImportKind; icon: IconSource }[];
 
 /** Keep review/progress visible while only the typed item list scrolls. */
 export function EcosystemBatchLayout<T extends { id: string }>({ entries, getKind, renderEntry, summary, processed, busy, children }: {
@@ -28,7 +28,7 @@ export function EcosystemBatchLayout<T extends { id: string }>({ entries, getKin
     <div className="ecosystem-compatibility__batch-status">
       <p>{summary}</p>
       <div className="ecosystem-compatibility__batch-types">
-        {groups.map(({ kind, glyph, entries: group }) => <Button key={kind} size="sm" variant="outline" leadingIcon={<Icon glyph={glyph} size="sm" />}
+        {groups.map(({ kind, icon, entries: group }) => <Button key={kind} size="sm" variant="outline" leadingIcon={<Icon {...icon} size="sm" />}
           onClick={() => groupElements.current[kind]?.scrollIntoView({ block: 'start' })}>
           {t(`capabilities.${kind}`)} · {formatNumber(group.length)}
         </Button>)}
@@ -40,9 +40,9 @@ export function EcosystemBatchLayout<T extends { id: string }>({ entries, getKin
     </div>
     <DialogBody className="ecosystem-compatibility__batch-body">
       <div className="ecosystem-compatibility__content-detail">
-        {groups.map(({ kind, glyph, entries: group }) => {
+        {groups.map(({ kind, icon, entries: group }) => {
           return <section key={kind} ref={(element) => { groupElements.current[kind] = element; }} className="ecosystem-compatibility__batch-group" aria-label={t(`capabilities.${kind}`)}>
-            <h3><Icon glyph={glyph} size="sm" /><span>{t(`capabilities.${kind}`)}</span><span>{formatNumber(group.length)}</span></h3>
+            <h3><Icon {...icon} size="sm" /><span>{t(`capabilities.${kind}`)}</span><span>{formatNumber(group.length)}</span></h3>
             {group.map((entry) => <Fragment key={entry.id}>{renderEntry(entry)}</Fragment>)}
           </section>;
         })}

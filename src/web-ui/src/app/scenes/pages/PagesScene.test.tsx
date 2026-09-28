@@ -93,7 +93,7 @@ vi.mock('@/infrastructure/confirm-dialog', () => ({
   confirmWarning: vi.fn(),
 }));
 
-vi.mock('@/app/components', () => ({
+vi.mock('@/app/components/GalleryLayout', () => ({
   GalleryLayout: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   GalleryPageHeader: ({
     title,

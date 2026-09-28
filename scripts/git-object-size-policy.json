@@ -2,6 +2,11 @@
   "maxBlobBytes": 5242880,
   "allowedBlobs": [
     {
+      "oid": "91edb76b95851a087b1ddf65c873f99f12ac306b",
+      "path": "src/web-ui/src/assets/fonts/harmonyos-sans/sc/HarmonyOS_Sans_SC.ttf",
+      "reason": "Official unmodified HarmonyOS Sans SC 2.040 variable font for offline design-system weights 400/500/600/700. Replaces three static SC faces with one smaller combined asset; verified by scripts/web-font-profile.mjs."
+    },
+    {
       "oid": "5c925d1fb1f1eccc85a1c7c78cc71a50ef9cc2db",
       "path": "src/web-ui/src/assets/fonts/harmonyos-sans/sc/HarmonyOS_Sans_SC_Bold.ttf",
       "reason": "Existing offline Simplified Chinese font, verified by scripts/web-font-profile.mjs. Any replacement requires explicit review."

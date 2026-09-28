@@ -72,6 +72,21 @@ class AccountStoreTest {
         assertEquals(CloudAccountFailure.NETWORK, expired.failure)
     }
 
+    @Test fun signInPollChecksImmediatelyAfterBrowserHandoff() = runTest {
+        val start = GitHubAuthorization("txn", "secret", "https://auth.openbitfun.com/sign-in#ticket=t", 100L, 30)
+        var firstPollAt = -1L
+        val token = AuthorizationPoll.awaitAccessToken(
+            start,
+            TransportLog.None,
+            nowSeconds = { testScheduler.currentTime / 1000L },
+        ) {
+            firstPollAt = testScheduler.currentTime
+            GitHubAuthorizationPoll("authorized", GitHubTokens("granted"))
+        }
+        assertEquals("granted", token)
+        assertEquals(0L, firstPollAt)
+    }
+
     @Test fun cancelledLoginDirectoryCannotReviveAccountOrPersistSelectedDevice() = runTest {
         for (failure in listOf<Throwable?>(null, CloudAccountException(CloudAccountFailure.NETWORK),
             CloudAccountException(CloudAccountFailure.AUTHENTICATION), IllegalStateException("Late failure"))) {

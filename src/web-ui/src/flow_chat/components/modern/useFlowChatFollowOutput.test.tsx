@@ -290,6 +290,54 @@ describe('useFlowChatFollowOutput', () => {
     expect(controller?.isFollowingOutput).toBe(true);
   });
 
+  it('reuses cached geometry in continuous streaming frames', () => {
+    let scrollHeightPx = 1500 + TAIL_SPACER;
+    let scrollHeightReads = 0;
+    Object.defineProperties(scroller, {
+      scrollHeight: {
+        configurable: true,
+        get: () => {
+          scrollHeightReads += 1;
+          return scrollHeightPx;
+        },
+      },
+      clientHeight: { configurable: true, value: VIEWPORT },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+    });
+    const scrollToContentEnd = vi.fn(() => {
+      scroller.scrollTop = 1000;
+    });
+
+    act(() => {
+      root.render(
+        <Harness
+          latestTurnId="turn-1"
+          scroller={scroller}
+          scrollToContentEnd={scrollToContentEnd}
+          onController={next => { controller = next; }}
+        />,
+      );
+    });
+    const readsAfterInitialPlacement = scrollHeightReads;
+
+    // Production streaming frames reuse the target cached by the last
+    // content-change refresh.
+    scrollHeightPx = 1800 + TAIL_SPACER;
+    runNextFrame();
+    expect(scrollHeightReads).toBe(readsAfterInitialPlacement);
+    expect(scroller.scrollTop).toBe(1000);
+
+    // The resize/content-change signal is the intentionally retained low-rate
+    // geometry refresh and updates the cached target once.
+    const beforeRefresh = scrollHeightReads;
+    act(() => controller?.scheduleFollowToLatest());
+    expect(scrollHeightReads).toBeGreaterThan(beforeRefresh);
+    expect(scroller.scrollTop).toBe(1300);
+    const afterRefresh = scrollHeightReads;
+    runNextFrame();
+    expect(scrollHeightReads).toBe(afterRefresh);
+  });
+
   it('tracks the content end exactly while the transcript is still opening', () => {
     // The virtualizer compensates a history prepend by writing scrollTop before the
     // prepended heights reach the DOM. While opening, the transcript is hidden
@@ -551,6 +599,7 @@ describe('useFlowChatFollowOutput', () => {
       clientHeight: VIEWPORT,
       scrollTop: 1000,
     });
+    act(() => controller?.scheduleFollowToLatest());
     runNextFrame();
 
     expect(scroller.scrollTop).toBe(1300);
@@ -581,6 +630,7 @@ describe('useFlowChatFollowOutput', () => {
       clientHeight: VIEWPORT,
       scrollTop: 1000,
     });
+    act(() => controller?.scheduleFollowToLatest());
     runNextFrame();
 
     expect(scroller.scrollTop).toBe(1000 - (300 - MAX_GAP));
@@ -608,6 +658,7 @@ describe('useFlowChatFollowOutput', () => {
       clientHeight: VIEWPORT,
       scrollTop: 1000,
     });
+    act(() => controller?.scheduleFollowToLatest());
     runNextFrame();
 
     expect(scroller.scrollTop).toBe(200 + MAX_GAP);
@@ -666,6 +717,7 @@ describe('useFlowChatFollowOutput', () => {
       clientHeight: VIEWPORT,
       scrollTop: 1000,
     });
+    act(() => controller?.scheduleFollowToLatest());
     runNextFrame();
     scrollToContentEnd.mockClear();
 
@@ -924,6 +976,7 @@ describe('useFlowChatFollowOutput', () => {
         clientHeight: VIEWPORT,
         scrollTop: scroller.scrollTop,
       });
+      act(() => controller?.scheduleFollowToLatest());
     }
 
     it('spends a line of growth over the frames that were empty', () => {
@@ -931,8 +984,6 @@ describe('useFlowChatFollowOutput', () => {
       // on one frame out of seven and none on the rest.
       followFromContentEnd();
       growContentBy(TAIL_EASE_LINE_PX);
-
-      runNextFrame();
 
       expect(scroller.scrollTop).toBeCloseTo(1000 + TAIL_EASE_LINE_PX * TAIL_EASE_ALPHA, 5);
       expect(scroller.scrollTop - 1000).toBeLessThan(TAIL_EASE_LINE_PX);
@@ -942,7 +993,7 @@ describe('useFlowChatFollowOutput', () => {
       followFromContentEnd();
       growContentBy(TAIL_EASE_LINE_PX);
 
-      let previousPx = 1000;
+      let previousPx = scroller.scrollTop;
       for (let frame = 0; frame < 20; frame += 1) {
         runNextFrame();
         // Every step is under a line: that is the bar the ease has to clear to
@@ -963,8 +1014,6 @@ describe('useFlowChatFollowOutput', () => {
       // already worse than having simply gone the whole way.
       followFromContentEnd();
       growContentBy(TAIL_EASE_SNAP_ABOVE_PX + 100);
-
-      runNextFrame();
 
       expect(scroller.scrollTop).toBe(1000 + TAIL_EASE_SNAP_ABOVE_PX + 100);
     });
@@ -990,8 +1039,6 @@ describe('useFlowChatFollowOutput', () => {
       });
       growContentBy(TAIL_EASE_LINE_PX);
 
-      runNextFrame();
-
       expect(scroller.scrollTop).toBe(1000 + TAIL_EASE_LINE_PX);
     });
 
@@ -1004,8 +1051,7 @@ describe('useFlowChatFollowOutput', () => {
         clientHeight: VIEWPORT,
         scrollTop: 1000,
       });
-
-      runNextFrame();
+      act(() => controller?.scheduleFollowToLatest());
 
       // Past the tolerated gap, so the hold rule gives ground — in one step.
       expect(scroller.scrollTop).toBe(200 + MAX_GAP);

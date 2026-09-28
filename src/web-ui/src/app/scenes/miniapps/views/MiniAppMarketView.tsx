@@ -23,7 +23,7 @@ import {
   GalleryPageHeader,
   GallerySkeleton,
   GalleryZone,
-} from '@/app/components';
+} from '@/app/components/GalleryLayout';
 import { useSceneManager } from '@/app/hooks/useSceneManager';
 import type { SceneTabId } from '@/app/components/SceneBar/types';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';

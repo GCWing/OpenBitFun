@@ -643,7 +643,7 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
                     ? `${workspaceName}, ${workspaceDetail}`
                     : workspaceName}
                   title={workspaceDetail || workspaceName}
-                  metadata={isActive ? <Icon name="check-line" size="lg" style={{ width: 13, height: 13 }} aria-hidden /> : null}
+                  metadata={isActive ? <Icon name="check-line" size="sm" aria-hidden /> : null}
                   onClick={event => {
                     event.stopPropagation();
                     setWorkspaceMenuOpen(false);
@@ -692,9 +692,9 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
         onClick={handleWorktreeToggle}
       >
         {worktreeEnabled ? (
-          <SquareCheck size={12} strokeWidth={1.8} aria-hidden />
+          <Icon glyph={SquareCheck} size="xs" aria-hidden />
         ) : (
-          <Square size={12} strokeWidth={1.8} aria-hidden />
+          <Icon glyph={Square} size="xs" aria-hidden />
         )}
         <span className="openbitfun-chat-input-workspace-strip__worktree-label">
           {tWorktrees('strip.toggleLabel')}
@@ -751,9 +751,8 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
           checked={selected}
           aria-label={accessibleLabel}
           leading={(
-            <OptionIcon
-              size={13}
-              strokeWidth={2}
+            <Icon glyph={OptionIcon}
+              size="sm"
               className={`openbitfun-chat-input-workspace-strip__permission-option-icon openbitfun-chat-input-workspace-strip__permission-option-icon--${mode}`}
               aria-hidden
             />
@@ -889,10 +888,9 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
                   }
                 }}
               >
-                <PermissionIcon
+                <Icon glyph={PermissionIcon}
                   className="openbitfun-chat-input-workspace-strip__permission-overview-icon"
-                  size={12}
-                  strokeWidth={1.8}
+                  size="xs"
                   aria-hidden
                 />
                 <span className="openbitfun-chat-input-workspace-strip__permission-label"><OverflowText>
@@ -991,7 +989,7 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
                           actions={permissionControl.onOpenDefaultSettings ? [{
                             id: 'open-default-settings',
                             label: t('chatInput.permissionMode.openDefaultSettings'),
-                            icon: <Icon name="gear" size="lg" style={{ width: 13, height: 13 }} aria-hidden />,
+                            icon: <Icon name="gear" size="sm" aria-hidden />,
                             testId: 'chat-input-permission-open-default-settings',
                             onClick: event => {
                               event.stopPropagation();
@@ -1034,9 +1032,8 @@ export const ChatInputWorkspaceStrip: React.FC<ChatInputWorkspaceStripProps> = (
                       checked={!permissionNextTurnArmed}
                       aria-label={`${t('chatInput.permissionMode.followSessionMode')} — ${permissionCopy[permissionMode].label}`}
                       leading={(
-                        <PermissionSessionIcon
-                          size={13}
-                          strokeWidth={2}
+                        <Icon glyph={PermissionSessionIcon}
+                          size="sm"
                           className={`openbitfun-chat-input-workspace-strip__permission-option-icon openbitfun-chat-input-workspace-strip__permission-option-icon--${permissionMode}`}
                           aria-hidden
                         />

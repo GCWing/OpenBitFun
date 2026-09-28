@@ -14,7 +14,7 @@ test("Tooltip renders only the trigger until it is shown", () => {
     ),
   );
 
-  assert.match(markup, /<button type="button">Settings<\/button>/);
+  assert.match(markup, /<button type="button"[^>]*>Settings<\/button>/);
   assert.doesNotMatch(markup, /role="tooltip"/);
 });
 
@@ -31,7 +31,7 @@ test("DesignSystemProvider owns shared tooltip delay and portal configuration", 
     ),
   );
 
-  assert.match(markup, /<button type="button">Rename<\/button>/);
+  assert.match(markup, /<button type="button"[^>]*>Rename<\/button>/);
 });
 
 test("Tooltip owns delayed opening, viewport flipping, and interactive persistence", async () => {

@@ -7,6 +7,7 @@ export const radioMeta = {
   name: "Radio",
   props: [
     { name: "checked", type: "boolean" },
+    { name: "readOnly", type: "boolean", defaultValue: "false" },
     { name: "label", type: "ReactNode" },
     { name: "description", type: "ReactNode" },
     { name: "invalid", type: "boolean", defaultValue: "false" },

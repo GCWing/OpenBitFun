@@ -5,9 +5,10 @@ import type { DialogTurn } from '../../types/flow-chat';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { consumeSubmittedMessageArrival } from '../../services/submittedMessagePresentation';
 
-const { mockStartAcpDialogTurn, mockStartAgenticDialogTurn, mockTransition, mockUpdateSessionMetadata, mockGetMode, mockUpdateMode } = vi.hoisted(() => ({
+const { mockStartAcpDialogTurn, mockStartAgenticDialogTurn, mockEnsureCoordinatorSession, mockTransition, mockUpdateSessionMetadata, mockGetMode, mockUpdateMode } = vi.hoisted(() => ({
   mockStartAcpDialogTurn: vi.fn(),
   mockStartAgenticDialogTurn: vi.fn(),
+  mockEnsureCoordinatorSession: vi.fn(),
   mockTransition: vi.fn(),
   mockUpdateSessionMetadata: vi.fn(),
   mockGetMode: vi.fn(),
@@ -21,6 +22,7 @@ vi.mock('@/infrastructure/api/service-api/ACPClientAPI', () => ({
 vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
   agentAPI: {
     startDialogTurn: mockStartAgenticDialogTurn,
+    ensureCoordinatorSession: mockEnsureCoordinatorSession,
     getSessionPermissionMode: mockGetMode,
     updateSessionPermissionMode: mockUpdateMode,
   },
@@ -28,6 +30,16 @@ vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
 
 vi.mock('@/infrastructure/api/service-api/SessionAPI', () => ({ sessionAPI: {} }));
 vi.mock('@/infrastructure/api/service-api/WorktreeAPI', () => ({ worktreeAPI: {} }));
+vi.mock('@/infrastructure/services/business/workspaceManager', () => ({
+  workspaceManager: {
+    getState: () => ({
+      openedWorkspaces: new Map([['project-workspace', {
+        id: 'project-workspace', rootPath: WORKSPACE_PATH, workspaceKind: 'normal',
+      }]]),
+      recentWorkspaces: [],
+    }),
+  },
+}));
 
 vi.mock('../../state-machine', () => ({
   stateMachineManager: {
@@ -238,5 +250,58 @@ describe('host queue submissions', () => {
     expect(context.activeTextItems.get(SESSION_ID)).toBe('active item');
     expect(addedTurns).toHaveLength(0);
     expect(tracker.hostAcceptedTurn).toBe(true);
+  });
+});
+
+describe('worktree follow-up submissions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockEnsureCoordinatorSession.mockResolvedValue(undefined);
+    mockTransition.mockResolvedValue(true);
+    mockStartAgenticDialogTurn.mockResolvedValue(undefined);
+    queueMocks.submit.mockResolvedValue({ receipt: { status: 'queued' } });
+  });
+
+  it.each([false, true])('prepares the owning project and sends the next turn with host queue support %s', async supportsQueue => {
+    queueMocks.supported.mockReturnValue(supportsQueue);
+    const { context, session } = createHarness([persistedTurn('turn-1', 0)]);
+    Object.assign(session, {
+      mode: 'Standard',
+      isHistorical: false,
+      historyState: 'ready',
+      workspaceId: 'worktree-not-in-catalog',
+      workspacePath: '/worktrees/task',
+      projectWorkspaceId: 'project-workspace',
+      projectWorkspacePath: WORKSPACE_PATH,
+      config: {
+        executionTarget: { kind: 'managedWorktree', worktreeId: 'worktree-1', rootPath: '/worktrees/task' },
+      },
+    });
+    const tracker = { createdLocalTurnId: null, hostAcceptedTurn: false };
+
+    await localSessionDriver.ensureReady(context, SESSION_ID);
+    await localSessionDriver.startTurn(context, {
+      ...startTurnInput(session), acpClientId: undefined, currentAgentType: 'Standard',
+    }, tracker);
+
+    expect(mockEnsureCoordinatorSession).toHaveBeenCalledWith({
+      sessionId: SESSION_ID, workspaceId: 'project-workspace', includeInternal: false,
+    });
+    if (supportsQueue) {
+      expect(queueMocks.submit).toHaveBeenCalledWith(
+        expect.objectContaining({ content: 'hello' }), expect.any(Object), undefined,
+      );
+      expect(mockStartAgenticDialogTurn).not.toHaveBeenCalled();
+    } else {
+      expect(mockStartAgenticDialogTurn).toHaveBeenCalledWith(expect.objectContaining({
+        sessionId: SESSION_ID,
+        workspaceId: 'worktree-not-in-catalog',
+        workspacePath: '/worktrees/task',
+        projectWorkspacePath: WORKSPACE_PATH,
+      }));
+    }
+    expect(tracker.hostAcceptedTurn).toBe(true);
+    expect(session.workspacePath).toBe('/worktrees/task');
+    expect(session.dialogTurns[0].id).toBe('turn-1');
   });
 });

@@ -13,6 +13,7 @@ import {
 } from './index';
 import { TaskToolDisplay } from './TaskToolDisplay';
 import { AgentControlToolCard } from './AgentControlToolCard';
+import { AgentInteractionToolCard } from './AgentInteractionToolCard';
 import { OpenBitFunControlToolCard } from './OpenBitFunControlToolCard';
 
 describe('tool card registry', () => {
@@ -28,6 +29,7 @@ describe('tool card registry', () => {
   it('renders AgentSpawn and AgentSendInput with the shared agent control card', () => {
     expect(getToolCardComponent('AgentSpawn')).toBe(AgentControlToolCard);
     expect(getToolCardComponent('AgentSendInput')).toBe(AgentControlToolCard);
+    expect(getToolCardComponent('AgentInterrupt')).toBe(AgentInteractionToolCard);
   });
 
   it('keeps lightweight dedicated-card classification aligned with the component registry', () => {
@@ -50,8 +52,11 @@ describe('tool card registry', () => {
       'LS',
       'WebSearch',
       'WebFetch',
+      'ListModels',
+      'ControlHub',
       'AgentSpawn',
       'AgentSendInput',
+      'AgentInterrupt',
       'AgentWait',
       'TodoWrite',
       'ContextCompression',
@@ -69,6 +74,26 @@ describe('tool card registry', () => {
       'PageDeploy',
       'PagePublish',
       'view_image',
+      'get_goal',
+      'create_goal',
+      'update_goal',
+      'AgentList',
+      'AgentDelete',
+      'SessionHistory',
+      'analyze_image',
+      'GetTime',
+      'ListMCPResources',
+      'ReadMCPResource',
+      'ListMCPPrompts',
+      'GetMCPPrompt',
+      'Worktree',
+      'PortForward',
+      'ReviewPlatform',
+      'FrontendWorkbench',
+      'FinalizeMiniApp',
+      'PublishMiniApp',
+      'PublishAppearance',
+      'Playbook',
     ]);
     expect(productOwnedNames).toEqual([
       'Task',
@@ -99,11 +124,11 @@ describe('tool card registry', () => {
     },
   );
 
-  it.each(['ControlHub', 'FinalizeMiniApp', 'PublishMiniApp', 'PublishAppearance'])(
-    'treats %s as a default-card explore tool',
+  it.each(['FinalizeMiniApp', 'PublishMiniApp', 'PublishAppearance'])(
+    'keeps consequential %s dedicated cards outside exploration',
     (toolName) => {
-      expect(usesDefaultToolCard(toolName)).toBe(true);
-      expect(isCollapsibleTool(toolName)).toBe(true);
+      expect(usesDefaultToolCard(toolName)).toBe(false);
+      expect(isCollapsibleTool(toolName)).toBe(false);
     },
   );
 

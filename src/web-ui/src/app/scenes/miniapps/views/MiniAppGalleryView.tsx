@@ -41,7 +41,7 @@ import {
   GalleryPageHeader,
   GallerySkeleton,
   GalleryZone,
-} from '@/app/components';
+} from '@/app/components/GalleryLayout';
 import { loadInstalledMarketOrigins } from '../utils/loadInstalledMarketOrigins';
 import { pickLocalizedString, pickLocalizedTags } from '../utils/pickLocalizedString';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';

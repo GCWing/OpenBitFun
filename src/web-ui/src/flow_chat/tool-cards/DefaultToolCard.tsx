@@ -5,6 +5,9 @@
 
 import React, { useMemo, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Icon } from '@openbitfun/ui';
+import { isShellToolName } from '../grouping/activityClassification';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import { DefaultToolCard as DefaultToolCardView } from '@openbitfun/ui/flow-chat';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
@@ -55,7 +58,7 @@ function truncatePreview(text: string, maxChars: number = MAX_PREVIEW_CHARS): st
   return `${text.slice(0, maxChars)}\n...`;
 }
 
-function getInlinePreview(value: any): string | null {
+function getInlinePreview(value: unknown): string | null {
   if (value === null || value === undefined) return null;
 
   if (typeof value === 'string') {
@@ -70,24 +73,17 @@ function getInlinePreview(value: any): string | null {
       : normalized;
   }
 
-  if (typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    for (const key of ['summary', 'title', 'text', 'content', 'output']) {
+      if (typeof record[key] === 'string') {
+        const preview = getInlinePreview(record[key]);
+        if (preview) return preview;
+      }
+    }
   }
-
-  if (Array.isArray(value)) {
-    return `Array(${value.length})`;
-  }
-
-  if (typeof value === 'object') {
-    const entries = Object.entries(value).filter(([key]) => !key.startsWith('_'));
-    if (entries.length === 0) return null;
-
-    const [firstKey, firstValue] = entries[0];
-    const nestedPreview = getInlinePreview(firstValue);
-    return nestedPreview ? `${firstKey}: ${nestedPreview}` : `Object(${entries.length})`;
-  }
-
-  return String(value);
+  return null;
 }
 
 export const DefaultToolCard: React.FC<ToolCardProps> = ({
@@ -96,10 +92,11 @@ export const DefaultToolCard: React.FC<ToolCardProps> = ({
   onExpand,
 }) => {
   const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status, requiresConfirmation, userConfirmed } = toolItem;
+  const { toolCall, toolResult, requiresConfirmation, userConfirmed } = toolItem;
+  const status = getToolCardStatus(toolItem);
   const [isExpanded, setIsExpanded] = useState(false);
   const toolId = toolItem.id ?? toolCall?.id;
-  const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
+  const { cardRootRef, applyExpandedState, dispatchToolCardToggle } = useToolCardHeightContract({
     toolId,
     toolName: config.toolName,
   });
@@ -107,7 +104,7 @@ export const DefaultToolCard: React.FC<ToolCardProps> = ({
   const filteredInput = useMemo(() => sanitizeToolInput(toolCall?.input), [toolCall?.input]);
   const hasInput = useMemo(() => hasVisibleValue(filteredInput), [filteredInput]);
   const hasResult = toolResult !== undefined && toolResult !== null && config.resultDisplayType !== 'hidden';
-  const errorMessage = toolResult?.success === false ? toolResult.error || t('toolCards.default.failed') : null;
+  const errorMessage = status === 'error' ? toolResult?.error || t('toolCards.default.failed') : null;
   const hasError = Boolean(errorMessage);
   const needsConfirmation = requiresConfirmation && !userConfirmed &&
     status !== 'completed' &&
@@ -135,95 +132,7 @@ export const DefaultToolCard: React.FC<ToolCardProps> = ({
     });
   }, [applyExpandedState, canExpand, isExpanded, onExpand]);
 
-  const getStatusText = () => {
-    if (needsConfirmation) {
-      return t('toolCards.default.waitingConfirm');
-    }
-
-    const progressMessage = (toolItem as any)._progressMessage;
-    if (progressMessage && (status === 'running' || status === 'streaming')) {
-      return progressMessage;
-    }
-
-    switch (status) {
-      case 'queued':
-        return t('toolCards.default.queued');
-      case 'waiting':
-        return t('toolCards.default.waiting');
-      case 'streaming':
-      case 'running':
-        return t('toolCards.default.executing');
-      case 'completed':
-        return t('toolCards.default.completed');
-      case 'cancelled':
-        return t('toolCards.default.cancelled');
-      case 'rejected':
-        return t('toolCards.default.rejected');
-      case 'error':
-        return t('toolCards.default.failed');
-      default:
-        return t('toolCards.default.preparing');
-    }
-  };
-
-  const getSummaryText = () => {
-    if (needsConfirmation) {
-      const preview = getInlinePreview(filteredInput);
-      return preview
-        ? `${t('toolCards.default.waitingConfirm')} - ${preview}`
-        : t('toolCards.default.waitingConfirm');
-    }
-
-    const progressMessage = (toolItem as any)._progressMessage;
-    if (progressMessage && (status === 'running' || status === 'streaming')) {
-      return progressMessage;
-    }
-
-    if (status === 'queued') {
-      const preview = getInlinePreview(filteredInput);
-      return preview
-        ? `${t('toolCards.default.queued')} - ${preview}`
-        : t('toolCards.default.queued');
-    }
-
-    if (status === 'waiting') {
-      const preview = getInlinePreview(filteredInput);
-      return preview
-        ? `${t('toolCards.default.waiting')} - ${preview}`
-        : t('toolCards.default.waiting');
-    }
-
-    if (status === 'completed') {
-      const preview = getInlinePreview(toolResult?.result) || getInlinePreview(filteredInput);
-      return preview
-        ? `${t('toolCards.default.completed')} - ${preview}`
-        : t('toolCards.default.completed');
-    }
-
-    if (status === 'error') {
-      return errorMessage || t('toolCards.default.failed');
-    }
-
-    if (status === 'rejected') {
-      return errorMessage || t('toolCards.default.rejected');
-    }
-
-    if (status === 'running' || status === 'streaming') {
-      const preview = getInlinePreview(filteredInput);
-      return preview
-        ? `${t('toolCards.default.executing')} - ${preview}`
-        : t('toolCards.default.executing');
-    }
-
-    if (status === 'pending' || status === 'preparing') {
-      const preview = getInlinePreview(filteredInput);
-      return preview
-        ? `${t('toolCards.default.preparing')} - ${preview}`
-        : t('toolCards.default.preparing');
-    }
-
-    return getStatusText();
-  };
+  const resultSummary = hasResult && status === 'completed' ? getInlinePreview(toolResult?.result) : undefined;
 
   const showConfirmationHighlight = needsConfirmation;
 
@@ -233,14 +142,17 @@ export const DefaultToolCard: React.FC<ToolCardProps> = ({
         status={status}
         isExpanded={isExpanded}
         onToggle={canExpand ? handleToggleExpand : undefined}
-        displayName={config.displayName}
+        displayName={t('toolCards.common.invokeTool')}
         toolName={config.toolName}
         description={config.description}
         hasDetails={canExpand}
-        icon={config.icon ?? undefined}
-        summary={getSummaryText()}
+        icon={isShellToolName(toolItem.toolName) ? <Icon name="square-terminal" size="sm" /> : config.icon ?? undefined}
+        summary={config.toolName}
+        resultSummary={resultSummary}
+        statusDescription={getToolCardStatusDescription(needsConfirmation ? 'pending_confirmation' : status, t, errorMessage)}
         inputLabel={t('toolCards.common.inputParams')}
         inputPreview={inputPreview}
+        onInputOpenChange={dispatchToolCardToggle}
         resultLabel={t('toolCards.common.executionResult')}
         resultPreview={toolResult?.success === false ? undefined : resultPreview}
         error={errorMessage || undefined}

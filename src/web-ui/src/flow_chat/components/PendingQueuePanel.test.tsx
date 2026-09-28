@@ -153,7 +153,7 @@ describe('PendingQueuePanel', () => {
   });
 
   it('submits only one steering request while send-now is in flight', async () => {
-    let resolveSteering: ((value: { steeringId: string }) => void) | undefined;
+    let resolveSteering: ((value: { success: boolean; steeringId: string }) => void) | undefined;
     mocks.steerDialogTurn.mockImplementation(
       () => new Promise(resolve => {
         resolveSteering = resolve;
@@ -182,7 +182,7 @@ describe('PendingQueuePanel', () => {
     expect(mocks.queueSetStatus).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      resolveSteering?.({ steeringId: 'steering-1' });
+      resolveSteering?.({ success: true, steeringId: 'steering-1' });
       await Promise.resolve();
     });
   });

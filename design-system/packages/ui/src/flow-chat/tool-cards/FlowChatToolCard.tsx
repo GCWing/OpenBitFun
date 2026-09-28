@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState,
   type CSSProperties,
@@ -10,7 +11,13 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
-import { ArrowUpRight, ChevronDown } from "lucide-react";
+import { Icon } from '../../components/Icon/Icon';
+import { IconButton } from '../../components/IconButton';
+import { Tooltip } from '../../components/Tooltip';
+import { useDesignSystem } from '../../overlay/useDesignSystem';
+import { ToolProcessingDots } from './ToolProcessingDots';
+import { ToolCapsulePresentationProvider, useToolCapsulePresentation } from './ToolCapsulePresentation';
+import { TOOL_CAPSULE_COLLAPSE_DURATION_MS, useToolCapsuleMotion } from '../motion/capsuleMotion';
 import { classNames } from "../../internal/classNames";
 import { OverflowText } from "../../primitives/OverflowText";
 import styles from "./FlowChatToolCard.module.css";
@@ -108,29 +115,53 @@ function shouldIgnoreToggleClick(
 }
 
 interface CollapsibleRegionProps {
+  id?: string;
   children?: ReactNode;
   className?: string;
   disableAnimation?: boolean;
+  durationMs?: number;
   isOpen: boolean;
   part: "error" | "expanded";
+  preserveClosingInlineSize?: boolean;
   status: FlowChatToolStatus;
 }
 
 type CollapsePhase = "closed" | "closing" | "open" | "opening";
 
 function CollapsibleRegion({
+  id,
   children,
   className,
   disableAnimation = false,
+  durationMs = TOOL_CARD_COLLAPSE_DURATION_MS,
   isOpen,
   part,
+  preserveClosingInlineSize = false,
   status,
 }: CollapsibleRegionProps) {
   const hasContent = children !== undefined && children !== null && children !== false;
   const open = Boolean(isOpen && hasContent);
+  const regionRef = useRef<HTMLDivElement>(null);
   const hasMountedRef = useRef(false);
   const [phase, setPhase] = useState<CollapsePhase>(() => (open ? "open" : "closed"));
   const [visuallyOpen, setVisuallyOpen] = useState(open);
+
+  useEffect(() => {
+    const region = regionRef.current;
+    if (!preserveClosingInlineSize || !open || !region) return;
+
+    // Exit content keeps its last open width so narrowing the capsule cannot
+    // rewrap the result and change its height partway through the same exit.
+    const rememberInlineSize = () => {
+      const width = region.getBoundingClientRect().width;
+      if (width > 0) region.style.setProperty('--_tool-card-expanded-inline-size', `${width}px`);
+    };
+    rememberInlineSize();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(rememberInlineSize);
+    observer.observe(region);
+    return () => observer.disconnect();
+  }, [open, preserveClosingInlineSize]);
 
   useEffect(() => {
     if (!hasMountedRef.current) {
@@ -162,11 +193,11 @@ function CollapsibleRegion({
         setVisuallyOpen(true);
       }
 
-      timeoutId = setTimeout(() => setPhase("open"), TOOL_CARD_COLLAPSE_DURATION_MS);
+      timeoutId = setTimeout(() => setPhase("open"), durationMs);
     } else {
       setVisuallyOpen(false);
       setPhase((currentPhase) => currentPhase === "closed" ? currentPhase : "closing");
-      timeoutId = setTimeout(() => setPhase("closed"), TOOL_CARD_COLLAPSE_DURATION_MS);
+      timeoutId = setTimeout(() => setPhase("closed"), durationMs);
     }
 
     return () => {
@@ -177,7 +208,7 @@ function CollapsibleRegion({
         clearTimeout(timeoutId);
       }
     };
-  }, [disableAnimation, open]);
+  }, [disableAnimation, durationMs, open]);
 
   if (!hasContent) {
     return null;
@@ -187,7 +218,10 @@ function CollapsibleRegion({
 
   return (
     <div
+      ref={regionRef}
+      id={id}
       aria-hidden={!open}
+      {...{ inert: !open ? '' : undefined }}
       className={styles.collapse}
       data-animate={disableAnimation ? "false" : "true"}
       data-openbitfun-component="flow-chat-tool-card"
@@ -195,7 +229,7 @@ function CollapsibleRegion({
       data-open={visuallyOpen ? "true" : "false"}
       data-phase={phase}
       style={{
-        "--_tool-card-collapse-duration": `${TOOL_CARD_COLLAPSE_DURATION_MS}ms`,
+        "--_tool-card-collapse-duration": `${durationMs}ms`,
       } as CSSProperties}
     >
       {shouldRender && (
@@ -230,6 +264,7 @@ export interface ProminentToolCardProps
   disableExpandAnimation?: boolean;
   errorContent?: ReactNode;
   expandedContent?: ReactNode;
+  expandedContentLayout?: "inset" | "flush";
   isExpanded?: boolean;
   isFailed?: boolean;
   onToggle?: (event: ReactMouseEvent<HTMLElement>) => void;
@@ -248,6 +283,7 @@ export function ProminentToolCard({
   disableExpandAnimation = false,
   errorContent,
   expandedContent,
+  expandedContentLayout = "inset",
   isExpanded = false,
   isFailed = false,
   onToggle,
@@ -293,6 +329,7 @@ export function ProminentToolCard({
   };
 
   return (
+    <ToolCapsulePresentationProvider>
     <div
       {...props}
       className={classNames(
@@ -337,6 +374,7 @@ export function ProminentToolCard({
       </div>
 
       <CollapsibleRegion
+        className={expandedContentLayout === "flush" ? styles.expandedFlush : undefined}
         disableAnimation={disableExpandAnimation}
         isOpen={Boolean(isExpanded && expandedContent && (!failed || allowExpandedWhenFailed))}
         part="expanded"
@@ -357,6 +395,7 @@ export function ProminentToolCard({
         {errorContent}
       </CollapsibleRegion>
     </div>
+    </ToolCapsulePresentationProvider>
   );
 }
 
@@ -364,8 +403,10 @@ export interface AmbientToolCardProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "children" | "onClick"> {
   className?: string;
   expandedContent?: ReactNode;
+  expandedContentLayout?: "inset" | "flush";
   header: ReactNode;
   isExpanded?: boolean;
+  requiresConfirmation?: boolean;
   onClick?: (event: ReactMouseEvent<HTMLElement>) => void;
   status: FlowChatToolStatus;
   toggleTestId?: string;
@@ -373,10 +414,12 @@ export interface AmbientToolCardProps
 
 export function AmbientToolCard({
   className,
-  expandedContent,
+  expandedContent: nativeExpandedContent,
+  expandedContentLayout = "inset",
   header,
-  isExpanded = false,
-  onClick,
+  isExpanded: nativeExpanded = false,
+  requiresConfirmation = false,
+  onClick: nativeOnClick,
   onKeyDown: onRootKeyDown,
   role,
   status,
@@ -384,25 +427,38 @@ export function AmbientToolCard({
   toggleTestId,
   ...props
 }: AmbientToolCardProps) {
+  const capsule = useToolCapsulePresentation();
+  const contentId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+  // Keep open-file/image actions, and keep every existing specialized result body.
+  const expandedContent = nativeExpandedContent || (!nativeOnClick || capsule?.expanded ? capsule?.fallbackContent : undefined);
+  const isExpanded = capsule ? capsule.expanded : nativeExpanded;
+  const onClick = capsule && expandedContent
+    ? () => capsule.onExpandedChange(!isExpanded)
+    : nativeOnClick;
   const hasExpandedContent = Boolean(expandedContent);
   const loading = LOADING_STATUSES.has(status);
   const expandedShell = Boolean(isExpanded && hasExpandedContent);
+  useToolCapsuleMotion(rootRef, Boolean(capsule), expandedShell, status);
   const interactive = Boolean(onClick);
-  const directAction = interactive && !hasExpandedContent;
+  const directAction = !capsule && interactive && !hasExpandedContent;
+  const confirmation = status === "pending_confirmation" || (requiresConfirmation
+    && !["completed", "confirmed", "error", "cancelled", "rejected"].includes(status));
   const appearanceState = getAppearanceState({
     isExpanded,
     isFailed: status === "error",
     isLoading: loading,
-    requiresConfirmation: false,
+    requiresConfirmation: confirmation,
   });
   const expandable = interactive && hasExpandedContent;
 
-  const handleSurfaceClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (!onClick || shouldIgnoreToggleClick(event, event.currentTarget)) {
+  const handleSurfaceClick = (event: ReactMouseEvent<HTMLElement>) => {
+    if (!onClick || (!capsule && shouldIgnoreToggleClick(event, event.currentTarget))) {
       return;
     }
     onClick(event);
   };
+  const Surface = capsule && interactive ? 'button' : 'div';
 
   const handleDirectActionKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     onRootKeyDown?.(event);
@@ -420,6 +476,7 @@ export function AmbientToolCard({
   return (
     <div
       {...props}
+      ref={rootRef}
       className={classNames(
         styles.ambientRoot,
         expandedShell && styles.ambientExpandedShell,
@@ -434,11 +491,17 @@ export function AmbientToolCard({
       data-openbitfun-state={appearanceState}
       data-openbitfun-status={status}
       data-openbitfun-expanded-shell={expandedShell ? "true" : "false"}
+      data-tool-capsule={capsule ? 'true' : undefined}
       onKeyDown={directAction || onRootKeyDown ? handleDirectActionKeyDown : undefined}
       role={directAction ? "button" : role}
       tabIndex={directAction ? 0 : tabIndex}
     >
-      <div
+      <Surface
+        type={capsule && interactive ? 'button' : undefined}
+        aria-label={capsule?.description}
+        aria-expanded={capsule && expandable ? isExpanded : undefined}
+        aria-controls={capsule && expandable ? contentId : undefined}
+        title={capsule?.description}
         className={classNames(
           styles.surface,
           styles.ambientSurface,
@@ -454,6 +517,7 @@ export function AmbientToolCard({
         data-testid={interactive ? toggleTestId : undefined}
         onClick={handleSurfaceClick}
       >
+        {capsule && <span aria-hidden="true" data-capsule-skin className={styles.capsuleSkin} />}
         <ToolCardRowLayoutContext.Provider
           value={{
             affordanceKind: "expand",
@@ -465,15 +529,24 @@ export function AmbientToolCard({
         >
           {header}
         </ToolCardRowLayoutContext.Provider>
-      </div>
+      </Surface>
 
+      <ToolCapsulePresentationProvider>
       <CollapsibleRegion
+        className={classNames(
+          styles.ambientExpanded,
+          expandedContentLayout === "flush" && styles.expandedFlush,
+        )}
+        id={capsule ? contentId : undefined}
+        preserveClosingInlineSize={Boolean(capsule)}
+        durationMs={capsule && !isExpanded ? TOOL_CAPSULE_COLLAPSE_DURATION_MS : undefined}
         isOpen={Boolean(isExpanded && expandedContent)}
         part="expanded"
         status={status}
       >
         {expandedContent}
       </CollapsibleRegion>
+      </ToolCapsulePresentationProvider>
     </div>
   );
 }
@@ -481,6 +554,7 @@ export function AmbientToolCard({
 export interface ToolCardIconSlotProps {
   affordanceKind?: ToolCardAffordanceKind;
   className?: string;
+  description?: string;
   expandable?: boolean;
   icon: ReactNode;
   isExpanded?: boolean;
@@ -491,12 +565,15 @@ export interface ToolCardIconSlotProps {
 export function ToolCardIconSlot({
   affordanceKind,
   className,
+  description,
   expandable,
   icon,
   isExpanded,
   onAffordanceClick,
   showDivider = false,
 }: ToolCardIconSlotProps) {
+  const { messages } = useDesignSystem();
+  const descriptionRef = useRef<HTMLSpanElement>(null);
   const layout = useContext(ToolCardRowLayoutContext);
   const resolvedExpandable = expandable ?? layout.expandable;
   const resolvedKind = affordanceKind ?? layout.affordanceKind;
@@ -506,60 +583,69 @@ export function ToolCardIconSlot({
   const isPanelAffordance = resolvedKind === "open-panel-right";
 
   return (
-    <span
-      className={classNames(
-        styles.iconSlot,
-        className,
-      )}
-      data-openbitfun-affordance={resolvedKind}
-      data-openbitfun-component="flow-chat-tool-card"
-      data-openbitfun-expandable={showInlineAffordance ? "true" : "false"}
-      data-openbitfun-part="icon"
-      data-divider={showDivider ? "true" : "false"}
-    >
+    <>
       <span
-        className={styles.iconMarks}
+        ref={descriptionRef}
+        aria-label={!showInlineAffordance ? description : undefined}
+        role={description && !showInlineAffordance ? "img" : undefined}
+        tabIndex={description && !showInlineAffordance ? 0 : undefined}
+        className={classNames(
+          styles.iconSlot,
+          className,
+        )}
+        data-openbitfun-affordance={resolvedKind}
         data-openbitfun-component="flow-chat-tool-card"
-        data-openbitfun-part="iconMarks"
+        data-openbitfun-expandable={showInlineAffordance ? "true" : "false"}
+        data-openbitfun-part="icon"
+        data-divider={showDivider ? "true" : "false"}
       >
         <span
-          className={styles.mainIcon}
+          className={styles.iconMarks}
           data-openbitfun-component="flow-chat-tool-card"
-          data-openbitfun-part="iconGraphic"
+          data-openbitfun-part="iconMarks"
         >
-          {icon}
-        </span>
-        {showInlineAffordance && (
           <span
-            aria-hidden="true"
-            className={styles.inlineAffordance}
+            className={styles.mainIcon}
+            data-openbitfun-icon-slot="true"
+            data-openbitfun-component="flow-chat-tool-card"
+            data-openbitfun-part="iconGraphic"
+          >
+            {icon}
+          </span>
+          {showInlineAffordance && (
+            <span
+              aria-hidden="true"
+              className={styles.inlineAffordance}
+              data-openbitfun-icon-slot="true"
+              data-openbitfun-affordance={resolvedKind}
+              data-openbitfun-component="flow-chat-tool-card"
+              data-openbitfun-part="iconAffordance"
+              data-expanded={resolvedExpanded ? "true" : "false"}
+            >
+              {isPanelAffordance
+                ? <Icon name="arrow-up-right" size="sm" />
+                : <Icon name="chevron-down" size="sm" />}
+            </span>
+          )}
+        </span>
+        {showInlineAffordance && handleAffordance && (
+          <button
+            aria-expanded={isPanelAffordance ? undefined : resolvedExpanded}
+            aria-label={[description, isPanelAffordance ? messages.toolCardOpenDetails : resolvedExpanded ? messages.toolCardCollapseDetails : messages.toolCardExpandDetails].filter(Boolean).join(". ")}
+            className={styles.iconAffordanceHit}
             data-openbitfun-affordance={resolvedKind}
             data-openbitfun-component="flow-chat-tool-card"
-            data-openbitfun-part="iconAffordance"
-            data-expanded={resolvedExpanded ? "true" : "false"}
-          >
-            {isPanelAffordance
-              ? <ArrowUpRight aria-hidden="true" />
-              : <ChevronDown aria-hidden="true" />}
-          </span>
+            data-openbitfun-part="iconAffordanceButton"
+            onClick={(event) => {
+              event.stopPropagation();
+              handleAffordance(event);
+            }}
+            type="button"
+          />
         )}
       </span>
-      {showInlineAffordance && handleAffordance && (
-        <button
-          aria-expanded={isPanelAffordance ? undefined : resolvedExpanded}
-          aria-label={isPanelAffordance ? "Open details" : resolvedExpanded ? "Collapse details" : "Expand details"}
-          className={styles.iconAffordanceHit}
-          data-openbitfun-affordance={resolvedKind}
-          data-openbitfun-component="flow-chat-tool-card"
-          data-openbitfun-part="iconAffordanceButton"
-          onClick={(event) => {
-            event.stopPropagation();
-            handleAffordance(event);
-          }}
-          type="button"
-        />
-      )}
-    </span>
+      {description && <Tooltip content={description} triggerRef={descriptionRef} trigger="hover-focus" />}
+    </>
   );
 }
 
@@ -577,6 +663,7 @@ export function ToolCardStatusIcon({
   return (
     <span
       className={classNames(styles.statusIcon, className)}
+      data-openbitfun-icon-slot="true"
       data-openbitfun-component="flow-chat-tool-card"
       data-openbitfun-part="status"
       data-divider={withDivider ? "true" : "false"}
@@ -589,17 +676,40 @@ export function ToolCardStatusIcon({
 export interface ToolCardActionsProps {
   children: ReactNode;
   className?: string;
+  /** Reserve the controls' width and reveal on the owning region's hover/focus. */
+  revealOnHover?: boolean;
 }
 
-export function ToolCardActions({ children, className }: ToolCardActionsProps) {
+export function ToolCardActions({ children, className, revealOnHover = false }: ToolCardActionsProps) {
   return (
     <span
       className={classNames(styles.toolCardActions, className)}
       data-openbitfun-component="flow-chat-tool-card"
       data-openbitfun-part="actions"
+      data-reveal={revealOnHover ? "hover" : undefined}
       onClick={(event) => event.stopPropagation()}
     >
       {children}
+    </span>
+  );
+}
+
+export interface ToolCardSubjectProps extends HTMLAttributes<HTMLSpanElement> {
+  actions?: ReactNode;
+}
+
+/** An object and its auxiliary controls form one reading and interaction unit. */
+export function ToolCardSubject({ children, actions, className, ...props }: ToolCardSubjectProps) {
+  return (
+    <span {...props} className={classNames(styles.subject, className)} data-tool-card-action-scope data-overflow-trigger>
+      {children !== undefined && children !== null && children !== false && children !== "" && (
+        <span className={styles.subjectText}>
+          {typeof children === "string" || typeof children === "number" ? <OverflowText>{children}</OverflowText> : children}
+        </span>
+      )}
+      {actions && <span className={styles.actionRegion} data-openbitfun-component="flow-chat-tool-card" data-openbitfun-part="actionRegion">
+        <ToolCardActions revealOnHover>{actions}</ToolCardActions>
+      </span>}
     </span>
   );
 }
@@ -647,7 +757,11 @@ export interface ProminentToolCardSummaryProps {
   actionTestId?: string;
   actions?: ReactNode;
   affordanceKind?: ToolCardAffordanceKind;
+  /** Visible primary decisions in the prominent card's right-hand control region. */
+  primaryActions?: ReactNode;
   content?: ReactNode;
+  /** Auxiliary subject controls share the prominent card's trailing region. */
+  contentActions?: ReactNode;
   expandAffordance?: boolean;
   extra?: ReactNode;
   summaryExpanded?: boolean;
@@ -664,21 +778,58 @@ export function ProminentToolCardSummary({
   actions,
   affordanceKind,
   content,
+  contentActions,
   expandAffordance,
   extra,
   summaryExpanded,
   icon,
   onAffordanceClick,
+  primaryActions,
   statusIcon,
   trailingActions,
 }: ProminentToolCardSummaryProps) {
+  const { messages } = useDesignSystem();
   const layout = useContext(ToolCardRowLayoutContext);
   const expandable = expandAffordance ?? layout.expandable;
   const resolvedKind = affordanceKind ?? layout.affordanceKind;
   const expanded = summaryExpanded ?? layout.isExpanded;
   const handleAffordance = onAffordanceClick ?? layout.onAffordanceClick;
   const affordanceAction = expandable ? handleAffordance : undefined;
-  const hasActionRegion = Boolean(actions || affordanceAction || trailingActions);
+  const affordanceButtonRef = useRef<HTMLButtonElement>(null);
+  const isExpandAction = resolvedKind === "expand" && Boolean(affordanceAction);
+  const hasPanelAction = resolvedKind === "open-panel-right" && Boolean(affordanceAction);
+  const hasContent = content !== undefined && content !== null && content !== false && content !== "";
+  const hasAuxiliaryActions = Boolean(actions || contentActions || hasPanelAction || trailingActions);
+  const hasActionRegion = Boolean(primaryActions || hasAuxiliaryActions);
+  const affordanceLabel = hasPanelAction ? messages.toolCardOpenDetails
+    : expanded ? messages.toolCardCollapseDetails : messages.toolCardExpandDetails;
+  const affordanceButton = affordanceAction && hasPanelAction ? (
+    <IconButton aria-label={affordanceLabel} title={affordanceLabel} size="sm" variant="quiet"
+      data-openbitfun-affordance={resolvedKind} data-openbitfun-part="affordanceButton"
+      icon={<Icon name="arrow-up-right" size="sm" />} ref={affordanceButtonRef}
+      onClick={event => { event.stopPropagation(); affordanceAction(event); }} />
+  ) : affordanceAction ? (
+    <button
+      aria-expanded={resolvedKind === "expand" ? expanded : undefined}
+      aria-label={affordanceLabel}
+      className={isExpandAction ? styles.summaryToggleButton : styles.affordanceButton}
+      data-openbitfun-icon-slot="true"
+      data-openbitfun-affordance={resolvedKind}
+      data-openbitfun-component="flow-chat-tool-card"
+      data-openbitfun-part="affordanceButton"
+      onClick={(event) => {
+        event.stopPropagation();
+        affordanceAction(event);
+      }}
+      ref={affordanceButtonRef}
+      type="button"
+    >
+      {resolvedKind === "open-panel-right" && <Icon name="arrow-up-right" size="sm" />}
+    </button>
+  ) : null;
+  const subjectText = typeof content === "string" || typeof content === "number"
+    ? <OverflowText>{content}</OverflowText>
+    : content;
 
   return (
     <div
@@ -687,7 +838,15 @@ export function ProminentToolCardSummary({
       data-openbitfun-component="flow-chat-tool-card"
       data-openbitfun-expandable={expandable ? "true" : "false"}
       data-openbitfun-part="summary"
+      onClick={isExpandAction ? (event) => {
+        if (shouldIgnoreToggleClick(event, event.currentTarget)) {
+          return;
+        }
+        event.stopPropagation();
+        affordanceButtonRef.current?.click();
+      } : undefined}
     >
+      {isExpandAction && affordanceButton}
       {icon !== undefined && icon !== null && icon !== false && icon !== "" && (
         <ToolCardIconSlot icon={icon} />
       )}
@@ -704,15 +863,13 @@ export function ProminentToolCardSummary({
             : action}
         </span>
       )}
-      {content !== undefined && content !== null && content !== false && (
+      {hasContent && (
         <span
           className={styles.content}
           data-openbitfun-component="flow-chat-tool-card"
           data-openbitfun-part="content"
         >
-          {typeof content === "string" || typeof content === "number"
-            ? <OverflowText>{content}</OverflowText>
-            : content}
+          {subjectText}
         </span>
       )}
       {extra !== undefined && extra !== null && extra !== false && (
@@ -728,47 +885,15 @@ export function ProminentToolCardSummary({
         <ToolCardStatusIcon icon={statusIcon} withDivider={Boolean(extra)} />
       )}
       {hasActionRegion && (
-        <span
-          className={styles.actionRegion}
-          data-openbitfun-component="flow-chat-tool-card"
-          data-openbitfun-part="actionRegion"
-        >
-          {actions}
-          {affordanceAction && (
-            <button
-              aria-expanded={resolvedKind === "expand" ? expanded : undefined}
-              aria-label={
-                resolvedKind === "open-panel-right"
-                  ? "Open details"
-                  : expanded
-                    ? "Collapse details"
-                    : "Expand details"
-              }
-              className={styles.affordanceButton}
-              data-openbitfun-affordance={resolvedKind}
-              data-openbitfun-component="flow-chat-tool-card"
-              data-openbitfun-part="affordanceButton"
-              onClick={(event) => {
-                event.stopPropagation();
-                affordanceAction(event);
-              }}
-              type="button"
-            >
-              {resolvedKind === "open-panel-right"
-                ? <ArrowUpRight aria-hidden="true" />
-                : <ChevronDown aria-hidden="true" />}
-            </button>
-          )}
-          {trailingActions !== undefined && trailingActions !== null && trailingActions !== false && (
-            <span
-              className={styles.trailingActions}
-              data-openbitfun-component="flow-chat-tool-card"
-              data-openbitfun-part="trailingActions"
-              data-divider={affordanceAction ? "true" : "false"}
-            >
-              {trailingActions}
-            </span>
-          )}
+        <span className={styles.actionRegion} data-openbitfun-component="flow-chat-tool-card" data-openbitfun-part="actionRegion">
+          {primaryActions && <ToolCardActions>{primaryActions}</ToolCardActions>}
+          {hasAuxiliaryActions && <ToolCardActions revealOnHover>
+            {actions}
+            {contentActions}
+            {hasPanelAction && affordanceButton}
+            {trailingActions && <span className={styles.trailingActions} data-openbitfun-component="flow-chat-tool-card"
+              data-openbitfun-part="trailingActions" data-divider="false">{trailingActions}</span>}
+          </ToolCardActions>}
         </span>
       )}
     </div>
@@ -780,6 +905,14 @@ export interface AmbientToolCardHeaderProps {
   action?: ReactNode;
   affordanceKind?: ToolCardAffordanceKind;
   content?: ReactNode;
+  /** Auxiliary controls for the subject, separate from status and primary actions. */
+  contentActions?: ReactNode;
+  /** Operation targets are plain by default. Prefer result for returned evidence. */
+  contentVariant?: "tinted" | "plain";
+  /** A concise, recorded result; never a generic success or progress label. */
+  result?: ReactNode;
+  /** Quiet status detail attached to the leading icon, including keyboard access. */
+  statusDescription?: string;
   expandable?: boolean;
   extra?: ReactNode;
   icon?: ReactNode;
@@ -794,6 +927,10 @@ export function AmbientToolCardHeader({
   action,
   affordanceKind = "expand",
   content,
+  contentActions,
+  contentVariant = "plain",
+  result,
+  statusDescription,
   expandable,
   extra,
   icon,
@@ -804,11 +941,40 @@ export function AmbientToolCardHeader({
   showDivider = false,
 }: AmbientToolCardHeaderProps) {
   const layout = useContext(ToolCardRowLayoutContext);
+  const capsule = useToolCapsulePresentation();
+  const { locale } = useDesignSystem();
+  const hasContent = content !== undefined && content !== null && content !== false && content !== "";
+  const hasResult = result !== undefined && result !== null && result !== false && result !== "";
+  const hasAction = action !== undefined && action !== null && action !== false && action !== "";
+  // Accept existing localized labels during migration without doubling punctuation.
+  const actionLabel = typeof action === "string" ? action.replace(/[:：]\s*$/u, "") : action;
+  const separator = locale.toLowerCase().startsWith("zh") ? "：" : ": ";
+
+  if (capsule) {
+    return <>
+      {icon && <ToolCardIconSlot icon={icon} expandable={false} />}
+      <span className={styles.ambientContent} data-openbitfun-component="flow-chat-tool-card" data-openbitfun-part="content">
+        <OverflowText>{capsule.label}</OverflowText>
+      </span>
+      {extra !== undefined && extra !== null && extra !== false && (
+        <span className={styles.capsuleExtra} data-openbitfun-part="extra">{extra}</span>
+      )}
+      {capsule.countLabel !== undefined && <span className={styles.capsuleStatus} aria-hidden="true">{capsule.countLabel}</span>}
+      {capsule.status !== 'completed' && capsule.status !== 'confirmed' && (
+        <span className={styles.capsuleStatus} aria-hidden="true">
+          {LOADING_STATUSES.has(capsule.status) && capsule.status !== 'waiting' && capsule.status !== 'queued'
+            ? <ToolProcessingDots size={14} /> : capsule.statusLabel}
+        </span>
+      )}
+      {layout.expandable && <Icon name="chevron-down" size="xs" className={styles.capsuleChevron} />}
+    </>;
+  }
 
   return (
     <>
       {icon !== undefined && icon !== null && icon !== false && icon !== "" && (
         <ToolCardIconSlot
+          description={statusDescription}
           affordanceKind={affordanceKind}
           expandable={expandable ?? layout.expandable}
           icon={icon}
@@ -817,26 +983,33 @@ export function AmbientToolCardHeader({
           showDivider={showDivider}
         />
       )}
-      {action !== undefined && action !== null && action !== false && action !== "" && (
+      {hasAction && (
         <span
           className={styles.ambientAction}
           data-openbitfun-component="flow-chat-tool-card"
           data-openbitfun-part="action"
         >
-          {typeof action === "string" || typeof action === "number"
-            ? <OverflowText>{action}</OverflowText>
-            : action}
+          {typeof actionLabel === "string" || typeof actionLabel === "number"
+            ? <OverflowText>{actionLabel}{(hasContent || hasResult) && separator}</OverflowText>
+            : <>{actionLabel}{(hasContent || hasResult) && separator}</>}
         </span>
       )}
-      {content !== undefined && content !== null && content !== false && (
+      {(hasContent || hasResult || contentActions) && (
         <span
           className={styles.ambientContent}
           data-openbitfun-component="flow-chat-tool-card"
           data-openbitfun-part="content"
         >
-          {typeof content === "string" || typeof content === "number"
-            ? <OverflowText>{content}</OverflowText>
-            : content}
+          {(hasContent || contentActions) && <ToolCardSubject actions={contentActions}>
+            {hasContent && <span className={styles.ambientSubject} data-variant={contentVariant}>
+              {typeof content === "string" || typeof content === "number"
+                ? <OverflowText>{content}</OverflowText>
+                : content}
+            </span>}
+          </ToolCardSubject>}
+          {hasResult && <span className={styles.ambientResult} data-openbitfun-part="resultSummary">
+            {typeof result === "string" || typeof result === "number" ? <OverflowText>{result}</OverflowText> : result}
+          </span>}
         </span>
       )}
       {extra !== undefined && extra !== null && extra !== false && (

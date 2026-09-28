@@ -1,3 +1,4 @@
+import { OpenBitFunBrandMotion } from "../../brand/OpenBitFunBrandMotion";
 import { classNames } from "../../internal/classNames";
 import styles from "./ToolProcessingDots.module.css";
 
@@ -8,6 +9,7 @@ export interface ToolProcessingDotsProps {
   size?: ToolProcessingDotsSize;
 }
 
+/** Compatibility entry for processing indicators; artwork is owned by the brand component. */
 export function ToolProcessingDots({
   className,
   size = 14,
@@ -21,9 +23,7 @@ export function ToolProcessingDots({
       data-size={size}
       role="presentation"
     >
-      <span className={styles.dot} />
-      <span className={styles.dot} />
-      <span className={styles.dot} />
+      <OpenBitFunBrandMotion variant="construction" size={size} />
     </span>
   );
 }

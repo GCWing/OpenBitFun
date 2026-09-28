@@ -8,12 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FlowToolItem, ToolCardConfig } from '../types/flow-chat';
 import { createTodoRenderItems } from './todoRenderItems';
 import { TodoWriteDisplay } from './TodoWriteDisplay';
+import { getToolCardConfig } from './toolCardMetadata';
 import { FLOWCHAT_COLLAPSE_DURATION_MS } from '../components/modern/flowChatCollapseMotion';
 
 vi.mock('react-i18next', async (importOriginal) => ({
   ...await importOriginal<typeof import('react-i18next')>(),
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: Record<string, unknown>) => key === 'toolCards.todoWrite.summaryProgress'
+      ? `${options?.task} · ${options?.completed}/${options?.total}` : key,
   }),
 }));
 
@@ -148,5 +150,32 @@ describe('TodoWriteDisplay expansion', () => {
     const summary = container.querySelector('[data-openbitfun-tool-card="todo"] [data-openbitfun-part="summary"]');
     expect(summary?.textContent).toContain('First task');
     expect(summary?.textContent).not.toContain('Second task');
+  });
+
+  it('keeps the next task and expandable list prominent with a legacy compact config', () => {
+    const toolItem = createTodoWriteItem('pending', [
+      { id: 'todo-a', content: 'Finished task', status: 'completed' },
+      { id: 'todo-b', content: 'Next task', status: 'pending' },
+    ]);
+
+    act(() => {
+      root.render(<TodoWriteDisplay toolItem={toolItem} config={config} />);
+    });
+    const summary = container.querySelector('[data-openbitfun-part="summary"]');
+    expect(summary?.textContent).toBe('Next task · 1/2');
+    expect(container.querySelector('[data-openbitfun-component="icon"][data-openbitfun-name="list-todo"]')).not.toBeNull();
+    expect(getToolCardConfig('TodoWrite').attention).toBe('prominent');
+    expect(container.querySelector('[data-openbitfun-tool-card="todo"]')?.getAttribute('data-openbitfun-attention')).toBe('prominent');
+
+    act(() => {
+      root.render(<TodoWriteDisplay toolItem={toolItem} config={{ ...config, displayMode: 'compact' }} />);
+    });
+    expect(container.querySelector('[data-openbitfun-view="compact"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="summary"]')?.textContent).toBe('Next task · 1/2');
+    act(() => {
+      container.querySelector<HTMLElement>('[data-testid="todo-tool-card-toggle"]')?.click();
+    });
+    expect(container.querySelectorAll('[data-openbitfun-part="todoItem"]')).toHaveLength(2);
+    expect(container.querySelector('[data-openbitfun-part="todoProgress"]')?.getAttribute('aria-valuenow')).toBe('1');
   });
 });

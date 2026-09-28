@@ -28,10 +28,10 @@ describe('BtwVirtualSessionList', () => {
     type: 'image-analyzing', turnId: `turn-${index}`,
   } as VirtualItem));
 
-  function render() {
+  function render(renderedItems = items) {
     act(() => root.render(
       <BtwVirtualSessionList
-        items={items}
+        items={renderedItems}
         scrollerRef={{ current: scroller }}
         headerRef={{ current: header }}
         followRef={followRef}
@@ -149,5 +149,75 @@ describe('BtwVirtualSessionList', () => {
     expect(owner.write).toHaveBeenCalledWith({
       owner: 'follow-output', topPx: 120000, holdForMs: 0,
     });
+  });
+
+  it.each([false, true])('settles tail rows when trailing margins are measured: %s', contained => {
+    // Supplied CSS geometry: a 100px body and an 8px trailing child margin.
+    // With flow-root both occupy the measured border box; with block the
+    // margin escapes, still occupies layout space, and vanishes on unmount.
+    // jsdom does not perform margin collapsing; this tests its consequences
+    // against the real virtualizer and the panel's real follow scheduler.
+    vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+      return this.hasAttribute('data-virtual-index') ? (contained ? 108 : 100) : 0;
+    });
+    Object.defineProperty(scroller, 'scrollHeight', { configurable: true, get: () => {
+      const window = host.firstElementChild as HTMLElement | null;
+      if (!window) return 500;
+      return Math.max(500, 15 + Number.parseFloat(window.style.paddingTop || '0')
+        + Number.parseFloat(window.style.paddingBottom || '0') + window.children.length * 108);
+    } });
+    let offset = 0;
+    Object.defineProperty(scroller, 'scrollTop', {
+      configurable: true,
+      get: () => Math.max(0, Math.min(offset, scroller.scrollHeight - scroller.clientHeight)),
+      set: (value: number) => { offset = Math.max(0, Math.min(value, scroller.scrollHeight - scroller.clientHeight)); },
+    });
+    vi.mocked(owner.write).mockImplementation(({ topPx }) => {
+      scroller.scrollTop = topPx;
+      return true;
+    });
+    vi.mocked(owner.shift).mockImplementation(delta => {
+      scroller.scrollTop += delta;
+      return true;
+    });
+    followRef.current = true;
+    render(items.slice(0, 20));
+    const oldRowNodes: Array<Element | null> = [];
+    const deliveredSizes = new WeakMap<object, Map<Element, number>>();
+    for (let frame = 0; frame < 40; frame++) {
+      act(() => {
+        // New and resized rows are measured after layout, including rows
+        // whose inline measurement was skipped during native scrolling.
+        for (const observer of [...resizeObservers]) {
+          const sizes = deliveredSizes.get(observer) ?? new Map<Element, number>();
+          deliveredSizes.set(observer, sizes);
+          const entries: ResizeObserverEntry[] = [];
+          for (const target of observer.targets) {
+            const blockSize = target === host.firstElementChild
+              ? scroller.scrollHeight - 15 : (target as HTMLElement).offsetHeight;
+            if (sizes.get(target) === blockSize) continue;
+            sizes.set(target, blockSize);
+            entries.push({ target, borderBoxSize: [{ blockSize, inlineSize: 500 }] } as unknown as ResizeObserverEntry);
+          }
+          if (entries.length) observer.callback(entries, {} as ResizeObserver);
+        }
+      });
+      act(() => {
+        // Browser scroll delivery precedes the next animation-frame write.
+        scroller.dispatchEvent(new Event('scroll'));
+        const pending = [...frames.values()];
+        frames.clear();
+        pending.forEach(callback => callback(frame * 16));
+      });
+      if (frame >= 10) oldRowNodes.push(host.querySelector('[data-virtual-index="9"]'));
+    }
+    const identities = new Set(oldRowNodes.filter(node => node !== null));
+    if (contained) {
+      expect(oldRowNodes).not.toContain(null);
+      expect(identities.size).toBe(1);
+    } else {
+      expect(oldRowNodes).toContain(null);
+      expect(identities.size).toBeGreaterThan(10);
+    }
   });
 });

@@ -4,7 +4,9 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
+import { isToolCardVisible } from '../utils/flowItemVisibility';
 import { DirectoryListToolCard } from '@openbitfun/ui/flow-chat';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
 interface LSEntry {
@@ -19,7 +21,8 @@ export const LSDisplay: React.FC<ToolCardProps> = ({
   onExpand
 }) => {
   const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status } = toolItem;
+  const { toolCall, toolResult } = toolItem;
+  const status = getToolCardStatus(toolItem);
   const [isExpanded, setIsExpanded] = useState(false);
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
@@ -79,7 +82,7 @@ export const LSDisplay: React.FC<ToolCardProps> = ({
 
   const directoryPath = getDirectoryPath();
   const hasDetails = status === 'completed' && entries.length > 0;
-  const hasResultData = toolResult?.result !== undefined && toolResult?.result !== null;
+  const hasResultData = Array.isArray(toolResult?.result?.entries);
 
   const handleClick = useCallback(() => {
     if (hasDetails) {
@@ -89,47 +92,20 @@ export const LSDisplay: React.FC<ToolCardProps> = ({
     }
   }, [applyExpandedState, hasDetails, isExpanded, onExpand]);
 
-  const renderAction = () => {
-    if (status === 'completed') {
-      return `${t('toolCards.ls.listDirectory')}:`;
-    }
-    if (status === 'running' || status === 'streaming') {
-      return t('toolCards.ls.listingDirectory');
-    }
-    if (status === 'pending') {
-      return t('toolCards.ls.preparingList');
-    }
-    return undefined;
-  };
-
-  const renderContent = () => {
-    if (status === 'completed') {
-      const statsText = stats.directories > 0 
-        ? t('toolCards.ls.filesAndDirs', { files: stats.files, directories: stats.directories })
-        : t('toolCards.ls.filesCount', { count: stats.files });
-      return `${directoryPath}${hasResultData ? ` (${statsText})` : ''}`;
-    }
-    if (status === 'running' || status === 'streaming') {
-      return `${directoryPath}...`;
-    }
-    if (status === 'pending') {
-      return directoryPath;
-    }
-    return directoryPath;
-  };
-
-  if (status === 'error') {
+  if (!isToolCardVisible(toolItem)) {
     return null;
   }
 
   return (
     <div ref={cardRootRef} data-openbitfun-adapter="directory-list" data-tool-card-id={toolId ?? ''}>
       <DirectoryListToolCard
-        action={renderAction()}
+        action={t('toolCards.ls.listDirectory')}
         status={status}
         isExpanded={isExpanded}
         onToggle={hasDetails ? handleClick : undefined}
-        summary={renderContent()}
+        summary={directoryPath}
+        resultSummary={status === 'completed' && hasResultData ? t('toolCards.ls.entriesCount', { count: stats.total }) : undefined}
+        statusDescription={getToolCardStatusDescription(status, t, toolResult?.error)}
         details={hasDetails ? [
           { label: `${t('toolCards.ls.labelPath')}:`, value: directoryPath },
           {

@@ -75,6 +75,10 @@ internal fun AccountRemoteScreen(
     requestedSessionId: String? = null,
     creatingSession: Boolean = false,
     onOpenSession: (String) -> Unit = {},
+    // CreateSession is already opened by the shared store. Keep its route
+    // callback separate from the sidebar callback, which also dispatches an
+    // Open intent for an existing row.
+    onCreatedSession: (String) -> Unit = onOpenSession,
     onCreateSession: () -> Unit = {},
     onRemoteHome: () -> Unit = {},
     modifier: Modifier,
@@ -99,6 +103,7 @@ internal fun AccountRemoteScreen(
         requestedSessionId = requestedSessionId,
         creatingSession = creatingSession,
         onOpenSession = onOpenSession,
+        onCreatedSession = onCreatedSession,
         onCreateSession = onCreateSession,
         onRemoteHome = onRemoteHome,
         connectionDetails = {
@@ -129,6 +134,7 @@ private fun RemoteConnectedScreen(
     requestedSessionId: String?,
     creatingSession: Boolean,
     onOpenSession: (String) -> Unit,
+    onCreatedSession: (String) -> Unit,
     onCreateSession: () -> Unit,
     onRemoteHome: () -> Unit,
     connectionDetails: @Composable () -> Unit,
@@ -207,7 +213,7 @@ private fun RemoteConnectedScreen(
             compact = compact,
             onDevicePick = onCreateDevicePick,
             onBack = onRemoteHome,
-            onCreated = onOpenSession,
+            onCreated = onCreatedSession,
             onWorkspaceIntent = onWorkspaceIntent,
             onIntent = onSessionIntent,
             modifier = modifier,

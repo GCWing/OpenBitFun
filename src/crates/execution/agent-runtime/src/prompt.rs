@@ -16,7 +16,7 @@ const DIRECT_TOOL_LISTING_GUIDANCE: &str = r#"Their definitions are already avai
 Each entry below is a directly callable tool name."#;
 const DEFERRED_TOOL_LISTING_TITLE: &str = "## Deferred tools";
 const DEFERRED_TOOL_LISTING_GUIDANCE: &str = r#"Their definitions are not loaded at the start of the conversation.
-You must obtain the tool definition using GetToolSpec before you first invoke a deferred tool. Once its definition is available in the conversation, you can call it through CallDeferredTool.
+Use GetToolSpec to read a deferred tool's full definition before invoking it through CallDeferredTool. Reuse it while the successful GetToolSpec result remains in the current context. If compaction or truncation removed that result, load it again; a summary or a past call does not keep the definition loaded.
 Each entry below is a deferred tool name with an optional short description."#;
 
 pub fn render_direct_tool_listing_body<'a>(

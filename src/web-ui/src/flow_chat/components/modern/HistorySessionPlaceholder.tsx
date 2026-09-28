@@ -1,6 +1,6 @@
 import { Button, Icon } from '@openbitfun/ui';
 import React from 'react';
-import { AlertCircle, LoaderCircle } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { SessionHistoryState } from '../../types/flow-chat';
 
@@ -22,7 +22,7 @@ export const HistorySessionPlaceholder: React.FC<HistorySessionPlaceholderProps>
         className={`history-session-placeholder__icon${failed ? ' history-session-placeholder__icon--failed' : ''}`}
         aria-hidden="true"
       >
-        {failed ? <AlertCircle size={24} /> : <LoaderCircle size={24} />}
+        {failed ? <Icon glyph={AlertCircle} size="lg" /> : <Icon name="progress-25" size="lg" />}
       </div>
       <div className="history-session-placeholder__text">
         <h2 className="history-session-placeholder__title">

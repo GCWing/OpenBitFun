@@ -1,7 +1,9 @@
 import type { ModelRound, FlowToolItem, TokenUsage } from '../../types/flow-chat';
+import type { ModelRoundItemGroup } from './modelRoundItemGrouping';
 
 export interface ModelRoundItemProps {
   round: ModelRound;
+  projectedGroups?: ModelRoundItemGroup[];
   turnId: string;
   isLastRound?: boolean;
   isTurnComplete?: boolean;
@@ -11,6 +13,23 @@ export interface ModelRoundItemProps {
   turnTokenUsage?: TokenUsage;
   canvasArtifactItems?: FlowToolItem[];
   expandedThinkingItemIds?: string[];
+}
+
+function sameProjectedGroups(left?: ModelRoundItemGroup[], right?: ModelRoundItemGroup[]): boolean {
+  if (left === right) return true;
+  if (!left || !right || left.length !== right.length) return false;
+  return left.every((group, index) => {
+    const other = right[index];
+    if (group.type === 'critical') return other.type === 'critical' && group.item === other.item;
+    if (other.type !== group.type) return false;
+    return group.isLast === other.isLast
+      && group.items.length === other.items.length
+      && group.items.every((item, itemIndex) => item === other.items[itemIndex])
+      && group.projection?.groupId === other.projection?.groupId
+      && group.projection?.isLastGroupInTurn === other.projection?.isLastGroupInTurn
+      && group.projection?.wasCutByCritical === other.projection?.wasCutByCritical
+      && group.projection?.sourceGroupIds?.join('\n') === other.projection?.sourceGroupIds?.join('\n');
+  });
 }
 
 export function areModelRoundItemPropsEqual(prev: ModelRoundItemProps, next: ModelRoundItemProps): boolean {
@@ -25,6 +44,7 @@ export function areModelRoundItemPropsEqual(prev: ModelRoundItemProps, next: Mod
     prev.round.renderHints?.continuedAfterInterruption === next.round.renderHints?.continuedAfterInterruption &&
     prev.round.renderHints?.disableExploreGrouping === next.round.renderHints?.disableExploreGrouping &&
     prev.round.items === next.round.items &&
+    sameProjectedGroups(prev.projectedGroups, next.projectedGroups) &&
     prev.round.attempts === next.round.attempts &&
     prev.round.attemptDiagnostics === next.round.attemptDiagnostics &&
     prev.round.historyRounds === next.round.historyRounds &&

@@ -43,7 +43,7 @@ describe('FlowChat flat content surfaces', () => {
   it('keeps product-owned transcript cards free of elevation shadows', () => {
     const sources = [
       readSource('../tool-cards/CreatePlanDisplay.scss'),
-      readSource('../tool-cards/TaskToolDisplay.scss'),
+      readSource('../../../../../design-system/packages/ui/src/flow-chat/tool-cards/AgentControlToolCard.module.css'),
       readSource('./usage/SessionUsageReportCard.scss'),
     ];
 

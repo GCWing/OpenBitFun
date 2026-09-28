@@ -16,6 +16,19 @@
     <string>1.0.2</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>CFBundleURLName</key>
+            <string>com.openbitfun.mobile.ios.auth</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>openbitfun</string>
+            </array>
+        </dict>
+    </array>
     <key>NSCameraUsageDescription</key>
     <string>扫描桌面端二维码以连接 OpenBitFun</string>
     <key>NSMicrophoneUsageDescription</key>

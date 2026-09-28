@@ -58,6 +58,13 @@ struct OpenBitFunApp: App {
                         if phase == .background { Self.coldStartProcessClaimed = true; coldStartConsumed = true; showStartupBrand = false; showColdStart = false }
                         model.handleScenePhase(phase)
                     }
+                    .onOpenURL { _ in
+                        // The auth page redirects to this scheme after the
+                        // browser completes. The shared account poller is
+                        // already waiting; opening the URL brings this scene
+                        // foreground and the next poll is immediate.
+                        model.notifyAuthorizationCallback()
+                    }
                     .environment(\.locale, Locale(identifier: model.appLanguage.rawValue))
             }
         }

@@ -114,7 +114,7 @@ export function ComposerVoiceInputButton({ controller }: ComposerVoiceInputButto
             aria-hidden="true"
           >
             {downloading
-              ? <Loader2 size={14} className="openbitfun-chat-input__voice-spinner" />
+              ? <Icon glyph={Loader2} size="sm" className="openbitfun-chat-input__voice-spinner" />
               : <Icon name="arrow-down" size="sm" />}
           </span>
           <span
@@ -201,12 +201,9 @@ export function ComposerVoiceInputButton({ controller }: ComposerVoiceInputButto
             aria-hidden="true"
           >
             {preparing ? (
-              <Loader2 size={12} className="openbitfun-chat-input__voice-spinner" />
+              <Icon glyph={Loader2} size="xs" className="openbitfun-chat-input__voice-spinner" />
             ) : controller.lowVolumeWarning ? (
-              <VolumeX
-                size={13}
-                className="openbitfun-chat-input__voice-low-volume"
-              />
+              <Icon glyph={VolumeX} size="sm" className="openbitfun-chat-input__voice-low-volume" />
             ) : (
               <span className="openbitfun-chat-input__voice-pill-recording-dot" />
             )}
@@ -291,7 +288,7 @@ export function ComposerVoiceInputButton({ controller }: ComposerVoiceInputButto
                 icon={transcribing && controller.completionMode === 'send' ? (
                   <Loader2 size={15} className="openbitfun-chat-input__voice-spinner" />
                 ) : (
-                  <Icon name="arrow-up" size="lg" style={{ width: 15, height: 15 }} />
+                  <Icon name="arrow-up" size="md" />
                 )}
                 variant="primary"
               />

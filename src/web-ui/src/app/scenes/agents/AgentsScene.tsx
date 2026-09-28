@@ -18,7 +18,7 @@ import {
   GalleryPageHeader,
   GallerySkeleton,
   GalleryZone,
-} from '@/app/components';
+} from '@/app/components/GalleryLayout';
 import AgentCard from './components/AgentCard';
 import AgentHarnessOverview from './components/AgentHarnessOverview';
 import CoreAgentCard from './components/CoreAgentCard';

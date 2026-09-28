@@ -18,6 +18,7 @@ import './DiffEditor.scss';
 import { Tooltip } from '@openbitfun/ui';
 import {
   DEFAULT_EDITOR_FONT_FAMILY,
+  resolveEditorFontFamily,
   DEFAULT_EDITOR_FONT_SIZE,
   DEFAULT_EDITOR_LINE_HEIGHT,
 } from '../config/defaults';
@@ -227,7 +228,7 @@ export const DiffEditor: React.FC<DiffEditorProps> = ({
           theme: themeId,
           automaticLayout: true,
           fontSize: editorConfigRuntimeRef.current.font_size || DEFAULT_EDITOR_FONT_SIZE,
-          fontFamily: editorConfigRuntimeRef.current.font_family || DEFAULT_EDITOR_FONT_FAMILY,
+          fontFamily: resolveEditorFontFamily(editorConfigRuntimeRef.current.font_family),
           lineHeight: editorConfigRuntimeRef.current.line_height 
             ? Math.round((editorConfigRuntimeRef.current.font_size || DEFAULT_EDITOR_FONT_SIZE) * editorConfigRuntimeRef.current.line_height)
             : 0,

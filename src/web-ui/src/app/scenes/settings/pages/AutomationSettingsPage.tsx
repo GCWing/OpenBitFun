@@ -1,10 +1,11 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { ScrollArea } from '@openbitfun/ui';
-import React, { lazy, Suspense, useEffect, useRef } from 'react';
+import React, { Suspense, useEffect, useRef } from 'react';
 import type { SettingsPageProps } from '../settingsTypes';
 import './AutomationSettingsPage.scss';
 
-const QuickActionsConfig = lazy(() => import('@/infrastructure/config/components/QuickActionsConfig'));
-const HooksConfig = lazy(() => import('@/infrastructure/config/components/HooksConfig'));
+const QuickActionsConfig = lazyWithRecovery(() => import('@/infrastructure/config/components/QuickActionsConfig'));
+const HooksConfig = lazyWithRecovery(() => import('@/infrastructure/config/components/HooksConfig'));
 
 function AutomationSettingsLoading() {
   return (

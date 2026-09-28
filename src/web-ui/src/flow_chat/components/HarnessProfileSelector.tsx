@@ -417,7 +417,7 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
                         leading={<HarnessProfileMark profile={id} />}
                         metadata={(
                           <span className="openbitfun-harness-selector__profile-status">
-                            {connected ? <Icon name="check-line" size="sm" style={{ width: 13, height: 13 }} aria-hidden /> : null}
+                            {connected ? <Icon name="check-line" size="sm" aria-hidden /> : null}
                             {id === 'other' ? (
                               <>
                                 <span className="openbitfun-harness-selector__agent-count">
@@ -477,7 +477,7 @@ export const HarnessProfileSelector: React.FC<HarnessProfileSelectorProps> = ({
                         leading={<Icon name="user" size="md" aria-hidden />}
                         metadata={(
                           <span className="openbitfun-harness-selector__profile-status">
-                            {connected ? <Icon name="check-line" size="sm" style={{ width: 13, height: 13 }} aria-hidden /> : null}
+                            {connected ? <Icon name="check-line" size="sm" aria-hidden /> : null}
                             {agent.available === false
                               ? t('chatInput.harness.unavailable')
                               : null}

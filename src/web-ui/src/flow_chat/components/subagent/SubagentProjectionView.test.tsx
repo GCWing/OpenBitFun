@@ -26,21 +26,11 @@ vi.mock('../FlowTextBlock', () => ({
 }));
 
 vi.mock('../../tool-cards/ModelThinkingDisplay', () => ({
-  ModelThinkingDisplay: () => <div data-testid="thinking-display" />,
+  ModelThinkingDisplay: ({ sourceSessionId }: { sourceSessionId?: string }) => <div data-testid="thinking-display" data-source-session-id={sourceSessionId} />,
 }));
 
 vi.mock('../FlowToolCard', () => ({
   FlowToolCard: () => <div data-testid="flow-tool-card" />,
-}));
-
-vi.mock('../modern/SmoothHeightCollapse', () => ({
-  SmoothHeightCollapse: ({
-    children,
-    isOpen,
-  }: {
-    children: React.ReactNode;
-    isOpen: boolean;
-  }) => (isOpen ? <>{children}</> : null),
 }));
 
 vi.mock('../../store/FlowChatStore', () => ({
@@ -103,7 +93,7 @@ describe('SubagentProjectionView', () => {
     container.remove();
   });
 
-  it('hydrates a metadata-only historical subagent session for collapsed transcript projection', async () => {
+  it('hydrates a metadata-only historical subagent session when its detail panel is mounted', async () => {
     flowChatState.sessions.set('subagent-1', createSession({
       isHistorical: true,
       historyState: 'metadata-only',
@@ -134,6 +124,14 @@ describe('SubagentProjectionView', () => {
         includeInternal: true,
       }),
     );
+  });
+
+  it('keeps projected thinking details owned by the child session', async () => {
+    await act(async () => root.render(<SubagentProjectionView
+      parentTaskToolId="task-1" parentSessionId="parent-1" sessionId="parent-1" subagentSessionId="subagent-1"
+      items={[{ id: 'thinking-1', type: 'thinking', timestamp: 1, status: 'completed' }]}
+    />));
+    expect(container.querySelector('[data-testid="thinking-display"]')?.getAttribute('data-source-session-id')).toBe('subagent-1');
   });
 
   it('does not hydrate when the caller already supplies projected items', async () => {

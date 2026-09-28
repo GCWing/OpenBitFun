@@ -24,6 +24,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -99,8 +100,18 @@ public class AccountStore internal constructor(
     /** Latest account membership snapshot, used to authorize explicit device stores. */
     private var controllableDevices: List<AccountDeviceUi> = emptyList()
     private var pendingInitialDeviceSelection = false
+    private val authorizationWakeups = kotlinx.coroutines.flow.MutableSharedFlow<Long>(extraBufferCapacity = 1)
+
+    init {
+        (backend as? CloudBackend)?.setAuthorizationWakeups(authorizationWakeups)
+    }
 
     public fun resumeSessionStreams() { backend.resumeSessionStreams() }
+
+    /** Wakes an in-flight browser authorization poll after a native deep link. */
+    public fun notifyAuthorizationCallback() {
+        authorizationWakeups.tryEmit(0L)
+    }
 
     public fun dispatch(intent: AccountIntent) {
         when (intent) {
@@ -650,11 +661,20 @@ internal object AuthorizationPoll {
         start: com.openbitfun.mobile.core.transport.GitHubAuthorization,
         log: TransportLog,
         nowSeconds: () -> Long = { kotlin.time.Clock.System.now().epochSeconds },
+        wake: kotlinx.coroutines.flow.Flow<Long> = kotlinx.coroutines.flow.flow { kotlinx.coroutines.awaitCancellation() },
         poll: suspend () -> com.openbitfun.mobile.core.transport.GitHubAuthorizationPoll,
     ): String {
         var lastTransient: CloudAccountException? = null
+        var firstPoll = true
         while (nowSeconds() < start.expiresAt) {
-            kotlinx.coroutines.delay(start.pollIntervalSeconds.coerceIn(1, 30) * 1000L)
+            // Poll immediately after the browser handoff so a completed
+            // transaction is not held behind the normal server interval.
+            if (!firstPoll) {
+                kotlinx.coroutines.withTimeoutOrNull(start.pollIntervalSeconds.coerceIn(1, 30) * 1000L) {
+                    wake.first()
+                }
+            }
+            firstPoll = false
             val result = try {
                 poll()
             } catch (cause: CloudAccountException) {
@@ -679,6 +699,12 @@ private class CloudBackend(
     private val client: CloudAccountClient,
     private val log: TransportLog,
 ) : AccountBackend {
+    private var authorizationWakeups: kotlinx.coroutines.flow.Flow<Long> = emptyFlow()
+
+    fun setAuthorizationWakeups(flow: kotlinx.coroutines.flow.Flow<Long>) {
+        authorizationWakeups = flow
+    }
+
     override suspend fun login(
         relayUrl: String,
         deviceId: String,
@@ -688,7 +714,7 @@ private class CloudBackend(
     ): AccountSessionData {
         val start = client.startAuthorization(relayUrl)
         onAuthorization(start.authorizationUrl)
-        val token = AuthorizationPoll.awaitAccessToken(start, log) { client.pollAuthorization(relayUrl, start) }
+        val token = AuthorizationPoll.awaitAccessToken(start, log, poll = { client.pollAuthorization(relayUrl, start) }, wake = authorizationWakeups)
         val session = client.login(relayUrl, token, deviceId, deviceName, deviceSecret)
         return AccountSessionData(
             relayUrl = relayUrl,

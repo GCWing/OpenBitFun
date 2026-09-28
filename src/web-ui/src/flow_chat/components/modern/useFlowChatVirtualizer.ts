@@ -25,7 +25,7 @@
  * scroll has been corrected but the items have not moved yet.
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import {
   observeElementOffset as observeTanStackElementOffset,
   observeElementRect as observeTanStackElementRect,
@@ -158,6 +158,8 @@ export interface UseFlowChatVirtualizerOptions<T> {
   headerRef: RefObject<HTMLElement | null>;
   getItemKey: (item: T) => string;
   estimateItemHeightPx: (item: T, context?: VirtualItemHeightEstimateContext) => number;
+  /** Exact size for rows whose content was collected into another stable row. */
+  getKnownItemHeightPx?: (item: T) => number | undefined;
   /** Data-driven inputs used by estimates before an item is mounted. */
   estimateContext?: VirtualItemHeightEstimateContext;
   /** Stable identity for data that changes an unmeasured row's estimate. */
@@ -331,6 +333,7 @@ export function useFlowChatVirtualizer<T>({
   headerRef,
   getItemKey,
   estimateItemHeightPx,
+  getKnownItemHeightPx,
   estimateContext,
   estimateContextRevision,
   startAtTailOnMount = false,
@@ -572,6 +575,35 @@ export function useFlowChatVirtualizer<T>({
      */
     return false;
   };
+
+  const previousKnownHeightsRef = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    if (!getKnownItemHeightPx) {
+      previousKnownHeightsRef.current.clear();
+      return;
+    }
+    const previous = previousKnownHeightsRef.current;
+    const next = new Map<string, number>();
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index];
+      const key = getItemKeyRef.current(item);
+      const knownHeight = getKnownItemHeightPx(item);
+      if (knownHeight !== undefined) next.set(key, knownHeight);
+      if (knownHeight === undefined && !previous.has(key)) continue;
+
+      // A mounted row has real geometry. An unmounted row must have its old
+      // key-based measurement replaced now; otherwise virtual padding keeps
+      // the height it had before the group collected its content.
+      const mounted = !isViewportSuspendedRef.current()
+        ? virtualizer.elementsCache.get(key)
+        : undefined;
+      const height = mounted?.isConnected
+        ? virtualizer.options.measureElement(mounted, undefined, virtualizer)
+        : knownHeight ?? estimateItemHeightRef.current(item, estimateContextRef.current);
+      virtualizer.resizeItem(index, height);
+    }
+    previousKnownHeightsRef.current = next;
+  }, [getKnownItemHeightPx, items, virtualizer]);
 
   const virtualRows = virtualizer.getVirtualItems();
   const totalSizePx = virtualizer.getTotalSize();

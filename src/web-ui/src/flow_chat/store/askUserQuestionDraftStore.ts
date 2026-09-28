@@ -59,19 +59,28 @@ export function askUserQuestionDraftKey(
   return surfaceScopedKey(surfaceId, sessionId, toolId);
 }
 
-function parseDraftKey(key: string): [DeviceSurfaceId, string, string] | null {
+/** Follow-up answers outlive the original pending-question mailbox entry. */
+export function askUserQuestionFollowUpDraftKey(
+  sessionId: string,
+  toolId: string,
+  surfaceId = getActiveSurfaceId(),
+): string {
+  return surfaceScopedKey(surfaceId, sessionId, toolId, 'follow-up');
+}
+
+function parseDraftKey(key: string): [DeviceSurfaceId, string, string, 'follow-up'?] | null {
   try {
     const parsed = JSON.parse(key) as unknown;
     if (
       !Array.isArray(parsed)
-      || parsed.length !== 3
+      || !(parsed.length === 3 || parsed.length === 4 && parsed[3] === 'follow-up')
       || typeof parsed[0] !== 'string'
       || typeof parsed[1] !== 'string'
       || typeof parsed[2] !== 'string'
     ) {
       return null;
     }
-    return [parsed[0], parsed[1], parsed[2]];
+    return [parsed[0], parsed[1], parsed[2], parsed[3]];
   } catch {
     return null;
   }
@@ -225,6 +234,7 @@ export const useAskUserQuestionDraftStore = create<AskUserQuestionDraftState>((s
       return parsed !== null
         && parsed[0] === surfaceId
         && parsed[1] === sessionId
+        && parsed[3] !== 'follow-up'
         && !retainedToolIds.has(parsed[2]);
     }));
   },

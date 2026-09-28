@@ -576,6 +576,20 @@ pub struct BackgroundSubagentStartResult {
     pub agent_id: String,
 }
 
+/// User-facing admission must agree with delegated reuse. Fresh-only children
+/// execute their initial turn through the dedicated hidden-subagent route.
+pub(super) fn ensure_session_accepts_conversation(session: &Session) -> OpenBitFunResult<()> {
+    if session.kind == SessionKind::Subagent
+        && session.config.continuation_policy == SessionContinuationPolicy::FreshOnly
+    {
+        return Err(OpenBitFunError::Validation(
+            "subagent_follow_up_unsupported: this subagent session is fresh-only; start a new Task invocation"
+                .to_string(),
+        ));
+    }
+    Ok(())
+}
+
 fn build_subagent_session_relationship(
     parent_info: Option<&SubagentParentInfo>,
     agent_type: &str,
@@ -6043,6 +6057,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     .await?
             }
         };
+        ensure_session_accepts_conversation(&session)?;
         self.ensure_session_runtime_ownership(&session_id, None)?;
         let session_workspace = Self::build_workspace_binding(&session.config).await;
 
@@ -10323,6 +10338,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                         .get_session(&session_id)
                         .and_then(|session| session.config.model_id.clone()),
                     focused_review_display_label: focused_review_display_label.clone(),
+                    continuation_policy: Some(continuation_policy),
                 })
                 .await;
             }

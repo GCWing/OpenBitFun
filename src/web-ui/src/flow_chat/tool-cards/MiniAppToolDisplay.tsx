@@ -2,7 +2,7 @@
  * MiniAppToolDisplay — InitMiniApp result on the prominent FlowChat framework.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { OverflowText, Button, Icon } from '@openbitfun/ui';
+import { OverflowText, IconButton, Icon } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
 
 import type { ToolCardProps } from '../types/flow-chat';
@@ -86,17 +86,10 @@ export const InitMiniAppDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
 
   const renderSummary = () => (
     <ProminentToolCardSummary
-      icon={<span className="miniapp-icon"><Icon name="floating-window" size="md" /></span>}
+      icon={<span className="miniapp-icon"><Icon name="mini-app" size="md" /></span>}
       action={`${t('toolCards.initMiniApp.title')}:`}
       content={
         <span data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="info" className="miniapp-tool-info">
-          <span data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="operation" className="operation-tag">
-            {isLoading
-              ? t('toolCards.initMiniApp.operationInit')
-              : isFailed
-                ? t('toolCards.initMiniApp.operationInit')
-                : t('toolCards.initMiniApp.skeletonReady')}
-          </span>
           <OverflowText
             data-openbitfun-component="mini-app-tool-display"
             data-openbitfun-part="command"
@@ -111,9 +104,14 @@ export const InitMiniAppDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
       extra={
         <>
           {success && appId && status === 'completed' && (
-            <OverflowText data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="output" className="output-summary" title={appId}>
-              {appId}
+            <OverflowText data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="output" className="output-summary">
+              {t('toolCards.initMiniApp.skeletonReady')}
             </OverflowText>
+          )}
+          {(status === 'cancelled' || status === 'rejected') && (
+            <span data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="operation" className="operation-tag">
+              {status === 'cancelled' ? t('toolCards.default.cancelled') : t('toolCards.default.rejected')}
+            </span>
           )}
           {isFailed && (
             <div data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="errorIndicator" className="error-indicator">
@@ -122,6 +120,17 @@ export const InitMiniAppDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
           )}
         </>
       }
+      actions={success && !isFailed && appId && status === 'completed' ? (
+        <span data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="actions">
+          <IconButton
+            variant="quiet" size="sm" icon={<Icon name="arrow-up-right" size="sm" />}
+            data-testid="chat-miniapp-open-btn" data-app-id={appId}
+            onClick={() => openScene(`miniapp:${appId}`)}
+            title={t('toolCards.initMiniApp.openInMiniAppTitle')}
+            aria-label={t('toolCards.initMiniApp.openInMiniApp')}
+          />
+        </span>
+      ) : undefined}
       statusIcon={renderStatusIcon()}
     />
   );
@@ -137,7 +146,7 @@ export const InitMiniAppDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
               {appId}
             </OverflowText>
           </div>
-          {miniAppFiles.map(filePath => (
+          {miniAppFiles.map((filePath, index) => (
             <div
               key={filePath}
               data-openbitfun-component="mini-app-tool-display"
@@ -146,26 +155,12 @@ export const InitMiniAppDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
               data-testid="chat-miniapp-file-row"
               data-path={filePath}
             >
-              <span data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="label" className="miniapp-result-label">{t('toolCards.initMiniApp.labelPath')}</span>
-              <OverflowText data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="value" className="miniapp-result-value" title={filePath}>
+              <span data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="label" className="miniapp-result-label">{index === 0 ? t('toolCards.initMiniApp.labelPath') : null}</span>
+              <span data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="value" className="miniapp-result-value" title={filePath}>
                 {filePath}
-              </OverflowText>
+              </span>
             </div>
           ))}
-        </div>
-        <div data-openbitfun-component="mini-app-tool-display" data-openbitfun-part="footer" className="miniapp-result-footer miniapp-action-buttons">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            leadingIcon={<Icon name="arrow-up-right" size="xs" />}
-            data-testid="chat-miniapp-open-btn"
-            data-app-id={appId}
-            onClick={() => openScene(`miniapp:${appId}`)}
-            title={t('toolCards.initMiniApp.openInMiniAppTitle')}
-          >
-            {t('toolCards.initMiniApp.openInMiniApp')}
-          </Button>
         </div>
       </div>
     );
@@ -203,12 +198,14 @@ export const InitMiniAppDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
       data-expanded={isExpanded ? 'true' : 'false'}
     >
       <ProminentToolCard
-        status={status}
+        status={isFailed ? 'error' : status}
         isExpanded={isExpanded}
         onToggle={hasExpandableDetails ? handleCardClick : undefined}
         className="miniapp-tool-display"
         summary={renderSummary()}
-        expandedContent={isExpanded ? renderDetailsWhenExpanded() : null}
+        collapsibleErrorContent
+        errorContent={isFailed ? renderExpandedError() : undefined}
+        expandedContent={isExpanded && !isFailed ? renderDetailsWhenExpanded() : null}
         summaryExpandAffordance={hasExpandableDetails}
       />
     </div>

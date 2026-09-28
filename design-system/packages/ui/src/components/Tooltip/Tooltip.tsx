@@ -1,6 +1,7 @@
 import {
   cloneElement,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useRef,
@@ -14,7 +15,7 @@ import {
 } from "react";
 import { classNames } from "../../internal/classNames";
 import { isImeOwnedKeyboardEvent } from "../../internal/ime";
-import { TooltipTriggerContext } from "../../internal/tooltipTriggerContext";
+import { registerTooltipTrigger, TitleTooltipContext, TooltipTriggerContext } from "../../internal/tooltipTriggerContext";
 import { Portal } from "../../overlay/Portal";
 import { useDesignSystem } from "../../overlay/useDesignSystem";
 import styles from "./Tooltip.module.css";
@@ -181,6 +182,7 @@ export function Tooltip({
   onBeforeShow,
 }: TooltipProps) {
   const designSystem = useDesignSystem();
+  const isTitleFallback = useContext(TitleTooltipContext);
   const resolvedDelayMs = delay ?? designSystem.tooltipDelay ?? DEFAULT_TOOLTIP_DELAY_MS;
 
   const tooltipId = useId();
@@ -202,6 +204,7 @@ export function Tooltip({
   const latestMousePositionRef = useRef<{ x: number; y: number } | null>(null);
   const recalcFrameRef = useRef<number | null>(null);
   const instantRef = useRef(false);
+  const activationRef = useRef(false);
   const hideCurrentRef = useRef<() => void>(() => {});
 
   const calculatePosition = useCallback(() => {
@@ -346,6 +349,8 @@ export function Tooltip({
     return () => {
       if (showTimeoutRef.current) clearTimeout(showTimeoutRef.current);
       if (hideTimeoutRef.current) clearTimeout(hideTimeoutRef.current);
+      showTimeoutRef.current = hideTimeoutRef.current = null;
+      activationRef.current = false;
       if (ownerDocument && activeTooltips.get(ownerDocument)?.id === tooltipId) activeTooltips.delete(ownerDocument);
     };
   }, [tooltipId, triggerRef]);
@@ -393,7 +398,6 @@ export function Tooltip({
 
   // A measured text slot can mount after focus has already reached its owner.
   // Only replay focus/virtual activation on a transition, not on visibility updates.
-  const activationRef = useRef(false);
   useEffect(() => {
     const element = triggerRef.current;
     const activated = !disabled && (active || Boolean(externalTriggerRef
@@ -472,6 +476,12 @@ export function Tooltip({
 
   useEffect(() => {
     const element = externalTriggerRef?.current;
+    if (!element || isTitleFallback) return;
+    return registerTooltipTrigger(element);
+  }, [externalTriggerRef, isTitleFallback]);
+
+  useEffect(() => {
+    const element = externalTriggerRef?.current;
     if (!element || !isShown) return;
     const descriptions = new Set(element.getAttribute("aria-describedby")?.split(/\s+/).filter(Boolean));
     descriptions.add(tooltipId);
@@ -484,6 +494,7 @@ export function Tooltip({
   }, [externalTriggerRef, isShown, tooltipId]);
 
   const triggerElement = children ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+    "data-openbitfun-tooltip-trigger": "true",
     ref: handleTriggerRef,
     onMouseEnter: handleMouseEnter,
     onMouseLeave: handleMouseLeave,

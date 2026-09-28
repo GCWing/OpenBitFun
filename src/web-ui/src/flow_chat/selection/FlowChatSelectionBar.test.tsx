@@ -121,7 +121,7 @@ describe('selection annotation dialog lifecycle', () => {
     expect(document.activeElement).toBe(textarea);
     expect(surface.querySelector('[data-openbitfun-product-part="quote"]')?.textContent).toBe('Selected source text');
     expect(surface.querySelector('label')).toBeNull();
-    expect(textarea.getAttribute('placeholder')).toBeNull();
+    expect(textarea.getAttribute('placeholder')).toBe('selection.annotationPlaceholder');
     act(() => {
       window.getSelection()?.removeAllRanges();
       document.dispatchEvent(new Event('selectionchange'));

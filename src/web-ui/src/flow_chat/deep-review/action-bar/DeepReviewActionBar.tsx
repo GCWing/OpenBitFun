@@ -1,13 +1,8 @@
-import { Icon, Textarea, type IconName } from '@openbitfun/ui';
+import { Icon, Textarea, type IconSource } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useI18n } from '@/infrastructure/i18n';
-import {
-  AlertTriangle,
-  AlertCircle,
-  Loader2,
-  MessageSquare,
-} from 'lucide-react';
+import { AlertTriangle, AlertCircle, Loader2 } from 'lucide-react';
 import {
   buildPendingFollowUpReviewSessionId,
   getPendingFollowUpReviewRequestId,
@@ -147,44 +142,25 @@ interface ReviewActionBarProps {
   childSessionId?: string;
 }
 
-type PhaseIconComponent = React.ComponentType<{
-  size?: number | string;
-  style?: React.CSSProperties;
-  className?: string;
-}>;
-
-function catalogPhaseIcon(name: Extract<IconName, 'check-circle' | 'clock'>): PhaseIconComponent {
-  return function CatalogPhaseIcon({ size = 18, style, className }) {
-    return (
-      <Icon
-        name={name}
-        size="lg"
-        className={className}
-        style={{ width: size, height: size, ...style }}
-      />
-    );
-  };
-}
-
 const PHASE_CONFIG: Record<ReviewActionPhase, {
-  icon: PhaseIconComponent;
+  icon: IconSource;
   iconClass: string;
   variant: 'success' | 'warning' | 'error' | 'info' | 'loading';
 }> = {
-  idle: { icon: catalogPhaseIcon('clock'), iconClass: '', variant: 'info' },
-  review_running: { icon: Loader2, iconClass: 'deep-review-action-bar__icon--loading', variant: 'loading' },
-  review_completed: { icon: catalogPhaseIcon('check-circle'), iconClass: 'deep-review-action-bar__icon--success', variant: 'success' },
-  fix_running: { icon: Loader2, iconClass: 'deep-review-action-bar__icon--loading', variant: 'loading' },
-  fix_completed: { icon: catalogPhaseIcon('check-circle'), iconClass: 'deep-review-action-bar__icon--success', variant: 'success' },
-  fix_failed: { icon: AlertCircle, iconClass: 'deep-review-action-bar__icon--error', variant: 'error' },
-  fix_timeout: { icon: catalogPhaseIcon('clock'), iconClass: 'deep-review-action-bar__icon--warning', variant: 'warning' },
-  fix_interrupted: { icon: AlertTriangle, iconClass: 'deep-review-action-bar__icon--warning', variant: 'warning' },
-  review_waiting_capacity: { icon: catalogPhaseIcon('clock'), iconClass: 'deep-review-action-bar__icon--warning', variant: 'warning' },
-  review_interrupted: { icon: AlertTriangle, iconClass: 'deep-review-action-bar__icon--warning', variant: 'warning' },
-  resume_blocked: { icon: AlertTriangle, iconClass: 'deep-review-action-bar__icon--error', variant: 'error' },
-  resume_running: { icon: Loader2, iconClass: 'deep-review-action-bar__icon--loading', variant: 'loading' },
-  resume_failed: { icon: AlertCircle, iconClass: 'deep-review-action-bar__icon--error', variant: 'error' },
-  review_error: { icon: AlertTriangle, iconClass: 'deep-review-action-bar__icon--error', variant: 'error' },
+  idle: { icon: { name: 'clock' }, iconClass: '', variant: 'info' },
+  review_running: { icon: { glyph: Loader2 }, iconClass: 'deep-review-action-bar__icon--loading', variant: 'loading' },
+  review_completed: { icon: { name: 'check-circle' }, iconClass: 'deep-review-action-bar__icon--success', variant: 'success' },
+  fix_running: { icon: { glyph: Loader2 }, iconClass: 'deep-review-action-bar__icon--loading', variant: 'loading' },
+  fix_completed: { icon: { name: 'check-circle' }, iconClass: 'deep-review-action-bar__icon--success', variant: 'success' },
+  fix_failed: { icon: { glyph: AlertCircle }, iconClass: 'deep-review-action-bar__icon--error', variant: 'error' },
+  fix_timeout: { icon: { name: 'clock' }, iconClass: 'deep-review-action-bar__icon--warning', variant: 'warning' },
+  fix_interrupted: { icon: { glyph: AlertTriangle }, iconClass: 'deep-review-action-bar__icon--warning', variant: 'warning' },
+  review_waiting_capacity: { icon: { name: 'clock' }, iconClass: 'deep-review-action-bar__icon--warning', variant: 'warning' },
+  review_interrupted: { icon: { glyph: AlertTriangle }, iconClass: 'deep-review-action-bar__icon--warning', variant: 'warning' },
+  resume_blocked: { icon: { glyph: AlertTriangle }, iconClass: 'deep-review-action-bar__icon--error', variant: 'error' },
+  resume_running: { icon: { glyph: Loader2 }, iconClass: 'deep-review-action-bar__icon--loading', variant: 'loading' },
+  resume_failed: { icon: { glyph: AlertCircle }, iconClass: 'deep-review-action-bar__icon--error', variant: 'error' },
+  review_error: { icon: { glyph: AlertTriangle }, iconClass: 'deep-review-action-bar__icon--error', variant: 'error' },
 };
 
 export const ReviewActionBar: React.FC<ReviewActionBarProps> = ({ childSessionId: scopedChildSessionId }) => {
@@ -425,7 +401,6 @@ export const ReviewActionBar: React.FC<ReviewActionBarProps> = ({ childSessionId
   }, [phase, longRunningNotified, t]);
 
   const phaseConfig = PHASE_CONFIG[phase];
-  const PhaseIcon = phaseConfig.icon;
 
   const decisionGateItems = useMemo(() => {
     if (!pendingDecisionAction) {
@@ -941,7 +916,7 @@ export const ReviewActionBar: React.FC<ReviewActionBarProps> = ({ childSessionId
       <ReviewActionHeader
         isReviewRunning={phase === 'review_running'}
         reviewData={reviewData}
-        PhaseIcon={PhaseIcon}
+        phaseIcon={phaseConfig.icon}
         phaseIconClass={phaseConfig.iconClass}
         phaseTitle={phaseTitle}
         errorMessage={errorMessage}
@@ -1115,7 +1090,7 @@ export const ReviewActionBar: React.FC<ReviewActionBarProps> = ({ childSessionId
       {/* Friendly message when review completed with no remediation items */}
       {phase === 'review_completed' && remediationItems.length === 0 && (
         <div className="deep-review-action-bar__no-issues" data-openbitfun-product-component="deep-review-action-bar" data-openbitfun-product-part="noIssues">
-          <Icon name="check-circle" size="lg" style={{ width: 18, height: 18 }} className="deep-review-action-bar__no-issues-icon" />
+          <Icon name="check-circle" size="md" className="deep-review-action-bar__no-issues-icon" />
           <span className="deep-review-action-bar__no-issues-text">
             {t('reviewActionBar.noIssuesFound')}
           </span>
@@ -1145,7 +1120,7 @@ export const ReviewActionBar: React.FC<ReviewActionBarProps> = ({ childSessionId
             className="deep-review-action-bar__custom-toggle"
             onClick={() => setShowCustomInput(!showCustomInput)}
           >
-            <MessageSquare size={14} />
+            <Icon name="message-square" size="sm" />
             <span>
               {showCustomInput
                 ? t('deepReviewActionBar.hideCustomInput')

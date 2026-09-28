@@ -66,6 +66,10 @@ export function interpolateMessage(template, params) {
   });
 }
 
+export function formatDesignLabNumber(value, locale) {
+  return new Intl.NumberFormat(resolveDesignLabLocale(locale) ?? 'en-US').format(value);
+}
+
 export function translateFromCatalog(catalog, locale, key, params) {
   const resolvedLocale = resolveDesignLabLocale(locale) ?? "en-US";
   const template = catalog[resolvedLocale]?.[key] ?? catalog["en-US"]?.[key] ?? key;

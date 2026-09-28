@@ -68,6 +68,14 @@ function execControlItem(input: Record<string, unknown>, result: unknown): FlowT
 }
 
 describe('buildWriteStdinCardModel', () => {
+  it('distinguishes receiving output from sending whitespace and preserves legacy process IDs', () => {
+    const poll = buildWriteStdinCardModel(writeStdinItem({}, { session_id: '42', chars: '' }), t);
+    const send = buildWriteStdinCardModel(writeStdinItem({}, { session_id: 42, chars: '\n' }), t);
+    expect(poll.sessionId).toBe(42);
+    expect(poll.interaction?.operation).toBe('receive');
+    expect(send.interaction?.operation).toBe('send');
+    expect(send.copyText).toBe('\n');
+  });
   it('does not display the appended enter after the input text', () => {
     const model = buildWriteStdinCardModel(writeStdinItem({}, {
       session_id: 42,

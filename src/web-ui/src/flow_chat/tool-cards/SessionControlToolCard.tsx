@@ -1,8 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import { SessionControlToolCard as SessionControlToolCardView } from '@openbitfun/ui/flow-chat';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
+import { interactionOutcome, readInteractionInput, readToolRecord } from './toolInteractionModel';
+import { useToolSessionParticipant, useCurrentToolSessionParticipant } from './useToolSessionParticipant';
 
 interface SessionSummary {
   session_id?: string;
@@ -32,21 +35,13 @@ interface SessionControlResult {
   sessions?: SessionSummary[];
 }
 
-function parseData<T>(value: unknown): T | null {
-  if (!value) return null;
-
-  try {
-    return typeof value === 'string' ? JSON.parse(value) as T : value as T;
-  } catch {
-    return null;
-  }
-}
-
 export const SessionControlToolCard: React.FC<ToolCardProps> = React.memo(({
   toolItem,
+  sessionId: sourceSessionId,
+  onExpand,
 }) => {
-  const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status } = toolItem;
+  const { t } = useI18n('flow-chat');
+  const { toolCall, toolResult } = toolItem;
   const [isExpanded, setIsExpanded] = useState(false);
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
@@ -55,20 +50,24 @@ export const SessionControlToolCard: React.FC<ToolCardProps> = React.memo(({
   });
 
   const inputData = useMemo(
-    () => parseData<SessionControlInput>(toolCall?.input) ?? {},
-    [toolCall?.input]
+    () => readInteractionInput(toolItem) as SessionControlInput,
+    [toolItem]
   );
 
   const resultData = useMemo(
-    () => parseData<SessionControlResult>(toolResult?.result),
+    () => readToolRecord(toolResult?.result) as SessionControlResult,
     [toolResult?.result]
   );
 
+  const status = getToolCardStatus(toolItem, resultData?.success === false);
   const action = resultData?.action ?? inputData.action ?? 'list';
   const workspace = resultData?.workspace ?? inputData.workspace;
   const session = resultData?.session;
   const sessionId = session?.session_id ?? resultData?.session_id ?? inputData.session_id;
   const sessionName = session?.session_name ?? resultData?.session_name ?? inputData.session_name;
+  const source = useCurrentToolSessionParticipant(sourceSessionId, t);
+  const target = useToolSessionParticipant(sessionId, sessionName || sessionId || t('toolCards.sessionControl.unknownSession'), t,
+    'session', { parentSessionId: sourceSessionId, enabled: action !== 'delete' && action !== 'list' && sessionId !== sourceSessionId });
   const agentType = session?.agent_type ?? inputData.agent_type;
   const sessions = Array.isArray(resultData?.sessions) ? resultData.sessions : [];
   const sessionCount = resultData?.count ?? sessions.length;
@@ -76,6 +75,7 @@ export const SessionControlToolCard: React.FC<ToolCardProps> = React.memo(({
   const hadActiveTurn = resultData?.had_active_turn;
   const cancelledTurnId = resultData?.cancelled_turn_id;
   const hasDetails = Boolean(
+    action !== 'list' ||
     workspace ||
     sessionId ||
     sessionName ||
@@ -86,86 +86,28 @@ export const SessionControlToolCard: React.FC<ToolCardProps> = React.memo(({
     cancelledTurnId ||
     toolResult?.error
   );
-
-  const getActionLabel = () => {
-    switch (action) {
-      case 'create':
-        return sessionName || t('toolCards.sessionControl.defaultSessionName');
-      case 'cancel':
-      case 'delete':
-      case 'rename':
-        return sessionId || t('toolCards.sessionControl.unknownSession');
-      case 'list':
-      default:
-        return workspace || t('toolCards.sessionControl.currentWorkspace');
-    }
+  const actionLabels = {
+    create: t('toolCards.interaction.create'),
+    cancel: t('toolCards.interaction.interrupt'),
+    delete: t('toolCards.interaction.delete'),
+    rename: t('toolCards.interaction.rename'),
+    list: t('toolCards.interaction.list'),
   };
+  const statusLabel = status === 'error' ? t('toolCards.default.failed')
+    : status === 'cancelled' ? t('toolCards.default.cancelled')
+      : status === 'rejected' ? t('toolCards.default.rejected')
+        : action === 'cancel' && status === 'completed' ? cancelStatus === 'no_active_turn'
+          ? t('toolCards.sessionControl.noActiveTurnStatus') : t('toolCards.sessionControl.cancelRequestedStatus') : undefined;
 
-  const renderContent = () => {
-    const label = getActionLabel();
-
-    if (status === 'completed') {
-      switch (action) {
-        case 'create':
-          return <>{t('toolCards.sessionControl.createdSession', { session: label })}</>;
-        case 'cancel':
-          if (cancelStatus === 'no_active_turn') {
-            return <>{t('toolCards.sessionControl.noActiveTurn', { session: label })}</>;
-          }
-          return <>{t('toolCards.sessionControl.cancelledSession', { session: label })}</>;
-        case 'delete':
-          return <>{t('toolCards.sessionControl.deletedSession', { session: label })}</>;
-        case 'rename':
-          return <>{t('toolCards.sessionControl.renamedSession', {
-            session: label,
-            name: sessionName || t('toolCards.sessionControl.defaultSessionName'),
-          })}</>;
-        case 'list':
-        default:
-          return <>{t('toolCards.sessionControl.listedSessions', { count: sessionCount })}</>;
-      }
-    }
-
-    if (status === 'running' || status === 'streaming') {
-      switch (action) {
-        case 'create':
-          return <>{t('toolCards.sessionControl.creatingSession', { session: label })}...</>;
-        case 'cancel':
-          return <>{t('toolCards.sessionControl.cancellingSession', { session: label })}...</>;
-        case 'delete':
-          return <>{t('toolCards.sessionControl.deletingSession', { session: label })}...</>;
-        case 'rename':
-          return <>{t('toolCards.sessionControl.renamingSession', {
-            session: label,
-            name: sessionName || t('toolCards.sessionControl.defaultSessionName'),
-          })}...</>;
-        case 'list':
-        default:
-          return <>{t('toolCards.sessionControl.listingSessions')}...</>;
-      }
-    }
-
-    if (status === 'error' || status === 'cancelled') {
-      return <>{t('toolCards.sessionControl.actionFailed')}</>;
-    }
-
-    switch (action) {
-      case 'create':
-        return <>{t('toolCards.sessionControl.preparingCreate', { session: label })}</>;
-      case 'cancel':
-        return <>{t('toolCards.sessionControl.preparingCancel', { session: label })}</>;
-      case 'delete':
-        return <>{t('toolCards.sessionControl.preparingDelete', { session: label })}</>;
-      case 'rename':
-        return <>{t('toolCards.sessionControl.preparingRename', {
-          session: label,
-          name: sessionName || t('toolCards.sessionControl.defaultSessionName'),
-        })}</>;
-      case 'list':
-      default:
-        return <>{t('toolCards.sessionControl.preparingList')}</>;
-    }
-  };
+  const completed = action === 'create' ? t('toolCards.interaction.sessionCreated')
+    : action === 'cancel' ? cancelStatus === 'no_active_turn' ? t('toolCards.interaction.noActiveRuns') : t('toolCards.interaction.stopRequested')
+      : action === 'delete' ? t('toolCards.interaction.sessionDeleted')
+        : action === 'rename' ? t('toolCards.interaction.renamed') : t('toolCards.interaction.list');
+  const active = action === 'create' ? t('toolCards.interaction.creatingSession')
+    : action === 'cancel' ? t('toolCards.interaction.stopping')
+      : action === 'delete' ? t('toolCards.interaction.deleting')
+        : action === 'rename' ? t('toolCards.interaction.renaming') : t('toolCards.sessionControl.listingSessions');
+  const summary = interactionOutcome(status, t, completed, active);
 
   const fields = [
     workspace ? { label: `${t('shared:features.workspace')}:`, value: workspace } : null,
@@ -196,23 +138,33 @@ export const SessionControlToolCard: React.FC<ToolCardProps> = React.memo(({
     <div ref={cardRootRef} data-openbitfun-adapter="session-control" data-tool-card-id={toolId ?? ''}>
       <SessionControlToolCardView
         status={status}
-        isExpanded={isExpanded}
-        onToggle={hasDetails
-          ? () => applyExpandedState(isExpanded, !isExpanded, setIsExpanded)
+        action={actionLabels[action]}
+        interaction={action !== 'list' ? {
+          operation: action === 'cancel' ? 'interrupt' : action,
+          source, target: { ...target, label: sessionName || target.label },
+        } : undefined}
+        statusLabel={action === 'list' ? statusLabel : undefined}
+        statusDescription={getToolCardStatusDescription(status, t, toolResult?.error) ?? statusLabel}
+        isExpanded={action === 'list' && isExpanded}
+        resultLabel={t('toolCards.interaction.inspectResult')}
+        onToggle={action === 'list' && hasDetails
+          ? () => applyExpandedState(isExpanded, !isExpanded, setIsExpanded, { onExpand })
           : undefined}
-        action={`${t('toolCards.sessionControl.title')}:`}
-        summary={renderContent()}
-        fields={fields}
+        summary={action === 'list' ? workspace || t('toolCards.sessionControl.currentWorkspace') : summary}
+        resultSummary={action === 'list' && status === 'completed'
+          && (typeof resultData?.count === 'number' || Array.isArray(resultData?.sessions))
+          ? t('toolCards.sessionControl.resultCount', { count: sessionCount }) : undefined}
+        fields={action === 'list' ? fields : undefined}
         sessions={action === 'list' ? sessions.map((item, index) => ({
           agentType: item.agent_type || '-',
           id: item.session_id || t('toolCards.sessionControl.unknownSession'),
           key: `${item.session_id ?? 'session'}-${index}`,
           name: item.session_name || t('toolCards.sessionControl.defaultSessionName'),
         })) : undefined}
-        emptyState={action === 'list' && sessions.length === 0 && status === 'completed'
+        emptyState={action === 'list' && Array.isArray(resultData?.sessions) && sessions.length === 0 && status === 'completed'
           ? t('toolCards.sessionControl.noSessions')
           : undefined}
-        error={toolResult?.error}
+        error={toolResult?.error || (status === 'error' ? t('toolCards.default.failed') : undefined)}
       />
     </div>
   );

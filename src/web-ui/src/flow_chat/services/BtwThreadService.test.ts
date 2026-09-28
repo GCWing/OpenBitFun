@@ -240,6 +240,16 @@ describe('BtwThreadService', () => {
     expect(sessions.has('btw-child')).toBe(true);
   });
 
+  it('rejects an unavailable side draft before binding its first request or calling the transport', async () => {
+    sessions.set('archived-child', {
+      sessionId: 'archived-child', sessionKind: 'btw', persistedStatus: 'archived', config: {},
+    });
+    await expect(sendMessageToBtwSession({ parentSessionId: 'parent-1', childSessionId: 'archived-child', question: 'Follow up' }))
+      .rejects.toMatchObject({ reason: 'archived' });
+    expect(mockUpdateSessionBtwOrigin).not.toHaveBeenCalled();
+    expect(mockAskStream).not.toHaveBeenCalled();
+  });
+
   it('passes image contexts and parent turn metadata through to the desktop /btw API', async () => {
     sessions.set('btw-child', {
       sessionId: 'btw-child',

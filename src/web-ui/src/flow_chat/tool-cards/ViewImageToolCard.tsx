@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import { ViewImageToolCard as ViewImageToolCardView } from '@openbitfun/ui/flow-chat';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
@@ -48,6 +49,7 @@ function fileName(path: string | null): string {
 
 export const ViewImageToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand }) => {
   const { t } = useI18n('flow-chat');
+  const status = getToolCardStatus(toolItem);
   const result = useMemo(() => parseResult(toolItem.toolResult?.result), [toolItem.toolResult?.result]);
   const source = useMemo(() => imageSource(toolItem), [toolItem]);
   const [isExpanded, setIsExpanded] = useState(Boolean(source));
@@ -78,30 +80,22 @@ export const ViewImageToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand 
   const path = result.path
     ?? (typeof toolItem.toolCall?.input?.path === 'string' ? toolItem.toolCall.input.path : null);
   const title = fileName(path);
-  const imageCount = toolItem.toolResult?.imageAttachments?.length ?? 1;
-  const viewedImagesText = t('toolCards.viewImage.viewedImages', { count: imageCount });
-  const viewingText = t('toolCards.viewImage.viewing');
-  const statusText = toolItem.status === 'error'
-    ? toolItem.toolResult?.error ?? t('toolCards.default.failed')
-    : toolItem.status === 'completed'
-      ? viewedImagesText === 'toolCards.viewImage.viewedImages'
-        ? t('toolCards.default.completed')
-        : viewedImagesText
-      : viewingText === 'toolCards.viewImage.viewing'
-        ? t('toolCards.default.executing')
-        : viewingText;
-
+  const imageCount = toolItem.toolResult?.imageAttachments?.length;
   return (
     <div data-openbitfun-adapter="view-image" ref={cardRootRef} data-tool-card-id={toolId ?? ''}>
       <ViewImageToolCardView
-        status={toolItem.status}
+        status={status}
         isExpanded={isExpanded}
         onToggle={source ? handleToggle : undefined}
         alt={title}
         source={source ?? undefined}
         width={result.width ?? undefined}
         height={result.height ?? undefined}
-        statusText={statusText}
+        action={t('toolCards.viewImage.title')}
+        statusText={path ? title : undefined}
+        resultSummary={status === 'completed' && imageCount && imageCount > 1
+          ? t('toolCards.viewImage.imagesCount', { count: imageCount }) : undefined}
+        statusDescription={getToolCardStatusDescription(status, t, toolItem.toolResult?.error)}
         previewLabel={t('toolCards.common.viewDetails')}
         imageFailed={imageFailed}
         errorText={t('toolCards.default.failed')}

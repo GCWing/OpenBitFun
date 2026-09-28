@@ -6,6 +6,7 @@ import {
   findElementWithDataValue,
   findFlowChatSearchTextRange,
   findFlowChatSearchTextRanges,
+  findFlowChatFocusTextRange,
   getFlowChatSearchTextRoot,
 } from './flowChatSearchDom';
 
@@ -69,6 +70,14 @@ describe('FlowChat search DOM navigation', () => {
     const range = findFlowChatSearchTextRange(root, 'needle');
 
     expect(range?.startContainer.parentElement?.textContent).toBe('visible needle');
+  });
+
+  it('uses the first readable source line for navigation, excluding controls and hidden text', () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<button>Copy</button><div aria-hidden="true">hidden</div> <p>Source line</p><p>Later content</p>';
+    expect(findFlowChatFocusTextRange(root)?.toString()).toBe('Source line');
+    root.innerHTML = '<button>Copy</button><div hidden>hidden</div>';
+    expect(findFlowChatFocusTextRange(root)).toBeNull();
   });
 });
 

@@ -84,8 +84,8 @@ describe('startup performance contract', () => {
     for (const styles of [source, componentStyles]) {
       expect(styles).toContain('width: 120px;');
       expect(styles).not.toContain('width: 144px;');
-      expect(styles).toContain('background-color: var(--openbitfun-color-content-on-light);');
-      expect(styles).toContain('background-color: var(--openbitfun-color-content-on-dark);');
+      expect(styles).toMatch(/(?:background-)?color: var\(--openbitfun-color-content-on-light\);/);
+      expect(styles).toMatch(/(?:background-)?color: var\(--openbitfun-color-content-on-dark\);/);
       expect(styles).toContain('color: var(--openbitfun-color-content-secondary);');
       expect(styles).not.toContain('var(--openbitfun-color-content-on-dark) 80%, transparent');
       expect(styles).toContain('var(--openbitfun-color-content-on-dark) 60%, transparent');
@@ -452,12 +452,22 @@ describe('startup performance contract', () => {
     );
     expect(backgroundCommandOutputPanelSource).not.toMatch(/from\s+['"]@\/tools\/terminal\/components['"]/);
     expect(backgroundCommandOutputPanelSource).toContain(
-      "React.lazy(() => import('./BackgroundTerminalProjection'))"
+      "lazyWithRecovery(() => import('./BackgroundTerminalProjection'))"
     );
     expect(backgroundCommandOutputPanelSource).toContain("await import('./backgroundTerminalReplay')");
     expect(backgroundCommandOutputPanelSource).not.toMatch(/from\s+['"]@xterm\//);
     expect(backgroundCommandOutputPanelSource).not.toMatch(/import\s+\{[^}]*BackgroundTerminalReplay[^}]*\}\s+from/);
-    expect(lazyTerminalOutputSource).toContain("import('./TerminalOutputRenderer')");
+    expect(lazyTerminalOutputSource).toContain("from '@openbitfun/flow-chat-presentation/terminal'");
+    const sharedLazyOutputSource = readSource('../../../../../packages/flow-chat-presentation/src/terminal/LazyTerminalOutputRenderer.tsx');
+    expect(sharedLazyOutputSource).toContain("import('./TerminalOutputRenderer')");
+  });
+
+  it('keeps gallery views off the shell and file-panel barrel', () => {
+    for (const view of ['MiniAppLibraryView', 'MiniAppSubmissionsView', 'MiniAppMarketView', 'MiniAppGalleryView']) {
+      const imports = staticImportSpecifiers(readSource(`../scenes/miniapps/views/${view}.tsx`));
+      expect(imports).not.toContain('@/app/components');
+      expect(imports).toContain('@/app/components/GalleryLayout');
+    }
   });
 
   it('keeps settings pages lazy by active page', () => {
@@ -505,7 +515,7 @@ describe('startup performance contract', () => {
     for (const viewSpecifier of lazyViewSpecifiers) {
       expect(viewStaticImports).not.toContain(viewSpecifier);
     }
-    expect(registrySource).toContain('component: lazy(definition.load)');
+    expect(registrySource).toContain('const component = lazyWithRecovery(definition.load)');
     expect(registrySource).toContain("id: 'application.general'");
   });
 
@@ -538,7 +548,6 @@ describe('startup performance contract', () => {
     expect(flowToolCardSource).toContain("from '../tool-cards'");
     expect(modelRoundItemSource).toContain("from '../../tool-cards/toolCardMetadata'");
     expect(modelRoundItemSource).not.toMatch(/from\s+['"]\.\.\/\.\.\/tool-cards['"]/);
-    expect(flowStoreSource).toContain("from '../tool-cards/toolCardMetadata'");
     expect(flowStoreSource).not.toMatch(/from\s+['"]\.\.\/tool-cards['"]/);
     expect(keyboardShortcutsSource).not.toMatch(/from\s+['"]@\/infrastructure\/config['"]/);
     expect(keyboardShortcutsSource).toContain(
@@ -763,19 +772,19 @@ describe('startup performance contract', () => {
     expect(workspaceItemSource).not.toMatch(/import\s+WorkspaceRelatedPathsDialog\s+from/);
     expect(workspaceItemSource).not.toMatch(/import\s+WorkspaceSessionBatchModal\s+from/);
     expect(workspaceItemSource).not.toMatch(/import\s+ScheduledJobsModal\s+from/);
-    expect(workspaceItemSource).toContain("lazy(() => import('./WorkspaceRelatedPathsDialog'))");
-    expect(workspaceItemSource).toContain("lazy(() => import('./WorkspaceSessionBatchModal'))");
-    expect(workspaceItemSource).toContain("lazy(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'))");
+    expect(workspaceItemSource).toContain("lazyWithRecovery(() => import('./WorkspaceRelatedPathsDialog'))");
+    expect(workspaceItemSource).toContain("lazyWithRecovery(() => import('./WorkspaceSessionBatchModal'))");
+    expect(workspaceItemSource).toContain("lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'))");
     expect(workspaceItemSource).toContain('<RetainedMountBoundary present={relatedPathsDialogOpen}>');
     expect(workspaceItemSource).toContain('<RetainedMountBoundary present={sessionBatchModalOpen}>');
     expect(workspaceItemSource).toContain('<RetainedMountBoundary present={scheduledJobsModalOpen}>');
 
     expect(sessionsSectionSource).not.toMatch(/import\s+ScheduledJobsModal\s+from/);
-    expect(sessionsSectionSource).toContain("lazy(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'))");
+    expect(sessionsSectionSource).toContain("lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsModal'))");
     expect(sessionsSectionSource).toContain('<RetainedMountBoundary present={scheduledJobsSession != null}>');
 
     expect(footerActionsSource).not.toMatch(/import\s+\{\s*RemoteConnectDialog\s*\}\s+from/);
-    expect(footerActionsSource).toContain("lazy(() => import('../../RemoteConnectDialog'))");
+    expect(footerActionsSource).toContain("lazyWithRecovery(() => import('../../RemoteConnectDialog'))");
     expect(footerActionsSource).toContain('<RetainedMountBoundary present={showRemoteConnect}>');
 
     expect(newProjectDialogSource).not.toMatch(/from\s+['"]@tauri-apps\/plugin-dialog['"]/);

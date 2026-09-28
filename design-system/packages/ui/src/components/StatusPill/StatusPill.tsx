@@ -20,6 +20,7 @@ export interface StatusPillProps
   children: ReactNode;
   leading?: ReactNode;
   tone?: StatusPillTone;
+  shape?: "pill" | "rounded";
   /** Strong color for short labels such as chat modes; prose keeps the default. */
   emphasis?: boolean;
 }
@@ -30,6 +31,7 @@ export const StatusPill = forwardRef<HTMLSpanElement, StatusPillProps>(
     className,
     leading,
     tone = "success",
+    shape = "pill",
     emphasis = false,
     ...props
   }, ref) {
@@ -39,6 +41,7 @@ export const StatusPill = forwardRef<HTMLSpanElement, StatusPillProps>(
         className={classNames(styles.root, className)}
         data-openbitfun-component="status-pill"
         data-tone={tone}
+        data-shape={shape}
         data-emphasis={emphasis ? "true" : "false"}
         ref={ref}
       >

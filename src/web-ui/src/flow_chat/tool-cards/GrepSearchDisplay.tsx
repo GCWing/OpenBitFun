@@ -4,16 +4,19 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
+import { isToolCardVisible } from '../utils/flowItemVisibility';
 import { GrepSearchToolCard } from '@openbitfun/ui/flow-chat';
+import { projectGrepSearchResults } from '@openbitfun/flow-chat-presentation/search';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
-import { formatSessionViewPreviewText } from '../utils/sessionViewPreview';
 export const GrepSearchDisplay: React.FC<ToolCardProps> = ({
   toolItem,
   onExpand
 }) => {
   const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status } = toolItem;
+  const { toolCall, toolResult } = toolItem;
+  const status = getToolCardStatus(toolItem);
   const [isExpanded, setIsExpanded] = useState(false);
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
@@ -62,7 +65,17 @@ export const GrepSearchDisplay: React.FC<ToolCardProps> = ({
   const pattern = getSearchPattern();
   const searchPath = getSearchPath();
   const hasDetails = status === 'completed' && stats.matches > 0;
-  const hasResultData = toolResult?.result !== undefined && toolResult?.result !== null;
+  const hasResultData = typeof toolResult?.result?.total_matches === 'number'
+    && Number.isFinite(toolResult.result.total_matches) && toolResult.result.total_matches >= 0;
+
+  const resultBlocks = useMemo(() => {
+    if (!hasDetails || !toolResult?.result?.result) return undefined;
+    return projectGrepSearchResults(String(toolResult.result.result), {
+      outputMode: toolResult.result.output_mode ?? toolCall?.input?.output_mode,
+      showLineNumbers: toolCall?.input?.['-n'],
+      multiline: toolCall?.input?.multiline,
+    });
+  }, [hasDetails, toolCall?.input, toolResult?.result]);
 
   const handleClick = useCallback(() => {
     if (hasDetails) {
@@ -72,48 +85,20 @@ export const GrepSearchDisplay: React.FC<ToolCardProps> = ({
     }
   }, [applyExpandedState, hasDetails, isExpanded, onExpand]);
 
-  const renderAction = () => {
-    if (status === 'completed') {
-      return `${t('toolCards.grepSearch.searchText')}:`;
-    }
-    if (status === 'running' || status === 'streaming') {
-      return t('toolCards.grepSearch.searchingText');
-    }
-    if (status === 'pending') {
-      return t('toolCards.grepSearch.preparingSearch');
-    }
-    return undefined;
-  };
-
-  const renderContent = () => {
-    if (status === 'completed') {
-      return `${pattern}${hasResultData ? ` (${t('toolCards.grepSearch.matchesCount', { count: stats.matches })})` : ''}`;
-    }
-    if (status === 'running' || status === 'streaming') {
-      const progressMessage = (toolItem as any)._progressMessage;
-      if (progressMessage) {
-        return progressMessage;
-      }
-      return `${pattern}...`;
-    }
-    if (status === 'pending') {
-      return pattern;
-    }
-    return pattern;
-  };
-
-  if (status === 'error') {
+  if (!isToolCardVisible(toolItem)) {
     return null;
   }
 
   return (
     <div ref={cardRootRef} data-openbitfun-adapter="grep-search" data-tool-card-id={toolId ?? ''}>
       <GrepSearchToolCard
-        action={renderAction()}
+        action={t('toolCards.grepSearch.searchText')}
         status={status}
         isExpanded={isExpanded}
         onToggle={hasDetails ? handleClick : undefined}
-        summary={renderContent()}
+        summary={pattern}
+        resultSummary={status === 'completed' && hasResultData ? t('toolCards.grepSearch.matchesCount', { count: stats.matches }) : undefined}
+        statusDescription={getToolCardStatusDescription(status, t, toolResult?.error)}
         details={hasDetails ? [
           { label: `${t('toolCards.grepSearch.labelPattern')}:`, value: pattern },
           { label: `${t('toolCards.grepSearch.labelPath')}:`, value: searchPath },
@@ -122,9 +107,7 @@ export const GrepSearchDisplay: React.FC<ToolCardProps> = ({
             value: t('toolCards.grepSearch.matchesAndFiles', { matches: stats.matches, files: stats.files }),
           },
         ] : undefined}
-        resultText={hasDetails && toolResult?.result?.result
-          ? formatSessionViewPreviewText(String(toolResult.result.result))
-          : undefined}
+        resultBlocks={resultBlocks}
       />
     </div>
   );

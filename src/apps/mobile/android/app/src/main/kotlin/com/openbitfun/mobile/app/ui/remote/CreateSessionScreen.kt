@@ -99,9 +99,13 @@ internal fun CreateSessionRoute(
     val modelOptions = ready?.createModelOptions(stringResource(R.string.models_unnamed)).orEmpty()
     val baseline = rememberSaveable { mutableStateOf(ready?.selectedSessionId) }
     val created = ready?.selectedSessionId
-    val hasTimeline = ready?.timeline != null
-    LaunchedEffect(created, hasTimeline) {
-        if (created != null && created != baseline.value && hasTimeline) onCreated(created)
+    LaunchedEffect(created) {
+        // The shared store publishes the new id only after the remote create
+        // has committed. Do not wait for a non-null timeline here: an empty
+        // session has no records, and a delayed stream must not strand the
+        // user on the creation surface. ConversationView owns that loading
+        // state once the id has been routed.
+        if (created != null && created != baseline.value) onCreated(created)
     }
 
     CreateSessionScreen(

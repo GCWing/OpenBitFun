@@ -3,6 +3,8 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FlowGroup, ThinkingBlock } from '@openbitfun/ui/flow-chat';
+import { DeferredContent } from '@openbitfun/flow-chat-presentation/deferred-content';
 import { computeFlowChatInputStackFooterPx } from '../../utils/flowChatScrollLayout';
 import { tailSpacerPxForViewport } from './flowChatTailFollow';
 import { ONE_SHOT_NAVIGATION_HOLD_MS } from './flowChatViewportOwnership';
@@ -258,7 +260,7 @@ function userMessage(turnId: string, id: string, content: string) {
   };
 }
 
-function modelRound(turnId: string, id: string, content: string) {
+function modelRound(turnId: string, id: string, content: React.ReactNode) {
   return {
     type: 'model-round',
     turnId,
@@ -557,6 +559,95 @@ describe('VirtualMessageList natural scroll contract', () => {
       expect(mocks.scrollItemIntoView).not.toHaveBeenCalled();
       expect(mocks.scrollToOffset).not.toHaveBeenCalled();
       expect(mocks.cancelAim).toHaveBeenCalledTimes(3);
+    } finally {
+      restoreRanges();
+      restoreLayout();
+    }
+  });
+
+  it.each([80, 1200])('locates a %ipx source clear of the top fade and floating input', async height => {
+    mocks.items = [userMessage('turn-1', 'message-1', 'Source')];
+    const restoreLayout = fakeLayout({ clientHeight: 600, scrollHeight: 2400, turnTopFromScrollerTop: 100 });
+    const restoreRanges = searchRangeLayout(() => new DOMRect(100, 30, 120, 20));
+    try {
+      const listRef = React.createRef<VirtualMessageListRef>();
+      act(() => root.render(<VirtualMessageList ref={listRef} />));
+      await settleOpenReveal();
+      const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+      scroller.style.setProperty('--openbitfun-space-12', '48px');
+      scroller.scrollTop = 400;
+      const source = document.createElement('div');
+      source.dataset.flowItemId = 'located-source';
+      source.textContent = 'First readable line';
+      source.getBoundingClientRect = () => new DOMRect(100, 30, 600, height);
+      scroller.querySelector('.virtual-item-wrapper')!.append(source);
+      mocks.scrollItemIntoView.mockClear();
+      mocks.scrollToOffset.mockClear();
+      act(() => expect(listRef.current?.focusFlowItem('located-source')).toBe(true));
+      const readableTop = 48;
+      const readableBottom = 388;
+      const targetTop = height > readableBottom - readableTop
+        ? readableTop + (readableBottom - readableTop) / 3
+        : (readableTop + readableBottom - height) / 2;
+      expect(mocks.scrollToOffset).toHaveBeenCalledExactlyOnceWith(400 + 30 - targetTop, {
+        owner: 'one-shot-navigation', holdForMs: ONE_SHOT_NAVIGATION_HOLD_MS,
+      });
+      expect(targetTop).toBeGreaterThan(readableTop);
+      expect(targetTop + 20).toBeLessThan(readableBottom);
+      expect(mocks.scrollItemIntoView).not.toHaveBeenCalled();
+    } finally { restoreRanges(); restoreLayout(); }
+  });
+
+  it.each(['explore', 'context', 'interface'])('opens the %s group before its collected thinking when navigating to a search hit', async category => {
+    vi.stubGlobal('IntersectionObserver', class { observe() {} unobserve() {} disconnect() {} });
+    const expanded: string[] = [];
+    function CollectedThinking() {
+      const [groupOpen, setGroupOpen] = React.useState(false);
+      const [thinkingOpen, setThinkingOpen] = React.useState(false);
+      const contentRef = React.useRef<HTMLDivElement>(null);
+      return <FlowGroup data-tool-card-id="group-1" data-group-kind={category}
+        data-testid={`chat-${category}-group`} summary="Collected calls" expanded={groupOpen} contentRef={contentRef}
+        onExpandedChange={open => { expanded.push('group'); setGroupOpen(open); }}>
+        <DeferredContent viewportRef={contentRef} label="Collected calls" segmentClassName="flow-group-content-segment"
+          segments={Array.from({ length: 10 }, (_, index) => ({
+            key: String(index), memberIds: [index === 9 ? 'thinking-1' : `other-${index}`],
+            estimatedHeightPx: 400, eager: index === 0,
+            render: () => index === 9 ? <ThinkingBlock data-tool-card-id="thinking-1" label="Thinking" expanded={thinkingOpen}
+              onToggle={() => { expanded.push('thinking'); setThinkingOpen(open => !open); }}>
+              <div className="thinking-markdown">needle</div>
+            </ThinkingBlock> : <button>Other call</button>,
+          }))} />
+      </FlowGroup>;
+    }
+    mocks.items = [modelRound('turn-1', 'round-1', <CollectedThinking />)];
+    const restoreLayout = fakeLayout({ clientHeight: 600, scrollHeight: 2400, turnTopFromScrollerTop: 100 });
+    const readRange = vi.fn(() => new DOMRect(100, 180, 48, 20));
+    const restoreRanges = searchRangeLayout(readRange);
+    const onUnavailable = vi.fn();
+    try {
+      const listRef = React.createRef<VirtualMessageListRef>();
+      act(() => root.render(<VirtualMessageList ref={listRef} />));
+      await settleOpenReveal();
+      const scroller = container.querySelector<HTMLElement>('[data-flowchat-scroller]')!;
+      scroller.scrollTop = 400;
+      mocks.scrollItemIntoView.mockClear();
+      mocks.scrollToOffset.mockClear();
+
+      act(() => listRef.current?.scrollToSearchMatch({
+        virtualItemIndex: 0, flowItemId: 'thinking-1', query: 'needle',
+        expandableIds: ['group-1', 'thinking-1'], onUnavailable,
+      }));
+      await settleOpenReveal();
+
+      expect(expanded).toEqual(['group', 'thinking']);
+      expect(container.querySelector('[data-tool-card-id="group-1"]')?.getAttribute('data-expanded')).toBe('true');
+      expect(container.querySelector('[data-tool-card-id="thinking-1"]')?.getAttribute('data-expanded')).toBe('true');
+      expect(container.querySelectorAll('[data-deferred-content="ready"]')).toHaveLength(2);
+      expect(readRange).toHaveBeenCalled();
+      expect(onUnavailable).not.toHaveBeenCalled();
+      expect(scroller.scrollTop).toBe(400);
+      expect(mocks.scrollItemIntoView).not.toHaveBeenCalled();
+      expect(mocks.scrollToOffset).not.toHaveBeenCalled();
     } finally {
       restoreRanges();
       restoreLayout();

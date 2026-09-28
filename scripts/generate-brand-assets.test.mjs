@@ -15,6 +15,17 @@ const HARMONY_MEDIA_DIRS = [
   'src/apps/mobile/harmonyos/entry/src/main/resources/base/media',
 ];
 
+test('design-system brand masters and packaged icons agree with native projections', () => {
+  const componentAssets = 'design-system/packages/ui/src/brand/assets';
+  for (const master of ['openbitfun-mark.svg', 'openbitfun-app-mark.png']) {
+    assert.deepEqual(readFileSync(`${componentAssets}/${master}`), readFileSync(`assets/brand/source/${master}`));
+  }
+  for (const size of [16, 32, 128, 256, 512]) {
+    const name = `openbitfun-app-icon-${size}.png`;
+    assert.deepEqual(readFileSync(`${componentAssets}/${name}`), readFileSync(`assets/brand/exports/${name}`));
+  }
+});
+
 function createChunk(type, payload) {
   const chunk = Buffer.alloc(8 + payload.length);
   chunk.write(type, 0, 4, 'ascii');

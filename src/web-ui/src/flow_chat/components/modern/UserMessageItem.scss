@@ -6,11 +6,11 @@
 .user-message-item-shell {
   @include transcriptLayout.content-column;
 
-  --_user-message-radius: calc(var(--openbitfun-control-flow-chat-card-radius) + 2px);
+  --_user-message-radius: var(--openbitfun-control-flow-chat-user-message-radius);
   --_user-message-padding-inline: var(--_user-message-radius);
 
   position: relative;
-  margin: 0.06rem 0 var(--openbitfun-control-flow-chat-flow-item-gap);
+  margin: var(--openbitfun-control-flow-chat-user-message-margin-block-start) 0 var(--openbitfun-control-flow-chat-flow-item-gap);
 }
 
 .user-message-item {
@@ -23,8 +23,8 @@
    * message one radius past the trailing edge of both.
    */
   width: fit-content;
-  max-width: min(72%, 48rem);
-  padding: 0.46rem var(--_user-message-padding-inline);
+  max-width: var(--openbitfun-control-flow-chat-user-message-max-width);
+  padding: var(--openbitfun-control-flow-chat-user-message-padding-block) var(--_user-message-padding-inline);
   background: var(--openbitfun-color-action-quiet-hover);
   border: none;
   border-radius: var(--_user-message-radius);
@@ -43,7 +43,10 @@
 .user-message-item--editing {
   width: auto;
   max-width: none;
-  margin-inline: calc(-1 * var(--_user-message-radius));
+  margin-inline: 0;
+  padding: 0;
+  // Composer owns the edit surface and focus treatment on the reading column.
+  background: transparent;
 }
 
 .user-message-item__timestamp {
@@ -260,23 +263,6 @@
 
 .user-message-edit-composer {
   width: 100%;
-
-  // The surrounding user-message bubble already communicates the editing
-  // boundary. Keep Composer's layout, but avoid stacking its border, shadow,
-  // and focus ring into a visually heavy double frame.
-  > [data-openbitfun-part='surface'],
-  > [data-openbitfun-part='surface']:focus-within {
-    min-block-size: 0;
-    gap: var(--openbitfun-control-flow-chat-inline-gap);
-    padding: 0;
-    border-color: transparent;
-    background: transparent;
-    box-shadow: none;
-  }
-
-  > [data-openbitfun-part='surface'] > [data-openbitfun-part='editor'] {
-    padding: 0;
-  }
 }
 
 .user-message-edit-composer__textarea {
@@ -290,6 +276,8 @@
 
 .user-message-edit-composer__rich-input {
   position: relative;
+  width: 100%;
+  min-width: 0;
   min-height: var(--openbitfun-control-height-sm);
   max-height: 45vh;
   overflow-y: auto;
@@ -307,10 +295,6 @@
 
 .user-message-edit-composer__actions {
   width: 100%;
-}
-
-.user-message-edit-composer__spinner {
-  animation: user-message-item-spin 1s linear infinite;
 }
 
 .user-message-item__rollback-spinner {

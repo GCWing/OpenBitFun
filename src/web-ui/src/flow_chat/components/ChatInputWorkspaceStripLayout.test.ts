@@ -149,7 +149,7 @@ describe('composer context track layout', () => {
     expect(mixin).toContain('height: 18px;');
     expect(mixin).toContain('border-radius: 999px;');
     expect(mixin).toContain('background: transparent;');
-    expect(mixin).toMatch(/> svg \{[\s\S]*?width: 12px;/);
+    expect(mixin).toMatch(/> :is\(svg, \[data-openbitfun-component='icon'\]\) \{[\s\S]*?width: var\(--openbitfun-control-icon-size-xs\);/);
 
     for (const control of [
       '    .dispatch-target-picker__trigger {\n      @include strip-control;',

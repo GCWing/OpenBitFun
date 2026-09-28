@@ -67,6 +67,7 @@ extension MobileAppModel {
         remoteInitialWorkspaceReady = false
         remoteLastAppliedAuthority = nil
         remoteSessions = []
+        pendingRemoteSessionDeletions.removeAll()
         remoteWorkspaces = []
         remoteAssistants = []
         workspaceCatalog = []
@@ -744,16 +745,27 @@ extension MobileAppModel {
             remoteSessions.removeAll { $0.id == session.id }
             remoteSessions.insert(session, at: 0)
             rebuildRemoteWorkspaceGroups()
+            // Creation only acknowledges the new row. Start the same
+            // conversation hydration path used when opening an existing row;
+            // without this dispatch the iOS surface selects the id but keeps
+            // the transcript unbound to the newly created session.
+            beginRemoteConversationOpen(sessionID: session.id)
+            coreAdapter?.openRemoteSession(sessionID: session.id)
         case let failed as CreateSessionOperationStateFailed:
             remoteCreateSubmitting = false
             remoteCreateError = failed.unsupported
                 ? localized("桌面端不支持创建此类会话")
                 : localized("创建远程会话失败，请重试")
             remoteCreateRequestID = nil
+            // Creation never committed a session. Close the create route so
+            // the previously selected conversation (or remote home) is
+            // restored, matching the Android/Harmony failure transition.
+            remoteCreateOpen = false
         case is CreateSessionOperationStateCancelled:
             remoteCreateSubmitting = false
             remoteCreateError = localized("创建远程会话已取消")
             remoteCreateRequestID = nil
+            remoteCreateOpen = false
         case is CreateSessionOperationStateIdle:
             if remoteCreateSubmitting {
                 remoteCreateSubmitting = false
@@ -770,11 +782,43 @@ extension MobileAppModel {
 
     func deleteRemoteSession(_ session: ChatSession) {
         guard !busy else { return }
+        pendingRemoteSessionDeletions.insert(session.id)
         coreAdapter?.deleteRemoteSession(sessionID: session.id)
-        if selectedSessionID == session.id {
-            remoteSessionSelected = false
-            timelineRows = []
-            messages = []
+    }
+
+    private func reconcileDirectoryAfterRemoteDeletion(_ sessions: [ChatSession], busy: Bool) {
+        guard !pendingRemoteSessionDeletions.isEmpty, !busy else { return }
+        let currentIDs = Set(sessions.map(\.id))
+        let succeeded = pendingRemoteSessionDeletions.filter { !currentIDs.contains($0) }
+        let failed = pendingRemoteSessionDeletions.filter { currentIDs.contains($0) }
+        pendingRemoteSessionDeletions.subtract(succeeded)
+        pendingRemoteSessionDeletions.subtract(failed)
+        guard !succeeded.isEmpty else { return }
+        deviceDirectory = deviceDirectory.map { device in
+            MobileDeviceDirectoryEntry(
+                id: device.id,
+                name: device.name,
+                online: device.online,
+                status: device.status,
+                error: device.error,
+                workspaces: device.workspaces.map { workspace in
+                    MobileWorkspaceGroup(
+                        workspaceId: workspace.workspaceId,
+                        path: workspace.path,
+                        name: workspace.name,
+                        selected: workspace.selected,
+                        sessions: workspace.sessions.filter { !succeeded.contains($0.id) },
+                        deviceKey: workspace.deviceKey,
+                        directoryExpanded: workspace.directoryExpanded,
+                        directoryStatus: workspace.directoryStatus,
+                        remoteConnectionId: workspace.remoteConnectionId,
+                        remoteSshHost: workspace.remoteSshHost
+                    )
+                },
+                sessions: device.sessions.filter { !succeeded.contains($0.id) },
+                catalogSource: device.catalogSource,
+                recentWorkspaces: device.recentWorkspaces
+            )
         }
     }
 
@@ -1060,6 +1104,7 @@ extension MobileAppModel {
             projectedSessions.insert(committed.session, at: 0)
         }
         setPublishedIfChanged(\.remoteSessions, to: projectedSessions)
+        reconcileDirectoryAfterRemoteDeletion(projectedSessions, busy: ready.busy)
         rebuildRemoteWorkspaceGroups()
         if let protected = committedRemoteCreate,
            protected.targetKey == targetKey,
@@ -1072,6 +1117,12 @@ extension MobileAppModel {
             } ?? false
             if !openingSessionIsNotReady, let selected = ready.selectedSessionId {
                 setPublishedIfChanged(\.selectedSessionID, to: selected)
+            } else if !openingSessionIsNotReady {
+                // A successful delete of the open session publishes a Ready
+                // state with no selection. Clear the route identity as well as
+                // the visible transcript so a later sidebar/create action
+                // cannot inherit the deleted session id.
+                setPublishedIfChanged(\.selectedSessionID, to: "")
             }
             setPublishedIfChanged(
                 \.remoteSessionSelected,

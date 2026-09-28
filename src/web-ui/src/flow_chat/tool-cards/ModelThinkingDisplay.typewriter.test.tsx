@@ -5,12 +5,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { ModelThinkingDisplay } from './ModelThinkingDisplay';
 import type { FlowThinkingItem } from '../types/flow-chat';
 import { TypewriterRevealGateContext, useCreateTypewriterRevealGate } from '../hooks/typewriterRevealGateContext';
+import { openThinkingPanel } from '../services/openThinkingPanel';
 
+vi.mock('../services/openThinkingPanel', () => ({ openThinkingPanel: vi.fn() }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
-vi.mock('@openbitfun/ui', () => ({
-  OverflowText: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
-  Icon: () => null,
-}));
 vi.mock('@/infrastructure/markdown', () => ({
   ThinkingMarkdownRenderer: ({ content }: { content: string }) => <div data-testid="body">{content}</div>,
 }));
@@ -22,7 +20,7 @@ vi.mock('./useToolCardHeightContract', () => ({
 }));
 
 let cleanup: (() => void) | undefined;
-afterEach(() => { cleanup?.(); vi.unstubAllGlobals(); });
+afterEach(() => { cleanup?.(); vi.unstubAllGlobals(); vi.mocked(openThinkingPanel).mockClear(); });
 
 function setup() {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -35,7 +33,7 @@ function setup() {
   document.body.append(host);
   const root = createRoot(host);
   cleanup = () => { act(() => root.unmount()); host.remove(); };
-  function Card({ content, streaming = true }: { content: string; streaming?: boolean }) {
+  function Card({ content, streaming = true, last = true }: { content: string; streaming?: boolean; last?: boolean }) {
     const gate = useCreateTypewriterRevealGate();
     const item: FlowThinkingItem = {
       id: 'thinking', type: 'thinking', reasoningKind: 'reasoning', content,
@@ -44,49 +42,66 @@ function setup() {
     };
     return <TypewriterRevealGateContext.Provider value={gate}>
       <output data-testid="gate">{String(gate.isAnyRevealing)}</output>
-      <ModelThinkingDisplay thinkingItem={item} />
+      <ModelThinkingDisplay thinkingItem={item} isLastItem={last} />
     </TypewriterRevealGateContext.Provider>;
   }
-  const render = (content: string, streaming = true) => act(() => root.render(<Card content={content} streaming={streaming} />));
+  const render = (content: string, streaming = true, last = true) => act(() => root.render(<Card content={content} streaming={streaming} last={last} />));
   const toggle = () => act(() => (host.querySelector('[data-testid="chat-thinking-toggle"]') as HTMLElement).click());
-  return { host, frames, render, toggle, gate: () => host.querySelector('output')?.textContent };
+  let now = performance.now();
+  const nextFrame = () => act(() => {
+    now += 16;
+    const pending = [...frames.values()];
+    frames.clear();
+    pending.forEach(callback => callback(now));
+  });
+  return { host, frames, render, toggle, nextFrame, gate: () => host.querySelector('output')?.textContent };
 }
 
-it('keeps playback while closing, drains when hidden, and resumes only new text after reopening', async () => {
+it('keeps the same inline playback and reveal gate while opening the panel', () => {
   const h = setup();
   h.render('Start');
-  const content = 'Start' + ' more'.repeat(2000);
+  const content = 'Start' + ' more'.repeat(200);
   h.render(content);
-  expect(h.host.querySelector('[data-testid="body"]')?.textContent).toBe('Start');
-  let finish!: () => void;
-  const finished = new Promise<void>(resolve => { finish = resolve; });
-  const container = h.host.querySelector('[data-openbitfun-part="expandContainer"]')!;
-  Object.defineProperty(container, 'getAnimations', { value: () => [{ transitionProperty: 'grid-template-rows', finished }] });
+  const inlineBody = h.host.querySelector('[data-testid="body"]')!;
+  expect(inlineBody.textContent).toBe('Start');
   h.toggle();
-  expect(h.host.querySelector('[data-testid="body"]')).not.toBeNull();
+  expect(openThinkingPanel).toHaveBeenCalledWith(expect.objectContaining({
+    thinkingItem: expect.objectContaining({ content }),
+  }));
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(h.host.querySelector('[data-testid="body"]')).toBe(inlineBody);
+  expect(h.host.querySelector('[data-testid="chat-thinking-panel"]')?.getAttribute('data-expanded')).toBe('true');
   expect(h.gate()).toBe('true');
-  await act(async () => { finish(); });
-  expect(h.host.querySelector('[data-testid="body"]')).toBeNull();
-  expect(h.gate()).toBe('false');
-  expect(h.frames.size).toBe(0);
-  const latest = content + ' hidden update';
-  h.render(latest);
-  expect(h.gate()).toBe('false');
-  expect(h.frames.size).toBe(0);
+  h.nextFrame();
+  const afterOpen = inlineBody.textContent!;
+  expect(afterOpen.length).toBeGreaterThan('Start'.length);
+  expect(afterOpen.length).toBeLessThan(content.length);
   h.toggle();
-  expect(h.host.querySelector('[data-testid="body"]')?.textContent).toBe(latest);
-  h.render(latest + ' next');
-  expect(h.host.querySelector('[data-testid="body"]')?.textContent).toBe(latest);
+  expect(openThinkingPanel).toHaveBeenCalledTimes(2);
+  expect(h.host.querySelector('[data-testid="body"]')).toBe(inlineBody);
+  expect(inlineBody.textContent).toBe(afterOpen);
+  h.nextFrame();
+  expect(inlineBody.textContent!.length).toBeGreaterThan(afterOpen.length);
   expect(h.gate()).toBe('true');
 });
 
-it('releases a finishing backlog immediately when collapsed without a transition', () => {
+it('drains the stream before automatic docking after the panel was opened', () => {
   const h = setup();
   h.render('Start');
-  h.render('Start' + ' more'.repeat(2000), false);
-  expect(h.gate()).toBe('true');
   h.toggle();
+  const content = 'Start' + ' more'.repeat(200);
+  h.render(content, false, false);
+  const panel = h.host.querySelector('[data-testid="chat-thinking-panel"]')!;
+  expect(h.gate()).toBe('true');
+  expect(panel.getAttribute('data-expanded')).toBe('true');
+  expect(h.host.querySelector('[data-testid="body"]')?.textContent).toBe('Start');
+  h.nextFrame();
+  expect(h.host.querySelector('[data-testid="body"]')?.textContent).not.toBe(content);
+  for (let frame = 0; frame < 100 && h.gate() === 'true'; frame += 1) h.nextFrame();
   expect(h.gate()).toBe('false');
-  expect(h.frames.size).toBe(0);
+  expect(panel.getAttribute('data-expanded')).toBe('false');
+  expect(panel.getAttribute('data-thinking-attachment')).toBe('side');
   expect(h.host.querySelector('[data-testid="body"]')).toBeNull();
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+  expect(openThinkingPanel).toHaveBeenCalledTimes(1);
 });

@@ -1,12 +1,15 @@
-import React, { useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import React, { useMemo } from 'react';
+import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
+import { getToolCardStatus } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import { SessionMessageToolCard as SessionMessageToolCardView } from '@openbitfun/ui/flow-chat';
-import { useToolCardHeightContract } from './useToolCardHeightContract';
+import { interactionOutcome, readInteractionInput, readToolRecord } from './toolInteractionModel';
+import { useToolSessionParticipant, useCurrentToolSessionParticipant } from './useToolSessionParticipant';
 
 interface SessionMessageInput {
   workspace?: string;
   session_id?: string;
+  session_name?: string;
   message?: string;
   agent_type?: string;
 }
@@ -15,87 +18,51 @@ interface SessionMessageResult {
   success?: boolean;
   target_workspace?: string;
   target_session_id?: string;
+  target_session_name?: string;
   target_agent_type?: string;
-}
-
-function parseData<T>(value: unknown): T | null {
-  if (!value) return null;
-
-  try {
-    return typeof value === 'string' ? JSON.parse(value) as T : value as T;
-  } catch {
-    return null;
-  }
 }
 
 export const SessionMessageToolCard: React.FC<ToolCardProps> = React.memo(({
   toolItem,
+  sessionId,
 }) => {
-  const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const { t } = useI18n('flow-chat');
+  const { toolCall, toolResult } = toolItem;
   const toolId = toolItem.id ?? toolCall?.id;
-  const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
-    toolId,
-    toolName: toolItem.toolName,
-  });
 
   const inputData = useMemo(
-    () => parseData<SessionMessageInput>(toolCall?.input) ?? {},
-    [toolCall?.input]
+    () => readInteractionInput(toolItem) as SessionMessageInput,
+    [toolItem]
   );
 
   const resultData = useMemo(
-    () => parseData<SessionMessageResult>(toolResult?.result),
+    () => readToolRecord(toolResult?.result) as SessionMessageResult,
     [toolResult?.result]
   );
 
+  const status = getToolCardStatus(toolItem, resultData?.success === false);
   const targetSessionId = resultData?.target_session_id ?? inputData.session_id;
-  const workspace = resultData?.target_workspace ?? inputData.workspace;
-  const agentType = resultData?.target_agent_type ?? inputData.agent_type;
   const message = inputData.message ?? '';
-  const hasDetails = Boolean(targetSessionId || workspace || agentType || message || toolResult?.error);
-
-  const targetLabel = targetSessionId || t('toolCards.sessionMessage.unknownSession');
-
-  const renderContent = () => {
-    if (status === 'completed') {
-      return <>{t('toolCards.sessionMessage.messageAccepted', { session: targetLabel })}</>;
-    }
-
-    if (status === 'running' || status === 'streaming') {
-      return <>{t('toolCards.sessionMessage.sendingMessage', { session: targetLabel })}...</>;
-    }
-
-    if (status === 'error' || status === 'cancelled') {
-      return <>{t('toolCards.sessionMessage.sendFailed', { session: targetLabel })}</>;
-    }
-
-    return <>{t('toolCards.sessionMessage.preparingSend', { session: targetLabel })}</>;
-  };
-
-  const fields = [
-    targetSessionId
-      ? { label: `${t('toolCards.sessionMessage.targetSession')}:`, value: targetSessionId }
-      : null,
-    workspace ? { label: `${t('shared:features.workspace')}:`, value: workspace } : null,
-    agentType ? { label: `${t('toolCards.sessionMessage.agentType')}:`, value: agentType } : null,
-  ].filter((field): field is NonNullable<typeof field> => Boolean(field));
+  const source = useCurrentToolSessionParticipant(sessionId, t);
+  const target = useToolSessionParticipant(targetSessionId,
+    resultData?.target_session_name || inputData.session_name || targetSessionId || t('toolCards.sessionMessage.unknownSession'), t,
+    'session', { parentSessionId: sessionId, enabled: targetSessionId !== sessionId });
+  const targetLabel = target.kind === 'agent' ? target.label
+    : resultData?.target_session_name || inputData.session_name || target.label;
+  const summary = interactionOutcome(status, t, message.trim() ? t('toolCards.interaction.messageSent')
+    : t('toolCards.interaction.messageAccepted'), t('toolCards.interaction.sendingMessage'));
 
   return (
-    <div ref={cardRootRef} data-openbitfun-adapter="session-message" data-tool-card-id={toolId ?? ''}>
+    <div data-openbitfun-adapter="session-message" data-tool-card-id={toolId ?? ''}>
       <SessionMessageToolCardView
         status={status}
-        isExpanded={isExpanded}
-        onToggle={hasDetails
-          ? () => applyExpandedState(isExpanded, !isExpanded, setIsExpanded)
-          : undefined}
-        action={`${t('toolCards.sessionMessage.title')}:`}
-        summary={renderContent()}
-        fields={fields}
+        action={t('toolCards.interaction.send')}
+        interaction={{ operation: 'send', source, target: { ...target, label: targetLabel } }}
+        summary={summary}
+        resultLabel={t('toolCards.interaction.inspectMessage')}
         message={message || undefined}
-        messageLabel={message ? `${t('toolCards.sessionMessage.message')}:` : undefined}
-        error={toolResult?.error}
+        messageLabel={message ? t('toolCards.sessionMessage.message') : undefined}
+        error={toolResult?.error || (status === 'error' ? t('toolCards.default.failed') : undefined)}
       />
     </div>
   );

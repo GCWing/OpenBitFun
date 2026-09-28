@@ -157,6 +157,10 @@ final class MobileCoreAdapter {
         account.dispatch(intent: AccountIntentLogin.shared)
     }
 
+    func notifyAuthorizationCallback() {
+        account.notifyAuthorizationCallback()
+    }
+
     func selectAccountDevice(id: String) {
         pendingDirectoryReconciles.removeAll()
         desiredRemoteTarget = .account(deviceID: id)

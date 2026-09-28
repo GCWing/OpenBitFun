@@ -70,9 +70,12 @@ fn tool_listing_sections_render_only_present_sections() {
     assert!(deferred_tool_listing
         .contains("Their definitions are not loaded at the start of the conversation."));
     assert!(deferred_tool_listing
-        .contains("You must obtain the tool definition using GetToolSpec before you first invoke a deferred tool."));
+        .contains("Use GetToolSpec to read a deferred tool's full definition before invoking it through CallDeferredTool."));
     assert!(deferred_tool_listing.contains(
-        "Once its definition is available in the conversation, you can call it through CallDeferredTool."
+        "Reuse it while the successful GetToolSpec result remains in the current context."
+    ));
+    assert!(deferred_tool_listing.contains(
+        "If compaction or truncation removed that result, load it again; a summary or a past call does not keep the definition loaded."
     ));
     assert!(deferred_tool_listing
         .contains("Each entry below is a deferred tool name with an optional short description."));
@@ -80,7 +83,7 @@ fn tool_listing_sections_render_only_present_sections() {
         "## Direct tools\nTheir definitions are already available. You can call them directly.\nEach entry below is a directly callable tool name.\n\n<direct_tools>\n- Read\n- GetToolSpec\n- CallDeferredTool\n</direct_tools>"
     ));
     assert!(deferred_tool_listing.contains(
-        "## Deferred tools\nTheir definitions are not loaded at the start of the conversation.\nYou must obtain the tool definition using GetToolSpec before you first invoke a deferred tool. Once its definition is available in the conversation, you can call it through CallDeferredTool."
+        "## Deferred tools\nTheir definitions are not loaded at the start of the conversation.\nUse GetToolSpec"
     ));
     assert!(deferred_tool_listing.ends_with("Search: summary"));
 }

@@ -1,6 +1,6 @@
 import { type HTMLAttributes, type ReactNode } from "react";
 import { classNames } from "../../internal/classNames";
-import { VoiceParticleLogo, type VoiceParticleAudioReader } from "../VoiceParticleLogo";
+import { VoiceParticleLogo, type VoiceParticleAudioReader } from "../../brand/VoiceParticleLogo";
 import styles from "./VoiceCallPanel.module.css";
 import { VoiceCallTranscript, type VoiceTranscriptEntry } from "./VoiceCallTranscript";
 import { VoiceCallControls } from "./VoiceCallControls";

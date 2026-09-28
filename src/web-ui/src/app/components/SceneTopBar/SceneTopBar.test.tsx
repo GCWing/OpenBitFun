@@ -10,13 +10,15 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 const sceneState = vi.hoisted(() => ({ openTabs: [{}] as unknown[], selectTab: vi.fn(), closeTab: vi.fn() }));
 const startDragging = vi.hoisted(() => vi.fn(async () => {}));
+const isMaximized = vi.hoisted(() => vi.fn(async () => false));
+const isFullscreen = vi.hoisted(() => vi.fn(async () => false));
 const stylesheet = readFileSync(
   resolve(process.cwd(), 'src/app/components/SceneTopBar/SceneTopBar.scss'),
   'utf8',
 );
 
 vi.mock('@/app/components/WindowControls', () => ({ WindowControls: () => <button>Window controls</button> }));
-vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ startDragging }) }));
+vi.mock('@tauri-apps/api/window', () => ({ getCurrentWindow: () => ({ startDragging, isMaximized, isFullscreen }) }));
 vi.mock('../../stores/sceneStore', () => ({ useSceneStore: (selector: (state: typeof sceneState) => unknown) => selector(sceneState) }));
 vi.mock('../SceneBar/SceneBar', async () => {
   const { TabGroup } = await import('@openbitfun/ui');
@@ -45,6 +47,8 @@ vi.mock('./SceneChrome', () => ({
 describe('SceneTopBar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    isMaximized.mockResolvedValue(false);
+    isFullscreen.mockResolvedValue(false);
     vi.stubGlobal('__TAURI_INTERNALS__', {
       invoke: vi.fn(),
       metadata: { currentWindow: { label: 'main' } },
@@ -212,6 +216,30 @@ describe('SceneTopBar', () => {
       expect(maximize).toHaveBeenCalledOnce();
 
       await mouseDown(toolbar, { detail: 1 });
+      expect(startDragging).toHaveBeenCalledTimes(2);
+    });
+
+    it.each([
+      { maximized: true, fullscreen: false },
+      { maximized: false, fullscreen: true },
+      { maximized: true, fullscreen: true },
+    ])('blocks dragging while maximized=$maximized/fullscreen=$fullscreen and restores it without rerendering', async ({ maximized, fullscreen }) => {
+      const toolbar = renderBar(2);
+      await mouseDown(toolbar);
+      expect(startDragging).toHaveBeenCalledOnce();
+
+      isMaximized.mockResolvedValue(maximized);
+      isFullscreen.mockResolvedValue(fullscreen);
+      for (const target of [toolbar, toolbar.querySelector('[role="tablist"]')!]) {
+        await mouseDown(target);
+      }
+      expect(startDragging).toHaveBeenCalledOnce();
+      doubleClick(toolbar);
+      expect(maximize).toHaveBeenCalledOnce();
+
+      isMaximized.mockResolvedValue(false);
+      isFullscreen.mockResolvedValue(false);
+      await mouseDown(toolbar);
       expect(startDragging).toHaveBeenCalledTimes(2);
     });
 

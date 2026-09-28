@@ -253,8 +253,8 @@ export function FlowChatSelectionBar({ rootRef, sessionId, parentSessionId, acti
           </div>
         </DialogBody>
         <DialogFooter>
-          <Button variant="fill" onClick={clear}>{t('selection.cancel')}</Button>
-          <Button variant="primary" onClick={() => submit('annotate')}>{t(parentSessionId ? 'selection.addToMain' : 'selection.addToSession')}</Button>
+          <Button variant="fill" size="sm" onClick={clear}>{t('selection.cancel')}</Button>
+          <Button variant="primary" size="sm" onClick={() => submit('annotate')}>{t(parentSessionId ? 'selection.addToMain' : 'selection.addToSession')}</Button>
         </DialogFooter>
       </Dialog>
     </>

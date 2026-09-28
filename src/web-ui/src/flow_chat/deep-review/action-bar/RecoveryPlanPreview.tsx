@@ -28,7 +28,7 @@ export const RecoveryPlanPreview: React.FC<RecoveryPlanPreviewProps> = ({
         )}
         {recoveryPlan.willRerun.length > 0 && (
           <div className="deep-review-action-bar__recovery-item">
-            <RotateCcw size={12} className="deep-review-action-bar__recovery-icon--rerun" />
+            <Icon glyph={RotateCcw} size="xs" className="deep-review-action-bar__recovery-icon--rerun" />
             <span>
               {t('deepReviewActionBar.recoveryRerun', {
                 count: recoveryPlan.willRerun.length,
@@ -38,7 +38,7 @@ export const RecoveryPlanPreview: React.FC<RecoveryPlanPreviewProps> = ({
         )}
         {recoveryPlan.willSkip.length > 0 && (
           <div className="deep-review-action-bar__recovery-item">
-            <SkipForward size={12} className="deep-review-action-bar__recovery-icon--skip" />
+            <Icon glyph={SkipForward} size="xs" className="deep-review-action-bar__recovery-icon--skip" />
             <span>
               {t('deepReviewActionBar.recoverySkip', {
                 count: recoveryPlan.willSkip.length,

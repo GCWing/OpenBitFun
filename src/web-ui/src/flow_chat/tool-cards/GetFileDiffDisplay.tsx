@@ -123,8 +123,8 @@ export const GetFileDiffDisplay: React.FC<ToolCardProps> = React.memo(({
           filePath={filePath}
           maxHeight={400}
           showLineNumbers={true}
-          lineNumberMode="dual"
-          showPrefix={true}
+          lineNumberMode="single"
+          showPrefix={false}
           contextLines={-1}
         />
       )

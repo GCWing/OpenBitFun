@@ -31,7 +31,7 @@ import {
   type IconSource,
 } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Copy, FolderOpen, Layers, Package, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Copy, FolderOpen, Layers, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 
 import type { SkillInfo, SkillLevel, SkillMarketItem } from '@/infrastructure/config/types';
@@ -307,7 +307,7 @@ const SkillsScene: React.FC = () => {
 
   const sourceCategories: CategoryInfo[] = installed.sourceGroups.map((group) => ({
     id: group.id,
-    icon: { name: 'extension' },
+    icon: { name: 'book-open' },
     labelKey: 'filters.source',
     titleKey: 'installed.titleSource',
     descKey: 'categories.source',
@@ -460,7 +460,7 @@ const SkillsScene: React.FC = () => {
                   selected={activeTab === 'discover'}
                   disabled={!desktopConfigAvailable}
                   onClick={() => setActiveTab('discover')}
-                  leading={<Icon glyph={Package} size="sm" />}
+                  leading={<Icon name="book-open" size="sm" />}
                 >
                   {t('market.title')}
                 </NavigationPanelItem>
@@ -502,7 +502,7 @@ const SkillsScene: React.FC = () => {
               )}
               {!desktopConfigAvailable ? (
                 <div className="skills-main__empty" data-testid="skills-management-unavailable" data-openbitfun-scene="skills" data-openbitfun-part="empty">
-                  <Icon glyph={Package} size="lg" />
+                  <Icon name="book-open" size="lg" />
                   <span>{t(remoteConnectionActive ? 'list.remoteUnavailable' : 'list.desktopUnavailable')}</span>
                 </div>
               ) : installedView === 'groups' ? (
@@ -570,7 +570,7 @@ const SkillsScene: React.FC = () => {
 
                     {!installed.loading && installedLoadFailed && (
                       <div className="skills-main__empty skills-main__empty--error" data-openbitfun-scene="skills" data-openbitfun-part="error">
-                        <Icon glyph={Package} size="lg" />
+                        <Icon name="book-open" size="lg" />
                         <span>{t('list.loadFailed')}</span>
                         <Button
                           variant="outline"
@@ -584,7 +584,7 @@ const SkillsScene: React.FC = () => {
 
                     {!installed.loading && !installedLoadFailed && installedFiltered.length === 0 && (
                       <div className="skills-main__empty" data-testid="skill-list-empty" data-openbitfun-scene="skills" data-openbitfun-part="empty">
-                        <Icon glyph={Package} size="lg" />
+                        <Icon name="book-open" size="lg" />
                         <span>
                           {installed.skills.length === 0
                             ? t('list.empty.noSkills')
@@ -644,7 +644,7 @@ const SkillsScene: React.FC = () => {
                                   data-openbitfun-part="installedCardOpen"
                                 />
                                 <div className="skills-card__icon" aria-hidden="true" data-openbitfun-scene="skills" data-openbitfun-part="installedCardIcon">
-                                  <Icon name="extension" size="sm" />
+                                  <Icon name="book-open" size="sm" />
                                 </div>
                                 <div className="skills-card__info" data-openbitfun-scene="skills" data-openbitfun-part="installedCardInfo">
                                   <div className="skills-card__title-row">
@@ -809,7 +809,7 @@ const SkillsScene: React.FC = () => {
                 <Empty
                   className="skills-discover__state"
                   role="alert"
-                  icon={<Icon glyph={Package} />}
+                  icon={<Icon name="book-open" />}
                   description={market.marketError}
                   actions={<Button variant="outline" size="sm" onClick={() => void market.refresh()}>{t('list.retry')}</Button>}
                   data-openbitfun-scene="skills"
@@ -820,7 +820,7 @@ const SkillsScene: React.FC = () => {
               {!market.marketLoading && !market.marketError && !market.loadingMore && market.marketSkills.length === 0 && (
                 <Empty
                   className="skills-discover__state"
-                  icon={<Icon glyph={Package} />}
+                  icon={<Icon name="book-open" />}
                   description={marketQuery ? t('market.empty.noMatch') : t('market.empty.noSkills')}
                   data-testid="skill-list-empty"
                   data-openbitfun-scene="skills"

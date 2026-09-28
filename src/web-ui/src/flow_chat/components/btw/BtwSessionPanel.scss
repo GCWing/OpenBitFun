@@ -27,105 +27,39 @@
   }
 
   &__header {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    background: var(--openbitfun-color-surface-panel);
-    border-bottom: 1px dashed var(--openbitfun-color-border-default);
     flex-shrink: 0;
-    min-height: 36px;
     min-width: 0;
   }
 
   &__header-left {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  &__header-title-wrap {
-    flex: 1 1 0;
+    flex: 1 1 auto;
     min-width: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
-  }
-
-  &__header-right {
-    flex: 0 1 auto;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 6px;
-  }
-
-  &__badge {
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: var(--openbitfun-type-flow-micro-font-size);
-    font-weight: var(--openbitfun-type-label-sm-font-weight);
-    color: var(--openbitfun-color-content-secondary);
-    background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 8%, transparent);
-    flex-shrink: 0;
+    gap: var(--openbitfun-space-2);
   }
 
   &__title {
     font-size: var(--openbitfun-type-flow-control-font-size);
     font-weight: var(--openbitfun-type-label-sm-font-weight);
     color: var(--openbitfun-color-content-primary);
-    overflow: hidden;
-    white-space: nowrap;
-    max-width: 100%;
-    text-align: center;
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
-  &__meta {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+  &__model {
+    flex: 0 1 auto;
     min-width: 0;
-    max-width: 100%;
+    max-width: 50%;
+    color: var(--openbitfun-color-content-muted);
     font-size: var(--openbitfun-type-flow-support-font-size);
-    color: var(--openbitfun-color-content-muted);
-    white-space: nowrap;
-    overflow: hidden;
   }
 
-  &__meta-label {
-    flex-shrink: 0;
-    color: var(--openbitfun-color-content-muted);
-  }
-
-  &__meta svg {
-    flex-shrink: 0;
-  }
-
-  &__meta-title {
+  &__origin {
     min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  &__origin-button,
-  &__stop-button {
-    flex-shrink: 0;
-    color: var(--openbitfun-color-content-secondary);
-
-    &:not(:disabled):hover {
-      background: color-mix(in srgb, var(--openbitfun-color-action-quiet-hover) 82%, transparent);
-      color: var(--openbitfun-color-content-primary);
-    }
-  }
-
-  &__stop-button:not(:disabled) {
-    color: color-mix(in srgb, var(--openbitfun-color-status-danger-content) 84%, var(--openbitfun-color-content-primary));
-
-    &:hover {
-      background: color-mix(in srgb, var(--openbitfun-color-status-danger-content) 12%, transparent);
-    }
+    max-width: 12rem;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-flow-support-font-size);
   }
 
   &__permission-approval {
@@ -148,7 +82,7 @@
 
     .virtual-item-wrapper {
       width: 100%;
-      display: block;
+      // Preserve the shared flow-root: virtual padding must include child margins.
     }
   }
 
@@ -205,10 +139,6 @@
       padding: 10px 16px;
       border-bottom: 1px solid var(--openbitfun-color-border-subtle);
     }
-  }
-
-  &__stop-spinner {
-    animation: btw-session-panel-stop-spin 0.9s linear infinite;
   }
 
   &__scroll-to-bottom {
@@ -292,22 +222,9 @@
     padding: 0 var(--openbitfun-control-flow-chat-content-padding-inline-mobile);
   }
 }
-
 @media (prefers-reduced-motion: reduce) {
   .btw-session-panel__action-bar-wrapper,
   .btw-session-panel__minimized-indicator {
     transition: none;
-  }
-}
-
-@keyframes btw-session-panel-stop-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .btw-session-panel__stop-spinner {
-    animation: none;
   }
 }

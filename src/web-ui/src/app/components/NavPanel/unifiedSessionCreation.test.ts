@@ -60,7 +60,7 @@ describe('unified project session creation', () => {
     expect(helloLauncher).toContain('<ConversationModeSurface');
     expect(helloLauncher).toContain('voiceTarget={voiceTarget}');
     expect(communicationSurface).toContain('onClick={handleModeSwitch}');
-    expect(communicationSurface).toContain('<Phone size={15} aria-hidden="true" />');
+    expect(communicationSurface).toContain('<Icon glyph={Phone} size="md" aria-hidden="true" />');
     expect(communicationSurface).toMatch(/<RealtimeVoiceCallPanel\b/);
     expect(toolbarMode).toContain('<ConversationModeSurface');
     expect(toolbarMode).toContain('switchTestId="toolbar-realtime-voice-mode-switch"');

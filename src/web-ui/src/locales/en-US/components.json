@@ -329,6 +329,7 @@
     }
   },
   "tooltip": {
+    "openDetails": "Open details",
     "copy": "Copy",
     "copied": "Copied",
     "close": "Close",

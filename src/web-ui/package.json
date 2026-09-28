@@ -31,6 +31,7 @@
     "test:run": "vitest run --maxWorkers=50%"
   },
   "dependencies": {
+    "@openbitfun/flow-chat-presentation": "workspace:*",
     "@openbitfun/design-tokens": "workspace:^",
     "@openbitfun/theme-openbitfun": "workspace:^",
     "@openbitfun/ui": "workspace:^",
@@ -63,7 +64,7 @@
     "immer": "^11.1.3",
     "jszip": "^3.10.1",
     "katex": "^0.16.25",
-    "lucide-react": "^0.541.0",
+    "lucide-react": "^0.560.0",
     "markstream-react": "2.0.13",
     "mermaid": "^11.10.1",
     "modern-screenshot": "^4.7.0",

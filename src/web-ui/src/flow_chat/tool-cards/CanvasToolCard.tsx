@@ -3,12 +3,12 @@ import { OverflowText, Icon } from '@openbitfun/ui';
 import { AlertTriangle } from 'lucide-react';
 import type { ToolCardProps } from '../types/flow-chat';
 import { ProminentToolCard, ProminentToolCardSummary } from '@openbitfun/ui/flow-chat';
-import { getToolCardConfig } from './toolCardMetadata';
+import { getToolCardStatus } from './toolCardStatus';
 import { flowChatStore } from '../store/FlowChatStore';
 import { CodePreview } from '../components/CodePreview';
 import { useTypewriter } from '../hooks/useTypewriter';
 import { useReportTypewriterReveal } from '../hooks/typewriterRevealGateContext';
-import { i18nService } from '@/infrastructure/i18n';
+import { useI18n } from '@/infrastructure/i18n';
 import { openCanvasArtifactTab } from '@/shared/utils/tabUtils';
 import { createLogger } from '@/shared/utils/logger';
 import { CanvasPreflight, type CanvasPreflightStatus } from '@/tools/openbitfun-canvas/CanvasPreflight';
@@ -78,8 +78,14 @@ function canvasTitle(result: CanvasToolResult | null, fallback: unknown): string
 const TERMINAL_STATUSES = new Set(['completed', 'error', 'cancelled', 'rejected']);
 
 export const CanvasToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId }) => {
-  const { status, toolCall, toolResult, partialParams, isParamsStreaming } = toolItem;
-  const toolDisplayName = getToolCardConfig(toolItem.toolName).displayName;
+  const { t, formatNumber } = useI18n('flow-chat');
+  const { toolCall, toolResult, partialParams, isParamsStreaming } = toolItem;
+  const status = getToolCardStatus(toolItem);
+  const actionLabels: Record<string, string> = {
+    CreateCanvas: t('toolCards.canvas.create'), ReadCanvas: t('toolCards.canvas.read'),
+    UpdateCanvas: t('toolCards.canvas.update'), PatchCanvas: t('toolCards.canvas.patch'),
+  };
+  const toolDisplayName = actionLabels[toolItem.toolName] ?? t('toolCards.canvas.title');
   const resultData = useMemo(() => parseCanvasResult(toolResult?.result), [toolResult?.result]);
   // Params stream in progressively; fall back to the finalized input afterwards.
   const liveParams = partialParams ?? toolCall?.input;
@@ -102,7 +108,7 @@ export const CanvasToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId })
   );
   const isLoading =
     status === 'preparing' || status === 'streaming' || status === 'running' || status === 'pending';
-  const isFailed = status === 'error' || toolResult?.success === false;
+  const isFailed = status === 'error';
   const isOpenable = status === 'completed' && Boolean(artifactReference);
 
   // CreateCanvas/UpdateCanvas stream their `source` argument; render it live like Write does.
@@ -119,8 +125,8 @@ export const CanvasToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId })
     liveSource.length > 0 && !isFailed && (status !== 'completed' || sourceTypewriter.isRevealing);
   const sourceDisplayContent = isSourceVisuallyStreaming ? sourceTypewriter.displayText : liveSource;
   const metaText = liveSource.length > 0
-    ? `Source · ${i18nService.formatNumber(liveSource.length)} chars`
-    : isOpenable ? 'Canvas artifact' : 'Waiting for Canvas';
+    ? t('toolCards.canvas.sourceLength', { count: formatNumber(liveSource.length) })
+    : isOpenable ? t('toolCards.canvas.artifact') : t('toolCards.canvas.waiting');
 
   const handleOpenPanel = useCallback(() => {
     if (!isOpenable) return;
@@ -189,29 +195,29 @@ export const CanvasToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId })
 
   const summary = (
     <ProminentToolCardSummary
-      icon={<span className="canvas-tool-card__icon"><Icon name="creative" size="md" /></span>}
+      icon={<span className="canvas-tool-card__icon"><Icon name="panels-top-left" size="md" /></span>}
       action={toolDisplayName}
       content={<span data-openbitfun-component="canvas-tool-card" data-openbitfun-part="title" className="canvas-tool-card__title">{title}</span>}
       extra={(
         <div data-openbitfun-component="canvas-tool-card" data-openbitfun-part="extra" className="canvas-tool-card__extra">
           {diagnostics.length > 0 && (
             <span data-openbitfun-component="canvas-tool-card" data-openbitfun-part="diagnostics" className="canvas-tool-card__diagnostics">
-              <AlertTriangle size={13} />
+              <Icon glyph={AlertTriangle} size="sm" />
               {diagnostics.length}
             </span>
           )}
           <span data-openbitfun-component="canvas-tool-card" data-openbitfun-part="status" className="canvas-tool-card__status">
-            {isLoading
-              ? (isSourceVisuallyStreaming ? 'Writing source' : 'Rendering')
-              : renderValidated
-                ? 'Preview ready'
-                : preflightStatus === 'failed'
-                  ? 'Runtime failed'
-                  : preflightStatus === 'timeout'
-                    ? 'Validation timed out'
-                    : resultData?.compiled
-                      ? 'Validating preview'
-                      : canvasStatus || 'Saved'}
+            {status === 'cancelled' ? t('toolCards.default.cancelled')
+              : status === 'rejected' ? t('toolCards.default.rejected')
+                : isFailed ? t('toolCards.default.failed')
+                  : isLoading ? (isSourceVisuallyStreaming ? t('toolCards.canvas.writing') : t('toolCards.canvas.rendering'))
+                    : hasRuntimeFailure || preflightStatus === 'failed' ? t('toolCards.canvas.runtimeFailed')
+                      : renderValidated ? t('toolCards.canvas.ready')
+                        : preflightStatus === 'timeout' ? t('toolCards.canvas.timedOut')
+                          : resultData?.compiled ? t('toolCards.canvas.validating')
+                            : status === 'completed' ? artifactReference ? toolItem.toolName === 'ReadCanvas'
+                              ? t('toolCards.canvas.loaded') : t('toolCards.canvas.saved') : t('toolCards.default.completed')
+                              : t('toolCards.canvas.waiting')}
           </span>
         </div>
       )}
@@ -236,11 +242,12 @@ export const CanvasToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId })
       <div data-openbitfun-component="canvas-tool-card" data-openbitfun-part="meta" className="canvas-tool-card__meta"><OverflowText behavior="marquee">
         <span>{metaText}</span>
       </OverflowText></div>
-      {diagnostics.length > 0 && (
+      {(diagnostics.length > 0 || isFailed) && (
         <ul data-openbitfun-component="canvas-tool-card" data-openbitfun-part="diagnosticList" className="canvas-tool-card__diagnostic-list">
+          {isFailed && <li>{toolResult?.error || t('toolCards.default.failed')}</li>}
           {diagnostics.slice(0, 3).map((diagnostic, index) => (
             <li key={`${diagnostic.code || diagnostic.message || 'diagnostic'}-${index}`}>
-              {diagnostic.message || diagnostic.code || 'Canvas diagnostic'}
+              {diagnostic.message || diagnostic.code || t('toolCards.canvas.diagnostic')}
             </li>
           ))}
         </ul>

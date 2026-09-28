@@ -1,6 +1,7 @@
 import { i18nService } from '@/infrastructure/i18n/core/I18nService';
 import type {
   SessionCustomMetadata,
+  SessionContinuationPolicy,
   SessionRelationship,
   SessionKind,
   SessionMetadata,
@@ -19,6 +20,7 @@ const RELATIONSHIP_METADATA_KEYS = new Set([
   'parentTurnIndex',
   'parentToolCallId',
   'subagentType',
+  'continuationPolicy',
 ]);
 const TITLE_METADATA_KEYS = new Set([
   'titleSource',
@@ -31,7 +33,7 @@ const TOP_LEVEL_METADATA_KEYS = new Set([
 
 type SessionRelationshipInput = Pick<
   Session,
-  'sessionKind' | 'parentSessionId' | 'btwOrigin' | 'parentToolCallId' | 'subagentType'
+  'sessionKind' | 'parentSessionId' | 'btwOrigin' | 'parentToolCallId' | 'subagentType' | 'continuationPolicy'
 >;
 
 export interface ResolvedSessionRelationship {
@@ -48,6 +50,10 @@ export interface ResolvedSessionRelationship {
 
 function normalizeString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+export function normalizeSessionContinuationPolicy(value: unknown): SessionContinuationPolicy | undefined {
+  return value === 'reusable' || value === 'fresh_only' ? value : undefined;
 }
 
 function normalizeTurnIndex(value: unknown): number | undefined {
@@ -81,7 +87,7 @@ export function normalizeSessionRelationship(
   input?: Partial<SessionRelationshipInput> | null
 ): Pick<
   Session,
-  'sessionKind' | 'parentSessionId' | 'btwOrigin' | 'parentToolCallId' | 'subagentType'
+  'sessionKind' | 'parentSessionId' | 'btwOrigin' | 'parentToolCallId' | 'subagentType' | 'continuationPolicy'
 > {
   const sessionKind = normalizeSessionKind(input?.sessionKind);
   const parentSessionId = normalizeString(
@@ -119,6 +125,9 @@ export function normalizeSessionRelationship(
     btwOrigin: origin,
     parentToolCallId,
     subagentType,
+    ...(sessionKind === 'subagent' && input?.continuationPolicy !== undefined
+      ? { continuationPolicy: normalizeSessionContinuationPolicy(input.continuationPolicy) }
+      : {}),
   };
 }
 
@@ -151,7 +160,7 @@ export function deriveSessionRelationshipFromMetadata(
   metadata?: Pick<SessionMetadata, 'customMetadata' | 'relationship'> | null
 ): Pick<
   Session,
-  'sessionKind' | 'parentSessionId' | 'btwOrigin' | 'parentToolCallId' | 'subagentType'
+  'sessionKind' | 'parentSessionId' | 'btwOrigin' | 'parentToolCallId' | 'subagentType' | 'continuationPolicy'
 > {
   const relationship = metadata?.relationship;
   const relationshipKind = normalizeSessionKind(relationship?.kind);
@@ -161,6 +170,8 @@ export function deriveSessionRelationshipFromMetadata(
       parentSessionId: normalizeString(relationship?.parentSessionId) ?? undefined,
       parentToolCallId: normalizeString(relationship?.parentToolCallId),
       subagentType: normalizeString(relationship?.subagentType),
+      // Only an authoritative metadata record may use the legacy runtime default.
+      continuationPolicy: normalizeSessionContinuationPolicy(relationship?.continuationPolicy ?? 'reusable'),
       btwOrigin: {
         requestId: normalizeString(relationship?.parentRequestId),
         parentSessionId: normalizeString(relationship?.parentSessionId),
@@ -179,6 +190,7 @@ export function deriveSessionRelationshipFromMetadata(
     parentSessionId: customMetadata?.parentSessionId ?? undefined,
     parentToolCallId: normalizeString(customMetadata?.parentToolCallId),
     subagentType: normalizeString(customMetadata?.subagentType),
+    continuationPolicy: normalizeSessionContinuationPolicy(customMetadata?.continuationPolicy ?? 'reusable'),
     btwOrigin:
       sessionKind !== 'normal'
         ? {
@@ -263,7 +275,7 @@ function buildSessionCustomMetadata(
 function buildSessionRelationshipMetadata(
   session: Pick<
     Session,
-    'sessionKind' | 'parentSessionId' | 'btwOrigin' | 'parentToolCallId' | 'subagentType'
+    'sessionKind' | 'parentSessionId' | 'btwOrigin' | 'parentToolCallId' | 'subagentType' | 'continuationPolicy'
   >,
   existingRelationship?: SessionRelationship | null
 ): SessionRelationship | undefined {
@@ -287,6 +299,11 @@ function buildSessionRelationshipMetadata(
       normalized.sessionKind === 'subagent'
         ? normalized.subagentType ?? null
         : null,
+    ...(normalized.sessionKind === 'subagent' && normalized.continuationPolicy
+      ? { continuationPolicy: normalized.continuationPolicy }
+      : existingRelationship?.continuationPolicy
+        ? { continuationPolicy: existingRelationship.continuationPolicy }
+        : {}),
   };
 }
 
@@ -298,6 +315,7 @@ export function buildCreateSessionRelationship(
     | 'btwOrigin'
     | 'parentToolCallId'
     | 'subagentType'
+    | 'continuationPolicy'
   >
 ): SessionRelationship | undefined {
   const normalized = normalizeSessionRelationship(session);
@@ -313,6 +331,7 @@ export function buildCreateSessionRelationship(
       btwOrigin: normalized.btwOrigin,
       parentToolCallId: normalized.parentToolCallId,
       subagentType: normalized.subagentType,
+      continuationPolicy: normalized.continuationPolicy,
     },
     null
   );
@@ -360,6 +379,7 @@ export function buildSessionMetadata(
     | 'btwOrigin'
     | 'parentToolCallId'
     | 'subagentType'
+    | 'continuationPolicy'
     | 'lastFinishedAt'
     | 'titleSource'
     | 'titleI18nKey'
@@ -432,6 +452,7 @@ export function buildSessionMetadata(
         btwOrigin: session.btwOrigin,
         parentToolCallId: session.parentToolCallId,
         subagentType: session.subagentType,
+        continuationPolicy: session.continuationPolicy,
       },
       existingMetadata?.relationship
     ),

@@ -41,13 +41,15 @@ openbitfun-services-core = { path = "../../src/crates/services/services-core", f
 winreg = "0.52"
 mslnk = "0.1"
 
-# The installer is a separate Cargo workspace. Keep Tauri's runtime crates on
-# the same revision as the desktop workspace; otherwise the exact Tauri 2.11.5
-# dependency can resolve newer, incompatible runtime and utils releases.
 [patch.crates-io]
+# The installer is a standalone Cargo workspace without a committed lockfile.
+# Keep its Tauri runtime family aligned with the main workspace's reviewed fix.
 tauri-runtime = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
 tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
 tauri-utils = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-macros = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-codegen = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-plugin = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
 
 [dev-dependencies]
 tempfile = "3"

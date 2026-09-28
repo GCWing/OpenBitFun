@@ -834,12 +834,14 @@ describe('subagent parent helpers', () => {
         parentToolCallId: 'task-review',
         agentType: 'ReviewWorker',
         focusedReviewDisplayLabel: 'Authentication boundary',
+        continuationPolicy: 'fresh_only',
       },
     );
 
     expect(
       FlowChatStore.getInstance().getState().sessions.get('review-child')?.focusedReviewDisplayLabel,
     ).toBe('Authentication boundary');
+    expect(FlowChatStore.getInstance().getState().sessions.get('review-child')?.continuationPolicy).toBe('fresh_only');
   });
 
   it('stores an absolute parent Turn index when linking from a partial restored tail', () => {

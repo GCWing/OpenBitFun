@@ -663,7 +663,7 @@ describe('FileOperationToolCard', () => {
     }));
   });
 
-  it('renders only the expand and open-panel controls after change metadata', async () => {
+  it('keeps the open-panel control in the trailing action region after change metadata', async () => {
     const toolItem: FlowToolItem = {
       id: 'tool-1',
       type: 'tool',
@@ -731,12 +731,14 @@ describe('FileOperationToolCard', () => {
     ) as HTMLButtonElement | null;
 
     expect(container.querySelector('[data-testid="chat-file-change-open-diff"]')).toBeNull();
-    expect(actionButtons).toHaveLength(2);
-    expect(actionButtons[0]?.getAttribute('data-openbitfun-part')).toBe('affordanceButton');
-    expect(actionButtons[1]).toBe(openButton);
+    expect(actionButtons).toEqual([openButton]);
+    expect(container.querySelector('.lucide-chevron-down')).toBeNull();
     expect(openButton?.getAttribute('data-openbitfun-affordance')).toBe('open-panel-right');
     expect(openButton?.querySelector('[data-openbitfun-icon="open-panel-right"]')).not.toBeNull();
-    expect(openButton?.closest('[data-openbitfun-part="trailingActions"]')?.getAttribute('data-divider')).toBe('true');
+    expect(contentRegion?.querySelector('button')).toBeNull();
+    expect(actionRegion?.previousElementSibling).toBe(extraRegion);
+    expect(actionRegion?.parentElement?.lastElementChild).toBe(actionRegion);
+    expect(openButton?.closest('[data-openbitfun-part="actionRegion"]')).toBe(actionRegion);
 
     await act(async () => {
       openButton?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -1325,13 +1327,26 @@ describe('FileOperationToolCard', () => {
 
     mocks.inlineDiffPreviewProps = [];
 
-    const card = container.querySelector(
-      '[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]',
+    const summary = container.querySelector(
+      '[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="summary"]',
     ) as HTMLDivElement | null;
+    const toggle = summary?.querySelector<HTMLButtonElement>('[data-openbitfun-part="affordanceButton"]');
+    expect(toggle?.tagName).toBe('BUTTON');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(summary?.querySelector('[data-openbitfun-part="actionRegion"] [data-openbitfun-affordance="expand"]')).toBeNull();
+
     await act(async () => {
-      card?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      summary?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
     expect(mocks.inlineDiffPreviewProps.map(props => props.maxHeight)).toContain(330);
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+
+    toggle?.focus();
+    expect(dom.window.document.activeElement).toBe(toggle);
+    await act(async () => {
+      toggle?.click();
+    });
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
   });
 });

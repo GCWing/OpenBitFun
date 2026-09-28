@@ -109,7 +109,10 @@ internal fun AccountLoginPage(
     val authorizationUrl = (state as? AccountUiState.Authorizing)?.authorizationUrl?.let { value ->
         val uri = android.net.Uri.parse(value)
         if (uri.scheme == "https" && uri.host == "auth.openbitfun.com") {
-            uri.buildUpon().appendQueryParameter("locale", locale).build().toString()
+            uri.buildUpon()
+                .appendQueryParameter("locale", locale)
+                .appendQueryParameter("returnTo", "openbitfun://auth/callback")
+                .build().toString()
         } else value
     }
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current

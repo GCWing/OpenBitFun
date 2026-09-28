@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
+import { tokenCatalog } from "@openbitfun/design-tokens";
+import { themeTokenCatalog } from "@openbitfun/theme-openbitfun";
 
 const stylesSource = new URL("../src/styles.css", import.meta.url);
 
@@ -47,4 +49,32 @@ test("Design Lab form resets stay below component styles in openbitfun.reset", a
     assert.ok(matches[0].index > resetLayer.start);
     assert.ok(matches[0].index < resetLayer.end);
   }
+});
+
+test("every Lab stylesheet consumes published tokens and has no empty selectors", async () => {
+  const root = new URL("../src/", import.meta.url);
+  const tokens = new Set([...tokenCatalog, ...themeTokenCatalog].map(token => token.cssVariable));
+  const files = (await readdir(root, { recursive: true })).filter(file => file.endsWith(".css"));
+  for (const file of files) {
+    const source = await readFile(new URL(file.replaceAll("\\", "/"), root), "utf8");
+    assert.doesNotMatch(source, /^\s*\{/m, `${file} contains a rule without a selector`);
+    for (const [, variable] of source.matchAll(/var\((--openbitfun-[a-z0-9-]+)/g)) {
+      assert.ok(tokens.has(variable), `${file} references unpublished token ${variable}`);
+    }
+  }
+});
+
+test("site controls use public components without a second native-control skin", async () => {
+  const root = new URL("../src/", import.meta.url);
+  const app = await readFile(new URL("App.tsx", root), "utf8");
+  for (const component of ["Dialog", "Sheet", "Select", "SearchField", "Listbox", "IconButton"]) {
+    assert.ok(app.includes(`<${component}`), `Site shell must consume ${component}`);
+  }
+  for (const file of ["App.tsx", "pages/ColorsPage.tsx", "pages/FoundationsPage.tsx", "pages/GettingStartedPage.tsx"]) {
+    const source = await readFile(new URL(file, root), "utf8");
+    assert.doesNotMatch(source, /<(?:button|input|select)\b/, `${file} reimplements a public control`);
+  }
+  const styles = await readFile(stylesSource, "utf8");
+  assert.doesNotMatch(styles, /\.lab-(?:shell|topbar|sidebar|search|settings)\b/);
+  assert.doesNotMatch(styles, /\.token-tools select|\.token-action-row button|\.component-code-heading button|\.component-inspector-select select/);
 });

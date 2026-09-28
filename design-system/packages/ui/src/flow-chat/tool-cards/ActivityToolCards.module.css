@@ -6,8 +6,4 @@
     color: var(--openbitfun-color-content-muted);
     white-space: nowrap;
   }
-
-  .summary[data-tone="danger"] {
-    color: var(--openbitfun-color-status-danger-content);
-  }
 }

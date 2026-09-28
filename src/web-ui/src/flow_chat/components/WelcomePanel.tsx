@@ -290,8 +290,7 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
                         trailingIcon={
                           <Icon
                             name="chevron-down"
-                            size="lg"
-                            style={{ width: 11, height: 11 }}
+                            size="xs"
                             className={`welcome-panel__inline-chevron${workspaceDropdownOpen ? ' welcome-panel__inline-chevron--open' : ''}`}
                           />
                         }
@@ -339,7 +338,7 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
                               checked
                               aria-disabled="true"
                               leading={<FolderOpen size={12} />}
-                              metadata={<Icon name="check-line" size="lg" style={{ width: 11, height: 11 }} />}
+                              metadata={<Icon name="check-line" size="xs" />}
                             >
                               {currentWorkspace.name}
                             </MenuItem>
@@ -371,7 +370,7 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
                         <Button
                           labelBehavior="static"
                           variant="text"
-                          leadingIcon={<Icon name="git" size="lg" style={{ width: 13, height: 13 }} className="welcome-panel__inline-icon" />}
+                          leadingIcon={<Icon name="git" size="sm" className="welcome-panel__inline-icon" />}
                           type="button"
                           data-openbitfun-product-component="welcome-panel"
                           data-openbitfun-product-part="gitAction"

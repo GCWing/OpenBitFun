@@ -40,7 +40,7 @@ import { tabGroupMeta } from "./components/TabGroup/TabGroup.meta";
 import { toolbarMeta } from "./components/Toolbar/Toolbar.meta";
 import { tooltipMeta } from "./components/Tooltip/Tooltip.meta";
 import { voiceCallPanelMeta } from "./components/VoiceCallPanel/VoiceCallPanel.meta";
-import { voiceParticleLogoMeta } from "./components/VoiceParticleLogo/VoiceParticleLogo.meta";
+import { voiceParticleLogoMeta } from "./brand/VoiceParticleLogo/VoiceParticleLogo.meta";
 import { mobileIconButtonMeta } from "./mobile/MobileIconButton/MobileIconButton.meta";
 import { mobileActionSheetMeta } from "./mobile/MobileActionSheet/MobileActionSheet.meta";
 import { mobileBadgeMeta } from "./mobile/MobileBadge/MobileBadge.meta";
@@ -66,8 +66,12 @@ import { mobileTextFieldMeta } from "./mobile/MobileTextField/MobileTextField.me
 import { mobileTextareaMeta } from "./mobile/MobileTextarea/MobileTextarea.meta";
 import { askUserMeta } from "./flow-chat/ask-user/AskUser.meta";
 import { chatComposerMeta } from "./flow-chat/composer/ChatComposer.meta";
+import { thinkingBlockMeta, flowGroupMeta, exploreGroupMeta, contextLoadGroupMeta, flowChatRuntimeStatusMeta } from "./flow-chat/conversation/ConversationBlocks.meta";
 import { ambientToolCardMeta } from "./flow-chat/tool-cards/AmbientToolCard.meta";
+import { controlHubToolCardMeta, listModelsToolCardMeta } from "./flow-chat/tool-cards/RuntimeToolCards.meta";
+import { semanticToolCardMetas } from "./flow-chat/tool-cards/SemanticToolCards.meta";
 import { commandToolCardMeta } from "./flow-chat/tool-cards/CommandToolCard.meta";
+import { toolRelationRowMeta } from './flow-chat/tool-cards/ToolRelationRow.meta';
 import { contextCompressionToolCardMeta } from "./flow-chat/tool-cards/ContextCompressionToolCard.meta";
 import { fileOperationToolCardMeta } from "./flow-chat/tool-cards/FileOperationToolCard.meta";
 import { prominentToolCardMeta } from "./flow-chat/tool-cards/ProminentToolCard.meta";
@@ -98,6 +102,7 @@ import {
   webFetchToolCardMeta,
   webSearchToolCardMeta,
 } from "./flow-chat/tool-cards/StandardToolCards.meta";
+import { openBitFunSolidMarkMeta, openBitFunAppIconMeta, openBitFunMarkMeta, openBitFunBrandMotionMeta, subagentHatchMeta } from "./brand/brand.meta";
 import type { ComponentMeta } from "./registry.types";
 
 export type {
@@ -107,6 +112,7 @@ export type {
 } from "./registry.types";
 
 export const componentRegistry = [
+  ...semanticToolCardMetas,
   actionCardMeta,
   actionItemMeta,
   activityItemMeta,
@@ -120,11 +126,18 @@ export const componentRegistry = [
   cardMeta,
   checkboxMeta,
   chatComposerMeta,
+  thinkingBlockMeta,
+  flowGroupMeta,
+  exploreGroupMeta,
+  contextLoadGroupMeta,
+  flowChatRuntimeStatusMeta,
   commandToolCardMeta,
+  toolRelationRowMeta,
   composerMeta,
   comboboxMeta,
   confirmDialogMeta,
   contextCompressionToolCardMeta,
+  controlHubToolCardMeta,
   cronToolCardMeta,
   defaultToolCardMeta,
   disclosureMeta,
@@ -144,6 +157,7 @@ export const componentRegistry = [
   keyHintMeta,
   launcherButtonMeta,
   listboxMeta,
+  listModelsToolCardMeta,
   loadingStateMeta,
   menuMeta,
   mobileActionSheetMeta,
@@ -201,6 +215,11 @@ export const componentRegistry = [
   toolbarMeta,
   tooltipMeta,
   voiceCallPanelMeta,
+  openBitFunSolidMarkMeta,
+  openBitFunAppIconMeta,
+  openBitFunMarkMeta,
+  openBitFunBrandMotionMeta,
+  subagentHatchMeta,
   voiceParticleLogoMeta,
   viewImageToolCardMeta,
   webFetchToolCardMeta,

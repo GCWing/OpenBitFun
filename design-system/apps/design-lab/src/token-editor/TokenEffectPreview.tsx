@@ -1,8 +1,13 @@
+import { componentRegistry } from "@openbitfun/ui/registry";
+import { ComponentCardPreview } from "../pages/ComponentsPage";
 import { Button, Stack, Switch } from "@openbitfun/ui";
 import { useI18n } from "../i18n";
 
-export function TokenEffectPreview() {
+export function TokenEffectPreview({ componentName }: { componentName?: string }) {
   const { t } = useI18n();
+
+  const component = componentRegistry.find(item => item.name === componentName);
+  if (component) return <section className="design-token-owner-preview"><span className="page-kicker">{t("design.selectedComponent")}</span><h2>{component.name}</h2><div><ComponentCardPreview component={component} /></div><a href={`#component/${component.name.toLowerCase()}`}>{t("design.relatedComponent")}</a></section>;
 
   return (
     <div className="token-effect-preview">
@@ -64,7 +69,7 @@ export function TokenEffectPreview() {
               {t("effect.componentGaps")}
             </div>
             <div className="geometry-sample">
-              <strong>180ms</strong>
+              <strong>motion.duration.normal</strong>
               {t("effect.motionNormal")}
             </div>
           </div>

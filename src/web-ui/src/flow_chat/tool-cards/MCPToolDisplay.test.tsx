@@ -158,7 +158,7 @@ describe('MCPToolDisplay', () => {
     expect(input?.textContent).toContain('Input Parameters');
     expect(container.querySelector('.mcp-input-code')).toBeNull();
     expect(result?.textContent).toContain('Search result');
-    expect(input?.compareDocumentPosition(result as Node) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(result?.compareDocumentPosition(input as Node) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
     act(() => {
       container.querySelector<HTMLButtonElement>('.mcp-input-disclosure button[aria-expanded]')?.dispatchEvent(

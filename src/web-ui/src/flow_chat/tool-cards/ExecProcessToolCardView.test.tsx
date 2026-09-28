@@ -115,6 +115,18 @@ describe.each([
 
   const expandedSurface = '[data-openbitfun-part="surface"][data-openbitfun-state~="expanded"]';
 
+  it('keeps Shell approval pending in its native ambient card', () => {
+    for (const status of ['completed', 'running', 'error', 'cancelled', 'pending_confirmation', 'rejected'] as const) {
+      act(() => root.render(
+        <ExecProcessToolCardView toolItem={toolItem(status)} model={model} />,
+      ));
+      const attention = status === 'rejected' ? 'prominent' : 'ambient';
+      expect(container.querySelector(`[data-openbitfun-part="surface"][data-openbitfun-attention="${attention}"]`)).not.toBeNull();
+      expect(container.querySelector('[data-tool-capsule="true"]')).toBeNull();
+      expect(container.textContent).toContain(model.primaryText);
+    }
+  });
+
   it.each(['completed', 'running', 'cancelled'] as const)('copies the complete %s output beyond the terminal viewport', async (status) => {
     const output = `${'long output '.repeat(30)}\nlast line\r\n`;
     act(() => {
@@ -125,7 +137,7 @@ describe.each([
     });
     if (!container.querySelector(expandedSurface)) {
       act(() => {
-        container.querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')!.click();
+        container.querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')!.click();
       });
     }
     vi.mocked(copyTextToClipboard).mockClear();
@@ -218,7 +230,7 @@ describe.each([
     act(() => { container.querySelector<HTMLElement>(expandedSurface)!.click(); });
     expect(container.querySelector(expandedSurface)).toBeNull();
     act(() => {
-      container.querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')!.click();
+      container.querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')!.click();
     });
     act(() => { vi.advanceTimersByTime(1000); });
     expect(container.querySelector(expandedSurface)).not.toBeNull();
@@ -233,7 +245,7 @@ describe.each([
       root.render(<ExecProcessToolCardView toolItem={toolItem('cancelled', true)} model={model} />);
     });
 
-    expect(container.textContent).toContain('Cancelled');
+    expect(container.querySelector('[data-openbitfun-part="icon"] [aria-label]')?.getAttribute('aria-label')).toContain('Cancelled');
     expect(container.textContent).not.toContain('Receiving parameters...');
   });
 
@@ -259,7 +271,7 @@ describe.each([
       );
     });
 
-    expect(container.textContent).toContain('Rejected');
+    expect(container.querySelector('[data-openbitfun-part="icon"] [aria-label]')?.getAttribute('aria-label')).toContain('Rejected');
     expect(container.textContent).not.toContain('Receiving parameters...');
   });
 
@@ -282,24 +294,28 @@ describe.each([
 
     act(() => {
       container
-        .querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')
+        .querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')
         ?.click();
     });
 
-    const exitCodeItem = Array.from(
-      container.querySelectorAll('[data-openbitfun-part="footer"] > span'),
-    ).find((item) => item.textContent?.includes('Exit code: 2'));
+    const exitCodeItem = [...container.querySelectorAll('[data-openbitfun-part="footer"] [data-tone]')]
+      .find((item) => item.textContent?.includes('Exit code: 2'));
+    expect(exitCodeItem?.textContent).toBe('Exit code: 2');
     expect(exitCodeItem?.getAttribute('data-tone')).toBe('neutral');
+    expect(exitCodeItem?.querySelector('.lucide-check')).toBeNull();
     expect(container.querySelector('.duration-text--completed-error')).toBeNull();
-    expect(container.querySelector('.duration-text--completed-success')).not.toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="footer"]')?.textContent).toContain('toolCards.execProcess.wallTime');
   });
 
   it('shows waiting confirmation instead of receiving params while confirmation is pending', () => {    act(() => {
       root.render(<ExecProcessToolCardView toolItem={toolItem('pending_confirmation', true)} model={model} />);
     });
 
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')).not.toBeNull();
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')).toBeNull();
+    const surface = container.querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]');
+    expect(surface?.getAttribute('data-openbitfun-state')).toBe('confirmation');
+    expect(container.querySelector(expandedSurface)).toBeNull();
+    act(() => surface!.click());
     expect(container.textContent).toContain('Waiting for confirmation');
     expect(container.textContent).not.toContain('Receiving parameters...');
     expect(container.querySelector('[data-openbitfun-component="command-tool-card"] [data-openbitfun-part="outputFrame"]')).not.toBeNull();
@@ -324,8 +340,8 @@ describe.each([
       );
     });
 
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')).not.toBeNull();
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')).not.toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')).toBeNull();
 
     act(() => {
       root.render(
@@ -337,8 +353,8 @@ describe.each([
       );
     });
 
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')).not.toBeNull();
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')).not.toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')).toBeNull();
     expect(container.textContent).toContain('All tests passed');
     expect(container.querySelector('[data-openbitfun-part="output"] pre')?.getAttribute('data-max-rows')).toBe('4');
 
@@ -354,10 +370,10 @@ describe.each([
 
     expect(container.querySelector(expandedSurface)).not.toBeNull();
     act(() => { vi.advanceTimersByTime(1000); });
-    // Collapsed cards keep the prominent framework shell and animate height closed.
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')).not.toBeNull();
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"][data-openbitfun-state~="expanded"]')).toBeNull();
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')).toBeNull();
+    // Collapsed cards keep the ambient framework shell and animate height closed.
+    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')).not.toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"][data-openbitfun-state~="expanded"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')).toBeNull();
     expect(container.querySelector('[data-openbitfun-part="output"] pre')?.getAttribute('data-max-rows')).toBe('4');
   });
 
@@ -378,7 +394,7 @@ describe.each([
 
     act(() => {
       container
-        .querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')
+        .querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')
         ?.click();
     });
 
@@ -399,7 +415,7 @@ describe.each([
 
     act(() => {
       container
-        .querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')
+        .querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')
         ?.click();
     });
 
@@ -408,7 +424,7 @@ describe.each([
     expect(container.querySelector('[data-openbitfun-part="outputFrame"]')?.getAttribute('data-sizing')).toBe('content');
   });
 
-  it('pushes session and execution metadata to the footer end', () => {
+  it('keeps the exit code next to duration at the footer end', () => {
     const metadataModel: ExecProcessCardModel = {
       ...model,
       sessionId: 42,
@@ -427,11 +443,12 @@ describe.each([
 
     act(() => {
       container
-        .querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]')
+        .querySelector<HTMLElement>('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"]')
         ?.click();
     });
 
-    const footerItems = Array.from(container.querySelectorAll('[data-openbitfun-part="footer"] > span'));
+    expect(container.querySelector('[data-openbitfun-part="surface"]')?.textContent).not.toContain('Exit code:');
+    const footerItems = Array.from(container.querySelectorAll('[data-openbitfun-part="footer"] [data-push-to-end]'));
     expect(footerItems).toHaveLength(3);
     expect(footerItems[0]?.getAttribute('data-push-to-end')).toBe('true');
     expect(footerItems[0]?.textContent).toContain('#42');
@@ -518,12 +535,12 @@ describe.each([
     act(() => {
       vi.advanceTimersByTime(899);
     });
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"][data-openbitfun-state~="expanded"]')).not.toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"][data-openbitfun-state~="expanded"]')).not.toBeNull();
 
     act(() => {
       vi.advanceTimersByTime(1);
     });
-    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="prominent"][data-openbitfun-state~="expanded"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="surface"][data-openbitfun-attention="ambient"][data-openbitfun-state~="expanded"]')).toBeNull();
     expect(container.querySelector('[data-openbitfun-component="command-tool-card"] [data-openbitfun-part="details"]')).not.toBeNull();
 
     act(() => {

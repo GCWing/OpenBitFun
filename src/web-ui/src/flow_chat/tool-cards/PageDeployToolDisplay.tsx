@@ -2,7 +2,7 @@
  * PageDeploy tool card — shows deploy slug / version result.
  */
 import React, { useCallback, useMemo, useState } from 'react';
-import { Button, Icon } from '@openbitfun/ui';
+import { IconButton, Icon } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
 
 import type { ToolCardProps } from '../types/flow-chat';
@@ -100,25 +100,29 @@ export const PageDeployDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
         status={isFailed ? 'error' : status}
         isExpanded={isExpanded}
         onToggle={hasExpandableDetails ? toggleExpanded : undefined}
-        action={`${t('toolCards.pageDeploy.title')}:`}
+        action={status === 'completed' && success
+          ? t('toolCards.pageDeploy.deployedTitle') : t('toolCards.pageDeploy.title')}
         subject={commandText}
+        statusLabel={status === 'cancelled' ? t('toolCards.default.cancelled')
+          : status === 'rejected' ? t('toolCards.default.rejected')
+            : isFailed ? t('toolCards.default.failed') : undefined}
         version={deployedVersion || undefined}
         loading={isLoading}
         fields={fields}
         error={isFailed ? getErrorMessage() : undefined}
-        actions={urlPath ? (
-          <Button
+        actions={success && !isFailed && status === 'completed' && slug && urlPath ? (
+          <IconButton
             type="button"
-            variant="outline"
+            variant="quiet"
             size="sm"
-            leadingIcon={<Icon name="arrow-up-right" size="xs" />}
+            icon={<Icon name="arrow-up-right" size="sm" />}
+            aria-label={t('toolCards.pageDeploy.openProduction')}
+            title={t('toolCards.pageDeploy.openProduction')}
             data-testid="chat-page-deploy-open-btn"
             onClick={() => void openPage(slug, generation).catch(() => {
               notificationService.error(t('toolCards.pageDeploy.openFailed'));
             })}
-          >
-            {t('toolCards.pageDeploy.openProduction')}
-          </Button>
+          />
         ) : undefined}
       />
     </div>

@@ -4,7 +4,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plane, Presentation, ListTodo, CalendarDays, ClipboardList, Mail, FileSpreadsheet, HandCoins, TrendingUp, FileText, RotateCcw } from 'lucide-react';
+import { Plane, Presentation, ListTodo, CalendarDays, ClipboardList, Mail, FileSpreadsheet, HandCoins, TrendingUp, RotateCcw } from 'lucide-react';
 import { ActionCard, IconButton, Tooltip, Icon } from '@openbitfun/ui';
 import './CoworkExampleCards.scss';
 
@@ -27,17 +27,17 @@ interface ExampleItem {
 }
 
 const EXAMPLES: ExampleItem[] = [
-  { id: 'desktop_cleanup', icon: <Icon name="image" size="lg" style={{ width: 18, height: 18 }} /> },
-  { id: 'vacation_plan', icon: <Plane size={18} /> },
-  { id: 'make_ppt', icon: <Presentation size={18} /> },
-  { id: 'todo_breakdown', icon: <ListTodo size={18} /> },
-  { id: 'optimize_week', icon: <TrendingUp size={18} /> },
-  { id: 'weekly_plan', icon: <CalendarDays size={18} /> },
-  { id: 'meeting_minutes', icon: <ClipboardList size={18} /> },
-  { id: 'reply_email', icon: <Mail size={18} /> },
-  { id: 'make_docx', icon: <FileText size={18} /> },
-  { id: 'make_spreadsheet', icon: <FileSpreadsheet size={18} /> },
-  { id: 'budget_plan', icon: <HandCoins size={18} /> },
+  { id: 'desktop_cleanup', icon: <Icon name="image" size="md" /> },
+  { id: 'vacation_plan', icon: <Icon glyph={Plane} size="md" /> },
+  { id: 'make_ppt', icon: <Icon glyph={Presentation} size="md" /> },
+  { id: 'todo_breakdown', icon: <Icon glyph={ListTodo} size="md" /> },
+  { id: 'optimize_week', icon: <Icon glyph={TrendingUp} size="md" /> },
+  { id: 'weekly_plan', icon: <Icon glyph={CalendarDays} size="md" /> },
+  { id: 'meeting_minutes', icon: <Icon glyph={ClipboardList} size="md" /> },
+  { id: 'reply_email', icon: <Icon glyph={Mail} size="md" /> },
+  { id: 'make_docx', icon: <Icon name="file-text" size="md" /> },
+  { id: 'make_spreadsheet', icon: <Icon glyph={FileSpreadsheet} size="md" /> },
+  { id: 'budget_plan', icon: <Icon glyph={HandCoins} size="md" /> },
 ];
 
 function pickRandomUnique<T>(items: readonly T[], count: number): T[] {

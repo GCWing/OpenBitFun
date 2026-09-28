@@ -1,4 +1,5 @@
-import React, { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
+import React, { Suspense, useState, useCallback, useEffect, useRef } from 'react';
 
 import { createOverlayPortal,
   Icon,
@@ -36,7 +37,7 @@ import { UpdateDownloadIndicator } from '@/infrastructure/update/UpdateDownloadI
 import { UpdateMenuItems } from '@/infrastructure/update/UpdateMenuItems';
 import { useUpdateInstallStore } from '@/infrastructure/update/updateInstallStore';
 
-const RemoteConnectDialog = lazy(() => import('../../RemoteConnectDialog'));
+const RemoteConnectDialog = lazyWithRecovery(() => import('../../RemoteConnectDialog'));
 
 const PersistentFooterActions: React.FC = () => {
   const { t } = useI18n('common');

@@ -1,5 +1,5 @@
 import type { HTMLAttributes, ReactNode } from "react";
-import { FileText } from "lucide-react";
+import { Icon } from "../../components/Icon/Icon";
 import {
   AmbientToolCard,
   AmbientToolCardHeader,
@@ -15,6 +15,7 @@ export interface ReadFileToolCardProps
   interactive?: boolean;
   onOpen?: () => void;
   status: FlowChatToolStatus;
+  statusDescription?: string;
 }
 
 export function ReadFileToolCard({
@@ -25,6 +26,7 @@ export function ReadFileToolCard({
   interactive = false,
   onOpen,
   status,
+  statusDescription,
   ...props
 }: ReadFileToolCardProps) {
   const canOpen = interactive && Boolean(onOpen);
@@ -39,10 +41,12 @@ export function ReadFileToolCard({
         <AmbientToolCardHeader
           action={action}
           content={content}
+          contentActions={canOpen ? <Icon name="arrow-up-right" size="sm" aria-hidden="true" /> : undefined}
+          statusDescription={statusDescription}
           icon={(
             <ToolCardStatusSlot
               status={status}
-              toolIcon={<FileText aria-hidden="true" />}
+              toolIcon={<Icon name="file-text" size="sm" />}
             />
           )}
         />

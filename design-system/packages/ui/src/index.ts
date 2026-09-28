@@ -4,7 +4,7 @@ import "./styles/scrollbars.css";
 export { VoiceCallPanel, type VoiceCallPanelProps, type VoiceCallLabels, type VoiceCallPhase } from "./components/VoiceCallPanel";
 export { VoiceCallTranscript, VoiceCallControls, VoiceCallIdentity, type VoiceTranscriptEntry, type VoiceCallTranscriptProps, type VoiceCallControlsProps, type VoiceCallIdentityProps } from "./components/VoiceCallPanel";
 export { VoiceCallHeader, type VoiceCallHeaderProps } from "./components/VoiceCallPanel";
-export { VoiceParticleLogo, type VoiceParticleLogoProps, type VoiceParticleAudio, type VoiceParticleAudioReader } from "./components/VoiceParticleLogo";
+export { VoiceParticleLogo, type VoiceParticleLogoProps, type VoiceParticleAudio, type VoiceParticleAudioReader } from "./brand/VoiceParticleLogo";
 
 export {
   DesignSystemProvider,
@@ -223,7 +223,9 @@ export { Radio, type RadioProps, type RadioSize } from "./components/Radio";
 export { RollingText, type RollingTextProps } from "./components/RollingText";
 export {
   ScrollArea,
+  type ScrollAreaEdgeFade,
   type ScrollAreaOrientation,
+  type ScrollAreaOverscrollBehaviorY,
   type ScrollAreaProps,
   type ScrollbarVisibility,
 } from "./components/ScrollArea";
@@ -298,3 +300,5 @@ export {
   type TokenOverrideName,
   type TokenOverrides,
 } from "./primitives/ThemeRoot";
+
+export { LayersPlusIcon } from "./components/Icon";

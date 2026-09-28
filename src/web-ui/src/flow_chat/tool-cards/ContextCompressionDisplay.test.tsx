@@ -53,7 +53,7 @@ describe('ContextCompressionDisplay', () => {
     dom.window.close();
   });
 
-  it('shows only the compressed length and reduction ratio in the result summary', () => {
+  it('shows the recorded before and after token counts', () => {
     act(() => {
       root.render(
         <ContextCompressionDisplay
@@ -71,14 +71,14 @@ describe('ContextCompressionDisplay', () => {
       );
     });
 
-    expect(container.querySelector('[data-openbitfun-part="action"]')?.textContent).toBe('Context compression:');
+    expect(container.querySelector('[data-openbitfun-part="action"]')?.textContent).toBe('Compress context:');
     expect(container.querySelector('[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="content"]')?.textContent).toBe(
-      'Compressed context length 31,000 (compression ratio 75%)',
+      '124,000 → 31,000 tokens',
     );
     expect(container.querySelector('[data-openbitfun-part="tokenChange"]')).toBeNull();
     expect(container.querySelector('[data-openbitfun-part="savings"]')).toBeNull();
     expect(container.querySelector('[data-openbitfun-part="meta"]')).toBeNull();
-    expect(container.textContent).not.toContain('124,000');
+    expect(container.textContent).not.toContain('75%');
     expect(container.textContent).not.toContain('Compression #3');
   });
 });

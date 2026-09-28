@@ -9,8 +9,8 @@ import { canonicalizeIcns } from './icns-container.mjs';
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(SCRIPT_DIR, '..');
 const SOURCE_DIR = path.join(ROOT_DIR, 'assets', 'brand', 'source');
-const SOURCE_SVG = path.join(SOURCE_DIR, 'openbitfun-mark.svg');
-const SOURCE_APP_MARK = path.join(SOURCE_DIR, 'openbitfun-app-mark.png');
+const SOURCE_SVG = path.join(ROOT_DIR, 'design-system/packages/ui/src/brand/assets/openbitfun-mark.svg');
+const SOURCE_APP_MARK = path.join(ROOT_DIR, 'design-system/packages/ui/src/brand/assets/openbitfun-app-mark.png');
 const SOURCE_MARKS = {
   dark: path.join(SOURCE_DIR, 'openbitfun-mark-dark.png'),
   light: path.join(SOURCE_DIR, 'openbitfun-mark-light.png'),
@@ -83,8 +83,8 @@ async function writePng(filePath, buffer) {
 
 function createReusableWebMark(svg) {
   const reusableMark = svg.replaceAll('stroke="black"', 'stroke="currentColor"');
-  if (reusableMark === svg) {
-    throw new Error('OpenBitFun mark source is missing its canonical black strokes');
+  if (!reusableMark.includes('stroke="currentColor"')) {
+    throw new Error('OpenBitFun mark source is missing its canonical inherited-color strokes');
   }
   return reusableMark;
 }
@@ -310,6 +310,15 @@ async function generateBrandAssets() {
   const exportDir = outputPath('assets', 'brand', 'exports');
   await mkdir(exportDir, { recursive: true });
   await copyFile(SOURCE_SVG, path.join(exportDir, 'openbitfun-mark.svg'));
+  const legacySourceDir = outputPath('assets', 'brand', 'source');
+  await mkdir(legacySourceDir, { recursive: true });
+  await copyFile(SOURCE_SVG, path.join(legacySourceDir, 'openbitfun-mark.svg'));
+  await copyFile(SOURCE_APP_MARK, path.join(legacySourceDir, 'openbitfun-app-mark.png'));
+  const componentAssetDir = outputPath('design-system', 'packages', 'ui', 'src', 'brand', 'assets');
+  await mkdir(componentAssetDir, { recursive: true });
+  for (const size of [16, 32, 128, 256, 512]) {
+    await writePng(path.join(componentAssetDir, `openbitfun-app-icon-${size}.png`), await renderIcon(size));
+  }
   for (const size of EXPORT_SIZES) {
     const dark = await renderMark(svg, size, '#202020');
     const light = await renderMark(svg, size, '#e8e8e8');

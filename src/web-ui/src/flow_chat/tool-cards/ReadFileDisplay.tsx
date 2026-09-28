@@ -4,16 +4,19 @@
 
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
+import { isToolCardVisible } from '../utils/flowItemVisibility';
 import { ReadFileToolCard } from '@openbitfun/ui/flow-chat';
-import { isSessionViewPreviewText } from '../utils/sessionViewPreview';
+import { i18nService } from '@/infrastructure/i18n';
 
 export const ReadFileDisplay: React.FC<ToolCardProps> = React.memo(({
   toolItem,
   onOpenInEditor,
 }) => {
   const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status, requiresConfirmation, userConfirmed } = toolItem;
+  const { toolCall, toolResult, requiresConfirmation, userConfirmed } = toolItem;
+  const status = getToolCardStatus(toolItem);
 
   const filePath = useMemo(() => {
     const path = toolCall?.input?.file_path || toolCall?.input?.target_file || toolCall?.input?.path;
@@ -42,7 +45,7 @@ export const ReadFileDisplay: React.FC<ToolCardProps> = React.memo(({
     if (!filePath || filePath === t('toolCards.readFile.noFileSpecified') || filePath === t('toolCards.readFile.parsingParams')) {
       return filePath || t('toolCards.readFile.noFileSpecified');
     }
-    return filePath.split('/').pop() || filePath.split('\\').pop() || filePath;
+    return filePath.split(/[/\\]/).pop() || filePath;
   }, [filePath, t]);
 
   const permissionTargetPath = useMemo(() => {
@@ -70,7 +73,7 @@ export const ReadFileDisplay: React.FC<ToolCardProps> = React.memo(({
     const limit = toolCall?.input?.limit;
     
     if (tail && limit !== undefined) {
-      return `tail ${limit} lines`;
+      return t('toolCards.readFile.tailLines', { count: limit, formattedCount: i18nService.formatNumber(limit) });
     }
 
     if (offset !== undefined || limit !== undefined) {
@@ -78,30 +81,16 @@ export const ReadFileDisplay: React.FC<ToolCardProps> = React.memo(({
       const endLine = limit ? startLine + limit - 1 : undefined;
       
       if (endLine) {
-        return `L${startLine}~L${endLine}`;
+        return t('toolCards.readFile.lineRange', { start: i18nService.formatNumber(startLine), end: i18nService.formatNumber(endLine) });
       } else if (startLine > 1) {
-        return `L${startLine}~EOF`;
+        return t('toolCards.readFile.fromLine', { start: i18nService.formatNumber(startLine) });
       }
     }
     
     return null;
-  }, [toolCall?.input?.offset, toolCall?.input?.start_line, toolCall?.input?.tail, toolCall?.input?.limit]);
+  }, [t, toolCall?.input?.offset, toolCall?.input?.start_line, toolCall?.input?.tail, toolCall?.input?.limit]);
 
-  const fileSize = useMemo(() => {
-    if (!toolResult?.result) return null;
-    
-    const content = toolResult.result.content || toolResult.result;
-    if (typeof content === 'string') {
-      if (isSessionViewPreviewText(content)) return null;
-      const bytes = new TextEncoder().encode(content).length;
-      if (bytes < 1024) return `${bytes}B`;
-      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-      return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-    }
-    return null;
-  }, [toolResult?.result]);
-
-  const canOpenFile = status === 'completed' && filePath !== t('toolCards.readFile.noFileSpecified') && filePath !== t('toolCards.readFile.parsingParams');
+  const canOpenFile = status === 'completed' && Boolean(onOpenInEditor) && filePath !== t('toolCards.readFile.noFileSpecified') && filePath !== t('toolCards.readFile.parsingParams');
   const showConfirmationActions = Boolean(
     requiresConfirmation &&
     !userConfirmed &&
@@ -111,68 +100,20 @@ export const ReadFileDisplay: React.FC<ToolCardProps> = React.memo(({
     status !== 'error'
   );
 
-  if (status === 'error') {
+  if (!isToolCardVisible(toolItem)) {
     return null;
   }
 
-  const renderAction = () => {
-    if (status === 'completed') {
-      return `${t('toolCards.readFile.readFile')}:`;
-    }
-    if (status === 'running' || status === 'streaming') {
-      return t('toolCards.readFile.readingFile');
-    }
-    if (showConfirmationActions || status === 'pending_confirmation') {
-      return t('toolCards.readFile.permissionRequest');
-    }
-    if (status === 'pending') {
-      return t('toolCards.readFile.preparingRead');
-    }
-    return undefined;
-  };
-
-  const renderContent = () => {
-    if (status === 'completed') {
-      return (
-        <>
-          {fileName}
-          {lineRange && <> {lineRange}</>}
-          {fileSize && <> ({fileSize})</>}
-        </>
-      );
-    }
-    if (status === 'running' || status === 'streaming') {
-      return (
-        <>
-          {fileName}
-          {lineRange && <> {lineRange}</>}
-          ...
-        </>
-      );
-    }
-    if (showConfirmationActions || status === 'pending_confirmation') {
-      return (
-        <>
-          {permissionTargetPath}
-          {lineRange && <> {lineRange}</>}
-        </>
-      );
-    }
-    if (status === 'pending') {
-      return (
-        <>
-          {fileName}
-          {lineRange && <> {lineRange}</>}
-        </>
-      );
-    }
-    return null;
-  };
+  const requestingPermission = showConfirmationActions || status === 'pending_confirmation';
+  const subject = requestingPermission ? permissionTargetPath : fileName;
 
   return (
     <ReadFileToolCard
-      action={renderAction()}
-      content={renderContent()}
+      accessibleLabel={`${t('toolCards.readFile.readFile')}: ${filePath}${lineRange ? ` · ${lineRange}` : ''}`}
+      title={filePath}
+      action={t(requestingPermission ? 'toolCards.readFile.permissionRequest' : 'toolCards.readFile.readFile')}
+      content={`${subject}${lineRange ? ` · ${lineRange}` : ''}`}
+      statusDescription={getToolCardStatusDescription(status, t, toolResult?.error)}
       status={status}
       interactive={canOpenFile}
       onOpen={canOpenFile ? handleOpenInEditor : undefined}

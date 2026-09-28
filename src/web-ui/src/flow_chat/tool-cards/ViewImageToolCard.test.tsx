@@ -64,7 +64,7 @@ describe('ViewImageToolCard', () => {
     expect(html).toContain('data:image/png;base64,AAAA');
     expect(html).toContain('width="899"');
     expect(html).toContain('height="949"');
-    expect(html).toContain('Viewed 1 image');
+    expect(html).toContain('preview.png');
     expect(html).not.toContain('toolCards.viewImage.viewedImages');
     expect(html).toContain('data-openbitfun-tool-card="view-image"');
     expect(html).toContain('data-openbitfun-part="imagePreview"');

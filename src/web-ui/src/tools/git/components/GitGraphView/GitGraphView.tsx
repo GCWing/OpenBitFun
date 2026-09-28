@@ -9,6 +9,7 @@ import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 import { gitAPI } from '@/infrastructure/api';
 import type { GitGraph, GitGraphNode } from '@/infrastructure/api/service-api/GitAPI';
 import { APPEARANCE_DOMAIN_TOKENS } from '@/infrastructure/appearance/appearanceDomainTokens';
+import { readActiveTypographyTokenPx, readActiveTypographyTokenValue } from '@openbitfun/design-tokens/typography-runtime';
 import { 
   GitGraphViewProps, 
   GitGraphViewConfig,
@@ -212,10 +213,11 @@ export const GitGraphView: React.FC<GitGraphViewProps> = ({
     ctx.clearRect(0, 0, totalWidth, totalHeight);
 
     const resolveCanvasColor = createCanvasColorResolver();
+    const codeFont = `${readActiveTypographyTokenPx('type.code.meta.fontSize')}px ${readActiveTypographyTokenValue('font.family.mono')}`;
 
     graphData.nodes.forEach((node, index) => {
       const y = index * viewConfig.rowHeight!;
-      drawNodeWithInfo(ctx, node, y, viewConfig, { isSelected: false, isHovered: false }, resolveCanvasColor);
+      drawNodeWithInfo(ctx, node, y, viewConfig, { isSelected: false, isHovered: false }, resolveCanvasColor, codeFont);
     });
   }, [graphData, viewConfig, appearance?.revision]);
 
@@ -478,7 +480,8 @@ function drawNodeWithInfo(
   y: number,
   config: GitGraphViewConfig,
   state: { isSelected: boolean; isHovered: boolean },
-  resolveCanvasColor: (color: string) => string
+  resolveCanvasColor: (color: string) => string,
+  codeFont: string,
 ) {
   const laneWidth = config.laneWidth!;
   const nodeSize = config.nodeSize!;
@@ -730,7 +733,7 @@ function drawNodeWithInfo(
   const hashText = node.hash.substring(0, 7);
   
   ctx.fillStyle = resolveCanvasColor('var(--openbitfun-color-content-disabled)');
-  ctx.font = '11px "SF Mono", "Monaco", "Courier New", monospace';
+  ctx.font = codeFont;
   ctx.fillText(hashText, hashX, centerY);
   
   ctx.restore();

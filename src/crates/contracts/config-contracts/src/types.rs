@@ -706,6 +706,7 @@ impl Default for AppearanceConfig {
 #[serde(default)]
 pub struct EditorConfig {
     pub font_size: u32,
+    /// Empty means follow the frontend design system's code font.
     pub font_family: String,
     pub font_weight: String,
     pub line_height: f64,
@@ -748,6 +749,7 @@ pub struct TerminalConfig {
     /// setting after the workbench UI restructuring. Values remain "right" or "bottom".
     pub terminal_panel_position: String,
     pub font_size: u32,
+    /// Empty means follow the frontend design system's code font.
     pub font_family: String,
     pub cursor_blink: bool,
     pub cursor_style: String,
@@ -1942,7 +1944,7 @@ impl Default for EditorConfig {
     fn default() -> Self {
         Self {
             font_size: 14,
-            font_family: "Consolas, \"Courier New\", monospace".to_string(),
+            font_family: String::new(),
             font_weight: "normal".to_string(),
             line_height: 1.5,
             cursor_style: "line".to_string(),
@@ -1978,7 +1980,7 @@ impl Default for TerminalConfig {
             default_shell: String::new(),
             terminal_panel_position: "right".to_string(),
             font_size: 14,
-            font_family: "Consolas, \"Courier New\", monospace".to_string(),
+            font_family: String::new(),
             cursor_blink: true,
             cursor_style: "block".to_string(),
             scrollback: 1000,
@@ -3237,6 +3239,25 @@ mod tests {
             defaults.builtin_subagent_selection("ResearchSpecialist"),
             SubagentModelSelection::fixed("fast")
         );
+    }
+
+    #[test]
+    fn code_font_defaults_follow_frontend_and_preserve_explicit_legacy_fonts() {
+        let editor: EditorConfig = serde_json::from_str("{}").unwrap();
+        let terminal: super::TerminalConfig = serde_json::from_str("{}").unwrap();
+        assert!(editor.font_family.is_empty());
+        assert!(terminal.font_family.is_empty());
+
+        for family in ["", "Consolas, \"Courier New\", monospace", "Fixture Mono"] {
+            let legacy = serde_json::json!({ "font_family": family });
+            let editor: EditorConfig = serde_json::from_value(legacy.clone()).unwrap();
+            let terminal: super::TerminalConfig = serde_json::from_value(legacy).unwrap();
+            assert_eq!(serde_json::to_value(editor).unwrap()["font_family"], family);
+            assert_eq!(
+                serde_json::to_value(terminal).unwrap()["font_family"],
+                family
+            );
+        }
     }
 
     #[test]

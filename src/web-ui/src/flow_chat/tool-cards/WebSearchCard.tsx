@@ -4,7 +4,9 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
+import { isToolCardVisible } from '../utils/flowItemVisibility';
 import { systemAPI } from '../../infrastructure/api';
 import { WebSearchToolCard } from '@openbitfun/ui/flow-chat';
 import { createLogger } from '@/shared/utils/logger';
@@ -17,7 +19,8 @@ export const WebSearchCard: React.FC<ToolCardProps> = ({
   onExpand
 }) => {
   const { t } = useTranslation('flow-chat');
-  const { toolCall, toolResult, status } = toolItem;
+  const { toolCall, toolResult } = toolItem;
+  const status = getToolCardStatus(toolItem);
   const [isExpanded, setIsExpanded] = useState(false);
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
@@ -70,7 +73,7 @@ export const WebSearchCard: React.FC<ToolCardProps> = ({
   };
 
   const searchTerm = getSearchTerm();
-  const hasResultData = toolResult?.result !== undefined && toolResult?.result !== null;
+  const hasResultCount = Array.isArray(toolResult?.result?.results);
   const hasResults = searchResults && searchResults.results.length > 0;
   const hasSummary = !hasResults && searchResults && searchResults.summary;
   const isExpandable = status === 'completed' && (hasResults || hasSummary);
@@ -83,39 +86,21 @@ export const WebSearchCard: React.FC<ToolCardProps> = ({
     }
   }, [applyExpandedState, isExpandable, isExpanded, onExpand]);
 
-  const renderContent = () => {
-    if (status === 'completed') {
-      let resultsText = '';
-      if (hasResultData && searchResults) {
-        if (hasResults) {
-          resultsText = ` (${t('toolCards.webSearch.resultsCount', { count: searchResults.total })})`;
-        } else if (hasSummary) {
-          resultsText = ` (${t('toolCards.webSearch.summaryAvailable')})`;
-        }
-      }
-      return `${searchTerm}${resultsText}`;
-    }
-    if (status === 'running' || status === 'streaming' || status === 'preparing') {
-      return `${searchTerm}...`;
-    }
-    if (status === 'pending') {
-      return searchTerm;
-    }
-    return searchTerm;
-  };
-
-  if (status === 'error') {
+  if (!isToolCardVisible(toolItem)) {
     return null;
   }
 
   return (
     <div ref={cardRootRef} data-openbitfun-adapter="web-search" data-tool-card-id={toolId ?? ''}>
       <WebSearchToolCard
-        action={`${t('toolCards.webSearch.action')}:`}
+        action={t('toolCards.webSearch.action')}
         status={status}
         isExpanded={isExpanded}
         onToggle={isExpandable ? handleClick : undefined}
-        summary={renderContent()}
+        summary={searchTerm}
+        resultSummary={status === 'completed' && hasResultCount
+          ? t('toolCards.webSearch.resultsCount', { count: searchResults?.total ?? 0 }) : undefined}
+        statusDescription={getToolCardStatusDescription(status, t, toolResult?.error)}
         results={hasResults ? searchResults?.results.map((result: any, index: number) => ({
           description: result.snippet,
           icon: 'link' as const,

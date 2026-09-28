@@ -1,254 +1,200 @@
-/**
- * InlineDiffPreview styles.
- * Lightweight inline diff preview, similar to GitHub unified diff.
- */
-
+/** Unified code diff: whole-line washes, distinct rails, and syntax colors. */
 .inline-diff-preview {
   position: relative;
+  box-sizing: border-box;
   width: 100%;
-  background: transparent;
-  font-family:var(--openbitfun-type-code-md-font-family);
-  font-size: var(--openbitfun-type-flow-control-font-size);
-  font-weight: var(--openbitfun-type-body-sm-font-weight);
-  
-  &__content {
-    overflow-y: auto;
-    overflow-x: hidden;
-    
+  min-width: 0;
+  overflow: hidden;
+  color: var(--openbitfun-color-code-diff-foreground);
+  background: var(--openbitfun-color-surface-panel);
+  font-family: var(--openbitfun-type-flow-code-font-family);
+  font-size: var(--openbitfun-type-flow-code-font-size);
+  font-weight: var(--openbitfun-type-flow-code-font-weight);
+  line-height: var(--openbitfun-type-flow-code-line-height);
+  font-synthesis: none;
+  text-shadow: none;
+
+  &[data-line-numbers="hidden"] .diff-line__content {
+    // The full-width change rail is separate from the shared text inset.
+    padding-inline-start: calc(
+      var(--openbitfun-control-flow-chat-card-padding-inline)
+      - var(--openbitfun-space-1)
+    );
   }
-  
+
+  &__content {
+    cursor: text;
+    scrollbar-gutter: auto;
+
+    &:focus-visible {
+      outline: 1px solid var(--openbitfun-color-focus-ring);
+      outline-offset: -2px;
+    }
+  }
+
+  &__canvas {
+    position: relative;
+    width: max-content;
+    min-width: 100%;
+  }
+
+  // Intrinsic width without a second visible or selectable copy of the code.
+  .inline-diff-preview__sizer {
+    height: 0;
+    min-height: 0;
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+    user-select: none;
+  }
+
   &--empty {
     display: flex;
     align-items: center;
     justify-content: center;
     min-height: 60px;
-    color: var(--openbitfun-color-content-muted);
-    font-size: var(--openbitfun-type-flow-control-font-size);
-    font-style: italic;
   }
-  
+
   &__placeholder {
     color: var(--openbitfun-color-content-muted);
     font-style: italic;
   }
 
   &__truncation-notice {
-    padding: 0.25rem 0.625rem;
+    padding: var(--openbitfun-space-1) var(--openbitfun-control-flow-chat-card-padding-inline);
     font-size: var(--openbitfun-type-flow-support-font-size);
     color: var(--openbitfun-color-content-muted);
     background: var(--openbitfun-color-surface-tertiary);
     border-bottom: 1px solid var(--openbitfun-color-border-subtle);
-    font-style: italic;
-  }
-}
-
-.diff-line {
-  display: flex;
-  align-items: stretch;
-  min-height: 22px;
-  line-height: var(--openbitfun-type-flow-code-line-height);
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-  
-  &:hover {
-    filter: brightness(1.05);
-  }
-  
-  &--unchanged {
-    background: transparent;
-    
-    .diff-line__prefix {
-      color: var(--openbitfun-color-content-muted);
-    }
-  }
-  
-  &--added {
-    background: color-mix(in srgb, var(--openbitfun-color-code-change-added) 10%, transparent);
-
-    .diff-line__gutter {
-      background: color-mix(in srgb, var(--openbitfun-color-code-change-added) 15%, transparent);
-    }
-
-    .diff-line__prefix {
-      color: var(--openbitfun-color-code-change-added);
-      font-weight: var(--openbitfun-type-label-sm-font-weight);
-    }
   }
 
-  &--removed {
-    background: color-mix(in srgb, var(--openbitfun-color-code-change-removed) 10%, transparent);
-
-    .diff-line__gutter {
-      background: color-mix(in srgb, var(--openbitfun-color-code-change-removed) 15%, transparent);
-    }
-
-    .diff-line__prefix {
-      color: var(--openbitfun-color-code-change-removed);
-      font-weight: var(--openbitfun-type-label-sm-font-weight);
-    }
-    
-    .diff-line__content {
-      opacity: 0.85;
-    }
-  }
-  
-  // Highlighted row (selected).
-  &--highlighted {
-    background: var(--openbitfun-color-action-secondary-hover) !important;
-
-    .diff-line__gutter {
-      background: var(--openbitfun-color-action-secondary-pressed) !important;
-    }
-  }
-  
-  &--separator {
-    background: var(--openbitfun-color-surface-tertiary);
-    justify-content: center;
-    padding: var(--openbitfun-control-flow-chat-inline-gap) 0;
-    cursor: default;
-    
-    &:hover {
-      filter: none;
-    }
-    
-    .diff-line__gutter--separator {
-      display: none;
-    }
-    
-    .diff-line__content--separator {
-      color: var(--openbitfun-color-content-muted);
-      font-size: var(--openbitfun-type-flow-support-font-size);
-      font-style: italic;
-      text-align: center;
-    }
-  }
-  
-  &__gutter {
-    display: flex;
-    align-items: center;
-    flex-shrink: 0;
-    padding: 0 8px;
-    gap: 0.125rem;
-    background: var(--openbitfun-color-surface-panel);
-    user-select: none;
-    border-right: 1px solid var(--openbitfun-color-border-subtle);
-
-    &--single {
-      padding: 0 4px;
-      gap: 0;
-
-      .diff-line__num {
-        min-width: 24px;
-        padding: 0 4px;
-      }
-    }
-  }
-
-  &__num {
-    min-width: 32px;
-    padding: 0 6px;
-    text-align: right;
-    color: var(--openbitfun-color-content-muted);
-    opacity: 0.6;
-    font-size: var(--openbitfun-type-flow-support-font-size);
-
-    &--original {
-      border-right: 1px solid var(--openbitfun-color-border-subtle);
-      padding-right: 8px;
-    }
-
-    &--modified {
-      padding-left: 8px;
-    }
-  }
-
-  &__prefix {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    flex-shrink: 0;
-    font-weight: var(--openbitfun-type-label-sm-font-weight);
-    user-select: none;
-  }
-  
-  &__content {
-    flex: 1;
-    min-width: 0;
-    padding: 0 8px;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    overflow: hidden;
-    
-    // Strip global and SyntaxHighlighter borders/backgrounds.
-    pre, code, span {
-      margin: 0 !important;
-      padding: 0 !important;
-      background: none !important;
-      background-color: transparent !important;
-      border: none !important;
-      border-width: 0 !important;
-      border-radius: 0 !important;
-      box-shadow: none !important;
-      display: inline !important;
-      font-size: inherit !important;
-    }
-
-    code span[style] {
-      font-weight: var(--openbitfun-type-body-sm-font-weight) !important;
-    }
-  }
-}
-
-// Light theme: softer, lower-saturation palette.
-:root[data-openbitfun-appearance-mode="light"] .inline-diff-preview,
-:root[data-openbitfun-appearance-mode="light"] .inline-diff-preview,
-.light .inline-diff-preview {
   .diff-line {
+    --_diff-line-background: var(--openbitfun-color-surface-panel);
+    --_diff-gutter-background: var(--openbitfun-color-surface-panel);
+    display: flex;
+    align-items: center;
+    min-height: 22px;
+    background: var(--_diff-line-background);
+    font-weight: var(--openbitfun-type-flow-code-font-weight);
+
+    // Solid additions and striped deletions remain distinguishable without color.
+    &::before {
+      content: '';
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      align-self: stretch;
+      flex: 0 0 var(--openbitfun-space-1);
+      pointer-events: none;
+    }
+
     &--added {
-      background: color-mix(in srgb, var(--openbitfun-color-code-change-added) 10%, transparent);
+      --_diff-change-color: var(--openbitfun-color-code-diff-added-marker);
+      --_diff-line-background: var(--openbitfun-color-code-diff-added-line);
+      --_diff-gutter-background: var(--openbitfun-color-code-diff-added-gutter);
 
-      .diff-line__gutter {
-        background: color-mix(in srgb, var(--openbitfun-color-code-change-added) 18%, transparent);
-      }
-
-      .diff-line__prefix {
-        color: var(--openbitfun-color-code-change-added);
+      &::before {
+        background: var(--_diff-change-color);
       }
     }
 
     &--removed {
-      background: color-mix(in srgb, var(--openbitfun-color-code-change-removed) 10%, transparent);
+      --_diff-change-color: var(--openbitfun-color-code-diff-removed-marker);
+      --_diff-line-background: var(--openbitfun-color-code-diff-removed-line);
+      --_diff-gutter-background: var(--openbitfun-color-code-diff-removed-gutter);
 
-      .diff-line__gutter {
-        background: color-mix(in srgb, var(--openbitfun-color-code-change-removed) 18%, transparent);
+      &::before {
+        background: repeating-linear-gradient(
+          to bottom,
+          var(--_diff-change-color) 0 1px,
+          var(--_diff-gutter-background) 1px 2px
+        );
       }
+    }
 
+    &--added,
+    &--removed {
+      .diff-line__gutter,
       .diff-line__prefix {
-        color: var(--openbitfun-color-code-change-removed);
+        color: var(--_diff-change-color);
       }
     }
 
     &--highlighted {
-      background: var(--openbitfun-color-action-secondary-hover) !important;
+      box-shadow: inset 0 0 0 1px var(--openbitfun-color-content-muted);
+    }
 
-      .diff-line__gutter {
-        background: var(--openbitfun-color-action-secondary-pressed) !important;
+    &--separator {
+      --_diff-line-background: var(--openbitfun-color-surface-tertiary);
+      cursor: default;
+
+      .diff-line__gutter--separator {
+        display: none;
+      }
+
+      .diff-line__content--separator {
+        color: var(--openbitfun-color-content-muted);
+        font-size: var(--openbitfun-type-flow-support-font-size);
       }
     }
-  }
 
-  .diff-line__gutter {
-    background: var(--openbitfun-color-surface-subtle);
-    border-right-color: var(--openbitfun-color-border-subtle);
-  }
-
-  .diff-line__num {
-    color: var(--openbitfun-color-content-muted);
-
-    &--original {
-      border-right-color: var(--openbitfun-color-border-subtle);
+    &__gutter {
+      position: sticky;
+      left: var(--openbitfun-space-1);
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      align-self: stretch;
+      flex-shrink: 0;
+      gap: 8px;
+      padding: 0 10px;
+      color: var(--openbitfun-color-code-diff-line-number);
+      background: var(--_diff-gutter-background);
+      box-shadow: inset -1px 0 var(--openbitfun-color-code-diff-gutter-border);
+      user-select: none;
+      font-variant-numeric: tabular-nums;
     }
+
+    &__num {
+      min-width: calc(var(--_diff-number-digits) * 1ch);
+      text-align: right;
+    }
+
+    &__prefix {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 18px;
+      flex-shrink: 0;
+      color: var(--openbitfun-color-content-muted);
+      user-select: none;
+
+      &--hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+    }
+
+    &__content {
+      flex: 1 0 auto;
+      padding: 1px var(--openbitfun-control-flow-chat-card-padding-inline) 1px var(--openbitfun-space-2);
+      white-space: pre;
+      tab-size: 4;
+
+      .token {
+        padding: 0;
+        background: transparent;
+        border: 0;
+        font-family: inherit;
+        font-size: inherit;
+        font-weight: var(--openbitfun-type-flow-code-font-weight) !important;
+        text-shadow: none;
+      }
+    }
+
   }
 }

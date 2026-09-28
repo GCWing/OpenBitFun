@@ -31,7 +31,7 @@ import {
   FlowChatVolatileContext,
   FlowChatVolatileContextValue,
 } from './FlowChatContext';
-import { useExploreGroupState } from './useExploreGroupState';
+import { useFlowGroupState } from './useFlowGroupState';
 import { useFlowChatFileActions } from './useFlowChatFileActions';
 import { useFlowChatNavigation } from './useFlowChatNavigation';
 import { useFlowChatCopyDialog } from './useFlowChatCopyDialog';
@@ -631,12 +631,16 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     pendingHistoryOpenSession !== null &&
     activeSession?.sessionId === pendingHistoryOpenSession.sessionId;
   const {
-    exploreGroupStates,
-    onExploreGroupToggle: handleExploreGroupToggle,
+    groupStates: exploreGroupStates,
+    groupReceiveFeedback,
+    expandedToolCapsules,
+    onToolCapsuleExpandedChange,
+    onGroupToggle: handleExploreGroupToggle,
     onExpandGroup: handleExpandGroup,
     onExpandAllInTurn: handleExpandAllInTurn,
     onCollapseGroup: handleCollapseGroup,
-  } = useExploreGroupState(virtualItems);
+  } = useFlowGroupState(virtualItems, undefined, activeSession?.sessionId, undefined,
+    surfaceScope.key('flow-group-feedback', surfaceScope.epoch, activeSession?.sessionId ?? ''));
   const { handleToolConfirm, handleToolReject } = useFlowChatToolActions();
 
   const { handleFileViewRequest } = useFlowChatFileActions({
@@ -952,10 +956,12 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     isHistoricalSession: activeSessionIsHistorical,
     contextRestoreState: activeSessionContextRestoreState,
     allowUserMessageRollback,
+    onGroupToggle: handleExploreGroupToggle,
     onExploreGroupToggle: handleExploreGroupToggle,
     onExpandGroup: handleExpandGroup,
     onExpandAllInTurn: handleExpandAllInTurn,
     onCollapseGroup: handleCollapseGroup,
+    onToolCapsuleExpandedChange,
   }), [
     handleFileViewRequest,
     onTabOpen,
@@ -974,17 +980,22 @@ export const ModernFlowChatContainer: React.FC<ModernFlowChatContainerProps> = (
     handleExpandGroup,
     handleExpandAllInTurn,
     handleCollapseGroup,
+    onToolCapsuleExpandedChange,
   ]);
 
   const volatileContextValue: FlowChatVolatileContextValue = useMemo(() => ({
     pendingPermissionToolCallIds,
+    groupStates: exploreGroupStates,
+    groupReceiveFeedback,
     exploreGroupStates,
+    expandedToolCapsules,
     searchQuery,
     searchMatchesByVirtualIndex,
     searchCurrentMatch,
   }), [
     pendingPermissionToolCallIds,
     exploreGroupStates,
+    expandedToolCapsules, groupReceiveFeedback,
     searchQuery,
     searchMatchesByVirtualIndex,
     searchCurrentMatch,

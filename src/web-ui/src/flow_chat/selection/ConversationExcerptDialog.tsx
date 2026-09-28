@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import {
   Button, Dialog, DialogBody, DialogClose, DialogFooter, DialogHeader, DialogHeading,
-  DialogTitle, ScrollArea,
+  DialogTitle, Icon, IconButton, ScrollArea, Tooltip,
 } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
@@ -49,6 +49,12 @@ export function ConversationExcerptDialog({ target, label, open, onOpenChange }:
       () => notificationService.warning(t('selection.sourceUnavailable')));
   };
   const locateLabel = dirty ? t('selection.saveAndLocate') : t('selection.locate');
+  const locateAction = <Tooltip content={locateLabel} placement="top">
+    <IconButton variant="quiet" size="xs" icon={<Icon name="arrow-up-right" />}
+      className="conversation-excerpt__locate" aria-label={locateLabel}
+      data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="locate"
+      disabled={!available} onClick={locate} />
+  </Tooltip>;
   return <Dialog open={open} onOpenChange={onOpenChange} size="sm" className="conversation-excerpt__dialog"
     initialFocusRef={target.mode === 'edit' ? inputRef : undefined}
     data-flowchat-selection-ignore="true" data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="dialog"
@@ -61,8 +67,8 @@ export function ConversationExcerptDialog({ target, label, open, onOpenChange }:
       <div className="conversation-excerpt__editor"
         data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="editor">
         {target.mode === 'edit' ? <ConversationExcerptEditor excerpt={target.excerpt} comment={comment} onCommentChange={setComment}
-          inputRef={inputRef} onSubmit={save} /> : <>
-          <ConversationExcerptQuote excerpt={target.excerpt} />
+          inputRef={inputRef} onSubmit={save} quoteAction={locateAction} /> : <>
+          <ConversationExcerptQuote excerpt={target.excerpt} action={locateAction} />
           {target.excerpt.comment?.trim() && <ScrollArea className="conversation-excerpt__comment" tabIndex={0} aria-label={label}
             data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="comment">
             {target.excerpt.comment}
@@ -70,16 +76,15 @@ export function ConversationExcerptDialog({ target, label, open, onOpenChange }:
         </>}
       </div>
     </DialogBody>
-    <DialogFooter>
-      {target.mode === 'edit' && <Button variant="text" tone="danger" disabled={!available}
-        onClick={remove}>{t('selection.remove')}</Button>}
-      <Button variant="outline"
-        data-openbitfun-product-component="conversation-excerpt" data-openbitfun-product-part="locate"
-        disabled={!available} onClick={locate}>{locateLabel}</Button>
-      {target.mode === 'edit' && <>
-        <Button variant="fill" onClick={() => onOpenChange(false)}>{t('selection.cancel')}</Button>
-        <Button variant="primary" disabled={!available} onClick={save}>{t('selection.save')}</Button>
-      </>}
-    </DialogFooter>
+    {target.mode === 'edit' && <DialogFooter>
+      <Tooltip content={t('selection.remove')} placement="top">
+        <IconButton variant="quiet" tone="danger" size="sm" icon={<Icon name="delete" />}
+          aria-label={t('selection.remove')} disabled={!available} onClick={remove} />
+      </Tooltip>
+      <div className="conversation-excerpt__footer-actions">
+        <Button variant="fill" size="sm" onClick={() => onOpenChange(false)}>{t('selection.cancel')}</Button>
+        <Button variant="primary" size="sm" disabled={!available} onClick={save}>{t('selection.save')}</Button>
+      </div>
+    </DialogFooter>}
   </Dialog>;
 }

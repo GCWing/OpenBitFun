@@ -30,7 +30,8 @@ vi.mock('react-i18next', async () => {
   };
 });
 
-vi.mock('@openbitfun/ui', () => ({
+vi.mock('@openbitfun/ui', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@openbitfun/ui')>(),
   Icon: ({ name }: { name: string }) => <span data-openbitfun-component="icon" data-openbitfun-name={name} />,
   OverflowText: ({ children, behavior: _behavior, marqueeActive: _marqueeActive, ...props }: any) => <span {...props}>{children}</span>,
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -498,7 +499,7 @@ describe('CodeReviewToolCard', () => {
       );
     });
     const issuesSectionButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('.review-report-section__header'),
+      container.querySelectorAll<HTMLButtonElement>('.review-report-section [data-openbitfun-component="disclosure"] button[aria-expanded]'),
     ).find((button) => button.textContent?.includes('Issues'));
     expect(issuesSectionButton).toBeTruthy();
     act(() => {

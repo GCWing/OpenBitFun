@@ -1,20 +1,12 @@
 import { OverflowText } from '../../primitives/OverflowText';
 import type {
   HTMLAttributes,
-  MouseEvent as ReactMouseEvent,
   ReactNode,
 } from "react";
 import {
-  ArrowUpRight,
-  FileText,
-  GitBranch,
   GitCompare,
-  Rocket,
   SearchCheck,
-  Square,
-  Sparkles,
 } from "lucide-react";
-import { IconButton } from "../../components/IconButton/IconButton";
 import { Icon } from "../../components/Icon/Icon";
 import {
   ProminentToolCard,
@@ -23,11 +15,9 @@ import {
   ToolCardActions,
   type FlowChatToolStatus,
 } from "./FlowChatToolCard";
-import {
-  hasVisibleToolCardStatusGlyph,
-  ToolCardStatusSlot,
-} from "./ToolCardStatusSlot";
 import { ToolProcessingDots } from "./ToolProcessingDots";
+import { ToolCardFields, ToolCardSection, ToolCardText } from "./ToolCardDetails";
+import { ScrollArea } from "../../components/ScrollArea";
 import styles from "./ProminentToolCards.module.css";
 
 interface ProminentCardProps
@@ -127,7 +117,7 @@ export function GitToolCard({
           extra={statusSummary ? (
             <OverflowText className={styles.summary} data-tone={statusTone}>{statusSummary}</OverflowText>
           ) : undefined}
-          icon={<GitBranch aria-hidden="true" />}
+          icon={<Icon name="git" size="sm" />}
           statusIcon={loading ? <ToolProcessingDots size={16} /> : undefined}
         />
       )}
@@ -174,7 +164,7 @@ export function FileDiffToolCard({
     <div className={styles.diffBody} data-openbitfun-part="details">
       {message && <div className={styles.message}>{message}</div>}
       {preview}
-      {textPreview && <pre className={styles.textPreview}>{textPreview}</pre>}
+      {textPreview && <ToolCardText className={styles.textPreview}>{textPreview}</ToolCardText>}
     </div>
   ) : undefined;
   return (
@@ -183,6 +173,7 @@ export function FileDiffToolCard({
       data-openbitfun-tool-card="file-diff"
       errorContent={error ? <div className={styles.error}>{error}</div> : undefined}
       expandedContent={body}
+      expandedContentLayout="flush"
       summary={(
         <ProminentToolCardSummary
           action={action}
@@ -203,7 +194,7 @@ export function FileDiffToolCard({
               deletions={changeSummary.deletions}
             />
           ) : undefined}
-          icon={<GitCompare aria-hidden="true" />}
+          icon={<Icon glyph={GitCompare} size="sm" />}
           statusIcon={loading ? <ToolProcessingDots size={16} /> : undefined}
         />
       )}
@@ -240,32 +231,34 @@ export function ReviewSummaryToolCard({
   title,
   ...props
 }: ReviewSummaryToolCardProps) {
-  const Icon = kind === "deep-review" ? Sparkles : SearchCheck;
   return (
     <ProminentToolCard
       {...props}
+      allowExpandedWhenFailed
       data-openbitfun-tool-card="review-summary"
+      data-openbitfun-review-kind={kind}
       expandedContent={(
         <div className={styles.reviewDetails} data-openbitfun-part="details">
           <p className={styles.reviewSummary}>{summary}</p>
           {changedFiles.length > 0 && (
-            <div>
-              {filesLabel && <div className={styles.sectionLabel}>{filesLabel}</div>}
-              <ul className={styles.fileList}>
-                {changedFiles.map((file) => <li key={file}>{file}</li>)}
-              </ul>
-            </div>
+            <ToolCardSection label={filesLabel}>
+              <ScrollArea className={styles.fileViewport} edgeFade="vertical" overscrollBehaviorY="auto">
+                <ul className={styles.fileList}>
+                  {changedFiles.map((file) => <li key={file}>{file}</li>)}
+                </ul>
+              </ScrollArea>
+            </ToolCardSection>
           )}
-          {action && <div className={styles.actions}>{action}</div>}
         </div>
       )}
       summary={(
         <ProminentToolCardSummary
           action={title}
+          actions={action}
           extra={changedFiles.length > 0 && fileCountLabel ? (
-            <span className={styles.fileCount}><FileText aria-hidden="true" />{fileCountLabel}</span>
+            <span className={styles.fileCount} data-openbitfun-icon-slot="true"><Icon name="file-text" size="sm" />{fileCountLabel}</span>
           ) : undefined}
-          icon={<Icon aria-hidden="true" />}
+          icon={<Icon glyph={SearchCheck} size="sm" />}
           statusIcon={loading ? <ToolProcessingDots size={16} /> : undefined}
         />
       )}
@@ -289,6 +282,8 @@ interface PageLifecycleToolCardBaseProps extends ProminentCardProps {
   loading?: boolean;
   subject: ReactNode;
   toolCard: "page-deploy" | "page-publish";
+  preview?: boolean;
+  statusLabel?: ReactNode;
   version?: ReactNode;
 }
 
@@ -302,21 +297,17 @@ function PageLifecycleToolCardBase({
   onToggle,
   status,
   subject,
+  preview: _preview = false,
+  statusLabel,
   toolCard,
   version,
   ...props
 }: PageLifecycleToolCardBaseProps) {
-  const hasDetails = fields.length > 0 || Boolean(actions || error);
+  const hasDetails = fields.length > 0 || Boolean(error);
   const body = hasDetails ? (
     <div className={styles.lifecycleDetails} data-openbitfun-part="details">
-      {fields.map((field, index) => (
-        <div className={styles.field} key={index}>
-          <span className={styles.fieldLabel}>{field.label}</span>
-          <span className={styles.fieldValue}>{field.value}</span>
-        </div>
-      ))}
+      {fields.length > 0 && <ToolCardFields fields={fields} />}
       {error && <div className={styles.error}>{error}</div>}
-      {actions && <div className={styles.actions}>{actions}</div>}
     </div>
   ) : undefined;
   return (
@@ -328,8 +319,10 @@ function PageLifecycleToolCardBase({
       summary={(
         <ProminentToolCardSummary
           action={action}
+          actions={actions}
           content={<OverflowText className={styles.command}>{subject}{version ? ` @ ${version}` : ""}</OverflowText>}
-          icon={<Rocket aria-hidden="true" />}
+          extra={statusLabel}
+          icon={<Icon name="panels-top-left" size="sm" />}
           statusIcon={loading ? <ToolProcessingDots size={16} /> : undefined}
         />
       )}
@@ -351,157 +344,4 @@ export function PagePublishToolCard(props: PagePublishToolCardProps) {
   return <PageLifecycleToolCardBase {...props} toolCard="page-publish" />;
 }
 
-export interface AgentControlToolCardProps extends ProminentCardProps {
-  agentName: ReactNode;
-  agentModel?: ReactNode;
-  avatar?: ReactNode;
-  details?: ReactNode;
-  error?: ReactNode;
-  summaryExpandAffordance?: boolean;
-  interruptAction?: AgentControlToolCardAction;
-  isFailed?: boolean;
-  onOpenAgent?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
-  openAgentLabel?: string;
-  openAgentTestId?: string;
-  prompt?: ReactNode;
-  requiresConfirmation?: boolean;
-  statusLabel?: ReactNode;
-  statusMeta?: ReactNode;
-  statusTone?: "danger" | "neutral" | "success" | "warning";
-  summary?: ReactNode;
-  toggleTestId?: string;
-}
-
-export interface AgentControlToolCardAction {
-  disabled?: boolean;
-  label: string;
-  onPress: (event: ReactMouseEvent<HTMLButtonElement>) => void;
-  pending?: boolean;
-  testId?: string;
-}
-
-export function AgentControlToolCard({
-  agentName,
-  agentModel,
-  avatar,
-  className,
-  details,
-  error,
-  summaryExpandAffordance,
-  interruptAction,
-  isExpanded = false,
-  isFailed = false,
-  onOpenAgent,
-  onToggle,
-  openAgentLabel,
-  openAgentTestId,
-  prompt,
-  requiresConfirmation = false,
-  status,
-  statusLabel,
-  statusMeta,
-  statusTone = "neutral",
-  summary,
-  toggleTestId,
-  ...props
-}: AgentControlToolCardProps) {
-  const expandedContent = details ?? (prompt ? (
-    <div className={styles.agentPrompt} data-openbitfun-part="prompt">{prompt}</div>
-  ) : undefined);
-  const expandable = Boolean(onToggle && (
-    expandedContent || summaryExpandAffordance || isExpanded
-  ));
-  const hasActions = Boolean(interruptAction);
-  const hasTrailingActions = Boolean(onOpenAgent && openAgentLabel);
-  const hasExtra = Boolean(statusMeta || statusLabel);
-  const showStatusGlyph = status !== "completed"
-    && status !== "confirmed"
-    && hasVisibleToolCardStatusGlyph(status);
-
-  const identity = (
-    <span className={styles.agentIdentity} data-openbitfun-part="agentIdentity">
-      <OverflowText className={styles.agentName} data-openbitfun-part="agentName">{agentName}</OverflowText>
-      {agentModel !== undefined && agentModel !== null && agentModel !== false && (
-        <OverflowText className={styles.agentModel} data-openbitfun-part="agentModel">{agentModel}</OverflowText>
-      )}
-    </span>
-  );
-
-  return (
-    <ProminentToolCard
-      {...props}
-      className={className}
-      data-openbitfun-tool-card="agent-control"
-      errorContent={error ? <div className={styles.error}>{error}</div> : undefined}
-      expandedContent={expandedContent}
-      summary={(
-        <ProminentToolCardSummary
-          action={identity}
-          actions={hasActions ? (
-            <ToolCardActions>
-              <IconButton
-                aria-label={interruptAction!.label}
-                data-openbitfun-part="interruptAgentButton"
-                disabled={interruptAction!.disabled}
-                icon={interruptAction!.pending
-                  ? <ToolProcessingDots size={12} />
-                  : <Square aria-hidden="true" fill="currentColor" />}
-                onClick={interruptAction!.onPress}
-                size="sm"
-                data-testid={interruptAction!.testId}
-                title={interruptAction!.label}
-                tone="danger"
-                variant="quiet"
-              />
-            </ToolCardActions>
-          ) : undefined}
-          content={summary !== undefined && summary !== null && summary !== false ? (
-            <OverflowText className={styles.agentSummary} data-openbitfun-part="agentSummary">{summary}</OverflowText>
-          ) : undefined}
-          extra={hasExtra ? (
-            <span className={styles.agentExtra} data-openbitfun-part="agentExtra">
-              {statusMeta !== undefined && statusMeta !== null && statusMeta !== false && (
-                <OverflowText className={styles.agentMeta} data-openbitfun-part="agentMeta">{statusMeta}</OverflowText>
-              )}
-              {statusLabel !== undefined && statusLabel !== null && statusLabel !== false && (
-                <OverflowText className={styles.agentStatus} data-openbitfun-part="agentStatus" data-tone={statusTone}>
-                  {statusLabel}
-                </OverflowText>
-              )}
-            </span>
-          ) : undefined}
-          icon={(
-            <span className={styles.agentAvatar} data-openbitfun-part="avatar">
-              {avatar ?? <Icon name="user" aria-hidden="true" />}
-            </span>
-          )}
-          statusIcon={showStatusGlyph
-            ? <ToolCardStatusSlot size={16} status={status} />
-            : undefined}
-          trailingActions={hasTrailingActions ? (
-            <ToolCardActions>
-              <IconButton
-                aria-label={openAgentLabel!}
-                data-openbitfun-affordance="open-panel-right"
-                data-openbitfun-part="openAgentButton"
-                icon={<ArrowUpRight aria-hidden="true" data-openbitfun-icon="open-panel-right" />}
-                onClick={onOpenAgent!}
-                size="sm"
-                data-testid={openAgentTestId}
-                title={openAgentLabel!}
-                variant="quiet"
-              />
-            </ToolCardActions>
-          ) : undefined}
-        />
-      )}
-      summaryExpandAffordance={summaryExpandAffordance ?? Boolean(expandedContent && onToggle)}
-      isExpanded={Boolean(isExpanded && expandedContent)}
-      isFailed={isFailed}
-      onToggle={expandable ? onToggle : undefined}
-      requiresConfirmation={requiresConfirmation}
-      status={status}
-      toggleTestId={toggleTestId}
-    />
-  );
-}
+export { AgentControlToolCard, type AgentControlToolCardProps } from "./AgentControlToolCard";
