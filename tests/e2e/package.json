@@ -29,6 +29,8 @@
     "test:l1:session": "wdio run ./config/wdio.conf.ts --spec \"./specs/l1-session.spec.ts\"",
     "test:l1:dialog": "wdio run ./config/wdio.conf.ts --spec \"./specs/l1-dialog.spec.ts\"",
     "test:l1:chat-flow": "wdio run ./config/wdio.conf.ts --spec \"./specs/l1-chat.spec.ts\"",
+    "test:l1:memory": "node ./scripts/seed-memory-e2e-profile.mjs && wdio run ./config/wdio.conf.ts --spec \"./specs/l1-memory-pipeline.spec.ts\"",
+    "seed:memory-e2e": "node ./scripts/seed-memory-e2e-profile.mjs",
     "test:l1:worktree": "wdio run ./config/wdio.conf.ts --spec \"./specs/l1-worktree.spec.ts\"",
     "test:l1:worktree-restart": "node ./scripts/run-worktree-restart-e2e.mjs",
     "test:l1:browser-video": "wdio run ./config/wdio.conf.ts --spec \"../specs/l1-browser-video-stream.spec.ts\"",
