@@ -278,25 +278,46 @@ describe("remote workspace uploads report their cancellable transfer id", () => 
   it("stops the remaining items of a multi-file upload after a stop request", async () => {
     const { cancelWorkspaceTransfer, uploadLocalPathsToWorkspaceDirectory: upload } =
       await loadTransferModule();
-    // The first item is stopped while it is being sent, which the backend
-    // reports as a failure. The remaining items must not start new transfers.
+    // The first item is stopped while it is being sent. The remaining items
+    // must not start, and a user stop is not reported as a failed file.
     uploadFromLocalPath.mockImplementation(async () => {
       cancelWorkspaceTransfer("transfer-multi");
       throw new Error("Transfer cancelled");
     });
     const states: Array<{ transferId?: string }> = [];
 
-    await expect(
-      upload(
-        ["/local/a.txt", "/local/b.txt", "/local/c.txt"],
-        "/workspace",
-        remoteWorkspace,
-        (state) => states.push(state ?? {}),
-        undefined,
-        "transfer-multi",
-      ),
-    ).rejects.toThrow(/a\.txt/);
+    const result = await upload(
+      ["/local/a.txt", "/local/b.txt", "/local/c.txt"],
+      "/workspace",
+      remoteWorkspace,
+      (state) => states.push(state ?? {}),
+      undefined,
+      "transfer-multi",
+    );
+    expect(result).toMatchObject({ successCount: 0, failedFiles: [], cancelled: true });
     expect(uploadFromLocalPath).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps completed items without treating a later stop as a failure", async () => {
+    const { cancelWorkspaceTransfer, uploadLocalPathsToWorkspaceDirectory: upload } =
+      await loadTransferModule();
+    uploadFromLocalPath
+      .mockResolvedValueOnce({ wasDirectory: false })
+      .mockImplementationOnce(async () => {
+        cancelWorkspaceTransfer("transfer-partial");
+        throw new Error("Transfer cancelled");
+      });
+
+    const result = await upload(
+      ["/local/a.txt", "/local/b.txt", "/local/c.txt"],
+      "/workspace",
+      remoteWorkspace,
+      () => undefined,
+      undefined,
+      "transfer-partial",
+    );
+    expect(result).toMatchObject({ successCount: 1, failedFiles: [], cancelled: true });
+    expect(uploadFromLocalPath).toHaveBeenCalledTimes(2);
   });
 
   it("does not start an upload stopped from its first progress card", async () => {
@@ -313,6 +334,7 @@ describe("remote workspace uploads report their cancellable transfer id", () => 
       "before-start",
     );
     expect(result.successCount).toBe(0);
+    expect(result.cancelled).toBe(true);
     expect(uploadFromLocalPath).not.toHaveBeenCalled();
   });
 });

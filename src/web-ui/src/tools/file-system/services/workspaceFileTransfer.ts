@@ -48,6 +48,8 @@ export interface WorkspaceTransferResult {
   successCount: number;
   directoryCount: number;
   failedFiles: Array<{ path: string; error: string }>;
+  /** A user stopped the remaining items; completed items still count. */
+  cancelled?: boolean;
 }
 
 export interface UploadToWorkspaceOptions {
@@ -865,6 +867,9 @@ export async function uploadLocalPathsToWorkspaceDirectory(
           }
         }
       } catch (error) {
+        if (isWorkspaceTransferCancelled(transferId)) {
+          break;
+        }
         failedFiles.push({
           path: localPath,
           error: error instanceof Error ? error.message : String(error),
@@ -893,7 +898,7 @@ export async function uploadLocalPathsToWorkspaceDirectory(
       throw new Error(details);
     }
 
-    return { successCount, directoryCount, failedFiles };
+    return { successCount, directoryCount, failedFiles, cancelled: wasCancelled };
   }
 
   // A local paste is not cancellable: the clipboard helper owns it, and no

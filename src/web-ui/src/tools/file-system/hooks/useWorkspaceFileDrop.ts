@@ -17,7 +17,7 @@ export interface UseWorkspaceFileDropOptions {
   workspacePath?: string;
   panelRef: RefObject<HTMLElement | null>;
   enabled?: boolean;
-  onProgress: (state: TransferProgressState | null) => void;
+  onProgress: (state: TransferProgressState | null, transferId: string) => void;
   onDragOver?: (overPanel: boolean) => void;
   onComplete: (targetDirectory: string, transferId: string) => void;
   onError: (error: unknown, transferId: string) => void;
@@ -160,7 +160,7 @@ export function useWorkspaceFileDrop({
               paths,
               targetDir,
               currentWorkspace,
-              onProgress,
+              (state) => onProgress(state, transferId),
               undefined,
               transferId
             );
