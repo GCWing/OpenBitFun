@@ -233,6 +233,9 @@ export async function* readPeerFileChunks(
     offset += bytes.byteLength;
     yield bytes;
   }
+  // The sink resumes this generator before publishing the staged file. A stop
+  // during the last chunk (or an empty file's info request) must still abort.
+  throwIfCancelled(transferId);
   return info.size;
 }
 
@@ -240,15 +243,18 @@ async function collectPeerDirectoryEntries(
   sourceDirectory: string,
   destinationDirectory: string,
   remoteConnectionId?: string,
+  transferId?: string,
 ): Promise<PeerDownloadEntry[]> {
   const { mkdir } = await import("@tauri-apps/plugin-fs");
   const pending = [{ source: sourceDirectory, destination: destinationDirectory }];
   const files: PeerDownloadEntry[] = [];
 
   while (pending.length > 0) {
+    throwIfCancelled(transferId);
     const current = pending.shift()!;
     await mkdir(current.destination, { recursive: true });
     const children = await workspaceAPI.getDirectoryChildren(current.source, remoteConnectionId ?? '');
+    throwIfCancelled(transferId);
     for (const child of children) {
       if (!isSafePeerTransferEntryName(child.name)) {
         throw new Error(`Unsafe peer file name: '${child.name}'`);
@@ -295,7 +301,7 @@ async function downloadPeerWorkspacePathToDisk(
     remote_connection_id: isRemoteWorkspace(workspace) ? workspace.connectionId : undefined,
   };
   const entries = isDirectory
-    ? await collectPeerDirectoryEntries(sourcePath, destinationPath, identity.remote_connection_id)
+    ? await collectPeerDirectoryEntries(sourcePath, destinationPath, identity.remote_connection_id, transferId)
     : [{
         sourcePath,
         destinationPath,
@@ -309,6 +315,7 @@ async function downloadPeerWorkspacePathToDisk(
   let smoothedSpeed = 0;
 
   for (const entry of entries) {
+    throwIfCancelled(transferId);
     const entryStart = bytesTransferred;
     let entryWritten = 0;
     let expectedEntrySize = entry.size;
@@ -355,6 +362,7 @@ async function downloadPeerWorkspacePathToDisk(
     bytesTransferred = entryStart + entryWritten;
   }
 
+  throwIfCancelled(transferId);
   onProgress({
     phase: "download",
     current: Math.max(bytesTransferred, 1),
@@ -643,6 +651,7 @@ export async function downloadWorkspaceFileToDisk(
     indeterminate: true,
   });
   try {
+    throwIfCancelled(transferId);
     const peerAdapter = currentPeerAdapter();
     if (peerAdapter) {
       await downloadPeerWorkspacePathToDisk(
@@ -699,7 +708,7 @@ export async function downloadWorkspaceFileToDisk(
             speed: smoothedSpeed,
           });
         }
-      }, transferId);
+      }, transferId, () => isWorkspaceTransferCancelled(transferId));
     } else {
       await workspaceAPI.exportLocalFileToPath(filePath, dest, workspace?.id);
     }
@@ -784,6 +793,9 @@ export async function uploadLocalPathsToWorkspaceDirectory(
         indeterminate: singleItem,
         ...(transferId ? { transferId } : {}),
       });
+      if (isWorkspaceTransferCancelled(transferId)) {
+        break;
+      }
 
       try {
         if (singleItem) {
@@ -830,6 +842,7 @@ export async function uploadLocalPathsToWorkspaceDirectory(
               }
             },
             transferId,
+            () => isWorkspaceTransferCancelled(transferId),
           );
           successCount += 1;
           if (uploadResult.wasDirectory) {
@@ -844,6 +857,7 @@ export async function uploadLocalPathsToWorkspaceDirectory(
             destPath,
             undefined,
             transferId,
+            () => isWorkspaceTransferCancelled(transferId),
           );
           successCount += 1;
           if (uploadResult.wasDirectory) {

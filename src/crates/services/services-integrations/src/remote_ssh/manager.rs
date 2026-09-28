@@ -5587,10 +5587,26 @@ impl SSHConnectionManager {
                 }
             }
         }
-        stdin
-            .shutdown()
-            .await
-            .with_context(|| format!("Failed to finish container file upload '{}'", path))?;
+        if !on_progress(written, total) {
+            return Err(abort_container_upload(
+                &control,
+                completion,
+                anyhow!("Transfer cancelled"),
+            )
+            .await);
+        }
+        if let Err(error) = stdin.shutdown().await {
+            return Err(abort_container_upload(
+                &control,
+                completion,
+                anyhow!(
+                    "Failed to finish container file upload '{}': {}",
+                    path,
+                    error
+                ),
+            )
+            .await);
+        }
         let exit = completion.wait().await;
         let _stdout = stdout_task.await.unwrap_or_default();
         let stderr = stderr_task.await.unwrap_or_default();

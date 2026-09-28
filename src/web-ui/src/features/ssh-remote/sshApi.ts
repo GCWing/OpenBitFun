@@ -226,6 +226,7 @@ export const sshApi = {
     localPath: string,
     onProgress?: (downloaded: number, total: number) => void,
     transferId?: string,
+    isCancelled?: () => boolean,
   ): Promise<void> {
     const tid = transferId ?? crypto.randomUUID();
     let unlisten: (() => void) | null = null;
@@ -243,12 +244,17 @@ export const sshApi = {
     }
 
     try {
+      // The stop action can run while the progress listener is being installed,
+      // before the backend has registered this transfer id.
+      if (isCancelled?.()) {
+        throw new Error('Transfer cancelled');
+      }
       await api.invoke('remote_download_to_local_path', {
         connectionId,
         remotePath,
         localPath,
         transferId: tid,
-      }, NO_REQUEST_DEADLINE);
+      }, transferId ? NO_REQUEST_DEADLINE : undefined);
     } finally {
       unlisten?.();
     }
@@ -272,6 +278,7 @@ export const sshApi = {
     remotePath: string,
     onProgress?: (uploaded: number, total: number) => void,
     transferId?: string,
+    isCancelled?: () => boolean,
   ): Promise<{ wasDirectory: boolean }> {
     const tid = transferId ?? crypto.randomUUID();
     let unlisten: (() => void) | null = null;
@@ -289,12 +296,15 @@ export const sshApi = {
     }
 
     try {
+      if (isCancelled?.()) {
+        throw new Error('Transfer cancelled');
+      }
       return await api.invoke('remote_upload_from_local_path', {
         connectionId,
         localPath,
         remotePath,
         transferId: tid,
-      }, NO_REQUEST_DEADLINE);
+      }, transferId ? NO_REQUEST_DEADLINE : undefined);
     } finally {
       unlisten?.();
     }

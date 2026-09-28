@@ -189,20 +189,22 @@ and renames it over the destination, the container command does the same after
 its size check, and a downloaded file is staged beside its local destination
 the same way. A failed or cancelled transfer therefore leaves any previous
 destination unchanged, and staging temporaries are removed when the owning side
-can still reach the path. Because a published upload replaces its destination
+can still reach the path. For directory transfers, files already published and
+directories already created remain when a later entry fails or is stopped.
+Because a published upload replaces its destination
 rather than writing through it, the result takes the staging file's mode and
 ownership, and a replaced symlink or hard link is not followed; that is what
 distinguishes a transfer from a workspace tool write above. A hard kill between
 staging and commit can leave one orphaned temporary, which the container
 commands sweep by age and the SFTP path leaves to the user.
 
-The controller applies no wall-clock deadline to commands whose duration scales
-with file size or entry count (file read and write, directory listing, tree,
-upload, download). Those operations are bounded where the work happens — every
-SFTP request has its own response timeout and the SSH transport drops a stalled
-connection — and a transfer ends when it completes, fails, or is stopped. A
-short controller deadline only reported a slow-but-healthy transfer as a failure
-while the host kept transferring it.
+The desktop upload and download commands opt out of the shared 30-second
+controller deadline when their caller provides a progress and stop surface.
+Every SFTP request retains its own response timeout, the SSH transport drops a
+stalled connection, and the transfer ends when it completes, fails, or is
+stopped. File reads, writes, listings, and transfers without a stop surface keep
+the default controller deadline. A short deadline on a stoppable transfer only
+reported a slow-but-healthy operation as failed while the host kept working.
 
 Directory and stat records use NUL-separated fields. File names containing
 newlines or the delimiters used by older implementations remain round-trippable.

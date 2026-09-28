@@ -202,6 +202,21 @@ describe("fixed peer download identity", () => {
     }
     expect(chunks).toEqual([1]);
   });
+
+  it("does not publish a peer file stopped after its final chunk", async () => {
+    const requestPeerCommand = vi.fn()
+      .mockResolvedValueOnce({ resp: "file_info", size: 1 })
+      .mockResolvedValueOnce({ resp: "file_chunk", offset: 0, chunk_size: 1, total_size: 1, chunk_base64: "AQ==", revision: "r1" });
+    const adapter = { requestPeerCommand } as unknown as Parameters<typeof readPeerFileChunks>[0];
+    const stream = readPeerFileChunks(
+      adapter, "/workspace/file", vi.fn(), { workspace_path: "/workspace" }, "last-chunk",
+    );
+    expect((await stream.next()).value).toEqual(new Uint8Array([1]));
+    cancelWorkspaceTransfer("last-chunk");
+    await expect(stream.next()).rejects.toThrow(
+      i18nService.t("panels/files:transfer.cancelled"),
+    );
+  });
 });
 
 describe("remote workspace uploads report their cancellable transfer id", () => {
@@ -282,5 +297,22 @@ describe("remote workspace uploads report their cancellable transfer id", () => 
       ),
     ).rejects.toThrow(/a\.txt/);
     expect(uploadFromLocalPath).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start an upload stopped from its first progress card", async () => {
+    const { cancelWorkspaceTransfer, uploadLocalPathsToWorkspaceDirectory: upload } =
+      await loadTransferModule();
+    const result = await upload(
+      ["/local/a.txt"],
+      "/workspace",
+      remoteWorkspace,
+      (state) => {
+        if (state?.current === 0) cancelWorkspaceTransfer("before-start");
+      },
+      undefined,
+      "before-start",
+    );
+    expect(result.successCount).toBe(0);
+    expect(uploadFromLocalPath).not.toHaveBeenCalled();
   });
 });

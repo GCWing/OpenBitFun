@@ -326,6 +326,13 @@ impl RemoteFileService {
                 return Err(error);
             }
         };
+        // An empty file has no chunk callback, and a stop can also arrive
+        // while the final chunk is being flushed. Check once more before the
+        // staged file becomes the destination.
+        if !on_progress(written, written) {
+            discard_staged_upload(&manager, connection_id, &staging).await;
+            anyhow::bail!("Transfer cancelled");
+        }
         if let Err(error) = self.atomic_replace(connection_id, &staging, path).await {
             discard_staged_upload(&manager, connection_id, &staging).await;
             return Err(error);

@@ -213,6 +213,9 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
     const id = crypto.randomUUID();
     const onProgress = (state: TransferProgressState | null) => {
       setTransfers((prev) => {
+        if (state !== null && cancelledTransferIdsRef.current.has(id)) {
+          return prev;
+        }
         const next = new Map(prev);
         if (state === null) {
           next.delete(id);
@@ -250,6 +253,9 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
       dropTransferIdRef.current = reportedId;
     }
     setTransfers((prev) => {
+      if (state !== null && cancelledTransferIdsRef.current.has(dropTransferIdRef.current ?? reportedId ?? '')) {
+        return prev;
+      }
       const next = new Map(prev);
       if (state === null) {
         const id = dropTransferIdRef.current;

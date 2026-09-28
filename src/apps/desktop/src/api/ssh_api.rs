@@ -606,6 +606,11 @@ async fn download_remote_file_to_local(
         downloaded = downloaded.saturating_add(read as u64);
         on_progress(downloaded);
     }
+    // Stop can arrive during the final read (including an empty file). Do not
+    // replace a destination after that stop just because the stream reached EOF.
+    if transfer.is_cancelled() {
+        return Err(TRANSFER_CANCELLED.to_string());
+    }
     staging.publish().await?;
     Ok(downloaded)
 }
@@ -658,8 +663,8 @@ pub async fn remote_download_to_local_path(
     local_path: String,
     transfer_id: String,
 ) -> Result<(), String> {
-    let remote_fs = state.get_remote_file_service_async().await?;
     let transfer = ActiveTransfer::register(&state.active_transfers, &transfer_id)?;
+    let remote_fs = state.get_remote_file_service_async().await?;
     let mut last_emit = Instant::now();
 
     // Check if the remote path is a directory.
@@ -814,11 +819,17 @@ async fn download_directory_from_remote(
     let mut total_bytes: u64 = 0;
     let mut scan_stack = vec![remote_dir.to_string()];
     while let Some(current) = scan_stack.pop() {
+        if transfer.is_cancelled() {
+            return Err(TRANSFER_CANCELLED.to_string());
+        }
         let entries = remote_fs
             .read_dir(connection_id, &current)
             .await
             .map_err(|e| e.to_string())?;
         for entry in entries {
+            if transfer.is_cancelled() {
+                return Err(TRANSFER_CANCELLED.to_string());
+            }
             validate_remote_name_for_local_download(&entry.name)?;
             if entry.is_symlink {
                 return Err(format!(
@@ -1016,6 +1027,7 @@ pub async fn remote_upload_from_local_path(
     remote_path: String,
     transfer_id: String,
 ) -> Result<RemoteUploadResult, String> {
+    let transfer = ActiveTransfer::register(&state.active_transfers, &transfer_id)?;
     let local_path = std::path::Path::new(&local_path);
     let local_metadata = std::fs::symlink_metadata(local_path).map_err(|error| {
         format!(
@@ -1036,9 +1048,6 @@ pub async fn remote_upload_from_local_path(
             local_path.display()
         ));
     }
-
-    // Register a cancellation flag for this transfer.
-    let transfer = ActiveTransfer::register(&state.active_transfers, &transfer_id)?;
 
     // A directory needs to be walked locally and recreated on the remote side.
     if local_path.is_dir() {

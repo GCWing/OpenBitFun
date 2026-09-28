@@ -15,10 +15,16 @@ path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "=2.6.3", features = [] }
+# This standalone app does not commit a Cargo.lock. Keep the Tauri build-time
+# crates aligned with the patched 2.11 runtime instead of resolving 2.7/2.10.
+tauri-codegen = "=2.6.3"
 zip = "0.6"
 
 [dependencies]
 tauri = { version = "=2.11.5", features = [] }
+tauri-macros = "=2.6.3"
+tauri-plugin = "=2.6.3"
+tauri-utils = "=2.9.3"
 tauri-plugin-dialog = "=2.7.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -34,6 +40,14 @@ openbitfun-services-core = { path = "../../src/crates/services/services-core", f
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 mslnk = "0.1"
+
+# The installer is a separate Cargo workspace. Keep Tauri's runtime crates on
+# the same revision as the desktop workspace; otherwise the exact Tauri 2.11.5
+# dependency can resolve newer, incompatible runtime and utils releases.
+[patch.crates-io]
+tauri-runtime = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
 
 [dev-dependencies]
 tempfile = "3"
