@@ -84,12 +84,20 @@ pub struct MemoryJobRecord {
 }
 
 impl MemoryJobRecord {
+    /// Cooldown that keeps a clean, finished consolidation run from being repeated.
+    ///
+    /// The evaluated input clock advances on idle runs too, so watermark equality
+    /// is not a cooldown precondition: an idle completion stamps the newest
+    /// evaluated `input_watermark` without writing `last_success_watermark`, and a
+    /// predicate that required the two to match would disarm the cooldown after
+    /// every no-op run and let each later pass redo the whole evaluation. This
+    /// mirrors the phase-2 runner in `agentic/memories/db.rs`, which owns the
+    /// freshness decision and delegates here so there is a single implementation.
     pub fn success_cooldown_until_unix_secs(&self, cooldown_seconds: i64) -> Option<i64> {
         if self.kind != JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL
             || self.status != JOB_STATUS_DONE
             || self.last_error.is_some()
             || self.input_watermark.is_none()
-            || self.last_success_watermark != self.input_watermark
         {
             return None;
         }
@@ -438,6 +446,47 @@ mod tests {
         assert_eq!(snapshot.records, vec![record]);
         assert_eq!(snapshot.jobs.len(), 1);
         assert_eq!(snapshot.jobs[0].job_key, "session-1");
+    }
+
+    #[test]
+    fn success_cooldown_survives_an_idle_watermark_advance() {
+        let mut job = MemoryJobRecord {
+            kind: JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL.to_string(),
+            job_key: "global".to_string(),
+            status: JOB_STATUS_DONE.to_string(),
+            worker_id: None,
+            ownership_token: None,
+            started_at_unix_secs: Some(1_000),
+            finished_at_unix_secs: Some(1_000),
+            lease_until_unix_secs: None,
+            retry_at_unix_secs: None,
+            retry_remaining: 3,
+            last_error: None,
+            input_watermark: Some(2_000),
+            last_success_watermark: Some(1_500),
+        };
+        // The evaluated input clock is ahead of the last success watermark because
+        // an idle run advanced it, which must not disarm the cooldown.
+        assert_eq!(job.success_cooldown_until_unix_secs(600), Some(1_600));
+
+        job.last_error = Some("boom".to_string());
+        assert_eq!(job.success_cooldown_until_unix_secs(600), None);
+        job.last_error = None;
+
+        job.status = "running".to_string();
+        assert_eq!(job.success_cooldown_until_unix_secs(600), None);
+        job.status = JOB_STATUS_DONE.to_string();
+
+        job.input_watermark = None;
+        assert_eq!(job.success_cooldown_until_unix_secs(600), None);
+        job.input_watermark = Some(2_000);
+
+        job.kind = "memory_stage1".to_string();
+        assert_eq!(job.success_cooldown_until_unix_secs(600), None);
+        job.kind = JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL.to_string();
+
+        job.finished_at_unix_secs = None;
+        assert_eq!(job.success_cooldown_until_unix_secs(600), None);
     }
 
     #[test]

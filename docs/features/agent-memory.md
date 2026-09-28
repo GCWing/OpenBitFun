@@ -81,6 +81,15 @@ tool state (`.openbitfun/`, and the legacy `.bitfun/` name) is excluded whether 
 ignores it, so a local search index written into the memory root can never make an
 unchanged workspace look dirty or leak tool state into the prompt.
 
+**Divergence from the upstream memory design:** upstream also diffed ignored
+paths and rendered each one as an added-file patch. This port keeps them out of
+the diff, which is what the memory end-to-end test verified and which avoids a
+whole-workspace diff churn whenever a user or global ignore rule changes. The
+consequence is explicit and deliberate: a memory file inside the memory root that
+a user or global gitignore rule matches is **not** consolidated. Keep memory
+files un-ignored. Each diff computation reports the skipped paths once (count plus
+a bounded sample) so the divergence is visible instead of silent.
+
 A workspace change is *meaningful* when it touches `MEMORY.md`,
 `memory_summary.md`, `raw_memories.md`, `rollout_summaries/**`, `skills/**`, or an
 `extensions/**` content file. Re-seeding `extensions/ad_hoc/instructions.md` on

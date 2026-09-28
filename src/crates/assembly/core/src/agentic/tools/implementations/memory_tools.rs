@@ -1326,7 +1326,7 @@ impl Tool for MemoryFetchTool {
     async fn description(&self) -> OpenBitFunResult<String> {
         Ok(r#"Read one file from the local OpenBitFun memory folder.
 
-Use MemoryFetch after MemorySearch, when MEMORY.md points at a specific evidence file, or when the user asks what memory contains. It reads one memory-root-relative path with a bounded line window and records memory usage automatically, so no <openOpenBitFun-mem-citation> block is needed for memory read through this tool.
+Use MemoryFetch after MemorySearch, when MEMORY.md points at a specific evidence file, or when the user asks what memory contains. It reads one memory-root-relative path with a bounded line window and records memory usage automatically, so no <openbitfun-mem-citation> block is needed for memory read through this tool.
 
 Provide exactly one of:
 - path: a memory-root-relative path such as "MEMORY.md", "memory_summary.md", or "rollout_summaries/<file>.md".
@@ -1737,7 +1737,16 @@ async fn write_ad_hoc_note(
 ///
 /// The service remains authoritative for the gates; this only mirrors the
 /// reportable session facts so the model learns why nothing was captured.
-async fn capture_session_skip_reason(workspace_path: &Path, session_id: &str) -> Option<String> {
+/// `storage_unavailable_sessions` is the one typed fact the service hands back,
+/// so it is classified first instead of being re-derived from the session record.
+async fn capture_session_skip_reason(
+    workspace_path: &Path,
+    session_id: &str,
+    storage_unavailable_sessions: u64,
+) -> Option<String> {
+    if storage_unavailable_sessions > 0 {
+        return Some("workspace session storage is not available for memory capture".to_string());
+    }
     let persistence = PersistenceManager::new(get_path_manager_arc()).ok()?;
     let metadata = persistence
         .load_session_metadata(workspace_path, session_id)
@@ -2320,12 +2329,16 @@ impl MemorySaveTool {
         let mut reason = if captured {
             "extracted memory from the completed turns of this session".to_string()
         } else {
-            capture_session_skip_reason(workspace_path, session_id)
-                .await
-                .unwrap_or_else(|| {
-                    "no new memory was extracted: this session is already captured, or another memory job currently owns it"
-                        .to_string()
-                })
+            capture_session_skip_reason(
+                workspace_path,
+                session_id,
+                stats.storage_unavailable_sessions,
+            )
+            .await
+            .unwrap_or_else(|| {
+                "no new memory was extracted: this session is already captured, or another memory job currently owns it"
+                    .to_string()
+            })
         };
         if stats.failed_sessions > 0 {
             reason.push_str("; extraction failed for this session, check the memory logs for the provider error");
@@ -2337,12 +2350,13 @@ impl MemorySaveTool {
             .request_consolidation(captured && trigger_consolidation)
             .await;
         info!(
-            "MemorySave capture_session finished: session_id={}, workspace_path={}, extracted={}, skipped={}, failed={}, consolidation_requested={}, consolidation_already_running={}",
+            "MemorySave capture_session finished: session_id={}, workspace_path={}, extracted={}, skipped={}, failed={}, storage_unavailable={}, consolidation_requested={}, consolidation_already_running={}",
             session_id,
             workspace_path_string,
             stats.extracted_sessions,
             stats.skipped_sessions,
             stats.failed_sessions,
+            stats.storage_unavailable_sessions,
             consolidation.requested,
             consolidation.already_running
         );
@@ -3398,6 +3412,32 @@ mod tests {
     async fn phase2_job_state_is_unavailable_without_a_database() {
         assert!(phase2_job_snapshot(None).await.is_none());
         assert!(!phase2_consolidation_in_progress(None).await);
+    }
+
+    #[tokio::test]
+    async fn capture_skip_reason_reports_unavailable_workspace_storage() {
+        // The typed service signal is authoritative and must not fall through to
+        // the generic "already captured / owned" cause.
+        let reason = capture_session_skip_reason(
+            Path::new("openbitfun-unregistered-workspace"),
+            "session-no-storage",
+            1,
+        )
+        .await
+        .expect("an unavailable workspace storage must be reported");
+        assert_eq!(
+            reason,
+            "workspace session storage is not available for memory capture"
+        );
+
+        let repeated = capture_session_skip_reason(
+            Path::new("openbitfun-unregistered-workspace"),
+            "session-no-storage",
+            7,
+        )
+        .await
+        .expect("any positive skip count must be reported");
+        assert_eq!(repeated, reason);
     }
 
     #[test]

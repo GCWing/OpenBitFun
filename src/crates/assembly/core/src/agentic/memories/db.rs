@@ -1775,28 +1775,19 @@ fn phase1_retry_exhaustion_quarantine_elapsed(job: &MemoryJobRow, now: i64) -> b
 
 /// Cooldown that keeps a clean, finished phase-2 run from being repeated.
 ///
-/// The predicate is owned here rather than by the shared memory store because the
-/// freshness decision belongs to the runner: a completion only reports a cooldown
-/// when the last run finished cleanly, and the runner decides whether the run has
-/// work by comparing its evaluated `input_watermark` and the workspace diff.
-/// An idle completion advances `input_watermark` without stamping
-/// `last_success_watermark`, so comparing those two watermarks would disarm the
-/// cooldown after every no-op run and let each later pass redo the whole
-/// evaluation.
+/// The predicate itself is owned by the shared memory store
+/// ([`MemoryJobRow::success_cooldown_until_unix_secs`]); this function is the
+/// call-site shim the runner uses. The freshness decision stays here in the
+/// sense that the runner decides whether the run has work by comparing its
+/// evaluated `input_watermark` and the workspace diff: an idle completion
+/// advances `input_watermark` without stamping `last_success_watermark`, so
+/// comparing those two watermarks would disarm the cooldown after every no-op
+/// run and let each later pass redo the whole evaluation.
 pub(crate) fn phase2_success_cooldown_until_unix_secs(
     job: &MemoryJobRow,
     cooldown_seconds: i64,
 ) -> Option<i64> {
-    if job.kind != JOB_KIND_MEMORY_CONSOLIDATE_GLOBAL
-        || job.status != JOB_STATUS_DONE
-        || job.last_error.is_some()
-        || job.input_watermark.is_none()
-    {
-        return None;
-    }
-
-    job.finished_at_unix_secs
-        .map(|finished_at| finished_at.saturating_add(cooldown_seconds.max(0)))
+    job.success_cooldown_until_unix_secs(cooldown_seconds)
 }
 
 /// Whether the incumbent phase-2 owner is still alive.

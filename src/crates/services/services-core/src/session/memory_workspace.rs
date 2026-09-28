@@ -1,4 +1,5 @@
 use git2::{Delta, Diff, DiffFormat, DiffOptions, IndexAddOption, Repository, Signature};
+use log::{debug, info};
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
@@ -220,11 +221,92 @@ fn memory_workspace_diff_sync(root: &Path) -> Result<MemoryWorkspaceDiff, Memory
         .map_err(|source| git_operation(root, "compute workspace diff", source))?;
     let changes = collect_workspace_changes(&diff);
     let unified_diff = render_workspace_diff(&diff, root)?;
+    log_skipped_ignored_paths(&repository, &baseline, root);
 
     Ok(MemoryWorkspaceDiff {
         changes,
         unified_diff,
     })
+}
+
+/// How many skipped ignored paths a single diff computation reports by name.
+const IGNORED_MEMORY_PATH_LOG_SAMPLE: usize = 8;
+
+/// Report the ignored paths this diff deliberately leaves out.
+///
+/// The consolidation diff does not enable `include_ignored`, so a file inside the
+/// memory root that a user or global gitignore rule matches is invisible to the
+/// consolidation prompt. libgit2 also reports no delta for it in that pass, so the
+/// skipped entries are enumerated by a separate ignored-only walk and reported
+/// once per diff computation. Memory content must stay un-ignored; this log is how
+/// the divergence becomes visible instead of silent.
+fn log_skipped_ignored_paths(repository: &Repository, baseline: &git2::Tree<'_>, root: &Path) {
+    let paths = skipped_ignored_memory_paths(repository, baseline, root);
+    if paths.is_empty() {
+        return;
+    }
+
+    let sample = paths
+        .iter()
+        .take(IGNORED_MEMORY_PATH_LOG_SAMPLE)
+        .cloned()
+        .collect::<Vec<_>>();
+    info!(
+        "Memory workspace diff skipped gitignored paths inside the memory root; memory files must stay un-ignored: root={}, skipped_count={}, sample={:?}, sample_truncated={}",
+        root.display(),
+        paths.len(),
+        sample,
+        paths.len() > sample.len()
+    );
+}
+
+/// Gitignored paths inside the memory root that the consolidation diff skips.
+///
+/// Sorted, deduplicated, and free of OpenBitFun tool state. Best effort: a workdir
+/// that cannot be walked yields an empty list, because observability must never
+/// fail the diff itself.
+fn skipped_ignored_memory_paths(
+    repository: &Repository,
+    baseline: &git2::Tree<'_>,
+    root: &Path,
+) -> Vec<String> {
+    let mut options = DiffOptions::new();
+    options
+        .include_untracked(true)
+        .recurse_untracked_dirs(true)
+        .show_untracked_content(true)
+        .include_ignored(true)
+        .recurse_ignored_dirs(true);
+    // Observability must never fail the diff itself, so an unwalkable workdir
+    // degrades to an empty list.
+    let ignored_diff = repository
+        .diff_tree_to_workdir_with_index(Some(baseline), Some(&mut options))
+        .map_err(|error| {
+            debug!(
+                "Memory workspace could not enumerate gitignored paths inside the memory root: root={}, error={}",
+                root.display(),
+                error
+            );
+        });
+    let Ok(ignored_diff) = ignored_diff else {
+        return Vec::new();
+    };
+
+    let mut paths = ignored_diff
+        .deltas()
+        .filter(|delta| delta.status() == Delta::Ignored)
+        .filter_map(|delta| {
+            delta
+                .new_file()
+                .path()
+                .or_else(|| delta.old_file().path())
+                .map(|path| path.to_string_lossy().replace('\\', "/"))
+        })
+        .filter(|path| !is_memory_tool_state_path(path))
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths.dedup();
+    paths
 }
 
 fn collect_workspace_changes(diff: &Diff<'_>) -> Vec<MemoryWorkspaceChange> {
@@ -350,7 +432,8 @@ fn git_operation(
 mod tests {
     use super::{
         memory_workspace_diff, render_memory_workspace_diff_file,
-        reset_memory_workspace_git_baseline, MemoryWorkspaceChange, MemoryWorkspaceChangeStatus,
+        reset_memory_workspace_git_baseline, skipped_ignored_memory_paths, MemoryWorkspaceChange,
+        MemoryWorkspaceChangeStatus, Repository,
     };
 
     #[tokio::test]
@@ -416,6 +499,31 @@ mod tests {
         );
         assert!(diff.unified_diff.is_empty());
         assert!(!diff.unified_diff.contains("Durable ignored memory note"));
+
+        // The skipped file is still enumerable, so the divergence is reported
+        // instead of staying silent.
+        let repository = Repository::open(root).unwrap();
+        let baseline = repository.head().unwrap().peel_to_tree().unwrap();
+        assert_eq!(
+            skipped_ignored_memory_paths(&repository, &baseline, root),
+            vec!["extensions/ad_hoc/notes/ignored-note.md".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn skipped_ignored_paths_exclude_tool_state() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::write(root.join(".gitignore"), ".openbitfun/\n").unwrap();
+        reset_memory_workspace_git_baseline(root).await.unwrap();
+
+        let index_dir = root.join(".openbitfun/search/flashgrep-index");
+        std::fs::create_dir_all(&index_dir).unwrap();
+        std::fs::write(index_dir.join("index.bin"), "tool state").unwrap();
+
+        let repository = Repository::open(root).unwrap();
+        let baseline = repository.head().unwrap().peel_to_tree().unwrap();
+        assert!(skipped_ignored_memory_paths(&repository, &baseline, root).is_empty());
     }
 
     #[tokio::test]

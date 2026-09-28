@@ -223,15 +223,9 @@ impl MemoryPhase1Service {
         let Some(session_storage_path) =
             local_session_storage_dir_for_workspace_path(workspace_path_ref).await
         else {
-            self.db
-                .release_phase1_claim_without_watermark(session_id, &ownership_token)
-                .await?;
-            warn!(
-                "Memory phase1 on-demand run skipped because the workspace storage is unavailable: session_id={}, workspace_path={}",
-                session_id, workspace_path
-            );
-            stats.skipped_sessions = 1;
-            return Ok(stats);
+            return self
+                .skip_unavailable_workspace_storage(session_id, &ownership_token, workspace_path)
+                .await;
         };
         stats.candidate_sessions = 1;
         let claimed = ClaimedMemorySourceSession {
@@ -266,6 +260,34 @@ impl MemoryPhase1Service {
             started_at.elapsed().as_millis()
         );
         Ok(stats)
+    }
+
+    /// Release the phase-1 claim and report a skip for an unresolvable workspace.
+    ///
+    /// Session storage is owned by the workspace identity, so a workspace path
+    /// that resolves to neither a local nor a registered remote workspace has no
+    /// persisted turns to read. The claim is released instead of left to expire,
+    /// and the skip is reported through `storage_unavailable_sessions` so callers
+    /// do not misreport it as the generic "already captured / owned" outcome.
+    async fn skip_unavailable_workspace_storage(
+        &self,
+        session_id: &str,
+        ownership_token: &str,
+        workspace_path: &str,
+    ) -> OpenBitFunResult<MemoryPhase1RunStats> {
+        self.db
+            .release_phase1_claim_without_watermark(session_id, ownership_token)
+            .await?;
+        warn!(
+            "Memory phase1 on-demand run skipped because the workspace storage is unavailable: session_id={}, workspace_path={}",
+            session_id, workspace_path
+        );
+        Ok(MemoryPhase1RunStats {
+            scanned_sessions: 1,
+            skipped_sessions: 1,
+            storage_unavailable_sessions: 1,
+            ..Default::default()
+        })
     }
 
     pub async fn prune_stage1_outputs_for_retention(
@@ -1636,6 +1658,64 @@ mod tests {
             .unwrap();
         assert_eq!(stats.skipped_sessions, 1);
         assert_eq!(stats.extracted_sessions, 0);
+    }
+
+    #[tokio::test]
+    async fn phase1_on_demand_run_reports_unavailable_workspace_storage() {
+        let temp = tempfile::tempdir().unwrap();
+        let path_manager = Arc::new(
+            crate::infrastructure::app_paths::PathManager::with_user_root_for_tests(
+                temp.path().to_path_buf(),
+            ),
+        );
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        let service = MemoryPhase1Service { db: Arc::new(db) };
+        let workspace_path = temp
+            .path()
+            .join("unregistered-workspace")
+            .to_string_lossy()
+            .to_string();
+
+        let ownership_token = match service
+            .db
+            .try_claim_phase1_job("session-no-storage", "memory-phase1", 1_700_000_000, 600, 4)
+            .await
+            .unwrap()
+        {
+            MemoryPhase1ClaimOutcome::Claimed { ownership_token } => ownership_token,
+            outcome => panic!("expected a claim, got {outcome:?}"),
+        };
+
+        let stats = service
+            .skip_unavailable_workspace_storage(
+                "session-no-storage",
+                &ownership_token,
+                &workspace_path,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(stats.scanned_sessions, 1);
+        assert_eq!(stats.skipped_sessions, 1);
+        assert_eq!(stats.storage_unavailable_sessions, 1);
+        assert_eq!(stats.extracted_sessions, 0);
+
+        // The claim is released without a watermark, so the session stays
+        // claimable once its workspace storage resolves.
+        assert!(service
+            .db
+            .phase1_source_needs_update("session-no-storage", 1_700_000_000)
+            .await
+            .unwrap());
+        assert!(matches!(
+            service
+                .db
+                .try_claim_phase1_job("session-no-storage", "memory-phase1", 1_700_000_000, 600, 4)
+                .await
+                .unwrap(),
+            MemoryPhase1ClaimOutcome::Claimed { .. }
+        ));
     }
 
     #[tokio::test]
