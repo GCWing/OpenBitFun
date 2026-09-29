@@ -1,3 +1,4 @@
+import { BoundedResourceCache } from '@/shared/utils/BoundedResourceCache';
 import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { useResourceFileAccess, type ResourceFileAccess } from '@/infrastructure/api/ResourceFileContext';
 /**
@@ -9,6 +10,7 @@ import React, { useState, useMemo, useCallback, useEffect, useLayoutEffect, useR
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import { Icon, IconButton, Tooltip } from '@openbitfun/ui';
 import remarkGfm from 'remark-gfm';
+import { remarkCachedParse } from './markdownParseCache';
 import { remarkAutolinkBoundaries } from './remarkAutolinkBoundaries';
 import { remarkStreamingTableLinks } from './remarkStreamingTableLinks';
 import rehypeRaw from 'rehype-raw';
@@ -254,7 +256,7 @@ const EDITOR_OPENABLE_BASENAMES = new Set([
   'readme.txt',
 ]);
 
-const localImageDataUrlCache = new Map<string, string>();
+const localImageDataUrlCache = new BoundedResourceCache<string, string>(24 * 1024 * 1024);
 const localImageRequestCache = new Map<string, Promise<string>>();
 
 const sanitizeSchema = {
@@ -520,7 +522,7 @@ async function getLocalImageDataUrl(
       : await workspaceAPI.readFileContent(localPath, 'base64', owner.remoteConnectionId);
     scope.assertCurrent('read markdown image');
     const dataUrl = `data:${getMimeType(localPath)};base64,${base64Content}`;
-    localImageDataUrlCache.set(cacheKey, dataUrl);
+    localImageDataUrlCache.set(cacheKey, dataUrl, (cacheKey.length + dataUrl.length) * 2);
     localImageRequestCache.delete(requestKey);
     return dataUrl;
   })().catch((error) => {
@@ -1746,7 +1748,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
   }, [components, isStreaming]);
   const basicMarkdownRenderer = (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
+      remarkPlugins={[remarkGfm, ...(!isStreaming ? [remarkCachedParse] : []), [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
       rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange]]}
       urlTransform={markdownUrlTransform}
       components={components}
@@ -1769,7 +1771,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
       )}
       <MarkdownErrorBoundary fallbackContent={sourceRange ? markdownContent.slice(sourceRange.start, sourceRange.end) : markdownContent}>
         {thinking ? (
-          <React.Suspense fallback={contentStr}>
+          <React.Suspense fallback={<span data-markdown-pending="true">{contentStr}</span>}>
             <ThinkingMarkdown
               content={contentStr}
               isStreaming={isStreaming}

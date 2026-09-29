@@ -40,6 +40,11 @@
     overflow-wrap: anywhere;
   }
 
+  [data-openbitfun-tool-card="glob-search"] .detail,
+  [data-openbitfun-tool-card="glob-search"] .detailLabel {
+    color: var(--openbitfun-color-content-primary);
+  }
+
   .results {
     display: flex;
     min-inline-size: 0;
@@ -123,6 +128,12 @@
     font-weight: var(--openbitfun-type-label-lg-font-weight);
     text-align: start;
     overflow-wrap: anywhere;
+  }
+
+  [data-openbitfun-tool-card="glob-search"] .resultTitle,
+  [data-openbitfun-tool-card="glob-search"] .resultButton,
+  [data-openbitfun-tool-card="glob-search"] .resultDescription {
+    color: var(--openbitfun-color-content-secondary);
   }
 
   .resultButton {

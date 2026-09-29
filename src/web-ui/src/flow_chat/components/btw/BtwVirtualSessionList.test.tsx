@@ -182,7 +182,7 @@ describe('BtwVirtualSessionList', () => {
     });
     followRef.current = true;
     render(items.slice(0, 20));
-    const oldRowNodes: Array<Element | null> = [];
+    const renderedWindows: string[] = [];
     const deliveredSizes = new WeakMap<object, Map<Element, number>>();
     for (let frame = 0; frame < 40; frame++) {
       act(() => {
@@ -209,15 +209,22 @@ describe('BtwVirtualSessionList', () => {
         frames.clear();
         pending.forEach(callback => callback(frame * 16));
       });
-      if (frame >= 10) oldRowNodes.push(host.querySelector('[data-virtual-index="9"]'));
+      if (frame >= 10) renderedWindows.push([...host.querySelectorAll('[data-virtual-index]')]
+        .map(node => node.getAttribute('data-virtual-index')).join(','));
     }
-    const identities = new Set(oldRowNodes.filter(node => node !== null));
+    const window = host.firstElementChild as HTMLElement;
+    const measuredTotal = Number.parseFloat(window.style.paddingTop || '0')
+      + Number.parseFloat(window.style.paddingBottom || '0')
+      + [...host.querySelectorAll<HTMLElement>('[data-virtual-index]')].reduce((sum, row) => sum + row.offsetHeight, 0);
     if (contained) {
-      expect(oldRowNodes).not.toContain(null);
-      expect(identities.size).toBe(1);
+      expect(new Set(renderedWindows).size).toBe(1);
+      expect(host.querySelector('[data-virtual-index="19"]')).not.toBeNull();
+      expect(scroller.scrollHeight - 15).toBe(measuredTotal);
     } else {
-      expect(oldRowNodes).toContain(null);
-      expect(identities.size).toBeGreaterThan(10);
+      // Adaptive overscan need not reproduce the old fixed-window oscillation,
+      // but escaped margins still violate the geometry used for tail placement.
+      expect(scroller.scrollHeight - 15 - measuredTotal).toBe(window.children.length * 8);
+      expect(scroller.scrollHeight - 15).toBeGreaterThan(measuredTotal);
     }
   });
 });

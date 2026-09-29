@@ -1,7 +1,8 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * MiniAppToolDisplay — InitMiniApp result on the prominent FlowChat framework.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { OverflowText, IconButton, Icon } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
 
@@ -15,7 +16,7 @@ export const InitMiniAppDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
   const { t } = useTranslation('flow-chat');
   const { status, toolResult, partialParams, isParamsStreaming, toolCall } = toolItem;
   const { openScene } = useSceneManager();
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
 
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
@@ -48,7 +49,7 @@ export const InitMiniAppDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
 
   const toggleExpanded = useCallback(() => {
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded);
-  }, [applyExpandedState, isExpanded]);
+  }, [applyExpandedState, isExpanded, setIsExpanded]);
 
   const handleCardClick = useCallback(
     (e: React.MouseEvent) => {

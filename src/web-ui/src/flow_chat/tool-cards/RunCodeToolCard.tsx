@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Run Code tool card.
  *
@@ -8,7 +9,7 @@
  * file into a terminal card's command line.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
@@ -60,7 +61,7 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
   const { t } = useTranslation('flow-chat');
   const { toolCall, toolResult } = toolItem;
   const status = getToolCardStatus(toolItem);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -81,7 +82,7 @@ export const RunCodeToolCard: React.FC<ToolCardProps> = ({
     if (!canExpand) return;
 
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded, { onExpand });
-  }, [applyExpandedState, canExpand, isExpanded, onExpand]);
+  }, [applyExpandedState, canExpand, isExpanded, onExpand, setIsExpanded]);
 
   const summary = description || firstMeaningfulLine(code);
 

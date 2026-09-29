@@ -5,6 +5,7 @@ import { hasSessionFileProvider } from '../session-drivers/sessionFileNavigation
 import type { FlowToolItem } from '../types/flow-chat';
 import { localFileOperationDiffStats, type FileOperationDiffStats } from './fileOperationDiffStats';
 import { getToolCardStatus } from './toolCardStatus';
+import { loadOperationSummary } from '../timeline/operationSummaryResource';
 
 const log = createLogger('useFileOperationDiffStats');
 
@@ -36,17 +37,11 @@ export function useFileOperationDiffStats(items: readonly FlowToolItem[], {
     let cancelled = false;
 
     void (async () => {
-      const snapshotApiModule = import('../../infrastructure/api');
       const results = await Promise.all(missing.map(async operationId => {
         try {
-          const { snapshotAPI } = await snapshotApiModule;
           if (cancelled || !scope.isCurrent()) return [operationId, null] as const;
-          const summary = await snapshotAPI.getOperationSummary(sessionId, operationId);
-          if (!summary) return [operationId, null] as const;
-          return [operationId, {
-            additions: Number(summary.linesAdded ?? 0),
-            deletions: Number(summary.linesRemoved ?? 0),
-          }] as const;
+          const summary = await loadOperationSummary(sessionId, operationId, surfaceEpoch, () => !cancelled && scope.isCurrent());
+          return [operationId, summary] as const;
         } catch (error) {
           if (!cancelled && scope.isCurrent()) log.warn('Failed to load operation summary', { sessionId, operationId, error });
           return [operationId, null] as const;

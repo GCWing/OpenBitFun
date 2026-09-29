@@ -2024,7 +2024,7 @@
       "copyCommandFailed": "复制命令失败",
       "cancel": "取消",
       "interrupt": "中断命令执行",
-      "openInPanel": "在右侧面板打开Terminal",
+      "openInPanel": "在面板中打开终端",
       "expandOutput": "展开输出",
       "collapseOutput": "收起输出",
       "rejected": "已拒绝",

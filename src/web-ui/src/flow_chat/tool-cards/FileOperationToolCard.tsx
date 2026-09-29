@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * File operation tool card on the shared prominent FlowChat framework.
  * Supports Write/Edit/Delete file operations
@@ -7,7 +8,7 @@
  * that it should remeasure the card after the transition.
  */
 
-import React, { useEffect, useCallback, useMemo, useState, useRef } from 'react';
+import React, { useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import path from 'path-browserify';
 import { getToolCardStatus } from './toolCardStatus';
@@ -147,7 +148,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
   const isFailed = status === 'error';
   
   // Streaming stays in the summary until the reader asks for the live preview.
-  const [isContentExpanded, setIsContentExpanded] = useState(false);
+  const [isContentExpanded, setIsContentExpanded] = useToolCardDisclosure('isContentExpanded');
   
   const hasInitializedCompletionEffectRef = useRef(false);
   const previousCompletionEndTimeRef = useRef<number | null>(toolItem.endTime ?? null);
@@ -325,7 +326,7 @@ const GenericFileOperationToolCard: React.FC<FileOperationToolCardProps> = ({
       nextExpanded,
       setIsContentExpanded,
     );
-  }, [applyHeightContractExpandedState, isContentExpanded]);
+  }, [applyHeightContractExpandedState, isContentExpanded, setIsContentExpanded]);
 
   useEffect(() => {
     if (error) {

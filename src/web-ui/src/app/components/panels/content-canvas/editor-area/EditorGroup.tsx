@@ -85,6 +85,7 @@ export interface EditorGroupProps {
   onCloseAllTabs?: () => Promise<void> | void;
   onInteraction?: (itemId: string, userInput: string) => Promise<void>;
   disablePopOut?: boolean;
+  toolbarActions?: React.ReactNode;
   terminalResizeSuspended?: boolean;
 }
 
@@ -114,6 +115,7 @@ export const EditorGroup: React.FC<EditorGroupProps> = ({
   onCloseAllTabs,
   onInteraction,
   disablePopOut = false,
+  toolbarActions,
   terminalResizeSuspended = false,
 }) => {
   const { t } = useTranslation('components');
@@ -261,6 +263,7 @@ export const EditorGroup: React.FC<EditorGroupProps> = ({
         onReorderTab={onReorderTab}
         onOpenMissionControl={onOpenMissionControl}
         onCloseAllTabs={onCloseAllTabs}
+        toolbarActions={toolbarActions}
         onTabPopOut={disablePopOut ? undefined : handleTabPopOut}
       />
 

@@ -1,3 +1,32 @@
+@use '../../item-rhythm' as itemRhythm;
+
+// Desktop collection boundaries use the same rhythm as body paragraphs.
+.explore-region--collapsible {
+  margin-bottom: var(--openbitfun-control-flow-chat-paragraph-gap);
+}
+
+// Whole groups and deferred segments retain the same spacing as flat members.
+// Only a complete group's final member hands its trailing gap to the group.
+.explore-region--collapsible:not(.flowchat-timeline-members) {
+  .explore-region__content {
+    @include itemRhythm.spacing($enclosed: true);
+    padding-block-start: var(--openbitfun-control-flow-chat-paragraph-gap);
+  }
+
+  .flow-group-content-segment {
+    @include itemRhythm.spacing;
+
+    &:last-child {
+      @include itemRhythm.spacing($enclosed: true);
+    }
+  }
+}
+
+// The exposed page edges need space only while the file group is collected.
+.explore-region[data-file-revisions='true'][data-expanded='true'] > [data-openbitfun-part='header'] {
+  padding-block-end: 0;
+}
+
 // ==================== Cross-ModelRound collapse ====================
 
 // Reduce spacing for explore-only model rounds.

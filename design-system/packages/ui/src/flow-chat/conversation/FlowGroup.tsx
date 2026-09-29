@@ -61,6 +61,8 @@ export interface FlowGroupProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
   streaming?: boolean;
   /** Opt into an internal scroll area for embedded hosts; transcripts use natural height. */
   bounded?: boolean;
+  /** The host renders members as siblings in its single virtual timeline. */
+  externalContent?: boolean;
   receiveFeedback?: FlowGroupReceiveFeedback;
   contentRef?: Ref<HTMLDivElement>;
   onContentScroll?: HTMLAttributes<HTMLDivElement>['onScroll'];
@@ -78,12 +80,13 @@ export interface FlowGroupProps extends Omit<HTMLAttributes<HTMLDivElement>, 'ch
 export const FlowGroup = forwardRef<HTMLDivElement, FlowGroupProps>(function FlowGroup({
   children, expanded, onExpandedChange, leading, summary, summaryItems, summaryDescription,
   itemCount = 0, placement = 'standalone', streaming = false, bounded = false,
-  receiveFeedback, contentRef, onContentScroll, contentProps, browser, fileRevision, className = '',
+  receiveFeedback, contentRef, onContentScroll, contentProps, browser, fileRevision, externalContent = false, className = '',
   'data-openbitfun-component': component = 'flow-group',
   'data-testid': testId = 'chat-flow-group', 'data-group-kind': kind,
   ...props
 }, ref) {
-  const contentId = useId();
+  const internalContentId = useId();
+  const contentId = externalContent ? undefined : internalContentId;
   const Content = bounded ? ScrollArea : 'div';
   const rootRef = useRef<HTMLDivElement | null>(null);
   const bindRoot = useCallback((node: HTMLDivElement | null) => {
@@ -155,7 +158,7 @@ export const FlowGroup = forwardRef<HTMLDivElement, FlowGroupProps>(function Flo
         <FlowGroupBrowser browser={browser} />
       </div>}
     </div>}
-    <FlowChatCollapse isOpen={expanded} id={contentId}
+    {!externalContent && <FlowChatCollapse isOpen={expanded} id={contentId}
       data-openbitfun-component={component} data-openbitfun-part="contentWrapper"
       className="explore-region__content-wrapper"
       innerClassName="explore-region__content-inner">
@@ -167,7 +170,8 @@ export const FlowGroup = forwardRef<HTMLDivElement, FlowGroupProps>(function Flo
         {browser?.empty && <div className="explore-region__empty">{browser.emptyLabel}</div>}
         {children}
       </Content>
-    </FlowChatCollapse>
+    </FlowChatCollapse>}
+    {externalContent && expanded && browser?.empty && <div className="explore-region__empty">{browser.emptyLabel}</div>}
   </div>;
 });
 

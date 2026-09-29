@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 import React, { useCallback, useMemo, useState } from 'react';
 import { OverflowText, Icon, IconButton } from '@openbitfun/ui';
 import { AlertTriangle } from 'lucide-react';
@@ -81,7 +82,7 @@ const TERMINAL_STATUSES = new Set(['completed', 'error', 'cancelled', 'rejected'
 export const CanvasToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId, onExpand }) => {
   const { t, formatNumber } = useI18n('flow-chat');
   const { toolCall, toolResult, partialParams, isParamsStreaming } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId: toolItem.id ?? toolCall?.id,
     toolName: toolItem.toolName,

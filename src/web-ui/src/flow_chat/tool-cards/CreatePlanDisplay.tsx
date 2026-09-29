@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Plan display components.
  *
@@ -114,7 +115,7 @@ export const PlanDisplay: React.FC<PlanDisplayProps> = ({
   const [hasSavedToProject, setHasSavedToProject] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   
-  const [isTodosExpanded, setIsTodosExpanded] = useState(false);
+  const [isTodosExpanded, setIsTodosExpanded] = useToolCardDisclosure('isTodosExpanded');
   const toolCardId = cacheKey ?? planFilePath;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId: toolCardId,
@@ -413,7 +414,7 @@ Read the plan file before making changes and treat it as the source of truth. Do
 
   const handleToggleTodos = useCallback(() => {
     applyExpandedState(isTodosExpanded, !isTodosExpanded, setIsTodosExpanded);
-  }, [applyExpandedState, isTodosExpanded]);
+  }, [applyExpandedState, isTodosExpanded, setIsTodosExpanded]);
 
   const isLoading = status === 'preparing' || status === 'receiving' || status === 'streaming' || status === 'running';
   const revealPlanTooltip = isRevealPlanDisabled

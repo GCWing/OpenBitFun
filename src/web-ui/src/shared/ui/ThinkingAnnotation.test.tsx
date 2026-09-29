@@ -89,12 +89,12 @@ describe('thinking page-margin annotation', () => {
     vi.useRealTimers();
   });
 
-  function render(content: React.ReactNode = <p>First line and last line🙂</p>) {
+  function render(content: React.ReactNode = <p>First line and last line🙂</p>, virtualized = false) {
     const activate = vi.fn();
     act(() => root.render(<DesignSystemProvider nativeTooltipPolicy="application">
       <div data-geometry="scroller" style={{ overflowY: 'auto' }} data-openbitfun-viewport-inset-bottom="120">
         <div data-geometry={nested ? 'nested' : undefined} style={{ overflowY: nested ? 'auto' : 'visible' }}>
-          <ThinkingBlock expanded={false} collapseIntoNext label="Thinking" capsuleLabel="Thought 24 characters" onOpenDetails={activate} />
+          <ThinkingBlock virtualized={virtualized} expanded={false} collapseIntoNext label="Thinking" capsuleLabel="Thought 24 characters" onOpenDetails={activate} />
           <div data-thinking-continuation="">{content}</div>
         </div>
       </div>
@@ -105,6 +105,17 @@ describe('thinking page-margin annotation', () => {
     scroller = host.querySelector('[data-geometry="scroller"]')!;
     return activate;
   }
+
+  it('defers dormant virtual-row geometry but resolves it before keyboard interaction', () => {
+    render(undefined, true);
+    expect(panel.dataset.thinkingAttachment).toBe('side');
+    expect(samples).toHaveLength(0);
+    resize(successor);
+    expect(samples).toHaveLength(0);
+    act(() => button.focus());
+    expect(samples.length).toBeGreaterThan(0);
+    expect(Number.isFinite(center())).toBe(true);
+  });
 
   it.each([
     { name: 'fully visible', start: 180, length: 160, expected: 80 },

@@ -35,6 +35,11 @@
   }
 }
 
+.subagent-projection-run {
+  @include itemRhythm.apply;
+  display: flow-root;
+}
+
 .subagent-projection-text__hint {
   display: flex;
   align-items: center;

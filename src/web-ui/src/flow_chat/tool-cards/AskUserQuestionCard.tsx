@@ -607,6 +607,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
             : t('toolCards.askUser.waitingAnswer');
 
   if (endedWithoutAnswer && !canFollowUp) {
+    const canReviewQuestions = cancelled && designQuestions.length > 0;
     const terminalLabel = timedOut
       ? t('toolCards.askUser.timeout')
       : cancelled
@@ -617,10 +618,16 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
     return (
       <AskUser
         data-tool-card-id={toolId ?? ''}
-        questions={[]}
+        disabled
+        disclosure={canReviewQuestions ? {
+          label: terminalLabel,
+          collapseLabel: t('toolCards.askUser.collapseQuestions'),
+        } : undefined}
+        onExpandedChange={dispatchToolCardToggle}
+        questions={canReviewQuestions ? designQuestions : []}
         ref={cardRootRef}
         state={timedOut ? 'timeout' : 'error'}
-        statusLabel={terminalLabel}
+        statusLabel={canReviewQuestions ? undefined : terminalLabel}
       />
     );
   }
@@ -658,6 +665,7 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
       answers={presentation.answers}
       aria-label={t('toolCards.askUser.questionsCount', { count: questions.length })}
       customAnswers={presentation.customAnswers}
+      data-flowchat-interaction={canAnswer ? 'response' : undefined}
       data-tool-card-id={toolId ?? ''}
       disabled={!canEditAnswers}
       defaultExpanded={!canFollowUp}

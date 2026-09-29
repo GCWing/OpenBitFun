@@ -168,7 +168,10 @@ export function getFlowChatSearchTextRoot(
 
     const thinkingItem = findElementWithDataValue(wrapper, 'data-tool-card-id', flowItemId);
     const thinkingText = thinkingItem?.querySelector<HTMLElement>('.thinking-markdown');
-    if (thinkingText) {
+    // The lazy reasoning renderer initially paints plain source. Its line
+    // positions differ from the parsed Markdown, so navigation must wait for
+    // that source to materialize before revealing an inner scroll range.
+    if (thinkingText && !thinkingText.querySelector('[data-markdown-pending="true"]')) {
       return thinkingText;
     }
 

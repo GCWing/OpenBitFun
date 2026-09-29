@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 import React, { Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import {
   GoalToolCard, AgentRosterToolCard, SessionHistoryToolCard, ImageAnalysisToolCard, TimeToolCard,
@@ -43,7 +44,7 @@ const views: Record<BuiltinCardFamily, React.ComponentType<SemanticToolCardProps
 
 export const BuiltinToolCard: React.FC<ToolCardProps> = ({ toolItem, sessionId, onExpand, onOpenInEditor }) => {
   const { t, formatNumber } = useI18n('flow-chat');
-  const [isExpanded, setExpanded] = useState(false);
+  const [isExpanded, setExpanded] = useToolCardDisclosure('isExpanded');
   const [market, setMarket] = useState<'miniapps' | 'appearance'>();
   const [marketOpen, setMarketOpen] = useState(false);
   const name = toolItem.toolName;

@@ -168,8 +168,7 @@ export function sessionToVirtualItems(session: Session | null): VirtualItem[] {
     if (
       cachedItems &&
       cachedItems.hasNewerDialogTurn === hasNewerDialogTurn &&
-      cachedItems.absoluteTurnIndex === absoluteTurnIndex &&
-      isStableTurnProjection(turn)
+      cachedItems.absoluteTurnIndex === absoluteTurnIndex
     ) {
       items.push(...cachedItems.items);
       return;

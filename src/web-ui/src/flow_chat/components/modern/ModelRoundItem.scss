@@ -6,9 +6,8 @@
   @include itemRhythm.apply;
   @include transcriptLayout.content-column;
   /*
-   * The composition assigns one 8px trailing gap to each item, including the
-   * last item across a model-round boundary. Consecutive collapsed ambient
-   * tools use the body paragraph gap, within a round and across virtual rows.
+   * The composition assigns one body-paragraph gap to each item, including
+   * expanded/prominent tools and the last item across virtual-row boundaries.
    *
    * No mount / enter animation lives here on purpose. The list is virtualized:
    * any animation keyed off mount replays whenever an item scrolls back into

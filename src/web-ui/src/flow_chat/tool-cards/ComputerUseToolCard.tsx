@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import { useToolCardDisclosure } from '../timeline/readerState';
+import React, { useMemo } from 'react';
 import { Button, Icon } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Camera, Clipboard, Keyboard, MousePointerClick } from 'lucide-react';
@@ -120,7 +121,7 @@ function actionIcon(action: string): React.ReactNode {
 export const ComputerUseToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand }) => {
   const { t } = useTranslation('flow-chat');
   const status = getToolCardStatus(toolItem);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolItem.toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,

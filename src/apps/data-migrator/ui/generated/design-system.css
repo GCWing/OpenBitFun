@@ -861,8 +861,8 @@
     --openbitfun-color-identity-harness-ultimate: #ff8c00;
     --openbitfun-color-key-hint-background: rgba(0, 0, 0, 0.08);
     --openbitfun-color-key-hint-content: rgba(0, 0, 0, 0.60);
-    --openbitfun-color-link-default: #2563eb;
-    --openbitfun-color-link-hover: #005fcc;
+    --openbitfun-color-link-default: #059cb0;
+    --openbitfun-color-link-hover: #07879a;
     --openbitfun-color-number-badge-background: rgba(0, 0, 0, 0.08);
     --openbitfun-color-overlay-scrim: rgba(16, 26, 39, 0.20);
     --openbitfun-color-scrollbar-thumb: rgba(0, 0, 0, 0.20);
@@ -1037,8 +1037,8 @@
     --openbitfun-color-identity-harness-ultimate: #ff8c00;
     --openbitfun-color-key-hint-background: rgba(255, 255, 255, 0.1);
     --openbitfun-color-key-hint-content: #858585;
-    --openbitfun-color-link-default: #60a5fa;
-    --openbitfun-color-link-hover: #93c5fd;
+    --openbitfun-color-link-default: #059cb0;
+    --openbitfun-color-link-hover: #36c6d7;
     --openbitfun-color-number-badge-background: rgba(255, 255, 255, 0.1);
     --openbitfun-color-overlay-scrim: rgba(0, 0, 0, 0.56);
     --openbitfun-color-scrollbar-thumb: rgba(255, 255, 255, 0.20);
@@ -1149,6 +1149,8 @@
     --openbitfun-color-identity-global-search-open-terminal: #000000;
     --openbitfun-color-key-hint-background: #cccccc;
     --openbitfun-color-key-hint-content: #343434;
+    --openbitfun-color-link-default: #0a6d7d;
+    --openbitfun-color-link-hover: #0d5764;
     --openbitfun-color-number-badge-background: #e6e6e6;
     --openbitfun-color-selection-surface: #cccccc;
     --openbitfun-color-status-danger-content: #8e1413;
@@ -1223,6 +1225,8 @@
     --openbitfun-color-identity-global-search-open-terminal: #ffffff;
     --openbitfun-color-key-hint-background: #343434;
     --openbitfun-color-key-hint-content: #d0d0d0;
+    --openbitfun-color-link-default: #7cdee9;
+    --openbitfun-color-link-hover: #b4eff5;
     --openbitfun-color-number-badge-background: #343434;
     --openbitfun-color-selection-surface: #505050;
     --openbitfun-color-status-danger-content: #f7a7a5;

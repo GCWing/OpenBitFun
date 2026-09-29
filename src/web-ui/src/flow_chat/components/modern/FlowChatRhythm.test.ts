@@ -68,12 +68,12 @@ describe('FlowChat transcript rhythm', () => {
     expect(isAmbientToolRunContinuationAfter(control, read)).toBe(false);
   });
 
-  it('spaces collapsed ambient tool runs like body paragraphs', () => {
+  it('spaces desktop content and tool runs like body paragraphs', () => {
     const toolStyles = readSource('../../_item-rhythm.scss');
     const sharedRhythm = readSource('../../../../../../design-system/packages/ui/src/flow-chat/conversation/FlowItemRhythm.css');
 
     expect(toolStyles).toContain(
-      'margin: 0 0 var(--openbitfun-control-flow-chat-flow-item-gap) 0;',
+      'margin: 0 0 var(--openbitfun-control-flow-chat-paragraph-gap) 0;',
     );
     expect(toolStyles).not.toContain(
       'margin: 0 0 var(--openbitfun-control-flow-chat-card-gap) 0;',
@@ -193,7 +193,7 @@ describe('FlowChat transcript rhythm', () => {
     // The fallback also covers a lazy card returning no content. Known hidden
     // cards are filtered before composition using the leaf's visibility rule.
     expect(toolStyles).toMatch(
-      /> \.flowchat-flow-item:has\(> \.flow-tool-card-wrapper:empty\) \{\s*margin-bottom: 0;\s*\}/,
+      /&:has\(> \.flow-tool-card-wrapper:empty\) \{\s*margin-bottom: 0;\s*\}/,
     );
     for (const hidingCard of [
       '../../tool-cards/ReadFileDisplay.tsx',

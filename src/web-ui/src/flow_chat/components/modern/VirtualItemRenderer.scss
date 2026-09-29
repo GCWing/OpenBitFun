@@ -4,6 +4,7 @@
  */
 @use '../../flat-markdown-surfaces' as flatMarkdownSurfaces;
 @use '../../transcript-layout' as transcriptLayout;
+@use '../../item-rhythm' as itemRhythm;
 
 .virtual-item-wrapper {
   @include flatMarkdownSurfaces.apply;
@@ -56,6 +57,8 @@
       .flow-thinking-item,
       .flowchat-flow-item
     ):is(:last-child, :has(+ .model-round-item__footer)),
+    > .flowchat-timeline-content > .model-round-item > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item):last-child,
+    > .flowchat-timeline-members.explore-region--collapsible > .explore-region__content > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item):last-child,
     > .explore-region .explore-region__content > :is(
       .flow-text-block,
       .flow-thinking-item,
@@ -70,15 +73,18 @@
   /* Adjacent model rounds are runtime structure, not visual sections. The
    * projection marks ambient-to-ambient boundaries from the full list so this rule
    * remains stable when either virtual row enters or leaves the rendered
-   * window. Collapsed ambient tools use the same gap as body paragraphs;
-   * expanded cards keep section spacing. */
-  &[data-ambient-tool-run-continuation-after='true']
-    > .model-round-item
-    > .flowchat-flow-item:last-child:has(
-      > .flow-tool-card-wrapper[data-openbitfun-attention='ambient']:not([data-tool-capsule='true']):not(.flow-tool-card-wrapper--permission-pending)
-        [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='root'][data-openbitfun-expanded-shell='false']
-    ) {
-    margin-bottom: var(--openbitfun-control-flow-chat-paragraph-gap);
+   * window. Ambient continuations retain the same paragraph gap as every
+   * other desktop transcript item. */
+  &[data-ambient-tool-run-continuation-after='true'] {
+    > .model-round-item,
+    > .flowchat-timeline-content > .model-round-item {
+      > .flowchat-flow-item:last-child:has(
+        > .flow-tool-card-wrapper[data-openbitfun-attention='ambient']:not([data-tool-capsule='true']):not(.flow-tool-card-wrapper--permission-pending)
+          [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='root'][data-openbitfun-expanded-shell='false']
+      ) {
+        margin-bottom: var(--openbitfun-control-flow-chat-paragraph-gap);
+      }
+    }
   }
 
   /*
@@ -100,6 +106,23 @@
     animation: none;
   }
 
+}
+
+// Collection geometry is expressed in one transcript, including when only its
+// middle is resident. The public header and card anatomy stay unchanged.
+.virtual-item-wrapper[data-timeline-kind='group-header'] > .explore-region--expanded {
+  margin-block-end: 0;
+}
+.flowchat-timeline-members.explore-region--collapsible {
+  margin-block: 0;
+  > .explore-region__content {
+    // Each virtual member owns its trailing gap, even when it is the sole child.
+    @include itemRhythm.spacing;
+    padding-block-start: 0;
+  }
+  &[data-group-first='true'] > .explore-region__content {
+    padding-block-start: var(--openbitfun-control-flow-chat-paragraph-gap);
+  }
 }
 
 // The current text line is a passive overlay, never a new transcript surface.

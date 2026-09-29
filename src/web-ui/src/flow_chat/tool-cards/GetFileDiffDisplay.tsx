@@ -1,8 +1,9 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Display component for the GetFileDiff tool.
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ToolCardProps } from '../types/flow-chat';
 import { FileDiffToolCard } from '@openbitfun/ui/flow-chat';
@@ -34,7 +35,7 @@ export const GetFileDiffDisplay: React.FC<ToolCardProps> = React.memo(({
 }) => {
   const { t } = useTranslation('flow-chat');
   const { toolCall, toolResult, status } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -92,7 +93,7 @@ export const GetFileDiffDisplay: React.FC<ToolCardProps> = React.memo(({
 
   const toggleExpanded = useCallback(() => {
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded);
-  }, [applyExpandedState, isExpanded]);
+  }, [applyExpandedState, isExpanded, setIsExpanded]);
 
   const handleCardClick = useCallback(() => {
     if (status === 'error' || (hasDiffContent && status === 'completed')) {

@@ -1,25 +1,35 @@
 // Composition owns inter-item space. Leaf views own only their content padding.
 // A model round retains its trailing gap across virtual rows; enclosed content
 // drops it so the enclosing section does not count the last gap twice.
-@mixin apply($enclosed: false) {
-  > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
-    .subagent-projection-text--truncated) {
-    margin: 0 0 var(--openbitfun-control-flow-chat-flow-item-gap) 0;
+@mixin spacing($enclosed: false) {
+  // The desktop composition owns one paragraph gap for every presentation.
+  // Include the stack identity so shared compact/prominent-card rules cannot
+  // replace it, including the public last-child reset on a virtual member row.
+  &:is([data-flow-item-stack], .explore-region__content, .flow-group-content-segment):not([data-agent-card-grid])
+    > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
+      .subagent-projection-text--truncated):not([hidden]):not([data-thinking-attachment='side']) {
+    margin: 0 0 var(--openbitfun-control-flow-chat-paragraph-gap) 0;
+
+    // A renderer with no content must not leave an empty paragraph behind.
+    &:has(> .flow-tool-card-wrapper:empty) {
+      margin-bottom: 0;
+    }
+
+    @if $enclosed {
+      &:is(:last-child, :has(+ .flowchat-capsule-row-break:last-child)) {
+        margin-bottom: 0;
+      }
+    }
   }
+}
+
+@mixin apply($enclosed: false) {
+  @include spacing($enclosed);
 
   // Side-docked reasoning occupies the next item's gutter, not a transcript row.
   > .flow-thinking-item[data-thinking-attachment='side'] {
     margin-bottom: 0;
   }
-
-  // Defensive fallback for a card renderer that returns no content. Known
-  // hidden items are removed before composition, including their wrappers.
-  > .flowchat-flow-item:has(> .flow-tool-card-wrapper:empty) {
-    margin-bottom: 0;
-  }
-
-  // Public FlowItemRhythm.css owns compact adjacency, including side reasoning.
-  // The composition marks its root with data-flow-item-stack.
 
   // Compact geometry is independent of concurrency; serial calls keep a row.
   > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-tool-capsule='true']) {
@@ -46,12 +56,5 @@
     display: inline-block;
     max-inline-size: calc(100% - var(--openbitfun-space-2));
     margin-inline-end: var(--openbitfun-space-2);
-  }
-
-  @if $enclosed {
-    > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
-      .subagent-projection-text--truncated):is(:last-child, :has(+ .flowchat-capsule-row-break:last-child)) {
-      margin-bottom: 0;
-    }
   }
 }

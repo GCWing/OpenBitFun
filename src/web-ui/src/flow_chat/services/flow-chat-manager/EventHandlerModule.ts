@@ -4,6 +4,7 @@
  */
 
 import { projectUserQuestionTiming } from '../../utils/userQuestionTiming';
+import { bindSubmittedMessageScrollIntent } from '../submittedMessageScrollIntent';
 import { FlowChatStore, mergeModelRoundAttemptDiagnostics } from '../../store/FlowChatStore';
 import { initializeAcpPlanState } from '../acpPlanState';
 import { isSessionTurnRetired } from '../../store/sessionMutationStore';
@@ -1940,6 +1941,7 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
       storageTurnIndex: typeof turnIndex === 'number' ? turnIndex : undefined,
       backendTurnIndex: typeof turnIndex === 'number' ? turnIndex : undefined,
     };
+    bindSubmittedMessageScrollIntent(sessionId, turnId, newTurn.userMessage.id);
     const replacedTempTurn = tempTurnId
       ? store.replaceOptimisticDialogTurn(sessionId, tempTurnId, newTurn)
       : false;

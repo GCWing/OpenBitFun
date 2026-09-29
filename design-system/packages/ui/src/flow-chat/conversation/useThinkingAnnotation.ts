@@ -63,6 +63,7 @@ export function useThinkingAnnotation(
   toggleRef: RefObject<HTMLButtonElement>,
   docked: boolean,
   resolveContinuation?: ThinkingContinuationResolver,
+  deferInactiveGeometry = false,
 ) {
   const blockedRef = useRef(false);
   const [hasContinuation, setHasContinuation] = useState(false);
@@ -107,6 +108,10 @@ export function useThinkingAnnotation(
       setHasContinuation(Boolean(successor && !successor.hidden
         && successor.querySelector(':scope > :not(:empty)')));
       if (!successor) return;
+      // A virtualized history row has no visible side control at rest. Its
+      // exact glyph position is needed on hover/focus, before revealing it.
+      // Avoid one forced layout per dormant thought during a group mount.
+      if (deferInactiveGeometry && !hovered && !focused) return;
       const header = successor.querySelector<HTMLElement>(successor.hasAttribute('data-flow-group')
         ? ':scope > .explore-region__toolbar .explore-region__header' : CARD_HEADER);
       const first = header ? null : textEdge(successor);
@@ -314,7 +319,7 @@ export function useThinkingAnnotation(
       // The last-center fallback retains the outgoing anchor through its fade.
       // A block does not consume it; the next valid successor replaces it.
     };
-  }, [docked, resolveContinuation, rootRef, toggleRef]);
+  }, [docked, resolveContinuation, rootRef, toggleRef, deferInactiveGeometry]);
 
   return { hasContinuation: docked && hasContinuation, tooltipBlocked: tooltip.blocked, tooltipActive: tooltip.active, canShowTooltip };
 }

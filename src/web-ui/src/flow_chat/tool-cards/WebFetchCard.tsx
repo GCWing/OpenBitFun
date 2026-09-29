@@ -1,4 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import { useToolCardDisclosure } from '../timeline/readerState';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
@@ -58,7 +59,7 @@ export const WebFetchCard: React.FC<ToolCardProps> = ({
   const { t } = useTranslation('flow-chat');
   const { toolCall, toolResult } = toolItem;
   const status = getToolCardStatus(toolItem);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -91,7 +92,7 @@ export const WebFetchCard: React.FC<ToolCardProps> = ({
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded, {
       onExpand,
     });
-  }, [applyExpandedState, isExpandable, isExpanded, onExpand]);
+  }, [applyExpandedState, isExpandable, isExpanded, onExpand, setIsExpanded]);
 
   const getDetails = () => {
     const details: string[] = [];

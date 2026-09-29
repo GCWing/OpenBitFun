@@ -17,7 +17,7 @@ const presentations: Record<string, ComponentPresentation> = {
   Dialog: "interactive", ConfirmDialog: "interactive", Sheet: "interactive",
   Combobox: "interactive", MultiSelect: "interactive", Select: "interactive", Tooltip: "interactive",
   Disclosure: "composition", Composer: "composition", Listbox: "composition", Menu: "composition",
-  NavigationPanel: "composition", PageHeader: "composition", ScrollArea: "composition",
+  NavigationPanel: "composition", PageHeader: "composition", ScrollArea: "composition", SplitView: "composition",
   SegmentedControl: "composition", TabGroup: "composition",
   Icon: "icons", RollingText: "motion", ShimmerText: "motion", VoiceCallPanel: "motion",
   ThinkingIndicator: "motion",

@@ -6,6 +6,7 @@
  */
 
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useFlowChatReaderValue } from '../timeline/readerState';
 import { ThinkingBlock } from '@openbitfun/ui/flow-chat';
 import { useTranslation } from 'react-i18next';
 import type { FlowThinkingItem } from '../types/flow-chat';
@@ -57,7 +58,9 @@ function resolveNextRoundContinuation(root: HTMLDivElement) {
 
   const sameTurnRound = Boolean(peer?.matches('.virtual-item-wrapper[data-item-type="model-round"]')
     && peer?.dataset.turnId === row.dataset.turnId);
-  const peerStack = sameTurnRound ? peer?.firstElementChild : null;
+  // The desktop timeline adds a block wrapper around the source stack. Keep
+  // legacy rounds and flattened leaves on the same continuation contract.
+  const peerStack = sameTurnRound ? peer?.querySelector('[data-flow-item-stack]') : null;
   const first = peerStack?.hasAttribute('data-flow-item-stack') ? peerStack.firstElementChild : null;
   const previous = root.previousElementSibling;
   const previousCard = previous instanceof HTMLElement && previous.hasAttribute('data-thinking-continuation')
@@ -74,7 +77,7 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
   thinkingItem,
   isLastItem = true,
   forceExpanded = false,
-  revealStreamingContent = false,
+  revealStreamingContent: revealFromGroup = false,
   displayContext = 'default',
   retainForGroupCollapse = false,
   hidden,
@@ -82,6 +85,10 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
 }) => {
   const { t } = useTranslation('flow-chat');
   const { sessionId, workspaceId, workspacePath, remoteConnectionId } = useFlowChatContext();
+  // Search temporarily reveals the recorded source in place. Activating the
+  // ordinary completed-thinking control opens its reader panel instead.
+  const [navigationThinking] = useFlowChatReaderValue('navigation:thinking', '');
+  const revealStreamingContent = revealFromGroup || navigationThinking === thinkingItem.id;
   const { content, isStreaming, status } = thinkingItem;
   const isSummary = thinkingItem.reasoningKind === 'summary';
   const isActive = isStreaming || status === 'streaming';
@@ -96,11 +103,11 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
     mounted: (isActive && !isSummary) || forceExpanded || revealStreamingContent,
   }));
   const retainClosingContent = retainedContent.identity === streamIdentity && retainedContent.mounted;
-  const [streamingChoice, setStreamingChoice] = useState<{ identity: string; expanded: boolean } | null>(null);
+  const [streamingChoice, setStreamingChoice] = useFlowChatReaderValue<string>(`thinking:${streamIdentity}:live`, 'auto');
   const [successor, setSuccessor] = useState<{ identity: string; ready: boolean; immediate: boolean; pending: boolean }>();
   const coordinateContinuation = !revealStreamingContent && (!forceExpanded || isActive);
   const successorReady = coordinateContinuation && successor?.identity === streamIdentity && successor.ready;
-  const readerChoice = streamingChoice?.identity === streamIdentity ? streamingChoice.expanded : undefined;
+  const readerChoice = streamingChoice === 'auto' ? undefined : streamingChoice === 'open';
   // Compact previews yield as soon as real output exists. A reader who opened
   // seven lines can finish its reveal; attention states always take precedence.
   const yieldToSuccessor = successorReady && (!(readerChoice ?? revealStreamingContent) || successor.immediate);
@@ -122,6 +129,9 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
     toolName: 'thinking',
   });
   const isVisuallyStreaming = !yieldToSuccessor && (isActive || isRevealing);
+  useLayoutEffect(() => {
+    if (!isVisuallyStreaming && streamingChoice !== 'auto') setStreamingChoice('auto');
+  }, [isVisuallyStreaming, streamingChoice, setStreamingChoice]);
   const lastLiveIdentity = useRef<string>();
   useLayoutEffect(() => {
     if (isVisuallyStreaming) lastLiveIdentity.current = streamIdentity;
@@ -139,12 +149,6 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
     if (previousExpanded.current.expanded !== isContentExpanded) dispatchToolCardToggle();
     previousExpanded.current = { identity: streamIdentity, expanded: isContentExpanded };
   }, [dispatchToolCardToggle, isContentExpanded, streamIdentity]);
-
-  useLayoutEffect(() => {
-    if (streamingChoice && (streamingChoice.identity !== streamIdentity || !isVisuallyStreaming)) {
-      setStreamingChoice(null);
-    }
-  }, [isVisuallyStreaming, streamIdentity, streamingChoice]);
 
   // Historical reasoning starts without inline Markdown. Retain a streamed or
   // forced body through its closing transition, then release it.
@@ -183,13 +187,14 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
     // Compact output replaces its last typeset line without any scroll writer.
     // Only the expanded reading viewport follows the bounded inner tail.
     enabled: isContentExpanded && scrollViewportExpanded, active: isVisuallyStreaming, contentVersion: renderedContent,
+    followOnOpen: !revealStreamingContent,
     onStep: step => {
       if (isTailFollowDiagnosticsEnabled()) noteTailFollowStep('thinking', step);
     },
   });
   useLayoutEffect(() => {
     const previous = previousStreamViewport.current;
-    if (isVisuallyStreaming && streamingViewportExpanded
+    if (isVisuallyStreaming && streamingViewportExpanded && !revealStreamingContent
       && (!previous.expanded || !previous.active || previous.identity !== streamIdentity)) {
       resume();
     }
@@ -198,7 +203,7 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
       expanded: isVisuallyStreaming ? streamingViewportExpanded
         : previous.identity === streamIdentity && previous.expanded,
     };
-  }, [isVisuallyStreaming, streamingViewportExpanded, streamIdentity, resume]);
+  }, [isVisuallyStreaming, streamingViewportExpanded, revealStreamingContent, streamIdentity, resume]);
 
   const contentLengthText = useMemo(() => {
     return t('toolCards.think.thinkingCharacters', { count: Array.from(content).length });
@@ -221,6 +226,7 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
 
   return (
     <ThinkingBlock
+      virtualized
       hidden={hidden}
       ref={cardRootRef}
       data-tool-card-id={thinkingItem.id}
@@ -231,7 +237,7 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
       streamingExpanded={streamingViewportExpanded}
       retainStreamingViewport={retainForGroupCollapse}
       onStreamingExpandedChange={next => applyExpandedState(streamingViewportExpanded, next,
-        expanded => setStreamingChoice({ identity: streamIdentity, expanded }))}
+        expanded => setStreamingChoice(expanded ? 'open' : 'closed'))}
       collapseIntoNext={(!isLastItem || successorReady) && (!forceExpanded || isActive)}
       resolveContinuation={resolveNextRoundContinuation}
       coordinateContinuation={coordinateContinuation}

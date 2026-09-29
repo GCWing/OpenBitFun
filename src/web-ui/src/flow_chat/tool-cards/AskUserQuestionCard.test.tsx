@@ -11,6 +11,8 @@ import {
 } from '@/infrastructure/peer-device/deviceSurface';
 import { PeerDeviceContext } from '@/infrastructure/peer-device/peerDeviceContextState';
 import { askUserQuestionDraftStore } from '../store/askUserQuestionDraftStore';
+import { FlowChatReaderState } from '../timeline/readerState';
+import { useTimelineInteraction } from '../timeline/useTimelineInteraction';
 
 const sendFollowUp = vi.hoisted(() => vi.fn());
 vi.mock('../services/FlowChatManager', () => ({
@@ -129,9 +131,16 @@ describe('AskUserQuestionCard', () => {
         { question: 'Anything else?', options: [{ label: 'Nothing else' }], multiSelect: false },
       ],
     };
-    const renderCard = () => root.render(
-      <AskUserQuestionCard toolItem={tool} config={config} sessionId="session-a" isLastItem />,
-    );
+    const takeReading = vi.fn();
+    const reader = new FlowChatReaderState();
+    function Transcript() {
+      const ref = React.useRef<HTMLDivElement>(null);
+      useTimelineInteraction(ref, reader, () => true, undefined, takeReading);
+      return <div ref={ref}><div className="virtual-item-wrapper" data-virtual-item-key="question">
+        <AskUserQuestionCard toolItem={tool} config={config} sessionId="session-a" isLastItem />
+      </div></div>;
+    }
+    const renderCard = () => root.render(<Transcript />);
     const next = () => container.querySelector<HTMLButtonElement>('[data-openbitfun-part="next"] button')!;
     const back = () => container.querySelector<HTMLButtonElement>('[data-openbitfun-part="back"] button')!;
     const choose = async (value: string) => {
@@ -193,6 +202,9 @@ describe('AskUserQuestionCard', () => {
     ];
     expect(answeredContent()).toEqual(expectedContent);
     expect(container.querySelector('input, button, progress, svg')).toBeNull();
+    // Answering, question navigation and custom-answer autofocus continue the
+    // live conversation; they must not turn its viewport into a history reader.
+    expect(takeReading).not.toHaveBeenCalled();
     act(() => root.render(null));
     act(renderCard);
     expect(answeredContent()).toEqual(expectedContent);
@@ -623,6 +635,66 @@ describe('AskUserQuestionCard', () => {
     expect(container.querySelector('input')).toBeNull();
     expect(container.querySelector('[data-openbitfun-part="submit"]')).toBeNull();
     expect(toolAPI.submitUserAnswers).not.toHaveBeenCalled();
+  });
+
+  it.each(['cancelled', 'completed'] as const)('lets a cancelled %s call reopen every received question without allowing answers', (status) => {
+    const item = questionTool('running');
+    item.toolCall.input.questions.push({
+      header: 'Region',
+      question: 'Which region?',
+      multiSelect: true,
+      options: [{ label: 'Asia', description: 'Use the Asia region' }],
+    });
+    act(() => root.render(<AskUserQuestionCard toolItem={item} config={config} sessionId="session-a" />));
+    const cancelledItem = {
+      ...item,
+      status,
+      isParamsStreaming: true,
+      partialParams: item.toolCall.input,
+      ...(status === 'completed' ? {
+        toolResult: { success: true, result: JSON.stringify({ status: 'cancelled' }) },
+      } : {}),
+    };
+    const renderCancelledCard = () => root.render(
+      <AskUserQuestionCard toolItem={cancelledItem} config={config} sessionId="session-a" />,
+    );
+    const expand = () => container.querySelector<HTMLButtonElement>('[data-openbitfun-part="disclosure"]')!.click();
+
+    act(renderCancelledCard);
+    expect(container.querySelector('input')).toBeNull();
+    expect(container.textContent).toContain('toolCards.default.cancelled');
+    act(expand);
+    expect(Array.from(container.querySelectorAll('legend'), (legend) => legend.textContent))
+      .toEqual(['Which database?', 'Which region?']);
+    expect(container.textContent).toContain('Use PostgreSQL');
+    expect(container.textContent).toContain('Use the Asia region');
+    expect(container.textContent).toContain('toolCards.default.cancelled');
+    expect(container.querySelector('[data-openbitfun-part="submit"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="next"]')).toBeNull();
+    container.querySelectorAll<HTMLInputElement>('input').forEach((input) => {
+      expect(input.disabled).toBe(true);
+      act(() => input.click());
+      expect(input.checked).toBe(false);
+    });
+    expect(toolAPI.startUserQuestionInteraction).not.toHaveBeenCalled();
+    expect(toolAPI.submitUserAnswers).not.toHaveBeenCalled();
+    expect(sendFollowUp).not.toHaveBeenCalled();
+    expect(askUserQuestionDraftStore.getState().drafts).toEqual({});
+
+    act(() => container.querySelector<HTMLButtonElement>('[data-openbitfun-part="collapse"]')!.click());
+    expect(container.querySelector('input')).toBeNull();
+    act(() => root.render(null));
+    act(renderCancelledCard);
+    act(expand);
+    expect(container.querySelectorAll('fieldset')).toHaveLength(2);
+  });
+
+  it('keeps an empty cancelled call as a notice without a disclosure', () => {
+    const item = questionTool('cancelled');
+    item.toolCall.input = {};
+    act(() => root.render(<AskUserQuestionCard toolItem={item} config={config} sessionId="session-a" />));
+    expect(container.textContent).toContain('toolCards.default.cancelled');
+    expect(container.querySelector('button, input')).toBeNull();
   });
 
   it('shows only the live question form beside an obsolete retry', async () => {

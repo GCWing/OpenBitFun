@@ -22,7 +22,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../components/panels/content-canvas', () => ({
-  ContentCanvas: () => <div data-testid="content-canvas" />,
+  ContentCanvas: ({ toolbarActions }: { toolbarActions?: React.ReactNode }) => (
+    <div data-testid="content-canvas">{toolbarActions}</div>
+  ),
   useCanvasStore: (selector: (state: typeof mocks.canvasStore) => unknown) => (
     selector(mocks.canvasStore)
   ),
@@ -44,10 +46,12 @@ vi.mock('@/shared/utils/logger', () => ({
 
 import AuxPane from './AuxPane';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
+import { hideSessionAuxPane } from './sessionPanelLayout';
 
 vi.mock('./sessionPanelLayout', () => ({
   expandSessionAuxPane: vi.fn(),
   collapseSessionAuxPane: vi.fn(),
+  hideSessionAuxPane: vi.fn(),
 }));
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -62,6 +66,7 @@ describe('AuxPane session canvas switching', () => {
 
   beforeEach(() => {
     mocks.switchAgentCanvasScope.mockReset();
+    vi.mocked(hideSessionAuxPane).mockClear();
     setActiveSession('session-a');
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -80,6 +85,24 @@ describe('AuxPane session canvas switching', () => {
     });
 
     expect(mocks.switchAgentCanvasScope).toHaveBeenCalledWith('session-a');
+  });
+
+  it('offers reversible fullscreen and hides the host without closing its tabs', () => {
+    const onToggleFullscreen = vi.fn();
+    act(() => root.render(<AuxPane onToggleFullscreen={onToggleFullscreen} />));
+    const maximize = container.querySelector<HTMLButtonElement>('[aria-label="canvas.maximizePanel"]')!;
+    expect(maximize.getAttribute('aria-pressed')).toBe('false');
+    act(() => maximize.click());
+    expect(onToggleFullscreen).toHaveBeenCalledTimes(1);
+
+    act(() => root.render(<AuxPane isFullscreen onToggleFullscreen={onToggleFullscreen} />));
+    const restore = container.querySelector<HTMLButtonElement>('[aria-label="canvas.restorePanel"]')!;
+    expect(restore.getAttribute('aria-pressed')).toBe('true');
+    act(() => restore.click());
+    expect(onToggleFullscreen).toHaveBeenCalledTimes(2);
+    act(() => container.querySelector<HTMLButtonElement>('[aria-label="canvas.hidePanel"]')!.click());
+    expect(hideSessionAuxPane).toHaveBeenCalledTimes(1);
+    expect(mocks.canvasStore.closeAllTabs).not.toHaveBeenCalled();
   });
 
   it('swaps canvas snapshots synchronously before the target session content can open', () => {

@@ -10,6 +10,7 @@ import { ModelThinkingDisplay } from './ModelThinkingDisplay';
 import { latestReasoningSummaryPreview } from '../utils/reasoningSummaryPresentation';
 import { openThinkingPanel } from '../services/openThinkingPanel';
 import { FlowChatContext } from '../components/modern/FlowChatContext';
+import { FlowChatReaderProvider, FlowChatReaderState } from '../timeline/readerState';
 import { activateSurface, getActiveSurfaceId } from '@/infrastructure/peer-device/deviceSurface';
 
 vi.mock('../utils/reasoningSummaryPresentation', { spy: true });
@@ -97,6 +98,21 @@ describe('ModelThinkingDisplay reasoning summary', () => {
     act(() => root.unmount());
     container.remove();
     vi.unstubAllGlobals();
+  });
+
+  it('temporarily reveals a completed search source without opening the details panel', async () => {
+    const reader = new FlowChatReaderState();
+    const item = { ...summaryItem('Find this recorded thought'), isStreaming: false, status: 'completed' as const };
+    await act(async () => root.render(<FlowChatReaderProvider store={reader}>
+      <ModelThinkingDisplay thinkingItem={item} />
+    </FlowChatReaderProvider>));
+    expect(container.querySelector('[data-testid="chat-thinking-panel"]')?.getAttribute('data-expanded')).toBe('false');
+    act(() => reader.set('navigation:thinking', item.id));
+    expect(container.querySelector('[data-testid="chat-thinking-panel"]')?.getAttribute('data-expanded')).toBe('true');
+    expect(container.querySelector('[data-testid="thinking-markdown"]')?.textContent).toBe(item.content);
+    expect(openThinkingPanel).not.toHaveBeenCalled();
+    act(() => reader.set('navigation:thinking', ''));
+    expect(container.querySelector('[data-testid="chat-thinking-panel"]')?.getAttribute('data-expanded')).toBe('false');
   });
 
   it.each(['reasoning', undefined] as const)(
@@ -459,12 +475,12 @@ describe('ModelThinkingDisplay side completion', () => {
         </div>
       </div>
       {showPeer && <div className="virtual-item-wrapper" data-item-type="model-round" data-turn-id={peerTurnId}>
-        <div className="model-round-item" data-flow-item-stack="">
+        <div className="flowchat-timeline-content"><div className="model-round-item" data-flow-item-stack="">
           <div data-thinking-continuation="">
             <FileOperationToolCard actionLabel="Edit file" operation="edit" path="demo.html"
               pathLabel="demo.html" status="completed" />
           </div>
-        </div>
+        </div></div>
       </div>}
     </div>;
 
@@ -637,6 +653,7 @@ describe('ModelThinkingDisplay side completion', () => {
     let cardHeight = 44;
     vi.spyOn(successor, 'getBoundingClientRect').mockImplementation(() => ({ top: 100, height: cardHeight } as DOMRect));
     vi.spyOn(header, 'getBoundingClientRect').mockImplementation(() => ({ top: 108, height: headerHeight } as DOMRect));
+    act(() => successor.dispatchEvent(new MouseEvent('mouseenter')));
     act(() => resizeCallbacks.get(header)!());
     expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('26px');
 
@@ -684,6 +701,7 @@ describe('ModelThinkingDisplay side completion', () => {
     expect(container.querySelector(panelSelector)).toBe(panel);
     expect(container.querySelector(toggleSelector)).toBe(toggle);
     expect(panel.nextElementSibling).toBe(successor);
+    act(() => successor.dispatchEvent(new MouseEvent('mouseenter')));
     expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('26px');
     expect(resizeCallbacks.has(oldSuccessor)).toBe(false);
     expect(resizeCallbacks.has(header)).toBe(true);
@@ -713,6 +731,7 @@ describe('ModelThinkingDisplay side completion', () => {
     const successor = container.querySelector<HTMLElement>('[data-thinking-continuation]')!;
     let blockHeight = 60;
     vi.spyOn(successor, 'getBoundingClientRect').mockImplementation(() => ({ top: 100, height: blockHeight } as DOMRect));
+    act(() => successor.dispatchEvent(new MouseEvent('mouseenter')));
     act(() => resizeCallbacks.get(successor)!());
     expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe(`${top - 100 + height / 2}px`);
 
@@ -740,6 +759,7 @@ describe('ModelThinkingDisplay side completion', () => {
     const paragraph = successor.querySelector('p')!;
     const toggle = container.querySelector(toggleSelector);
     vi.spyOn(successor, 'getBoundingClientRect').mockReturnValue({ top: 100, height: 300 } as DOMRect);
+    act(() => successor.dispatchEvent(new MouseEvent('mouseenter')));
     act(() => resizeCallbacks.get(successor)!());
     expect(panel.style.getPropertyValue('--_thinking-continuation-center')).toBe('14px');
 

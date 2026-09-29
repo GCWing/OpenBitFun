@@ -1,8 +1,9 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Tool card for TodoWrite.
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { i18nService } from '@/infrastructure/i18n';
 import type { ToolCardProps } from '../types/flow-chat';
@@ -29,7 +30,7 @@ export const TodoWriteDisplay: React.FC<ToolCardProps> = ({
   const { t } = useTranslation('flow-chat');
   const { status, toolResult, partialParams, isParamsStreaming } = toolItem;
 
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -98,7 +99,7 @@ export const TodoWriteDisplay: React.FC<ToolCardProps> = ({
   const handleToggleExpanded = useCallback(() => {
     if (todosToDisplay.length === 0) return;
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded);
-  }, [applyExpandedState, isExpanded, todosToDisplay.length]);
+  }, [applyExpandedState, isExpanded, setIsExpanded, todosToDisplay.length]);
 
   const hasTodos = todosToDisplay.length > 0;
 

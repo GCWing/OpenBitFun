@@ -19,6 +19,7 @@ import { useFlowChatSearchPresentation } from './useFlowChatSearchPresentation';
 import { ConversationExcerptMarkers } from '../../selection/ConversationExcerptMarkers';
 import { getKnownVirtualItemHeightPx } from './virtualItemHeightEstimators';
 import { Icon } from '@openbitfun/ui';
+import { TimelineContentBlock } from '../../timeline/TimelineContentBlock';
 
 interface VirtualItemRendererProps {
   item: VirtualItem;
@@ -38,8 +39,10 @@ interface VirtualItemRendererProps {
 export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
   ({ item, index, endsBeforeUserTurn = false, continuesAmbientToolRunAfter = false, measureRef }) => {
     const { searchQuery, searchMatchesByVirtualIndex, searchCurrentMatch } = useFlowChatVolatileContext();
-    const matches = searchMatchesByVirtualIndex?.get(index);
-    const currentMatch = searchCurrentMatch?.virtualItemIndex === index ? searchCurrentMatch : undefined;
+    const sourceIndex = item.timeline?.sourceIndex ?? index;
+    const ownsMatch = (match: { flowItemId?: string }) => !item.timeline || !match.flowItemId || item.timeline.memberIds.includes(match.flowItemId);
+    const matches = searchMatchesByVirtualIndex?.get(sourceIndex)?.filter(ownsMatch);
+    const currentMatch = searchCurrentMatch?.virtualItemIndex === sourceIndex && ownsMatch(searchCurrentMatch) ? searchCurrentMatch : undefined;
     const isSearchMatch = Boolean(matches?.length);
     const isSearchCurrent = Boolean(currentMatch);
     const isCollectedEmpty = getKnownVirtualItemHeightPx(item) === 0;
@@ -72,8 +75,12 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
           );
         
         case 'model-round':
+          if (item.timeline?.kind === 'group-header') return <FlowGroupRenderer data={item.timeline.group!}
+            turnId={item.turnId} placement="standalone" timelineExpanded={item.timeline.expanded} />;
+          if (item.timeline?.kind === 'group-members' || item.timeline?.kind === 'content') return <TimelineContentBlock item={item} />;
           return (
             <ModelRoundItem 
+              blockPart={item.timeline ? item.timeline.kind === 'round-header' ? 'header' : item.timeline.kind === 'round-footer' ? 'footer' : 'content' : undefined}
               round={item.data} 
               projectedGroups={item.projectedGroups}
               turnId={item.turnId} 
@@ -135,6 +142,8 @@ export const VirtualItemRenderer = React.memo<VirtualItemRendererProps>(
         data-testid="flowchat-message-item"
         data-turn-id={item.turnId}
         data-item-type={item.type}
+        data-timeline-kind={item.timeline?.kind}
+        data-timeline-group-id={item.timeline?.group?.groupId}
         data-collected-empty={isCollectedEmpty ? 'true' : undefined}
         data-turn-boundary-after={endsBeforeUserTurn ? 'true' : undefined}
         data-ambient-tool-run-continuation-after={continuesAmbientToolRunAfter ? 'true' : undefined}

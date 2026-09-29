@@ -7,6 +7,7 @@ import type { FlowChatContext } from '../services/flow-chat-manager/types';
 import type { SurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import type { DialogTurn } from '../types/flow-chat';
 import { registerSubmittedMessage } from '../services/submittedMessagePresentation';
+import { registerSubmittedMessageScrollIntent } from '../services/submittedMessageScrollIntent';
 
 /** Register send feedback before the synchronous optimistic projection can render. */
 export function addSubmittedDialogTurn(
@@ -18,6 +19,7 @@ export function addSubmittedDialogTurn(
   const session = context.flowChatStore.getState().sessions.get(sessionId);
   if (session && !session.dialogTurns.some(existing => existing.id === turn.id)) {
     registerSubmittedMessage(scope, sessionId, turn.id, turn.userMessage.id);
+    registerSubmittedMessageScrollIntent(scope, sessionId, turn.id, turn.userMessage.id);
   }
   context.flowChatStore.addDialogTurn(sessionId, turn);
 }

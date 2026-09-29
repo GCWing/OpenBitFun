@@ -130,6 +130,7 @@ import previewImage from "../assets/design-system-hero.webp";
 import { IconCompositionPreview } from "../preview/IconCompositionPreview";
 import { RollingTextPreview } from "../preview/RollingTextPreview";
 import { ThinkingIndicatorPreview } from "../preview/ThinkingIndicatorPreview";
+import { SplitViewPreview } from "../preview/SplitViewPreview";
 import { NestedMenuPattern } from "./ReferencePatterns";
 import { useI18n, type MessageKey } from "../i18n";
 import {
@@ -443,6 +444,9 @@ export function ComponentDetailPage({
   const inspectorStates = states;
 
   const codeSample = useMemo(() => {
+    if (component.name === "SplitView") {
+      return `import { SplitView } from "@openbitfun/ui";\n\n<SplitView\n  primary={<Chat />}\n  secondary={<Content />}\n  mode={mode}\n  secondarySide={contentSide}\n  rightSize={rightSize}\n  onRightSizeChange={setRightSize}\n  dividerLabel="${t('splitView.resize')}"\n  dividerActions={<SwapButton onClick={swapPanes} />}\n/>`;
+    }
     if (component.name === "ThinkingIndicator") {
       return `import { ThinkingIndicator } from "@openbitfun/ui";\n\n<ThinkingIndicator active={thinking} size="sm" label="${t("thinkingIndicator.label")}" />\n`;
     }
@@ -903,6 +907,7 @@ export function ComponentDetailPage({
     if (component.name === "ThinkingIndicator") {
       return <ThinkingIndicatorPreview key={state} state={state} />;
     }
+    if (component.name === "SplitView") return <SplitViewPreview state={state} />;
 
     if (component.name === "MobileButton") {
       return <MobileButton data-openbitfun-preview-state={state} disabled={state === "disabled"} loading={state === "loading"}>{t("components.preview.actionCardTitle")}</MobileButton>;

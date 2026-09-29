@@ -1,4 +1,5 @@
 import React, { useCallback } from 'react';
+import { useToolCardDisclosure } from '../timeline/readerState';
 import { useTranslation } from 'react-i18next';
 import { ExecProcessPresentation, type ExecProcessCardModel } from '@openbitfun/flow-chat-presentation/exec';
 import type { FlowToolItem, ToolCardDisplayContext } from '../types/flow-chat';
@@ -27,6 +28,7 @@ export const ExecProcessToolCardView: React.FC<ExecProcessToolCardViewProps> = (
   displayContext,
 }) => {
   const { t } = useTranslation('flow-chat');
+  const [expanded, setExpanded] = useToolCardDisclosure('output');
   const { activeSessionOverride } = useFlowChatContext();
   const isSubagentSurface = displayContext === 'subagent-projection'
     || activeSessionOverride?.sessionKind === 'subagent';
@@ -35,9 +37,10 @@ export const ExecProcessToolCardView: React.FC<ExecProcessToolCardViewProps> = (
     toolName: toolItem.toolName,
   });
   const onExpandedChange = useCallback((expanded: boolean) => {
+    setExpanded(expanded);
     dispatchToolCardToggle();
     if (expanded) onExpand?.();
-  }, [dispatchToolCardToggle, onExpand]);
+  }, [dispatchToolCardToggle, onExpand, setExpanded]);
   const { copied, copy } = useCopyTextAction({
     getText: () => model.copyText,
     successMessage: t('toolCards.execProcess.primaryCopied'),
@@ -47,6 +50,7 @@ export const ExecProcessToolCardView: React.FC<ExecProcessToolCardViewProps> = (
 
   return (
     <ExecProcessPresentation
+      expanded={expanded}
       toolItem={toolItem}
       model={model}
       attention={getToolItemCardConfig(toolItem).attention}

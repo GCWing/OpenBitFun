@@ -150,8 +150,8 @@
       }
     },
     "link": {
-      "default": { "$type": "color", "$value": "{ref.color.blue.600}" },
-      "hover": { "$type": "color", "$value": "{ref.color.blue.700}" }
+      "default": { "$type": "color", "$value": "{ref.color.cyan.500}" },
+      "hover": { "$type": "color", "$value": "{ref.color.cyan.600}" }
     },
     "border": {
       "subtle": { "$type": "color", "$value": "rgba(16, 26, 39, 0.08)" },

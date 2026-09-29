@@ -25,7 +25,7 @@ export function FileRevisionSummary({ file, itemCount, expanded, onToggle, conte
   itemCount: number;
   expanded: boolean;
   onToggle?: () => void;
-  contentId: string;
+  contentId?: string;
   description: string;
   component: string;
   testId: string;

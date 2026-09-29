@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 import React, { useEffect, useMemo, useState } from 'react';
 import { IconButton, Icon } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
@@ -35,7 +36,7 @@ export const ReviewSessionSummaryCard: React.FC<ToolCardProps> = React.memo(({
   onExpand,
 }) => {
   const { t } = useTranslation('flow-chat');
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId: toolItem.id ?? toolItem.toolCall?.id,
     toolName: toolItem.toolName,

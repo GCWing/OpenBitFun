@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import { useToolCardDisclosure } from '../timeline/readerState';
+import React, { useMemo } from 'react';
 import { ControlHubToolCard as ControlHubToolCardView, type ToolCardField, type ControlHubToolCardRecord } from '@openbitfun/ui/flow-chat';
 import { useI18n } from '@/infrastructure/i18n';
 import type { ToolCardProps } from '../types/flow-chat';
@@ -8,7 +9,7 @@ import { buildControlHubCardModel, formatRuntimeToolValue, runtimeToolNeedsConfi
 
 export const ControlHubToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand }) => {
   const { t, formatNumber } = useI18n('flow-chat');
-  const [isExpanded, setExpanded] = useState(false);
+  const [isExpanded, setExpanded] = useToolCardDisclosure('isExpanded');
   const model = useMemo(() => buildControlHubCardModel(toolItem), [toolItem]);
   const { cardRootRef, applyExpandedState, dispatchToolCardToggle } = useToolCardHeightContract({ toolId: toolItem.id, toolName: 'ControlHub' });
   const actions: Record<string, string> = {

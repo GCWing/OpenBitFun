@@ -8,6 +8,7 @@
  */
 
 import React, { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useFlowChatReaderValue, useTimelineReveal } from '../../timeline/readerState';
 import { useTranslation } from 'react-i18next';
 import { subscribeOverlayInteraction, createOverlayPortal, Button, Disclosure, Icon, IconButton, Menu, MenuItem, Tooltip } from '@openbitfun/ui';
 import { AmbientToolCard, AmbientToolCardHeader, ToolCardSection, ToolCardText } from '@openbitfun/ui/flow-chat';
@@ -358,6 +359,7 @@ const RetryAttemptSection: React.FC<{
 export const ModelRoundItem = React.memo<ModelRoundItemProps>(
   ({
     round,
+    blockPart,
     projectedGroups,
     turnId,
     isLastRound = false,
@@ -373,9 +375,11 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     const { sessionId, allowTranscriptExport = true } = useFlowChatContext();
     const typewriterRevealGate = useCreateTypewriterRevealGate();
     const [copied, setCopied] = useState(false);
-    const [showRetryHistory, setShowRetryHistory] = useState(false);
-    const [showRoundHistory, setShowRoundHistory] = useState(false);
-    const [openHistoryRoundAttemptIds, setOpenHistoryRoundAttemptIds] = useState<Record<string, boolean>>({});
+    const [showRetryHistory, setShowRetryHistory] = useFlowChatReaderValue<boolean>(`round:${turnId}:${round.id}:retries`, false);
+    const [showRoundHistory, setShowRoundHistory] = useFlowChatReaderValue<boolean>(`round:${turnId}:${round.id}:history`, false);
+    const [historyChoices, setHistoryChoices] = useFlowChatReaderValue<string>(`round:${turnId}:${round.id}:attempts`, '{}');
+    const openHistoryRoundAttemptIds = useMemo<Record<string, boolean>>(() => JSON.parse(historyChoices), [historyChoices]);
+    const turnRevealing = useTimelineReveal(turnId, `${round.id}:${blockPart}:${round.items[0]?.id ?? ''}`, typewriterRevealGate.isAnyRevealing);
     const [isCopyMenuOpen, setIsCopyMenuOpen] = useState(false);
     const copyButtonRef = useRef<HTMLButtonElement>(null);
     const copyMenuRef = useRef<HTMLDivElement>(null);
@@ -432,23 +436,23 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     const historyRounds = round.historyRounds ?? [];
 
     useEffect(() => {
-      if (historicalAttempts.length === 0 && showRetryHistory) {
+      if ((!blockPart || blockPart === 'header') && historicalAttempts.length === 0 && showRetryHistory) {
         setShowRetryHistory(false);
       }
-    }, [historicalAttempts.length, showRetryHistory]);
+    }, [blockPart, historicalAttempts.length, showRetryHistory, setShowRetryHistory]);
 
     useEffect(() => {
-      if (historyRounds.length === 0 && showRoundHistory) {
+      if ((!blockPart || blockPart === 'header') && historyRounds.length === 0 && showRoundHistory) {
         setShowRoundHistory(false);
       }
-    }, [historyRounds.length, showRoundHistory]);
+    }, [blockPart, historyRounds.length, showRoundHistory, setShowRoundHistory]);
 
     const setHistoryRoundAttemptsExpanded = useCallback((historyRoundId: string, expanded: boolean) => {
-      setOpenHistoryRoundAttemptIds((current) => ({
-        ...current,
+      setHistoryChoices((current) => JSON.stringify({
+        ...JSON.parse(current),
         [historyRoundId]: expanded,
       }));
-    }, []);
+    }, [setHistoryChoices]);
 
     // Keep the recorded round order; FlowChatStore already applies immutable updates.
     const sortedItems = useMemo(
@@ -560,11 +564,11 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
     // footer layout as soon as the model round completes so the eventual
     // reveal does not resize the list (that resize flashed the chat pane).
     const isVisuallyStreaming = round.isStreaming || typewriterRevealGate.isAnyRevealing;
-    const shouldReserveFooter = isTurnComplete &&
+    const shouldReserveFooter = (!blockPart || blockPart === 'footer') && isTurnComplete &&
       isLastRound &&
       !round.isStreaming &&
       (hasContent || completionMetaItems.length > 0);
-    const shouldRevealFooter = shouldReserveFooter && !typewriterRevealGate.isAnyRevealing;
+    const shouldRevealFooter = shouldReserveFooter && !typewriterRevealGate.isAnyRevealing && !turnRevealing;
 
     return (
       <TypewriterRevealGateProvider value={typewriterRevealGate}>
@@ -585,7 +589,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
         data-effective-model-name={round.effectiveModelName || ''}
         data-streaming={isVisuallyStreaming ? 'true' : 'false'}
       >
-        {round.renderHints?.continuedAfterInterruption && (
+        {(!blockPart || blockPart === 'header') && round.renderHints?.continuedAfterInterruption && (
           <div className="model-round-item__continuation">{t('modelRound.continued')}</div>
         )}
         {renderTraceEnabled && renderTraceStartedAtMs !== null && groupSummary && (
@@ -599,7 +603,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
           />
         )}
 
-        {historyRounds.length > 0 && (
+        {(!blockPart || blockPart === 'header') && historyRounds.length > 0 && (
           <RetryHistoryCard
             id={`${round.id}:round-history`}
             isExpanded={showRoundHistory}
@@ -674,7 +678,7 @@ export const ModelRoundItem = React.memo<ModelRoundItemProps>(
           </RetryHistoryCard>
         )}
 
-        {historicalAttempts.length > 0 && (
+        {(!blockPart || blockPart === 'header') && historicalAttempts.length > 0 && (
           <RetryHistoryCard
             id={`${round.id}:attempt-history`}
             isExpanded={showRetryHistory}

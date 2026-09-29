@@ -9,7 +9,7 @@ import type { FlowToolItem } from '../../types/flow-chat';
 import { getModelRoundExploreGroups, isExploreGroupExpanded } from './modelRoundItemGrouping';
 import { resolveFlowChatFocusTarget } from './flowChatFocusTarget';
 
-it('retains open capsule state when rounds regroup, and clears it only on explicit collection', () => {
+it('retains child disclosure through regrouping and explicit parent collection', () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   const container = document.createElement('div');
   const root = createRoot(container);
@@ -31,14 +31,14 @@ it('retains open capsule state when rounds regroup, and clears it only on explic
     expect(state.exploreGroupStates.get('group')).toBe(true);
     act(() => state.onToolCapsuleExpandedChange(key, true));
     act(() => state.onCollapseGroup('group'));
-    expect(state.expandedToolCapsules.has(key)).toBe(false);
+    expect(state.expandedToolCapsules.has(key)).toBe(true);
     expect(state.exploreGroupStates.get('group')).toBe(false);
   } finally {
     act(() => root.unmount());
   }
 });
 
-it('retains any merged source expansion and explicitly closes all source states and member details', () => {
+it('explicitly closes merged group sources while retaining member choices', () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   const root = createRoot(document.createElement('div'));
   const key = toolCapsuleStateKey('session', 'turn', 'read');
@@ -54,7 +54,7 @@ it('retains any merged source expansion and explicitly closes all source states 
     expect(isExploreGroupExpanded((item as Extract<VirtualItem, { type: 'explore-group' }>).data, state.exploreGroupStates)).toBe(true);
     act(() => state.onCollapseGroup('owner'));
     expect([...state.exploreGroupStates.values()]).toEqual([false, false, false]);
-    expect(state.expandedToolCapsules.has(key)).toBe(false);
+    expect(state.expandedToolCapsules.has(key)).toBe(true);
     act(() => state.onExpandGroup('previous-inline'));
     expect(isExploreGroupExpanded((item as Extract<VirtualItem, { type: 'explore-group' }>).data, state.exploreGroupStates)).toBe(true);
     act(() => state.onExploreGroupToggle('owner'));
@@ -97,7 +97,7 @@ it('expands and collects mixed-round groups using the same identities as item na
     expect(state.exploreGroupStates.get(groupId)).toBe(true);
     act(() => state.onCollapseGroup(groupId));
     expect(state.exploreGroupStates.get(groupId)).toBe(false);
-    expect(state.expandedToolCapsules.has(key)).toBe(false);
+    expect(state.expandedToolCapsules.has(key)).toBe(true);
     expect(state.expandedToolCapsules.has(otherKey)).toBe(true);
   } finally {
     act(() => root.unmount());

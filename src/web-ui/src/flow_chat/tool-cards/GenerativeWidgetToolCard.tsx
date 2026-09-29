@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useToolCardDisclosure } from '../timeline/readerState';
 import { subscribeOverlayInteraction, Tooltip, Icon, IconButton } from '@openbitfun/ui';
 import type { ToolCardProps } from '../types/flow-chat';
 import { ProminentToolCard, ProminentToolCardSummary, ToolProcessingDots } from '@openbitfun/ui/flow-chat';
@@ -104,7 +105,19 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
     status === 'preparing' || status === 'streaming' || status === 'running' || status === 'pending';
   const isFailed = status === 'error' || (status === 'completed' && toolResult?.success === false);
   // Keep a live preview open if the tool fails; historical errors start compact.
-  const [isCardExpanded, setIsCardExpanded] = useState(!isFailed);
+  const [isCardExpanded, setIsCardExpanded] = useToolCardDisclosure('widget', !isFailed);
+  const [retainInstance, setRetainInstance] = useState(false);
+  useEffect(() => {
+    // Cross-origin iframe pointer events do not bubble. Its focus is observable
+    // on the host, which can acquire the same lease as an ordinary input.
+    const retainFocusedFrame = () => {
+      if (document.activeElement?.tagName === 'IFRAME' && cardRootRef.current?.contains(document.activeElement)) {
+        setRetainInstance(true);
+      }
+    };
+    window.addEventListener('blur', retainFocusedFrame);
+    return () => window.removeEventListener('blur', retainFocusedFrame);
+  }, [cardRootRef]);
   const widgetId = resultData?.widget_id || toolCall?.id || toolItem.id;
   const isClickable = status === 'completed' && !isFailed && widgetCode.trim().length > 0;
   const hasRenderableWidget = widgetCode.trim().length > 0 && !isFailed;
@@ -150,7 +163,7 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
       }
       handleOpenPanel();
     },
-    [applyExpandedState, handleOpenPanel, isCardExpanded, isFailed],
+    [applyExpandedState, handleOpenPanel, isCardExpanded, isFailed, setIsCardExpanded],
   );
 
   const handleWidgetEvent = useCallback((event: WidgetMessage) => {
@@ -307,7 +320,9 @@ export const GenerativeWidgetToolCard: React.FC<ToolCardProps> = ({ toolItem, se
 
   return (
     <>
-      <div ref={cardRootRef} data-tool-card-id={toolItem.id ?? toolCall?.id ?? ''} data-openbitfun-component="generative-widget-tool-card" data-openbitfun-part="root" data-openbitfun-state={isFailed ? 'failed' : undefined}>
+      <div ref={cardRootRef} data-flowchat-retain-instance={retainInstance && isCardExpanded ? 'true' : undefined}
+        onPointerDownCapture={() => setRetainInstance(true)} onFocusCapture={() => setRetainInstance(true)}
+        data-tool-card-id={toolItem.id ?? toolCall?.id ?? ''} data-openbitfun-component="generative-widget-tool-card" data-openbitfun-part="root" data-openbitfun-state={isFailed ? 'failed' : undefined}>
         <ProminentToolCard
         title={isClickable ? t('toolCards.generativeUI.openSource') : undefined}
         status={isFailed ? 'error' : status}

@@ -1,8 +1,9 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Context compression display for Flow Chat.
  */
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FlowToolItem } from '../types/flow-chat';
 import { ContextCompressionToolCard } from '@openbitfun/ui/flow-chat';
@@ -36,7 +37,7 @@ export const ContextCompressionDisplay: React.FC<ContextCompressionDisplayProps>
   compressionData
 }) => {
   const { t } = useTranslation('flow-chat');
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId: toolItem?.id,
     toolName: 'ContextCompression',

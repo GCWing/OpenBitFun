@@ -5,7 +5,7 @@
 
 import { FlowGroup, type FlowGroupProps } from '@openbitfun/ui/flow-chat';
 import { Icon } from '@openbitfun/ui';
-import React, { useMemo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useMemo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useRef } from 'react';
 import { DeferredContent } from '@openbitfun/flow-chat-presentation/deferred-content';
 
 import { useI18n } from '@/infrastructure/i18n';
@@ -30,12 +30,14 @@ import { useFlowChatContext, useFlowChatVolatileContext } from './FlowChatContex
 import { FileEditGroupView } from './FileEditGroupView';
 import { buildFlowGroupRenderSegments, estimateFlowGroupItemsHeight } from './flowGroupRenderSegments';
 import './ExploreRegion.scss';
+import { useFlowChatReaderValue } from '../../timeline/readerState';
 
 export interface FlowGroupRendererProps {
   data: FlowGroupData;
   turnId: string;
   expandedThinkingItemIds?: readonly string[];
   placement?: 'standalone' | 'inline';
+  timelineExpanded?: boolean;
 }
 
 interface FlowGroupView {
@@ -74,6 +76,7 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
   turnId,
   expandedThinkingItemIds,
   placement,
+  timelineExpanded,
 }) => {
   const { t, formatNumber } = useI18n('flow-chat');
   const category = getFlowGroupCategory(data);
@@ -111,9 +114,9 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
   const toolItemCount = useMemo(() => allItems.filter(item => item.type === 'tool').length, [allItems]);
   const filePath = category === 'file-edit' ? fileEditTarget(allItems.find(item => item.type === 'tool')) : undefined;
   const fileStatus = useMemo(() => fileEditGroupStatus(category === 'file-edit' ? allItems : []), [category, allItems]);
-  const [query, setQuery] = useState('');
-  const [toolFilter, setToolFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState<FlowGroupStatusFilter>('all');
+  const [query, setQuery] = useFlowChatReaderValue<string>(`group:${groupId}:query`, '');
+  const [toolFilter, setToolFilter] = useFlowChatReaderValue<string>(`group:${groupId}:tool`, 'all');
+  const [statusFilter, setStatusFilter] = useFlowChatReaderValue<FlowGroupStatusFilter>(`group:${groupId}:status`, 'all');
   const deferredQuery = useDeferredValue(query);
   const toolLabels = useMemo(() => flowGroupToolLabels(t), [t]);
   const toolCounts = useMemo(() => flowGroupToolCounts(allItems), [allItems]);
@@ -137,9 +140,9 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
     && expandedToolCapsules?.has(toolCapsuleStateKey(sessionId, turnId, item.id)));
   const hasPendingPermission = allItems.some(item => item.type === 'tool'
     && pendingPermissionToolCallIds?.has((item as FlowToolItem).toolCall.id));
-  const isExpanded = hasOpenCapsule || hasPendingPermission || defaultExpanded
+  const isExpanded = timelineExpanded ?? (hasPendingPermission || (disclosureChoice !== false && hasOpenCapsule) || defaultExpanded
     || (disclosureChoice === undefined && (fileStatus.failed > 0 || fileStatus.stopped > 0))
-    || (disclosureChoice === undefined && revealGate.isAnyRevealing);
+    || (disclosureChoice === undefined && revealGate.isAnyRevealing));
   // Once sealed work is complete, the parent owns the single closing motion.
   // Keep revealed thinking at its current height while the reveal gate drains.
   const retainForGroupCollapse = disclosureChoice !== true && !hasOpenCapsule && !hasPendingPermission
@@ -150,8 +153,8 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
     previousExpanded.current = isExpanded;
   }, [dispatchToolCardToggle, isExpanded]);
   useEffect(() => {
-    if (hasOpenCapsule && disclosureChoice !== true) onExpandGroup?.(groupId);
-  }, [disclosureChoice, groupId, hasOpenCapsule, onExpandGroup]);
+    if (timelineExpanded === undefined && hasOpenCapsule && disclosureChoice === undefined) onExpandGroup?.(groupId);
+  }, [disclosureChoice, groupId, hasOpenCapsule, onExpandGroup, timelineExpanded]);
   const summaryPresentation = useMemo(
     () => policy.summarize(allItems, t, formatNumber),
     [policy, allItems, t, formatNumber],
@@ -164,7 +167,7 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
 
   const resetFilters = useCallback(() => {
     setQuery(''); setToolFilter('all'); setStatusFilter('all');
-  }, []);
+  }, [setQuery, setStatusFilter, setToolFilter]);
   const revealItem = useCallback((itemId: string) => {
     if (browse.visibleIds.has(itemId)) return false;
     resetFilters();
@@ -213,6 +216,7 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
       onReset: resetFilters,
     },
   };
+  if (timelineExpanded !== undefined) return view.render({ ...groupProps, externalContent: true }, { items: allItems, sessionId });
   const renderItem = (item: FlowItem, idx: number) => (
     <FlowGroupItemRenderer
       key={item.id}
@@ -259,6 +263,8 @@ export const FlowGroupRenderer: React.FC<FlowGroupRendererProps> = React.memo(({
 interface FlowGroupItemRendererProps {
   item: FlowItem;
   turnId: string;
+  roundId?: string;
+  withinGroup?: boolean;
   isLastItem?: boolean;
   forceThinkingExpanded?: boolean;
   revealStreamingContent?: boolean;
@@ -268,7 +274,7 @@ interface FlowGroupItemRendererProps {
   Item: FlowGroupView['Item'];
 }
 
-const FlowGroupItemRenderer = React.memo<FlowGroupItemRendererProps>(({ item, turnId, isLastItem, forceThinkingExpanded, revealStreamingContent, retainForGroupCollapse, hidden, capsuleRow, Item }) => {
+export const FlowGroupItemRenderer = React.memo<FlowGroupItemRendererProps>(({ item, turnId, roundId, withinGroup = true, isLastItem, forceThinkingExpanded, revealStreamingContent, retainForGroupCollapse, hidden, capsuleRow, Item }) => {
   const {
     onToolConfirm,
     onToolReject,
@@ -307,13 +313,16 @@ const FlowGroupItemRenderer = React.memo<FlowGroupItemRendererProps>(({ item, tu
         <FlowTextBlock
           textItem={item as FlowTextItem}
           hidden={hidden}
+          traceContext={{ turnId, roundId, itemId: item.id }}
+          testId="chat-assistant-message-content"
+          testAttributes={{ 'data-turn-id': turnId, 'data-flow-item-id': item.id, 'data-status': item.status }}
         />
       );
 
     case 'thinking': {
       const thinkingItem = item as FlowThinkingItem;
       return (
-        <ModelThinkingDisplay thinkingItem={thinkingItem} hidden={hidden} withinGroup isLastItem={isLastItem}
+        <ModelThinkingDisplay thinkingItem={thinkingItem} hidden={hidden} withinGroup={withinGroup} isLastItem={isLastItem}
           forceExpanded={forceThinkingExpanded} revealStreamingContent={revealStreamingContent}
           retainForGroupCollapse={retainForGroupCollapse} />
       );

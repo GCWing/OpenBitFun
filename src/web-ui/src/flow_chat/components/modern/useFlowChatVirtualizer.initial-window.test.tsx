@@ -139,14 +139,15 @@ describe('initial virtual window with the real virtualizer', () => {
     shortOverscan = true;
     render(34, true);
     reconcileEnabled = true;
-    expect(windows.at(-1)![0]).toBe(27);
+    const initialFirst = windows.at(-1)![0];
+    expect(initialFirst).toBeGreaterThan(0);
     const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
     act(() => {
       latestApi.scrollToOffset(scroller.scrollHeight - 500, { owner: 'follow-output' });
       latestApi.syncViewportOffset(scroller.scrollTop);
     });
     const first = windows.at(-1)![0];
-    expect(first).toBeLessThan(27);
+    expect(first).toBeLessThan(initialFirst);
     expect(windows.at(-1)!.at(-1)).toBe(33);
     const row = host.querySelector(`[data-virtual-index="${first}"]`);
     const commits = windows.length;
@@ -176,6 +177,27 @@ describe('initial virtual window with the real virtualizer', () => {
     viewportSuspended = false;
     act(() => latestApi.syncViewportOffset(scroller.scrollTop));
     expect(windows.at(-1)![0]).toBe(0);
+  });
+
+  it('keeps the live window aligned when native layout clamps before its scroll event', () => {
+    render(34, true);
+    const scroller = host.querySelector<HTMLElement>('[data-scroller]')!;
+    act(() => {
+      latestApi.scrollToOffset(scroller.scrollHeight - 500, { owner: 'follow-output' });
+      latestApi.syncViewportOffset(scroller.scrollTop);
+    });
+    // A collection above the output shrinks. The browser clamps now, while
+    // native scroll/scroll-end delivery still describes the previous range.
+    shortOverscan = true;
+    act(() => {
+      scroller.scrollTop = Math.max(0, scroller.scrollHeight - 500);
+      latestApi.measureRenderedItems();
+    });
+    const measuredWindow = [...windows.at(-1)!];
+    const mountedRows = [...host.querySelectorAll('[data-virtual-index]')];
+    act(() => scroller.dispatchEvent(new Event('scroll')));
+    expect(windows.at(-1)).toEqual(measuredWindow);
+    expect([...host.querySelectorAll('[data-virtual-index]')]).toEqual(mountedRows);
   });
 
   it('keeps the measured reading window stable before the compensation scroll event arrives', () => {

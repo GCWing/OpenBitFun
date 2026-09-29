@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { FlowChatCardReaderProvider } from '../timeline/readerState';
 import { ToolCapsulePresentationProvider } from '@openbitfun/ui/flow-chat';
 import { getToolCardComponent } from '../tool-cards';
 import { getToolItemCardConfig, isToolCapsule } from '../tool-cards/toolCardMetadata';
@@ -140,6 +141,7 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
       data-openbitfun-attention={config.attention}
       data-openbitfun-presentation={config.presentation}
     >
+      <FlowChatCardReaderProvider itemKey={capsuleKey}>
       <FlowToolCardErrorBoundary
         toolItem={effectiveToolItem}
         displayName={config.displayName}
@@ -164,6 +166,7 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
         onConfirm={handleConfirm}
         onReject={handleReject}
       />
+      </FlowChatCardReaderProvider>
       {interruptionNote && !cardHandlesInterruptionNote && (
         <div
           className="flow-tool-card-note"

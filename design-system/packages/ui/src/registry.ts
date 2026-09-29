@@ -31,6 +31,7 @@ import { radioMeta } from "./components/Radio/Radio.meta";
 import { rollingTextMeta } from "./components/RollingText/RollingText.meta";
 import { shimmerTextMeta } from "./components/ShimmerText/ShimmerText.meta";
 import { scrollAreaMeta } from "./components/ScrollArea/ScrollArea.meta";
+import { splitViewMeta } from "./components/SplitView/SplitView.meta";
 import { searchFieldMeta } from "./components/SearchField/SearchField.meta";
 import { segmentedControlMeta } from "./components/SegmentedControl/SegmentedControl.meta";
 import { selectMeta } from "./components/Select/Select.meta";
@@ -202,6 +203,7 @@ export const componentRegistry = [
   shimmerTextMeta,
   runCodeToolCardMeta,
   scrollAreaMeta,
+  splitViewMeta,
   searchFieldMeta,
   segmentedControlMeta,
   selectMeta,

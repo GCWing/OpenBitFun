@@ -30,6 +30,8 @@ export interface ThinkingBlockProps extends Omit<HTMLAttributes<HTMLDivElement>,
   capsuleLabel?: string;
   /** Dock a settled disclosure beside a continuation marked data-thinking-continuation. */
   collapseIntoNext?: boolean;
+  /** Recycled rows settle initial placement and measure resting side controls on interaction. */
+  virtualized?: boolean;
   /** Resolve a continuation in a peer container when it is not a direct sibling. */
   resolveContinuation?: ThinkingContinuationResolver;
   /** Coordinate the first live successor with the outgoing row, without remounting it. */
@@ -56,7 +58,7 @@ export const ThinkingBlock = forwardRef<HTMLDivElement, ThinkingBlockProps>(func
   children, expanded, streaming = false, visuallyStreaming = streaming,
   streamingExpanded = false, onStreamingExpandedChange, retainStreamingViewport = false,
   reasoningKind = 'reasoning', status, context = 'default', label, capsuleLabel = label, onToggle, onOpenDetails, collapseIntoNext = false, resolveContinuation, scrollOwner = 'self',
-  coordinateContinuation = false, handoffIdentity, onContinuationReadyChange,
+  coordinateContinuation = false, handoffIdentity, onContinuationReadyChange, virtualized = false,
   contentRef, expandContainerRef, mountContent = true, contentProps, scrollState = { hasScroll: false, atTop: true, atBottom: true },
   className = '', style, ...props
 }, ref) {
@@ -81,9 +83,9 @@ export const ThinkingBlock = forwardRef<HTMLDivElement, ThinkingBlockProps>(func
     if (liveViewport !== undefined || (expanded && !retainStreamingViewport)) lastLiveViewport.current = liveViewport;
   }, [expanded, liveViewport, retainStreamingViewport]);
   const wantsDock = collapseIntoNext && !expanded && !visuallyStreaming;
-  const { hasContinuation, tooltipBlocked, tooltipActive, canShowTooltip } = useThinkingAnnotation(rootRef, toggleRef, wantsDock, resolveContinuation);
+  const { hasContinuation, tooltipBlocked, tooltipActive, canShowTooltip } = useThinkingAnnotation(rootRef, toggleRef, wantsDock, resolveContinuation, virtualized);
   const docked = wantsDock && hasContinuation;
-  const handoff = useThinkingHandoff(rootRef, docked, label, wantsDock);
+  const handoff = useThinkingHandoff(rootRef, docked, label, wantsDock, virtualized);
   const exchange = useThinkingSuccessor(rootRef, {
     identity: handoffIdentity, enabled: coordinateContinuation,
     expanded, visuallyStreaming, resolveContinuation, onReadyChange: onContinuationReadyChange,

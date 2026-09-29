@@ -1,8 +1,9 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Compact tool card for web_search.
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
@@ -21,7 +22,7 @@ export const WebSearchCard: React.FC<ToolCardProps> = ({
   const { t } = useTranslation('flow-chat');
   const { toolCall, toolResult } = toolItem;
   const status = getToolCardStatus(toolItem);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -84,7 +85,7 @@ export const WebSearchCard: React.FC<ToolCardProps> = ({
         onExpand,
       });
     }
-  }, [applyExpandedState, isExpandable, isExpanded, onExpand]);
+  }, [applyExpandedState, isExpandable, isExpanded, onExpand, setIsExpanded]);
 
   if (!isToolCardVisible(toolItem)) {
     return null;

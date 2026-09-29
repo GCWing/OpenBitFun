@@ -2,6 +2,7 @@ import type { ModelRound, FlowToolItem, TokenUsage } from '../../types/flow-chat
 import type { ModelRoundItemGroup } from './modelRoundItemGrouping';
 
 export interface ModelRoundItemProps {
+  blockPart?: 'content' | 'header' | 'footer';
   round: ModelRound;
   projectedGroups?: ModelRoundItemGroup[];
   turnId: string;
@@ -40,6 +41,7 @@ export function areModelRoundItemPropsEqual(prev: ModelRoundItemProps, next: Mod
 
   // In complete state, compare items array reference to detect tool state changes.
   return (
+    prev.blockPart === next.blockPart &&
     prev.round.id === next.round.id &&
     prev.round.renderHints?.continuedAfterInterruption === next.round.renderHints?.continuedAfterInterruption &&
     prev.round.renderHints?.disableExploreGrouping === next.round.renderHints?.disableExploreGrouping &&

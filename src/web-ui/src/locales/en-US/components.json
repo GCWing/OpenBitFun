@@ -544,6 +544,13 @@
     "devWingExpand": "Expand dev tools"
   },
   "canvas": {
+    "resizePanes": "Resize panes",
+    "chatPane": "Chat",
+    "contentPane": "Content",
+    "swapPanes": "Swap panes",
+    "hidePanel": "Hide panel",
+    "maximizePanel": "Maximize panel",
+    "restorePanel": "Restore panel",
     "noContentOpen": "No content open",
     "filesCount": "{{count}} files",
     "searchPlaceholder": "Search file name or path...",

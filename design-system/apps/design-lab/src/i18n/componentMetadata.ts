@@ -15,6 +15,7 @@ const categoryKeys: Readonly<Record<string, MessageKey>> = {
 };
 
 const descriptionKeys: Readonly<Record<string, MessageKey>> = {
+  SplitView: "component.SplitView.description",
   ListModelsToolCard: "component.ListModelsToolCard.description",
   ControlHubToolCard: "component.ControlHubToolCard.description",
   ThinkingBlock: "component.ThinkingBlock.description",

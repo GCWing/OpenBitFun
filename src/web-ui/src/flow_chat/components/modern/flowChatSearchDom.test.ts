@@ -11,6 +11,13 @@ import {
 } from './flowChatSearchDom';
 
 describe('FlowChat search DOM navigation', () => {
+  it('waits for lazy reasoning to replace its provisional source before locating a hit', () => {
+    const root = document.createElement('div');
+    root.innerHTML = '<div data-tool-card-id="thought"><div class="thinking-markdown"><span data-markdown-pending="true">needle</span></div></div>';
+    expect(getFlowChatSearchTextRoot(root, 'thought')).toBeNull();
+    root.querySelector('.thinking-markdown')!.innerHTML = '<p>needle</p>';
+    expect(getFlowChatSearchTextRoot(root, 'thought')).toBe(root.querySelector('.thinking-markdown'));
+  });
   it('finds a query split across Markdown text nodes', () => {
     const root = document.createElement('div');
     root.innerHTML = '<p>Before <span>key</span><strong>word</strong> after</p>';

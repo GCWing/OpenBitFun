@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import { useToolCardDisclosure } from '../timeline/readerState';
+import React, { useMemo } from 'react';
 import { ListModelsToolCard as ListModelsToolCardView } from '@openbitfun/ui/flow-chat';
 import { useI18n } from '@/infrastructure/i18n';
 import type { ToolCardProps } from '../types/flow-chat';
@@ -8,7 +9,7 @@ import { buildListModelsCardModel, formatRuntimeToolValue, runtimeToolNeedsConfi
 
 export const ListModelsToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand }) => {
   const { t, formatNumber } = useI18n('flow-chat');
-  const [isExpanded, setExpanded] = useState(false);
+  const [isExpanded, setExpanded] = useToolCardDisclosure('isExpanded');
   const model = useMemo(() => buildListModelsCardModel(toolItem), [toolItem]);
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({ toolId: toolItem.id, toolName: 'ListModels' });
   const needsConfirmation = runtimeToolNeedsConfirmation(toolItem, model.status);

@@ -18,6 +18,7 @@ import { getLoadedPrismSyntaxHighlighter, loadPrismSyntaxHighlighter } from '@/s
 import { buildCodePreviewPrismStyle } from './codePreviewPrismTheme';
 import { ScrollArea, type ScrollAreaEdgeFade, type ScrollbarVisibility } from '@openbitfun/ui';
 import './CodePreview.scss';
+import { WindowedCodeContent } from './WindowedCodeContent';
 
 export interface CodePreviewProps {
   /** Code content */
@@ -257,7 +258,11 @@ export const CodePreview: React.FC<CodePreviewProps> = memo(({
         style={containerStyle}
         tabIndex={0}
       >
-        {SyntaxHighlighter ? (
+        {!isStreaming && (displayContent.length > 8000 || countNewlines(displayContent) > 120) ? (
+          <WindowedCodeContent content={displayContent} language={detectedLanguage} scrollerRef={containerRef}
+            startingLineNumber={displayContentInfo.startingLineNumber} showLineNumbers={showLineNumbers}
+            highlightedLine={highlightedLine} onLineClick={handleLineClick} />
+        ) : SyntaxHighlighter ? (
           <SyntaxHighlighter
             language={detectedLanguage}
             style={prismStyle}

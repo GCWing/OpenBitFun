@@ -12,75 +12,24 @@
  */
 
 import React, { useMemo, memo, useRef, useCallback, useState, useLayoutEffect, CSSProperties } from 'react';
-import Prism from 'prismjs';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ScrollArea, type ScrollAreaEdgeFade, type ScrollbarVisibility } from '@openbitfun/ui';
 import { getPrismLanguage } from '@/infrastructure/language-detection';
 import { createLogger } from '@/shared/utils/logger';
 import { getInlineDiffTokenStyle } from './inlineDiffPrismTheme';
 import { computeLineDiff, type DiffLine } from './inlineDiffModel';
-import { splitTokensByNewlines, type LineTokens, type PrismToken } from './inlineDiffTokens';
+import { type LineTokens, type PrismToken } from './inlineDiffTokens';
+import { useHighlightedLines } from '../timeline/highlightResources';
+import { FlowChatResourceCache } from '../timeline/resourceCache';
 import './InlineDiffPreview.scss';
+import { truncateForDiff } from './inlineDiffTruncation';
 
 const log = createLogger('InlineDiffPreview');
 
 /** Estimated row height in px; the virtualizer measures the resolved typography. */
 const ROW_HEIGHT = 22;
 
-/**
- * Maximum total lines (original + modified) before content is truncated.
- * Keeps diffLines() + Prism.tokenize() cost bounded for large files.
- * The caller may also pre-truncate; this is a safety net inside the component.
- */
-const MAX_TOTAL_LINES = 500;
-/** Character budget that complements MAX_TOTAL_LINES for very long single lines. */
-const MAX_TOTAL_CHARS = 50_000;
-
-/** Result of truncation: possibly shortened content + metadata. */
-interface TruncationResult {
-  originalContent: string;
-  modifiedContent: string;
-  truncated: boolean;
-  omittedLines: number;
-}
-
-/**
- * Truncate original/modified content when combined line or char count exceeds
- * thresholds. Returns head + tail so both ends of the diff remain visible.
- */
-function truncateForDiff(original: string, modified: string): TruncationResult {
-  const origLines = original ? original.split('\n') : [];
-  const modLines = modified ? modified.split('\n') : [];
-  const totalLines = origLines.length + modLines.length;
-  const totalChars = original.length + modified.length;
-
-  if (totalLines <= MAX_TOTAL_LINES && totalChars <= MAX_TOTAL_CHARS) {
-    return { originalContent: original, modifiedContent: modified, truncated: false, omittedLines: 0 };
-  }
-
-  // Budget per side, per half (head/tail).
-  const perSide = Math.max(50, Math.floor(MAX_TOTAL_LINES / 4));
-
-  const slice = (lines: string[]): { text: string; kept: number; dropped: number } => {
-    if (lines.length <= perSide * 2) return { text: lines.join('\n'), kept: lines.length, dropped: 0 };
-    const head = lines.slice(0, perSide);
-    const tail = lines.slice(lines.length - perSide);
-    return {
-      text: [...head, '', `... truncated ${lines.length - perSide * 2} lines ...`, '', ...tail].join('\n'),
-      kept: perSide * 2,
-      dropped: lines.length - perSide * 2,
-    };
-  };
-
-  const o = slice(origLines);
-  const m = slice(modLines);
-  return {
-    originalContent: o.text,
-    modifiedContent: m.text,
-    truncated: true,
-    omittedLines: o.dropped + m.dropped,
-  };
-}
+const diffCache = new FlowChatResourceCache<string, DiffLine[]>(8 * 1024 * 1024, 64);
 
 export interface InlineDiffPreviewProps {
   /** Original content. */
@@ -119,20 +68,6 @@ export interface InlineDiffPreviewProps {
  * Tokenize a full content string with prismjs, return per-line token arrays.
  * Falls back to plain-text lines when the language grammar is not registered.
  */
-function tokenizeContent(content: string, language: string): LineTokens[] {
-  if (!content) return [];
-  const grammar = Prism.languages[language];
-  if (!grammar) {
-    // Graceful fallback: split by lines, no highlighting
-    return content.split('\n').map(line => [line]);
-  }
-  try {
-    const tokens = Prism.tokenize(content, grammar);
-    return splitTokensByNewlines(tokens);
-  } catch {
-    return content.split('\n').map(line => [line]);
-  }
-}
 
 /**
  * Render a single Prism token as a React element.
@@ -267,8 +202,13 @@ export const InlineDiffPreview: React.FC<InlineDiffPreviewProps> = memo(({
   // Compute diff line list (fast, O(ND))
   const diffLineList = useMemo<DiffLine[]>(() => {
     try {
+      const key = JSON.stringify([truncated.originalContent, truncated.modifiedContent, contextLines]);
+      const cached = diffCache.get(key);
+      if (cached) return cached;
       const rawDiff = computeLineDiff(truncated.originalContent, truncated.modifiedContent);
-      return applyContextCollapsing(rawDiff, contextLines);
+      const lines = applyContextCollapsing(rawDiff, contextLines);
+      diffCache.set(key, lines, key.length * 2 + lines.reduce((bytes, line) => bytes + line.content.length * 2 + 80, 0));
+      return lines;
     } catch (error) {
       log.error('Diff computation failed', error);
       return [{ type: 'context-separator' as const, content: 'Diff computation failed; file may be too large.' }];
@@ -285,14 +225,8 @@ export const InlineDiffPreview: React.FC<InlineDiffPreviewProps> = memo(({
     String(Math.max(line.originalLineNumber ?? 0, line.modifiedLineNumber ?? 0)).length)), [diffLineList]);
 
   // Tokenize each content once — O(content_length), not O(lines²)
-  const originalLineTokens = useMemo(
-    () => tokenizeContent(truncated.originalContent, detectedLanguage),
-    [truncated.originalContent, detectedLanguage],
-  );
-  const modifiedLineTokens = useMemo(
-    () => tokenizeContent(truncated.modifiedContent, detectedLanguage),
-    [truncated.modifiedContent, detectedLanguage],
-  );
+  const originalLineTokens = useHighlightedLines(truncated.originalContent, detectedLanguage);
+  const modifiedLineTokens = useHighlightedLines(truncated.modifiedContent, detectedLanguage);
 
   // Line number → token array lookup helpers
   const getTokensForLine = useCallback(
@@ -405,7 +339,7 @@ export const InlineDiffPreview: React.FC<InlineDiffPreviewProps> = memo(({
     >
       {truncated.truncated && (
         <div className="inline-diff-preview__truncation-notice" data-openbitfun-component="inline-diff-preview" data-openbitfun-part="notice">
-          Content too large; showing first and last portions ({truncated.omittedLines} lines omitted).
+          Content too large; showing first and last portions{truncated.omittedLines === null ? '.' : ` (${truncated.omittedLines} lines omitted).`}
         </div>
       )}
       <ScrollArea

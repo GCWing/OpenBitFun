@@ -32,6 +32,7 @@ export interface ExecProcessPresentationProps {
   renderStatus: (props: ExecStatusPresentation) => ReactNode;
   clock?: PresentationClock;
   initialExpanded?: boolean;
+  expanded?: boolean;
   /** Public card pseudo-state used only by static component specimens. */
   previewState?: 'hover';
 }
@@ -83,7 +84,7 @@ export function ExecProcessPresentation(props: ExecProcessPresentationProps) {
 function ExecCommandPresentation({
   toolItem, model, attention = 'prominent', t, rootRef, onExpandedChange, primaryCopied = false,
   onCopyPrimary, renderOutput, renderOutputAction, renderStatus,
-  initialExpanded = false, previewState,
+  initialExpanded = false, expanded, previewState,
 }: ExecProcessPresentationProps) {
   const status = toolItem.status || 'pending';
   const isParamsStreaming = Boolean(toolItem.isParamsStreaming);
@@ -101,7 +102,8 @@ function ExecCommandPresentation({
     ? 'toolCards.terminal.rejected'
     : 'toolCards.terminal.cancelled';
   const toolId = toolItem.id ?? toolItem.toolCall?.id;
-  const [isExpanded, setIsExpandedState] = useState(initialExpanded);
+  const [localExpanded, setIsExpandedState] = useState(initialExpanded);
+  const isExpanded = expanded ?? localExpanded;
   const outputRendererRef = useRef<ExecOutputHandle | null>(null);
   const toggleExpanded = useCallback(() => {
     const nextExpanded = !isExpanded;

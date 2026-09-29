@@ -101,6 +101,7 @@ test("registry exposes only the formal stable components", () => {
       "ShimmerText",
       "RunCodeToolCard",
       "ScrollArea",
+      "SplitView",
       "SearchField",
       "SegmentedControl",
       "Select",

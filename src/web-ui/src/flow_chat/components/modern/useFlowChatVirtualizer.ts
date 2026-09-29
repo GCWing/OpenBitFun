@@ -29,6 +29,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import {
   observeElementOffset as observeTanStackElementOffset,
   observeElementRect as observeTanStackElementRect,
+  measureElement as measureTanStackElement,
   useVirtualizer,
   type Rect,
   type Virtualizer,
@@ -45,8 +46,16 @@ import {
   type VirtualItemHeightEstimateContext,
 } from './virtualMessageListLayout';
 
-/** Item-count overscan. Roughly two Turns either side of the viewport. */
-const FLOW_CHAT_OVERSCAN_ITEMS = 6;
+/** A nearby pixel window, bounded in leaves so dense groups mount incrementally. */
+export function timelineOverscanRange(start: number, end: number, count: number, viewportPx: number,
+  heightAt: (index: number) => number): number[] {
+  let first = start, last = end;
+  const budget = Math.max(200, viewportPx * 0.6);
+  let above = 0, below = 0;
+  while (first > 0 && start - first < 16 && (above < budget || start - first < 2)) above += Math.max(1, heightAt(--first));
+  while (last < count - 1 && last - end < 16 && (below < budget || last - end < 2)) below += Math.max(1, heightAt(++last));
+  return Array.from({ length: Math.max(0, last - first + 1) }, (_, index) => first + index);
+}
 
 /**
  * How long the library goes on re-aiming after an aim, mirrored from it.
@@ -146,6 +155,7 @@ interface MeasuringVirtualizer {
 }
 
 export interface UseFlowChatVirtualizerOptions<T> {
+  pinnedKeys?: ReadonlySet<string>;
   items: readonly T[];
   scrollerRef: RefObject<HTMLElement | null>;
   /**
@@ -329,6 +339,7 @@ export function virtualWindowPaddingPx(
 
 export function useFlowChatVirtualizer<T>({
   items,
+  pinnedKeys,
   scrollerRef,
   headerRef,
   getItemKey,
@@ -345,13 +356,21 @@ export function useFlowChatVirtualizer<T>({
 }: UseFlowChatVirtualizerOptions<T>): FlowChatVirtualizer {
   const itemsRef = useRef(items);
   itemsRef.current = items;
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+    if (scroller && !scroller.hasAttribute('data-flowchat-virtual-viewport')) scroller.setAttribute('data-flowchat-virtual-viewport', '');
+  });
   const initialTailRef = useRef(startAtTailOnMount);
   const hasInitialItemsRef = useRef(items.length > 0);
   if (items.length > 0) hasInitialItemsRef.current = true;
   const reconcileOpeningMeasurementRef = useRef(reconcileOpeningMeasurement);
   reconcileOpeningMeasurementRef.current = reconcileOpeningMeasurement;
   const pendingMeasurementRef = useRef(false);
+  const resettingMeasurementsRef = useRef(false);
   const pendingMeasurementShiftRef = useRef(false);
+  // Keep the estimated initial tail seed until a real placement or gesture has
+  // established the viewport. Later measurements must use that live position.
+  const viewportOffsetEstablishedRef = useRef(false);
   const publishMeasuredOffsetRef = useRef<((actualOffsetPx?: number) => void) | null>(null);
   const syncViewportOffset = useCallback((actualOffsetPx: number) => {
     if (Number.isFinite(actualOffsetPx)) publishMeasuredOffsetRef.current?.(actualOffsetPx);
@@ -419,14 +438,19 @@ export function useFlowChatVirtualizer<T>({
     return item === undefined ? 0 : estimateItemHeightRef.current(item, estimateContextRef.current);
   }, []);
 
+  const itemKeyRevision = useMemo(() => items.map(getItemKey).join('\u0000'), [items, getItemKey]);
   const resolveItemKey = useCallback((index: number) => {
     // Recreate the callback when estimate inputs change. TanStack uses the
     // callback identity to invalidate its derived measurement positions while
     // retaining DOM-measured sizes in its key cache.
     void estimateContextRevision;
+    void itemKeyRevision;
     const item = itemsRef.current[index];
     return item === undefined ? index : getItemKeyRef.current(item);
-  }, [estimateContextRevision]);
+  }, [estimateContextRevision, itemKeyRevision]);
+
+  const attachingRowsRef = useRef(new Set<HTMLElement>());
+  const measurementBatchRef = useRef<Map<Element, number> | null>(null);
 
   const virtualizer = useVirtualizer({
     // A live-tail open previously mounted rows 0..13 before moving to 22..33;
@@ -447,11 +471,13 @@ export function useFlowChatVirtualizer<T>({
     observeElementRect: observeFlowChatViewportRect,
     observeElementOffset: (instance, callback) => {
       let synchronized = false;
-        const publish = (actualOffsetPx?: number) => {
-          const scroller = instance.scrollElement;
-          if (!scroller || scroller !== scrollerRef.current || isViewportSuspendedRef.current()) return;
-          const actualOffset = actualOffsetPx ?? scroller.scrollTop;
+      viewportOffsetEstablishedRef.current = false;
+      const publish = (actualOffsetPx?: number) => {
+        const scroller = instance.scrollElement;
+        if (!scroller || scroller !== scrollerRef.current || isViewportSuspendedRef.current()) return;
+        const actualOffset = actualOffsetPx ?? scroller.scrollTop;
         synchronized = true;
+        viewportOffsetEstablishedRef.current = true;
         // false avoids a nested flushSync while React is attaching measured rows.
         if (instance.scrollOffset !== actualOffset) callback(actualOffset, false);
       };
@@ -460,7 +486,10 @@ export function useFlowChatVirtualizer<T>({
         // TanStack's debounced scroll-end callback captures the last native-event
         // offset. It must not undo a newer synchronous measurement reconciliation.
         if (synchronized && !isScrolling && instance.scrollElement) offset = instance.scrollElement.scrollTop;
-        if (isScrolling) synchronized = false;
+        if (isScrolling) {
+          synchronized = false;
+          viewportOffsetEstablishedRef.current = true;
+        }
         callback(offset, isScrolling);
       });
       return () => {
@@ -483,13 +512,26 @@ export function useFlowChatVirtualizer<T>({
       // Ordinary reading also shifts the real viewport when measured rows above
       // it shrink. Publish that readback after the size cache updates, before
       // selecting a window from the old offset and unmounting those same rows.
-      if (reconciled || shifted) publishMeasuredOffsetRef.current?.();
+      // A physical range shrink can also clamp follow without a registered
+      // shift. Every measured window uses the actual offset, including live
+      // follow after opening; a delayed native event must not select old rows.
+      if (reconciled || shifted || viewportOffsetEstablishedRef.current) publishMeasuredOffsetRef.current?.();
     },
     estimateSize,
+    measureElement: (element, entry, instance) => measurementBatchRef.current?.get(element)
+      ?? measureTanStackElement(element, entry, instance),
     getItemKey: resolveItemKey,
     // Items carry their own index attribute already; measuring reads it back.
     indexAttribute: 'data-virtual-index',
-    overscan: FLOW_CHAT_OVERSCAN_ITEMS,
+    overscan: 0,
+    rangeExtractor: range => {
+      const indexes = new Set(timelineOverscanRange(range.startIndex, range.endIndex, range.count,
+        scrollerRef.current?.clientHeight ?? 0, estimateSize));
+      if (pinnedKeys?.size) itemsRef.current.forEach((item, index) => {
+        if (pinnedKeys.has(getItemKeyRef.current(item))) indexes.add(index);
+      });
+      return [...indexes].sort((a, b) => a - b);
+    },
     scrollMargin: contentStartPx,
     scrollPaddingStart: scrollPaddingStartPx,
     /*
@@ -511,6 +553,7 @@ export function useFlowChatVirtualizer<T>({
   // An instance field rather than an option, so it is assigned here — before
   // any measurement callback can reach `resizeItem`.
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta) => {
+    if (resettingMeasurementsRef.current) return false;
     pendingMeasurementRef.current = true;
     const scroller = scrollerRef.current;
     if (!scroller) return false;
@@ -621,7 +664,21 @@ export function useFlowChatVirtualizer<T>({
     contentStartPx,
   );
 
-  const measureRowElement = virtualizer.measureElement;
+  // Ref attachment interleaves with descendant layout effects. Reading each
+  // row here used to force a separate style/layout pass for every new card.
+  const measureRowElement = useCallback((element: HTMLElement | null) => {
+    if (element) attachingRowsRef.current.add(element);
+  }, []);
+  useLayoutEffect(() => {
+    const attached = [...attachingRowsRef.current].filter(element => element.isConnected);
+    attachingRowsRef.current.clear();
+    virtualizer.measureElement(null);
+    if (!attached.length || isViewportSuspendedRef.current()) return;
+    // Read before any viewport shift or size-cache notification can write.
+    measurementBatchRef.current = new Map(attached.map(element => [element, element.offsetHeight]));
+    try { for (const element of attached) virtualizer.measureElement(element); }
+    finally { measurementBatchRef.current = null; }
+  });
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -659,15 +716,54 @@ export function useFlowChatVirtualizer<T>({
     const scroller = scrollerRef.current;
     if (!scroller || isViewportSuspendedRef.current()) return;
     const elements = scroller.querySelectorAll<HTMLElement>('[data-virtual-index]');
+    const measurements: Array<[number, number]> = [];
     for (const element of elements) {
+      if (element.closest('[data-flowchat-virtual-viewport]') !== scroller) continue;
       const index = Number(element.getAttribute('data-virtual-index'));
       if (!Number.isInteger(index)) continue;
-      virtualizer.resizeItem(
-        index,
-        virtualizer.options.measureElement(element, undefined, virtualizer),
-      );
+      measurements.push([index, virtualizer.options.measureElement(element, undefined, virtualizer)]);
     }
+    // measure() clears keyed sizes but leaves the previous derived positions.
+    // Rebuild those before resizeItem compares heights: otherwise unchanged
+    // compact rows look like zero deltas, never repopulate the empty size cache,
+    // and fall back to estimates until another resize or scroll arrives.
+    (virtualizer as unknown as MeasuringVirtualizer).getMeasurements();
+    for (const [index, height] of measurements) virtualizer.resizeItem(index, height);
   }, [scrollerRef, virtualizer]);
+
+  const [fontRevision, setFontRevision] = useState(0);
+  useEffect(() => {
+    const changed = () => setFontRevision(value => value + 1);
+    document.fonts?.addEventListener('loadingdone', changed);
+    const observer = new MutationObserver(changed);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'class', 'data-openbitfun-appearance-revision'] });
+    return () => { observer.disconnect(); document.fonts?.removeEventListener('loadingdone', changed); };
+  }, []);
+  const layoutSignature = `${estimateContext?.availableWidthPx ?? ''}:${fontRevision}`;
+  const measuredLayoutRef = useRef(layoutSignature);
+  const previousKeysRef = useRef(new Set<string>());
+  const retiredMeasurementsRef = useRef(0);
+  useLayoutEffect(() => {
+    const keys = new Set(items.map(getItemKeyRef.current));
+    for (const key of previousKeysRef.current) if (!keys.has(key)) retiredMeasurementsRef.current++;
+    previousKeysRef.current = keys;
+    if (measuredLayoutRef.current === layoutSignature && retiredMeasurementsRef.current < 2048) return;
+    if (isViewportSuspendedRef.current()) return;
+    const scroller = scrollerRef.current;
+    const before = (virtualizer as unknown as MeasuringVirtualizer).getMeasurements();
+    const anchorIndex = before.findIndex(row => row.end > (scroller?.scrollTop ?? 0));
+    const anchorStart = before[anchorIndex]?.start;
+    resettingMeasurementsRef.current = true;
+    try { virtualizer.measure(); measureRenderedItems(); }
+    finally { resettingMeasurementsRef.current = false; }
+    const after = (virtualizer as unknown as MeasuringVirtualizer).getMeasurements()[anchorIndex]?.start;
+    if (after !== undefined && anchorStart !== undefined && Math.abs(after - anchorStart) > 0.5) {
+      shiftViewport(after - anchorStart);
+      publishMeasuredOffsetRef.current?.();
+    }
+    measuredLayoutRef.current = layoutSignature;
+    retiredMeasurementsRef.current = 0;
+  }, [itemKeyRevision, layoutSignature, items, measureRenderedItems, scrollerRef, shiftViewport, virtualizer]);
 
   const getItemBounds = useCallback((index: number): FlowChatItemBounds | null => {
     const measurement = (virtualizer as unknown as MeasuringVirtualizer)

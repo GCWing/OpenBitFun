@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FlowGroupReceiveFeedback } from '@openbitfun/ui/flow-chat';
 import type { VirtualItem } from '../../types/flow-chat-projection';
-import { toolCapsuleStateKey } from '../../tool-cards/toolCapsuleModel';
 import { indexFlowGroups } from '../../grouping/selectors';
 import { getFlowGroupStateIds, isFlowGroupExpanded } from '../../grouping/types';
 import { captureFlowGroupFeedbackSnapshot, collectFlowGroupReceiveFeedback } from '../../grouping/receiveFeedback';
@@ -58,11 +57,8 @@ export function useFlowGroupState(
   const onCollapseGroup = useCallback((groupId: string) => {
     const location = indexRef.current.byId.get(groupId);
     const ids = location ? getFlowGroupStateIds(location.group) : [groupId];
-    if (location) setExpandedToolCapsules(previous => {
-      const next = new Set(previous);
-      location.group.allItems.forEach(member => next.delete(toolCapsuleStateKey(sessionIdRef.current, location.turnId, member.id)));
-      return next;
-    });
+    // A parent fold changes only the parent. Child disclosure is a reader
+    // choice and is restored when the collection is opened again.
     setGroupStates(previous => {
       const next = new Map(previous);
       ids.forEach(id => next.set(id, false));

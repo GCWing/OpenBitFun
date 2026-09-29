@@ -1,7 +1,8 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * PagePublish tool card — shows publish slug / version / URLs.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { IconButton, Icon } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
 
@@ -24,7 +25,7 @@ async function openPage(slug: string, knownGeneration?: string, versionId?: stri
 export const PagePublishDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
   const { t } = useTranslation('flow-chat');
   const { status, toolResult, partialParams, isParamsStreaming, toolCall } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
 
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
@@ -64,7 +65,7 @@ export const PagePublishDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
 
   const toggleExpanded = useCallback(() => {
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded);
-  }, [applyExpandedState, isExpanded]);
+  }, [applyExpandedState, isExpanded, setIsExpanded]);
 
   const getErrorMessage = () => {
     if (toolResult && 'error' in toolResult && toolResult.error) {

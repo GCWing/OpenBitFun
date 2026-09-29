@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * Display component for MCP tools.
  * Supports MCP Apps: when tool result contains ui:// resource, renders interactive UI in sandboxed iframe.
@@ -203,8 +204,8 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
     userConfirmed,
     isParamsStreaming,
   } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [isInputExpanded, setIsInputExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
+  const [isInputExpanded, setIsInputExpanded] = useToolCardDisclosure('isInputExpanded');
   // Tool-result images are inline content of this card, so the card owns their overlay.
   const [imagePreview, setImagePreview] = useState<ImageLightboxState | null>(null);
   const toolId = toolItem.id ?? toolCall?.id;
@@ -662,12 +663,12 @@ export const MCPToolDisplay: React.FC<ToolCardProps> = ({
       setIsInputExpanded(false);
     }
     applyExpandedState(isExpanded, nextExpanded, setIsExpanded);
-  }, [applyExpandedState, isExpanded]);
+  }, [applyExpandedState, isExpanded, setIsExpanded, setIsInputExpanded]);
 
   const handleInputOpenChange = useCallback((open: boolean) => {
     setIsInputExpanded(open);
     dispatchToolCardToggle();
-  }, [dispatchToolCardToggle]);
+  }, [dispatchToolCardToggle, setIsInputExpanded]);
 
   const getErrorMessage = () => {
     if (toolResult && 'error' in toolResult) {

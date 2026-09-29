@@ -35,8 +35,10 @@ export interface ContentCanvasProps {
   createTabEventName?: string;
   /** Reveal this host after an explicit content-open request. */
   onReveal?: () => void;
-  /** Close the containing panel, when this host is collapsible. */
+  /** Hide the containing panel, when this host is collapsible. */
   onCollapsePanel?: () => void;
+  /** Host-owned layout actions, replacing the group-level close-all button. */
+  toolbarActions?: React.ReactNode;
   /** Suspend terminal fit/PTY resize while the hosting panel is animating. */
   terminalResizeSuspended?: boolean;
   /** Whether this host exposes Mission Control. */
@@ -54,6 +56,7 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
   createTabEventName,
   onReveal,
   onCollapsePanel,
+  toolbarActions,
   terminalResizeSuspended = false,
   missionControlEnabled = true,
   emptyState,
@@ -186,7 +189,7 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
     // Show empty state when there are no visible tabs and no terminal keep-alive tabs.
     if (!hasRenderableTabs) {
       return (
-        <EmptyState onClose={disablePopOut ? undefined : onCollapsePanel}>
+        <EmptyState onClose={disablePopOut ? undefined : onCollapsePanel} toolbarActions={toolbarActions}>
           {emptyState}
         </EmptyState>
       );
@@ -205,6 +208,7 @@ export const ContentCanvas: React.FC<ContentCanvasProps> = ({
             onTabCloseWithDirtyCheck={handleCloseWithDirtyCheck}
             onTabCloseAllWithDirtyCheck={handleCloseAllWithDirtyCheck}
             disablePopOut={disablePopOut}
+            toolbarActions={toolbarActions}
             terminalResizeSuspended={terminalResizeSuspended}
           />
         </div>

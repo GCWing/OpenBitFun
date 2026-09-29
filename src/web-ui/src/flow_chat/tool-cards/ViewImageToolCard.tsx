@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
@@ -52,7 +53,7 @@ export const ViewImageToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand 
   const status = getToolCardStatus(toolItem);
   const result = useMemo(() => parseResult(toolItem.toolResult?.result), [toolItem.toolResult?.result]);
   const source = useMemo(() => imageSource(toolItem), [toolItem]);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const [imageFailed, setImageFailed] = useState(false);
   const toolId = toolItem.id ?? toolItem.toolCall?.id;

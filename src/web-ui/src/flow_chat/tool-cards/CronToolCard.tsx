@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from 'react';
+import { useToolCardDisclosure } from '../timeline/readerState';
+import React, { useMemo } from 'react';
 import { CronToolCard as CronToolCardView } from '@openbitfun/ui/flow-chat';
 import { useI18n } from '@/infrastructure/i18n';
 import type { CronSchedule } from '@/infrastructure/api';
@@ -114,7 +115,7 @@ export const CronToolCard: React.FC<ToolCardProps> = React.memo(({ toolItem }) =
   const { t, formatDate } = useI18n('flow-chat');
   const { t: tTodos } = useI18n('scenes/todos');
   const { toolCall, toolResult } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,

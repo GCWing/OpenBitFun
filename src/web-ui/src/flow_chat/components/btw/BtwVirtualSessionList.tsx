@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type RefObject, type MutableRefObject } from 'react';
+import { useEmbeddedTimelineFollow } from '../../timeline/useEmbeddedTimelineFollow';
+import { Fragment, useEffect, useRef, useState, type RefObject, type MutableRefObject } from 'react';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
 import { VirtualItemRenderer } from '../modern/VirtualItemRenderer';
 import { useFlowChatVirtualizer } from '../modern/useFlowChatVirtualizer';
@@ -13,6 +14,13 @@ import { FLOWCHAT_FOCUS_ITEM_EVENT, type FlowChatFocusItemRequest } from '../../
 import { findExcerptTextRoot, highlightLocatedExcerpt } from '../../selection/locateConversationExcerpt';
 import { resolveExcerptRange } from '../../selection/flowChatSelection';
 import { resolveFlowChatFocusTarget } from '../modern/flowChatFocusTarget';
+import { useFlowChatContext } from '../modern/FlowChatContext';
+import { useConversationTimeline } from '../../timeline/useConversationTimeline';
+import { FlowChatReaderProvider } from '../../timeline/readerState';
+import { useTimelineInteraction } from '../../timeline/useTimelineInteraction';
+import { TimelineMutationBoundary } from '../../timeline/TimelineMutationBoundary';
+import { findTimelineBlockIndex } from '../../timeline/document';
+import { revealContainedRange } from '@openbitfun/flow-chat-presentation/scroll';
 
 interface BtwVirtualSessionListProps {
   items: VirtualItem[];
@@ -28,9 +36,11 @@ interface BtwVirtualSessionListProps {
 
 /** The embedded transcript shares row placement, not the primary session shell. */
 export function BtwVirtualSessionList({
-  items, scrollerRef, headerRef, followRef, viewportOwner,
+  items: sourceItems, scrollerRef, headerRef, followRef, viewportOwner,
   exploreGroupStates, isHistorical, viewState, onExpandGroup,
 }: BtwVirtualSessionListProps) {
+  const { sessionId } = useFlowChatContext();
+  const { items, reader } = useConversationTimeline(sourceItems, sessionId, 'side');
   const windowRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   useEffect(() => {
@@ -42,7 +52,14 @@ export function BtwVirtualSessionList({
     updateWidth();
     return () => observer.disconnect();
   }, [scrollerRef]);
+  const cancelAimRef = useRef<() => void>(() => {});
+  const pinnedKeys = useTimelineInteraction(scrollerRef, reader, () => followRef.current, undefined, () => {
+    followRef.current = false;
+    if (viewState) viewState.followTail = false;
+    viewportOwner.release('follow-output'); cancelAimRef.current();
+  });
   const virtualizer = useFlowChatVirtualizer({
+    pinnedKeys,
     items,
     scrollerRef,
     headerRef,
@@ -59,15 +76,19 @@ export function BtwVirtualSessionList({
     writeViewport: viewportOwner.write,
     shiftViewport: viewportOwner.shift,
   });
+  cancelAimRef.current = virtualizer.cancelAim;
   useBtwPanelViewport(viewState, items, scrollerRef, windowRef, virtualizer, viewportOwner);
-  const navigationRef = useRef({ items, virtualizer, onExpandGroup });
-  navigationRef.current = { items, virtualizer, onExpandGroup };
+  const navigationRef = useRef({ items, sourceItems, virtualizer, onExpandGroup });
+  navigationRef.current = { items, sourceItems, virtualizer, onExpandGroup };
   useEffect(() => {
     const scroller = scrollerRef.current;
     if (!scroller) return;
     let generation = 0;
     let frame = 0;
-    const cancel = () => { generation++; cancelAnimationFrame(frame); navigationRef.current.virtualizer.cancelAim(); };
+    const cancel = () => {
+      generation++; cancelAnimationFrame(frame); navigationRef.current.virtualizer.cancelAim();
+      reader.set('navigation:thinking', '');
+    };
     const unsubscribe = globalEventBus.on<FlowChatFocusItemRequest>(FLOWCHAT_FOCUS_ITEM_EVENT, request => {
       if (!request.embedded || !request.excerpt || request.sessionId !== scroller.dataset.flowchatSelectionRoot) return;
       cancel();
@@ -76,16 +97,20 @@ export function BtwVirtualSessionList({
       if (request.surfaceEpoch !== scope.epoch) return;
       const excerpt = request.excerpt;
       const fragment = excerpt.fragments[0];
+      reader.set('navigation:thinking', fragment.flowItemId ?? '');
       const startedAt = performance.now();
-      let materialized = false;
+      let materialized = -1;
+      let expandedGroup: string | undefined;
       followRef.current = false;
       if (viewState) viewState.followTail = false;
       const aim = () => {
         if (generation !== ownGeneration || !scope.isCurrent()) return;
         const current = navigationRef.current;
         const source = findExcerptTextRoot(excerpt);
-        const range = source && resolveExcerptRange(source, fragment);
+        const ready = source && !source.closest('[data-markdown-pending]') && !source.querySelector('[data-markdown-pending]');
+        const range = ready && resolveExcerptRange(source, fragment);
         if (range) {
+          revealContainedRange(range, scroller);
           const bounds = scroller.getBoundingClientRect();
           const rect = range.getBoundingClientRect();
           current.virtualizer.cancelAim();
@@ -96,14 +121,22 @@ export function BtwVirtualSessionList({
           highlightLocatedExcerpt(excerpt);
           return;
         }
-        if (!materialized) {
-          const target = resolveFlowChatFocusTarget(request, current.items);
-          const index = fragment.flowItemId ? target.resolvedVirtualIndex
+        {
+          const target = resolveFlowChatFocusTarget(request, current.sourceItems);
+          const index = fragment.flowItemId ? findTimelineBlockIndex(current.items, target.resolvedVirtualIndex ?? -1, fragment.flowItemId)
             : current.items.findIndex(item => item.type === 'user-message' && item.turnId === fragment.turnId);
           if (index === undefined || index < 0) { request.onUnavailable?.(); return; }
-          if (target.expandExploreGroupId) current.onExpandGroup?.(target.expandExploreGroupId);
-          current.virtualizer.scrollItemIntoView(index, { align: 'center', owner: 'one-shot-navigation' });
-          materialized = true;
+          if (target.expandExploreGroupId && expandedGroup !== target.expandExploreGroupId) {
+            expandedGroup = target.expandExploreGroupId;
+            reader.set(`group:${expandedGroup}:query`, '');
+            reader.set(`group:${expandedGroup}:tool`, 'all');
+            reader.set(`group:${expandedGroup}:status`, 'all');
+            current.onExpandGroup?.(target.expandExploreGroupId);
+          }
+          if (materialized !== index) {
+            current.virtualizer.scrollItemIntoView(index, { align: 'center', owner: 'one-shot-navigation' });
+            materialized = index;
+          }
         }
         if (performance.now() - startedAt >= 2000) { request.onUnavailable?.(); return; }
         frame = requestAnimationFrame(aim);
@@ -118,47 +151,33 @@ export function BtwVirtualSessionList({
       cancel(); unsubscribe(); scroller.removeEventListener('wheel', cancel); scroller.removeEventListener('touchmove', cancel);
       scroller.removeEventListener('pointerdown', cancel); scroller.removeEventListener('keydown', cancel);
     };
-  }, [scrollerRef, followRef, viewState]);
+  }, [scrollerRef, followRef, viewState, reader]);
 
-  // Estimated offscreen rows change the scroll range as they mount. Follow
-  // those measurements as well as streamed data, but recheck user intent in
-  // the frame itself so a queued update cannot undo an upward gesture.
-  useEffect(() => {
-    const scroller = scrollerRef.current;
-    const window = windowRef.current;
-    if (!scroller || !window) return;
-    let frame: number | undefined;
-    const follow = () => {
-      if (frame !== undefined) cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        frame = undefined;
-        if (!followRef.current || scroller.clientHeight === 0) return;
-        viewportOwner.write({ owner: 'follow-output', topPx: scroller.scrollHeight, holdForMs: 0 });
-      });
-    };
-    const observer = new ResizeObserver(follow);
-    observer.observe(window);
-    observer.observe(scroller);
-    follow();
-    return () => {
-      observer.disconnect();
-      if (frame !== undefined) cancelAnimationFrame(frame);
-    };
-  }, [items, virtualizer.rows, scrollerRef, followRef, viewportOwner]);
+  useEmbeddedTimelineFollow({ scrollerRef, contentRef: windowRef, followRef, viewportOwner,
+    revision: items, cancelAim: virtualizer.cancelAim });
 
   return (
+    <FlowChatReaderProvider store={reader}>
+    <TimelineMutationBoundary itemKeys={items.map(getVirtualItemStableKey)} scrollerRef={scrollerRef}
+      canRepair={() => !followRef.current && viewportOwner.canShift()} shift={viewportOwner.shift}>
     <div
       ref={windowRef}
       style={{ paddingTop: virtualizer.paddingTopPx, paddingBottom: virtualizer.paddingBottomPx }}
     >
-      {virtualizer.rows.map(row => (
+      {virtualizer.rows.map((row, rowIndex) => (
+        <Fragment key={row.key}>
+        {rowIndex > 0 && row.startPx > virtualizer.rows[rowIndex - 1].endPx &&
+          <div aria-hidden="true" style={{ height: row.startPx - virtualizer.rows[rowIndex - 1].endPx }} />}
         <VirtualItemRenderer
           key={row.key}
           item={items[row.index]}
           index={row.index}
           measureRef={virtualizer.measureRowElement}
         />
+        </Fragment>
       ))}
     </div>
+    </TimelineMutationBoundary>
+    </FlowChatReaderProvider>
   );
 }

@@ -204,15 +204,25 @@
   .message-list-footer {
     /* Current input-stack inset is supplied inline by VirtualMessageList. */
     overflow-anchor: none;
+    flex-shrink: 0;
   }
 
-  /*
-   * Resident tail reservation (~1 viewport, supplied inline). It exists so the
-   * browser cannot clamp scrollTop when content shrinks; see
-   * `flowChatTailFollow.ts`. Height must stay a function of the viewport only.
-   */
+  &__extent {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+
+  &__items {
+    flex-shrink: 0;
+  }
+
+  /* Unused space always trails the content. The latest Turn's minimum extent
+     survives growth and collapse; the reading line is a threshold, not a reason
+     to push a short transcript down. */
   .message-list-tail-spacer {
     width: 100%;
+    flex-grow: 1;
     flex-shrink: 0;
     pointer-events: none;
     overflow-anchor: none;

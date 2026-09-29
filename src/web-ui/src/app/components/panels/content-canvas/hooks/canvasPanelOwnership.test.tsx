@@ -19,7 +19,9 @@ import {
   collapseSessionBottomTerminalPane,
   expandSessionAuxPane,
   expandSessionBottomTerminalPane,
+  hideSessionAuxPane,
 } from '@/app/scenes/session/sessionPanelLayout';
+import { useApp } from '@/app/hooks/useApp';
 import { fileTabManager } from '@/shared/services/FileTabManager';
 import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
 import { useSceneStore } from '@/app/stores/sceneStore';
@@ -116,6 +118,49 @@ describe('canvas host panel ownership', () => {
     flowChatStore.setState(state => ({ ...state, sessions: new Map(), activeSessionId: null }));
     stores.forEach(store => store.getState().reset());
     container.remove();
+  });
+
+  it('preserves tabs and width through fullscreen, restore, hide and reopen', async () => {
+    let toggleFullscreen: () => void;
+    function LayoutProbe() {
+      toggleFullscreen = useApp().toggleChatPanel;
+      return null;
+    }
+    const tabId = useAgentCanvasStore.getState().addTab(content('unfinished'), 'active');
+    useAgentCanvasStore.getState().setTabDirty(tabId, 'primary', true);
+    const originalTabs = useAgentCanvasStore.getState().primaryGroup;
+    expandSessionAuxPane();
+    await act(async () => root.render(<LayoutProbe />));
+
+    const flushLayout = async (action: () => void) => act(async () => {
+      action();
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    });
+    await flushLayout(() => toggleFullscreen());
+    expect(appManager.getState().layout).toMatchObject({ chatCollapsed: true, rightPanelCollapsed: false, rightPanelWidth: 520 });
+    await flushLayout(() => toggleFullscreen());
+    expect(appManager.getState().layout).toMatchObject({ chatCollapsed: false, rightPanelCollapsed: false, rightPanelWidth: 520 });
+
+    await flushLayout(() => toggleFullscreen());
+    await flushLayout(hideSessionAuxPane);
+    expect(appManager.getState().layout).toMatchObject({ chatCollapsed: false, rightPanelCollapsed: true });
+    await flushLayout(expandSessionAuxPane);
+    expect(appManager.getState().layout).toMatchObject({ chatCollapsed: false, rightPanelCollapsed: false, rightPanelWidth: 520 });
+    expect(useAgentCanvasStore.getState().primaryGroup).toBe(originalTabs);
+  });
+
+  it('reveals the bottom terminal from fullscreen without opening hidden content from chat-only', () => {
+    expandSessionBottomTerminalPane(260);
+    expect(appManager.getState().layout).toMatchObject({
+      chatCollapsed: false, rightPanelCollapsed: true, bottomTerminalPanelCollapsed: false,
+    });
+    appManager.updateLayout({ chatCollapsed: true });
+    collapseSessionBottomTerminalPane();
+    expandSessionBottomTerminalPane(260);
+    expect(appManager.getState().layout).toMatchObject({
+      chatCollapsed: false, rightPanelCollapsed: false, bottomTerminalPanelCollapsed: false,
+      bottomTerminalPanelHeight: 260, rightPanelWidth: 520,
+    });
   });
 
   it.each([true, false])('preserves a session panel with collapsed=%s through file-view lifetime', async collapsed => {

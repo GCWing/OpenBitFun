@@ -12,7 +12,7 @@ interface Handoff {
 
 /** Move the retained control only after it has faded out. CSS owns the fold and
  * its reversal; this hook waits for those actual transitions, never a timer. */
-export function useThinkingHandoff(rootRef: RefObject<HTMLDivElement>, side: boolean, label: string, wantsDock: boolean) {
+export function useThinkingHandoff(rootRef: RefObject<HTMLDivElement>, side: boolean, label: string, wantsDock: boolean, virtualized = false) {
   const previousLabel = useRef(label);
   const [motionReady, setMotionReady] = useState(false);
   const [handoff, setHandoff] = useState<Handoff>(() => ({
@@ -39,7 +39,7 @@ export function useThinkingHandoff(rootRef: RefObject<HTMLDivElement>, side: boo
     const position = side ? 'side' : 'block';
     // History/remounts have no running transitions. Hidden groups and reduced
     // motion also settle directly rather than queueing an invisible handoff.
-    if (!header?.getAnimations || !view || root?.closest('[hidden], [inert]')
+    if ((virtualized && !motionReady) || !header?.getAnimations || !view || root?.closest('[hidden], [inert]')
       || view.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
       setHandoff({ target: side, phase: position, origin: position, label: previousLabel.current });
       return;
@@ -51,7 +51,7 @@ export function useThinkingHandoff(rootRef: RefObject<HTMLDivElement>, side: boo
       label: handoff.phase === 'leaving' ? handoff.label : previousLabel.current,
       top: view.getComputedStyle(header).insetBlockStart,
     });
-  }, [handoff, rootRef, side]);
+  }, [handoff, rootRef, side, motionReady, virtualized]);
 
   useIsomorphicLayoutEffect(() => {
     if (handoff.phase !== 'leaving' || handoff.target !== side) return;

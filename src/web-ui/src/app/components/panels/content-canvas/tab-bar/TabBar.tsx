@@ -49,6 +49,8 @@ export interface TabBarProps {
   onCloseAllTabs?: () => Promise<void> | void;
   /** Pop out tab as independent scene */
   onTabPopOut?: (tabId: string) => void;
+  /** undefined keeps default actions; null omits them in non-owning split groups. */
+  toolbarActions?: React.ReactNode;
 }
 
 export const TabBar: React.FC<TabBarProps> = ({
@@ -67,6 +69,7 @@ export const TabBar: React.FC<TabBarProps> = ({
   onOpenMissionControl,
   onCloseAllTabs,
   onTabPopOut,
+  toolbarActions,
 }) => {
   const { t } = useTranslation('components');
   const [overflowTabIds, setOverflowTabIds] = useState<string[]>([]);
@@ -89,13 +92,19 @@ export const TabBar: React.FC<TabBarProps> = ({
     if (!list || !toolbar || list.clientWidth === 0) return;
 
     const toolbarStyle = getComputedStyle(toolbar);
-    const closeWidth = actionsRef.current
-      ?.querySelector<HTMLElement>('.canvas-tab-bar__close-all')?.offsetWidth ?? 0;
+    const actions = actionsRef.current;
+    const fixedActions = actions
+      ? Array.from(actions.children).filter((child): child is HTMLElement =>
+        child instanceof HTMLElement && child.dataset.openbitfunProductComponent !== 'canvas-tab-overflow')
+      : [];
+    const actionsGap = actions ? parseFloat(getComputedStyle(actions).columnGap) || 0 : 0;
+    const fixedActionsWidth = fixedActions.reduce((width, action) => width + action.offsetWidth, 0)
+      + Math.max(0, fixedActions.length - 1) * actionsGap;
     const availableWithoutOverflow = toolbar.clientWidth
       - (parseFloat(toolbarStyle.paddingLeft) || 0)
       - (parseFloat(toolbarStyle.paddingRight) || 0)
       - (parseFloat(toolbarStyle.columnGap) || 0)
-      - closeWidth;
+      - fixedActionsWidth;
     const canFitWithoutMenu = !onOpenMissionControl
       && list.scrollWidth <= availableWithoutOverflow;
     const viewport = list.getBoundingClientRect();
@@ -382,8 +391,8 @@ export const TabBar: React.FC<TabBarProps> = ({
             />
           )}
 
-          {/* Close all tabs button */}
-          {onCloseAllTabs && visibleTabs.length > 0 && (
+          {/* Hosts own layout actions; close-all remains available in tab menus. */}
+          {toolbarActions !== undefined ? toolbarActions : onCloseAllTabs && visibleTabs.length > 0 && (
             <Tooltip content={t('tabs.closeAll')} placement="bottom">
               <IconButton
                 data-openbitfun-product-component="canvas-tab-bar"

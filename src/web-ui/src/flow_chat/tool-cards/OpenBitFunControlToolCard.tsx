@@ -1,3 +1,4 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Icon, OverflowText, ScrollArea } from '@openbitfun/ui';
 import {
@@ -15,7 +16,7 @@ import './OpenBitFunControlToolCard.scss';
 
 export const OpenBitFunControlToolCard: React.FC<ToolCardProps> = ({ toolItem, onExpand }) => {
   const { t, currentLanguage, formatNumber } = useI18n('flow-chat');
-  const [isExpanded, setExpanded] = useState(false);
+  const [isExpanded, setExpanded] = useToolCardDisclosure('isExpanded');
   const [localCapability, setLocalCapability] = useState<unknown>();
   const model = useMemo(() => buildOpenBitFunControlCardModel(toolItem, currentLanguage, localCapability),
     [toolItem, currentLanguage, localCapability]);
