@@ -73,6 +73,28 @@ pub async fn start_memory_startup_task(request: MemoryStartupRequest) {
                 );
             }
         }
+        // Failure bookkeeping expires on the same pass and before phase 1 claims
+        // any session: an expired row is a dead end whose attempt budget is
+        // dropped here instead of being requeued by the quarantine path.
+        let max_failure_report_days = config.memories.max_failure_report_days;
+        match phase1
+            .prune_failed_stage1_jobs(max_failure_report_days)
+            .await
+        {
+            Ok(expired) if expired > 0 => {
+                info!(
+                    "Memory startup expired stale stage1 failure records: expired={}, max_failure_report_days={}",
+                    expired, max_failure_report_days
+                );
+            }
+            Ok(_) => {}
+            Err(error) => {
+                warn!(
+                    "Memory startup failed to expire stale stage1 failure records: {}",
+                    error
+                );
+            }
+        }
         if let Err(error) = phase1
             .run_once_excluding_session(Some(request.session_id.as_str()))
             .await

@@ -59,9 +59,10 @@
     },
     "failed": {
       "title": "Sessions that failed extraction",
-      "description": "These sessions could not be extracted. They stay listed until extraction succeeds or their retry budget is restored. Clearing the failure records lets them be retried on the next memory run.",
+      "description": "These sessions could not be extracted. They stay listed until extraction succeeds, their retry budget is restored, or the failure is older than the failure report window. Clearing the failure records lets them be retried on the next memory run.",
       "none": "No failed extraction.",
       "retryExhausted": "retry budget exhausted",
+      "failedAt": "Failed {{time}}",
       "clearAction": "Clear failed records",
       "clearConfirmTitle": "Clear failed extraction records?",
       "clearConfirm": "This deletes the failure records of the listed sessions on the current execution host. Extracted memories are kept, and clearing the failure bookkeeping lets these sessions be retried on the next memory run.",

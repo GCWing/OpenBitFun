@@ -36,6 +36,15 @@ const PHASE1_RETRY_EXHAUSTION_QUARANTINE_SECONDS: i64 = 24 * 60 * 60;
 /// beats mean the process that held the job is gone and a new run may reclaim it.
 const PHASE2_HEARTBEAT_STALE_SECONDS: i64 = 120;
 
+/// Bounds of the failed stage-1 report retention window.
+///
+/// The window has a one-day floor for the same reason candidate retention has
+/// one: a misconfigured zero must not wipe the failure bookkeeping of an attempt
+/// that still deserves a retry. The ceiling keeps the failed list from becoming a
+/// permanent archive of errors nobody can act on any more.
+const FAILED_STAGE1_REPORT_MIN_RETENTION_DAYS: i64 = 1;
+const FAILED_STAGE1_REPORT_MAX_RETENTION_DAYS: i64 = 90;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct MemoryPhase2CandidateRow {
     pub session_id: String,
@@ -76,6 +85,10 @@ pub struct MemoryStage1Failure {
     pub session_id: String,
     pub last_error: String,
     pub retry_exhausted: bool,
+    /// When the failed attempt finished, or when it started if it never
+    /// finished. `None` only when the host stored neither timestamp, so a
+    /// status surface can show how old a failure is instead of guessing.
+    pub failed_at_unix_secs: Option<i64>,
 }
 
 /// Read-only view of the memory pipeline state for status surfaces.
@@ -667,10 +680,11 @@ impl MemoryDatabase {
             let mut failures_stmt = conn
                 .prepare(
                     r#"
-                    SELECT job_key, COALESCE(last_error, ''), retry_remaining
+                    SELECT job_key, COALESCE(last_error, ''), retry_remaining,
+                           COALESCE(finished_at, started_at)
                     FROM jobs
                     WHERE kind = ?1 AND status = ?2
-                    ORDER BY COALESCE(finished_at, 0) DESC, job_key ASC
+                    ORDER BY COALESCE(finished_at, started_at, 0) DESC, job_key ASC
                     "#,
                 )
                 .map_err(|error| {
@@ -685,6 +699,7 @@ impl MemoryDatabase {
                         session_id: row.get(0)?,
                         last_error: row.get(1)?,
                         retry_exhausted: row.get::<_, i64>(2)? <= 0,
+                        failed_at_unix_secs: row.get(3)?,
                     })
                 })
                 .map_err(|error| {
@@ -747,6 +762,82 @@ impl MemoryDatabase {
                     ))
                 })?;
             Ok(cleared as u64)
+        })
+        .await
+        .map_err(|error| {
+            OpenBitFunError::service(format!("Memories write task failed: {}", error))
+        })?
+    }
+
+    /// Deletes stage-1 failure bookkeeping that is too old to stay actionable.
+    ///
+    /// Failure bookkeeping must not outlive its usefulness: once a failed
+    /// extraction is older than the report window, the session either produced
+    /// output in the meantime or its source session is gone, so the row only
+    /// keeps a dead end listed forever. Expiring the row also drops the stale
+    /// attempt budget with it, so the session becomes claimable again instead of
+    /// waiting for the 24 h quarantine requeue to reconsider a months-old error.
+    ///
+    /// Only per-session `memory_stage1` rows in `error` state expire. The global
+    /// phase-2 job is never age-pruned: its `last_error` is refreshed on every
+    /// run and serves as current-run diagnostics, not as a failure record. The
+    /// `stage1_outputs` rows are never touched, so no extracted memory is lost.
+    ///
+    /// The window is clamped to 1..=90 days so a misconfigured zero cannot wipe
+    /// bookkeeping that still matters and an unbounded value cannot turn the
+    /// failed list into a permanent archive. Returns the number of deleted rows.
+    pub async fn prune_failed_stage1_jobs(
+        &self,
+        max_report_age_days: i64,
+    ) -> OpenBitFunResult<u64> {
+        let max_report_age_days = max_report_age_days.clamp(
+            FAILED_STAGE1_REPORT_MIN_RETENTION_DAYS,
+            FAILED_STAGE1_REPORT_MAX_RETENTION_DAYS,
+        );
+        // The cutoff is taken once, before the write task, so every row is judged
+        // against the same clock.
+        let cutoff_unix_secs = current_unix_secs() - max_report_age_days * 24 * 60 * 60;
+        self.prune_failed_stage1_jobs_before(cutoff_unix_secs).await
+    }
+
+    /// Expires stage-1 failure rows whose failure watermark is at or before
+    /// `cutoff_unix_secs`.
+    ///
+    /// A row exactly on the cutoff is expired: the window means "at most N days
+    /// old", not "strictly younger than N days".
+    async fn prune_failed_stage1_jobs_before(
+        &self,
+        cutoff_unix_secs: i64,
+    ) -> OpenBitFunResult<u64> {
+        if !self.db_path.exists() {
+            return Ok(0);
+        }
+
+        let db_path = self.db_path.clone();
+        task::spawn_blocking(move || -> OpenBitFunResult<u64> {
+            let conn = open_connection(&db_path)?;
+            initialize_schema(&conn)?;
+            // A row that never finished still carries the failure watermark in
+            // `started_at`, so both columns are part of the comparison. `0`
+            // covers a row that has neither, which can only be older than any
+            // window.
+            let expired = conn
+                .execute(
+                    r#"
+                    DELETE FROM jobs
+                    WHERE kind = ?1
+                      AND status = ?2
+                      AND COALESCE(finished_at, started_at, 0) <= ?3
+                    "#,
+                    params![JOB_KIND_MEMORY_STAGE1, JOB_STATUS_ERROR, cutoff_unix_secs],
+                )
+                .map_err(|error| {
+                    OpenBitFunError::io(format!(
+                        "Failed to prune expired memory stage1 failures: {}",
+                        error
+                    ))
+                })?;
+            Ok(expired as u64)
         })
         .await
         .map_err(|error| {
@@ -2131,6 +2222,39 @@ mod tests {
         }
     }
 
+    /// Claims and fails one stage-1 session, leaving an `error` job row behind.
+    async fn mark_phase1_failure(db: &MemoryDatabase, session_id: &str, error: &str) {
+        let token = claim_token(
+            db.try_claim_phase1_job(session_id, "worker", 100, 60, 8)
+                .await
+                .unwrap(),
+        );
+        assert!(db
+            .mark_phase1_job_failed(session_id, &token, 0, error.to_string())
+            .await
+            .unwrap());
+    }
+
+    /// Overwrites the failure watermark of a stage-1 job row so a test can place
+    /// it at an exact age instead of relying on the wall clock.
+    fn set_stage1_job_finished_at(db: &MemoryDatabase, session_id: &str, finished_at: i64) {
+        let conn = open_connection(db.path()).unwrap();
+        conn.execute(
+            "UPDATE jobs SET finished_at = ?1 WHERE kind = ?2 AND job_key = ?3",
+            params![finished_at, JOB_KIND_MEMORY_STAGE1, session_id],
+        )
+        .unwrap();
+    }
+
+    async fn stage1_failure_sessions(db: &MemoryDatabase) -> Vec<String> {
+        let snapshot = db.status_snapshot().await.unwrap();
+        snapshot
+            .stage1_failed
+            .into_iter()
+            .map(|failure| failure.session_id)
+            .collect()
+    }
+
     #[tokio::test]
     async fn schema_uses_codex_stage1_outputs_and_jobs_tables() {
         let temp = tempdir().unwrap();
@@ -2304,6 +2428,7 @@ mod tests {
         assert_eq!(before.stage1_failed.len(), 1);
         assert_eq!(before.stage1_failed[0].session_id, "session-failed");
         assert_eq!(before.stage1_failed[0].last_error, "403 forbidden");
+        assert!(before.stage1_failed[0].failed_at_unix_secs.is_some());
 
         assert_eq!(db.clear_failed_stage1_jobs().await.unwrap(), 1);
 
@@ -2337,6 +2462,183 @@ mod tests {
             }
             other => panic!("cleared session should be claimable again, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn prune_failed_stage1_jobs_expires_only_outdated_phase1_failures() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        // A failure that aged out of the report window.
+        mark_phase1_failure(&db, "session-stale", "403 AccessDenied.Unpurchased").await;
+        // A failure that is still inside the window.
+        mark_phase1_failure(&db, "session-recent", "provider unavailable").await;
+        // A successful phase-1 session with output, and the global phase-2 job.
+        let done_token = claim_token(
+            db.try_claim_phase1_job("session-done", "worker", 100, 60, 8)
+                .await
+                .unwrap(),
+        );
+        assert!(db
+            .mark_phase1_job_succeeded(&test_memory_row("session-done", 100), &done_token)
+            .await
+            .unwrap());
+        assert_eq!(
+            db.claim_phase2_job("global", "phase2-token", 10, 3600)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::Claimed
+        );
+        assert!(db
+            .complete_phase2_job_failure(
+                "global",
+                "phase2-token",
+                current_unix_secs() + 3600,
+                "consolidation failed".to_string(),
+            )
+            .await
+            .unwrap());
+
+        let now = current_unix_secs();
+        let cutoff = now - 14 * 24 * 60 * 60;
+        set_stage1_job_finished_at(&db, "session-stale", cutoff - 1);
+        set_stage1_job_finished_at(&db, "session-recent", cutoff + 1);
+        set_stage1_job_finished_at(&db, "session-done", cutoff - 1);
+
+        assert_eq!(
+            stage1_failure_sessions(&db).await,
+            vec!["session-recent".to_string(), "session-stale".to_string()]
+        );
+
+        assert_eq!(db.prune_failed_stage1_jobs_before(cutoff).await.unwrap(), 1);
+
+        assert_eq!(
+            stage1_failure_sessions(&db).await,
+            vec!["session-recent".to_string()]
+        );
+        // The stage-1 output of the successful session survives, and so does the
+        // phase-2 job: its error is current-run diagnostics, not a failure record.
+        let snapshot = db.status_snapshot().await.unwrap();
+        assert_eq!(snapshot.stage1_output_count, 1);
+        assert_eq!(snapshot.phase2_status.as_deref(), Some(JOB_STATUS_ERROR));
+        assert_eq!(
+            snapshot.phase2_last_error.as_deref(),
+            Some("consolidation failed")
+        );
+
+        // The expired row is gone, so its session is claimable again instead of
+        // waiting for the quarantine requeue to reconsider a months-old error.
+        match db
+            .try_claim_phase1_job("session-stale", "worker", 100, 60, 8)
+            .await
+            .unwrap()
+        {
+            MemoryPhase1ClaimOutcome::Claimed { ownership_token } => {
+                assert!(!ownership_token.is_empty())
+            }
+            other => panic!("expired failure should be claimable again, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn prune_failed_stage1_jobs_expires_a_failure_exactly_on_the_cutoff() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        mark_phase1_failure(&db, "session-on-cutoff", "boom").await;
+        mark_phase1_failure(&db, "session-inside-window", "boom").await;
+
+        let cutoff = current_unix_secs() - 14 * 24 * 60 * 60;
+        set_stage1_job_finished_at(&db, "session-on-cutoff", cutoff);
+        set_stage1_job_finished_at(&db, "session-inside-window", cutoff + 1);
+
+        // The window means "at most N days old", so the row exactly on the cutoff
+        // is expired and the one second younger row is kept.
+        assert_eq!(db.prune_failed_stage1_jobs_before(cutoff).await.unwrap(), 1);
+        assert_eq!(
+            stage1_failure_sessions(&db).await,
+            vec!["session-inside-window".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn prune_failed_stage1_jobs_uses_started_at_when_a_failure_never_finished() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+        mark_phase1_failure(&db, "session-orphan", "process died").await;
+
+        // A row written by a build that failed without stamping `finished_at`.
+        let conn = open_connection(db.path()).unwrap();
+        let cutoff = current_unix_secs() - 14 * 24 * 60 * 60;
+        conn.execute(
+            "UPDATE jobs SET finished_at = NULL, started_at = ?1 WHERE kind = ?2 AND job_key = ?3",
+            params![cutoff - 60, JOB_KIND_MEMORY_STAGE1, "session-orphan"],
+        )
+        .unwrap();
+        drop(conn);
+
+        assert_eq!(db.prune_failed_stage1_jobs_before(cutoff).await.unwrap(), 1);
+        assert!(stage1_failure_sessions(&db).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn prune_failed_stage1_jobs_clamps_the_report_window_to_its_bounds() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        mark_phase1_failure(&db, "session-hour-old", "boom").await;
+        mark_phase1_failure(&db, "session-100-days-old", "boom").await;
+
+        let now = current_unix_secs();
+        set_stage1_job_finished_at(&db, "session-hour-old", now - 60 * 60);
+        set_stage1_job_finished_at(&db, "session-100-days-old", now - 100 * 24 * 60 * 60);
+
+        // A zero window is clamped to the one-day floor: it must not wipe the
+        // bookkeeping of a retry that still deserves a chance.
+        assert_eq!(db.prune_failed_stage1_jobs(0).await.unwrap(), 1);
+        assert_eq!(
+            stage1_failure_sessions(&db).await,
+            vec!["session-hour-old".to_string()]
+        );
+
+        // An unbounded window is clamped to the ceiling, so a very old failure is
+        // not kept as a permanent archive entry either.
+        assert_eq!(db.prune_failed_stage1_jobs(1_000).await.unwrap(), 0);
+        assert_eq!(
+            stage1_failure_sessions(&db).await,
+            vec!["session-hour-old".to_string()]
+        );
+    }
+
+    #[tokio::test]
+    async fn prune_failed_stage1_jobs_ignores_a_missing_database() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        let db_path = db.path().to_path_buf();
+        assert!(!db_path.exists());
+
+        assert_eq!(db.prune_failed_stage1_jobs(14).await.unwrap(), 0);
+        // Expiring failure records must not create the database as a side effect.
+        assert!(!db_path.exists());
     }
 
     #[tokio::test]
@@ -2720,6 +3022,7 @@ mod tests {
         assert_eq!(snapshot.stage1_failed[0].session_id, "session-c");
         assert_eq!(snapshot.stage1_failed[0].last_error, "model outage");
         assert!(!snapshot.stage1_failed[0].retry_exhausted);
+        assert!(snapshot.stage1_failed[0].failed_at_unix_secs.is_some());
         assert_eq!(snapshot.phase2_status.as_deref(), Some(JOB_STATUS_ERROR));
         assert!(snapshot.phase2_last_finished_at_unix_secs.is_some());
         assert_eq!(

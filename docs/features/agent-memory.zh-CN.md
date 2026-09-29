@@ -140,6 +140,13 @@ auto_approve 只是权限模式，不是沙箱：在该模式下项目敏感标�
 使用时钟（`last_usage`）会在所有解析到具体行的记忆读取上推进：记忆引用
 （citation）、`MemoryFetch` 读取以及 `MemorySearch` 命中。
 
+失败记录有自己的过期时钟：失败时间早于 `max_failure_report_days` 的 stage-1 失败行
+会被删除，因此重试次数已用尽的死路（例如模型已下线）不会永久停留在失败列表中。该
+清理在启动流程中执行，也会在每次手动运行之前执行，且都排在 phase-1 认领之前，所以
+过期行在被 24 小时隔离重排逻辑重新考虑之前就已消失。只有按会话记录的 stage-1
+`error` 行会过期：全局 phase-2 任务保留其 `last_error` 作为当次运行的诊断信息，
+`stage1_outputs` 不会被触碰，因此不会丢失任何已抽取的记忆。
+
 只有当数据库行消失时才会删除 rollout summary 文件。仍然存在、只是落在当前选择集
 之外的行会保留其 summary 文件，因此 `MEMORY.md` 仍引用的证据不会被销毁。
 
@@ -192,6 +199,7 @@ summary 共享同一 `<时间戳>-<4位哈希>` 前缀，则说明同一会话�
 | `max_raw_memories_for_consolidation` | `64` | 每次 phase-2 最多选择的 stage-1 行数（上限 4096）。 |
 | `max_unused_days` | `30` | stage-1 行的保留窗口；超过该时长未使用的行会被删除，其记忆内容随之被遗忘（下限 1、上限 365）。 |
 | `max_rollout_age_days` | `10` | phase 1 仍会考虑的最旧来源会话（上限 365）。 |
+| `max_failure_report_days` | `14` | stage-1 抽取失败记录的报告窗口；更旧的失败记录会被删除（下限 1、上限 90）。 |
 | `max_rollouts_per_startup` | `2` | 每次启动流程最多认领的来源会话数。 |
 | `max_rollouts_scan_limit` | `2000` | 每次启动流程最多扫描的来源会话数。 |
 | `min_rollout_idle_hours` | `6` | 会话可被抽取前的最小空闲时间。 |

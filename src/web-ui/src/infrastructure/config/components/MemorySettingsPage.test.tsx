@@ -252,11 +252,13 @@ const READY_STATUS = {
       sessionId: '0194f5a6-89ab-7cde-8123-456789abcdef',
       lastError: 'provider unavailable',
       retryExhausted: true,
+      failedAtUnixSecs: 1_700_000_000,
     },
     {
       sessionId: '0194f5a6-89ab-7cde-8123-456789abcdea',
       lastError: RAW_PROVIDER_ERROR,
       retryExhausted: true,
+      failedAtUnixSecs: null,
     },
   ],
   phase2Status: 'error',
@@ -488,6 +490,20 @@ describe('MemorySettingsPage truthfulness', () => {
       .toBe('danger');
     expect(entries[0].querySelector('.openbitfun-memory-settings__failure-session')?.textContent)
       .toBe('0194f5a6…');
+  });
+
+  it('shows the failure age so a stale failure is answerable at a glance', async () => {
+    await act(async () => root.render(<MemorySettingsPage />));
+    await flush();
+
+    const entries = failedSessionEntries(container);
+    // The host reported a timestamp: it is rendered through the shared i18n
+    // date helper, not with a raw epoch number.
+    expect(entries[0].querySelector('[data-testid="memories-status-stage1-failed-at"]')?.textContent)
+      .toBe('status.failed.failedAt:{"time":"DATE"}');
+
+    // A host that stored no timestamp renders no age instead of a guessed date.
+    expect(entries[1].querySelector('[data-testid="memories-status-stage1-failed-at"]')).toBeNull();
   });
 
   it('clears failed extraction records only after the confirm action', async () => {

@@ -21,6 +21,9 @@ pub struct MemoryStage1FailureResponse {
     pub session_id: String,
     pub last_error: String,
     pub retry_exhausted: bool,
+    /// When the failed attempt finished (or started, when it never finished).
+    /// `null` when the host stored neither timestamp.
+    pub failed_at_unix_secs: Option<i64>,
 }
 
 /// Byte counts of the memory root. `null` means the host could not read that
@@ -86,6 +89,7 @@ fn stage1_failure_responses(snapshot: MemoryStatusSnapshot) -> Vec<MemoryStage1F
             session_id: failure.session_id,
             last_error: failure.last_error,
             retry_exhausted: failure.retry_exhausted,
+            failed_at_unix_secs: failure.failed_at_unix_secs,
         })
         .collect()
 }
@@ -170,6 +174,7 @@ mod tests {
                     session_id: "session-a".to_string(),
                     last_error: "provider unavailable".to_string(),
                     retry_exhausted: true,
+                    failed_at_unix_secs: Some(1_700_000_000),
                 }],
                 phase2_status: Some("error".to_string()),
                 phase2_last_finished_at_unix_secs: Some(1_700_000_000),
@@ -194,6 +199,10 @@ mod tests {
         assert_eq!(response.stage1_failed[0].session_id, "session-a");
         assert_eq!(response.stage1_failed[0].last_error, "provider unavailable");
         assert!(response.stage1_failed[0].retry_exhausted);
+        assert_eq!(
+            response.stage1_failed[0].failed_at_unix_secs,
+            Some(1_700_000_000)
+        );
         assert_eq!(response.phase2_status.as_deref(), Some("error"));
         assert_eq!(
             response.phase2_last_finished_at_unix_secs,
@@ -255,6 +264,7 @@ mod tests {
                     session_id: "session-b".to_string(),
                     last_error: "still failing".to_string(),
                     retry_exhausted: false,
+                    failed_at_unix_secs: Some(1_690_000_000),
                 }],
                 ..Default::default()
             }),
@@ -268,7 +278,8 @@ mod tests {
                     {
                         "sessionId": "session-b",
                         "lastError": "still failing",
-                        "retryExhausted": false
+                        "retryExhausted": false,
+                        "failedAtUnixSecs": 1690000000
                     }
                 ]
             })

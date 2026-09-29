@@ -304,6 +304,18 @@ impl MemoryPhase1Service {
             .await
     }
 
+    /// Expires stage-1 failure bookkeeping older than the configured report
+    /// window.
+    ///
+    /// The store owns the 1..=90 day clamp of that window, so the configured
+    /// value is passed through unchanged. Returns the number of expired rows.
+    pub async fn prune_failed_stage1_jobs(
+        &self,
+        max_report_age_days: i64,
+    ) -> OpenBitFunResult<u64> {
+        self.db.prune_failed_stage1_jobs(max_report_age_days).await
+    }
+
     pub async fn run_once_excluding_session(
         &self,
         excluded_session_id: Option<&str>,

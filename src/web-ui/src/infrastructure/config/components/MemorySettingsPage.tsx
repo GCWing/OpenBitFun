@@ -52,6 +52,7 @@ const DEFAULT_MEMORIES_CONFIG: MemoriesConfigShape = {
   max_raw_memories_for_consolidation: 64,
   max_unused_days: 30,
   max_rollout_age_days: 10,
+  max_failure_report_days: 14,
   max_rollouts_per_startup: 2,
   max_rollouts_scan_limit: 2000,
   min_rollout_idle_hours: 6,
@@ -109,6 +110,7 @@ function normalizeMemoriesConfig(config: Partial<MemoriesConfigShape> | null | u
     max_raw_memories_for_consolidation: normalized.max_raw_memories_for_consolidation,
     max_unused_days: normalized.max_unused_days,
     max_rollout_age_days: normalized.max_rollout_age_days,
+    max_failure_report_days: normalized.max_failure_report_days,
     max_rollouts_per_startup: normalized.max_rollouts_per_startup,
     max_rollouts_scan_limit: normalized.max_rollouts_scan_limit,
     min_rollout_idle_hours: normalized.min_rollout_idle_hours,
@@ -133,6 +135,24 @@ function shortSessionId(sessionId: string | undefined): string {
     return '';
   }
   return value.length > 8 ? `${value.slice(0, 8)}…` : value;
+}
+
+/**
+ * When a failed extraction happened, as a compact date.
+ *
+ * The age is what makes "is this stale?" answerable at a glance: a failure from
+ * months ago is a dead end, while one from today still deserves a retry. The
+ * host reports the timestamp only when it stored one, so a missing value renders
+ * nothing instead of a guessed date.
+ */
+function formatFailureAge(
+  failedAtUnixSecs: number | null | undefined,
+  formatDate: (date: Date | number, options?: Intl.DateTimeFormatOptions) => string,
+): string | null {
+  if (typeof failedAtUnixSecs !== 'number' || !Number.isFinite(failedAtUnixSecs)) {
+    return null;
+  }
+  return formatDate(new Date(failedAtUnixSecs * 1000), { dateStyle: 'short' });
 }
 
 /**
@@ -744,34 +764,42 @@ const MemorySettingsPage: React.FC = () => {
                     className="openbitfun-memory-settings__failure-list"
                     data-testid="memories-status-stage1-failed"
                   >
-                    {failedSessions.map((failure, index) => (
-                      <div
-                        className="openbitfun-memory-settings__failure-entry"
-                        data-testid="memories-status-stage1-failed-entry"
-                        key={failure.sessionId ?? index}
-                      >
-                        <div className="openbitfun-memory-settings__failure-head">
-                          <span
-                            className="openbitfun-memory-settings__failure-session"
-                            title={failure.sessionId}
-                          >
-                            {shortSessionId(failure.sessionId)}
-                          </span>
-                          {failure.retryExhausted ? (
-                            <StatusPill tone="danger" emphasis>
-                              {t('status.failed.retryExhausted')}
-                            </StatusPill>
-                          ) : null}
-                        </div>
+                    {failedSessions.map((failure, index) => {
+                      const failedAt = formatFailureAge(failure.failedAtUnixSecs, formatDate);
+                      return (
                         <div
-                          className="openbitfun-memory-settings__failure-error"
-                          data-testid="memories-status-stage1-failed-error"
-                          title={failure.lastError}
+                          className="openbitfun-memory-settings__failure-entry"
+                          data-testid="memories-status-stage1-failed-entry"
+                          key={failure.sessionId ?? index}
                         >
-                          {summarizeMemoryError(failure.lastError)}
+                          <div className="openbitfun-memory-settings__failure-head">
+                            <span
+                              className="openbitfun-memory-settings__failure-session"
+                              title={failure.sessionId}
+                            >
+                              {shortSessionId(failure.sessionId)}
+                            </span>
+                            {failedAt ? (
+                              <span data-testid="memories-status-stage1-failed-at">
+                                {t('status.failed.failedAt', { time: failedAt })}
+                              </span>
+                            ) : null}
+                            {failure.retryExhausted ? (
+                              <StatusPill tone="danger" emphasis>
+                                {t('status.failed.retryExhausted')}
+                              </StatusPill>
+                            ) : null}
+                          </div>
+                          <div
+                            className="openbitfun-memory-settings__failure-error"
+                            data-testid="memories-status-stage1-failed-error"
+                            title={failure.lastError}
+                          >
+                            {summarizeMemoryError(failure.lastError)}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </ConfigPageRow>

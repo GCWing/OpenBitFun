@@ -107,26 +107,43 @@ pub async fn get_memory_status() -> OpenBitFunResult<MemoryStatusReport> {
 /// Schedules one memory pipeline pass in the background and returns immediately.
 ///
 /// Phase 1 extraction runs first, then Phase 2 consolidation, mirroring the
-/// startup pass. Failures are logged, not propagated: the trigger already
-/// returned, and the status surface reports the resulting pipeline state.
+/// startup pass. The same expiry sweep that runs at startup runs here before
+/// phase 1 claims any session, so a manual run also clears failure records that
+/// aged out of the report window instead of leaving them listed. Failures are
+/// logged, not propagated: the trigger already returned, and the status surface
+/// reports the resulting pipeline state.
 pub async fn run_memory_pipeline_now() -> OpenBitFunResult<MemoryPipelineRunReport> {
     let config = load_global_config().await?;
     if !config.memories.generate_memories {
         info!("Memory pipeline run requested while generate_memories is disabled");
         return Ok(MemoryPipelineRunReport { started: false });
     }
+    let max_failure_report_days = config.memories.max_failure_report_days;
 
     tokio::spawn(async move {
         info!("Memory pipeline on-demand run started");
 
         match MemoryPhase1Service::new().await {
-            Ok(service) => match service.run_once().await {
-                Ok(stats) => info!(
-                    "Memory pipeline on-demand phase1 pass finished: scanned_sessions={}, extracted_sessions={}, skipped_sessions={}",
-                    stats.scanned_sessions, stats.extracted_sessions, stats.skipped_sessions
-                ),
-                Err(error) => warn!("Memory pipeline on-demand phase1 run failed: {}", error),
-            },
+            Ok(service) => {
+                match service.prune_failed_stage1_jobs(max_failure_report_days).await {
+                    Ok(expired) if expired > 0 => info!(
+                        "Memory pipeline on-demand run expired stale stage1 failure records: expired={}, max_failure_report_days={}",
+                        expired, max_failure_report_days
+                    ),
+                    Ok(_) => {}
+                    Err(error) => warn!(
+                        "Memory pipeline on-demand run failed to expire stale stage1 failure records: {}",
+                        error
+                    ),
+                }
+                match service.run_once().await {
+                    Ok(stats) => info!(
+                        "Memory pipeline on-demand phase1 pass finished: scanned_sessions={}, extracted_sessions={}, skipped_sessions={}",
+                        stats.scanned_sessions, stats.extracted_sessions, stats.skipped_sessions
+                    ),
+                    Err(error) => warn!("Memory pipeline on-demand phase1 run failed: {}", error),
+                }
+            }
             Err(error) => warn!(
                 "Memory pipeline on-demand phase1 service initialization failed: {}",
                 error

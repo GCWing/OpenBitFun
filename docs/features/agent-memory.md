@@ -166,6 +166,15 @@ row pruned -> its rollout summary file is deleted at the next sync
 The usage clock (`last_usage`) advances on every memory read that resolves to a
 row: memory citations, `MemoryFetch` reads, and `MemorySearch` hits.
 
+Failure bookkeeping expires on its own clock. A failed stage-1 row whose failure
+timestamp is older than `max_failure_report_days` is deleted, so a retry-exhausted
+dead end (for example a model that no longer exists) cannot stay listed forever.
+The sweep runs at startup and before every on-demand run, ahead of phase-1
+claims, so an expired row is gone before the quarantine requeue would consider
+renewing its attempt budget. Only per-session stage-1 `error` rows expire: the
+global phase-2 job keeps its `last_error` as current-run diagnostics, and
+`stage1_outputs` is never touched, so no extracted memory is lost.
+
 Rollout summary files are only deleted when their database row is gone. A live row
 that simply fell outside the current selection keeps its summary file, so
 evidence that `MEMORY.md` still references is never destroyed.
@@ -223,6 +232,7 @@ Memory configuration lives in the top-level `memories` section of
 | `max_raw_memories_for_consolidation` | `64` | Maximum stage-1 rows selected per phase-2 run (clamped to 4096). |
 | `max_unused_days` | `30` | Retention window for stage-1 rows; a row unused for this long is deleted and its memory content is forgotten (clamped to 1..365). |
 | `max_rollout_age_days` | `10` | Oldest source session phase 1 still considers (clamped to 365). |
+| `max_failure_report_days` | `14` | Report window for failed stage-1 extraction records; older failure bookkeeping is deleted (clamped to 1..90). |
 | `max_rollouts_per_startup` | `2` | Maximum source sessions claimed per startup pass. |
 | `max_rollouts_scan_limit` | `2000` | Maximum source sessions scanned per startup pass. |
 | `min_rollout_idle_hours` | `6` | Minimum idle time before a session can be extracted. |

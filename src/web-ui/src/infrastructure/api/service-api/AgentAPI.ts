@@ -294,6 +294,12 @@ export interface MemoryStage1FailureInfo {
   sessionId?: string;
   lastError?: string;
   retryExhausted?: boolean;
+  /**
+   * When the failed attempt finished, or when it started if it never finished.
+   * `null`/absent when the host stored neither timestamp, so the age of a
+   * failure is shown only when the host actually knows it.
+   */
+  failedAtUnixSecs?: number | null;
 }
 
 /** Byte/count statistics of the host memory root. `null` means "unreadable". */
