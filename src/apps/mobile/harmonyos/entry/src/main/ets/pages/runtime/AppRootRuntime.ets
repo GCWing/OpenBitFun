@@ -41,6 +41,10 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
   }
 
   async aboutToAppear(onAccountRestored?: (signedIn: boolean) => void): Promise<void> {
+    // Account login can be tapped while the rest of the cold-start work is
+    // still running. Initialize its secure store first so the login path never
+    // races the asynchronous cache and onboarding setup below.
+    await this.settingsController.initializeCloudAccount(this.host.context());
     await this.localeController.initialize(this.host.context());
     if (this.host.offerTaskNotifications) {
       await this.taskCompletionNotificationPort.offerOnboarding(
@@ -51,7 +55,6 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
     await this.remoteChatCache.init(this.host.context());
     await this.remoteSessionListCache.init(this.host.context());
     await this.restoreCachedRemoteSessions();
-    await this.settingsController.initializeCloudAccount(this.host.context());
     if (onAccountRestored) onAccountRestored(this.settingsController.hasCloudAccountSession());
     if (this.settingsController.hasCloudAccountSession()) {
       try {

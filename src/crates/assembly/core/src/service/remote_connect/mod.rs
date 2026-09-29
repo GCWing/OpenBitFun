@@ -971,20 +971,28 @@ impl RemoteConnectService {
         let (forward_tx, forward_rx) = tokio::sync::mpsc::channel(128);
         tokio::spawn(async move {
             while let Some(event) = event_rx.recv().await {
-                let _effect = device_lifecycle.lock().await;
-                if *active_connection_id.read().await != Some(connection_id) {
+                let should_forward = {
+                    let _effect = device_lifecycle.lock().await;
+                    if *active_connection_id.read().await != Some(connection_id) {
+                        false
+                    } else {
+                        match &event {
+                            relay_client::RelayEvent::DevicePresence { devices } => {
+                                *online_arc.write().await = devices.clone();
+                            }
+                            relay_client::RelayEvent::Disconnected => {
+                                *online_arc.write().await = Vec::new();
+                            }
+                            _ => {}
+                        }
+                        true
+                    }
+                };
+                if !should_forward {
                     break;
                 }
-                match &event {
-                    relay_client::RelayEvent::DevicePresence { devices } => {
-                        *online_arc.write().await = devices.clone();
-                    }
-                    relay_client::RelayEvent::Disconnected => {
-                        *online_arc.write().await = Vec::new();
-                    }
-                    _ => {}
-                }
-                if forward_tx.try_send(event).is_err() {
+                if forward_tx.send(event).await.is_err() {
+                    log::info!("Device routing event consumer closed");
                     break;
                 }
             }
