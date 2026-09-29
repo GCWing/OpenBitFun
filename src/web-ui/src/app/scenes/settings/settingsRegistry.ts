@@ -202,6 +202,7 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
       phrase('settings/memory', 'status.actions.runNow'),
       phrase('settings/memory', 'status.failed.title'),
       phrase('settings/memory', 'status.failed.description'),
+      phrase('settings/memory', 'status.failed.clearAction'),
     ],
     load: () => import('../../../infrastructure/config/components/MemorySettingsPage'),
   }),

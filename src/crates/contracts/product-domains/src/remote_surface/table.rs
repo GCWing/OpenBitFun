@@ -160,6 +160,10 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("choose_external_subagent_conflict_command",                  Unsupported, Proxied,          HANDLED),
     op("cleanup_invalid_workspaces",                                 Unaudited,   Proxied,          HANDLED),
     op("clear_mcp_remote_auth",                                      Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
+    // Same host-local memory store as `get_memory_status`: this clears the
+    // failure bookkeeping of the controller host's own memory pipeline, so a
+    // remote workspace session must never route it to the remote host.
+    op("clear_memory_stage1_failures",                               Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("clear_project_permission_grants",                            Agnostic,    Proxied,          HANDLED),
     op("clear_session_thread_goal",                                  Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("clear_web_search_credential",                                Agnostic,    Proxied,          HANDLED),

@@ -7,12 +7,12 @@ use crate::agentic::memories::db::{
 };
 use crate::agentic::memories::transcript::redact_memory_secrets;
 use crate::agentic::memories::workspace::{
-    memory_workspace_diff, memory_workspace_has_input_artifacts, prepare_memory_workspace,
-    reset_memory_workspace_baseline, sync_phase2_workspace_inputs, write_workspace_diff,
-    MemoryWorkspaceDiff, AD_HOC_EXTENSION_NAME, AD_HOC_INSTRUCTIONS_FILE_NAME,
-    MEMORY_EXTENSIONS_DIR_NAME, MEMORY_FILE_NAME, MEMORY_SUMMARY_FILE_NAME,
-    PHASE2_WORKSPACE_DIFF_FILE_NAME, RAW_MEMORIES_FILENAME, ROLLOUT_SUMMARIES_DIR_NAME,
-    SKILLS_DIR_NAME,
+    memory_index_file, memory_workspace_diff, memory_workspace_has_input_artifacts,
+    phase2_workspace_diff_file, prepare_memory_workspace, reset_memory_workspace_baseline,
+    sync_phase2_workspace_inputs, write_workspace_diff, MemoryWorkspaceDiff, AD_HOC_EXTENSION_NAME,
+    AD_HOC_INSTRUCTIONS_FILE_NAME, MEMORY_EXTENSIONS_DIR_NAME, MEMORY_FILE_NAME,
+    MEMORY_SUMMARY_FILE_NAME, PHASE2_WORKSPACE_DIFF_FILE_NAME, RAW_MEMORIES_FILENAME,
+    ROLLOUT_SUMMARIES_DIR_NAME, SKILLS_DIR_NAME,
 };
 use crate::agentic::persistence::PersistenceManager;
 use crate::agentic::tools::{ToolPathPolicy, ToolRuntimeRestrictions};
@@ -144,8 +144,23 @@ impl MemoryPhase2Consolidator for InternalAgentMemoryPhase2Consolidator {
             task_description,
         );
         let started_at = std::time::Instant::now();
+        // The consolidation budget follows the workload it has to read: a large
+        // workspace diff and a large consolidated index both cost real generation
+        // time, and a fixed ceiling silently truncates the turn on exactly those
+        // runs. The measured inputs are logged with the decision.
+        let (workspace_diff_bytes, memory_index_bytes) =
+            read_phase2_consolidation_workload(memory_root).await;
+        let consolidation_timeout_seconds =
+            phase2_consolidation_timeout_seconds(workspace_diff_bytes, memory_index_bytes);
+        info!(
+            "Memory phase2 consolidation timeout computed: workspace_root={}, workspace_diff_bytes={}, memory_index_bytes={}, timeout_seconds={}",
+            memory_root.display(),
+            workspace_diff_bytes,
+            memory_index_bytes,
+            consolidation_timeout_seconds
+        );
         let result = coordinator
-            .execute_internal_agent(request, None, Some(20 * 60))
+            .execute_internal_agent(request, None, Some(consolidation_timeout_seconds))
             .await?;
         let completed = result.status == SubagentResultStatus::Completed;
         if !completed {
@@ -1098,6 +1113,64 @@ pub(crate) async fn phase2_lease_seconds() -> OpenBitFunResult<i64> {
     Ok(config.memories.phase2_lease_seconds.clamp(60, 24 * 60 * 60))
 }
 
+/// Floor of the consolidation turn budget: a small memory workspace still needs a
+/// full model turn, and a run that hits this floor is never a timeout candidate.
+const PHASE2_CONSOLIDATION_MIN_TIMEOUT_SECONDS: u64 = 20 * 60;
+/// Ceiling of the consolidation turn budget. Bounded on purpose: the global
+/// phase-2 lease is heartbeated, but an unbounded turn would still hold the
+/// memory workspace baseline and the global job open indefinitely.
+const PHASE2_CONSOLIDATION_MAX_TIMEOUT_SECONDS: u64 = 60 * 60;
+/// Bytes of `phase2_workspace_diff.md` that buy one extra second of budget.
+///
+/// The diff is what the agent must read and reason about, so it dominates the
+/// scaling: 200 B/s means a 10 KB diff adds ~51 s (still at the floor) and a
+/// 200 KB diff adds ~17 min.
+const PHASE2_CONSOLIDATION_DIFF_BYTES_PER_EXTRA_SECOND: u64 = 200;
+/// Bytes of `MEMORY.md` that buy one extra second of budget.
+///
+/// The current index is re-read on every consolidation, so it costs time too, but
+/// it is rewriting cost rather than parsing cost: 1 KiB/s means a 400 KB index
+/// adds ~6.5 min.
+const PHASE2_CONSOLIDATION_INDEX_BYTES_PER_EXTRA_SECOND: u64 = 1024;
+
+/// Consolidation turn budget in seconds, derived from the workload the turn must
+/// read.
+///
+/// The budget is `base + diff/200 + index/1024` seconds clamped to
+/// [`PHASE2_CONSOLIDATION_MIN_TIMEOUT_SECONDS`]..[`PHASE2_CONSOLIDATION_MAX_TIMEOUT_SECONDS`].
+/// Anchors (see the constants above): an empty workspace stays at 20 min, a
+/// ~10 KB diff with a ~20 KB index stays at ~21 min, and the observed heavy run
+/// (~200 KB diff with a ~393 KB index) lands at ~44 min.
+fn phase2_consolidation_timeout_seconds(diff_bytes: u64, memory_index_bytes: u64) -> u64 {
+    let workload_seconds = diff_bytes / PHASE2_CONSOLIDATION_DIFF_BYTES_PER_EXTRA_SECOND.max(1)
+        + memory_index_bytes / PHASE2_CONSOLIDATION_INDEX_BYTES_PER_EXTRA_SECOND.max(1);
+    PHASE2_CONSOLIDATION_MIN_TIMEOUT_SECONDS
+        .saturating_add(workload_seconds)
+        .clamp(
+            PHASE2_CONSOLIDATION_MIN_TIMEOUT_SECONDS,
+            PHASE2_CONSOLIDATION_MAX_TIMEOUT_SECONDS,
+        )
+}
+
+/// Measures the two inputs of the consolidation budget.
+///
+/// Both files are produced by this run: the runner writes
+/// `phase2_workspace_diff.md` immediately before starting the agent, and
+/// `MEMORY.md` is the previous consolidation's output. A file that is not there
+/// yet contributes nothing, so a missing workspace never inflates the budget.
+async fn read_phase2_consolidation_workload(memory_root: &std::path::Path) -> (u64, u64) {
+    let diff_bytes = read_file_len_if_present(&phase2_workspace_diff_file(memory_root)).await;
+    let index_bytes = read_file_len_if_present(&memory_index_file(memory_root)).await;
+    (diff_bytes, index_bytes)
+}
+
+async fn read_file_len_if_present(path: &std::path::Path) -> u64 {
+    match tokio::fs::metadata(path).await {
+        Ok(metadata) => metadata.len(),
+        Err(_) => 0,
+    }
+}
+
 fn select_phase2_model_id(
     config: &crate::service::config::types::GlobalConfig,
 ) -> OpenBitFunResult<String> {
@@ -1344,6 +1417,63 @@ mod tests {
             vec![root.to_string_lossy().to_string()]
         );
         assert!(!request.runtime_tool_restrictions.is_tool_allowed("Bash"));
+    }
+
+    #[test]
+    fn phase2_consolidation_timeout_scales_with_the_workload() {
+        let min = PHASE2_CONSOLIDATION_MIN_TIMEOUT_SECONDS;
+        let max = PHASE2_CONSOLIDATION_MAX_TIMEOUT_SECONDS;
+
+        // An empty workspace pays no workload and stays at the floor.
+        assert_eq!(phase2_consolidation_timeout_seconds(0, 0), min);
+        // A small run stays near the floor: buffer slack, not a second turn.
+        let small = phase2_consolidation_timeout_seconds(10 * 1024, 20 * 1024);
+        assert!(
+            (min..=25 * 60).contains(&small),
+            "small run should stay in the 20-25 min band, got {small}"
+        );
+
+        // The observed heavy run (~200 KB diff, ~393 KB index) must land in the
+        // 40-50 min band instead of hitting a fixed 20 min ceiling.
+        let heavy = phase2_consolidation_timeout_seconds(200 * 1024, 393 * 1024);
+        assert!(
+            (40 * 60..=50 * 60).contains(&heavy),
+            "heavy run should land in the 40-50 min band, got {heavy}"
+        );
+
+        // The budget is monotonic in both inputs and never leaves its band.
+        assert!(phase2_consolidation_timeout_seconds(200 * 1024, 0) > small);
+        assert!(phase2_consolidation_timeout_seconds(0, 393 * 1024) > small);
+        assert_eq!(
+            phase2_consolidation_timeout_seconds(u64::MAX, u64::MAX),
+            max
+        );
+        assert_eq!(phase2_consolidation_timeout_seconds(1, 1), min);
+    }
+
+    #[tokio::test]
+    async fn phase2_consolidation_workload_counts_only_present_files() {
+        let temp = tempdir().unwrap();
+        let memory_root = temp.path().join("memories");
+
+        // No workspace yet: neither input contributes.
+        assert_eq!(
+            read_phase2_consolidation_workload(&memory_root).await,
+            (0, 0)
+        );
+
+        tokio::fs::create_dir_all(&memory_root).await.unwrap();
+        tokio::fs::write(phase2_workspace_diff_file(&memory_root), vec![b'd'; 4096])
+            .await
+            .unwrap();
+        tokio::fs::write(memory_index_file(&memory_root), vec![b'm'; 2048])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            read_phase2_consolidation_workload(&memory_root).await,
+            (4096, 2048)
+        );
     }
 
     #[tokio::test]

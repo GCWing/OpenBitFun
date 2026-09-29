@@ -712,6 +712,48 @@ impl MemoryDatabase {
         })?
     }
 
+    /// Removes the failure bookkeeping of failed stage-1 extractions.
+    ///
+    /// Only phase-1 per-session rows in `error` state are deleted: the global
+    /// phase-2 job and successful rows are not failure bookkeeping, and the
+    /// `stage1_outputs` rows themselves are never touched, so clearing stops the
+    /// failed list from repeating without discarding extracted memory.
+    ///
+    /// A cleared session becomes claimable again immediately: the next scan finds
+    /// no job row for it, so `try_claim_phase1_job` inserts a fresh claim with the
+    /// full default attempt budget instead of returning `SkippedRetryExhausted`.
+    /// Returns the number of cleared rows.
+    pub async fn clear_failed_stage1_jobs(&self) -> OpenBitFunResult<u64> {
+        if !self.db_path.exists() {
+            return Ok(0);
+        }
+
+        let db_path = self.db_path.clone();
+        task::spawn_blocking(move || -> OpenBitFunResult<u64> {
+            let conn = open_connection(&db_path)?;
+            initialize_schema(&conn)?;
+            let cleared = conn
+                .execute(
+                    r#"
+                    DELETE FROM jobs
+                    WHERE kind = ?1 AND status = ?2
+                    "#,
+                    params![JOB_KIND_MEMORY_STAGE1, JOB_STATUS_ERROR],
+                )
+                .map_err(|error| {
+                    OpenBitFunError::io(format!(
+                        "Failed to clear failed memory stage1 jobs: {}",
+                        error
+                    ))
+                })?;
+            Ok(cleared as u64)
+        })
+        .await
+        .map_err(|error| {
+            OpenBitFunError::service(format!("Memories write task failed: {}", error))
+        })?
+    }
+
     /// Bumps `usage_count` / `last_usage` for stage-1 rows referenced by a
     /// memory read.
     ///
@@ -2202,6 +2244,99 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(outcome, MemoryPhase1ClaimOutcome::SkippedRetryBackoff);
+    }
+
+    #[tokio::test]
+    async fn clear_failed_stage1_jobs_clears_only_phase1_error_rows() {
+        let temp = tempdir().unwrap();
+        let path_manager = Arc::new(PathManager::with_user_root_for_tests(
+            temp.path().to_path_buf(),
+        ));
+        let db = MemoryDatabase::new(path_manager);
+        db.initialize().await.unwrap();
+
+        // A phase-1 session whose extraction failed and is waiting out its retry
+        // backoff.
+        let failed_token = claim_token(
+            db.try_claim_phase1_job("session-failed", "worker", 100, 60, 4)
+                .await
+                .unwrap(),
+        );
+        assert!(db
+            .mark_phase1_job_failed(
+                "session-failed",
+                &failed_token,
+                3600,
+                "403 forbidden".to_string()
+            )
+            .await
+            .unwrap());
+
+        // A successful phase-1 session and its stage-1 output must survive.
+        let done_token = claim_token(
+            db.try_claim_phase1_job("session-done", "worker", 100, 60, 4)
+                .await
+                .unwrap(),
+        );
+        assert!(db
+            .mark_phase1_job_succeeded(&test_memory_row("session-done", 100), &done_token)
+            .await
+            .unwrap());
+
+        // The global phase-2 job is not failure bookkeeping either.
+        assert_eq!(
+            db.claim_phase2_job("global", "phase2-token", 10, 3600)
+                .await
+                .unwrap(),
+            MemoryPhase2ClaimOutcome::Claimed
+        );
+        assert!(db
+            .complete_phase2_job_failure(
+                "global",
+                "phase2-token",
+                current_unix_secs() + 3600,
+                "consolidation failed".to_string(),
+            )
+            .await
+            .unwrap());
+
+        let before = db.status_snapshot().await.unwrap();
+        assert_eq!(before.stage1_failed.len(), 1);
+        assert_eq!(before.stage1_failed[0].session_id, "session-failed");
+        assert_eq!(before.stage1_failed[0].last_error, "403 forbidden");
+
+        assert_eq!(db.clear_failed_stage1_jobs().await.unwrap(), 1);
+
+        let after = db.status_snapshot().await.unwrap();
+        assert!(after.stage1_failed.is_empty());
+        // The stage-1 output of the successful session is untouched.
+        assert_eq!(after.stage1_output_count, 1);
+        // The phase-2 global job keeps its own failure state.
+        assert_eq!(after.phase2_status.as_deref(), Some(JOB_STATUS_ERROR));
+        assert_eq!(
+            after.phase2_last_error.as_deref(),
+            Some("consolidation failed")
+        );
+        // Successful phase-1 rows are not failure bookkeeping: a second clear
+        // finds nothing, and the successful row still does not need an update.
+        assert_eq!(db.clear_failed_stage1_jobs().await.unwrap(), 0);
+        assert!(!db
+            .phase1_source_needs_update("session-done", 100)
+            .await
+            .unwrap());
+
+        // Clearing removed the job row, so the session is claimable again on the
+        // next scan with a restored attempt budget.
+        match db
+            .try_claim_phase1_job("session-failed", "worker", 100, 60, 4)
+            .await
+            .unwrap()
+        {
+            MemoryPhase1ClaimOutcome::Claimed { ownership_token } => {
+                assert!(!ownership_token.is_empty())
+            }
+            other => panic!("cleared session should be claimable again, got {other:?}"),
+        }
     }
 
     #[tokio::test]

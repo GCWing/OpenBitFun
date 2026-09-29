@@ -12,6 +12,7 @@ const updateConfigMock = vi.hoisted(() => vi.fn());
 const resetConfigMock = vi.hoisted(() => vi.fn());
 const getMemoryStatusMock = vi.hoisted(() => vi.fn());
 const runMemoryPipelineNowMock = vi.hoisted(() => vi.fn());
+const clearMemoryStage1FailuresMock = vi.hoisted(() => vi.fn());
 const notifyErrorMock = vi.hoisted(() => vi.fn());
 const notifyInfoMock = vi.hoisted(() => vi.fn());
 const notifySuccessMock = vi.hoisted(() => vi.fn());
@@ -69,7 +70,28 @@ vi.mock('@openbitfun/ui', () => ({
     variant: _variant,
     ...props
   }, ref) => <button ref={ref} type="button" {...props}>{children}</button>),
-  ConfirmDialog: () => null,
+  ConfirmDialog: ({
+    open,
+    onConfirm,
+    message,
+    confirmText,
+    title,
+  }: {
+    open?: boolean;
+    onConfirm?: () => void;
+    message?: React.ReactNode;
+    confirmText?: string;
+    title?: React.ReactNode;
+  }) => (
+    open ? (
+      <div data-testid="confirm-dialog" data-title={typeof title === 'string' ? title : undefined}>
+        <span data-testid="confirm-dialog-message">{message}</span>
+        <button type="button" data-testid="confirm-dialog-confirm" onClick={onConfirm}>
+          {confirmText}
+        </button>
+      </div>
+    ) : null
+  ),
   Icon: ({ name }: { name: string }) => <span data-icon={name} />,
   IconButton: ({
     icon,
@@ -127,6 +149,17 @@ vi.mock('@openbitfun/ui', () => ({
       ))}
     </select>
   ),
+  StatusPill: ({
+    children,
+    tone,
+    leading: _leading,
+    emphasis: _emphasis,
+    ...props
+  }: React.HTMLAttributes<HTMLSpanElement> & {
+    tone?: string;
+    emphasis?: boolean;
+    leading?: React.ReactNode;
+  }) => <span data-testid="status-pill" data-tone={tone} {...props}>{children}</span>,
   Switch: ({
     checked,
     disabled,
@@ -187,6 +220,7 @@ vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
   agentAPI: {
     getMemoryStatus: getMemoryStatusMock,
     runMemoryPipelineNow: runMemoryPipelineNowMock,
+    clearMemoryStage1Failures: clearMemoryStage1FailuresMock,
     getMemoryPaths: vi.fn(),
     resetMemory: vi.fn(),
   },
@@ -204,6 +238,9 @@ vi.mock('../services/ConfigManager', () => ({
   },
 }));
 
+const PHASE2_LAST_ERROR = 'consolidation timeout after 1200s {\n"error":{"type":"timeout","code":"request_timeout"}}';
+const RAW_PROVIDER_ERROR = '403 Forbidden {\n"error":{"message":"The model is not available in your region, request id req_0123456789abcdef0123456789abcdef","type":"permission_error","code":"model_unavailable"}}';
+
 const READY_STATUS = {
   generateMemories: true,
   useMemories: false,
@@ -211,11 +248,20 @@ const READY_STATUS = {
   stage1OutputCount: 7,
   stage1PendingPromotionCount: 2,
   stage1Failed: [
-    { sessionId: '0194f5a6-89ab-7cde-8123-456789abcdef', lastError: 'provider unavailable', retryExhausted: true },
+    {
+      sessionId: '0194f5a6-89ab-7cde-8123-456789abcdef',
+      lastError: 'provider unavailable',
+      retryExhausted: true,
+    },
+    {
+      sessionId: '0194f5a6-89ab-7cde-8123-456789abcdea',
+      lastError: RAW_PROVIDER_ERROR,
+      retryExhausted: true,
+    },
   ],
   phase2Status: 'error',
   phase2LastFinishedAtUnixSecs: 1_700_000_000,
-  phase2LastError: 'consolidation failed',
+  phase2LastError: PHASE2_LAST_ERROR,
   files: { memoryIndexBytes: 128, memorySummaryBytes: null, rolloutSummaryCount: 3 },
 };
 
@@ -243,6 +289,26 @@ function runNowButton(container: HTMLElement): HTMLButtonElement | null {
 
 function memoryToggle(container: HTMLElement): HTMLInputElement | null {
   return container.querySelector('[data-testid="memories-enabled-toggle"]');
+}
+
+function phase2LastErrorBlock(container: HTMLElement): HTMLElement | null {
+  return container.querySelector('[data-testid="memories-status-phase2-last-error"]');
+}
+
+function failedSessionList(container: HTMLElement): HTMLElement | null {
+  return container.querySelector('[data-testid="memories-status-stage1-failed"]');
+}
+
+function failedSessionEntries(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll('[data-testid="memories-status-stage1-failed-entry"]'));
+}
+
+function clearFailuresButton(container: HTMLElement): HTMLButtonElement | null {
+  return container.querySelector('[data-testid="memories-clear-failed-btn"]');
+}
+
+function confirmDialogConfirmButton(container: HTMLElement): HTMLButtonElement | null {
+  return container.querySelector('[data-testid="confirm-dialog-confirm"]');
 }
 
 async function expandAdvanced(container: HTMLElement) {
@@ -275,6 +341,7 @@ describe('MemorySettingsPage truthfulness', () => {
     resetConfigMock.mockResolvedValue(undefined);
     getMemoryStatusMock.mockResolvedValue(READY_STATUS);
     runMemoryPipelineNowMock.mockResolvedValue({ started: true });
+    clearMemoryStage1FailuresMock.mockResolvedValue({ clearedCount: 2, stage1Failed: [] });
   });
 
   afterEach(async () => {
@@ -349,14 +416,136 @@ describe('MemorySettingsPage truthfulness', () => {
     expect(rowByLabel(container, 'status.fields.pendingPromotion')?.textContent).toContain('n2');
     expect(rowByLabel(container, 'status.fields.phase2')?.textContent).toContain('shared:statuses.failed');
     expect(rowByLabel(container, 'status.fields.phase2')?.textContent).toContain('DATE');
-    expect(rowByLabel(container, 'status.fields.phase2LastError')?.textContent)
-      .toContain('consolidation failed');
+    expect(phase2LastErrorBlock(container)?.textContent)
+      .toContain('consolidation timeout after 1200s');
     expect(rowByLabel(container, 'status.fields.rolloutSummaries')?.textContent).toContain('n3');
     // A `null` byte count is unknown, not zero.
     expect(rowByLabel(container, 'status.fields.memorySummary')?.textContent).toContain('status.unknown');
-    expect(rowByLabel(container, 'status.failed.title')?.textContent).toContain('0194f5a6');
-    expect(rowByLabel(container, 'status.failed.title')?.textContent).toContain('provider unavailable');
-    expect(rowByLabel(container, 'status.failed.title')?.textContent).toContain('status.failed.retryExhausted');
+
+    const failedList = failedSessionList(container);
+    expect(failedList?.textContent).toContain('0194f5a6');
+    expect(failedList?.textContent).toContain('provider unavailable');
+    expect(failedList?.textContent).toContain('status.failed.retryExhausted');
+  });
+
+  it('renders the consolidation error as a tinted, clamped block with the full text on title', async () => {
+    await act(async () => root.render(<MemorySettingsPage />));
+    await flush();
+
+    const errorBlock = phase2LastErrorBlock(container);
+    expect(errorBlock).not.toBeNull();
+    // A dedicated tinted block instead of a bare inline span at body size.
+    expect(errorBlock?.classList.contains('openbitfun-memory-settings__error-detail')).toBe(true);
+
+    const visibleText = errorBlock?.querySelector('.openbitfun-memory-settings__error-detail-text');
+    expect(visibleText).not.toBeNull();
+    // The provider payload tail is dropped from the visible line...
+    expect(visibleText?.textContent).toBe('consolidation timeout after 1200s');
+    expect(visibleText?.textContent).not.toContain('{"error');
+    expect(visibleText?.textContent).not.toContain('request_timeout');
+    // ...and the whole message stays reachable through `title`.
+    expect(visibleText?.getAttribute('title')).toBe(PHASE2_LAST_ERROR);
+  });
+
+  it('condenses a very long consolidation error instead of printing it in full', async () => {
+    const longError = `provider failure ${'x'.repeat(400)}`;
+    getMemoryStatusMock.mockResolvedValue({ ...READY_STATUS, phase2LastError: longError });
+
+    await act(async () => root.render(<MemorySettingsPage />));
+    await flush();
+
+    const visibleText = phase2LastErrorBlock(container)
+      ?.querySelector('.openbitfun-memory-settings__error-detail-text');
+    const text = visibleText?.textContent ?? '';
+    expect(text.length).toBeGreaterThan(0);
+    expect(text.length).toBeLessThanOrEqual(121);
+    expect(text.endsWith('…')).toBe(true);
+    expect(visibleText?.getAttribute('title')).toBe(longError);
+  });
+
+  it('renders each failed session as a compact entry with a one-line error summary', async () => {
+    await act(async () => root.render(<MemorySettingsPage />));
+    await flush();
+
+    const entries = failedSessionEntries(container);
+    expect(entries).toHaveLength(2);
+    for (const entry of entries) {
+      // Every entry is the same tinted block as the pipeline error, not one
+      // undifferentiated inline run.
+      expect(entry.classList.contains('openbitfun-memory-settings__failure-entry')).toBe(true);
+    }
+
+    const summary = entries[1].querySelector('[data-testid="memories-status-stage1-failed-error"]');
+    // The raw provider JSON body is not printed verbatim, the sentence in front
+    // of it is, and the whole message stays on `title`.
+    expect(summary?.textContent).toBe('403 Forbidden');
+    expect(summary?.textContent).not.toContain('model_unavailable');
+    expect(summary?.textContent).not.toContain('{"error');
+    expect(summary?.getAttribute('title')).toBe(RAW_PROVIDER_ERROR);
+
+    // The retry-exhausted marker is a design-system status pill, not bare text.
+    expect(entries[0].querySelector('[data-testid="status-pill"]')?.getAttribute('data-tone'))
+      .toBe('danger');
+    expect(entries[0].querySelector('.openbitfun-memory-settings__failure-session')?.textContent)
+      .toBe('0194f5a6…');
+  });
+
+  it('clears failed extraction records only after the confirm action', async () => {
+    await act(async () => root.render(<MemorySettingsPage />));
+    await flush();
+
+    const clearButton = clearFailuresButton(container);
+    expect(clearButton).not.toBeNull();
+
+    await act(async () => {
+      clearButton?.click();
+    });
+    await flush();
+
+    // Opening the confirmation must not call the host on its own.
+    expect(clearMemoryStage1FailuresMock).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="confirm-dialog-message"]')?.textContent)
+      .toBe('status.failed.clearConfirm');
+
+    await act(async () => {
+      confirmDialogConfirmButton(container)?.click();
+    });
+    await flush();
+
+    expect(clearMemoryStage1FailuresMock).toHaveBeenCalledTimes(1);
+    expect(notifySuccessMock).toHaveBeenCalledWith('status.failed.cleared:{"count":2}');
+    // The status card is re-read from the host instead of being patched locally.
+    expect(getMemoryStatusMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a failed clear instead of claiming the records were removed', async () => {
+    clearMemoryStage1FailuresMock.mockRejectedValue(new Error('host unreachable'));
+
+    await act(async () => root.render(<MemorySettingsPage />));
+    await flush();
+
+    await act(async () => {
+      clearFailuresButton(container)?.click();
+    });
+    await flush();
+    await act(async () => {
+      confirmDialogConfirmButton(container)?.click();
+    });
+    await flush();
+
+    expect(notifyErrorMock).toHaveBeenCalledWith('host unreachable');
+    expect(notifySuccessMock).not.toHaveBeenCalled();
+  });
+
+  it('offers the clear action only when a session actually failed', async () => {
+    getMemoryStatusMock.mockResolvedValue({ ...READY_STATUS, stage1Failed: [] });
+
+    await act(async () => root.render(<MemorySettingsPage />));
+    await flush();
+
+    expect(clearFailuresButton(container)).toBeNull();
+    expect(failedSessionList(container)).toBeNull();
+    expect(container.textContent).toContain('status.failed.none');
   });
 
   it('does not fabricate pipeline numbers when the status read fails', async () => {
@@ -369,6 +558,7 @@ describe('MemorySettingsPage truthfulness', () => {
       .map((element) => element.textContent ?? '');
     expect(alerts.some((text) => text.includes('host unreachable'))).toBe(true);
     expect(rowByLabel(container, 'status.fields.storedOutputs')).toBeNull();
+    expect(clearFailuresButton(container)).toBeNull();
     expect(runNowButton(container)?.disabled).toBe(true);
   });
 

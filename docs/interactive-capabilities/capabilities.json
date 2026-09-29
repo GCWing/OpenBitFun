@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "ac7e3c1d53321bca6759cbc9128938dda18521f0842bc709163d67c86473537c",
+  "digest": "3a517011cbeac900808dd5a547d303aa54f6b098cf7579a5c10df534890feec8",
   "ownerDigest": "c0e5c187cf62bc6ed06196ce8520b3eb427bf268cf24659b72d2552fb1d99c54",
   "searchAcceptance": [
     {
@@ -27114,13 +27114,13 @@
         },
         {
           "id": "pipeline-status",
-          "titleZh": "查看宿主记忆管线状态并手动运行一次提取与整理",
-          "titleEn": "Inspect the host memory pipeline status and run one extraction and consolidation pass manually",
+          "titleZh": "查看宿主记忆管线状态、手动运行一次提取与整理，或清除失败记录",
+          "titleEn": "Inspect the host memory pipeline status, run one extraction and consolidation pass manually, or clear the failed-extraction records",
           "control": {
             "kind": "open",
             "reasonCode": "unstructuredInteraction",
-            "reasonZh": "记忆状态来自当前宿主的实时管线数据（数据库行、记忆目录文件与有效配置），手动运行也是异步后台任务，目前没有绑定到产品控制 operation 的结构化动作；智能体会打开精确入口，把查看状态与手动运行保留在用户可见界面。",
-            "reasonEn": "The memory status comes from the current host's live pipeline data (database rows, memory-root files, and effective config), and a manual run is an asynchronous background pass with no product-control operation bound yet; the Agent opens the exact entry and keeps status inspection and the manual run in the visible UI."
+            "reasonZh": "记忆状态与失败记录都来自当前宿主的实时管线数据（数据库行、记忆目录文件与有效配置），手动运行也是异步后台任务，目前没有绑定到产品控制 operation 的结构化动作；智能体会打开精确入口，把查看状态、手动运行与清除失败记录保留在用户可见界面。",
+            "reasonEn": "The memory status and the failed-extraction records come from the current host's live pipeline data (database rows, memory-root files, and effective config), and a manual run is an asynchronous background pass with no product-control operation bound yet; the Agent opens the exact entry and keeps status inspection, the manual run, and clearing failed records in the visible UI."
           }
         },
         {
@@ -27320,8 +27320,8 @@
         "Set how long unused memories are retained",
         "选择记忆整理模型并让它跟随主模型或提取模型",
         "Choose the consolidation model or make it follow the primary or extraction model",
-        "查看宿主记忆管线状态并手动运行一次提取与整理",
-        "Inspect the host memory pipeline status and run one extraction and consolidation pass manually",
+        "查看宿主记忆管线状态、手动运行一次提取与整理，或清除失败记录",
+        "Inspect the host memory pipeline status, run one extraction and consolidation pass manually, or clear the failed-extraction records",
         "打开记忆目录、恢复默认设置或显式清空全部记忆",
         "Open the memory directory, restore defaults, or explicitly erase all memories",
         "关闭长期记忆",

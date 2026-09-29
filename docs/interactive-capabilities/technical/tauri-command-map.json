@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "ac7e3c1d53321bca6759cbc9128938dda18521f0842bc709163d67c86473537c",
-  "commandCount": 670,
+  "catalogDigest": "3a517011cbeac900808dd5a547d303aa54f6b098cf7579a5c10df534890feec8",
+  "commandCount": 671,
   "coverage": {
-    "commandCount": 670,
-    "documentedCommandCount": 622,
+    "commandCount": 671,
+    "documentedCommandCount": 623,
     "implementationCommandCount": 48,
     "implementationDigest": "f6d38a24a70708988cb47ada81d07eccf0668684e8734c9ee5155b9ffa7e3db8"
   },
@@ -1233,6 +1233,22 @@
       "sourceFile": "src/apps/desktop/src/api/mcp_api.rs",
       "signature": "fn clear_mcp_remote_auth( state: State<'_, AppState>, request: ClearMCPRemoteAuthRequest, ) -> Result<(), String>",
       "remoteWorkspacePolicy": "LegacyUnaudited"
+    },
+    {
+      "id": "clear_memory_stage1_failures",
+      "moduleId": "memory",
+      "capabilityId": "setting.ai.memory",
+      "capabilityIds": [
+        "setting.ai.memory"
+      ],
+      "documentedItemIds": [
+        "setting.ai.memory:pipeline-status"
+      ],
+      "visibility": "documented",
+      "rustPath": "api::memory_api::clear_memory_stage1_failures",
+      "sourceFile": "src/apps/desktop/src/api/memory_api.rs",
+      "signature": "fn clear_memory_stage1_failures( request: ClearMemoryStage1FailuresRequest, ) -> Result<ClearMemoryStage1FailuresResponse, String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "clear_project_permission_grants",

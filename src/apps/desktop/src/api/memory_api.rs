@@ -1,15 +1,18 @@
-//! Memory pipeline status and on-demand trigger commands.
+//! Memory pipeline status, on-demand trigger, and failure-bookkeeping commands.
 //!
-//! Both commands are thin wire wrappers over `openbitfun_core::service::agentic_api`.
-//! The memory database, the memory workspace, and the memory config are owned by
-//! the OpenBitFun host that runs the agent, so the payload describes the *host's*
-//! memory store and never follows the workspace filesystem to a remote host.
+//! Every command here is a thin wire wrapper over
+//! `openbitfun_core::service::agentic_api`. The memory database, the memory
+//! workspace, and the memory config are owned by the OpenBitFun host that runs the
+//! agent, so the payload describes the *host's* memory store and never follows the
+//! workspace filesystem to a remote host.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
+use openbitfun_core::agentic::memories::db::MemoryStatusSnapshot;
 use openbitfun_core::service::agentic_api::{
-    get_memory_status as read_memory_status, run_memory_pipeline_now as trigger_memory_pipeline,
-    MemoryPipelineRunReport, MemoryStatusReport,
+    clear_memory_stage1_failures as clear_stage1_failures, get_memory_status as read_memory_status,
+    run_memory_pipeline_now as trigger_memory_pipeline, MemoryPipelineRunReport,
+    MemoryStatusReport,
 };
 
 #[derive(Debug, Serialize)]
@@ -55,6 +58,38 @@ pub struct RunMemoryPipelineNowResponse {
     pub started: bool,
 }
 
+/// Request for [`clear_memory_stage1_failures`].
+///
+/// The action is unconditional, but it still travels as a structured request so
+/// the command keeps the repository's Tauri request shape (and can gain an
+/// explicit scope later without a wire break).
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ClearMemoryStage1FailuresRequest {}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClearMemoryStage1FailuresResponse {
+    /// Number of failed stage-1 job rows that were deleted.
+    pub cleared_count: u64,
+    /// Failed list after the clear, so the caller does not have to re-read to
+    /// learn whether the list is really empty.
+    pub stage1_failed: Vec<MemoryStage1FailureResponse>,
+}
+
+/// Projects the snapshot's failed stage-1 rows onto the wire shape.
+fn stage1_failure_responses(snapshot: MemoryStatusSnapshot) -> Vec<MemoryStage1FailureResponse> {
+    snapshot
+        .stage1_failed
+        .into_iter()
+        .map(|failure| MemoryStage1FailureResponse {
+            session_id: failure.session_id,
+            last_error: failure.last_error,
+            retry_exhausted: failure.retry_exhausted,
+        })
+        .collect()
+}
+
 impl From<MemoryStatusReport> for MemoryStatusResponse {
     fn from(report: MemoryStatusReport) -> Self {
         let snapshot = report.status;
@@ -64,15 +99,7 @@ impl From<MemoryStatusReport> for MemoryStatusResponse {
             memory_root_dir: report.memory_root_dir,
             stage1_output_count: snapshot.stage1_output_count,
             stage1_pending_promotion_count: snapshot.stage1_pending_promotion_count,
-            stage1_failed: snapshot
-                .stage1_failed
-                .into_iter()
-                .map(|failure| MemoryStage1FailureResponse {
-                    session_id: failure.session_id,
-                    last_error: failure.last_error,
-                    retry_exhausted: failure.retry_exhausted,
-                })
-                .collect(),
+            stage1_failed: stage1_failure_responses(snapshot.clone()),
             phase2_status: snapshot.phase2_status,
             phase2_last_finished_at_unix_secs: snapshot.phase2_last_finished_at_unix_secs,
             phase2_last_error: snapshot.phase2_last_error,
@@ -107,6 +134,24 @@ pub async fn run_memory_pipeline_now() -> Result<RunMemoryPipelineNowResponse, S
         .await
         .map(RunMemoryPipelineNowResponse::from)
         .map_err(|error| format!("Failed to start the memory pipeline: {}", error))
+}
+
+/// Deletes the failed stage-1 extraction bookkeeping on this host.
+///
+/// This clears the failure list only: extracted memories are kept, and the
+/// cleared sessions become eligible for extraction again on the next memory run.
+#[tauri::command]
+pub async fn clear_memory_stage1_failures(
+    request: ClearMemoryStage1FailuresRequest,
+) -> Result<ClearMemoryStage1FailuresResponse, String> {
+    let ClearMemoryStage1FailuresRequest {} = request;
+    clear_stage1_failures()
+        .await
+        .map(|report| ClearMemoryStage1FailuresResponse {
+            cleared_count: report.cleared_count,
+            stage1_failed: stage1_failure_responses(report.status),
+        })
+        .map_err(|error| format!("Failed to clear failed memory extractions: {}", error))
 }
 
 #[cfg(test)]
@@ -199,5 +244,44 @@ mod tests {
             serde_json::to_value(&skipped).unwrap(),
             serde_json::json!({ "started": false })
         );
+    }
+
+    #[test]
+    fn clear_failures_response_serializes_camel_case_and_keeps_the_post_clear_list() {
+        let response = ClearMemoryStage1FailuresResponse {
+            cleared_count: 2,
+            stage1_failed: stage1_failure_responses(MemoryStatusSnapshot {
+                stage1_failed: vec![MemoryStage1Failure {
+                    session_id: "session-b".to_string(),
+                    last_error: "still failing".to_string(),
+                    retry_exhausted: false,
+                }],
+                ..Default::default()
+            }),
+        };
+
+        assert_eq!(
+            serde_json::to_value(&response).unwrap(),
+            serde_json::json!({
+                "clearedCount": 2,
+                "stage1Failed": [
+                    {
+                        "sessionId": "session-b",
+                        "lastError": "still failing",
+                        "retryExhausted": false
+                    }
+                ]
+            })
+        );
+    }
+
+    #[test]
+    fn clear_failures_request_accepts_the_structured_payload_shape() {
+        // The Web UI sends `{ request: {} }`; an extra field from a newer client
+        // must not break an older host command.
+        let _: ClearMemoryStage1FailuresRequest =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        let _: ClearMemoryStage1FailuresRequest =
+            serde_json::from_value(serde_json::json!({ "futureScope": "all" })).unwrap();
     }
 }

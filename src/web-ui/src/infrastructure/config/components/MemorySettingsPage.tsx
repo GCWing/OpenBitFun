@@ -6,6 +6,7 @@ import {
   MenuPopover,
   NumberInput,
   Select,
+  StatusPill,
   type MenuEntry,
   type SelectOption,
   Switch,
@@ -30,6 +31,7 @@ import {
   ConfigPageRow,
   ConfigPageSection,
 } from './common';
+import './MemorySettingsPage.scss';
 
 const log = createLogger('MemorySettings');
 
@@ -133,6 +135,47 @@ function shortSessionId(sessionId: string | undefined): string {
   return value.length > 8 ? `${value.slice(0, 8)}…` : value;
 }
 
+/**
+ * Character budget of a visible error summary.
+ *
+ * The full message stays reachable through the element's `title`, so the list
+ * stays scannable instead of printing a provider JSON body verbatim.
+ */
+const MEMORY_ERROR_SUMMARY_MAX_CHARS = 120;
+
+/**
+ * Drops a trailing provider JSON body from an error string.
+ *
+ * Stage-1 failures are stored verbatim, so a provider rejection can look like
+ * `<message> {"error":{"message":"...","type":"..."}}`. The human sentence in
+ * front of that payload is the useful part; everything from the first `{"error`
+ * marker on is left to the `title` attribute.
+ */
+function stripProviderJsonTail(rawError: string): string {
+  const jsonStart = rawError.indexOf('{"error');
+  return jsonStart > 0 ? rawError.slice(0, jsonStart).trim() : rawError;
+}
+
+/** Condenses a raw pipeline error into one short, readable line. */
+function summarizeMemoryError(rawError: string | null | undefined): string {
+  const raw = (rawError ?? '').trim();
+  if (!raw) {
+    return '';
+  }
+  const withoutPayload = stripProviderJsonTail(raw);
+  const firstLine = withoutPayload
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  // The dropped payload can leave the line's opening brace behind; a summary
+  // ending in `{` reads like a broken value.
+  const condensed = (firstLine ?? withoutPayload.replace(/\s+/g, ' ').trim())
+    .replace(/[{\s]+$/, '');
+  return condensed.length > MEMORY_ERROR_SUMMARY_MAX_CHARS
+    ? `${condensed.slice(0, MEMORY_ERROR_SUMMARY_MAX_CHARS).trimEnd()}…`
+    : condensed;
+}
+
 const MemorySettingsPage: React.FC = () => {
   const { t, formatDate, formatNumber } = useI18n(['settings/memory', 'shared']);
   const { error: notifyError, info: notifyInfo, success: notifySuccess } = useNotification();
@@ -141,8 +184,9 @@ const MemorySettingsPage: React.FC = () => {
   const [config, setConfig] = useState<MemoriesConfigShape>(DEFAULT_MEMORIES_CONFIG);
   const [models, setModels] = useState<AIModelConfig[]>([]);
   const [savingKey, setSavingKey] = useState<keyof MemoriesConfigShape | null>(null);
-  const [actionBusy, setActionBusy] = useState<'reset-settings' | 'open-directory' | 'reset-memory' | null>(null);
+  const [actionBusy, setActionBusy] = useState<'reset-settings' | 'open-directory' | 'reset-memory' | 'clear-failures' | null>(null);
   const [resetMemoryConfirmOpen, setResetMemoryConfirmOpen] = useState(false);
+  const [clearFailuresConfirmOpen, setClearFailuresConfirmOpen] = useState(false);
   const [resetSettingsConfirmOpen, setResetSettingsConfirmOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -380,6 +424,28 @@ const MemorySettingsPage: React.FC = () => {
     }
   }, [notifyError, notifySuccess, refreshMemoryStatus, t]);
 
+  /**
+   * Clears the failed-extraction bookkeeping of the current host.
+   *
+   * The action deletes failure records only: extracted memories are kept, and
+   * the cleared sessions become eligible for extraction again on the next memory
+   * run, so the status card is re-read instead of patched locally.
+   */
+  const handleClearFailures = useCallback(async () => {
+    setClearFailuresConfirmOpen(false);
+    setActionBusy('clear-failures');
+    try {
+      const result = await agentAPI.clearMemoryStage1Failures();
+      notifySuccess(t('status.failed.cleared', { count: result.clearedCount ?? 0 }));
+      await refreshMemoryStatus();
+    } catch (error) {
+      log.error('Failed to clear failed memory extractions', error);
+      notifyError(error instanceof Error ? error.message : t('status.failed.clearFailed'));
+    } finally {
+      setActionBusy(null);
+    }
+  }, [notifyError, notifySuccess, refreshMemoryStatus, t]);
+
   const handleRunPipelineNow = useCallback(async () => {
     const baseline = memoryStatus.kind === 'ready'
       ? memoryStatus.data.phase2LastFinishedAtUnixSecs ?? null
@@ -601,7 +667,19 @@ const MemorySettingsPage: React.FC = () => {
                   align="center"
                   multiline
                 >
-                  <span>{statusData.phase2LastError}</span>
+                  <div
+                    className="openbitfun-memory-settings__error-detail"
+                    data-testid="memories-status-phase2-last-error"
+                  >
+                    {/* The full message stays on `title`: a timeout report can be
+                        hundreds of characters and must not read like a value. */}
+                    <span
+                      className="openbitfun-memory-settings__error-detail-text"
+                      title={statusData.phase2LastError}
+                    >
+                      {summarizeMemoryError(statusData.phase2LastError)}
+                    </span>
+                  </div>
                 </ConfigPageRow>
               ) : null}
 
@@ -634,19 +712,64 @@ const MemorySettingsPage: React.FC = () => {
               </ConfigPageRow>
 
               <ConfigPageRow
-                label={t('status.failed.title')}
+                label={(
+                  <span className="openbitfun-memory-settings__inline-header">
+                    <span className="openbitfun-memory-settings__inline-header-main">
+                      <span>{t('status.failed.title')}</span>
+                    </span>
+                    {failedSessions.length > 0 ? (
+                      <span className="openbitfun-memory-settings__inline-header-actions">
+                        <Button
+                          data-testid="memories-clear-failed-btn"
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setClearFailuresConfirmOpen(true)}
+                          loading={actionBusy === 'clear-failures'}
+                          disabled={actionBusy !== null}
+                        >
+                          {t('status.failed.clearAction')}
+                        </Button>
+                      </span>
+                    ) : null}
+                  </span>
+                )}
                 description={t('status.failed.description')}
                 multiline
               >
                 {failedSessions.length === 0 ? (
                   <span>{t('status.failed.none')}</span>
                 ) : (
-                  <div>
+                  <div
+                    className="openbitfun-memory-settings__failure-list"
+                    data-testid="memories-status-stage1-failed"
+                  >
                     {failedSessions.map((failure, index) => (
-                      <div key={failure.sessionId ?? index}>
-                        <span>{shortSessionId(failure.sessionId)}</span>
-                        <span>{failure.lastError}</span>
-                        {failure.retryExhausted ? <span>{t('status.failed.retryExhausted')}</span> : null}
+                      <div
+                        className="openbitfun-memory-settings__failure-entry"
+                        data-testid="memories-status-stage1-failed-entry"
+                        key={failure.sessionId ?? index}
+                      >
+                        <div className="openbitfun-memory-settings__failure-head">
+                          <span
+                            className="openbitfun-memory-settings__failure-session"
+                            title={failure.sessionId}
+                          >
+                            {shortSessionId(failure.sessionId)}
+                          </span>
+                          {failure.retryExhausted ? (
+                            <StatusPill tone="danger" emphasis>
+                              {t('status.failed.retryExhausted')}
+                            </StatusPill>
+                          ) : null}
+                        </div>
+                        <div
+                          className="openbitfun-memory-settings__failure-error"
+                          data-testid="memories-status-stage1-failed-error"
+                          title={failure.lastError}
+                        >
+                          {summarizeMemoryError(failure.lastError)}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -923,6 +1046,15 @@ const MemorySettingsPage: React.FC = () => {
         type="warning"
         confirmDanger
         confirmText={t('actions.resetMemoryConfirmAction')}
+      />
+      <ConfirmDialog
+        open={clearFailuresConfirmOpen}
+        onOpenChange={() => setClearFailuresConfirmOpen(false)}
+        onConfirm={() => void handleClearFailures()}
+        title={t('status.failed.clearConfirmTitle')}
+        message={t('status.failed.clearConfirm')}
+        type="warning"
+        confirmText={t('status.failed.clearConfirmAction')}
       />
     </ConfigPageLayout>
   );

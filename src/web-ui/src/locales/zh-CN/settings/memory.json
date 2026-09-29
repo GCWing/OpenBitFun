@@ -59,9 +59,15 @@
     },
     "failed": {
       "title": "抽取失败的会话",
-      "description": "这些会话未能完成抽取。在抽取成功或重试次数恢复之前会一直列出。",
+      "description": "这些会话未能完成抽取。在抽取成功或重试次数恢复之前会一直列出。清除失败记录后，下一次记忆任务会重新尝试抽取这些会话。",
       "none": "没有抽取失败的会话。",
-      "retryExhausted": "重试次数已用尽"
+      "retryExhausted": "重试次数已用尽",
+      "clearAction": "清除失败记录",
+      "clearConfirmTitle": "清除抽取失败记录？",
+      "clearConfirm": "将删除当前执行主机上这些会话的失败记录。已抽取的记忆不会被删除；清除失败记录后，这些会话会在下一次记忆任务中重新尝试抽取。",
+      "clearConfirmAction": "清除记录",
+      "cleared": "已清除 {{count}} 条失败记录",
+      "clearFailed": "清除失败记录失败"
     },
     "messages": {
       "loading": "正在读取记忆状态…",

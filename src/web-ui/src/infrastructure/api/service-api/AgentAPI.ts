@@ -325,6 +325,14 @@ export interface RunMemoryPipelineNowResponse {
   started?: boolean;
 }
 
+/** Result of clearing the failed-extraction bookkeeping on the host. */
+export interface ClearMemoryStage1FailuresResponse {
+  /** Number of failed stage-1 records that were deleted. */
+  clearedCount?: number;
+  /** Failed list after the clear, so the caller does not have to re-read it. */
+  stage1Failed?: MemoryStage1FailureInfo[];
+}
+
 export interface RestoreSessionWithTurnsResponse {
   session: SessionInfo;
   turns: DialogTurnData[];
@@ -1282,6 +1290,23 @@ export class AgentAPI {
       return await api.invoke<RunMemoryPipelineNowResponse>('run_memory_pipeline_now');
     } catch (error) {
       throw createTauriCommandError('run_memory_pipeline_now', error);
+    }
+  }
+
+  /**
+   * Deletes the failed-extraction bookkeeping on the current OpenBitFun host.
+   *
+   * Extracted memories are kept, and the cleared sessions can be extracted again
+   * on the next memory run. Throws when the host cannot clear the records.
+   */
+  async clearMemoryStage1Failures(): Promise<ClearMemoryStage1FailuresResponse> {
+    try {
+      return await api.invoke<ClearMemoryStage1FailuresResponse>(
+        'clear_memory_stage1_failures',
+        { request: {} },
+      );
+    } catch (error) {
+      throw createTauriCommandError('clear_memory_stage1_failures', error);
     }
   }
 

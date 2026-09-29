@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:514a6cfb879e33fb",
+  "digest": "fnv1a64:fe76bc59c46cc763",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -964,6 +964,18 @@
       "id": "clear_mcp_remote_auth",
       "surface": "tauri_command",
       "remoteWorkspace": "LegacyUnaudited",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "clear_memory_stage1_failures",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
       "peer": {
         "kind": "proxied"
       },

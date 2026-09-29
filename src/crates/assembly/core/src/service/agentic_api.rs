@@ -72,6 +72,17 @@ pub struct MemoryPipelineRunReport {
     pub started: bool,
 }
 
+/// Outcome of clearing the failed stage-1 extraction bookkeeping.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MemoryClearFailuresReport {
+    /// Number of failed stage-1 job rows that were deleted.
+    pub cleared_count: u64,
+    /// Pipeline snapshot read after the clear, so the caller does not have to
+    /// guess whether the failed list is really empty.
+    pub status: MemoryStatusSnapshot,
+}
+
 /// Reads the persisted pipeline snapshot plus the effective config flags and the
 /// memory-root file statistics.
 ///
@@ -143,6 +154,30 @@ pub async fn run_memory_pipeline_now() -> OpenBitFunResult<MemoryPipelineRunRepo
     });
 
     Ok(MemoryPipelineRunReport { started: true })
+}
+
+/// Deletes the failed stage-1 extraction bookkeeping for this host.
+///
+/// This is the manual counterpart of the automatic 24 h quarantine requeue: it
+/// removes only the `memory_stage1/*` job rows in `error` state, so the failed
+/// list stops repeating without discarding any extracted memory and without
+/// touching the global phase-2 job. A cleared session becomes claimable again on
+/// the next scan, which inserts a fresh claim with the full default attempt
+/// budget.
+pub async fn clear_memory_stage1_failures() -> OpenBitFunResult<MemoryClearFailuresReport> {
+    let db = MemoryDatabase::new(get_path_manager_arc());
+    let cleared_count = db.clear_failed_stage1_jobs().await?;
+    let status = db.status_snapshot().await?;
+    info!(
+        "Memory stage1 failure bookkeeping cleared: cleared_count={}, remaining_failed={}",
+        cleared_count,
+        status.stage1_failed.len()
+    );
+
+    Ok(MemoryClearFailuresReport {
+        cleared_count,
+        status,
+    })
 }
 
 async fn load_global_config() -> OpenBitFunResult<GlobalConfig> {
@@ -323,5 +358,32 @@ mod tests {
         let report: MemoryPipelineRunReport =
             serde_json::from_value(serde_json::json!({})).unwrap();
         assert!(!report.started);
+    }
+
+    #[test]
+    fn clear_failures_report_carries_the_cleared_count_and_post_clear_status() {
+        let report = MemoryClearFailuresReport {
+            cleared_count: 3,
+            status: MemoryStatusSnapshot {
+                stage1_output_count: 4,
+                stage1_pending_promotion_count: 1,
+                stage1_failed: Vec::new(),
+                phase2_status: Some("error".to_string()),
+                phase2_last_finished_at_unix_secs: None,
+                phase2_last_error: Some("consolidation failed".to_string()),
+            },
+        };
+        let value = serde_json::to_value(&report).unwrap();
+        assert_eq!(value["cleared_count"], serde_json::json!(3));
+        assert_eq!(value["status"]["stage1_output_count"], serde_json::json!(4));
+        assert_eq!(value["status"]["stage1_failed"], serde_json::json!([]));
+
+        // A host that reports nothing still yields a usable report instead of
+        // forcing the caller to guess the post-clear state.
+        let empty: MemoryClearFailuresReport =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(empty.cleared_count, 0);
+        assert!(empty.status.stage1_failed.is_empty());
+        assert_eq!(empty.status.phase2_status, None);
     }
 }

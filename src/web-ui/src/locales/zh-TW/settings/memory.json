@@ -59,9 +59,15 @@
     },
     "failed": {
       "title": "抽取失敗的會話",
-      "description": "這些會話未能完成抽取。在抽取成功或重試次數恢復之前會持續列出。",
+      "description": "這些會話未能完成抽取。在抽取成功或重試次數恢復之前會持續列出。清除失敗記錄後，下一次記憶任務會重新嘗試抽取這些會話。",
       "none": "沒有抽取失敗的會話。",
-      "retryExhausted": "重試次數已用盡"
+      "retryExhausted": "重試次數已用盡",
+      "clearAction": "清除失敗記錄",
+      "clearConfirmTitle": "清除抽取失敗記錄？",
+      "clearConfirm": "將刪除目前執行主機上這些會話的失敗記錄。已抽取的記憶不會被刪除；清除失敗記錄後，這些會話會在下一次記憶任務中重新嘗試抽取。",
+      "clearConfirmAction": "清除記錄",
+      "cleared": "已清除 {{count}} 筆失敗記錄",
+      "clearFailed": "清除失敗記錄失敗"
     },
     "messages": {
       "loading": "正在讀取記憶狀態…",
