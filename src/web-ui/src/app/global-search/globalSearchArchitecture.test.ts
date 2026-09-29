@@ -24,7 +24,7 @@ describe('global search ownership', () => {
     expect(globalSearch).toContain('variant="modal"');
     expect(auxPane).not.toContain('GlobalSearchContent');
     expect(auxPane).toContain('missionControlEnabled={false}');
-    expect(contentCanvas).toContain('<EmptyState onClose={disablePopOut ? undefined : onCollapsePanel}>');
+    expect(contentCanvas).toContain('<EmptyState onClose={disablePopOut ? undefined : onCollapsePanel} toolbarActions={toolbarActions}>');
     expect(contentCanvas).toContain(
       'onOpenMissionControl={missionControlEnabled ? handleOpenMissionControl : undefined}',
     );

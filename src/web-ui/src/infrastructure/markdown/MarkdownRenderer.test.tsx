@@ -8,6 +8,7 @@ import type { MenuItem } from '@/shared/context-menu-system/types';
 import { MarkdownRenderer, ThinkingMarkdownRenderer } from './MarkdownRenderer';
 import { useAgentCanvasStore } from '@/app/components/panels/content-canvas/stores/canvasStore';
 import { useSceneStore } from '@/app/stores/sceneStore';
+import { selectSessionPaneMode, sessionPaneLayoutStore } from '@/app/scenes/session/sessionPaneLayoutStore';
 import { useContentResourceStore } from '@/app/workbench/contentResourceStore';
 import { appManager } from '@/app/services/AppManager';
 import { flowChatStore } from '@/flow_chat/store/FlowChatStore';
@@ -511,9 +512,6 @@ Second paragraph.
   it('commits a browser view and explicitly reveals its inline host', async () => {
     container.className = 'openbitfun-session-scene modern-flowchat-container';
     openSessionHost();
-    const onExpandPanel = vi.fn();
-
-    window.addEventListener('expand-right-panel-immediate', onExpandPanel);
 
     try {
       await act(async () => {
@@ -523,16 +521,16 @@ Second paragraph.
 
       const link = container.querySelector<HTMLAnchorElement>('a[href="https://example.com/docs"]');
       expect(link).not.toBeNull();
+      expect(selectSessionPaneMode(sessionPaneLayoutStore.getState())).toBe('chat-only');
 
       act(() => {
         link?.click();
       });
 
-      expect(onExpandPanel).toHaveBeenCalledTimes(1);
+      expect(selectSessionPaneMode(sessionPaneLayoutStore.getState())).toBe('split');
       expect(useAgentCanvasStore.getState().primaryGroup.tabs).toHaveLength(1);
       expect(useAgentCanvasStore.getState().primaryGroup.tabs[0].content.data.url).toBe('https://example.com/docs');
     } finally {
-      window.removeEventListener('expand-right-panel-immediate', onExpandPanel);
       vi.useRealTimers();
     }
   });
