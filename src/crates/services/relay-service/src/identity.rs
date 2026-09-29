@@ -3,7 +3,11 @@
 
 use axum::http::StatusCode;
 use serde::Deserialize;
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 pub(crate) const IDENTITY_ME_URL: &str = "https://auth.openbitfun.com/api/v1/me";
 
@@ -25,6 +29,78 @@ pub(crate) struct VerifiedIdentity {
 #[derive(Deserialize)]
 struct IdentityResponse {
     user: VerifiedIdentity,
+}
+
+/// A poll answer the authority has already given for a transaction.
+struct CompletedPoll {
+    transaction_secret: String,
+    payload: serde_json::Value,
+    expires_at: i64,
+}
+
+/// Terminal sign-in outcomes, keyed by transaction id.
+///
+/// The authority redeems a transaction exactly once: the first poll that finds
+/// it completed returns the tokens, and every later poll for the same
+/// transaction answers `consumed` without them. Clients poll on an interval and
+/// can lose a response, repeat a request, or come back from the background,
+/// which turns a completed sign-in into a dead one. Replaying the answer this
+/// relay already holds keeps the poll idempotent for the length of the
+/// transaction window.
+///
+/// The secret is part of the entry rather than the key so a poll that cannot
+/// present it is refused here, never handed a token granted to someone else.
+fn completed_authorizations() -> &'static Mutex<HashMap<String, CompletedPoll>> {
+    static COMPLETED: OnceLock<Mutex<HashMap<String, CompletedPoll>>> = OnceLock::new();
+    COMPLETED.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// How long a terminal answer is replayed. The authority hands the transaction
+/// out for a few minutes; a client that redeems it late stays inside this.
+const POLL_REPLAY_SECS: i64 = 900;
+
+fn now_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+fn replay_completed_poll(
+    transaction_id: &str,
+    transaction_secret: &str,
+) -> Option<serde_json::Value> {
+    let mut completed = completed_authorizations()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    completed.retain(|_, poll| poll.expires_at > now_secs());
+    completed
+        .get(transaction_id)
+        .filter(|poll| poll.transaction_secret == transaction_secret)
+        .map(|poll| poll.payload.clone())
+}
+
+fn remember_completed_poll(
+    transaction_id: &str,
+    transaction_secret: &str,
+    payload: &serde_json::Value,
+) {
+    // Pending is not an outcome: the next poll still has to ask.
+    if payload.get("status").and_then(|status| status.as_str()) == Some("pending") {
+        return;
+    }
+    let mut completed = completed_authorizations()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    completed.retain(|_, poll| poll.expires_at > now_secs());
+    completed.insert(
+        transaction_id.to_string(),
+        CompletedPoll {
+            transaction_secret: transaction_secret.to_string(),
+            payload: payload.clone(),
+            expires_at: now_secs() + POLL_REPLAY_SECS,
+        },
+    );
 }
 
 impl IdentityVerifier {
@@ -55,14 +131,20 @@ impl IdentityVerifier {
         {
             return Err(StatusCode::BAD_REQUEST);
         }
-        self.auth_request(
-            "auth/desktop/poll",
-            serde_json::json!({
-                "transactionId": transaction_id,
-                "transactionSecret": transaction_secret,
-            }),
-        )
-        .await
+        if let Some(payload) = replay_completed_poll(transaction_id, transaction_secret) {
+            return Ok(payload);
+        }
+        let payload = self
+            .auth_request(
+                "auth/desktop/poll",
+                serde_json::json!({
+                    "transactionId": transaction_id,
+                    "transactionSecret": transaction_secret,
+                }),
+            )
+            .await?;
+        remember_completed_poll(transaction_id, transaction_secret, &payload);
+        Ok(payload)
     }
 
     async fn auth_request(
@@ -279,7 +361,55 @@ mod tests {
             task.abort();
         }
     }
-}
+
+    #[tokio::test]
+    async fn poll_replays_a_completed_transaction_instead_of_redeeming_it_twice() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let upstream_calls = Arc::new(AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/me", listener.local_addr().unwrap());
+        let counter = upstream_calls.clone();
+        let app = Router::new().route(
+            "/auth/desktop/poll",
+            axum::routing::post(move || {
+                let counter = counter.clone();
+                async move {
+                    // The authority redeems once, then reports the transaction
+                    // as consumed without ever returning tokens again.
+                    if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                        axum::Json(serde_json::json!({
+                            "status": "authorized",
+                            "tokens": { "accessToken": "token-1" },
+                        }))
+                    } else {
+                        axum::Json(serde_json::json!({ "status": "consumed" }))
+                    }
+                }
+            }),
+        );
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = IdentityVerifier::with_url(&url).unwrap();
+
+        let first = client.poll_auth("replayed", "secret-1").await.unwrap();
+        let repeated = client.poll_auth("replayed", "secret-1").await.unwrap();
+        let other_secret = client.poll_auth("replayed", "secret-2").await.unwrap();
+
+        assert_eq!(first["status"], "authorized");
+        assert_eq!(repeated, first, "a repeated poll must see what the first saw");
+        assert_eq!(
+            upstream_calls.load(Ordering::SeqCst),
+            2,
+            "only the mismatching secret asks the authority again"
+        );
+        assert_eq!(
+            other_secret["status"], "consumed",
+            "a mismatched secret is never handed the issued token"
+        );
+        task.abort();
+    }
 
 fn identity_request_permit() -> Result<tokio::sync::OwnedSemaphorePermit, StatusCode> {
     static REQUESTS: std::sync::OnceLock<Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
