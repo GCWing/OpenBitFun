@@ -318,7 +318,7 @@ impl AppearanceConfig {
         let startup_locale_json =
             serde_json::to_string(&startup_locale).unwrap_or_else(|_| "\"zh-CN\"".to_string());
         let show_startup_window_controls = !cfg!(target_os = "macos");
-        let native_sidebar_material = cfg!(any(target_os = "windows", target_os = "macos"));
+        let native_sidebar_material = native_sidebar_material_available();
         let startup_trace_id_json = serde_json::to_string(startup_trace_id)
             .unwrap_or_else(|_| "\"desktop-unknown\"".to_string());
         let bootstrap_log_level_json = serde_json::to_string(crate::logging::level_to_str(
@@ -510,6 +510,28 @@ fn use_development_frontend() -> bool {
     }
 }
 
+/// Whether the window-level sidebar material can be hosted by the compositor.
+///
+/// macOS vibrancy and the Windows 11 Mica/acrylic backdrops are owned by the
+/// compositor. Older Windows builds have to fall back to a live blur-behind,
+/// which re-blurs everything behind the window on every move and makes dragging
+/// the window stutter, so those builds keep the frontend fallback surfaces
+/// (opaque theme colors plus a CSS backdrop) instead.
+fn native_sidebar_material_available() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        true
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::window_shell::window_backdrop_available()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        false
+    }
+}
+
 pub fn create_main_window(
     app_handle: &tauri::AppHandle,
     startup_trace_id: &str,
@@ -619,19 +641,22 @@ pub fn create_main_window(
 
     // The webview must be transparent for the OS material to reach the sidebar.
     // Scene backgrounds and the startup tint remain owned by the frontend.
+    // Requesting the material where the compositor cannot host it would leave
+    // the window with a live blur-behind that drops frames while the window is
+    // dragged, so those builds keep the opaque fallback surfaces instead.
     #[cfg(any(target_os = "windows", target_os = "macos"))]
     {
+        let mut effects = tauri::window::EffectsBuilder::new();
+        if native_sidebar_material_available() {
+            effects = effects.effects([
+                tauri::window::Effect::Acrylic,
+                tauri::window::Effect::Sidebar,
+            ]);
+        }
         builder = builder
             .transparent(true)
             .background_color(tauri::window::Color(0, 0, 0, 0))
-            .effects(
-                tauri::window::EffectsBuilder::new()
-                    .effects([
-                        tauri::window::Effect::Acrylic,
-                        tauri::window::Effect::Sidebar,
-                    ])
-                    .build(),
-            );
+            .effects(effects.build());
     }
 
     #[cfg(debug_assertions)]
@@ -671,6 +696,10 @@ pub fn create_main_window(
             #[cfg(target_os = "windows")]
             if let Err(error) = crate::window_webview_geometry::install(&window) {
                 error!("Failed to install main WebView geometry protection: {error}");
+            }
+            #[cfg(target_os = "windows")]
+            if let Err(error) = crate::window_shell::install_frame_handling(&window) {
+                error!("Failed to install main window frame handling: {error}");
             }
             let reapply_maximized = crate::restore_main_window_state(&window);
             crate::webview_recovery::install(&window);
