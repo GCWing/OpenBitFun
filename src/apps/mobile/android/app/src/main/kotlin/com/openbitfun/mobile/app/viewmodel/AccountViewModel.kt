@@ -30,6 +30,8 @@ internal class AccountViewModel(application: Application) : AndroidViewModel(app
     private val completionNotifier = com.openbitfun.mobile.app.platform.TaskCompletionNotifier(application)
     private var foreground = true
     fun setBackground(value: Boolean) {
+        LogcatCoreLog.info("account host visibility foreground=${!value}")
+        store.setForeground(!value)
         if (!value) store.resumeSessionStreams()
         foreground = !value
         completionNotifier.setBackground(value)
@@ -82,6 +84,7 @@ internal class AccountViewModel(application: Application) : AndroidViewModel(app
     }
 
     fun notifyAuthorizationCallback() {
+        LogcatCoreLog.info("account authorization callback wakeup")
         store.notifyAuthorizationCallback()
     }
 

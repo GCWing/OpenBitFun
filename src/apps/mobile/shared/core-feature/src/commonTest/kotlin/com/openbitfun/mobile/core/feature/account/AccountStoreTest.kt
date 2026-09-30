@@ -11,8 +11,11 @@ import com.openbitfun.mobile.core.transport.GitHubTokens
 import com.openbitfun.mobile.core.transport.TransportLog
 import com.openbitfun.mobile.core.transport.RemoteCommandTransport
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.DeserializationStrategy
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -40,15 +43,22 @@ class AccountStoreTest {
         val token = AuthorizationPoll.awaitAccessToken(start, TransportLog.None, nowSeconds = { 0 }) {
             attempts++
             when (attempts) {
-                1 -> throw CloudAccountException(CloudAccountFailure.NETWORK)
-                2 -> throw CloudAccountException(CloudAccountFailure.TIMEOUT)
-                3 -> throw CloudAccountException(CloudAccountFailure.RATE_LIMITED, 429)
-                4 -> GitHubAuthorizationPoll("pending")
+                1 -> throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE)
+                2 -> throw CloudAccountException(CloudAccountFailure.NETWORK)
+                3 -> throw CloudAccountException(CloudAccountFailure.TIMEOUT)
+                4 -> throw CloudAccountException(CloudAccountFailure.RATE_LIMITED, 429)
+                5 -> GitHubAuthorizationPoll("pending")
                 else -> GitHubAuthorizationPoll("authorized", GitHubTokens("granted"))
             }
         }
         assertEquals("granted", token)
-        assertEquals(5, attempts)
+        assertEquals(6, attempts)
+
+        assertFailsWith<CloudAccountException> {
+            AuthorizationPoll.awaitAccessToken(start, TransportLog.None, nowSeconds = { 0 }) {
+                throw CloudAccountException(CloudAccountFailure.MALFORMED_RESPONSE, 400)
+            }
+        }
 
         var refusals = 0
         assertFailsWith<CloudAccountException> {
@@ -85,6 +95,35 @@ class AccountStoreTest {
         }
         assertEquals("granted", token)
         assertEquals(0L, firstPollAt)
+    }
+
+    @Test fun signInPollWaitsInBackgroundAndResumesWhenForegroundReturns() = runTest {
+        val start = GitHubAuthorization("txn", "secret", "https://auth.openbitfun.com/sign-in#ticket=t", 100L, 30)
+        val foreground = MutableStateFlow(true)
+        var attempts = 0
+        val token = async {
+            AuthorizationPoll.awaitAccessToken(
+                start,
+                TransportLog.None,
+                nowSeconds = { 0 },
+                foreground = foreground,
+            ) {
+                attempts++
+                if (attempts == 1) GitHubAuthorizationPoll("pending")
+                else GitHubAuthorizationPoll("authorized", GitHubTokens("granted"))
+            }
+        }
+
+        runCurrent()
+        assertEquals(1, attempts)
+        foreground.value = false
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertEquals(1, attempts)
+        foreground.value = true
+        advanceUntilIdle()
+        assertEquals("granted", token.await())
+        assertEquals(2, attempts)
     }
 
     @Test fun cancelledLoginDirectoryCannotReviveAccountOrPersistSelectedDevice() = runTest {

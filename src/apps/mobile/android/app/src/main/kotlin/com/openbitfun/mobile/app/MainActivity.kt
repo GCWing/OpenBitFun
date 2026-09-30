@@ -23,6 +23,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.openbitfun.mobile.app.platform.LogcatCoreLog
 import com.openbitfun.mobile.app.ui.shell.MobileScreen
 import com.openbitfun.mobile.app.platform.StartupRevealPreference
 import com.openbitfun.mobile.app.platform.AppLocaleController
@@ -40,6 +41,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         AppLocaleController.applySaved(this)
         super.onCreate(savedInstanceState)
+        LogcatCoreLog.initialize(applicationContext)
+        LogcatCoreLog.info("activity onCreate callback=${isAuthorizationCallbackIntent(intent)}")
         authorizationCallbackPending = isAuthorizationCallbackIntent(intent)
         val coldStartCandidate = !processLaunchClaimed
             && !intent.getBooleanExtra(DESIGN_PREVIEW_EXTRA, false)
@@ -91,6 +94,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        LogcatCoreLog.info("activity onStart callbackPending=$authorizationCallbackPending")
         if (!intent.getBooleanExtra(DESIGN_PREVIEW_EXTRA, false)) {
             accountModel().setBackground(false)
             if (authorizationCallbackPending) {
@@ -103,10 +107,12 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        LogcatCoreLog.info("activity onNewIntent action=${intent.action} callback=${isAuthorizationCallbackIntent(intent)}")
         if (isAuthorizationCallbackIntent(intent)) accountModel().notifyAuthorizationCallback()
     }
 
     override fun onStop() {
+        LogcatCoreLog.info("activity onStop")
         showStartupBrand = false
         showColdStart = false
         allowColdStart = false

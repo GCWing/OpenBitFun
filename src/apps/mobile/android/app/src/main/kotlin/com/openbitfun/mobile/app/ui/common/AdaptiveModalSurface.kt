@@ -66,7 +66,16 @@ internal fun AdaptiveModalSurface(
         Dialog(onDismissRequest = onDismissRequest,
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
             val window = (LocalView.current.parent as? DialogWindowProvider)?.window
-            SideEffect { window?.setDimAmount(0f) }
+            SideEffect {
+                window?.setDimAmount(0f)
+                // The account sheet is edge-to-edge. Some Android-compatible
+                // hosts otherwise leave the dialog's default white navigation
+                // bar below the rounded surface as a visible strip.
+                window?.navigationBarColor = android.graphics.Color.TRANSPARENT
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    window?.isNavigationBarContrastEnforced = false
+                }
+            }
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.scrim)
                 .pointerInput(onDismissRequest) { detectTapGestures(onTap = { onDismissRequest() }) }
                 .safeDrawingPadding().imePadding().padding(MobileDesignGeometry.LoginSheetOuterMargin),

@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -101,12 +102,28 @@ public class AccountStore internal constructor(
     private var controllableDevices: List<AccountDeviceUi> = emptyList()
     private var pendingInitialDeviceSelection = false
     private val authorizationWakeups = kotlinx.coroutines.flow.MutableSharedFlow<Long>(extraBufferCapacity = 1)
+    private val authorizationResumes = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val authorizationForeground = kotlinx.coroutines.flow.MutableStateFlow(true)
 
     init {
-        (backend as? CloudBackend)?.setAuthorizationWakeups(authorizationWakeups)
+        (backend as? CloudBackend)?.setAuthorizationWakeups(
+            authorizationWakeups,
+            authorizationResumes,
+            authorizationForeground,
+        )
     }
 
     public fun resumeSessionStreams() { backend.resumeSessionStreams() }
+
+    /** Pause browser authorization polling while an OEM has backgrounded the app. */
+    public fun setForeground(value: Boolean) {
+        val wasForeground = authorizationForeground.value
+        authorizationForeground.value = value
+        if (value && !wasForeground) {
+            authorizationResumes.tryEmit(Unit)
+            authorizationWakeups.tryEmit(0L)
+        }
+    }
 
     /** Wakes an in-flight browser authorization poll after a native deep link. */
     public fun notifyAuthorizationCallback() {
@@ -629,19 +646,19 @@ internal object AuthorizationPoll {
      * Whether a failed poll should be tried again inside the sign-in window.
      *
      * Retry what the next tick could plausibly get past: a dropped connection,
-     * a timeout, a relay that is briefly unavailable, and a rate limit that
-     * asks for exactly the wait the loop already does between polls. Stop for
-     * anything the relay meant — a rejected or unparseable transaction stays
-     * rejected however long the phone keeps asking.
+     * a timeout, a relay that is briefly unavailable, a rate limit that asks
+     * for exactly the wait the loop already does between polls, or a response
+     * that was truncated while an OEM froze and resumed the app. A malformed
+     * HTTP error from the relay still stops immediately.
      */
-    fun retryable(failure: CloudAccountFailure): Boolean = when (failure) {
+    fun retryable(failure: CloudAccountFailure, statusCode: Int? = null): Boolean = when (failure) {
         CloudAccountFailure.NETWORK,
         CloudAccountFailure.TIMEOUT,
         CloudAccountFailure.RATE_LIMITED,
         CloudAccountFailure.RELAY_UNAVAILABLE -> true
+        CloudAccountFailure.MALFORMED_RESPONSE -> statusCode == null
         CloudAccountFailure.INVALID_CREDENTIALS,
-        CloudAccountFailure.AUTHENTICATION,
-        CloudAccountFailure.MALFORMED_RESPONSE -> false
+        CloudAccountFailure.AUTHENTICATION -> false
     }
 
     /**
@@ -662,28 +679,36 @@ internal object AuthorizationPoll {
         log: TransportLog,
         nowSeconds: () -> Long = { kotlin.time.Clock.System.now().epochSeconds },
         wake: kotlinx.coroutines.flow.Flow<Long> = kotlinx.coroutines.flow.flow { kotlinx.coroutines.awaitCancellation() },
+        foreground: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true),
+        resumed: kotlinx.coroutines.flow.Flow<Unit> = emptyFlow(),
         poll: suspend () -> com.openbitfun.mobile.core.transport.GitHubAuthorizationPoll,
     ): String {
         var lastTransient: CloudAccountException? = null
         var firstPoll = true
+        var attempt = 0
         while (nowSeconds() < start.expiresAt) {
+            foreground.first { it }
             // Poll immediately after the browser handoff so a completed
             // transaction is not held behind the normal server interval.
             if (!firstPoll) {
                 kotlinx.coroutines.withTimeoutOrNull(start.pollIntervalSeconds.coerceIn(1, 30) * 1000L) {
-                    wake.first()
+                    kotlinx.coroutines.flow.merge(wake.map { Unit }, resumed).first()
                 }
             }
             firstPoll = false
+            foreground.first { it }
+            attempt += 1
+            log.info("authorization poll attempt=$attempt")
             val result = try {
                 poll()
             } catch (cause: CloudAccountException) {
-                if (!retryable(cause.failure)) throw cause
+                if (!retryable(cause.failure, cause.statusCode)) throw cause
                 lastTransient = cause
                 log.warn("account authorization poll retrying reason=${cause.failure}")
                 continue
             }
             lastTransient = null
+            log.info("authorization poll result status=${result.status} hasToken=${!result.tokens?.accessToken.isNullOrEmpty()}")
             if (result.status == "authorized") {
                 val token = result.tokens?.accessToken
                 if (!token.isNullOrEmpty()) return token
@@ -700,9 +725,17 @@ private class CloudBackend(
     private val log: TransportLog,
 ) : AccountBackend {
     private var authorizationWakeups: kotlinx.coroutines.flow.Flow<Long> = emptyFlow()
+    private var authorizationResumes: kotlinx.coroutines.flow.Flow<Unit> = emptyFlow()
+    private var authorizationForeground: kotlinx.coroutines.flow.Flow<Boolean> = kotlinx.coroutines.flow.flowOf(true)
 
-    fun setAuthorizationWakeups(flow: kotlinx.coroutines.flow.Flow<Long>) {
-        authorizationWakeups = flow
+    fun setAuthorizationWakeups(
+        wakeups: kotlinx.coroutines.flow.Flow<Long>,
+        resumes: kotlinx.coroutines.flow.Flow<Unit>,
+        foreground: kotlinx.coroutines.flow.Flow<Boolean>,
+    ) {
+        authorizationWakeups = wakeups
+        authorizationResumes = resumes
+        authorizationForeground = foreground
     }
 
     override suspend fun login(
@@ -712,10 +745,21 @@ private class CloudBackend(
         deviceSecret: ByteArray,
         onAuthorization: (String) -> Unit,
     ): AccountSessionData {
+        log.info("authorization flow started")
         val start = client.startAuthorization(relayUrl)
+        log.info("authorization start received expiresAt=${start.expiresAt} pollInterval=${start.pollIntervalSeconds}s")
         onAuthorization(start.authorizationUrl)
-        val token = AuthorizationPoll.awaitAccessToken(start, log, poll = { client.pollAuthorization(relayUrl, start) }, wake = authorizationWakeups)
+        val token = AuthorizationPoll.awaitAccessToken(
+            start,
+            log,
+            poll = { client.pollAuthorization(relayUrl, start) },
+            wake = authorizationWakeups,
+            foreground = authorizationForeground,
+            resumed = authorizationResumes,
+        )
+        log.info("authorization poll completed")
         val session = client.login(relayUrl, token, deviceId, deviceName, deviceSecret)
+        log.info("account login response accepted")
         return AccountSessionData(
             relayUrl = relayUrl,
             username = session.userId,
