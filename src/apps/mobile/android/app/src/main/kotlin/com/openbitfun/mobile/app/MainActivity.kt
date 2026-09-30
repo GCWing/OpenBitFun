@@ -1,5 +1,6 @@
 package com.openbitfun.mobile.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.mutableStateOf
@@ -35,9 +36,11 @@ class MainActivity : ComponentActivity() {
     private var showStartupBrand by mutableStateOf(true)
     private var showColdStart by mutableStateOf(false)
     private var allowColdStart by mutableStateOf(false)
+    private var authorizationCallbackPending = false
     override fun onCreate(savedInstanceState: Bundle?) {
         AppLocaleController.applySaved(this)
         super.onCreate(savedInstanceState)
+        authorizationCallbackPending = isAuthorizationCallbackIntent(intent)
         val coldStartCandidate = !processLaunchClaimed
             && !intent.getBooleanExtra(DESIGN_PREVIEW_EXTRA, false)
         processLaunchClaimed = true
@@ -88,13 +91,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (!intent.getBooleanExtra(DESIGN_PREVIEW_EXTRA, false)) accountModel().setBackground(false)
+        if (!intent.getBooleanExtra(DESIGN_PREVIEW_EXTRA, false)) {
+            accountModel().setBackground(false)
+            if (authorizationCallbackPending) {
+                authorizationCallbackPending = false
+                accountModel().notifyAuthorizationCallback()
+            }
+        }
     }
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        accountModel().notifyAuthorizationCallback()
+        if (isAuthorizationCallbackIntent(intent)) accountModel().notifyAuthorizationCallback()
     }
 
     override fun onStop() {
@@ -107,6 +116,16 @@ class MainActivity : ComponentActivity() {
 
     private fun accountModel() = androidx.lifecycle.ViewModelProvider(this,
         com.openbitfun.mobile.app.viewmodel.AccountViewModel.Factory)[com.openbitfun.mobile.app.viewmodel.AccountViewModel::class.java]
+
+    private fun isAuthorizationCallbackIntent(intent: Intent): Boolean {
+        val uri = intent.data ?: return false
+        return intent.action == Intent.ACTION_VIEW &&
+            uri.scheme == "openbitfun" &&
+            uri.authority == "auth" &&
+            uri.path == "/callback" &&
+            uri.query == null &&
+            uri.fragment == null
+    }
 
     private companion object {
         var processLaunchClaimed = false
