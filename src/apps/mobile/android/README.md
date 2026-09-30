@@ -7,10 +7,17 @@ Provisional source layout:
 - `app/src/main/kotlin/`: Kotlin application code.
 - `app/src/main/res/`: Android resources.
 
-Build debug and unsigned release artifacts with:
+Build a debug artifact with:
 
 ```bash
-JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew :app:assembleDebug :app:assembleRelease
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew :app:assembleDebug
+```
+
+An unsigned release is available only for local inspection and must be
+requested explicitly:
+
+```bash
+JAVA_HOME='/Applications/Android Studio.app/Contents/jbr/Contents/Home' ./gradlew -PallowUnsignedRelease=true :app:assembleRelease
 ```
 
 For a signed release, set `OPENBITFUN_ANDROID_KEYSTORE`,

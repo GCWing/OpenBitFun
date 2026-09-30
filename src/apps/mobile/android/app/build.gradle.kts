@@ -15,6 +15,22 @@ val hasReleaseSigning = listOf(
     releaseKeyAlias,
     releaseKeyPassword,
 ).all { !it.isNullOrBlank() }
+val allowUnsignedRelease = providers.gradleProperty("allowUnsignedRelease")
+    .map { it.equals("true", ignoreCase = true) }
+    .orElse(false)
+    .get()
+val releaseTaskRequested = gradle.startParameter.taskNames.any {
+    it.contains("release", ignoreCase = true)
+}
+
+if (releaseTaskRequested && !hasReleaseSigning && !allowUnsignedRelease) {
+    throw GradleException(
+        "Release signing credentials are missing. Set OPENBITFUN_ANDROID_KEYSTORE, " +
+            "OPENBITFUN_ANDROID_KEYSTORE_PASSWORD, OPENBITFUN_ANDROID_KEY_ALIAS, and " +
+            "OPENBITFUN_ANDROID_KEY_PASSWORD, or explicitly pass " +
+            "-PallowUnsignedRelease=true for a non-distributable local artifact.",
+    )
+}
 
 android {
     sourceSets.getByName("main").assets.srcDir(file("../../../../shared/terminal/webview/generated"))
