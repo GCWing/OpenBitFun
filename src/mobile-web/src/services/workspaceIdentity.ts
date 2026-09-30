@@ -226,7 +226,7 @@ export function workspaceDisplayName(
   const value = name?.trim() ?? '';
   const normalized = value.toLowerCase();
   if (value && normalized !== 'unknown' && normalized !== 'unknown project'
-    && value !== '未知' && value !== '未知项目') {
+    && value !== '\u672A\u77E5' && value !== '\u672A\u77E5\u9879\u76EE') {
     return value;
   }
   const root = (path ?? '').trim().replace(/\/+$/, '');
