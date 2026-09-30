@@ -219,6 +219,11 @@ export class SettingsController {
 
   cancelCloudLogin(): void { this.cloud?.client.cancelAuthorization(); }
 
+  /** Keep browser authorization polling aligned with the page lifecycle. */
+  setAuthorizationForeground(value: boolean): void {
+    this.cloud?.client.setAuthorizationForeground(value);
+  }
+
   async logoutCloudAccount(): Promise<void> {
     this.cancelCloudLogin();
     const cloud = this.requireCloud();

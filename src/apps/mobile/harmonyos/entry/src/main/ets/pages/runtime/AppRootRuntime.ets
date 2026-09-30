@@ -86,6 +86,7 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
 
   onPageShow(): void {
     RemoteLogger.info(`page show state=${(this.remotePageState.connectionState as ConnectionState)} route=${this.appShellViewModel.currentRoute()}`);
+    this.settingsController.setAuthorizationForeground(true);
     this.taskCompletionNotificationController.onForeground();
     this.remoteActivityViewModel.resume();
     // Idempotent: covers the pairing that happened after the last cold start.
@@ -96,6 +97,7 @@ export class AppRootRuntime extends AppRootRuntimeComposition {
 
   onPageHide(): void {
     RemoteLogger.info(`page hide state=${(this.remotePageState.connectionState as ConnectionState)} route=${this.appShellViewModel.currentRoute()}`);
+    this.settingsController.setAuthorizationForeground(false);
     this.settingsController.stopPresencePolling();
     const activeRemoteTurn = this.remotePageState.activeTurnMessage;
     if (this.isRemoteConversationContext(this.remotePageState.activeSession.sessionId)) {

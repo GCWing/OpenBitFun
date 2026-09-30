@@ -3,22 +3,30 @@ package com.openbitfun.mobile.app
 import android.content.Intent
 import android.os.Bundle
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.openbitfun.mobile.app.ui.shell.StartupBrandReveal
 import com.openbitfun.mobile.app.ui.shell.ColdStartHomeTransition
 import com.openbitfun.mobile.app.ui.shell.LocalColdStartTarget
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.view.WindowCompat
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,6 +45,7 @@ class MainActivity : ComponentActivity() {
     private var showStartupBrand by mutableStateOf(true)
     private var showColdStart by mutableStateOf(false)
     private var allowColdStart by mutableStateOf(false)
+    private var showWelcomeNavigationProtection by mutableStateOf(true)
     private var authorizationCallbackPending = false
     override fun onCreate(savedInstanceState: Bundle?) {
         AppLocaleController.applySaved(this)
@@ -64,6 +73,12 @@ class MainActivity : ComponentActivity() {
                 AppThemeMode.DARK -> true
             }
             OpenBitFunTheme(dark = dark) {
+                LaunchedEffect(dark, showWelcomeNavigationProtection, showStartupBrand, showColdStart, allowColdStart) {
+                    val welcomeIsVisible = showWelcomeNavigationProtection &&
+                        !showStartupBrand && !showColdStart && !allowColdStart
+                    WindowCompat.getInsetsController(window, window.decorView).isAppearanceLightNavigationBars =
+                        !dark && !welcomeIsVisible
+                }
                 val target = remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
                 var origin by remember { mutableStateOf(Offset.Zero) }
                 Box(Modifier.onGloballyPositioned { origin = it.positionInRoot() }) {
@@ -72,6 +87,7 @@ class MainActivity : ComponentActivity() {
                             if (showStartupBrand || showColdStart) hideFromAccessibility()
                         }) {
                         MobileScreen(onAccountRestored = { signedIn ->
+                            showWelcomeNavigationProtection = !signedIn
                             if (allowColdStart) {
                                 allowColdStart = false
                                 showColdStart = signedIn
@@ -83,6 +99,20 @@ class MainActivity : ComponentActivity() {
                     val bounds = target.value
                     if (showColdStart) {
                         ColdStartHomeTransition(bounds?.translate(-origin)) { showColdStart = false }
+                    }
+                    // Android 15+ makes the gesture/navigation area part of an
+                    // edge-to-edge window. Keep the signed-out welcome dock's
+                    // dark surface behind that area at the Activity root; a
+                    // screen or Scaffold inset cannot paint over the system
+                    // region reliably on all API levels.
+                    if (showWelcomeNavigationProtection && !showStartupBrand && !showColdStart && !allowColdStart) {
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(32.dp)
+                                .background(Color(23, 25, 23)),
+                        )
                     }
                 }
                 if (!showStartupBrand && !showColdStart && !allowColdStart) {

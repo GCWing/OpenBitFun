@@ -422,7 +422,17 @@ internal fun MobileScreen(onAccountRestored: (Boolean) -> Unit = {}) {
     }
 
     val content: @Composable () -> Unit = {
-        Scaffold(
+        if (controlSummary.source == RemoteControlSource.NONE && readyAccount == null) {
+            // The compact signed-out welcome surface owns the full window,
+            // including the gesture/navigation area. Keeping it outside the
+            // Scaffold prevents Scaffold's content insets from leaving a
+            // platform-colored strip below the welcome dock.
+            WelcomeHome(
+                signedIn = false,
+                onLogin = { shell.openAccount(signedIn = false) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else Scaffold(
             // The manifest asks for `adjustResize`, but an edge-to-edge window
             // is never resized by it — the keyboard simply draws on top, and
             // what it draws on top of is the composer. Adding the IME to the

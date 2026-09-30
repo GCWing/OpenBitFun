@@ -76,10 +76,21 @@ internal fun WelcomeHome(onLogin: () -> Unit, signedIn: Boolean = false, modifie
                     }
                 }
             }
-            Column(Modifier.fillMaxWidth().background(MobileDesignColors.Light.WelcomeDock, RoundedCornerShape(topStart = G.WelcomeDockRadius, topEnd = G.WelcomeDockRadius))
-                .padding(start = G.WelcomeGutter, end = G.WelcomeGutter, top = G.WelcomeGutter, bottom = G.WelcomeDockBottom), verticalArrangement = Arrangement.spacedBy(G.WelcomeButtonGap)) {
-                WelcomeAction(stringResource(if (signedIn) R.string.sidebar_connect_desktop else R.string.welcome_login), onLogin)
-                com.openbitfun.mobile.app.ui.miniapps.MiniAppsButton(contentColor = MobileDesignColors.Light.WelcomeButton)
+            Column(
+                Modifier.fillMaxWidth().background(
+                    MobileDesignColors.Light.WelcomeDock,
+                    RoundedCornerShape(topStart = G.WelcomeDockRadius, topEnd = G.WelcomeDockRadius),
+                ),
+            ) {
+                Column(
+                    Modifier.fillMaxWidth()
+                        .padding(start = G.WelcomeGutter, end = G.WelcomeGutter, top = G.WelcomeGutter, bottom = G.WelcomeDockBottom)
+                        .navigationBarsPadding(),
+                    verticalArrangement = Arrangement.spacedBy(G.WelcomeButtonGap),
+                ) {
+                    WelcomeAction(stringResource(if (signedIn) R.string.sidebar_connect_desktop else R.string.welcome_login), onLogin)
+                    com.openbitfun.mobile.app.ui.miniapps.MiniAppsButton(contentColor = MobileDesignColors.Light.WelcomeButton)
+                }
             }
         }
     }
