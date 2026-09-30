@@ -28,8 +28,8 @@ export struct WorkspaceToolsPanel {
       if (this.state.deviceScope) {
         Select([{ value: RemoteI18n.t('workspaceTools.runtimeLocal') }, ...this.state.locations.map((item: WorkspaceToolLocation): SelectOption => ({ value: item.name }))])
           .value(this.state.locations.find((item: WorkspaceToolLocation): boolean => item.id === this.state.connectionId)?.name || RemoteI18n.t('workspaceTools.runtimeLocal'))
-          .fontColor(INK).width('100%').height(48).enabled(!this.state.busy)
-          .backgroundColor(CARD).border({ width: 1, color: LINE }).borderRadius(12)
+          .fontColor(INK).width('100%').height(54).enabled(!this.state.busy)
+          .backgroundColor(CARD).border({ width: 1, color: LINE }).borderRadius(16)
           .onSelect((index: number) => this.onIntent({ type: 'open-device', connectionId: index === 0 ? '' : this.state.locations[index - 1]?.id, tab: this.state.initialTab }))
       }
       if (this.state.error.length > 0) { Text(this.state.saveConflict ? RemoteI18n.t('workspaceTools.fileConflict') : this.state.error).fontColor(MUTED).fontSize(MobileDesignTypography.bodySmall.size) }
@@ -43,7 +43,7 @@ export struct WorkspaceToolsPanel {
       Tabs({ index: this.state.initialTab }) {
         TabContent() { this.Files() }.tabBar(new SubTabBarStyle(RemoteI18n.t('workspaceTools.files')).labelStyle({ selectedColor: INK, unselectedColor: MUTED }).indicator({ color: INK }))
         TabContent() { this.Terminal() }.tabBar(new SubTabBarStyle(RemoteI18n.t('workspaceTools.terminal')).labelStyle({ selectedColor: INK, unselectedColor: MUTED }).indicator({ color: INK }))
-      }.onChange((index: number) => this.onIntent({ type: 'panel', tab: index })).layoutWeight(1)
+      }.barHeight(50).onChange((index: number) => this.onIntent({ type: 'panel', tab: index })).layoutWeight(1)
     }.padding({ left: 16, right: 16, bottom: 16 }).width('100%').height('100%').backgroundColor(PAGE_BG)
   }
   @Builder
@@ -101,38 +101,39 @@ export struct WorkspaceToolsPanel {
           .width(40).height(40).padding(0).backgroundColor(TRANSPARENT).borderRadius(8).accessibilityText(RemoteI18n.t('workspaceTools.refresh'))
           .onClick(() => this.onIntent({ type: 'directory' }))
       }.width('100%').height(48).padding({ left: 4, right: 4 }).backgroundColor(CARD).border({ width: 1, color: LINE }).borderRadius(8)
-      Scroll() {
-        Row({ space: 8 }) {
+      Row({ space: 8 }) {
         Button() {
           Row({ space: 6 }) {
             SymbolGlyph($r('sys.symbol.doc_text')).fontColor([INK]).fontSize(16)
             Text(RemoteI18n.t('workspaceTools.newFile')).fontColor(INK).fontSize(MobileDesignTypography.labelSmall.size)
           }
-        }.height(36).padding({ left: 10, right: 10 }).backgroundColor(SOFT).borderRadius(8)
+        }.layoutWeight(1).height(44).padding({ left: 4, right: 4 }).backgroundColor(CARD).border({ width: 1, color: LINE }).borderRadius(13)
           .onClick(() => this.onIntent({ type: 'file-action', text: 'file' }))
         Button() {
           Row({ space: 6 }) {
             SymbolGlyph($r('sys.symbol.folder')).fontColor([INK]).fontSize(16)
             Text(RemoteI18n.t('workspaceTools.mkdir')).fontColor(INK).fontSize(MobileDesignTypography.labelSmall.size)
           }
-        }.height(36).padding({ left: 10, right: 10 }).backgroundColor(SOFT).borderRadius(8)
+        }.layoutWeight(1).height(44).padding({ left: 4, right: 4 }).backgroundColor(SOFT).borderRadius(13)
           .onClick(() => this.onIntent({ type: 'file-action', text: 'folder' }))
         Button() {
           Row({ space: 6 }) {
             SymbolGlyph($r('sys.symbol.doc_text_badge_arrow_up')).fontColor([INK]).fontSize(16)
             Text(RemoteI18n.t('workspaceTools.upload')).fontColor(INK).fontSize(MobileDesignTypography.labelSmall.size)
           }
-        }.height(36).padding({ left: 10, right: 10 }).backgroundColor(SOFT).borderRadius(8)
+        }.layoutWeight(1).height(44).padding({ left: 4, right: 4 }).backgroundColor(SOFT).borderRadius(13)
           .onClick(() => this.onIntent({ type: 'file-action', text: 'upload' }))
-        }
-      }.scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off).width('100%').height(40)
+      }.width('100%').height(44)
       Row({ space: 8 }) {
-        Blank().layoutWeight(1)
+        Row({ space: 6 }) {
+          Text(RemoteI18n.t('workspaceTools.files')).fontColor(INK).fontSize(MobileDesignTypography.bodySmall.size).fontWeight(FontWeight.Medium)
+          Text(String(this.state.entries.length)).fontColor(MUTED).fontSize(MobileDesignTypography.labelSmall.size)
+        }.layoutWeight(1).alignItems(VerticalAlign.Center)
         Select([
         { value: RemoteI18n.t('workspaceTools.nameAsc') }, { value: RemoteI18n.t('workspaceTools.nameDesc') },
         { value: RemoteI18n.t('workspaceTools.modifiedAsc') }, { value: RemoteI18n.t('workspaceTools.modifiedDesc') }
-        ]).selected(this.state.sort).value(this.sortTitle()).fontColor(INK).height(36).layoutWeight(1).enabled(!this.state.busy)
-          .backgroundColor(SOFT).borderRadius(18)
+        ]).selected(this.state.sort).value(this.sortTitle()).fontColor(MUTED).height(34).width(132).enabled(!this.state.busy)
+          .backgroundColor(SOFT).borderRadius(17)
           .onSelect((index: number) => this.onIntent({ type: 'sort', text: String(index) }))
       }.enabled(!this.state.busy).width('100%')
       if (this.state.busy) { LoadingProgress().width(24).height(24).color(MUTED) }

@@ -84,7 +84,11 @@ export class WorkspaceToolsViewModel {
     const generation = ++this.browseGeneration; const target = this.target();
     const path = intent.path || '/'; const append = intent.type === 'browse-more';
     this.state.browseBusy = true; this.state.browseError = '';
-    if (!append) { this.state.browseEntries = []; this.state.browseHasMore = false; }
+    if (!append) {
+      this.state.browsePath = path;
+      this.state.browseEntries = [];
+      this.state.browseHasMore = false;
+    }
     try {
       const args: FileArgs = { request: { path: path, remoteConnectionId: intent.text || '',
         offset: append ? this.state.browseEntries.length : 0, limit: 100, sortBy: 'name', sortOrder: 'asc' } };

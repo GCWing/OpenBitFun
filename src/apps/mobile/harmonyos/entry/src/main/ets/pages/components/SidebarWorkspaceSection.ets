@@ -432,7 +432,14 @@ export struct SidebarWorkspaceSection {
   }
 
   private liveWorkspaceName(entry: DeviceDirectoryEntry): string {
-    return this.liveWorkspacePath(entry).length > 0 ? this.workspaceName : '';
+    if (this.liveWorkspacePath(entry).length === 0) return '';
+    if (this.workspaceKind === 'remote' && this.workspaceConnectionId.length > 0) {
+      const connection = this.savedConnections.find((item: SavedRuntimeConnection): boolean => {
+        return item.id === this.workspaceConnectionId && item.name.trim().length > 0;
+      });
+      if (connection) return connection.name;
+    }
+    return this.workspaceName;
   }
 
   private liveWorkspaceKind(entry: DeviceDirectoryEntry): string {
