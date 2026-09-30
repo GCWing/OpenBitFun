@@ -59,6 +59,8 @@ class MainActivity : ComponentActivity() {
         showStartupBrand = coldStartCandidate && StartupRevealPreference.claim(this)
         allowColdStart = coldStartCandidate && !showStartupBrand
         enableEdgeToEdge()
+        @Suppress("DEPRECATION")
+        if (android.os.Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
         setContent {
             if (intent.getBooleanExtra(DESIGN_PREVIEW_EXTRA, false)) {
                 val scenario = mobileDesignScenario(intent.getStringExtra(DESIGN_SCENARIO_EXTRA))
@@ -110,7 +112,9 @@ class MainActivity : ComponentActivity() {
                             Modifier
                                 .align(Alignment.BottomCenter)
                                 .fillMaxWidth()
-                                .height(32.dp)
+                                // Include the platform's divider inset above
+                                // the gesture area as well as the nav bar.
+                                .height(40.dp)
                                 .background(Color(23, 25, 23)),
                         )
                     }
