@@ -27,8 +27,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "type-check": "tsc --noEmit",
-    "test": "vitest",
-    "test:run": "vitest run --maxWorkers=50%"
+    "test": "cross-env NODE_OPTIONS=--no-experimental-webstorage vitest",
+    "test:run": "cross-env NODE_OPTIONS=--no-experimental-webstorage vitest run --maxWorkers=50%"
   },
   "dependencies": {
     "@openbitfun/flow-chat-presentation": "workspace:*",

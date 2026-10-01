@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { launchBrowser, startSourceServer } from './helpers/browser-account-harness.mjs';
-const modulePath = '/@fs' + fileURLToPath(new URL('../../shared/dialog-queue/HostDialogQueue.ts', import.meta.url));
+const modulePath = '/@fs/' + fileURLToPath(new URL('../../shared/dialog-queue/HostDialogQueue.ts', import.meta.url)).replace(/\\/g, '/').replace(/^\/+/, '');
 
 test('real IndexedDB retains an ambiguous submission after closing the browser page', {timeout:60000}, async () => {
  const server=await startSourceServer();const browser=await launchBrowser();
@@ -50,7 +52,7 @@ test('mobile running composer keeps send and stop independently available alongs
   assert.ok((await page.evaluate(()=>window.queueFixture.calls)).includes('send'));
   assert.ok(!(await page.evaluate(()=>window.queueFixture.calls)).includes('stop'));
   assert.equal(await page.$eval('body', body=>body.scrollWidth<=window.innerWidth),true);
-  await page.screenshot({path:'/tmp/mobile-host-message-queue.png',fullPage:true});
+  await page.screenshot({path:path.join(tmpdir(),'mobile-host-message-queue.png'),fullPage:true});
  }finally{await browser.close();await server.close();}
 });
 
@@ -113,7 +115,7 @@ test('queue stays above the measured composer across phone, keyboard-height and 
   assert.equal(geometry.plusWidth,44);
   for(const edge of ['top','bottom','left']) assert.ok(Math.abs(geometry[edge]-geometry.right)<1,JSON.stringify(geometry));
   assert.ok(Math.abs(geometry.textLeft-geometry.iconLeft)<1,JSON.stringify(geometry));
-  await page.screenshot({path:'/tmp/mobile-queue-aligned.png',fullPage:true});
+  await page.screenshot({path:path.join(tmpdir(),'mobile-queue-aligned.png'),fullPage:true});
   await page.click('[aria-label="排队消息说明"]');
   await page.waitForSelector('.host-message-queue__help');
   await page.click('[aria-label="排队消息说明"]');

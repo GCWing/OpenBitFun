@@ -549,7 +549,7 @@ jobs:
     name: Frontend Build
     runs-on: ubuntu-latest
     env:
-      NODE_OPTIONS: --max-old-space-size=6144
+      NODE_OPTIONS: --max-old-space-size=6144 --no-experimental-webstorage
     needs: build-impact
     steps:
       - uses: actions/checkout@v5

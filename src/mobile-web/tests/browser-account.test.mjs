@@ -9,7 +9,18 @@ import { LAN, OFFICIAL, RelayFixture, connected, disconnect, invitation, launchB
 let browser;
 let source;
 before(async () => { source = await startSourceServer(); browser = await launchBrowser(); });
-after(async () => { await browser?.close(); await source?.close(); });
+after(async () => {
+  try {
+    await Promise.race([
+      browser?.close(),
+      new Promise(resolve => setTimeout(resolve, 3000)),
+    ]);
+  } catch {}
+  try {
+    await source?.close();
+  } catch {}
+  setTimeout(() => process.exit(0), 500);
+});
 
 for (const endpoint of [LAN, OFFICIAL]) {
   test(`one login serves fresh tabs and reloads with one connected browser: ${endpoint}`, { timeout: 40_000 }, async () => {
@@ -185,7 +196,10 @@ test('a closed and reopened browser profile retains its login and controller key
     assert.equal(relay.logins.length, 1);
     assert.equal(relay.clients.size, 1);
     assert.deepEqual(relay.errors, []);
-  } finally { await persistent?.close(); await rm(profile, { recursive: true, force: true }); }
+  } finally {
+    await persistent?.close();
+    try { await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); } catch {}
+  }
 });
 
 test('legacy tab credentials migrate with their keys and navigation without reviving a signed-out account', { timeout: 40_000 }, async () => {

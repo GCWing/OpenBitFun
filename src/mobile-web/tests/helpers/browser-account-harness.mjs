@@ -44,6 +44,11 @@ export async function launchBrowser(options = {}) {
     '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser',
     process.env.PROGRAMFILES && `${process.env.PROGRAMFILES}/Google/Chrome/Application/chrome.exe`,
+    process.env['PROGRAMFILES(X86)'] && `${process.env['PROGRAMFILES(X86)']}/Google/Chrome/Application/chrome.exe`,
+    process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}/Google/Chrome/Application/chrome.exe`,
+    process.env.PROGRAMFILES && `${process.env.PROGRAMFILES}/Microsoft/Edge/Application/msedge.exe`,
+    process.env['PROGRAMFILES(X86)'] && `${process.env['PROGRAMFILES(X86)']}/Microsoft/Edge/Application/msedge.exe`,
+    process.env.LOCALAPPDATA && `${process.env.LOCALAPPDATA}/Microsoft/Edge/Application/msedge.exe`,
   ].find(path => path && existsSync(path));
   assert.ok(executablePath, 'Set PUPPETEER_EXECUTABLE_PATH to an installed Chrome/Chromium browser.');
   return puppeteer.launch({ executablePath, headless: 'new',
@@ -64,7 +69,7 @@ export async function startSourceServer() {
     sockets.handleUpgrade(request, socket, head, ws => fixture.socket(ws, url.searchParams.get('endpoint')));
   });
   await vite.listen();
-  return { origin: `http://127.0.0.1:${vite.httpServer.address().port}`, close: async () => { for (const socket of sockets.clients) socket.terminate(); sockets.close(); realtimeFixtures.clear(); await vite.close(); } };
+  return { origin: `http://127.0.0.1:${vite.httpServer.address().port}`, close: async () => { for (const socket of sockets.clients) socket.terminate(); sockets.close(); realtimeFixtures.clear(); vite.httpServer?.closeAllConnections?.(); await vite.close(); } };
 }
 
 /** Real browser fetches and encrypted RPC envelopes; only Relay/host IO is simulated. */

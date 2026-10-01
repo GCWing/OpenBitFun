@@ -2955,7 +2955,12 @@ impl CoreRemoteSessionRuntimeHost {
     pub(crate) fn new() -> Result<Self, String> {
         let coordinator = get_global_coordinator()
             .ok_or_else(|| "Desktop session system not ready".to_string())?;
-        let runtime = CoreServiceAgentRuntime::agent_runtime(coordinator.clone())?;
+        let scheduler = get_global_scheduler()
+            .ok_or_else(|| "Dialog scheduler is not initialized".to_string())?;
+        let runtime = CoreServiceAgentRuntime::agent_runtime_with_dialog_turns(
+            coordinator.clone(),
+            scheduler,
+        )?;
         Ok(Self {
             coordinator,
             runtime,
@@ -4156,6 +4161,30 @@ mod tests {
             .expect("remote session rollback");
         assert!(rollback.contains("ensure_remote_binding_runtime_ownership"));
         assert!(rollback.contains("binding.is_remote()"));
+
+        let remote_session_host_impl = source
+            .split("impl CoreRemoteSessionRuntimeHost")
+            .nth(1)
+            .and_then(|source| source.split("struct CoreRemotePollRuntimeHost").next())
+            .expect("remote session host struct implementation");
+        assert!(
+            remote_session_host_impl.contains("agent_runtime_with_dialog_turns"),
+            "CoreRemoteSessionRuntimeHost must register dialogue and revert ports for rollback"
+        );
+
+        let dialog_turns_builder = source
+            .split("pub(crate) fn agent_runtime_with_dialog_turns")
+            .nth(1)
+            .and_then(|source| {
+                source
+                    .split("pub(crate) fn agent_runtime_with_lifecycle_delivery")
+                    .next()
+            })
+            .expect("agent_runtime_with_dialog_turns definition");
+        assert!(
+            dialog_turns_builder.contains(".with_session_revert_port(session_revert)"),
+            "agent_runtime_with_dialog_turns must attach session_revert port"
+        );
     }
 
     #[test]
@@ -4659,8 +4688,13 @@ mod history_workspace_identity_tests {
     async fn history_routing_uses_ids_even_with_colliding_roots_and_stale_transport_fields() {
         let temp = tempfile::tempdir().unwrap();
         let local = register_local_fixture(temp.path(), None).await;
+        let remote_path = if local.root_path.to_string_lossy().starts_with('/') {
+            local.root_path.to_string_lossy().to_string()
+        } else {
+            format!("/srv/colliding-test/{}", uuid::Uuid::new_v4())
+        };
         let remote = register_remote_fixture(
-            &local.root_path.to_string_lossy(),
+            &remote_path,
             "history-test-ssh",
             "history.example",
         )

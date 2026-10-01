@@ -108,6 +108,7 @@ const controlIdentity = await moduleUrl('../src/services/controlClientIdentity.t
 const hostStream = await moduleUrl('../../shared/relay-transport/HostStream.ts');
 const managerUrl = await moduleUrl('../src/services/RemoteSessionManager.ts', {
   '../../../shared/agent-harness/wire': agentWire,
+  '../../../shared/dialog-queue/HostDialogQueue': 'data:text/javascript,export class HostDialogQueue {}',
   '../../../shared/relay-transport/HostStream': hostStream,
   './controlClientIdentity': controlIdentity,
   './SessionSynchronizer': 'data:text/javascript,export class SessionSynchronizer {}',
