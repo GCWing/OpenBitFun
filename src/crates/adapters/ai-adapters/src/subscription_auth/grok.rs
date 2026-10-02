@@ -15,8 +15,8 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 const CLIENT_ID: &str = "b1a00492-073a-47ea-816f-4c329264a828";
-const DEVICE_AUTHORIZATION_URL: &str = "https://auth.x.ai/oauth2/device/code";
-const TOKEN_URL: &str = "https://auth.x.ai/oauth2/token";
+const ISSUER: &str = "https://auth.x.ai";
+const DISCOVERY_URL: &str = "https://auth.x.ai/.well-known/openid-configuration";
 const DEVICE_CODE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 const SCOPE: &str = "openid profile email offline_access grok-cli:access api:access";
 const XAI_BASE_URL: &str = "https://api.x.ai/v1";
@@ -29,6 +29,63 @@ const DEFAULT_POLL_INTERVAL_SECS: i64 = 5;
 const SHORT_TOKEN_REFRESH_LEEWAY_MS: i64 = 2 * 60 * 1000;
 const LONG_TOKEN_REFRESH_LEEWAY_MS: i64 = 60 * 60 * 1000;
 const SHORT_TOKEN_THRESHOLD_MS: i64 = 45 * 60 * 1000;
+
+#[derive(Debug, Deserialize)]
+struct DiscoveryDocument {
+    issuer: String,
+    device_authorization_endpoint: String,
+    token_endpoint: String,
+}
+
+struct OAuthEndpoints {
+    device_authorization: reqwest::Url,
+    token: reqwest::Url,
+}
+
+fn trusted_auth_endpoint(value: &str) -> Result<reqwest::Url> {
+    let url = reqwest::Url::parse(value).context("parse xAI authentication endpoint")?;
+    if value.chars().any(|character| character.is_ascii_control())
+        || url.scheme() != "https"
+        || url.host_str() != Some("auth.x.ai")
+        || url.port_or_known_default() != Some(443)
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+    {
+        return Err(anyhow!(
+            "xAI discovery returned an untrusted authentication endpoint"
+        ));
+    }
+    Ok(url)
+}
+
+fn discovery_endpoints(document: DiscoveryDocument) -> Result<OAuthEndpoints> {
+    if document.issuer.trim_end_matches('/') != ISSUER {
+        return Err(anyhow!(
+            "xAI discovery issuer does not match the expected issuer"
+        ));
+    }
+    Ok(OAuthEndpoints {
+        device_authorization: trusted_auth_endpoint(&document.device_authorization_endpoint)?,
+        token: trusted_auth_endpoint(&document.token_endpoint)?,
+    })
+}
+
+async fn discover_endpoints(options: &SubscriptionHttpOptions) -> Result<OAuthEndpoints> {
+    let response = oauth_request(http_client(options)?.get(DISCOVERY_URL))
+        .send()
+        .await
+        .context("fetch xAI OpenID discovery document")?;
+    if !response.status().is_success() {
+        return Err(anyhow!("xAI discovery failed: HTTP {}", response.status()));
+    }
+    discovery_endpoints(
+        response
+            .json()
+            .await
+            .context("parse xAI discovery document")?,
+    )
+}
 
 #[derive(Debug, Deserialize)]
 struct DeviceCodeResponse {
@@ -141,9 +198,12 @@ fn validate_verification_url(url: &str) -> Result<()> {
     Ok(())
 }
 
-async fn request_device_code(options: &SubscriptionHttpOptions) -> Result<DeviceCodeResponse> {
+async fn request_device_code(
+    options: &SubscriptionHttpOptions,
+    endpoints: &OAuthEndpoints,
+) -> Result<DeviceCodeResponse> {
     let client = http_client(options)?;
-    let response = oauth_request(client.post(DEVICE_AUTHORIZATION_URL))
+    let response = oauth_request(client.post(endpoints.device_authorization.clone()))
         .form(&[
             ("client_id", CLIENT_ID),
             ("scope", SCOPE),
@@ -210,9 +270,10 @@ fn classify_device_poll_error(
 async fn poll_once(
     device_code: &str,
     options: &SubscriptionHttpOptions,
+    endpoints: &OAuthEndpoints,
 ) -> Result<DevicePoll<TokenResponse>> {
     let client = http_client(options)?;
-    let response = oauth_request(client.post(TOKEN_URL))
+    let response = oauth_request(client.post(endpoints.token.clone()))
         .form(&[
             ("grant_type", DEVICE_CODE_GRANT_TYPE),
             ("client_id", CLIENT_ID),
@@ -295,8 +356,9 @@ async fn persist_tokens(tokens: TokenResponse, expected_revision: u64) -> Result
 }
 
 async fn refresh(refresh_token: &str, options: &SubscriptionHttpOptions) -> Result<TokenResponse> {
+    let endpoints = discover_endpoints(options).await?;
     let client = http_client(options)?;
-    let response = oauth_request(client.post(TOKEN_URL))
+    let response = oauth_request(client.post(endpoints.token))
         .form(&[
             ("grant_type", "refresh_token"),
             ("refresh_token", refresh_token),
@@ -323,7 +385,8 @@ pub(crate) async fn begin_login(
     expected_revision: u64,
     options: SubscriptionHttpOptions,
 ) -> Result<StartedLogin> {
-    let device = request_device_code(&options).await?;
+    let endpoints = discover_endpoints(&options).await?;
+    let device = request_device_code(&options, &endpoints).await?;
     let interval = positive_seconds(device.interval, DEFAULT_POLL_INTERVAL_SECS);
     let expires_in = positive_seconds(device.expires_in, DEFAULT_DEVICE_LIFETIME_SECS)
         .min(super::LOGIN_TIMEOUT.as_secs() as i64);
@@ -344,7 +407,7 @@ pub(crate) async fn begin_login(
                     Duration::from_secs(expires_in as u64),
                     Duration::from_secs(3),
                     true,
-                    || poll_once(&device_code, &options),
+                    || poll_once(&device_code, &options, &endpoints),
                 )
                 .await
                 .context("complete xAI device authorization")
@@ -484,6 +547,61 @@ mod tests {
         TokenResponse, DEFAULT_MODEL, LONG_TOKEN_REFRESH_LEEWAY_MS, SHORT_TOKEN_REFRESH_LEEWAY_MS,
         XAI_BASE_URL, XAI_REQUEST_URL,
     };
+
+    #[test]
+    fn discovery_accepts_changed_paths_and_ignores_unrelated_metadata() {
+        let document = serde_json::from_value(serde_json::json!({
+            "issuer": "https://auth.x.ai/",
+            "device_authorization_endpoint": "https://auth.x.ai/new/device",
+            "token_endpoint": "https://auth.x.ai/new/token",
+            "authorization_endpoint": "https://auth.x.ai/authorize"
+        }))
+        .unwrap();
+        let endpoints = super::discovery_endpoints(document).unwrap();
+        assert_eq!(
+            endpoints.device_authorization.as_str(),
+            "https://auth.x.ai/new/device"
+        );
+        assert_eq!(endpoints.token.as_str(), "https://auth.x.ai/new/token");
+    }
+
+    #[test]
+    fn discovery_rejects_wrong_issuer_missing_fields_and_untrusted_endpoints() {
+        for invalid in [
+            "http://auth.x.ai/token",
+            "https://auth.x.ai:8443/token",
+            "https://user@auth.x.ai/token",
+            "https://auth.x.ai.evil.test/token",
+            "https://attacker.example/token",
+            "https://auth.x.ai/token#fragment",
+            "https://auth.x.ai/\ntoken",
+        ] {
+            for field in ["token_endpoint", "device_authorization_endpoint"] {
+                let mut value = serde_json::json!({
+                    "issuer": "https://auth.x.ai",
+                    "device_authorization_endpoint": "https://auth.x.ai/device",
+                    "token_endpoint": "https://auth.x.ai/token"
+                });
+                value[field] = serde_json::json!(invalid);
+                assert!(
+                    super::discovery_endpoints(serde_json::from_value(value).unwrap()).is_err()
+                );
+            }
+        }
+        let document = serde_json::from_value(serde_json::json!({
+            "issuer": "https://attacker.example",
+            "device_authorization_endpoint": "https://auth.x.ai/device",
+            "token_endpoint": "https://auth.x.ai/token"
+        }))
+        .unwrap();
+        assert!(super::discovery_endpoints(document).is_err());
+        assert!(
+            serde_json::from_value::<super::DiscoveryDocument>(serde_json::json!({
+                "issuer": "https://auth.x.ai", "token_endpoint": "https://auth.x.ai/token"
+            }))
+            .is_err()
+        );
+    }
 
     #[test]
     fn accepts_https_verification_urls_and_rejects_unsafe_urls() {

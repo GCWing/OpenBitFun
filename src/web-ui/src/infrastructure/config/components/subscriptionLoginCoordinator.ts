@@ -1,4 +1,15 @@
 import type { SubscriptionProvider } from '../types';
+import type { SubscriptionLoginMethod } from '@/infrastructure/api/service-api/AIApi';
+
+export function subscriptionLoginMethodsForSurface(
+  provider: SubscriptionProvider,
+  methods: readonly SubscriptionLoginMethod[] | undefined,
+  localBrowserCallbackReachable: boolean,
+): SubscriptionLoginMethod[] {
+  return (methods ?? []).filter((method) => (
+    provider !== 'codex' || method !== 'browser' || localBrowserCallbackReachable
+  ));
+}
 
 /**
  * Keeps the settings UI to one sign-in action while selecting the Codex flow
