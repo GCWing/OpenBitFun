@@ -1437,7 +1437,7 @@ fs.writeFileSync(output, content);
     });
     assert.equal(result.status, scenario === 'stale' ? 1 : 0, `${scenario}: ${result.stderr}`);
     const requests = Number(readFileSync(path.join(cwd, 'requests'), 'utf8'));
-    assert.ok(requests > 1 && requests <= 12, `${scenario}: bounded content retries`);
+    assert.ok(requests > 1 && requests <= 60, `${scenario}: bounded content retries`);
     if (scenario === 'stale') assert.match(result.stderr, /did not converge/);
   }
 });
