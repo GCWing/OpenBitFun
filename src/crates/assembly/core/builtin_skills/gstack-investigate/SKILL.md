@@ -20,11 +20,11 @@ Fixing symptoms creates whack-a-mole debugging. Every fix that doesn't address r
 
 ## OpenBitFun Dispatch
 
-When this skill is invoked by OpenBitFun, this skill supplies the debugging methodology. Use existing Task sub-agents to gather independent evidence, then keep hypothesis selection and fixes in the main session.
+When this skill is invoked by OpenBitFun, this skill supplies the debugging methodology. Use existing Agent sub-agents to gather independent evidence, then keep hypothesis selection and fixes in the main session.
 
-- Do not assume a Debugger sub-agent exists. Choose only from the Task tool's available agents.
+- Do not assume a Debugger sub-agent exists. Choose only from the AgentSpawn tool's available agents.
 - Prefer matching custom debugging/domain sub-agents if available; otherwise use `Explore` for code-path tracing and locating logs, configs, tests, and affected files.
-- Split independent evidence tracks into parallel Task calls when useful: reproduction path, recent-change audit, config/environment audit, and suspected subsystem trace.
+- Split independent evidence tracks into parallel AgentSpawn calls when useful: reproduction path, recent-change audit, config/environment audit, and suspected subsystem trace.
 - Keep Task work read-only until root cause is proven. Ask for facts, file paths, commands tried, observations, and confidence.
 - The main session owns the root-cause statement, fix plan, implementation, and regression test.
 

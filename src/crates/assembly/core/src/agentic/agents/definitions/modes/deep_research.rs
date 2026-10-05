@@ -15,7 +15,10 @@ impl DeepResearchMode {
     pub fn new() -> Self {
         Self {
             default_tools: vec![
-                "Task".to_string(),
+                "AgentSpawn".to_string(),
+                "AgentSendInput".to_string(),
+                "AgentControl".to_string(),
+                "AgentList".to_string(),
                 "ListModels".to_string(),
                 "AgentWait".to_string(),
                 "WebSearch".to_string(),
@@ -95,10 +98,19 @@ mod tests {
     fn has_expected_default_tools() {
         let agent = DeepResearchMode::new();
         let tools = agent.default_tools();
-        assert!(
-            tools.contains(&"Task".to_string()),
-            "Task tool required for parallel sub-agent orchestration"
-        );
+        for tool in [
+            "AgentSpawn",
+            "AgentSendInput",
+            "AgentControl",
+            "AgentList",
+            "AgentWait",
+        ] {
+            assert!(
+                tools.contains(&tool.to_string()),
+                "{tool} required for sub-agent orchestration"
+            );
+        }
+        assert!(!tools.contains(&"Task".to_string()));
         assert!(tools.contains(&"ListModels".to_string()));
         assert!(tools.contains(&"WebSearch".to_string()));
         assert!(tools.contains(&"WebFetch".to_string()));

@@ -811,20 +811,18 @@
           "control": {
             "kind": "delegate",
             "tools": [
-              "Task",
               "AgentSpawn",
               "AgentWait",
               "AgentSendInput",
-              "AgentInterrupt",
-              "AgentList",
-              "AgentDelete"
+              "AgentControl",
+              "AgentList"
             ],
             "workflowZh": [
-              "按任务形态使用 Task 或 AgentSpawn 启动有边界的子任务，并保留返回的 agent_id",
+              "使用 AgentSpawn 启动有边界的子任务，并保留返回的 agent_id",
               "用 AgentList/AgentWait 查看进度；需要调整时用 AgentSendInput，必要时再中断或删除，最终综合子智能体结果"
             ],
             "workflowEn": [
-              "Start a bounded subtask with Task or AgentSpawn and retain the returned agent_id",
+              "Start a bounded subtask with AgentSpawn and retain the returned agent_id",
               "Use AgentList or AgentWait for progress, AgentSendInput for corrections, and interrupt or delete only when necessary before synthesizing the results"
             ]
           },

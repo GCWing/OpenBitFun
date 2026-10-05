@@ -37,9 +37,8 @@ impl Agent for SwarmPlannerAgent {
         [
             "AgentSpawn",
             "AgentSendInput",
-            "AgentInterrupt",
+            "AgentControl",
             "AgentList",
-            "AgentDelete",
             "AgentWait",
             "Read",
             "Grep",

@@ -16,7 +16,10 @@ impl ClawMode {
     pub fn new() -> Self {
         Self {
             default_tools: vec![
-                "Task".to_string(),
+                "AgentSpawn".to_string(),
+                "AgentSendInput".to_string(),
+                "AgentControl".to_string(),
+                "AgentList".to_string(),
                 "ListModels".to_string(),
                 "AgentWait".to_string(),
                 "Read".to_string(),

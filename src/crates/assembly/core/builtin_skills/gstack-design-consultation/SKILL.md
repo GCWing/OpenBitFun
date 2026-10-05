@@ -18,11 +18,11 @@ You are a senior product designer with strong opinions about typography, color, 
 
 ## OpenBitFun Dispatch
 
-When this skill is invoked by OpenBitFun, this skill supplies the design-system methodology. Use existing Task sub-agents for independent discovery, then keep design-system authorship in the main session.
+When this skill is invoked by OpenBitFun, this skill supplies the design-system methodology. Use existing Agent sub-agents for independent discovery, then keep design-system authorship in the main session.
 
-- Do not assume a Design Partner sub-agent exists. Choose only from the Task tool's available agents.
+- Do not assume a Design Partner sub-agent exists. Choose only from the AgentSpawn tool's available agents.
 - Prefer matching custom design/research/frontend sub-agents if available; otherwise use `Explore` for product/UI surface mapping, design docs, themes, screenshots, and component libraries.
-- Use Task for research, inventory, and convention extraction; do not ask sub-agents to create or overwrite DESIGN.md.
+- Use AgentSpawn for research, inventory, and convention extraction; do not ask sub-agents to create or overwrite DESIGN.md.
 - The main session synthesizes the system, explains tradeoffs, and makes file edits after user-approved direction.
 
 ---
@@ -169,7 +169,7 @@ which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```bash
 TMPERR_DESIGN=$(mktemp /tmp/codex-design-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 - Visual thesis: one sentence describing mood, material, and energy
 - Typography: specific font names (not defaults — no Inter/Roboto/Arial/system) + hex colors
 - Color system: CSS variables for background, surface, primary text, muted text, accent
@@ -184,7 +184,7 @@ Use a 5-minute timeout (`timeout: 300000`). After the command completes, read st
 cat "$TMPERR_DESIGN" && rm -f "$TMPERR_DESIGN"
 ```
 
-2. **Independent design subagent** (via OpenBitFun Task tool):
+2. **Independent design subagent** (via OpenBitFun AgentSpawn tool):
 Dispatch a subagent with this prompt:
 "Given this product context, propose a design direction that would SURPRISE. What would the cool indie studio do that the enterprise UI team wouldn't?
 - Propose an aesthetic direction, typography stack (specific font names), color palette (hex values)

@@ -98,7 +98,10 @@ pub(crate) fn direct_computer_use_policy() -> &'static AgentToolPolicyOverrides 
 
 pub fn standard_harness_tools() -> Vec<String> {
     vec![
-        "Task".to_string(),
+        "AgentSpawn".to_string(),
+        "AgentSendInput".to_string(),
+        "AgentControl".to_string(),
+        "AgentList".to_string(),
         "ListModels".to_string(),
         "AgentWait".to_string(),
         "Read".to_string(),
@@ -292,6 +295,19 @@ mod tests {
     fn standard_harness_tools_exclude_create_plan_and_include_goal_tools() {
         let tools = standard_harness_tools();
 
+        for collaboration_tool in [
+            "AgentSpawn",
+            "AgentSendInput",
+            "AgentControl",
+            "AgentList",
+            "AgentWait",
+        ] {
+            assert!(
+                tools.contains(&collaboration_tool.to_string()),
+                "missing standard collaboration tool {collaboration_tool}"
+            );
+        }
+        assert!(!tools.contains(&"Task".to_string()));
         assert!(tools.contains(&"ListModels".to_string()));
         assert!(!tools.contains(&"CreatePlan".to_string()));
         assert!(tools.contains(&"get_goal".to_string()));

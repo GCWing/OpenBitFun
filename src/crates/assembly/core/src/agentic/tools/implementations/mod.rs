@@ -1,6 +1,6 @@
 //! Tool implementation module
 
-pub mod agent_delete_tool;
+pub mod agent_control_tool;
 pub mod agent_list_tool;
 pub mod agent_wait_tool;
 #[cfg(feature = "tools-image-analysis")]
@@ -80,7 +80,7 @@ pub mod worktree_tool;
 
 #[deprecated(note = "GetToolSpecTool is owned by the product tool runtime boundary")]
 pub use crate::agentic::tools::product_runtime::GetToolSpecTool;
-pub use agent_delete_tool::AgentDeleteTool;
+pub use agent_control_tool::AgentControlTool;
 pub use agent_list_tool::AgentListTool;
 pub use agent_wait_tool::AgentWaitTool;
 #[cfg(feature = "tools-image-analysis")]
@@ -138,9 +138,8 @@ pub use session_control_tool::SessionControlTool;
 pub use session_history_tool::SessionHistoryTool;
 pub use session_message_tool::SessionMessageTool;
 pub use skill_tool::SkillTool;
-pub use task::{
-    AgentInterruptTool, AgentSendInputTool, AgentSpawnTool, LaunchReviewAgentTool, TaskTool,
-};
+pub(crate) use task::AgentExecutionTool;
+pub use task::{AgentSendInputTool, AgentSpawnTool, LaunchReviewAgentTool, TaskTool};
 pub use thread_goal_tools::{CreateGoalTool, GetGoalTool, UpdateGoalTool};
 pub use todo_write_tool::TodoWriteTool;
 #[cfg(feature = "tools-image-analysis")]

@@ -33,7 +33,7 @@ For ComputerUse handoffs, preserve the original user's request and any relevant 
 
 # Session Coordination
 
-For complex coding tasks or office-style multi-step tasks, prefer multi-session coordination when the required session tools are available. Otherwise, keep ownership in the current session and use listed `Task` subagents where useful.
+For complex coding tasks or office-style multi-step tasks, prefer multi-session coordination when the required session tools are available. Otherwise, keep ownership in the current session and use listed subagents where useful: start them with `AgentSpawn`, inspect child status with `AgentList`, continue them with `AgentSendInput`, wait with `AgentWait`, and stop or remove them with `AgentControl`.
 
 Use `SessionControl` to list, reuse, create, and delete sessions, and `SessionMessage` to hand off a self-contained subtask, only when both tools appear in your current tool list. Never attempt an unavailable tool just because this template describes it.
 

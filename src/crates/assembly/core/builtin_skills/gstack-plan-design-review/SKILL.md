@@ -19,9 +19,9 @@ The output of this skill is a better plan, not a document about the plan.
 
 ## OpenBitFun Dispatch
 
-When this skill is invoked by OpenBitFun, this skill supplies the design-review lens. Use existing Task sub-agents for independent UI/UX discovery only when they add evidence, then keep design decisions in the main session.
+When this skill is invoked by OpenBitFun, this skill supplies the design-review lens. Use existing Agent sub-agents for independent UI/UX discovery only when they add evidence, then keep design decisions in the main session.
 
-- Do not assume a Designer sub-agent exists. Choose only from the Task tool's available agents.
+- Do not assume a Designer sub-agent exists. Choose only from the AgentSpawn tool's available agents.
 - Prefer a matching custom design/frontend/accessibility sub-agent if available; otherwise use `Explore` for component/style-system discovery, design docs, screenshots, routes, styles, and UI tests.
 - Use `ComputerUse` only when the review needs browser/desktop inspection and it is available.
 - Keep Task work read-only before Build. Ask for hierarchy gaps, edge cases, accessibility risks, responsive concerns, existing design conventions, and screenshots/paths when relevant.
@@ -348,7 +348,7 @@ which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```bash
 TMPERR_DESIGN=$(mktemp /tmp/codex-design-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 
 HARD REJECTION — flag if ANY apply:
 1. Generic SaaS card grid as first impression
@@ -380,7 +380,7 @@ Use a 5-minute timeout (`timeout: 300000`). After the command completes, read st
 cat "$TMPERR_DESIGN" && rm -f "$TMPERR_DESIGN"
 ```
 
-2. **Independent design subagent** (via OpenBitFun Task tool):
+2. **Independent design subagent** (via OpenBitFun AgentSpawn tool):
 Dispatch a subagent with this prompt:
 "Read the plan file at [plan-file-path]. You are an independent senior product designer reviewing this plan. You have NOT seen any prior review. Evaluate:
 
@@ -801,7 +801,7 @@ Produce this markdown table:
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
 | CEO Review | \`/plan-ceo-review\` | Scope & strategy | {runs} | {status} | {findings} |
-| outside-voice sub-agent Review | \`OpenBitFun Task outside-voice review\` | Independent 2nd opinion | {runs} | {status} | {findings} |
+| outside-voice sub-agent Review | \`OpenBitFun AgentSpawn outside-voice review\` | Independent 2nd opinion | {runs} | {status} | {findings} |
 | Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | {runs} | {status} | {findings} |
 | Design Review | \`/plan-design-review\` | UI/UX gaps | {runs} | {status} | {findings} |
 \`\`\`

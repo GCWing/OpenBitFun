@@ -13,9 +13,9 @@ You are running the specialized pre-landing workflow. Analyze the current branch
 
 ## OpenBitFun Dispatch
 
-When this skill is invoked by OpenBitFun, this skill supplies the pre-landing review lens. Use existing Task sub-agents for independent diff review tracks, then consolidate findings in the main session.
+When this skill is invoked by OpenBitFun, this skill supplies the pre-landing review lens. Use existing Agent sub-agents for independent diff review tracks, then consolidate findings in the main session.
 
-- Do not assume a Staff Engineer sub-agent exists. Choose only from the Task tool's available agents.
+- Do not assume a Staff Engineer sub-agent exists. Choose only from the AgentSpawn tool's available agents.
 - Use at most one built-in `CodeReview` sub-agent for an independent pass, and put the exact correctness, performance, security, or architecture question in its prompt. Broader dynamic lens selection belongs to the unified `/review` path.
 - Prefer a matching custom review sub-agent when the user configured one. Use `Explore` only for broad read-only investigation when no review sub-agent fits.
 - Keep Task work read-only. Ask for tight findings with file paths, line references if possible, severity, confidence, and why tests might miss it.
@@ -386,8 +386,8 @@ Note which specialists were selected, gated, and skipped. Print the selection:
 
 ### Dispatch specialists in parallel
 
-For each selected specialist, launch an independent subagent via OpenBitFun's Task tool.
-**Launch ALL selected specialists in a single message** (multiple Task tool calls)
+For each selected specialist, launch an independent subagent via OpenBitFun's AgentSpawn tool.
+**Launch ALL selected specialists in a single message** (multiple AgentSpawn tool calls)
 so they run in parallel. Each subagent has fresh context — no prior review bias.
 
 **Each specialist subagent prompt:**
@@ -501,7 +501,7 @@ Remember these stats — you will need them for the review-log entry in Step 5.8
 
 **Activation:** Only if DIFF_LINES > 200 OR any specialist produced a CRITICAL finding.
 
-If activated, dispatch one more subagent via the Task tool (foreground, not background).
+If activated, dispatch one more subagent via the AgentSpawn tool (foreground, not background).
 
 The Red Team subagent receives:
 1. The red-team checklist from `the built-in red-team review checklist`
@@ -700,7 +700,7 @@ If `OLD_CFG` is `disabled`: skip outside-voice sub-agent passes only. OpenBitFun
 
 ### OpenBitFun adversarial subagent (always runs)
 
-Dispatch via the Task tool. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
+Dispatch via the AgentSpawn tool. The subagent has fresh context — no checklist bias from the structured review. This genuine independence catches things the primary reviewer is blind to.
 
 Subagent prompt:
 "Read the diff for this branch with `git diff origin/<base>`. Think like an attacker and a chaos engineer. Your job is to find ways this code will fail in production. Look for: edge cases, race conditions, security holes, resource leaks, failure modes, silent data corruption, logic errors that produce wrong results silently, error handling that swallows failures, and trust boundary violations. Be adversarial. Be thorough. No compliments — just the problems. For each finding, classify as FIXABLE (you know how to fix it) or INVESTIGATE (needs human judgment)."
@@ -718,7 +718,7 @@ If a suitable OpenBitFun outside-voice or review sub-agent is available AND `OLD
 ```bash
 TMPERR_ADV=$(mktemp /tmp/codex-adv-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 ```
 
 Set ExecCommand's `yield_time_ms` parameter to `300000` (5 minutes). Do NOT use the `timeout` shell command — it doesn't exist on macOS. After the command completes, read stderr:
@@ -747,7 +747,7 @@ If `DIFF_TOTAL >= 200` AND outside-voice sub-agent is available AND `OLD_CFG` is
 TMPERR=$(mktemp /tmp/outside-voice-review-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
 cd "$_REPO_ROOT"
-Use the OpenBitFun Task tool to dispatch a suitable independent read-only structured review sub-agent over the diff.
+Use the OpenBitFun AgentSpawn tool to dispatch a suitable independent read-only structured review sub-agent over the diff.
 ```
 
 Set ExecCommand's `yield_time_ms` parameter to `300000` (5 minutes). Do NOT use the `timeout` shell command — it doesn't exist on macOS. Present output under `CODEX SAYS (code review):` header.
@@ -761,7 +761,7 @@ A) Investigate and fix now (recommended)
 B) Continue — review will still complete
 ```
 
-If A: address the findings. Re-run `OpenBitFun Task outside-voice review` to verify.
+If A: address the findings. Re-run `OpenBitFun AgentSpawn outside-voice review` to verify.
 
 Read stderr for errors (same error handling as outside-voice sub-agent adversarial above).
 

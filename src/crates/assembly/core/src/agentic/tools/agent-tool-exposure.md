@@ -23,6 +23,11 @@ Notes:
 | `ExecControl` | Direct | None | - |
 | `GetTime` | Direct | None | - |
 | `Task` | Direct | None | - |
+| `AgentSpawn` | Direct | None | - |
+| `AgentSendInput` | Direct | None | - |
+| `AgentControl` | Direct | None | - |
+| `AgentList` | Direct | None | - |
+| `AgentWait` | Direct | None | - |
 | `Skill` | Direct | None | - |
 | `AskUserQuestion` | Direct | None | - |
 | `TodoWrite` | Direct | None | - |

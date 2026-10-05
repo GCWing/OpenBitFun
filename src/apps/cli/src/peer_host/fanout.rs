@@ -391,7 +391,7 @@ async fn handle_agentic_event(
     {
         let (tool_name, params) = effective_tool_invocation(&identity.tool_name, params);
         debug_assert_eq!(identity.effective_name(), tool_name);
-        if tool_name == "Task"
+        if matches!(tool_name, "Task" | "AgentSpawn")
             && params
                 .get("run_in_background")
                 .and_then(serde_json::Value::as_bool)
@@ -426,7 +426,7 @@ async fn handle_agentic_event(
         let terminal_task_call = match tool_event {
             ToolEventData::Completed {
                 identity, result, ..
-            } if identity.effective_name() == "Task" => Some((
+            } if matches!(identity.effective_name(), "Task" | "AgentSpawn") => Some((
                 identity.tool_id.as_str(),
                 result
                     .get("background_task_id")
@@ -436,7 +436,7 @@ async fn handle_agentic_event(
                     .and_then(serde_json::Value::as_u64),
             )),
             ToolEventData::Failed { identity, .. } | ToolEventData::Cancelled { identity, .. }
-                if identity.effective_name() == "Task" =>
+                if matches!(identity.effective_name(), "Task" | "AgentSpawn") =>
             {
                 Some((identity.tool_id.as_str(), None, None))
             }

@@ -50,9 +50,8 @@ fn code_agent_tools_are_selected_from_atomic_provider_groups() {
     for explore_tool in [
         "AgentSpawn",
         "AgentSendInput",
-        "AgentInterrupt",
+        "AgentControl",
         "AgentList",
-        "AgentDelete",
         "PortForward",
         "OpenBitFunControl",
     ] {

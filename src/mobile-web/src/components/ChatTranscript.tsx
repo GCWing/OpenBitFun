@@ -204,7 +204,7 @@ const TodoCard: React.FC<{ tool: RemoteToolStatus }> = ({ tool }) => {
 };
 
 /**
- * Extract task description and agent type from execute_subagent tool data.
+ * Extract agent prompt and type from an agent launch tool.
  * Prefers tool_input (full JSON from backend), falls back to input_preview (truncated).
  */
 function parseTaskInfo(tool: RemoteToolStatus): { description?: string; agentType?: string } | null {
@@ -213,8 +213,8 @@ function parseTaskInfo(tool: RemoteToolStatus): { description?: string; agentTyp
   })();
   if (!source) return null;
   return {
-    description: source.description,
-    agentType: source.subagent_type,
+    description: source.description || source.prompt,
+    agentType: source.subagent_type || source.agent_type,
   };
 }
 
@@ -713,17 +713,16 @@ export const isPendingAskUserQuestion = (tool?: RemoteToolStatus | null) => {
 };
 
 /**
- * Collect subagent internal items into the Task item's subItems field.
- * When a Task tool appears, all subsequent items until the next non-subagent
- * item (or a completed Task) are its internal output. We attach them as
- * subItems on the Task ChatMessageItem for nested rendering.
+ * Collect subagent internal items into the agent launch item's subItems field.
+ * When an AgentSpawn (or legacy Task) tool appears, subsequent subagent items
+ * are attached for nested rendering.
  */
 function filterSubagentItems(items: ChatMessageItem[]): ChatMessageItem[] {
   const result: ChatMessageItem[] = [];
   let currentTaskItem: ChatMessageItem | null = null;
 
   for (const item of items) {
-    if (item.type === 'tool' && item.tool?.name === 'Task') {
+    if (item.type === 'tool' && ['Task', 'AgentSpawn'].includes(item.tool?.name ?? '')) {
       const taskCopy: ChatMessageItem = { ...item, subItems: [] };
       result.push(taskCopy);
       currentTaskItem = taskCopy;
@@ -862,12 +861,12 @@ function renderStandardGroups(
       const flushAll = () => { flushRead(); flushRegular(); };
 
       for (const entry of g.entries) {
-        if (entry.tool && entry.tool.name !== 'Task' && isToolAwaitingApproval(entry.tool)) {
+        if (entry.tool && !['Task', 'AgentSpawn'].includes(entry.tool.name) && isToolAwaitingApproval(entry.tool)) {
           flushAll();
           rendered.push(
             <ToolCard key={`${keyPrefix}-approval-${gi}-${rendered.length}`} tool={entry.tool} now={now} onApproveTool={onApproveTool} onRejectTool={onRejectTool} />,
           );
-        } else if (entry.tool?.name === 'Task') {
+        } else if (entry.tool && ['Task', 'AgentSpawn'].includes(entry.tool.name)) {
           flushAll();
           rendered.push(
             <TaskToolCard key={`${keyPrefix}-task-${gi}-${rendered.length}`} tool={entry.tool!} now={now} subItems={entry.subItems} onCancelTool={onCancelTool} onApproveTool={onApproveTool} onRejectTool={onRejectTool} />,
@@ -1168,13 +1167,13 @@ const ChatTranscript: React.FC<ChatTranscriptProps> = ({
           );
         }
 
-        const taskTools = activeTurn.tools.filter((tool) => tool.name === 'Task');
+        const taskTools = activeTurn.tools.filter((tool) => ['Task', 'AgentSpawn'].includes(tool.name));
         const hasRunningSubagent = taskTools.some((tool) => tool.status === 'running');
         const askTools = activeTurn.tools.filter(
           (tool) => tool.name === 'AskUserQuestion' && tool.status === 'running' && tool.tool_input,
         );
         const askToolIds = new Set(askTools.map((tool) => tool.id));
-        const regularTools = activeTurn.tools.filter((tool) => tool.name !== 'Task' && !askToolIds.has(tool.id));
+        const regularTools = activeTurn.tools.filter((tool) => !['Task', 'AgentSpawn'].includes(tool.name) && !askToolIds.has(tool.id));
         const subItemsForTask: ChatMessageItem[] = hasRunningSubagent
           ? [
               ...(activeTurn.thinking ? [{ type: 'thinking' as const, content: activeTurn.thinking }] : []),

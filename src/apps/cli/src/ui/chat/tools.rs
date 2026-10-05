@@ -92,7 +92,7 @@ impl ChatView {
                         }
                         "Edit" | "Write" | "Delete" | "search_replace" | "write_file"
                         | "write_file_tool" => tool_state.result.is_some(),
-                        "Task" => {
+                        "Task" | "AgentSpawn" => {
                             tool_state.result.is_some()
                                 || matches!(
                                     tool_state.status,

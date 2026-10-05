@@ -20,9 +20,9 @@ You do NOT make code changes. You produce a **Security Posture Report** with con
 
 ## OpenBitFun Dispatch
 
-When this skill is invoked by OpenBitFun, this skill supplies the security-review lens. Use existing Task sub-agents for independent security evidence gathering, then make final severity and remediation calls in the main session.
+When this skill is invoked by OpenBitFun, this skill supplies the security-review lens. Use existing Agent sub-agents for independent security evidence gathering, then make final severity and remediation calls in the main session.
 
-- Do not assume a CSO sub-agent exists. Choose only from the Task tool's available agents.
+- Do not assume a CSO sub-agent exists. Choose only from the AgentSpawn tool's available agents.
 - Prefer a matching custom security sub-agent if available; otherwise use one `CodeReview` task with an exact security lens for diff-focused review and `Explore` for broader code/config mapping and security-sensitive files.
 - Keep Task work read-only. Ask for concrete evidence: file paths, trust boundaries, inputs, auth/data flows, exploit preconditions, and confidence.
 - In parallel batches, return a compact Security brief: `critical/high findings`, `trust-boundary risks`, `false-positive notes`, `required fixes`, `verification`.
@@ -462,7 +462,7 @@ When a finding is VERIFIED, search the entire codebase for the same vulnerabilit
 
 **Parallel Finding Verification:**
 
-For each candidate finding, launch an independent verification sub-task using the Task tool. The verifier has fresh context and cannot see the initial scan's reasoning — only the finding itself and the FP filtering rules.
+For each candidate finding, launch an independent verification sub-task using the AgentSpawn tool. The verifier has fresh context and cannot see the initial scan's reasoning — only the finding itself and the FP filtering rules.
 
 Prompt each verifier with:
 - The file path and line number ONLY (avoid anchoring)
@@ -471,7 +471,7 @@ Prompt each verifier with:
 
 Launch all verifiers in parallel. Discard findings where the verifier scores below 8 (daily mode) or below 2 (comprehensive mode).
 
-If the Task tool is unavailable, self-verify by re-reading code with a skeptic's eye. Note: "Self-verified — independent sub-task unavailable."
+If the AgentSpawn tool is unavailable, self-verify by re-reading code with a skeptic's eye. Note: "Self-verified — independent sub-task unavailable."
 
 ### Phase 13: Findings Report + Trend Tracking + Remediation
 

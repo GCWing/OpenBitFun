@@ -2278,7 +2278,7 @@ impl SessionManager {
         let event = EvidenceLedgerEvent::new(
             session_id,
             turn_id,
-            "Task",
+            "AgentSpawn",
             EvidenceLedgerTargetKind::Subagent,
             subagent_type,
             EvidenceLedgerEventStatus::PartialTimeout,

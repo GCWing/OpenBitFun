@@ -12,9 +12,7 @@ use super::{
     turn_settlement::TurnSettlementTracker,
     BackgroundSubagentOutcomeStore, BackgroundSubagentWaitMode, BackgroundSubagentWaitResult,
 };
-use crate::agentic::agents::{
-    get_agent_registry, is_swarm_planner_agent_type, ExternalSubagentModelBinding,
-};
+use crate::agentic::agents::{get_agent_registry, ExternalSubagentModelBinding};
 use crate::agentic::context_profile::ContextProfilePolicy;
 use crate::agentic::core::{
     InternalReminderKind, Message, MessageContent, MessageSemanticKind, ProcessingPhase, Session,
@@ -134,7 +132,7 @@ use tokio_util::sync::CancellationToken;
 
 const MANUAL_COMPACTION_COMMAND: &str = "/compact";
 const CONTEXT_COMPRESSION_TOOL_NAME: &str = "ContextCompression";
-const TASK_TOOL_NAME: &str = "Task";
+const AGENT_SPAWN_TOOL_NAME: &str = "AgentSpawn";
 const DEFAULT_SUBAGENT_MAX_CONCURRENCY: usize = 5;
 const DEFAULT_SWARM_MAX_CONCURRENCY: usize = 16;
 const MAX_SUBAGENT_MAX_CONCURRENCY: usize = 64;
@@ -3902,9 +3900,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
             append_skill_agent_listing_diff_reminders(
                 &mut prepended_messages,
                 diff.render_skill_listing_update(),
-                (!is_swarm_planner_agent_type(agent_type))
-                    .then(|| diff.render_agent_listing_update())
-                    .flatten(),
+                diff.render_agent_listing_update(),
             );
             if diff.is_empty() {
                 SkillAgentSnapshotPersistence::None
@@ -4340,7 +4336,10 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 attempt_id: None,
                 attempt_index: None,
                 tool_event: ToolEventData::Started {
-                    identity: ToolEventIdentity::direct(tool_call_id.clone(), TASK_TOOL_NAME),
+                    identity: ToolEventIdentity::direct(
+                        tool_call_id.clone(),
+                        AGENT_SPAWN_TOOL_NAME,
+                    ),
                     params: tool_params.clone(),
                     timeout_seconds: None,
                 },
@@ -4443,7 +4442,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                                 tool_event: ToolEventData::Completed {
                                     identity: ToolEventIdentity::direct(
                                         tool_call_id.clone(),
-                                        TASK_TOOL_NAME,
+                                        AGENT_SPAWN_TOOL_NAME,
                                     ),
                                     result: data.clone(),
                                     result_for_assistant: Some(assistant_text.clone()),
@@ -4465,7 +4464,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                             ToolEventData::Cancelled {
                                 identity: ToolEventIdentity::direct(
                                     tool_call_id.clone(),
-                                    TASK_TOOL_NAME,
+                                    AGENT_SPAWN_TOOL_NAME,
                                 ),
                                 reason: error_text.clone(),
                                 duration_ms: Some(duration_ms),
@@ -4478,7 +4477,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                             ToolEventData::Failed {
                                 identity: ToolEventIdentity::direct(
                                     tool_call_id.clone(),
-                                    TASK_TOOL_NAME,
+                                    AGENT_SPAWN_TOOL_NAME,
                                 ),
                                 error_detail: None,
                                 error: error_text.clone(),
@@ -4514,7 +4513,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                     String::new(),
                     vec![ToolCall {
                         tool_id: tool_call_id.clone(),
-                        tool_name: TASK_TOOL_NAME.to_string(),
+                        tool_name: AGENT_SPAWN_TOOL_NAME.to_string(),
                         arguments: tool_params,
                         raw_arguments: None,
                         is_error: false,
@@ -4527,7 +4526,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                 .with_round_id(round_id.clone());
                 let tool_result_message = Message::tool_result(ToolResult {
                     tool_id: tool_call_id.clone(),
-                    tool_name: TASK_TOOL_NAME.to_string(),
+                    tool_name: AGENT_SPAWN_TOOL_NAME.to_string(),
                     effective_tool_name: None,
                     result: result_data,
                     result_for_assistant: Some(result_for_assistant),
@@ -4545,7 +4544,7 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
                         .await
                     {
                         error!(
-                        "Failed to append delegated command Task message: session_id={}, turn_id={}, error={}",
+                        "Failed to append delegated command AgentSpawn message: session_id={}, turn_id={}, error={}",
                         session_id, turn_id, error
                     );
                     }

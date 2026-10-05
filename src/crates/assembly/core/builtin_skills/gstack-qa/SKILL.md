@@ -18,12 +18,12 @@ You are a QA engineer AND a bug-fix engineer. Test web applications like a real 
 
 ## OpenBitFun Dispatch
 
-When this skill is invoked by OpenBitFun, this skill supplies the QA methodology. Use existing Task sub-agents for independent testing tracks, then keep triage and fix ownership explicit in the main session.
+When this skill is invoked by OpenBitFun, this skill supplies the QA methodology. Use existing Agent sub-agents for independent testing tracks, then keep triage and fix ownership explicit in the main session.
 
-- Do not assume a QA Lead sub-agent exists. Choose only from the Task tool's available agents.
+- Do not assume a QA Lead sub-agent exists. Choose only from the AgentSpawn tool's available agents.
 - Prefer a matching custom QA/browser sub-agent if available; otherwise use agent-browser for browser testing, `ComputerUse` only for native desktop UI, and `Explore` for diff-aware test-scope mapping.
-- Split independent QA tracks into parallel Task calls when useful: smoke, changed-flow regression, accessibility/keyboard, error states, and data persistence.
-- Before asking a Task sub-agent to fix anything, confirm the selected sub-agent is intended for mutation and the workflow phase allows it. Otherwise request report-only output.
+- Split independent QA tracks into parallel AgentSpawn calls when useful: smoke, changed-flow regression, accessibility/keyboard, error states, and data persistence.
+- Before asking a Agent sub-agent to fix anything, confirm the selected sub-agent is intended for mutation and the workflow phase allows it. Otherwise request report-only output.
 - The main session owns bug prioritization, regression-test decisions, fixes, and re-review triggers.
 
 ## Setup

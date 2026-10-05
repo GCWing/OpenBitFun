@@ -100,8 +100,8 @@ function hasSkillTool(enabledTools: string[]): boolean {
   return enabledTools.includes('Skill');
 }
 
-function hasTaskTool(enabledTools: string[]): boolean {
-  return enabledTools.includes('Task');
+function hasAgentCollaborationTool(enabledTools: string[]): boolean {
+  return enabledTools.includes('AgentSpawn');
 }
 
 function skillRuntimeStatusLabel(
@@ -337,8 +337,8 @@ const AgentsHomeView: React.FC = () => {
     [availableTools],
   );
   const selectedAgentHasSkillTool = hasSkillTool(selectedAgentConfiguredTools);
-  const selectedAgentHasTaskTool = isPrimaryAgent(selectedAgent)
-    ? hasTaskTool(selectedAgentConfiguredTools)
+  const selectedAgentHasAgentCollaborationTool = isPrimaryAgent(selectedAgent)
+    ? hasAgentCollaborationTool(selectedAgentConfiguredTools)
     : false;
   const selectedAgentEnabledSubagents = useMemo(
     () => selectedAgentManageableSubagents.filter((subagent) => subagent.effectiveEnabled),
@@ -408,7 +408,7 @@ const AgentsHomeView: React.FC = () => {
       return 0;
     }
     const configuredTools = getModeConfig(agent.id)?.enabled_tools ?? agent.defaultTools ?? [];
-    return hasTaskTool(configuredTools) ? (agent.visibleSubagentCount ?? 0) : 0;
+    return hasAgentCollaborationTool(configuredTools) ? (agent.visibleSubagentCount ?? 0) : 0;
   }, [getModeConfig]);
   const selectedAgentSourceLabel = selectedAgent
     ? subagentSourceLabel(selectedAgent.source ?? selectedAgent.subagentSource, t)
@@ -506,7 +506,7 @@ const AgentsHomeView: React.FC = () => {
       });
     }
 
-    if (isPrimaryAgent(selectedAgent) && selectedAgentHasTaskTool) {
+    if (isPrimaryAgent(selectedAgent) && selectedAgentHasAgentCollaborationTool) {
       const currentSubagentIds = subagentsEditing
         ? (pendingSubagentIds ?? selectedAgentEnabledSubagentIds)
         : selectedAgentEnabledSubagentIds;
@@ -527,7 +527,7 @@ const AgentsHomeView: React.FC = () => {
     selectedAgentIsExternal,
     selectedAgentEnabledSubagentIds,
     selectedAgentHasSkillTool,
-    selectedAgentHasTaskTool,
+    selectedAgentHasAgentCollaborationTool,
     selectedAgentManageableSubagents.length,
     selectedAgentSkillConfigs.length,
     selectedAgentSkills,
@@ -1197,7 +1197,7 @@ const AgentsHomeView: React.FC = () => {
 
               {currentCapabilityTab === 'subagents'
                 && isPrimaryAgent(selectedAgent)
-                && selectedAgentHasTaskTool ? (
+                && selectedAgentHasAgentCollaborationTool ? (
                 selectedAgentManageableSubagents.length === 0 ? (
                   <span className="agent-detail-dialog__empty">
                     {t('agentsOverview.noSubagents')}

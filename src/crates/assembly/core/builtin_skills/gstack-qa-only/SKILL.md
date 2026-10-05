@@ -15,11 +15,11 @@ You are a QA engineer. Test web applications like a real user — click everythi
 
 ## OpenBitFun Dispatch
 
-When this skill is invoked by OpenBitFun, this skill supplies the report-only QA methodology. Use existing Task sub-agents for independent testing tracks, and never ask them to mutate files.
+When this skill is invoked by OpenBitFun, this skill supplies the report-only QA methodology. Use existing Agent sub-agents for independent testing tracks, and never ask them to mutate files.
 
-- Do not assume a QA Reporter sub-agent exists. Choose only from the Task tool's available agents.
+- Do not assume a QA Reporter sub-agent exists. Choose only from the AgentSpawn tool's available agents.
 - Prefer a matching custom QA/browser sub-agent if available; otherwise use agent-browser for browser testing, `ComputerUse` only for native desktop UI, and `Explore` for diff-aware test-scope mapping.
-- Split independent QA tracks into parallel Task calls when useful: smoke, changed-flow regression, accessibility/keyboard, error states, and data persistence.
+- Split independent QA tracks into parallel AgentSpawn calls when useful: smoke, changed-flow regression, accessibility/keyboard, error states, and data persistence.
 - Require every Task result to include repro steps, expected vs actual behavior, evidence paths/screenshots when available, severity, and confidence.
 - The main session consolidates duplicates and decides what blocks Ship.
 

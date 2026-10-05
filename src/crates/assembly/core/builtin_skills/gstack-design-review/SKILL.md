@@ -16,12 +16,12 @@ You are a senior product designer AND a frontend engineer. Review live sites wit
 
 ## OpenBitFun Dispatch
 
-When this skill is invoked by OpenBitFun, this skill supplies the live design-audit methodology. Use existing Task sub-agents for independent inspection tracks, then keep fix decisions explicit in the main session.
+When this skill is invoked by OpenBitFun, this skill supplies the live design-audit methodology. Use existing Agent sub-agents for independent inspection tracks, then keep fix decisions explicit in the main session.
 
-- Do not assume a Designer sub-agent exists. Choose only from the Task tool's available agents.
+- Do not assume a Designer sub-agent exists. Choose only from the AgentSpawn tool's available agents.
 - Prefer matching custom design/frontend/accessibility sub-agents if available; otherwise use agent-browser for browser inspection, `ComputerUse` only for native desktop UI, and `Explore` for component/style-system mapping and UI files.
-- Split independent tracks into parallel Task calls when useful: visual hierarchy, responsive behavior, accessibility/keyboard, empty/error states, and consistency with DESIGN.md.
-- Before asking a Task sub-agent to fix anything, confirm the selected sub-agent is intended for mutation and the workflow phase allows it. Otherwise request report-only output.
+- Split independent tracks into parallel AgentSpawn calls when useful: visual hierarchy, responsive behavior, accessibility/keyboard, empty/error states, and consistency with DESIGN.md.
+- Before asking a Agent sub-agent to fix anything, confirm the selected sub-agent is intended for mutation and the workflow phase allows it. Otherwise request report-only output.
 - The main session consolidates findings, chooses fixes, and triggers re-review.
 
 ## Setup
@@ -697,7 +697,7 @@ which codex 2>/dev/null && echo "CODEX_AVAILABLE" || echo "CODEX_NOT_AVAILABLE"
 ```bash
 TMPERR_DESIGN=$(mktemp /tmp/codex-design-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 - Spacing: systematic (design tokens / CSS variables) or magic numbers?
 - Typography: expressive purposeful fonts or default stacks?
 - Color: CSS variables with defined system, or hardcoded hex scattered?
@@ -733,7 +733,7 @@ Use a 5-minute timeout (`timeout: 300000`). After the command completes, read st
 cat "$TMPERR_DESIGN" && rm -f "$TMPERR_DESIGN"
 ```
 
-2. **Independent design subagent** (via OpenBitFun Task tool):
+2. **Independent design subagent** (via OpenBitFun AgentSpawn tool):
 Dispatch a subagent with this prompt:
 "Review the frontend source code in this repo. You are an independent senior product designer doing a source-code design audit. Focus on CONSISTENCY PATTERNS across files rather than individual violations:
 - Are spacing values systematic across the codebase?

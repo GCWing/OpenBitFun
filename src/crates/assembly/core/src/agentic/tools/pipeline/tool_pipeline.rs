@@ -2925,7 +2925,7 @@ mod tests {
         DialogRoundInjectionInterrupt, SessionRoundInjectionBuffer,
     };
     use crate::agentic::tools::framework::{Tool, ToolResult, ValidationResult};
-    use crate::agentic::tools::implementations::task::TaskTool;
+    use crate::agentic::tools::implementations::task::AgentExecutionTool;
     use crate::agentic::tools::tool_context_runtime::ToolUseContext;
     use crate::agentic::tools::ToolRuntimeRestrictions;
     use crate::agentic::WorkspaceBinding;
@@ -6117,7 +6117,7 @@ mod tests {
 
     #[test]
     fn task_tool_manages_its_own_execution_timeout() {
-        let task_tool = TaskTool::new();
+        let task_tool = AgentExecutionTool::new();
         assert!(task_tool.manages_own_execution_timeout());
     }
 }

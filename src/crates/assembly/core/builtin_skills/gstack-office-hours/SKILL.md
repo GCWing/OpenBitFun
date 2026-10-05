@@ -22,12 +22,12 @@ You are a **YC office hours partner**. Your job is to ensure the problem is unde
 
 ## OpenBitFun Dispatch
 
-When this skill is invoked by OpenBitFun, treat this skill as the product-thinking methodology and use existing Task sub-agents only for independent discovery that improves the design doc.
+When this skill is invoked by OpenBitFun, treat this skill as the product-thinking methodology and use existing Agent sub-agents only for independent discovery that improves the design doc.
 
-- Do not assume role-named sub-agents exist. Choose only from the Task tool's available agents.
+- Do not assume role-named sub-agents exist. Choose only from the AgentSpawn tool's available agents.
 - Prefer a matching custom research/product sub-agent if available; otherwise use `Explore` for codebase/workflow discovery and locating relevant docs or prior plans.
 - Keep all final problem framing, tradeoff decisions, and design-doc writing in the main session.
-- Task prompts should be read-only and scoped: ask for evidence, examples, existing flows, risks, or prior art; never ask them to implement.
+- AgentSpawn prompts should be read-only and scoped: ask for evidence, examples, existing flows, risks, or prior art; never ask them to implement.
 - If no useful sub-agent exists, continue in the main session and say `subagent: none suitable`.
 
 ---
@@ -398,7 +398,7 @@ Then add the context block and mode-appropriate instructions:
 ```bash
 TMPERR_OH=$(mktemp /tmp/codex-oh-err-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 ```
 
 Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
@@ -416,7 +416,7 @@ On any outside-voice sub-agent error, fall back to the independent subagent belo
 
 **If CODEX_NOT_AVAILABLE (or outside-voice sub-agent errored):**
 
-Dispatch via the Task tool. The subagent has fresh context — genuine independence.
+Dispatch via the AgentSpawn tool. The subagent has fresh context — genuine independence.
 
 Subagent prompt: same mode-appropriate prompt as above (Startup or Builder variant).
 
@@ -638,11 +638,11 @@ If user chooses A, launch both voices simultaneously:
 ```bash
 TMPERR_SKETCH=$(mktemp /tmp/codex-sketch-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 ```
 Use a 5-minute timeout (`timeout: 300000`). After completion: `cat "$TMPERR_SKETCH" && rm -f "$TMPERR_SKETCH"`
 
-2. **Independent subagent** (via OpenBitFun Task tool):
+2. **Independent subagent** (via OpenBitFun AgentSpawn tool):
 "For this product approach, what design direction would you recommend? What aesthetic, typography, and interaction patterns fit? What would make this approach feel inevitable to the user? Be specific — font names, hex colors, spacing values."
 
 Present outside-voice sub-agent output under `CODEX SAYS (design sketch):` and subagent output under `INDEPENDENT SUBAGENT (design direction):`.
@@ -838,7 +838,7 @@ Before presenting the document to the user for approval, run an adversarial revi
 
 **Step 1: Dispatch reviewer subagent**
 
-Use the Task tool to dispatch an independent reviewer. The reviewer has fresh context
+Use the AgentSpawn tool to dispatch an independent reviewer. The reviewer has fresh context
 and cannot see the brainstorming conversation — only the document. This ensures genuine
 adversarial independence.
 

@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "d2710a9488e6f021e11ece435e8d067a9285903c26f20f5bc0b586ac46d67e6d",
+  "digest": "63afe6c13213f11a7089fbb6208db930d563e4d3098f7c6dcf4c20a1f4e87271",
   "ownerDigest": "c0e5c187cf62bc6ed06196ce8520b3eb427bf268cf24659b72d2552fb1d99c54",
   "searchAcceptance": [
     {
@@ -1353,13 +1353,11 @@
         "additionalProperties": true
       },
       "delegateTools": [
-        "Task",
         "AgentSpawn",
         "AgentWait",
         "AgentSendInput",
-        "AgentInterrupt",
-        "AgentList",
-        "AgentDelete"
+        "AgentControl",
+        "AgentList"
       ],
       "presentationTarget": {
         "kind": "action",
@@ -19711,20 +19709,18 @@
           "control": {
             "kind": "delegate",
             "tools": [
-              "Task",
               "AgentSpawn",
               "AgentWait",
               "AgentSendInput",
-              "AgentInterrupt",
-              "AgentList",
-              "AgentDelete"
+              "AgentControl",
+              "AgentList"
             ],
             "workflowZh": [
-              "按任务形态使用 Task 或 AgentSpawn 启动有边界的子任务，并保留返回的 agent_id",
+              "使用 AgentSpawn 启动有边界的子任务，并保留返回的 agent_id",
               "用 AgentList/AgentWait 查看进度；需要调整时用 AgentSendInput，必要时再中断或删除，最终综合子智能体结果"
             ],
             "workflowEn": [
-              "Start a bounded subtask with Task or AgentSpawn and retain the returned agent_id",
+              "Start a bounded subtask with AgentSpawn and retain the returned agent_id",
               "Use AgentList or AgentWait for progress, AgentSendInput for corrections, and interrupt or delete only when necessary before synthesizing the results"
             ]
           }
@@ -19794,16 +19790,14 @@
         "帮我进入智能体管理页",
         "Open Agents so I can see the specialized roles",
         "Take me to agent management",
-        "Task",
         "AgentSpawn",
         "AgentWait",
         "AgentSendInput",
-        "AgentInterrupt",
+        "AgentControl",
         "AgentList",
-        "AgentDelete",
-        "按任务形态使用 Task 或 AgentSpawn 启动有边界的子任务，并保留返回的 agent_id",
+        "使用 AgentSpawn 启动有边界的子任务，并保留返回的 agent_id",
         "用 AgentList/AgentWait 查看进度；需要调整时用 AgentSendInput，必要时再中断或删除，最终综合子智能体结果",
-        "Start a bounded subtask with Task or AgentSpawn and retain the returned agent_id",
+        "Start a bounded subtask with AgentSpawn and retain the returned agent_id",
         "Use AgentList or AgentWait for progress, AgentSendInput for corrections, and interrupt or delete only when necessary before synthesizing the results"
       ],
       "docsUrl": "https://playbook.openbitfun.com/capabilities/feature.agents/"

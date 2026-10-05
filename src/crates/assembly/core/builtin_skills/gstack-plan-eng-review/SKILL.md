@@ -16,9 +16,9 @@ Review this plan thoroughly before making any code changes. For every issue or r
 
 ## OpenBitFun Dispatch
 
-When this skill is invoked by OpenBitFun, this skill supplies the engineering-manager review lens. Use existing Task sub-agents for independent architecture and evidence gathering, then synthesize decisions in the main session.
+When this skill is invoked by OpenBitFun, this skill supplies the engineering-manager review lens. Use existing Agent sub-agents for independent architecture and evidence gathering, then synthesize decisions in the main session.
 
-- Do not assume an Eng Manager sub-agent exists. Choose only from the Task tool's available agents.
+- Do not assume an Eng Manager sub-agent exists. Choose only from the AgentSpawn tool's available agents.
 - Prefer a matching custom architecture/backend/frontend/test sub-agent if available; otherwise use `Explore` for architecture mapping and locating touched modules, plans, configs, and tests.
 - Keep Task work read-only before Build. Ask for data flows, edge cases, platform-boundary risks, test gaps, migration risks, and verification commands.
 - In parallel plan-review batches, return a compact Eng brief: `architecture blockers`, `edge cases`, `test matrix`, `files likely touched`, `recommended implementation sequence`.
@@ -485,7 +485,7 @@ THE PLAN:
 ```bash
 TMPERR_PV=$(mktemp /tmp/codex-planreview-XXXXXXXX)
 _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 ```
 
 Use a 5-minute timeout (`timeout: 300000`). After the command completes, read stderr:
@@ -511,7 +511,7 @@ On any outside-voice sub-agent error, fall back to the OpenBitFun adversarial su
 
 **If CODEX_NOT_AVAILABLE (or outside-voice sub-agent errored):**
 
-Dispatch via the Task tool. The subagent has fresh context — genuine independence.
+Dispatch via the AgentSpawn tool. The subagent has fresh context — genuine independence.
 
 Subagent prompt: same plan review prompt as above.
 
@@ -561,7 +561,7 @@ true # OpenBitFun has no external review-log helper
 ```
 
 Substitute: STATUS = "clean" if no findings, "issues_found" if findings exist.
-SOURCE = "codex" if outside-voice sub-agent ran, "subagent" if a OpenBitFun Task sub-agent ran.
+SOURCE = "codex" if outside-voice sub-agent ran, "subagent" if a OpenBitFun Agent sub-agent ran.
 
 **Cleanup:** Run `rm -f "$TMPERR_PV"` after processing (if outside-voice sub-agent was used).
 
@@ -621,7 +621,7 @@ If any failure mode has no test AND no error handling AND would be silent, flag 
 
 ### Worktree parallelization strategy
 
-Analyze the plan's implementation steps for parallel execution opportunities. This helps the user split work across OpenBitFun Task sub-agents, git worktrees, or separate workspaces when the workstreams are genuinely independent.
+Analyze the plan's implementation steps for parallel execution opportunities. This helps the user split work across OpenBitFun Agent sub-agents, git worktrees, or separate workspaces when the workstreams are genuinely independent.
 
 **Skip if:** all steps touch the same primary module, or the plan has fewer than 2 independent workstreams. In that case, write: "Sequential implementation, no parallelization opportunity."
 
@@ -784,7 +784,7 @@ Produce this markdown table:
 | Review | Trigger | Why | Runs | Status | Findings |
 |--------|---------|-----|------|--------|----------|
 | CEO Review | \`/plan-ceo-review\` | Scope & strategy | {runs} | {status} | {findings} |
-| outside-voice sub-agent Review | \`OpenBitFun Task outside-voice review\` | Independent 2nd opinion | {runs} | {status} | {findings} |
+| outside-voice sub-agent Review | \`OpenBitFun AgentSpawn outside-voice review\` | Independent 2nd opinion | {runs} | {status} | {findings} |
 | Eng Review | \`/plan-eng-review\` | Architecture & tests (required) | {runs} | {status} | {findings} |
 | Design Review | \`/plan-design-review\` | UI/UX gaps | {runs} | {status} | {findings} |
 \`\`\`

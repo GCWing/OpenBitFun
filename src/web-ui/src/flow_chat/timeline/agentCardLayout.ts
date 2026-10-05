@@ -11,7 +11,7 @@ export function isAgentLaunchCard(item: FlowItem): boolean {
   if (item.type !== 'tool') return false;
   const tool = projectEffectiveToolItem(item as FlowToolItem);
   if (tool.toolName === 'AgentSpawn') return true;
-  if (tool.toolName !== 'Task' && tool.toolName !== 'LaunchReviewAgent') return false;
+  if (!['Task', 'LaunchReviewAgent'].includes(tool.toolName)) return false;
   const action = (toolString(readInteractionInput(tool).action)
     || toolString(readToolRecord(tool.toolResult?.result).action)).toLowerCase();
   return action !== 'send_input' && action !== 'cancel';

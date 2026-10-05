@@ -69,7 +69,7 @@ export const FlowToolCard: React.FC<FlowToolCardProps> = React.memo(({
   const config = getToolItemCardConfig(effectiveToolItem);
   const CardComponent = getToolCardComponent(effectiveToolItem.toolName);
   const interruptionNote = getToolInterruptionNote(effectiveToolItem, t);
-  const cardHandlesInterruptionNote = effectiveToolItem.toolName === 'Task';
+  const cardHandlesInterruptionNote = ['Task', 'AgentSpawn', 'LaunchReviewAgent'].includes(effectiveToolItem.toolName);
   const toolCardTestId =
     effectiveToolItem.toolName === 'ExecCommand'
       ? 'chat-shell-tool-card'

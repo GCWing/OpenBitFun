@@ -18,9 +18,8 @@ impl UltimateHarness {
             default_tools: [
                 "AgentSpawn",
                 "AgentSendInput",
-                "AgentInterrupt",
+                "AgentControl",
                 "AgentList",
-                "AgentDelete",
                 "AgentWait",
                 "Read",
                 "Edit",

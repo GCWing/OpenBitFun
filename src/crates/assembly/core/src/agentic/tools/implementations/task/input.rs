@@ -89,7 +89,7 @@ pub(super) struct TaskInvocation {
     pub(super) cancel_descendants: bool,
 }
 
-impl TaskTool {
+impl AgentExecutionTool {
     pub(super) fn parse_invocation(
         input: &Value,
         is_deep_review_parent: bool,
@@ -104,13 +104,13 @@ impl TaskTool {
         if is_deep_review_parent {
             if input.get("action").is_some() {
                 return Err(OpenBitFunError::tool(
-                    "action is not supported for DeepReview Task calls".to_string(),
+                    "action is not supported for DeepReview AgentSpawn calls".to_string(),
                 ));
             }
             for field in ["fork_context", "agent_id", "run_in_background"] {
                 if input.get(field).is_some() {
                     return Err(OpenBitFunError::tool(format!(
-                        "{field} is not allowed for DeepReview Task calls"
+                        "{field} is not allowed for DeepReview AgentSpawn calls"
                     )));
                 }
             }
@@ -120,11 +120,19 @@ impl TaskTool {
             return Ok(TaskInvocation {
                 action: TaskAction::Spawn,
                 requested_agent_id: None,
-                description: Self::string_field(input, "description", "DeepReview Task calls")?,
-                prompt: Self::string_field(input, "prompt", "DeepReview Task calls")?,
+                description: Self::string_field(
+                    input,
+                    "description",
+                    "DeepReview AgentSpawn calls",
+                )?,
+                prompt: Self::string_field(input, "prompt", "DeepReview AgentSpawn calls")?,
                 context_mode: SubagentContextMode::Fresh,
                 target_agent_id: None,
-                subagent_type: Self::string_field(input, "subagent_type", "DeepReview Task calls")?,
+                subagent_type: Self::string_field(
+                    input,
+                    "subagent_type",
+                    "DeepReview AgentSpawn calls",
+                )?,
                 model_id,
                 inherit_parent_model,
                 timeout_seconds: Self::optional_timeout_seconds(input)?,
@@ -152,12 +160,13 @@ impl TaskTool {
         }
         if Self::has_deep_review_retry_fields(input) {
             return Err(OpenBitFunError::tool(
-                "DeepReview retry fields are only allowed for DeepReview Task calls".to_string(),
+                "DeepReview retry fields are only allowed for DeepReview AgentSpawn calls"
+                    .to_string(),
             ));
         }
         if input.get("timeout_seconds").is_some() {
             return Err(OpenBitFunError::tool(
-                "timeout_seconds is only allowed for DeepReview Task calls".to_string(),
+                "timeout_seconds is only allowed for DeepReview AgentSpawn calls".to_string(),
             ));
         }
         let run_in_background = Self::optional_bool(input, "run_in_background")?.unwrap_or(false);

@@ -9,9 +9,8 @@ use super::round_executor::{ModelRoundLifecycle, RoundExecutor};
 use super::types::{ExecutionContext, ExecutionResult, RoundContext, RoundResult};
 use crate::agentic::agents::{
     build_prompt_context_for_workspace, get_agent_registry, get_embedded_prompt,
-    is_swarm_planner_agent_type, render_direct_tool_listing_body, PrependedPromptReminders,
-    PromptBuilder, PromptBuilderContext, RuntimeContextNeeds, ToolListingSections,
-    UserContextPolicy, UserContextSection,
+    render_direct_tool_listing_body, PrependedPromptReminders, PromptBuilder, PromptBuilderContext,
+    RuntimeContextNeeds, ToolListingSections, UserContextPolicy, UserContextSection,
 };
 use crate::agentic::context_profile::{ContextProfilePolicy, ModelCapabilityProfile};
 use crate::agentic::coordination::scheduler::agent_dialog_turn_image_contexts;
@@ -41,7 +40,7 @@ use crate::agentic::session::{
 };
 use crate::agentic::skill_agent_snapshot::build_skill_agent_tool_listing_sections_from_snapshot;
 use crate::agentic::tools::framework::ToolUseContext;
-use crate::agentic::tools::implementations::{SkillTool, TaskTool};
+use crate::agentic::tools::implementations::{AgentExecutionTool, SkillTool};
 use crate::agentic::tools::product_runtime::{
     collect_product_loaded_deferred_tool_specs, GetToolSpecTool,
 };
@@ -1438,7 +1437,7 @@ impl ExecutionEngine {
                 None
             },
             agent_listing: if has_tool_definition("Task") || has_tool_definition("AgentSpawn") {
-                TaskTool::build_available_agents_context_section(Some(tool_context)).await
+                AgentExecutionTool::build_available_agents_context_section(Some(tool_context)).await
             } else {
                 None
             },
@@ -1675,11 +1674,8 @@ impl ExecutionEngine {
             built_user_context
         };
         let runtime_context = prompt_builder.build_runtime_context_reminder().await;
-        let (skill_listing, mut agent_listing) =
+        let (skill_listing, agent_listing) =
             skill_agent_listing_reminders(baseline_tool_sections.as_ref());
-        if is_swarm_planner_agent_type(current_agent.id()) {
-            agent_listing = None;
-        }
 
         PrependedPromptReminders {
             deferred_tool_listing: prompt_builder.build_deferred_tool_listing_reminder(),

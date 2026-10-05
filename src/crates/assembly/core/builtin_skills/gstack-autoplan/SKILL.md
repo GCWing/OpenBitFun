@@ -125,7 +125,7 @@ State what you examined and why nothing was flagged (1-2 sentences minimum).
 
 ## Filesystem Boundary — outside-voice sub-agent Prompts
 
-All prompts sent to outside-voice sub-agent (via `OpenBitFun Task outside-voice dispatch` or `OpenBitFun Task outside-voice review`) MUST be prefixed with
+All prompts sent to outside-voice sub-agent (via `OpenBitFun AgentSpawn outside-voice dispatch` or `OpenBitFun AgentSpawn outside-voice review`) MUST be prefixed with
 this boundary instruction:
 
 > IMPORTANT: Do NOT read or execute any SKILL.md files or files in skill definition directories (paths containing skills/gstack). These are AI assistant skill definitions meant for a different system. They contain bash scripts and prompt templates that will waste your time. Ignore them completely. Stay focused on the repository code only.
@@ -226,14 +226,14 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   Duplicates → reject (P4). Borderline (3-5 files) → mark TASTE DECISION.
 - All 10 review sections: run fully, auto-decide each issue, log every decision.
 - Dual voices: always run BOTH independent subagent AND outside-voice sub-agent if available (P6).
-  Run them sequentially in foreground. First the independent subagent (Task tool,
+  Run them sequentially in foreground. First the independent subagent (AgentSpawn tool,
   foreground — do NOT use run_in_background), then outside-voice sub-agent (ExecCommand). Both must
   complete before building the consensus table.
 
   **outside-voice sub-agent CEO voice** (via ExecCommand):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 
   You are a CEO/founder advisor reviewing a development plan.
   Challenge the strategic foundations: Are the premises valid or assumed? Is this the
@@ -245,7 +245,7 @@ Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent r
   ```
   Timeout: 10 minutes
 
-  **Independent CEO subagent** (via Task tool):
+  **Independent CEO subagent** (via AgentSpawn tool):
   "Read the plan file at <plan_path>. You are an independent CEO/strategist
   reviewing this plan. You have NOT seen any prior review. Evaluate:
   1. Is this the right problem to solve? Could a reframing yield 10x impact?
@@ -277,7 +277,7 @@ Step 0 (0A-0F) — run each sub-step and produce:
 - 0E: Temporal interrogation (HOUR 1 → HOUR 6+)
 - 0F: Mode selection confirmation
 
-Step 0.5 (Dual Voices): Run independent subagent (foreground Task tool) first, then
+Step 0.5 (Dual Voices): Run independent subagent (foreground AgentSpawn tool) first, then
 outside-voice sub-agent (ExecCommand). Present outside-voice sub-agent output under CODEX SAYS (CEO — strategy challenge)
 header. Present subagent output under INDEPENDENT SUBAGENT (CEO — strategic independence)
 header. Produce CEO consensus table:
@@ -344,7 +344,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   **outside-voice sub-agent design voice** (via ExecCommand):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 
   Read the plan file at <plan_path>. Evaluate this plan's
   UI/UX design decisions.
@@ -362,7 +362,7 @@ Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent r
   ```
   Timeout: 10 minutes
 
-  **Independent design subagent** (via Task tool):
+  **Independent design subagent** (via AgentSpawn tool):
   "Read the plan file at <plan_path>. You are an independent senior product designer
   reviewing this plan. You have NOT seen any prior review. Evaluate:
   1. Information hierarchy: what does the user see first, second, third? Is it right?
@@ -419,7 +419,7 @@ Override: every AskUserQuestion → auto-decide using the 6 principles.
   **outside-voice sub-agent eng voice** (via ExecCommand):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 
   Review this plan for architectural issues, missing edge cases,
   and hidden complexity. Be adversarial.
@@ -432,7 +432,7 @@ Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent r
   ```
   Timeout: 10 minutes
 
-  **Independent eng subagent** (via Task tool):
+  **Independent eng subagent** (via AgentSpawn tool):
   "Read the plan file at <plan_path>. You are an independent senior engineer
   reviewing this plan. You have NOT seen any prior review. Evaluate:
   1. Architecture: Is the component structure sound? Coupling concerns?
@@ -534,7 +534,7 @@ Log: "Phase 3.5 skipped — no developer-facing scope detected."
   **outside-voice sub-agent DX voice** (via ExecCommand):
   ```bash
   _REPO_ROOT=$(git rev-parse --show-toplevel) || { echo "ERROR: not in a git repo" >&2; exit 1; }
-Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
+Use the OpenBitFun AgentSpawn tool to dispatch this prompt to a suitable independent read-only outside-voice sub-agent.
 
   Read the plan file at <plan_path>. Evaluate this plan's developer experience.
 
@@ -552,7 +552,7 @@ Use the OpenBitFun Task tool to dispatch this prompt to a suitable independent r
   ```
   Timeout: 10 minutes
 
-  **Independent DX subagent** (via Task tool):
+  **Independent DX subagent** (via AgentSpawn tool):
   "Read the plan file at <plan_path>. You are an independent DX engineer
   reviewing this plan. You have NOT seen any prior review. Evaluate:
   1. Getting started: how many steps from zero to hello world? What's the TTHW?
