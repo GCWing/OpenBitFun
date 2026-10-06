@@ -12,6 +12,7 @@ import type { Options as RehypeSanitizeOptions } from 'rehype-sanitize';
 import type { Pluggable } from 'unified';
 import 'katex/dist/katex.min.css';
 import { rehypeSourceRange, type MarkdownSourceRange } from './rehypeSourceRange';
+import { rehypeWindowsDrivePaths } from './rehypeWindowsDrivePaths';
 
 interface MarkdownMathRendererProps {
   markdownContent: string;
@@ -37,7 +38,7 @@ export const MarkdownMathRenderer: React.FC<MarkdownMathRendererProps> = ({
   const content = (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkMath, [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkComputerFileLinks]}
-      rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], rehypeKatex]}
+      rehypePlugins={[rehypeRaw, rehypeWindowsDrivePaths, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange], rehypeKatex]}
       urlTransform={urlTransform}
       components={components}
     >

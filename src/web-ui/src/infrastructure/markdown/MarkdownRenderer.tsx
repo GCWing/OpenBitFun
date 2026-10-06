@@ -43,6 +43,7 @@ import { useStreamingTextReveal } from './useStreamingTextReveal';
 import { SessionMarkdownImage, type SessionImageReader } from './SessionMarkdownImage';
 import { ImageLightbox, type ImageLightboxState } from '@/shared/ui/ImageLightbox';
 import { rehypeSourceRange, type MarkdownSourceRange } from './rehypeSourceRange';
+import { rehypeWindowsDrivePaths } from './rehypeWindowsDrivePaths';
 
 const log = createLogger('Markdown');
 const COMPUTER_LINK_PREFIX = 'computer://';
@@ -58,6 +59,12 @@ function markdownUrlTransform(value: string, key?: string): string {
   if (/^openbitfun:\/\/(?:runtime|current-session)\//.test(value)) return value;
   // These references are resolved through the owning host, never by the browser.
   if (/^(computer:\/\/|file:)/i.test(value)) return value;
+  // A Windows drive-letter path looks like a custom URL scheme to the
+  // react-markdown safety filter (for example, `C:/image.png` is parsed as
+  // scheme `c`). Mark it as a local file reference before that filter runs;
+  // the renderer will strip the internal prefix and read it through the
+  // owning workspace/session provider.
+  if (/^[A-Za-z]:[\\/]/.test(value)) return `file:///${value.replace(/\\/g, '/')}`;
   if (key === 'src' && /^data:image\/(png|jpeg|gif|webp|bmp|svg\+xml|avif);base64,/i.test(value)) return value;
   if (value.startsWith(CANVAS_LINK_PREFIX) && parseCanvasArtifactReference(value)) {
     return value;
@@ -368,6 +375,9 @@ function normalizeFileLikeHref(rawHref: string): string {
   }
 
   // Normalize URI-style Windows drive paths to native absolute paths.
+  if (/^\/{2,}[A-Za-z]:[\\/]/.test(filePath)) {
+    filePath = filePath.replace(/^\/+/, '/');
+  }
   if (/^\/[A-Za-z]:[\\/]/.test(filePath)) {
     filePath = filePath.slice(1);
   }
@@ -1727,7 +1737,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
     const basicFragment = (
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema]]}
+        rehypePlugins={[rehypeRaw, rehypeWindowsDrivePaths, [rehypeSanitize, sanitizeSchema]]}
         urlTransform={markdownUrlTransform}
         components={fragmentComponents}
       >{fragment}</ReactMarkdown>
@@ -1749,7 +1759,7 @@ const MarkdownSurface = React.memo<MarkdownRendererProps & { thinking?: boolean;
   const basicMarkdownRenderer = (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, ...(!isStreaming ? [remarkCachedParse] : []), [remarkStreamingTableLinks, { isStreaming }], remarkAutolinkBoundaries, remarkAutolinkInternalLinks]}
-      rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange]]}
+      rehypePlugins={[rehypeRaw, rehypeWindowsDrivePaths, [rehypeSanitize, sanitizeSchema], [rehypeSourceRange, sourceRange]]}
       urlTransform={markdownUrlTransform}
       components={components}
     >

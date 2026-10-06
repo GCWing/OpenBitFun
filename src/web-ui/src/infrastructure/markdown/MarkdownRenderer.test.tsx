@@ -864,10 +864,31 @@ Second paragraph.
     expect(mocks.getCurrentWorkspacePath).not.toHaveBeenCalled();
   });
 
+  it('loads Windows drive-letter absolute markdown images', async () => {
+    const imagePath = 'C:/SampleDocs/preview.png';
+
+    await act(async () => {
+      root.render(
+        <MarkdownRenderer
+          content={`![Preview](${imagePath})`}
+          basePath="D:/IgnoredWorkspace"
+        />,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const image = container.querySelector<HTMLImageElement>('img[alt="Preview"]');
+    expect(image).not.toBeNull();
+    expect(mocks.readFileContent).toHaveBeenCalledWith(imagePath, 'base64', undefined);
+    expect(image?.src).toBe('data:image/png;base64,cmVsdS1wbmc=');
+  });
+
   it.each([
     ['computer://output/preview%20%E5%9B%BE.png', '/srv/project/output/preview 图.png'],
     ['file:///srv/project/preview.png', '/srv/project/preview.png'],
     ['computer:///srv/project/preview.png', '/srv/project/preview.png'],
+    ['file:///C:/SampleDocs/preview.png', 'C:/SampleDocs/preview.png'],
   ])('resolves output image references through the owning filesystem: %s', async (source, expectedPath) => {
     await act(async () => root.render(<MarkdownRenderer content={`![Preview](${source})`} basePath="/srv/project" remoteConnectionId={source} />));
     expect(mocks.readFileContent).toHaveBeenCalledWith(expectedPath, 'base64', source);
