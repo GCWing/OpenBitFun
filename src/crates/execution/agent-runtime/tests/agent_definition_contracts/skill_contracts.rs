@@ -488,7 +488,6 @@ fn builtin_skill_catalog_and_mode_policy_are_runtime_owned() {
     assert_eq!(builtin_skill_group_key("docs-canvas"), Some("canvas"));
     assert_eq!(builtin_skill_group_key("multitask"), Some("coordination"));
     assert_eq!(builtin_skill_group_key("plan"), Some("planning"));
-    assert_eq!(builtin_skill_group_key("gstack-review"), Some("gstack"));
     assert_eq!(builtin_skill_group_key("unknown-skill"), None);
 
     assert_eq!(
@@ -1315,21 +1314,21 @@ fn global_skill_disable_overrides_mode_selection_without_changing_mode_defaults(
 }
 
 #[test]
-fn explicit_invocation_hidden_builtin_fallback_is_runtime_owned() {
+fn explicit_invocation_requires_an_agent_and_resolves_default_hidden_builtin() {
     let candidate = SkillCandidate {
-        info: builtin_skill("gstack-review"),
+        info: builtin_skill("agent-browser"),
         priority: 10,
     };
 
     match resolve_default_hidden_builtin_for_explicit_invocation(
-        "gstack-review",
+        "agent-browser",
         vec![candidate.clone()],
         Some("Standard"),
     ) {
         ExplicitSkillInvocationResolution::Found(skill) => {
-            assert_eq!(skill.key, "user::openbitfun-system::gstack-review");
+            assert_eq!(skill.key, "user::openbitfun-system::agent-browser");
         }
-        other => panic!("expected hidden gstack fallback, got {other:?}"),
+        other => panic!("expected hidden built-in fallback, got {other:?}"),
     }
 
     assert!(matches!(
@@ -1342,7 +1341,7 @@ fn explicit_invocation_hidden_builtin_fallback_is_runtime_owned() {
     ));
     assert!(matches!(
         resolve_default_hidden_builtin_for_explicit_invocation(
-            "gstack-review",
+            "agent-browser",
             vec![candidate],
             None
         ),

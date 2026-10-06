@@ -71,7 +71,7 @@ impl Agent for DeepResearchMode {
     }
 
     fn prompt_template_name(&self, _model_name: Option<&str>) -> &str {
-        "deep_research_agent"
+        "deep_research_mode"
     }
 
     fn default_tools(&self) -> Vec<String> {
@@ -134,8 +134,8 @@ mod tests {
         let agent = DeepResearchMode::new();
         assert_eq!(
             agent.prompt_template_name(Some("gpt-5.1")),
-            "deep_research_agent"
+            "deep_research_mode"
         );
-        assert_eq!(agent.prompt_template_name(None), "deep_research_agent");
+        assert_eq!(agent.prompt_template_name(None), "deep_research_mode");
     }
 }

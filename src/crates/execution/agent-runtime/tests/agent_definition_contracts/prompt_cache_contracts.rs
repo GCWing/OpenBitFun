@@ -25,7 +25,7 @@ fn prompt_cache_lookup_preserves_identity_and_expiry_semantics() {
     store.set_system_prompt(
         "session-1",
         CachedSystemPrompt::new(
-            SystemPromptCacheIdentity::new("template:agentic_mode"),
+            SystemPromptCacheIdentity::new("template:standard_mode"),
             "system prompt",
         ),
     );
@@ -69,10 +69,10 @@ fn prompt_cache_lookup_preserves_identity_and_expiry_semantics() {
 fn prompt_cache_scope_key_preserves_legacy_mode_switch_shape() {
     assert_eq!(
         prompt_cache_scope_key(
-            &SystemPromptCacheIdentity::new("template:agentic_mode"),
+            &SystemPromptCacheIdentity::new("template:standard_mode"),
             &UserContextCacheIdentity::new("workspace_context|workspace_instructions"),
         ),
-        "template:agentic_mode||workspace_context|workspace_instructions"
+        "template:standard_mode||workspace_context|workspace_instructions"
     );
 }
 
@@ -84,7 +84,7 @@ fn prompt_cache_restore_decision_prunes_expired_persisted_entries() {
                 content: "stale prompt".to_string(),
                 created_at_ms: 0,
             },
-            identity: SystemPromptCacheIdentity::new("template:agentic_mode"),
+            identity: SystemPromptCacheIdentity::new("template:standard_mode"),
         }),
         ..Default::default()
     };
@@ -115,7 +115,7 @@ fn prompt_cache_restore_decision_deletes_empty_expired_cache() {
                 content: "stale prompt".to_string(),
                 created_at_ms: 0,
             },
-            identity: SystemPromptCacheIdentity::new("template:agentic_mode"),
+            identity: SystemPromptCacheIdentity::new("template:standard_mode"),
         }),
         ..Default::default()
     };

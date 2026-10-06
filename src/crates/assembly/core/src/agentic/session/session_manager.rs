@@ -18374,7 +18374,7 @@ mod tests {
             )
             .await
             .expect("session should be created");
-        let identity = SystemPromptCacheIdentity::new("template:agentic_mode");
+        let identity = SystemPromptCacheIdentity::new("template:standard_mode");
         let user_context_identity = UserContextCacheIdentity::new(
             "workspace_context|workspace_instructions|project_layout",
         );
@@ -18816,7 +18816,7 @@ mod tests {
             )
             .await
             .expect("session should be created");
-        let identity = SystemPromptCacheIdentity::new("template:agentic_mode");
+        let identity = SystemPromptCacheIdentity::new("template:standard_mode");
         let user_context_identity = UserContextCacheIdentity::new(
             "workspace_context|workspace_instructions|project_layout",
         );
@@ -18979,7 +18979,7 @@ mod tests {
             )
             .await
             .expect("target session should be created");
-        let identity = SystemPromptCacheIdentity::new("template:agentic_mode");
+        let identity = SystemPromptCacheIdentity::new("template:standard_mode");
         let user_context_identity = UserContextCacheIdentity::new(
             "workspace_context|workspace_instructions|project_layout",
         );
@@ -19060,7 +19060,7 @@ mod tests {
             )
             .await
             .expect("session should be created");
-        let identity = SystemPromptCacheIdentity::new("template:agentic_mode");
+        let identity = SystemPromptCacheIdentity::new("template:standard_mode");
         let user_context_identity = UserContextCacheIdentity::new(
             "workspace_context|workspace_instructions|project_layout",
         );

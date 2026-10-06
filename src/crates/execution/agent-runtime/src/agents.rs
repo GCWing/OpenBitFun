@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::HashSet;
 
-pub const STANDARD_HARNESS_PROMPT_TEMPLATE: &str = "agentic_mode";
+pub const STANDARD_HARNESS_PROMPT_TEMPLATE: &str = "standard_mode";
 pub const STANDARD_HARNESS_CONFIG_ID: &str = "Standard";
 pub const STANDARD_HARNESS_CONFIG_LABEL: &str = "Standard";
 pub const STANDARD_HARNESS_CONFIG_MEMBERS: &[&str] = &["Standard"];

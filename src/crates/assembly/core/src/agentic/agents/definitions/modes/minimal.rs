@@ -48,7 +48,7 @@ impl Agent for MinimalHarness {
     }
 
     fn prompt_template_name(&self, _model_name: Option<&str>) -> &str {
-        "minimal-harness-v1"
+        "minimal_mode"
     }
 
     fn default_tools(&self) -> Vec<String> {

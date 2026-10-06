@@ -9,7 +9,6 @@ pub(super) enum BuiltinSkillGroup {
     Debugging,
     Coordination,
     Planning,
-    Gstack,
 }
 
 impl BuiltinSkillGroup {
@@ -24,7 +23,6 @@ impl BuiltinSkillGroup {
             Self::Debugging => "debugging",
             Self::Coordination => "coordination",
             Self::Planning => "planning",
-            Self::Gstack => "gstack",
         }
     }
 }
@@ -87,66 +85,6 @@ pub(super) const BUILTIN_SKILL_SPECS: &[BuiltinSkillSpec] = &[
     BuiltinSkillSpec {
         dir_name: "openbitfun-frontend-dev",
         group: BuiltinSkillGroup::Creation,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-autoplan",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-cso",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-design-consultation",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-design-review",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-document-release",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-investigate",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-office-hours",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-plan-ceo-review",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-plan-design-review",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-plan-eng-review",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-qa",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-qa-only",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-retro",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-review",
-        group: BuiltinSkillGroup::Gstack,
-    },
-    BuiltinSkillSpec {
-        dir_name: "gstack-ship",
-        group: BuiltinSkillGroup::Gstack,
     },
     BuiltinSkillSpec {
         dir_name: "ppt-design",

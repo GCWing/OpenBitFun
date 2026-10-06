@@ -21763,7 +21763,7 @@ mod tests {
             )
             .await;
 
-        let system_prompt_identity = SystemPromptCacheIdentity::new("template:agentic_mode");
+        let system_prompt_identity = SystemPromptCacheIdentity::new("template:standard_mode");
         let user_context_identity = UserContextCacheIdentity::new("workspace_context");
         session_manager
             .remember_system_prompt(

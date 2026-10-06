@@ -677,7 +677,7 @@ mod tests {
 
         let source_prompt_cache = SessionPromptCache {
             system_prompt: Some(CachedSystemPrompt::new(
-                SystemPromptCacheIdentity::new("template:agentic_mode"),
+                SystemPromptCacheIdentity::new("template:standard_mode"),
                 "system prompt",
             )),
             user_context: Some(CachedUserContext::new(

@@ -85,17 +85,6 @@ static EMPTY_AGENT_TOOL_POLICY_OVERRIDES: std::sync::LazyLock<AgentToolPolicyOve
 static EMPTY_PERMISSION_CONSTRAINTS: std::sync::LazyLock<PermissionConstraintLayer> =
     std::sync::LazyLock::new(PermissionConstraintLayer::default);
 
-/// Exposure policy for main modes that own desktop workflows. Availability and
-/// user allowlists are still resolved by the normal tool catalog.
-pub(crate) fn direct_computer_use_policy() -> &'static AgentToolPolicyOverrides {
-    static POLICY: std::sync::LazyLock<AgentToolPolicyOverrides> = std::sync::LazyLock::new(|| {
-        let mut policy = AgentToolPolicyOverrides::default();
-        policy.insert("ComputerUse".to_string(), ToolExposure::Direct);
-        policy
-    });
-    &POLICY
-}
-
 pub fn standard_harness_tools() -> Vec<String> {
     vec![
         "AgentSpawn".to_string(),
@@ -278,8 +267,8 @@ mod tests {
     #[test]
     fn embedded_prompt_catalog_compatibility_export_matches_lookup() {
         assert_eq!(
-            EMBEDDED_PROMPTS.get("agentic_mode").copied(),
-            get_embedded_prompt("agentic_mode")
+            EMBEDDED_PROMPTS.get("standard_mode").copied(),
+            get_embedded_prompt("standard_mode")
         );
     }
 
@@ -332,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn agentic_mode_uses_shared_coding_tools() {
+    fn standard_mode_uses_shared_coding_tools() {
         let shared_tools = standard_harness_tools();
 
         let mut expected = shared_tools;
@@ -341,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn agentic_mode_uses_shared_coding_user_context_policy() {
+    fn standard_mode_uses_shared_coding_user_context_policy() {
         let shared_policy = standard_harness_user_context_policy();
 
         assert_eq!(StandardHarness::new().user_context_policy(), shared_policy);
@@ -349,10 +338,10 @@ mod tests {
 }
 
 #[cfg(test)]
-mod direct_desktop_policy_tests {
+mod desktop_tool_tests {
     use super::*;
     #[test]
-    fn main_desktop_modes_own_computer_use_without_forcing_it_into_readonly_modes() {
+    fn main_desktop_modes_include_computer_use() {
         let modes: Vec<Box<dyn Agent>> = vec![
             Box::new(ClawMode::new()),
             Box::new(CoworkMode::new()),
@@ -366,10 +355,6 @@ mod direct_desktop_policy_tests {
                     .any(|name| name == "ComputerUse"),
                 "{}",
                 mode.id()
-            );
-            assert_eq!(
-                mode.tool_exposure_overrides().get("ComputerUse"),
-                Some(&ToolExposure::Direct)
             );
         }
         let config = crate::service::config::types::AgentProfileConfig {

@@ -284,14 +284,11 @@ pub fn resolve_default_hidden_builtin_for_explicit_invocation(
         return ExplicitSkillInvocationResolution::NotFound;
     };
 
-    // A mode may keep gstack and computer-use builtins default-hidden while
-    // still allowing an exact explicit invocation.
+    // A mode may keep computer-use builtins default-hidden while still
+    // allowing an exact explicit invocation.
     if info.level == SkillLocation::User
         && info.is_builtin
-        && matches!(
-            info.group_key.as_deref(),
-            Some("gstack") | Some("computer-use")
-        )
+        && matches!(info.group_key.as_deref(), Some("computer-use"))
         && !resolve_skill_default_enabled_for_mode(&info, mode_id)
     {
         return ExplicitSkillInvocationResolution::Found(info);
