@@ -67,7 +67,6 @@ use crate::util::types::ToolDefinition;
 use crate::util::{elapsed_ms_u64, truncate_at_char_boundary};
 use dashmap::DashMap;
 use log::{debug, error, info, trace, warn};
-use openbitfun_agent_runtime::output_surface::TOOL_CONTEXT_INLINE_MARKDOWN_IMAGE_DISPLAY_KEY;
 use openbitfun_agent_runtime::permission::PERMISSION_MODE_CONTEXT_KEY;
 use openbitfun_agent_runtime::remote_file_delivery::TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY;
 use openbitfun_ai_adapters::ModelExchangeTraceConfig;
@@ -1472,12 +1471,6 @@ impl ExecutionEngine {
             .get(TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY)
             .and_then(|value| value.parse::<bool>().ok())
             .unwrap_or(false);
-        let inline_markdown_image_display = context
-            .context
-            .get(TOOL_CONTEXT_INLINE_MARKDOWN_IMAGE_DISPLAY_KEY)
-            .and_then(|value| value.parse::<bool>().ok())
-            .unwrap_or(false);
-
         build_prompt_context_for_workspace(
             workspace,
             workspace.workspace_id.as_deref(),
@@ -1489,9 +1482,7 @@ impl ExecutionEngine {
         )
         .await
         .map(|prompt_context| {
-            prompt_context
-                .with_remote_file_delivery_channel(remote_file_delivery_channel)
-                .with_inline_markdown_image_display(inline_markdown_image_display)
+            prompt_context.with_remote_file_delivery_channel(remote_file_delivery_channel)
         })
     }
 

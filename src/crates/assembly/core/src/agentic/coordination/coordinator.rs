@@ -90,9 +90,6 @@ use crate::util::errors::{OpenBitFunError, OpenBitFunResult};
 use dashmap::DashMap;
 use log::{debug, error, info, warn};
 use openbitfun_agent_runtime::deep_review::FocusedReviewAssignment;
-use openbitfun_agent_runtime::output_surface::{
-    supports_inline_markdown_images_for_source, TOOL_CONTEXT_INLINE_MARKDOWN_IMAGE_DISPLAY_KEY,
-};
 use openbitfun_agent_runtime::permission::{
     AUTO_APPROVE_ASK_CONTEXT_KEY, PERMISSION_MODE_CONTEXT_KEY,
 };
@@ -6982,12 +6979,6 @@ Update the persona files and delete BOOTSTRAP.md as soon as bootstrap is complet
         if needs_computer_links_for_source(submission_policy.trigger_source) {
             context_vars.insert(
                 TOOL_CONTEXT_REMOTE_FILE_DELIVERY_KEY.to_string(),
-                "true".to_string(),
-            );
-        }
-        if supports_inline_markdown_images_for_source(submission_policy.trigger_source) {
-            context_vars.insert(
-                TOOL_CONTEXT_INLINE_MARKDOWN_IMAGE_DISPLAY_KEY.to_string(),
                 "true".to_string(),
             );
         }

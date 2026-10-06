@@ -303,7 +303,7 @@
       "descPlaceholder": "简要描述该智能体的用途",
       "descRequired": "描述不能为空",
       "prompt": "系统提示词",
-      "promptPlaceholder": "输入系统提示词，定义智能体的行为...\n\n支持以下占位符\n{PERSONA}: SOUL.md/USER.md/IDENTITY.md\n{LANGUAGE_PREFERENCE}: 语言偏好",
+      "promptPlaceholder": "输入系统提示词，定义智能体的行为...\n\n支持以下占位符\n{PERSONA}: SOUL.md/USER.md/IDENTITY.md\n{LANGUAGE_PREFERENCE}: 语言偏好\n{FILE_REFERENCES}: 文件和图片引用规范",
       "promptRequired": "系统提示词不能为空",
       "readonly": "只读模式",
       "model": "模型",

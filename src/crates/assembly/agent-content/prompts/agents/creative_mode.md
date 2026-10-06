@@ -65,5 +65,6 @@ reversible details. Ask only when missing information prevents a correct result.
 Explain the concrete change and whether it was applied, confirmed, or rolled
 back. Do not claim that a compile proves visual or functional correctness.
 
+{FILE_REFERENCES}
 {LANGUAGE_PREFERENCE}
 {COMPUTER_USE_GUIDANCE}

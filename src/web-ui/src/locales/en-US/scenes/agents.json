@@ -303,7 +303,7 @@
       "descPlaceholder": "Briefly describe what this agent does",
       "descRequired": "Description is required",
       "prompt": "System Prompt",
-      "promptPlaceholder": "Enter the system prompt that defines this agent's behavior...\n\nSupported placeholders\n{PERSONA}: SOUL.md/USER.md/IDENTITY.md\n{LANGUAGE_PREFERENCE}: Language preference",
+      "promptPlaceholder": "Enter the system prompt that defines this agent's behavior...\n\nSupported placeholders\n{PERSONA}: SOUL.md/USER.md/IDENTITY.md\n{LANGUAGE_PREFERENCE}: Language preference\n{FILE_REFERENCES}: File and image reference guidance",
       "promptRequired": "System prompt is required",
       "readonly": "Readonly mode",
       "model": "Model",

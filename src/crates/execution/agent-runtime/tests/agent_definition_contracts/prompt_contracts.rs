@@ -150,7 +150,6 @@ fn runtime_context_renderer_preserves_local_exec_and_computer_use_guidance() {
             invocation: "powershell.exe -NoLogo".to_string(),
         }),
         supports_image_understanding: None,
-        inline_markdown_image_display: false,
     })
     .expect("runtime context should render");
 
@@ -188,7 +187,6 @@ fn runtime_context_renderer_preserves_remote_workspace_split() {
             invocation: "powershell.exe".to_string(),
         }),
         supports_image_understanding: None,
-        inline_markdown_image_display: false,
     })
     .expect("remote runtime context should render");
 
@@ -211,7 +209,6 @@ fn runtime_context_renderer_adds_text_only_computer_use_guidance_for_non_visual_
         remote_execution: None,
         local_shell: None,
         supports_image_understanding: Some(false),
-        inline_markdown_image_display: false,
     })
     .expect("runtime context should render");
 
@@ -233,7 +230,6 @@ fn runtime_context_renderer_omits_text_only_guidance_for_visual_or_unknown_model
             remote_execution: None,
             local_shell: None,
             supports_image_understanding,
-            inline_markdown_image_display: false,
         })
         .expect("runtime context should render");
 
@@ -241,38 +237,6 @@ fn runtime_context_renderer_omits_text_only_guidance_for_visual_or_unknown_model
         assert!(!reminder.contains("## Computer Use Input Strategy"));
         assert!(!reminder.contains("primary model does not accept image inputs"));
     }
-}
-
-#[test]
-fn runtime_context_renderer_scopes_inline_image_guidance_to_capable_surfaces() {
-    let reminder = render_runtime_context_reminder(&RuntimeContextFacts {
-        needs: RuntimeContextNeeds::default(),
-        host_os: "linux".to_string(),
-        host_family: "unix".to_string(),
-        host_arch: "x86_64".to_string(),
-        remote_execution: None,
-        local_shell: None,
-        supports_image_understanding: None,
-        inline_markdown_image_display: true,
-    })
-    .expect("output-surface context should render without tool runtime facts");
-
-    assert!(reminder.contains("## Chat Image Display"));
-    assert!(reminder.contains("`![concise alt text](source)`"));
-    assert!(reminder.contains("workspace-relative image paths"));
-    assert!(reminder.contains("do not call image-analysis tools solely to display an image"));
-
-    assert!(render_runtime_context_reminder(&RuntimeContextFacts {
-        needs: RuntimeContextNeeds::default(),
-        host_os: "linux".to_string(),
-        host_family: "unix".to_string(),
-        host_arch: "x86_64".to_string(),
-        remote_execution: None,
-        local_shell: None,
-        supports_image_understanding: None,
-        inline_markdown_image_display: false,
-    })
-    .is_none());
 }
 
 #[test]

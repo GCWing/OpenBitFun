@@ -48,12 +48,13 @@ Use `ComputerUse` directly for native application and OS UI tasks when it appear
 
 For a model that can see images, observe the selected window and act on its attached screenshot, including controls with no AX/OCR text. Use image coordinates and the exact screenshot ID; accessibility and OCR are optional precision aids, not prerequisites for a visible button, canvas or game. Group already-decided inputs with `app_batch` and typed `steps` (`app_click`, `app_type_text`, `app_key_chord`, `app_scroll`, `app_drag`, `wait`); inspect the single final observation before the next decision. For an observed search field with known Return-to-search behavior, batch `app_type_text` with `focus` plus `app_key_chord` with `["return"]`, then inspect the results before choosing one. Focus-and-type alone is already one `app_type_text` call; do not split it into click, observation and typing. A batch uses the same native input route and authorization as single calls, so it cannot repair an unavailable route. Do not batch a later target that is not yet visible, or wait through an unknown result. Reuse returned observations instead of taking an extra screenshot after every input. `app_drag` uses observed `from`/`to` image targets and `duration_ms`."#;
 
-const FILE_REFERENCES: &str = r#"# File References
-IMPORTANT: Whenever you mention a file path in normal prose that the user might want to open, make it a clickable markdown link: [text](url).
+const FILE_REFERENCES: &str = r#"# File and Image References
+IMPORTANT: Whenever you mention a file path in normal prose that the user might want to open, make it a clickable markdown link: [text](url). For an image file, use standard Markdown image syntax: ![concise alt text](url).
 
 **Link URL path**:
 - For files inside the workspace, use the workspace-relative path: [filename.ts](src/filename.ts)
-- For files outside the workspace, use the absolute path as the URL: [settings.json](/external/project/settings.json)
+- For files outside the workspace, use the absolute path as the URL: [settings.json](/absolute/path/to/settings.json)
+- For images, use workspace-relative path or absolute path or verified HTTP(S) image URLs
 
 **Line targets**:
 - For a specific line, append `#L<line>` to URL: [filename.ts:42](src/filename.ts#L42)
@@ -67,15 +68,14 @@ IMPORTANT: Whenever you mention a file path in normal prose that the user might 
 <good-examples>
 - Source file: [filename.ts](src/filename.ts)
 - Specific line: [filename.ts:42](src/filename.ts#L42)
-- External file line: [settings.json:12](/external/project/settings.json#L12)
-- Generated report: [report.md](deep-research/report.md)
+- External file line: [settings.json:12](/absolute/path/to/settings.json#L12)
 </good-examples>
 <bad-examples>
 - Bare path: src/filename.ts
 - Backticks in link text: [`filename.ts:42`](src/filename.ts)
 - Whole link wrapped in backticks: `[report.md](deep-research/report.md)`
 - Full path in link text: [src/filename.ts](src/filename.ts)
-- Absolute path as plain text: /external/project/deep-research/report.md
+- Absolute path as plain text: /absolute/path/to/deep-research/report.md
 </bad-examples>"#;
 
 #[derive(Debug, Clone)]
@@ -98,8 +98,6 @@ pub struct PromptBuilderContext {
     pub runtime_context_needs: RuntimeContextNeeds,
     /// Remote mobile/bot turns need `computer://` links for file delivery.
     pub remote_file_delivery_channel: bool,
-    /// The active response surface can render Markdown image syntax inline.
-    pub inline_markdown_image_display: bool,
     /// Resolved through the active local or remote workspace filesystem provider.
     pub workspace_instruction_files_context: Option<String>,
     /// Distinguishes a resolved empty result from a caller that has not resolved instructions.
@@ -124,7 +122,6 @@ impl PromptBuilderContext {
             tool_listing_sections: ToolListingSections::default(),
             runtime_context_needs: RuntimeContextNeeds::default(),
             remote_file_delivery_channel: false,
-            inline_markdown_image_display: false,
             workspace_instruction_files_context: None,
             workspace_instruction_files_context_resolved: false,
         }
@@ -167,11 +164,6 @@ impl PromptBuilderContext {
 
     pub fn with_remote_file_delivery_channel(mut self, enabled: bool) -> Self {
         self.remote_file_delivery_channel = enabled;
-        self
-    }
-
-    pub fn with_inline_markdown_image_display(mut self, enabled: bool) -> Self {
-        self.inline_markdown_image_display = enabled;
         self
     }
 
@@ -334,7 +326,6 @@ impl PromptBuilder {
             remote_execution: self.context.remote_execution.clone(),
             local_shell,
             supports_image_understanding: self.context.supports_image_understanding,
-            inline_markdown_image_display: self.context.inline_markdown_image_display,
         })
     }
 
@@ -552,7 +543,7 @@ For instructions on locating and reading the transcripts, read: `{}`
     /// - `{MEMORY_ROOT}` - OpenBitFun memory workspace root, used by internal memory agents
     /// - `{READ_TERMINAL}` - Local user terminal transcript guidance
     /// - `{COMPUTER_USE_GUIDANCE}` - Shared native desktop interaction guidance
-    /// - `{FILE_REFERENCES}` - Shared clickable file-link guidance
+    /// - `{FILE_REFERENCES}` - Shared file and image reference guidance
     ///
     /// If a placeholder is not in the template, corresponding content will not be added
     pub async fn build_prompt_from_template(&self, template: &str) -> OpenBitFunResult<String> {
