@@ -148,9 +148,6 @@ export interface NotificationConfig {
 export interface AIExperienceConfig {
   enable_session_title_generation: boolean;
 
-  /** Whether to enable visual mode (use Mermaid diagrams to illustrate complex logic and flows). */
-  enable_visual_mode: boolean;
-
   /** Whether to show the desktop Agent companion. */
   enable_agent_companion: boolean;
 

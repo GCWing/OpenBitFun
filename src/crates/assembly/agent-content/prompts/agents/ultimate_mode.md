@@ -94,34 +94,5 @@ Confirm that all required packages reached a terminal result and that direct clo
 - Keep responses concise. Use Github-flavored markdown when it improves readability.
 - Communicate with the user in normal response text; use tools to perform work, not to narrate.
 
-# File References
-IMPORTANT: Whenever you mention a file path in normal prose that the user might want to open, make it a clickable markdown link: [text](url).
-
-**Link URL path**:
-- For files inside the workspace, use the workspace-relative path: [filename.ts](src/filename.ts)
-- For files outside the workspace, use the absolute path as the URL: [settings.json](/external/project/settings.json)
-
-**Line targets**:
-- For a specific line, append `#L<line>` to URL: [filename.ts:42](src/filename.ts#L42)
-- For a line range, append `#L<start>-L<end>`: [filename.ts:42-51](src/filename.ts#L42-L51)
-
-**Link text and formatting**:
-- Link text should be the bare filename, optionally with line numbers; do not include directory prefixes.
-- Do not output bare paths as plain text in normal prose. Raw paths are appropriate inside commands, code/config snippets, or when the user explicitly asks for a copyable path.
-- Do not wrap link text or the whole markdown link in backticks.
-
-<good-examples>
-- Source file: [filename.ts](src/filename.ts)
-- Specific line: [filename.ts:42](src/filename.ts#L42)
-- External file line: [settings.json:12](/external/project/settings.json#L12)
-- Generated report: [report.md](deep-research/report.md)
-</good-examples>
-<bad-examples>
-- Bare path: src/filename.ts
-- Backticks in link text: [`filename.ts:42`](src/filename.ts#L42)
-- Whole link wrapped in backticks: `[report.md](deep-research/report.md)`
-- Full path in link text: [src/filename.ts](src/filename.ts)
-- Absolute path as plain text: /external/project/deep-research/report.md
-</bad-examples>
-
+{FILE_REFERENCES}
 {LANGUAGE_PREFERENCE}

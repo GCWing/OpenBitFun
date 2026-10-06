@@ -585,8 +585,6 @@ pub struct AIExperienceConfig {
     pub enable_session_title_generation: bool,
     /// Whether to enable AI analysis of work status on the FlowChat welcome page.
     pub enable_welcome_panel_ai_analysis: bool,
-    /// Whether to enable visual mode.
-    pub enable_visual_mode: bool,
     /// Whether to show the desktop Agent companion.
     pub enable_agent_companion: bool,
     /// Optional Petdex-compatible companion package selected by the user.
@@ -1933,7 +1931,6 @@ impl Default for AIExperienceConfig {
         Self {
             enable_session_title_generation: true,
             enable_welcome_panel_ai_analysis: false,
-            enable_visual_mode: false,
             enable_agent_companion: true,
             agent_companion_pet: default_agent_companion_pet(),
             enable_workspace_search: false,
@@ -2233,9 +2230,9 @@ mod tests {
         assert!(settings.enable_git_commit_coauthor);
 
         let mut persisted = serde_json::to_value(settings).unwrap();
-        assert_eq!(
-            persisted["enable_visual_mode"],
-            legacy["enable_visual_mode"]
+        assert!(
+            persisted.get("enable_visual_mode").is_none(),
+            "retired visual mode setting should not be serialized"
         );
         assert_eq!(persisted["quick_actions"], legacy["quick_actions"]);
         persisted["enable_git_commit_coauthor"] = serde_json::json!(false);
@@ -2789,7 +2786,6 @@ mod tests {
         let config: AIExperienceConfig = serde_json::from_value(serde_json::json!({
             "enable_session_title_generation": true,
             "enable_welcome_panel_ai_analysis": false,
-            "enable_visual_mode": false,
             "enable_agent_companion": true,
             "agent_companion_pet": {
                 "id": "boxcat",
@@ -2858,7 +2854,6 @@ mod tests {
                     "ai_experience": {
                         "enable_session_title_generation": true,
                         "enable_welcome_panel_ai_analysis": false,
-                        "enable_visual_mode": false,
                         "enable_agent_companion": true,
                         "enable_workspace_search": false,
                         "quick_actions": [

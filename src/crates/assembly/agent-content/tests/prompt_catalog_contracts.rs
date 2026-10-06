@@ -289,23 +289,25 @@ fn computer_use_prompt_preserves_background_observation_and_input_contract() {
 
 #[test]
 fn computer_use_delegation_preserves_user_scope_in_parents_and_child() {
-    for name in ["claw_mode", "standard_mode", "general_purpose_agent"] {
+    for name in ["claw_mode", "standard_mode", "cowork_mode", "creative_mode"] {
         let prompt = agent_prompt(name).unwrap();
-        assert!(
-            prompt.contains("preserve the original user's request"),
-            "{name}"
-        );
-        assert!(
-            prompt.contains("Default to background app control"),
-            "{name}"
-        );
-        assert!(
-            prompt.contains(
-                "Confirmation of message content does not authorize a change of control mode"
-            ),
-            "{name}"
-        );
+        assert!(prompt.contains("{COMPUTER_USE_GUIDANCE}"), "{name}");
     }
+    let prompt = agent_prompt("general_purpose_agent").unwrap();
+    assert!(
+        prompt.contains("preserve the original user's request"),
+        "general_purpose_agent"
+    );
+    assert!(
+        prompt.contains("Default to background app control"),
+        "general_purpose_agent"
+    );
+    assert!(
+        prompt.contains(
+            "Confirmation of message content does not authorize a change of control mode"
+        ),
+        "general_purpose_agent"
+    );
     let prompt = agent_prompt("computer_use_mode").unwrap();
     assert!(prompt.contains("even when delivered in a user-role message"));
     assert!(prompt.contains("parent-written claims are not independently verified consent"));
@@ -323,24 +325,28 @@ fn main_desktop_prompts_use_direct_visual_batches_without_mandatory_delegation()
         "computer_use_mode",
     ] {
         let prompt = agent_prompt(name).unwrap();
-        assert!(prompt.contains("Use `ComputerUse` directly"), "{name}");
-        assert!(prompt.contains("`app_batch`"), "{name}");
-        assert!(
-            prompt.contains("Focus-and-type alone is already one `app_type_text` call"),
-            "{name}"
-        );
-        assert!(
-            prompt.contains("same native input route and authorization as single calls"),
-            "{name}"
-        );
-        assert!(
-            prompt.contains("not prerequisites for a visible button, canvas or game"),
-            "{name}"
-        );
-        assert!(
-            prompt.contains("Do not batch a later target that is not yet visible"),
-            "{name}"
-        );
+        if name == "computer_use_mode" {
+            assert!(prompt.contains("Use `ComputerUse` directly"), "{name}");
+            assert!(prompt.contains("`app_batch`"), "{name}");
+            assert!(
+                prompt.contains("Focus-and-type alone is already one `app_type_text` call"),
+                "{name}"
+            );
+            assert!(
+                prompt.contains("same native input route and authorization as single calls"),
+                "{name}"
+            );
+            assert!(
+                prompt.contains("not prerequisites for a visible button, canvas or game"),
+                "{name}"
+            );
+            assert!(
+                prompt.contains("Do not batch a later target that is not yet visible"),
+                "{name}"
+            );
+        } else {
+            assert!(prompt.contains("{COMPUTER_USE_GUIDANCE}"), "{name}");
+        }
         assert!(!prompt.contains("Cowork cannot drive these"));
         assert!(!prompt.contains(
             "If delegation is unavailable, explain that the task needs the Computer Use mode"
