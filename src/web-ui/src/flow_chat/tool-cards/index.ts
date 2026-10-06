@@ -8,6 +8,20 @@ import { isMcpToolName } from '@/infrastructure/mcp/toolName';
 import type { ToolNameForOwner } from '@openbitfun/flow-chat-presentation/registry';
 import type { JSXElementConstructor } from 'react';
 import type { ToolCardProps } from '../types/flow-chat';
+
+type CompatibilityStandardToolName = 'AgentInterrupt' | 'AgentDelete';
+type CompatibilityProductToolName = 'Task';
+type StandardToolCardRegistry = Record<
+  ToolNameForOwner<'standard'>,
+  JSXElementConstructor<ToolCardProps>
+> &
+  Partial<Record<CompatibilityStandardToolName, JSXElementConstructor<ToolCardProps>>>;
+type ProductToolCardRegistry = Record<
+  ToolNameForOwner<'product'>,
+  JSXElementConstructor<ToolCardProps>
+> &
+  Partial<Record<CompatibilityProductToolName, JSXElementConstructor<ToolCardProps>>>;
+
 export {
   TOOL_CARD_CONFIGS,
   getToolCardConfig,
@@ -153,7 +167,7 @@ export const STANDARD_TOOL_CARD_ADAPTERS = {
   'PublishMiniApp': BuiltinToolCard,
   'PublishAppearance': BuiltinToolCard,
   'Playbook': BuiltinToolCard,
-} as const satisfies Record<ToolNameForOwner<'standard'>, JSXElementConstructor<ToolCardProps>>;
+} as const satisfies StandardToolCardRegistry;
 
 /**
  * Bespoke product cards intentionally kept in Web UI.
@@ -179,7 +193,7 @@ export const PRODUCT_OWNED_TOOL_CARD_COMPONENTS = {
   'ReadCanvas': CanvasToolCard,
   'UpdateCanvas': CanvasToolCard,
   'PatchCanvas': CanvasToolCard,
-} as const satisfies Record<ToolNameForOwner<'product'>, JSXElementConstructor<ToolCardProps>>;
+} as const satisfies ProductToolCardRegistry;
 
 // Runtime map keyed by backend tool names.
 export const TOOL_CARD_COMPONENTS = {

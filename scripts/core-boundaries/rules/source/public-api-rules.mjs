@@ -34,7 +34,6 @@ export const agentRuntimeRootPublicModules = [
   'evidence_ledger',
   'review_read_receipt',
   'native_hooks',
-  'output_surface',
   'permission',
   'post_call_hooks',
   'prompt',

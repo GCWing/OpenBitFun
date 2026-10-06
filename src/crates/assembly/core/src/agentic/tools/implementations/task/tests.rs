@@ -209,6 +209,29 @@ fn agent_send_input_tool_message_renders_the_target_agent_id() {
 }
 
 #[test]
+fn background_subagent_start_acknowledgement_exposes_agent_wait_task_id() {
+    let message = AgentExecutionTool::background_subagent_started_assistant_message(
+        "parser-review",
+        "bg-task-1",
+    );
+
+    assert!(message.contains("Background subagent started successfully."));
+    assert!(message.contains("agent_id: \"parser-review\""));
+    assert!(message.contains("bg_task_id: \"bg-task-1\""));
+    assert!(message.contains("Use AgentWait with this bg_task_id"));
+}
+
+#[test]
+fn started_background_tasks_do_not_expose_structured_task_markers() {
+    let message = AgentExecutionTool::background_subagent_started_assistant_message(
+        "parser-review",
+        "bg-task-1",
+    );
+
+    assert!(!message.contains("<background_task"));
+}
+
+#[test]
 fn task_model_id_inherit_requests_parent_model_inheritance() {
     let invocation = AgentExecutionTool::parse_invocation(
         &json!({

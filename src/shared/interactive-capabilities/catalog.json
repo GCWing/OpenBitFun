@@ -171,6 +171,11 @@
   },
   "agentToolExclusions": [
     {
+      "tool": "Task",
+      "reasonZh": "兼容性委派原语，仅为显式配置的旧版智能体保留，不是独立的用户功能。",
+      "reasonEn": "Compatibility delegation primitive retained for explicitly configured legacy agents; it is not a standalone user feature."
+    },
+    {
       "tool": "GetToolSpec",
       "reasonZh": "延迟工具的契约发现原语，只负责按需加载另一个工具的输入说明，不是独立的用户功能。",
       "reasonEn": "Framework discovery primitive for loading another deferred tool's input contract; it is not a standalone user feature."

@@ -371,7 +371,6 @@
     "Explore": "Explore SubAgent: quickly browse the codebase to understand project structure and key files",
     "CodeReview": "Code review SubAgent: perform quality checks and provide improvement suggestions",
     "DeepReview": "Strict Review compatibility SubAgent: supports review workflows in historical sessions and commands.",
-    "GenerateDoc": "Documentation SubAgent: automatically generate code documentation and explanations",
     "Init": "Init agent: help set up project structure and initial configuration",
     "ReviewFixer": "Review fixer SubAgent: automatically fix code issues based on review results",
     "Claw": "Personal assistant: help with daily tasks using your preferences and context.",

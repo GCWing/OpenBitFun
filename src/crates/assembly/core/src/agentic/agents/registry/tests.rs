@@ -554,11 +554,6 @@ fn product_full_agent_registry_preserves_the_complete_builtin_catalog() {
 }
 
 #[test]
-fn generate_doc_hidden_agent_defaults_to_fast() {
-    assert_eq!(default_model_id_for_builtin_agent("GenerateDoc"), "fast");
-}
-
-#[test]
 fn deep_review_family_defaults_to_fast() {
     for agent_type in [
         "DeepReview",

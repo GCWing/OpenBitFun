@@ -186,12 +186,6 @@ pub fn builtin_agent_definition_specs() -> Vec<BuiltinAgentDefinitionSpec> {
             SubagentVisibilityPolicy::default(),
         ),
         builtin_agent_spec(
-            "GenerateDoc",
-            Hidden,
-            "fast",
-            SubagentVisibilityPolicy::default(),
-        ),
-        builtin_agent_spec(
             "OpenBitFun",
             Hidden,
             "primary",
@@ -212,8 +206,7 @@ pub fn default_model_id_for_builtin_agent(agent_type: &str) -> &'static str {
         | "DeepResearch" | "Ultimate" => "primary",
         "Explore" | "CodeReview" | "GeneralPurpose" | "MemoryPhase2" | "SwarmPlanner"
         | "SwarmWorker" => "primary",
-        "GenerateDoc"
-        | "ResearchSpecialist"
+        "ResearchSpecialist"
         | "DeepReview"
         | "ReviewWorker"
         | "ReviewBusinessLogic"

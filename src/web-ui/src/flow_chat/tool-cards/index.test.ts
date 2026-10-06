@@ -16,6 +16,16 @@ import { AgentControlToolCard } from './AgentControlToolCard';
 import { AgentInteractionToolCard } from './AgentInteractionToolCard';
 import { OpenBitFunControlToolCard } from './OpenBitFunControlToolCard';
 
+// These cards remain available for rendering historical or explicitly
+// configured tool calls, but are no longer part of the current presentation
+// registry: AgentControl replaced the AgentInterrupt/AgentDelete tools, and
+// Task remains only as a compatibility tool.
+const COMPATIBILITY_ONLY_TOOL_CARD_NAMES = new Set([
+  'AgentInterrupt',
+  'AgentDelete',
+  'Task',
+]);
+
 describe('tool card registry', () => {
   it('keeps OpenBitFun controls visible through their dedicated product card', () => {
     expect(getToolCardComponent('OpenBitFunControl')).toBe(OpenBitFunControlToolCard);
@@ -32,9 +42,11 @@ describe('tool card registry', () => {
     expect(getToolCardComponent('AgentInterrupt')).toBe(AgentInteractionToolCard);
   });
 
-  it('keeps lightweight dedicated-card classification aligned with the component registry', () => {
+  it('keeps current lightweight dedicated-card classification aligned with the component registry', () => {
     expect([...DEDICATED_TOOL_CARD_NAMES].sort()).toEqual(
-      Object.keys(TOOL_CARD_COMPONENTS).sort(),
+      Object.keys(TOOL_CARD_COMPONENTS)
+        .filter((toolName) => !COMPATIBILITY_ONLY_TOOL_CARD_NAMES.has(toolName))
+        .sort(),
     );
   });
 

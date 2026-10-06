@@ -164,7 +164,7 @@ impl AgentSpawnTool {
 
 Choose an `agent_type` permitted by the current system prompt. Each type has its own role and tool set.
 
-Choose a meaningful `agent_id` for this agent. It must be unique among agents launched by the current parent session and match `[a-z][a-z0-9_-]{0,31}`. Reusing an existing or deleted agent's ID fails; the runtime never renames it automatically.
+Choose a meaningful `agent_id` for this agent. It must be unique among agents launched by you and match `[a-z][a-z0-9_-]{0,31}`.
 
 Write a self-contained `prompt` that gives the agent everything it needs to complete the work:
 - State the objective, scope, relevant paths or symbols, constraints, and expected result.

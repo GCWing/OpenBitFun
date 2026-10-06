@@ -216,7 +216,6 @@ fn builtin_agent_definition_catalog_preserves_order_categories_models_and_visibi
             "ReviewFixer",
             "CodeReview",
             "DeepReview",
-            "GenerateDoc",
             "OpenBitFun",
             "MemoryPhase2",
         ]
@@ -250,7 +249,6 @@ fn builtin_agent_definition_catalog_preserves_order_categories_models_and_visibi
         default_model_id_for_builtin_agent("GeneralPurpose"),
         "primary"
     );
-    assert_eq!(default_model_id_for_builtin_agent("GenerateDoc"), "fast");
     assert_eq!(
         default_model_id_for_builtin_agent("MemoryPhase2"),
         "primary"

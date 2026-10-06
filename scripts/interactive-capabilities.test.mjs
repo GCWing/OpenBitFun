@@ -223,7 +223,7 @@ test('every product Agent tool is mapped to a user capability or explicitly clas
     productTools,
     'new Agent tools must be mapped in the shared manual or receive a reviewed framework-only exclusion',
   );
-  assert.deepEqual(excludedTools, new Set(['GetToolSpec', 'CallDeferredTool']));
+  assert.deepEqual(excludedTools, new Set(['Task', 'GetToolSpec', 'CallDeferredTool']));
   assert.equal([...delegatedTools].filter((tool) => excludedTools.has(tool)).length, 0);
 
   const byId = new Map(source.capabilities.map((capability) => [capability.id, capability]));

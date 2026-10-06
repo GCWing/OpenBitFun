@@ -808,7 +808,6 @@ mod tests {
                 "Worktree",
                 "ReviewPlatform",
                 "ControlHub",
-                "ComputerUse",
                 "Playbook",
             ],
             "deferred tool manifest must stay stable before moving registry or manifest ownership"
