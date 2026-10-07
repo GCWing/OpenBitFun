@@ -34,7 +34,6 @@ pub struct WorkspaceRuntimeContext {
     pub snapshot_metadata_dir: PathBuf,
     pub snapshot_baselines_dir: PathBuf,
     pub snapshot_operations_dir: PathBuf,
-    pub plans_dir: PathBuf,
     pub locks_dir: PathBuf,
     pub config_dir: PathBuf,
     pub isolation_status_file: PathBuf,
@@ -54,7 +53,6 @@ impl WorkspaceRuntimeContext {
             snapshot_metadata_dir: snapshots_dir.join("metadata"),
             snapshot_baselines_dir: snapshots_dir.join("baselines"),
             snapshot_operations_dir: snapshots_dir.join("operations"),
-            plans_dir: runtime_root.join("plans"),
             locks_dir: runtime_root.join("locks"),
             isolation_status_file: config_dir.join("isolation_status.json"),
             layout_state_file: config_dir.join("runtime_layout_state.json"),
@@ -74,7 +72,6 @@ impl WorkspaceRuntimeContext {
             self.snapshot_metadata_dir.as_path(),
             self.snapshot_baselines_dir.as_path(),
             self.snapshot_operations_dir.as_path(),
-            self.plans_dir.as_path(),
             self.locks_dir.as_path(),
             self.config_dir.as_path(),
         ]

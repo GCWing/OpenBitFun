@@ -3,8 +3,11 @@
 //! Provides unified management for all app storage paths, supporting user, project, and temporary levels
 
 use crate::util::errors::*;
-use log::{debug, error};
+use log::{debug, error, warn};
 use openbitfun_services_core::product_identity::{data_namespace, hidden_data_directory};
+use openbitfun_services_core::workspace_identity::{
+    local_workspace_runtime_key, remote_workspace_runtime_key, remote_workspace_runtime_root,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -35,8 +38,8 @@ pub struct PathManager {
     /// Optional override for the product home directory, used by tests to avoid
     /// touching the real user home.
     product_home_override: Option<PathBuf>,
-    /// Cache of runtime slugs keyed by the original and canonical workspace paths.
-    project_runtime_slug_cache: Arc<Mutex<HashMap<PathBuf, String>>>,
+    /// Cache of runtime keys keyed by the original and canonical workspace paths.
+    project_runtime_key_cache: Arc<Mutex<HashMap<PathBuf, String>>>,
 }
 
 impl PathManager {
@@ -49,7 +52,7 @@ impl PathManager {
         Ok(Self {
             user_root,
             product_home_override,
-            project_runtime_slug_cache: Arc::new(Mutex::new(HashMap::new())),
+            project_runtime_key_cache: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -374,10 +377,132 @@ impl PathManager {
         self.product_home_dir().join("worktrees")
     }
 
-    /// Get the runtime root for a workspace: ~/.openbitfun/projects/<workspace-slug>/
+    /// Get the runtime root for a workspace: ~/.openbitfun/projects/<24-hex-key>/
     pub fn project_runtime_root(&self, workspace_path: &Path) -> PathBuf {
+        let runtime_root = self
+            .projects_root()
+            .join(self.project_runtime_key(workspace_path));
+        self.migrate_legacy_project_runtime(workspace_path, &runtime_root)
+    }
+
+    /// Get the legacy runtime root for a local workspace.
+    ///
+    /// This remains available only for lazy migration from the pre-24-hex
+    /// path scheme.
+    pub fn legacy_project_runtime_root(&self, workspace_path: &Path) -> PathBuf {
         self.projects_root()
             .join(self.project_runtime_slug(workspace_path))
+    }
+
+    /// Get the runtime root for a remote workspace: ~/.openbitfun/projects/<24-hex-key>/.
+    pub fn remote_workspace_runtime_root(&self, ssh_host: &str, remote_root_norm: &str) -> PathBuf {
+        let runtime_root = self
+            .projects_root()
+            .join(remote_workspace_runtime_key(ssh_host, remote_root_norm));
+        self.migrate_legacy_remote_runtime(ssh_host, remote_root_norm, &runtime_root)
+    }
+
+    fn project_runtime_key(&self, workspace_path: &Path) -> String {
+        let requested_path = workspace_path.to_path_buf();
+        if let Some(key) = self.cached_project_runtime_key(&requested_path) {
+            return key;
+        }
+
+        let canonical_path =
+            dunce::canonicalize(workspace_path).unwrap_or_else(|_| requested_path.clone());
+        if canonical_path != requested_path {
+            if let Some(key) = self.cached_project_runtime_key(&canonical_path) {
+                self.store_project_runtime_key(&requested_path, &key);
+                return key;
+            }
+        }
+
+        let canonical = canonical_path.to_string_lossy().replace('\\', "/");
+        let key = local_workspace_runtime_key(&canonical);
+        self.store_project_runtime_key(&canonical_path, &key);
+        if canonical_path != requested_path {
+            self.store_project_runtime_key(&requested_path, &key);
+        }
+        key
+    }
+
+    fn migrate_legacy_project_runtime(
+        &self,
+        workspace_path: &Path,
+        runtime_root: &Path,
+    ) -> PathBuf {
+        if runtime_root.exists() {
+            return runtime_root.to_path_buf();
+        }
+
+        let legacy_root = self.legacy_project_runtime_root(workspace_path);
+        if legacy_root == runtime_root || !legacy_root.is_dir() {
+            return runtime_root.to_path_buf();
+        }
+
+        if let Err(error) = std::fs::create_dir_all(self.projects_root()) {
+            warn!(
+                "Failed to prepare workspace projects root for runtime migration: root={}, error={}",
+                self.projects_root().display(),
+                error
+            );
+            return legacy_root;
+        }
+
+        if let Err(error) = std::fs::rename(&legacy_root, runtime_root) {
+            warn!(
+                "Failed to migrate legacy workspace runtime: legacy_root={}, runtime_root={}, error={}",
+                legacy_root.display(),
+                runtime_root.display(),
+                error
+            );
+            if !runtime_root.exists() {
+                return legacy_root;
+            }
+        }
+        runtime_root.to_path_buf()
+    }
+
+    fn migrate_legacy_remote_runtime(
+        &self,
+        ssh_host: &str,
+        remote_root_norm: &str,
+        runtime_root: &Path,
+    ) -> PathBuf {
+        if runtime_root.exists() {
+            return runtime_root.to_path_buf();
+        }
+
+        let legacy_root = remote_workspace_runtime_root(
+            self.remote_ssh_mirror_root_dir(),
+            ssh_host,
+            remote_root_norm,
+        );
+        if legacy_root == runtime_root || !legacy_root.is_dir() {
+            return runtime_root.to_path_buf();
+        }
+
+        if let Err(error) = std::fs::create_dir_all(self.projects_root()) {
+            warn!(
+                "Failed to prepare workspace projects root for remote runtime migration: root={}, error={}",
+                self.projects_root().display(),
+                error
+            );
+            return legacy_root;
+        }
+
+        if let Err(error) = std::fs::rename(&legacy_root, runtime_root) {
+            warn!(
+                "Failed to migrate legacy remote workspace runtime: legacy_root={}, runtime_root={}, error={}",
+                legacy_root.display(),
+                runtime_root.display(),
+                error
+            );
+            if !runtime_root.exists() {
+                return legacy_root;
+            }
+        }
+        runtime_root.to_path_buf()
     }
 
     /// Get project internal config directory: {project}/.openbitfun/config/
@@ -430,19 +555,19 @@ impl PathManager {
         self.project_root(workspace_path).join("plugins")
     }
 
-    /// Get project snapshots directory: ~/.openbitfun/projects/<workspace-slug>/snapshots/
+    /// Get project snapshots directory: ~/.openbitfun/projects/<24-hex-key>/snapshots/
     pub fn project_snapshots_dir(&self, workspace_path: &Path) -> PathBuf {
         self.project_runtime_root(workspace_path).join("snapshots")
     }
 
-    /// Get project sessions directory: ~/.openbitfun/projects/<workspace-slug>/sessions/
+    /// Get project sessions directory: ~/.openbitfun/projects/<24-hex-key>/sessions/
     pub fn project_sessions_dir(&self, workspace_path: &Path) -> PathBuf {
         self.project_runtime_root(workspace_path).join("sessions")
     }
 
-    /// Get project plans directory: ~/.openbitfun/projects/<workspace-slug>/plans/
+    /// Get project plans directory: {project}/.openbitfun/plans/
     pub fn project_plans_dir(&self, workspace_path: &Path) -> PathBuf {
-        self.project_runtime_root(workspace_path).join("plans")
+        self.project_root(workspace_path).join("plans")
     }
 
     /// Get the user-owned trust store for a workspace's product plugins.
@@ -455,45 +580,26 @@ impl PathManager {
             .join("trust.json")
     }
 
+    /// Calculate the pre-24-hex slug used only to locate legacy directories.
     fn project_runtime_slug(&self, workspace_path: &Path) -> String {
-        let requested_path = workspace_path.to_path_buf();
-        if let Some(slug) = self.cached_project_runtime_slug(&requested_path) {
-            return slug;
-        }
-
         let canonical_path =
-            dunce::canonicalize(workspace_path).unwrap_or_else(|_| requested_path.clone());
-        if canonical_path != requested_path {
-            if let Some(slug) = self.cached_project_runtime_slug(&canonical_path) {
-                self.store_project_runtime_slug(&requested_path, &slug);
-                return slug;
-            }
-        }
-
-        let canonical = canonical_path.to_string_lossy().to_string();
-        let slug = Self::build_project_runtime_slug(&canonical);
-
-        self.store_project_runtime_slug(&canonical_path, &slug);
-        if canonical_path != requested_path {
-            self.store_project_runtime_slug(&requested_path, &slug);
-        }
-
-        slug
+            dunce::canonicalize(workspace_path).unwrap_or_else(|_| workspace_path.to_path_buf());
+        Self::build_project_runtime_slug(&canonical_path.to_string_lossy())
     }
 
-    fn cached_project_runtime_slug(&self, workspace_path: &Path) -> Option<String> {
-        self.project_runtime_slug_cache
+    fn cached_project_runtime_key(&self, workspace_path: &Path) -> Option<String> {
+        self.project_runtime_key_cache
             .lock()
-            .expect("project runtime slug cache poisoned")
+            .expect("project runtime key cache poisoned")
             .get(workspace_path)
             .cloned()
     }
 
-    fn store_project_runtime_slug(&self, workspace_path: &Path, slug: &str) {
-        self.project_runtime_slug_cache
+    fn store_project_runtime_key(&self, workspace_path: &Path, key: &str) {
+        self.project_runtime_key_cache
             .lock()
-            .expect("project runtime slug cache poisoned")
-            .insert(workspace_path.to_path_buf(), slug.to_string());
+            .expect("project runtime key cache poisoned")
+            .insert(workspace_path.to_path_buf(), key.to_string());
     }
 
     pub(crate) fn build_project_runtime_slug(canonical: &str) -> String {
@@ -575,7 +681,7 @@ impl Default for PathManager {
                 Self {
                     user_root: std::env::temp_dir().join("openbitfun"),
                     product_home_override: Self::get_product_home_override(),
-                    project_runtime_slug_cache: Arc::new(Mutex::new(HashMap::new())),
+                    project_runtime_key_cache: Arc::new(Mutex::new(HashMap::new())),
                 }
             }
         }
@@ -592,7 +698,7 @@ impl PathManager {
         Self {
             user_root,
             product_home_override: Some(base.join("home").join(".openbitfun")),
-            project_runtime_slug_cache: Arc::new(Mutex::new(HashMap::new())),
+            project_runtime_key_cache: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 }
@@ -775,7 +881,7 @@ mod tests {
     }
 
     #[test]
-    fn project_runtime_root_uses_human_readable_workspace_slug() {
+    fn project_runtime_root_uses_compact_hex_key() {
         let pm = PathManager::default();
         let runtime_root = pm.project_runtime_root(Path::new(r"E:\Projects\OpenBitFun\Source"));
         let slug = runtime_root
@@ -783,7 +889,8 @@ mod tests {
             .and_then(|value| value.to_str())
             .expect("runtime root should have terminal component");
 
-        assert!(slug.starts_with("e--projects-openbitfun-source"));
+        assert_eq!(slug.len(), 24);
+        assert!(slug.chars().all(|ch| ch.is_ascii_hexdigit()));
         assert_eq!(runtime_root.parent(), Some(pm.projects_root().as_path()));
     }
 
@@ -814,18 +921,98 @@ mod tests {
     }
 
     #[test]
-    fn plugin_trust_path_distinguishes_workspace_slug_collisions() {
+    fn runtime_key_distinguishes_workspace_slug_collisions() {
         let pm = PathManager::default();
         let first = Path::new("workspace-a");
         let second = Path::new("workspace_a");
 
-        assert_eq!(
+        assert_ne!(
             pm.project_runtime_root(first),
             pm.project_runtime_root(second)
         );
         assert_ne!(
             pm.project_plugin_trust_file(first),
             pm.project_plugin_trust_file(second)
+        );
+
+        let chinese = Path::new("workspace-中文");
+        let emoji = Path::new("workspace-😀");
+        assert_ne!(
+            pm.project_runtime_root(chinese),
+            pm.project_runtime_root(emoji)
+        );
+    }
+
+    #[test]
+    fn project_runtime_root_lazily_migrates_legacy_directory() {
+        let base = std::env::temp_dir().join(format!(
+            "openbitfun-runtime-migration-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let workspace = base.join("workspace");
+        std::fs::create_dir_all(&workspace).expect("workspace should exist");
+        let pm = PathManager::with_user_root_for_tests(base.join("user"));
+        let legacy = pm.legacy_project_runtime_root(&workspace);
+        std::fs::create_dir_all(legacy.join("sessions")).expect("legacy runtime should exist");
+        std::fs::create_dir_all(legacy.join("plans")).expect("legacy plans should exist");
+        std::fs::write(
+            legacy.join("plans").join("legacy.plan.md"),
+            b"legacy plans marker",
+        )
+        .expect("legacy plan marker should be written");
+
+        let runtime = pm.project_runtime_root(&workspace);
+
+        assert_eq!(
+            runtime
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::len),
+            Some(24)
+        );
+        assert!(runtime.join("plans").join("legacy.plan.md").exists());
+        assert!(!legacy.exists());
+    }
+
+    #[test]
+    fn remote_runtime_root_uses_compact_key_and_migrates_legacy_directory() {
+        let base = std::env::temp_dir().join(format!(
+            "openbitfun-remote-runtime-migration-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let pm = PathManager::with_user_root_for_tests(base.join("user"));
+        let host = "Example.COM";
+        let remote_root = "/root/repo";
+        let legacy = openbitfun_services_core::workspace_identity::remote_workspace_runtime_root(
+            pm.remote_ssh_mirror_root_dir(),
+            host,
+            remote_root,
+        );
+        std::fs::create_dir_all(legacy.join("sessions")).expect("legacy runtime should exist");
+        std::fs::write(legacy.join("sessions").join("marker"), b"legacy")
+            .expect("legacy marker should be written");
+
+        let runtime = pm.remote_workspace_runtime_root(host, remote_root);
+
+        assert_eq!(
+            runtime
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::len),
+            Some(24)
+        );
+        assert!(runtime.join("sessions").join("marker").exists());
+        assert!(!legacy.exists());
+    }
+
+    #[test]
+    fn project_plans_live_under_project_local_product_directory() {
+        let pm = PathManager::default();
+        let workspace = Path::new("workspace");
+
+        assert_eq!(
+            pm.project_plans_dir(workspace),
+            workspace.join(".openbitfun").join("plans")
         );
     }
 

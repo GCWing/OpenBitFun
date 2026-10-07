@@ -147,7 +147,10 @@ fn is_current_workspace_plan_path(
         return Ok(false);
     }
 
-    let plans_root = context.current_workspace_runtime_root()?.join("plans");
+    let workspace_root = context.workspace_root().ok_or_else(|| {
+        OpenBitFunError::validation("A workspace is required for plan permissions".to_string())
+    })?;
+    let plans_root = get_path_manager_arc().project_plans_dir(workspace_root);
     is_local_path_within_root(Path::new(&resolved.resolved_path), &plans_root)
 }
 
@@ -157,8 +160,6 @@ fn openbitfun_managed_local_roots(context: &ToolUseContext) -> OpenBitFunResult<
         return Ok(roots);
     }
 
-    let runtime_root = context.current_workspace_runtime_root()?;
-    roots.push(runtime_root.join("plans"));
     if let Some(session_id) = context.session_id.as_deref() {
         roots.push(
             context
@@ -317,7 +318,7 @@ mod tests {
         let workspace = temp.path().join("workspace");
         let runtime_root = temp.path().join("runtime");
         let terminal_root = temp.path().join("terminals");
-        let plan = runtime_root.join("plans/plan.plan.md");
+        let plan = workspace.join(".openbitfun/plans/plan.plan.md");
         let reference = runtime_root.join("sessions/session-1/artifacts/session-references/ref.md");
         let compression =
             runtime_root.join("sessions/session-1/artifacts/compression-transcripts/turn.md");
@@ -377,7 +378,7 @@ mod tests {
         let temp = tempfile::tempdir().expect("temp dir");
         let workspace = temp.path().join("workspace");
         let runtime_root = temp.path().join("runtime");
-        let plan = runtime_root.join("plans/plan.plan.md");
+        let plan = workspace.join(".openbitfun/plans/plan.plan.md");
         let transcript =
             runtime_root.join("sessions/session-1/artifacts/compression-transcripts/turn.md");
         fs::create_dir_all(&workspace).expect("workspace dir");
@@ -438,6 +439,25 @@ mod tests {
             .expect("transcript edit permission intents");
         assert_eq!(transcript_edit.len(), 1);
         assert_eq!(transcript_edit[0].action, "edit");
+    }
+
+    #[test]
+    fn project_openbitfun_files_are_not_globally_exempt_from_edit_permission() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        let workspace = temp.path().join("workspace");
+        let config_file = workspace.join(".openbitfun/config/settings.json");
+        fs::create_dir_all(config_file.parent().expect("config parent")).expect("config dir");
+        fs::write(&config_file, "{}").expect("config file");
+
+        let context =
+            ToolUseContext::for_tool_listing(Some(WorkspaceBinding::new(None, workspace)), None);
+        let file_path = config_file.to_string_lossy();
+        let intents = file_permission_intents("edit", [file_path.as_ref()], &context)
+            .expect("project config permission intent");
+
+        assert_eq!(intents.len(), 1);
+        assert_eq!(intents[0].action, "edit");
+        assert_eq!(intents[0].resources.len(), 1);
     }
 
     #[test]
