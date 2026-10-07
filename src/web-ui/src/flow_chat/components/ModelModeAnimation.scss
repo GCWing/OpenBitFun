@@ -1,0 +1,344 @@
+.openbitfun-model-mode {
+  --_model-mode-cycle: 8s;
+
+  position: absolute;
+  inset: 0;
+  // Starlight stays above ambient haze, beneath the centered menu label.
+  z-index: 1;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+  border-radius: inherit;
+  fill: var(--openbitfun-color-content-on-dark);
+  stroke: none;
+  pointer-events: none;
+  user-select: none;
+
+  &[data-mode='smart'] {
+    // Neutral starlight stays distinct from the colored nebula.
+    color: var(--openbitfun-color-content-on-dark);
+    fill: currentColor;
+  }
+
+  &[data-mode='pool'] {
+    --_model-mode-cycle: 6.6s;
+    --_model-battery-tint: color-mix(in oklch, var(--openbitfun-color-status-success-emphasis) 72%, var(--openbitfun-color-link-default));
+    color: color-mix(in srgb, var(--_model-battery-tint) 65%, var(--openbitfun-color-content-on-dark));
+  }
+
+  &__nebula {
+    fill: color-mix(in srgb, var(--openbitfun-color-surface-panel) 70%, var(--openbitfun-color-content-on-dark));
+    opacity: 0.85;
+    transform-origin: center;
+    animation: openbitfun-model-mode-nebula 9s ease-in-out -3s infinite alternate;
+  }
+
+  &__nebula-field {
+    opacity: 0.22;
+
+    :where([data-color-scheme='dark']) & {
+      opacity: 0.085;
+    }
+  }
+
+  :where([data-mode='smart']) &__nebula {
+    // Move the overscanned texture as a whole, with enough coverage at both ends.
+    transform-box: view-box;
+    animation-name: openbitfun-model-smart-nebula-drift;
+  }
+
+  &[data-mode='smart'] &__nebula {
+    fill: color-mix(in oklch, var(--openbitfun-color-link-default) 58%, var(--openbitfun-color-accent-secondary));
+  }
+
+  &__sky-layer {
+    --_model-star-drift-x: 3px;
+    --_model-star-drift-y: 1.5px;
+
+    // The whole sky shares one slow direction; only depth changes its travel distance.
+    animation: openbitfun-model-sky-drift 12s ease-in-out -4.5s infinite alternate;
+  }
+
+  &__sky-layer--far {
+    opacity: 0.54;
+
+    :where([data-color-scheme='light']) & {
+      opacity: 0.8;
+    }
+  }
+
+  &__sky-layer--middle {
+    --_model-star-drift-x: 5px;
+    --_model-star-drift-y: 2.5px;
+
+    opacity: 0.78;
+
+    :where([data-color-scheme='light']) & {
+      opacity: 1;
+    }
+  }
+
+  &__sky-layer--near {
+    --_model-star-drift-x: 10px;
+    --_model-star-drift-y: 5px;
+  }
+
+  &__sky-star {
+    opacity: var(--_model-star-opacity);
+    animation: openbitfun-model-sky-twinkle var(--_model-star-duration) ease-in-out var(--_model-star-delay) infinite;
+  }
+
+  &__sky-star--near {
+    animation-name: openbitfun-model-sky-flare;
+  }
+
+  &__sky-glow {
+    // Keep a tight corona around the crisp core, especially against a dark sky.
+    opacity: 0.8;
+
+    :where([data-color-scheme='dark']) & {
+      opacity: 0.6;
+    }
+  }
+
+  &__sky-core {
+    :where([data-color-scheme='light']) & {
+      // A white edge reinforces the luminous core without a gray outline.
+      stroke: currentColor;
+      stroke-width: 0.3;
+    }
+  }
+
+  &[data-mode='pool'] &__nebula {
+    fill: color-mix(in srgb, currentColor 68%, var(--openbitfun-color-content-on-dark));
+  }
+
+  &[data-mode='pool'] &__nebula-field {
+    opacity: 0.28;
+
+    :where([data-color-scheme='dark']) & {
+      opacity: 0.14;
+    }
+  }
+
+  &__battery-silhouettes {
+    opacity: 0.9;
+
+    :where([data-color-scheme='dark']) & {
+      opacity: 0.8;
+    }
+  }
+
+  &__battery-glass {
+    color: color-mix(in srgb, currentColor 25%, var(--openbitfun-color-content-on-dark));
+  }
+
+  &__battery-rim {
+    // A tinted fine edge reads on light glass; dark glass retains a pale reflection.
+    color: color-mix(in srgb, var(--_model-battery-tint) 50%, var(--openbitfun-color-content-on-dark));
+
+    :where([data-color-scheme='dark']) & {
+      color: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 72%, currentColor);
+    }
+  }
+
+  &__battery-energy,
+  &__battery-particles {
+    animation: openbitfun-model-battery-breathe var(--_model-mode-cycle) ease-in-out calc(var(--_model-mode-cycle) * var(--_model-star-cell-phase)) infinite;
+  }
+
+  &__battery-shell {
+    // Glass stays present while only the light inside it breathes.
+    opacity: 0.9;
+  }
+
+  &__battery-light {
+    // Pale mint light sits above the jade tint instead of adding another dense green fill.
+    color: color-mix(in srgb, var(--_model-battery-tint) 55%, var(--openbitfun-color-content-on-dark));
+
+    :where([data-color-scheme='dark']) & {
+      color: color-mix(in srgb, var(--_model-battery-tint) 64%, var(--openbitfun-color-content-on-dark));
+    }
+  }
+
+  &__battery-energy {
+    fill-opacity: 0.72;
+    opacity: 0.8;
+
+    :where([data-color-scheme='dark']) & {
+      fill-opacity: 0.42;
+    }
+  }
+
+  &__battery-outline {
+    // A steady reflection keeps the shape legible while its interior breathes.
+    opacity: 0.82;
+    stroke-width: 0.85;
+  }
+
+  &__battery-outline--right {
+    // Compensate for the deeper sky at the right edge without darkening the glass.
+    opacity: 1;
+  }
+
+  &__battery-particles {
+    fill: color-mix(in srgb, var(--_model-battery-tint) 55%, var(--openbitfun-color-content-on-dark));
+    opacity: 0.9;
+
+    :where([data-color-scheme='dark']) & {
+      fill: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 88%, currentColor);
+    }
+  }
+
+  &__battery-spark {
+    fill: var(--_model-battery-tint);
+
+    :where([data-color-scheme='dark']) & {
+      fill: color-mix(in srgb, currentColor 70%, var(--openbitfun-color-content-on-dark));
+    }
+  }
+
+  &__battery-particle {
+    opacity: calc(var(--_model-star-opacity) * 0.75);
+    animation: openbitfun-model-battery-rise var(--_model-star-duration) linear var(--_model-star-delay) infinite;
+  }
+}
+
+@keyframes openbitfun-model-sky-drift {
+  from {
+    transform: translate(calc(var(--_model-star-drift-x) * -1), var(--_model-star-drift-y));
+  }
+
+  to {
+    transform: translate(var(--_model-star-drift-x), calc(var(--_model-star-drift-y) * -1));
+  }
+}
+
+// Hold the bright phase long enough to read before each star fades independently.
+@keyframes openbitfun-model-sky-twinkle {
+  0%, 100% {
+    opacity: calc(var(--_model-star-opacity) * 0.3);
+  }
+
+  34% {
+    opacity: calc(var(--_model-star-opacity) * 0.62);
+  }
+
+  44%, 60% {
+    opacity: var(--_model-star-opacity);
+  }
+
+  76% {
+    opacity: calc(var(--_model-star-opacity) * 0.52);
+  }
+
+  88% {
+    opacity: calc(var(--_model-star-opacity) * 0.7);
+  }
+}
+
+@keyframes openbitfun-model-sky-flare {
+  0%, 100% {
+    opacity: calc(var(--_model-star-opacity) * 0.16);
+  }
+
+  28% {
+    opacity: calc(var(--_model-star-opacity) * 0.56);
+  }
+
+  44%, 62% {
+    opacity: var(--_model-star-opacity);
+  }
+
+  82% {
+    opacity: calc(var(--_model-star-opacity) * 0.38);
+  }
+}
+
+@keyframes openbitfun-model-smart-nebula-drift {
+  from {
+    transform: translate(-8%, 5%) scale(1.3);
+    opacity: 0.75;
+  }
+
+  to {
+    transform: translate(8%, -5%) scale(1.3);
+    opacity: 1;
+  }
+}
+
+@keyframes openbitfun-model-mode-nebula {
+  from {
+    transform: translate(-1%, 1%) scale(1.04);
+    opacity: 0.7;
+  }
+
+  to {
+    transform: translate(1%, -1%) scale(1.08);
+    opacity: 1;
+  }
+}
+
+// Overlapping phases pass a soft emphasis left to right without moving the glass.
+@keyframes openbitfun-model-battery-breathe {
+  0%, 100% {
+    opacity: 0.7;
+  }
+
+  26% {
+    opacity: 0.98;
+  }
+
+  52% {
+    opacity: 0.82;
+  }
+
+  76% {
+    opacity: 0.7;
+  }
+}
+
+// Short rising currents fade before wrapping; individual phases prevent a wave of resets.
+@keyframes openbitfun-model-battery-rise {
+  0% {
+    opacity: 0;
+    transform: translate(0, var(--_model-star-rise-y));
+  }
+
+  22% {
+    opacity: calc(var(--_model-star-opacity) * 0.72);
+  }
+
+  48% {
+    opacity: var(--_model-star-opacity);
+    transform: translate(var(--_model-star-sway-x), 0);
+  }
+
+  78% {
+    opacity: calc(var(--_model-star-opacity) * 0.62);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(0, calc(var(--_model-star-rise-y) * -1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openbitfun-model-mode {
+    &__nebula,
+    &__sky-layer,
+    &__sky-star,
+    &__battery-energy,
+    &__battery-particles,
+    &__battery-particle {
+      animation: none;
+    }
+  }
+}
+
+@media (forced-colors: active) {
+  .openbitfun-model-mode {
+    display: none;
+  }
+}

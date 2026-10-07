@@ -1,26 +1,27 @@
 {
   "title": "編輯器",
-  "subtitle": "編輯器外觀和行為設置",
+  "subtitle": "調整程式碼的顯示、縮排與自動格式化",
   "sections": {
     "appearance": {
       "title": "外觀設置",
-      "description": "編輯器的視覺外觀設定"
+      "description": "僅影響編輯器內的文字與游標；介面和對話字級在外觀頁調整"
     },
     "behavior": {
       "title": "編輯行為",
-      "description": "編輯器的交互行為設置"
+      "description": "縮排設定影響新輸入的文字，自動換行只改變顯示方式"
     },
     "display": {
       "title": "顯示設置",
-      "description": "編輯器的視覺輔助功能"
+      "description": "用視覺標記輔助定位程式碼和辨識空白字元，不會改動檔案內容"
     },
     "advanced": {
       "title": "高級功能",
-      "description": "編輯器增強功能開關"
+      "description": "醒目提示只改變顯示，格式化與空白清理會改動文字"
     }
   },
   "appearance": {
     "font": "字體",
+    "fontDefault": "跟隨應用程式碼字體",
     "fontWeight": "字體粗細",
     "fontWeightNormal": "正常",
     "fontWeightBold": "粗體",
@@ -43,7 +44,7 @@
       "expand": "擴展",
       "solid": "常亮"
     },
-    "lineHeightDesc": "相對於字級的倍數（em）。例如，14 px 字級搭配 1.5 em 行高，實際為 21 px"
+    "lineHeightDesc": "字體大小的倍數；例如 14 px 字體配合 1.5 倍行高，實際為 21 px"
   },
   "behavior": {
     "tabSize": "Tab 寬度",
@@ -64,10 +65,9 @@
       "interval": "間隔顯示"
     },
     "smoothScrolling": "平滑滾動",
-    "smoothScrollingDesc": "啟用平滑滾動動畫",
     "scrollBeyondLastLine": "允許滾動超過最後一行",
     "scrollBeyondLastLineDesc": "可以將檔案末尾滾動到屏幕中央",
-    "tabSizeDesc": "定位點的字元欄數（ch），預設為 4。使用空格縮排時，也決定每級縮排的寬度",
+    "tabSizeDesc": "每個定位點佔用的字元欄數；使用空格縮排時，也決定每級縮排寬度",
     "detectIndentation": "自動偵測縮排",
     "detectIndentationDesc": "開啟檔案時優先辨識既有縮排，否則使用上方預設值。關閉後一律使用預設值。狀態列中的調整僅套用於目前檔案",
     "detectIndentationUnsupported": "目前主機不支援儲存縮排偵測設定，升級主機後可啟用此選項。"
@@ -100,15 +100,13 @@
   },
   "advanced": {
     "semanticHighlighting": "語義高亮",
-    "semanticHighlightingDesc": "使用語義資訊改進程式碼高亮",
+    "semanticHighlightingDesc": "依變數、函式等符號的意義區分程式碼顏色",
     "bracketPairColorization": "括號對著色",
     "bracketPairColorizationDesc": "用不同顏色區分嵌套的括號對",
     "formatOnSave": "儲存時格式化",
-    "formatOnSaveDesc": "儲存檔案時自動格式化代碼",
     "formatOnPaste": "粘貼時格式化",
-    "formatOnPasteDesc": "粘貼代碼時自動格式化",
-    "trimAutoWhitespace": "自動刪除行尾空格",
-    "trimAutoWhitespaceDesc": "儲存時移除行尾多餘的空格"
+    "trimAutoWhitespace": "清理自動插入的空白",
+    "trimAutoWhitespaceDesc": "移除自動縮排等操作留下的行尾空白"
   },
   "messages": {
     "loading": "載入中...",

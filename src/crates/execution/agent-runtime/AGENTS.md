@@ -9,6 +9,9 @@ port-backed `sdk` / `AgentRuntime` facade that can be built and tested without
 
 ## Feature Boundaries
 
+- `definition-contracts` includes pure `native-hook-settings` validation for
+  skill frontmatter. Discovery does not select process execution or Tokio.
+
 - `native-hook-settings` exposes Codex-compatible hook settings parsing and
   validation without process execution.
 - `native-hook-runtime` extends settings with payload, output, and managed

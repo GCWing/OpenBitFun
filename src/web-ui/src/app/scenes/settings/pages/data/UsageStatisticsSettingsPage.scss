@@ -1,0 +1,221 @@
+.openbitfun-usage-stats {
+  [data-openbitfun-part='activityPanel'] .openbitfun-config-page-section__body {
+    padding: var(--openbitfun-space-4) var(--openbitfun-space-5);
+  }
+
+  &__activity {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-4);
+    min-width: 0;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    line-height: var(--openbitfun-type-label-sm-line-height);
+  }
+
+  &__activity-period {
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    line-height: var(--openbitfun-type-label-sm-line-height);
+  }
+
+  &__activity-grid {
+    display: grid;
+    grid-template-rows: var(--openbitfun-space-6) repeat(7, var(--openbitfun-space-5));
+    gap: var(--openbitfun-space-1) clamp(1px, 0.35cqi, var(--openbitfun-space-1));
+    align-items: center;
+    justify-items: center;
+    width: 100%;
+    min-width: 0;
+  }
+
+  &__activity-month {
+    justify-self: start;
+    align-self: start;
+    white-space: nowrap;
+  }
+
+  &__activity-weekday {
+    justify-self: start;
+    padding-inline-end: var(--openbitfun-space-2);
+  }
+
+  &__activity-day {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    max-width: var(--openbitfun-space-4);
+    aspect-ratio: 1;
+    padding: 0;
+    border: 0;
+    background: transparent;
+
+    &::before {
+      content: '';
+      display: block;
+      width: 100%;
+      aspect-ratio: 1;
+      border-radius: var(--openbitfun-radius-pill);
+      background: var(--openbitfun-color-border-default);
+    }
+
+    &[data-level='1']::before {
+      background: color-mix(in srgb, var(--openbitfun-color-status-info-emphasis) 40%, transparent);
+    }
+
+    &[data-level='2']::before {
+      background: color-mix(in srgb, var(--openbitfun-color-status-info-emphasis) 60%, transparent);
+    }
+
+    &[data-level='3']::before {
+      background: color-mix(in srgb, var(--openbitfun-color-status-info-emphasis) 80%, transparent);
+    }
+
+    &[data-level='4']::before {
+      background: var(--openbitfun-color-status-info-emphasis);
+    }
+
+    &:is(button) {
+      box-sizing: border-box;
+      max-width: var(--openbitfun-space-5);
+      padding: calc(var(--openbitfun-space-1) / 2);
+      cursor: pointer;
+
+      &:is(:hover, :focus-visible)::before {
+        border-radius: var(--openbitfun-radius-sm);
+      }
+
+      &:focus-visible::before {
+        outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+        outline-offset: var(--openbitfun-focus-offset);
+      }
+    }
+  }
+
+  &__activity-footer,
+  &__activity-legend {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__activity-footer {
+    justify-content: space-between;
+    flex-wrap: wrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__activity-legend {
+    margin-inline-start: auto;
+    white-space: nowrap;
+
+    .openbitfun-usage-stats__activity-day {
+      width: var(--openbitfun-space-3);
+      flex: 0 0 auto;
+    }
+  }
+
+  &__metric-value {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 0;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+
+    strong {
+      color: var(--openbitfun-color-content-primary);
+      font-size: var(--openbitfun-type-label-md-font-size);
+      font-weight: var(--openbitfun-type-label-selected-font-weight);
+      line-height: var(--openbitfun-type-label-md-line-height);
+    }
+
+    small {
+      color: var(--openbitfun-color-content-secondary);
+      font-size: var(--openbitfun-type-support-font-size);
+      line-height: var(--openbitfun-type-support-line-height);
+    }
+  }
+
+  &__message {
+    margin: 0;
+  }
+
+  [data-openbitfun-part='distributions'] [role='tabpanel'] > .openbitfun-config-page-row:first-child {
+    border-top: 1px solid var(--openbitfun-component-config-page-divider);
+  }
+
+  [data-openbitfun-part='trendPanel'] {
+    width: 100%;
+    min-width: 0;
+  }
+
+  &__trend {
+    display: flex;
+    flex-direction: column;
+    gap: var(--openbitfun-space-3);
+    min-width: 0;
+  }
+
+  &__trend-range {
+    margin: 0;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    line-height: var(--openbitfun-type-label-sm-line-height);
+  }
+
+  &__trend-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  &__trend-grid {
+    stroke: var(--openbitfun-component-config-page-divider);
+    stroke-width: 1;
+  }
+
+  &__trend-axis {
+    fill: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__trend-input,
+  &__trend-key--input {
+    fill: var(--openbitfun-color-status-info-emphasis);
+    background: var(--openbitfun-color-status-info-emphasis);
+  }
+
+  &__trend-output,
+  &__trend-key--output {
+    fill: var(--openbitfun-color-accent-secondary);
+    background: var(--openbitfun-color-accent-secondary);
+  }
+
+  &__trend-legend,
+  &__trend-legend > span {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__trend-legend {
+    gap: var(--openbitfun-space-5);
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+  }
+
+  &__trend-key {
+    width: var(--openbitfun-space-3);
+    height: var(--openbitfun-space-3);
+    border-radius: var(--openbitfun-radius-xs);
+  }
+}
+
+@container config-panel (max-width: 520px) {
+  .openbitfun-usage-stats [data-openbitfun-part='activityPanel'] .openbitfun-config-page-section__body {
+    padding: var(--openbitfun-space-4);
+  }
+}

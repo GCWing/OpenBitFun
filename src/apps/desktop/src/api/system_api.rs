@@ -310,7 +310,14 @@ pub async fn check_for_updates(
     request: CheckForUpdatesRequest,
 ) -> Result<CheckForUpdatesResponse, String> {
     let _ = request;
-    let updater = ranked_updater(&app).await?;
+    // Discovery reads only the manifests. Package throughput probes belong to download.
+    let updater = app
+        .updater_builder()
+        .endpoints(default_endpoints())
+        .map_err(|e| e.to_string())?
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| e.to_string())?;
     let update = updater.check().await.map_err(|e| e.to_string())?;
     match update {
         Some(u) => Ok(CheckForUpdatesResponse {

@@ -6,7 +6,7 @@
 
 import type * as monaco from 'monaco-editor';
 import type { EditorConfig, EditorConfigPartial, EditorPresetName, EditorPresetConfig } from '../config/types';
-import { DEFAULT_EDITOR_CONFIG, mergeConfig } from '../config/defaults';
+import { DEFAULT_EDITOR_CONFIG, mergeConfig, resolveEditorFontFamily } from '../config/defaults';
 import { getPreset } from '../config/presets';
 import { monacoAppearanceAdapter } from '@/infrastructure/appearance/adapters/MonacoAppearanceAdapter';
 
@@ -102,7 +102,7 @@ function convertToMonacoOptions(
     automaticLayout: true,
     
     fontSize: config.fontSize,
-    fontFamily: config.fontFamily,
+    fontFamily: resolveEditorFontFamily(config.fontFamily),
     fontWeight: config.fontWeight,
     lineHeight,
     cursorStyle: config.cursorStyle,
@@ -182,7 +182,7 @@ function convertToMonacoOptions(
     inlayHints: {
       enabled: config.inlayHints.enabled,
       fontSize: config.inlayHints.fontSize,
-      fontFamily: config.inlayHints.fontFamily,
+      fontFamily: resolveEditorFontFamily(config.inlayHints.fontFamily || config.fontFamily),
       padding: config.inlayHints.padding,
     },
     
@@ -259,7 +259,7 @@ export function buildUpdateOptions(
     options.fontSize = config.fontSize;
   }
   if (config.fontFamily !== undefined) {
-    options.fontFamily = config.fontFamily;
+    options.fontFamily = resolveEditorFontFamily(config.fontFamily);
   }
   if (config.lineHeight !== undefined && config.fontSize !== undefined) {
     options.lineHeight = Math.round(config.fontSize * config.lineHeight);

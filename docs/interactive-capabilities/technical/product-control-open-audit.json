@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "3a517011cbeac900808dd5a547d303aa54f6b098cf7579a5c10df534890feec8",
+  "catalogDigest": "2962c3e48e05d2eb8931c256453b9cac62e90a9be849eca3c6e24a668245bfcf",
   "count": 213,
   "reasonCounts": {
     "externalAuth": 4,
@@ -2639,7 +2639,7 @@
         "pageId": "application.shortcuts"
       },
       "evidence": [
-        "source:src/web-ui/src/app/scenes/settings/components/KeyboardShortcutsTab.tsx#lists every known shortcut"
+        "source:src/web-ui/src/app/scenes/settings/pages/application/KeyboardShortcutsSection.tsx#lists every known shortcut"
       ]
     },
     {
@@ -2655,8 +2655,8 @@
         "pageId": "application.shortcuts"
       },
       "evidence": [
-        "source:src/web-ui/src/app/scenes/settings/components/KeyboardShortcutsTab.tsx#buildFinalConflictMap",
-        "source:src/web-ui/src/app/scenes/settings/components/KeyboardShortcutsTab.tsx#buildStoredKeybindings({})"
+        "source:src/web-ui/src/app/scenes/settings/pages/application/KeyboardShortcutsSection.tsx#buildFinalConflictMap",
+        "source:src/web-ui/src/app/scenes/settings/pages/application/KeyboardShortcutsSection.tsx#buildStoredKeybindings({})"
       ]
     },
     {
@@ -2795,9 +2795,9 @@
         "pageId": "ai.models"
       },
       "evidence": [
-        "source:src/web-ui/src/infrastructure/config/components/ModelSettingsPage.tsx#custom_headers",
-        "source:src/web-ui/src/infrastructure/config/components/ModelSettingsPage.tsx#custom_request_body",
-        "source:src/web-ui/src/infrastructure/config/components/ModelSettingsPage.tsx#skip_ssl_verify"
+        "source:src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx#custom_headers",
+        "source:src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx#custom_request_body",
+        "source:src/web-ui/src/app/scenes/settings/pages/ai/ModelSettingsPage.tsx#skip_ssl_verify"
       ]
     },
     {
@@ -2900,7 +2900,7 @@
         "pageId": "workspace.session"
       },
       "evidence": [
-        "source:src/web-ui/src/infrastructure/config/components/DefaultHarnessConfig.tsx#DefaultHarnessConfig",
+        "source:src/web-ui/src/app/scenes/settings/pages/ai/DefaultHarnessSection.tsx#DefaultHarnessSection",
         "source:src/web-ui/src/locales/zh-CN/settings/runtime.json#defaultHarness.title"
       ]
     },

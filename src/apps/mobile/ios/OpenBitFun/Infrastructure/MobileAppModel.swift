@@ -30,6 +30,8 @@ final class MobileAppModel: ObservableObject {
     @Published var remoteConversationLoading = false
     @Published var remotePermissionMode = "ASK"
     @Published var remotePermissionFailure: String?
+    /// False until the desktop has reported its mode for this connection.
+    @Published var remotePermissionModeLoaded = false
     @Published var remoteHostCapabilities: [String] = []
     @Published var accountAvatarURL: String?
     @Published var remoteAssistants: [MobileAssistantOption] = []
@@ -59,8 +61,10 @@ final class MobileAppModel: ObservableObject {
     @Published var composerSendGeneration: UInt64 = 0
     @Published var drawerOpen = false
     @Published var settingsOpen = false
-    @Published var remoteControlSettingsOpen = false
     @Published var accountSheetOpen = false
+    /// Number of visible sign-in steps (account sheet or the step embedded in
+    /// settings); the authorization page auto-opens only while one is shown.
+    var accountLoginSurfaces = 0
     @Published var languagePickerOpen = false
     @Published var connectionPhase: ConnectionPhase = .connected
     @Published var isSending = false
@@ -74,11 +78,13 @@ final class MobileAppModel: ObservableObject {
     @Published var remoteSessionSelected = false
     @Published var remoteOpenedSessionID: String? = nil
     @Published var localSessionSelected = false
-    @Published var pairingSheetOpen = false
-    @Published var pairingScanRequested = false
-    var pendingDeviceLink: String?
-    @Published var pairingBusy = false
-    @Published var pairingError: String?
+    /// Account device picker. Native apps connect only through the signed-in
+    /// account's device list; QR and link pairing belong to mobile web.
+    @Published var devicePickerOpen = false
+    /// Session ids awaiting the authoritative delete result. The directory
+    /// sidebar has its own cached projection, so it must be reconciled when a
+    /// delete succeeds even if the deleted session was not the open one.
+    var pendingRemoteSessionDeletions: Set<String> = []
     @Published var coreErrorMessage: String?
     @Published var launchAccountRestored: Bool? = nil
     @Published var accountUser: String?
@@ -92,6 +98,9 @@ final class MobileAppModel: ObservableObject {
     @Published var accountDeviceCount = 0
     @Published var accountDevices: [MobileAccountDevice] = []
     @Published var accountSelectedDeviceID: String?
+    // The selected device the user disconnected from. The selection stays so the
+    // settings card can offer it again, but account churn must not bind it back.
+    var remoteReleasedDeviceID: String?
     @Published var accountDirectoryError: String?
     @Published var accountRefreshing = false
     @Published var deviceDirectory: [MobileDeviceDirectoryEntry] = []
@@ -122,13 +131,11 @@ final class MobileAppModel: ObservableObject {
     var designGalleryPreview = false
     var remoteCreatePreview = false
     var directoryFixturePreview = false
-    var pairingGeneration: UInt64 = 0
     var accountGeneration: UInt64 = 0
     var remoteTargetEpoch: UInt64 = 0
     @Published var remoteExpectedDeviceKey: String?
     var remoteBoundTargetKey: String?
     var remoteBoundTargetEpoch: UInt64?
-    var pairingRetainedAccountAuthority: RetainedAccountAuthority?
     var accountDirectoryGeneration: UInt64 = 0
     var pendingDirectorySession: (deviceKey: String, sessionID: String, epoch: UInt64)?
     @Published var remoteInitialSessionReady = false
@@ -242,31 +249,25 @@ final class MobileAppModel: ObservableObject {
         )
     }
 
+    /// Connecting a desktop always goes through the account: signed-out users
+    /// sign in first, signed-in users pick from the account device list.
     func connectRemote() {
-        pairingError = nil
-        pairingScanRequested = false
-        pairingSheetOpen = true
-    }
-
-    func scanRemote() {
-        pairingError = nil
-        pairingScanRequested = true
-        pairingSheetOpen = true
-    }
-
-    func consumePairingScanRequest() {
-        pairingScanRequested = false
-    }
-
-    func openAccountFromPairing() {
-        pairingSheetOpen = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            self.accountSheetOpen = true
+        guard accountUser != nil else {
+            accountSheetOpen = true
+            return
         }
+        refreshRemoteDevices()
+        devicePickerOpen = true
     }
 
-    func dismissPairing() {
-        pairingError = nil
+    /// Account entry points (welcome, sidebar, settings rows). Settings embed
+    /// the signed-in account, so there is no standalone profile page.
+    func openAccount() {
+        if accountUser == nil || accountFailureStage == "DEVICE_LIST" {
+            accountSheetOpen = true
+        } else {
+            settingsOpen = true
+        }
     }
 
     func handleScenePhase(_ phase: ScenePhase) {
@@ -281,7 +282,23 @@ final class MobileAppModel: ObservableObject {
         refreshRemoteDevices()
     }
 
+    /// Same rule as Android and HarmonyOS: a released selection is bound again,
+    /// a dropped link is retried on the target that is still bound.
+    func reconnectRemote() {
+        guard let releasedID = remoteReleasedDeviceID else {
+            retryRemoteConnection()
+            return
+        }
+        guard let device = accountDevices.first(where: { $0.id == releasedID }) else {
+            refreshRemoteDevices()
+            return
+        }
+        selectRemoteDevice(device, preserveDrawer: true)
+    }
+
     func disconnectRemote() {
+        remoteReleasedDeviceID = accountSelectedDeviceID
+        remoteExpectedDeviceKey = nil
         completionNotifier.reset()
         resetRemoteConversationOpen()
         invalidateTargetScopedFileTransfers()
@@ -309,7 +326,7 @@ final class MobileAppModel: ObservableObject {
         timelineRows = []
         messages = []
         surface = .remote
-        connectionPhase = .connected
+        connectionPhase = .disconnected
     }
 
     func openRemoteSurface() {
@@ -323,98 +340,6 @@ final class MobileAppModel: ObservableObject {
 
     func dismissSessionDetails() {
         sessionDetails = nil
-    }
-
-    func submitPairing(url: String) {
-        guard let result = coreAdapter?.resolveDeviceLink(url: url) else { return }
-        pairingBusy = false
-        pairingError = nil
-        if result.status == .signInRequired {
-            pendingDeviceLink = url
-            openAccountFromPairing()
-        } else if result.status == .ready,
-                  let id = result.deviceId,
-                  let device = accountDevices.first(where: { $0.id == id }) {
-            pendingDeviceLink = nil
-            pairingSheetOpen = false
-            selectRemoteDevice(device)
-        } else {
-            pendingDeviceLink = nil
-            pairingError = result.status == .invalid
-                ? localized("请使用当前版本的 OpenBitFun 设备二维码。")
-                : localized("该设备已离线，或不属于当前 OpenBitFun 账户。")
-        }
-    }
-
-    private func prepareProjectionForPairingSubmission() {
-        let adapterTargetKey = coreAdapter?.currentRemoteTargetKey
-        let adapterEpoch = coreAdapter?.currentRemoteTargetEpoch ?? 0
-        let healthyConnected: Bool
-        switch connectionPhase {
-        case .connected: healthyConnected = remoteConnected
-        case .reconnecting, .disconnected: healthyConnected = false
-        }
-        if let adapterTargetKey,
-           adapterTargetKey.hasPrefix("account:"),
-           adapterTargetKey == remoteExpectedDeviceKey,
-           adapterEpoch == remoteTargetEpoch,
-           adapterTargetKey == remoteBoundTargetKey,
-           adapterEpoch == remoteBoundTargetEpoch,
-           healthyConnected {
-            pairingRetainedAccountAuthority = RetainedAccountAuthority(
-                targetKey: adapterTargetKey,
-                epoch: adapterEpoch
-            )
-        } else {
-            pairingRetainedAccountAuthority = nil
-        }
-        let transition = RemoteAuthorityGate.pairingAttemptTransition(
-            authoritativeTargetKey: adapterTargetKey,
-            remoteConnected: remoteConnected
-        )
-        guard transition.clearBoundRemoteProjection else { return }
-
-        invalidateTargetScopedFileTransfers()
-        remoteConnected = transition.remoteConnected
-        remoteExpectedDeviceKey = nil
-        remoteLastAppliedAuthority = nil
-        committedRemoteCreate = nil
-        remoteInitialSessionReady = false
-        remoteInitialWorkspaceReady = false
-        remoteSessionSelected = false
-        remoteSessions = []
-        remoteWorkspaces = []
-        remoteAssistants = []
-        remotePermissionFailure = nil
-        sessionDetails = nil
-        workspaceCatalog = []
-        remoteSidebarWorkspaceState = nil
-        workspaceLoading = false
-        workspaceLoadFailed = false
-        workspaceSelectionBusy = false
-        remoteCreateWorkspacePhase = .unavailable
-        pendingDirectorySession = nil
-        pendingDirectoryWorkspace = nil
-        pendingDirectoryRemoteDraft = nil
-        pendingRemoteWorkspaceCreate = nil
-        pendingRemoteSessionRefreshWorkspace = nil
-        pendingRemoteAssistantCreate = false
-        selectedRemoteWorkspaceKind = ""
-        selectedSessionID = ""
-        remoteCreateOpen = false
-        remoteCreateSubmitting = false
-        remoteCreateRequestID = nil
-        remoteCreateRequestEpoch = remoteTargetEpoch
-        remoteCreateRequestDeviceKey = nil
-        remoteCreateError = nil
-        remoteCreateDeviceError = nil
-        activeTurnID = nil
-        isSending = false
-        busy = false
-        composerImages = []
-        timelineRows = []
-        messages = []
-        connectionPhase = .reconnecting
     }
 
     func stopSending() {

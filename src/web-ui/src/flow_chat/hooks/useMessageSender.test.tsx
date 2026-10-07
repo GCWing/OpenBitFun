@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => {
   const ensureBackendSession = vi.fn();
   const sendBtw = vi.fn();
   const manager = {
-    createChatSession,
+    createChatDraft: createChatSession,
     sendMessage,
     getFlowChatState: () => ({ sessions }),
     ensureBackendSession,

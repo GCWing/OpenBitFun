@@ -1,166 +1,124 @@
-import { describe, expect, it, vi } from 'vitest';
-import {
-  isLegacyEcosystemCompatibilityDestination,
-  resolveSettingsDestination,
-} from './settingsDestination';
-import {
-  SETTINGS_CATEGORIES,
-  SETTINGS_PAGE_MANIFESTS,
-} from './settingsRegistry';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { registerSettingsDraft, resetSettingsDraftRegistryForTests, getSettingsDraftSnapshot } from '@/infrastructure/config/settingsDraftRegistry';
+import { isLegacyEcosystemCompatibilityDestination, resolveSettingsDestination } from './settingsDestination';
+import { SETTINGS_CATEGORIES, SETTINGS_PAGE_MANIFESTS, getSettingsPageManifest, isSettingsPageId } from './settingsRegistry';
 import { useSettingsStore } from './settingsStore';
-import type { SettingsDestination } from './settingsTypes';
+import migrations from './settingsDestinationMigrations.json';
+import type { SettingsDestinationInput } from './settingsDestination';
 
 vi.mock('@/infrastructure/i18n/core/I18nService', () => ({
   i18nService: { loadNamespace: vi.fn(async () => undefined) },
 }));
 
+afterEach(() => {
+  resetSettingsDraftRegistryForTests();
+  useSettingsStore.setState(useSettingsStore.getInitialState());
+});
+
 describe('settings information architecture', () => {
-  it('uses five ownership categories and twenty canonical pages', () => {
-    expect(SETTINGS_CATEGORIES.map((category) => category.id)).toEqual([
-      'application',
-      'ai',
-      'workspace',
-      'tools',
-      'data',
-    ]);
-    expect(SETTINGS_PAGE_MANIFESTS).toHaveLength(20);
-    expect(new Set(SETTINGS_PAGE_MANIFESTS.map((page) => page.id)).size).toBe(20);
-  });
-
-  it('keeps memory with AI, pet with application, and review inside execution', () => {
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'ai.memory')?.categoryId).toBe('ai');
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'application.pet')?.categoryId).toBe('application');
-    expect(SETTINGS_PAGE_MANIFESTS.some((page) => page.id.includes('review'))).toBe(false);
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'tools.execution')?.searchPhrases)
-      .toContainEqual({ namespace: 'settings/review-capacity', key: 'capacity.title' });
-  });
-
-  it('keeps execution and permissions on one page, with browser and desktop control in one page', () => {
-    const execution = SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'tools.execution');
-    const control = SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'tools.desktop-control');
-
-    expect(SETTINGS_PAGE_MANIFESTS.some((page) => page.id === 'tools.device-control')).toBe(false);
-    expect(SETTINGS_PAGE_MANIFESTS.some((page) => page.id === 'tools.browser-control')).toBe(false);
-    expect(execution?.views).toBeUndefined();
-    expect(execution?.searchPhrases)
-      .toContainEqual({ namespace: 'settings/runtime', key: 'permissionPolicy.sectionTitle' });
-    expect(execution?.searchPhrases)
-      .toContainEqual({ namespace: 'settings/runtime', key: 'toolExecution.sectionTitle' });
-    expect(control?.labelKey).toBe('navigation.pages.browserDesktopControl.label');
-    expect(control?.searchPhrases)
-      .toContainEqual({ namespace: 'settings/runtime', key: 'computerUse.sectionTitle' });
-    expect(control?.searchPhrases)
-      .toContainEqual({ namespace: 'settings/runtime', key: 'browserControl.sectionTitle' });
-    expect(resolveSettingsDestination('tools.device-control')).toEqual({ pageId: 'tools.desktop-control' });
-    expect(resolveSettingsDestination('tools.browser-control')).toEqual({ pageId: 'tools.desktop-control' });
-    expect(resolveSettingsDestination('review')).toEqual({ pageId: 'tools.execution' });
-  });
-
-  it('normalizes the retired browser-control page at the store boundary', () => {
-    useSettingsStore.getState().openDestination({
-      pageId: 'tools.browser-control',
-    } as unknown as SettingsDestination);
-
-    expect(useSettingsStore.getState().activePageId).toBe('tools.desktop-control');
-    expect(useSettingsStore.getState().pageTransitionTarget).toBe('tools.desktop-control');
-  });
-
-  it('keeps Assistant ownership outside Settings and model preferences with network proxy', () => {
-    expect(SETTINGS_PAGE_MANIFESTS.some((page) => page.id.includes('assistant'))).toBe(false);
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'ai.models')?.searchPhrases)
-      .toEqual(expect.arrayContaining([
-        { namespace: 'settings/default-model', key: 'sections.defaults' },
-        { namespace: 'settings/default-model', key: 'sections.proxy' },
-      ]));
-  });
-
-  it('keeps external-source governance outside Settings while retaining WebSearch, MCP, and ACP owners', () => {
-    expect(SETTINGS_CATEGORIES.find((category) => category.id === 'tools')?.pages.map((page) => page.id))
-      .toEqual([
-        'tools.execution',
-        'tools.desktop-control',
-        'tools.automation',
-        'tools.webSearch',
-        'tools.mcp',
-        'tools.acp',
-      ]);
-    expect(SETTINGS_PAGE_MANIFESTS.some((page) => page.id === 'tools.integrations')).toBe(false);
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'tools.mcp')?.views).toBeUndefined();
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'tools.acp')?.views?.map((view) => view.id))
-      .toEqual(['local', 'ssh', 'json']);
-  });
-
-  it('keeps automation as a page with deep-linkable views', () => {
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'tools.automation')?.views?.map((view) => view.id))
-      .toEqual(['quick-actions', 'hooks']);
-  });
-
-  it('exposes voice and shortcuts as independent application pages', () => {
-    const applicationPages = SETTINGS_CATEGORIES.find((category) => category.id === 'application')?.pages;
-
-    expect(applicationPages?.map((page) => page.id)).toEqual([
-      'application.general',
-      'application.appearance',
-      'application.pet',
-      'application.voice',
-      'application.shortcuts',
-      'application.terminal',
-      'application.editor',
-    ]);
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'application.voice')?.views)
-      .toBeUndefined();
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'application.shortcuts')?.views)
-      .toBeUndefined();
-    expect(resolveSettingsDestination('application.input')).toEqual({ pageId: 'application.voice' });
-    expect(resolveSettingsDestination('shortcuts')).toEqual({ pageId: 'application.shortcuts' });
-  });
-
-  it('exposes terminal and editor as independent application pages', () => {
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'application.terminal')?.views)
-      .toBeUndefined();
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'application.editor')?.views)
-      .toBeUndefined();
-    expect(resolveSettingsDestination('application.development')).toEqual({
-      pageId: 'application.terminal',
+  it('groups flat pages by ownership and keeps the pet independent', () => {
+    expect(Object.fromEntries(SETTINGS_CATEGORIES.map(category => [category.id, category.pages.map(page => page.id)]))).toEqual({
+      application: ['application.general', 'application.appearance', 'application.pet', 'application.input'],
+      ai: ['ai.models', 'ai.session-memory', 'ai.execution', 'ai.permissions'],
+      development: ['development.editor', 'development.terminal', 'development.workspace'],
+      tools: ['tools.web-search', 'tools.desktop-control', 'tools.mcp', 'tools.external-agents', 'tools.automation'],
+      data: ['data.usage', 'data.archived', 'data.diagnostics'],
     });
-    expect(resolveSettingsDestination('terminal')).toEqual({ pageId: 'application.terminal' });
-    expect(resolveSettingsDestination('editor')).toEqual({ pageId: 'application.editor' });
+    expect(new Set(SETTINGS_PAGE_MANIFESTS.map(page => page.id)).size).toBe(19);
+    expect(SETTINGS_PAGE_MANIFESTS.filter(page => page.views?.length).map(page => page.id)).toEqual(['tools.external-agents']);
+    expect(getSettingsPageManifest('tools.external-agents').views?.map(view => view.id)).toEqual(['local', 'ssh', 'json']);
+    expect(getSettingsPageManifest('application.input').sections?.map(section => section.id)).toEqual(['voice', 'shortcuts']);
+    expect(getSettingsPageManifest('application.pet').sections?.map(section => section.id)).toEqual(['voice-call', 'pet']);
+    expect(getSettingsPageManifest('tools.automation').sections?.map(section => section.id)).toEqual(['quick-actions', 'hooks']);
   });
 
-  it('keeps appearance packages discoverable inside Appearance', () => {
-    const appearance = SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'application.appearance');
-
-    expect(appearance?.searchPhrases).toEqual(expect.arrayContaining([
-      { namespace: 'settings/appearance', key: 'package.title' },
+  it('keeps review with execution, permissions separate, and browser control with desktop control', () => {
+    expect(getSettingsPageManifest('ai.execution').searchPhrases).toContainEqual({ namespace: 'settings/review-capacity', key: 'capacity.title' });
+    expect(getSettingsPageManifest('ai.execution').searchPhrases).not.toContainEqual({ namespace: 'settings/runtime', key: 'permissionPolicy.sectionTitle' });
+    expect(getSettingsPageManifest('ai.permissions').searchPhrases).toContainEqual({ namespace: 'settings/runtime', key: 'permissionPolicy.sectionTitle' });
+    expect(getSettingsPageManifest('tools.desktop-control').searchPhrases).toEqual(expect.arrayContaining([
+      { namespace: 'settings/runtime', key: 'computerUse.sectionTitle' },
+      { namespace: 'settings/runtime', key: 'browserControl.sectionTitle' },
     ]));
-    expect(SETTINGS_PAGE_MANIFESTS.some((page) => /motion|package/.test(page.id))).toBe(false);
   });
 
-  it('exposes usage and archived sessions as separate second-level pages', () => {
-    const dataPages = SETTINGS_CATEGORIES.find((category) => category.id === 'data')?.pages;
-
-    expect(dataPages?.map((page) => page.id)).toEqual([
-      'data.usage',
-      'data.archived',
-      'data.diagnostics',
-    ]);
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'data.usage')?.views).toBeUndefined();
-    expect(SETTINGS_PAGE_MANIFESTS.find((page) => page.id === 'data.archived')?.views).toBeUndefined();
-  });
-
-  it('contains old links at the upgrade boundary and emits canonical destinations', () => {
-    expect(resolveSettingsDestination('hooks')).toEqual({
-      pageId: 'tools.automation',
-      viewId: 'hooks',
-    });
+  it('keeps models with network settings and external-source governance outside Settings', () => {
+    expect(getSettingsPageManifest('ai.models').searchPhrases).toEqual(expect.arrayContaining([
+      { namespace: 'settings/default-model', key: 'sections.defaults' },
+      { namespace: 'settings/default-model', key: 'sections.proxy' },
+    ]));
+    expect(SETTINGS_PAGE_MANIFESTS.some(page => /assistant|integrations|review/.test(page.id))).toBe(false);
     expect(isLegacyEcosystemCompatibilityDestination('external-sources')).toBe(true);
-    expect(isLegacyEcosystemCompatibilityDestination('tools.integrations')).toBe(true);
     expect(isLegacyEcosystemCompatibilityDestination({ pageId: 'tools.integrations' })).toBe(true);
-    expect(resolveSettingsDestination('mcp-tools')).toEqual({ pageId: 'tools.mcp' });
-    expect(resolveSettingsDestination('acp-agents')).toEqual({ pageId: 'tools.acp' });
-    expect(resolveSettingsDestination('ai.models')).toEqual({ pageId: 'ai.models' });
-    expect(resolveSettingsDestination('usage-statistics')).toEqual({ pageId: 'data.usage' });
-    expect(resolveSettingsDestination('archived-sessions')).toEqual({ pageId: 'data.archived' });
-    expect(resolveSettingsDestination('data.history')).toEqual({ pageId: 'data.usage' });
+  });
+
+  it.each([
+    ['application.voice', { pageId: 'application.input', sectionId: 'voice' }],
+    ['shortcuts', { pageId: 'application.input', sectionId: 'shortcuts' }],
+    ['application.shortcuts', { pageId: 'application.input', sectionId: 'shortcuts' }],
+    ['application.development', { pageId: 'development.terminal' }],
+    ['terminal', { pageId: 'development.terminal' }],
+    ['editor', { pageId: 'development.editor' }],
+    ['ai.memory', { pageId: 'ai.session-memory', sectionId: 'memory' }],
+    ['workspace.session', { pageId: 'ai.session-memory', sectionId: 'session' }],
+    ['workspace.worktrees', { pageId: 'development.workspace', sectionId: 'worktrees' }],
+    ['tools.execution', { pageId: 'ai.execution' }],
+    ['session-permissions', { pageId: 'ai.permissions' }],
+    ['review', { pageId: 'ai.execution' }],
+    ['tools.device-control', { pageId: 'tools.desktop-control' }],
+    ['tools.browser-control', { pageId: 'tools.desktop-control' }],
+    ['hooks', { pageId: 'tools.automation', sectionId: 'hooks' }],
+    ['quick-actions', { pageId: 'tools.automation', sectionId: 'quick-actions' }],
+    ['tools.webSearch', { pageId: 'tools.web-search' }],
+    ['acp-agents', { pageId: 'tools.external-agents' }],
+    ['mcp-tools', { pageId: 'tools.mcp' }],
+    ['usage-statistics', { pageId: 'data.usage' }],
+    ['archived-sessions', { pageId: 'data.archived' }],
+    ['data.history', { pageId: 'data.usage' }],
+  ])('migrates an existing %s link and round-trips the new destination', (oldId, expected) => {
+    const destination = resolveSettingsDestination(oldId);
+    expect(destination).toEqual(expected);
+    expect(resolveSettingsDestination(destination)).toEqual(destination);
+    useSettingsStore.getState().openDestination({ pageId: oldId });
+    expect(useSettingsStore.getState().activePageId).toBe(destination.pageId);
+    expect(useSettingsStore.getState().activeSectionId).toBe(destination.sectionId ?? null);
+  });
+
+  it('migrates old view payloads and drops targets that do not belong to the destination', () => {
+    expect(resolveSettingsDestination({ pageId: 'tools.execution', viewId: 'common' })).toEqual({ pageId: 'ai.permissions' });
+    expect(resolveSettingsDestination({ pageId: 'tools.execution', viewId: 'advanced' })).toEqual({ pageId: 'ai.execution' });
+    expect(resolveSettingsDestination({ pageId: 'tools.automation', viewId: 'hooks' })).toEqual({ pageId: 'tools.automation', sectionId: 'hooks' });
+    expect(resolveSettingsDestination({ pageId: 'tools.acp', viewId: 'ssh' })).toEqual({ pageId: 'tools.external-agents', viewId: 'ssh' });
+    expect(resolveSettingsDestination({ pageId: 'ai.models', sectionId: 'hooks', viewId: 'json' })).toEqual({ pageId: 'ai.models' });
+  });
+
+  it('keeps shared catalog migrations on real pages and their owned sections', () => {
+    const targets: SettingsDestinationInput[] = [
+      ...Object.values(migrations.pages),
+      ...Object.values(migrations.views).flatMap(Object.values),
+      ...Object.values(migrations.capabilities).flatMap((migration) => [
+        ...('destination' in migration ? [migration.destination] : []),
+        ...('items' in migration ? Object.values(migration.items) : []),
+      ]),
+    ];
+    for (const target of targets) {
+      expect(isSettingsPageId(target.pageId), target.pageId).toBe(true);
+      expect(resolveSettingsDestination(target)).toEqual(target);
+    }
+  });
+
+  it('allows inline navigation without discarding edits and guards leaving the merged page', () => {
+    useSettingsStore.getState().openDestination({ pageId: 'application.input', sectionId: 'shortcuts' });
+    const save = vi.fn();
+    const discard = vi.fn();
+    registerSettingsDraft({ id: 'shortcuts', pageId: 'application.input', label: 'Shortcuts', dirty: true, save, discard });
+    useSettingsStore.getState().openDestination({ pageId: 'application.voice' });
+    expect(useSettingsStore.getState().activeSectionId).toBe('voice');
+    expect(getSettingsDraftSnapshot().pendingNavigation).toBeNull();
+    useSettingsStore.getState().openPage('application.general');
+    expect(useSettingsStore.getState().activePageId).toBe('application.input');
+    expect(getSettingsDraftSnapshot().pendingNavigation).not.toBeNull();
+    expect(save).not.toHaveBeenCalled();
+    expect(discard).not.toHaveBeenCalled();
   });
 });

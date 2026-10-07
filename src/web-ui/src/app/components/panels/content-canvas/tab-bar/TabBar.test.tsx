@@ -128,6 +128,25 @@ describe('canvas TabGroup integration', () => {
     expect(contextMenu.showMenu.mock.calls[0][1].map((item: { id: string }) => item.id)).toContain('tab-toggle-pin');
   });
 
+  it('replaces the close-all button with host controls while retaining close-all in the tab menu', () => {
+    const hidePanel = vi.fn();
+    props.toolbarActions = <button onClick={hidePanel}>Hide panel</button>;
+    render();
+    expect(container.querySelector('.canvas-tab-bar__close-all')).toBeNull();
+    act(() => container.querySelector<HTMLButtonElement>('.canvas-tab-bar__actions button')!.click());
+    expect(hidePanel).toHaveBeenCalledTimes(1);
+    expect(props.onCloseAllTabs).not.toHaveBeenCalled();
+
+    act(() => tab('a').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })));
+    const closeAll = contextMenu.showMenu.mock.calls[0][1].find((item: { id: string }) => item.id === 'tab-close-all');
+    expect(closeAll.disabled).toBe(false);
+
+    props.toolbarActions = null;
+    render();
+    expect(container.querySelector('.canvas-tab-bar__close-all')).toBeNull();
+    expect(container.querySelector('.canvas-tab-bar__actions')?.textContent).not.toContain('Hide panel');
+  });
+
   it('retains group identity when dragging and reordering standard tabs', () => {
     props.draggingTabId = 'a';
     render();

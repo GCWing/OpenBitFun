@@ -1,5 +1,3 @@
-@use '../../markdown-typography' as markdownTypography;
-
 .openbitfun-conversation-mode-surface {
   flex: 1;
   min-width: 0;
@@ -88,8 +86,6 @@
   width: 20px;
   height: 20px;
   background: currentColor;
-  mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
-  -webkit-mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
 }
 
 .openbitfun-conversation-mode-surface--integrated {
@@ -194,10 +190,6 @@
 .openbitfun-conversation-mode-surface__composer-content { min-height: 0; overflow: hidden; }
 .openbitfun-conversation-mode-surface__transcript {
   .markdown-renderer { white-space: normal; }
-
-  &[data-openbitfun-presentation='chat'] {
-    @include markdownTypography.apply;
-  }
 }
 
 .openbitfun-conversation-mode-surface__transcript[data-openbitfun-presentation='voice'] .markdown-renderer {

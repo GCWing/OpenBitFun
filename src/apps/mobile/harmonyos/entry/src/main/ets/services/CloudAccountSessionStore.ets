@@ -4,6 +4,7 @@ import { preferences } from '@kit.ArkData';
 import { Encoding } from './Encoding';
 import { HarmonyUpgradeIdentityContract } from './HarmonyUpgradeIdentityContract';
 import { OhosError } from './OhosError';
+import { RemoteLogger } from './RemoteLogger';
 
 const STORE_NAME: string = HarmonyUpgradeIdentityContract.CLOUD_ACCOUNT_STORE;
 const CIPHER_KEY: string = 'github_device_session_v1_cipher';
@@ -49,8 +50,31 @@ export class CloudAccountSessionStore {
     const previous = await this.load();
     const secret = previous ? Encoding.base64ToBytes(previous.masterKey) : Encoding.randomBytes(32);
     if (secret.length !== 32) throw new Error('Stored device identity is invalid.');
-    await this.writeSealed('device_private_key_v1_cipher', 'device_private_key_v1_iv', Encoding.bytesToBase64(secret));
+    try {
+      await this.writeSealed('device_private_key_v1_cipher', 'device_private_key_v1_iv', Encoding.bytesToBase64(secret));
+    } catch (err) {
+      // A reinstall clears Preferences but HarmonyOS may retain the HUKS alias.
+      // Only rotate the alias when there is no prior session record: existing
+      // encrypted account data must never be made unreadable as recovery.
+      if (previous) throw err instanceof Error ? err : new Error(OhosError.reason(err));
+      RemoteLogger.warn('cloud account device identity write failed on fresh install; recreating local key');
+      await this.recreateKeyForFreshInstall();
+      await this.writeSealed('device_private_key_v1_cipher', 'device_private_key_v1_iv', Encoding.bytesToBase64(secret));
+    }
     return secret;
+  }
+
+  private async recreateKeyForFreshInstall(): Promise<void> {
+    try {
+      await huks.deleteKeyItem(HUKS_ALIAS, {});
+    } catch (err) {
+      const message = OhosError.reason(err);
+      if (message.indexOf('12000011') < 0 && message.indexOf('-13') < 0 &&
+        message.toLowerCase().indexOf('does not exist') < 0) {
+        throw err instanceof Error ? err : new Error(OhosError.reason(err));
+      }
+    }
+    await this.ensureKey();
   }
 
   async loadProfile(userId: string): Promise<GitHubAccountProfile | undefined> {

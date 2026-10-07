@@ -13,11 +13,22 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.2</string>
+    <string>1.0.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
-    <key>NSCameraUsageDescription</key>
-    <string>扫描桌面端二维码以连接 OpenBitFun</string>
+    <string>2</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>CFBundleURLName</key>
+            <string>com.openbitfun.mobile.ios.auth</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>openbitfun</string>
+            </array>
+        </dict>
+    </array>
     <key>NSMicrophoneUsageDescription</key>
     <string>使用麦克风把语音转换为聊天输入</string>
     <key>NSSpeechRecognitionUsageDescription</key>

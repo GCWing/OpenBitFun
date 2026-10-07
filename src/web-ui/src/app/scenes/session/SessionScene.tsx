@@ -1,47 +1,22 @@
-import { GripHorizontal as LucideGripHorizontal, GripVertical as LucideGripVertical } from 'lucide-react';
-/**
- * SessionScene — Session scene layout.
- *
- * Layout (left to right):
- *   ChatPane (flex:1, FlowChat conversation)
- *   PaneResizer (draggable divider)
- *   AuxPane (variable width, ContentCanvas tabs)
- *
- * Resizer logic moved here from WorkspaceShell.
- */
-
+/** Session-owned composition over the shared, controlled SplitView. */
+import { ArrowLeftRight, GripHorizontal } from 'lucide-react';
 import React, { useRef, useState, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Icon, IconButton, SplitView, Tooltip } from '@openbitfun/ui';
+import { useI18n } from '@/infrastructure/i18n';
 import { useApp } from '../../hooks/useApp';
 import ChatPane from './ChatPane';
-import AuxPane, { type AuxPaneRef } from './AuxPane';
+import AuxPane from './AuxPane';
 import BottomTerminalPane from './BottomTerminalPane';
+import { collapseSessionBottomTerminalPane, expandSessionBottomTerminalPane } from './sessionPanelLayout';
+import { useSessionPaneLayout } from './sessionPaneLayoutStore';
 import {
-  collapseSessionBottomTerminalPane,
-  expandSessionAuxPane,
-  expandSessionBottomTerminalPane,
-} from './sessionPanelLayout';
-import {
-  getCachedTerminalPanelPosition,
-  onTerminalPanelPositionChange,
-  refreshTerminalPanelPosition,
+  getCachedTerminalPanelPosition, onTerminalPanelPositionChange, refreshTerminalPanelPosition,
 } from '@/tools/terminal/services/terminalPanelPreferenceService';
 import type { TerminalPanelPosition } from '@/infrastructure/config/types';
-
 import {
-  BOTTOM_TERMINAL_PANEL_CONFIG,
-  RIGHT_PANEL_CONFIG,
-  PANEL_COMMON_CONFIG,
-  STORAGE_KEYS,
-  PanelDisplayMode,
-  getPanelDisplayMode,
-  getModeWidth,
-  getSnappedWidth,
-  getNextMode,
-  savePanelWidth,
-  loadPanelWidth,
+  BOTTOM_TERMINAL_PANEL_CONFIG, RIGHT_PANEL_CONFIG, PANEL_COMMON_CONFIG, STORAGE_KEYS,
+  getPanelDisplayMode, getModeWidth, getSnappedWidth, getNextMode, savePanelWidth, loadPanelWidth,
 } from '../../layout/panelConfig';
-
 import './SessionScene.scss';
 
 const TERMINAL_PANEL_RESIZE_SUSPEND_FALLBACK_MS = 360;
@@ -52,203 +27,79 @@ interface SessionSceneProps {
   isActive?: boolean;
 }
 
-const SessionScene: React.FC<SessionSceneProps> = ({
-  workspacePath,
-  isEntering = false,
-  isActive = true,
-}) => {
-  const { t } = useTranslation('flow-chat');
-  const {
-    state,
-    updateRightPanelWidth,
-    toggleRightPanel,
-    updateBottomTerminalPanelHeight,
-  } = useApp();
-  const auxPaneRef = useRef<AuxPaneRef>(null);
-
-  const [isDraggingRight, setIsDraggingRight] = useState(false);
+const SessionScene: React.FC<SessionSceneProps> = ({ workspacePath, isEntering = false, isActive = true }) => {
+  const { t } = useI18n('flow-chat');
+  const { t: tPane } = useI18n('components');
+  const { state, updateBottomTerminalPanelHeight } = useApp();
+  const pane = useSessionPaneLayout();
+  const [isDraggingContent, setIsDraggingContent] = useState(false);
+  const [isContentSettling, setIsContentSettling] = useState(false);
   const [isDraggingBottom, setIsDraggingBottom] = useState(false);
-  const [isHovering, setIsHovering] = useState(false);
   const [isHoveringBottom, setIsHoveringBottom] = useState(false);
-  const [isRightPanelTransitioning, setIsRightPanelTransitioning] = useState(false);
   const [isBottomTerminalPanelTransitioning, setIsBottomTerminalPanelTransitioning] = useState(false);
-  const [terminalPanelPosition, setTerminalPanelPosition] = useState<TerminalPanelPosition>(() =>
-    getCachedTerminalPanelPosition(),
-  );
-
-  const [, setLastRightWidth] = useState<number>(() =>
-    loadPanelWidth(STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH, RIGHT_PANEL_CONFIG.COMFORTABLE_DEFAULT)
-  );
-
+  const [terminalPanelPosition, setTerminalPanelPosition] = useState<TerminalPanelPosition>(getCachedTerminalPanelPosition);
   const containerRef = useRef<HTMLDivElement>(null);
-  const resizerRef = useRef<HTMLDivElement>(null);
-  const auxPaneElementRef = useRef<HTMLDivElement>(null);
   const bottomTerminalPaneElementRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number | null>(null);
-  const rightPanelTransitionTimerRef = useRef<number | null>(null);
   const bottomPanelTransitionTimerRef = useRef<number | null>(null);
-  const previousRightTransitionKeyRef = useRef<string | null>(null);
   const previousBottomTransitionKeyRef = useRef<string | null>(null);
-
-  const currentRightWidth = state.layout.rightPanelWidth || RIGHT_PANEL_CONFIG.COMFORTABLE_DEFAULT;
+  const bottomDragCleanupRef = useRef<(() => void) | null>(null);
   const currentBottomHeight = state.layout.bottomTerminalPanelHeight || BOTTOM_TERMINAL_PANEL_CONFIG.COMFORTABLE_DEFAULT;
   const isTerminalDockedBottom = terminalPanelPosition === 'bottom';
-  const isDragging = isDraggingRight || isDraggingBottom;
+  const isContentOnly = pane.mode === 'content-only';
+  const isBottomHidden = isContentOnly || state.layout.bottomTerminalPanelCollapsed;
+  const isDragging = isDraggingContent || isDraggingBottom;
+  const bottomTerminalPanelMode = isBottomHidden ? 'collapsed'
+    : getPanelDisplayMode(currentBottomHeight, BOTTOM_TERMINAL_PANEL_CONFIG);
 
-  const stopRightPanelTransition = useCallback(() => {
-    if (rightPanelTransitionTimerRef.current !== null) {
-      window.clearTimeout(rightPanelTransitionTimerRef.current);
-      rightPanelTransitionTimerRef.current = null;
-    }
-    setIsRightPanelTransitioning(false);
+  useEffect(() => {
+    const stop = onTerminalPanelPositionChange(setTerminalPanelPosition);
+    void refreshTerminalPanelPosition();
+    return stop;
   }, []);
 
-  const startRightPanelTransition = useCallback(() => {
-    if (rightPanelTransitionTimerRef.current !== null) {
-      window.clearTimeout(rightPanelTransitionTimerRef.current);
-    }
-    setIsRightPanelTransitioning(true);
-    rightPanelTransitionTimerRef.current = window.setTimeout(
-      stopRightPanelTransition,
-      TERMINAL_PANEL_RESIZE_SUSPEND_FALLBACK_MS,
-    );
-  }, [stopRightPanelTransition]);
+  // Heavy content measures only the settled layout, not intermediate drag sizes.
+  useLayoutEffect(() => {
+    setIsContentSettling(true);
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => setIsContentSettling(false));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pane.mode, pane.contentSide, pane.preferredRightPaneWidth]);
+
+  useLayoutEffect(() => {
+    const element = bottomTerminalPaneElementRef.current;
+    if (element) element.inert = isBottomHidden || !isActive;
+  }, [isBottomHidden, isActive, isTerminalDockedBottom]);
 
   const stopBottomPanelTransition = useCallback(() => {
-    if (bottomPanelTransitionTimerRef.current !== null) {
-      window.clearTimeout(bottomPanelTransitionTimerRef.current);
-      bottomPanelTransitionTimerRef.current = null;
-    }
+    if (bottomPanelTransitionTimerRef.current !== null) window.clearTimeout(bottomPanelTransitionTimerRef.current);
+    bottomPanelTransitionTimerRef.current = null;
     setIsBottomTerminalPanelTransitioning(false);
   }, []);
 
   const startBottomPanelTransition = useCallback(() => {
-    if (bottomPanelTransitionTimerRef.current !== null) {
-      window.clearTimeout(bottomPanelTransitionTimerRef.current);
-    }
+    if (bottomPanelTransitionTimerRef.current !== null) window.clearTimeout(bottomPanelTransitionTimerRef.current);
     setIsBottomTerminalPanelTransitioning(true);
-    bottomPanelTransitionTimerRef.current = window.setTimeout(
-      stopBottomPanelTransition,
-      TERMINAL_PANEL_RESIZE_SUSPEND_FALLBACK_MS,
-    );
+    bottomPanelTransitionTimerRef.current = window.setTimeout(stopBottomPanelTransition, TERMINAL_PANEL_RESIZE_SUSPEND_FALLBACK_MS);
   }, [stopBottomPanelTransition]);
 
-  const rightPanelMode: PanelDisplayMode = useMemo(() => {
-    if (state.layout.rightPanelCollapsed) return 'collapsed';
-    return getPanelDisplayMode(currentRightWidth, RIGHT_PANEL_CONFIG);
-  }, [state.layout.rightPanelCollapsed, currentRightWidth]);
-
-  const bottomTerminalPanelMode: PanelDisplayMode = useMemo(() => {
-    if (state.layout.bottomTerminalPanelCollapsed) return 'collapsed';
-    return getPanelDisplayMode(currentBottomHeight, BOTTOM_TERMINAL_PANEL_CONFIG);
-  }, [state.layout.bottomTerminalPanelCollapsed, currentBottomHeight]);
-
-  useEffect(() => {
-    const unsubscribe = onTerminalPanelPositionChange(setTerminalPanelPosition);
-    void refreshTerminalPanelPosition();
-    return unsubscribe;
+  const calculateValidBottomHeight = useCallback((height: number): number => {
+    const containerHeight = containerRef.current?.offsetHeight ?? 0;
+    if (containerHeight <= 0) return height;
+    const max = Math.max(0, Math.min(BOTTOM_TERMINAL_PANEL_CONFIG.MAX_WIDTH, containerHeight - PANEL_COMMON_CONFIG.RESIZER_WIDTH - 220));
+    return Math.min(max, Math.max(Math.min(BOTTOM_TERMINAL_PANEL_CONFIG.COMPACT_WIDTH, max), height));
   }, []);
-
-  // Keep right panel visible when chat is hidden
-  useEffect(() => {
-    if (state.layout.chatCollapsed && state.layout.rightPanelCollapsed) {
-      expandSessionAuxPane();
-    }
-  }, [state.layout.chatCollapsed, state.layout.rightPanelCollapsed]);
-
-  const calculateValidRightWidth = useCallback((newWidth: number): number => {
-    if (!containerRef.current) return newWidth;
-    const containerWidth = containerRef.current.offsetWidth;
-    // When the container hasn't been laid out yet (e.g. window just restored from
-    // minimize), offsetWidth may be 0. Bail early to avoid clamping to a tiny value.
-    if (containerWidth <= 0) return newWidth;
-    // NavPanel (240px) is outside SessionScene — only account for resizer + min chat width
-    const reserved = PANEL_COMMON_CONFIG.RESIZER_WIDTH + PANEL_COMMON_CONFIG.MIN_CENTER_WIDTH;
-    const dynamicMax = containerWidth - reserved;
-    const maxWidth = Math.min(RIGHT_PANEL_CONFIG.MAX_WIDTH, dynamicMax);
-    return Math.min(maxWidth, Math.max(RIGHT_PANEL_CONFIG.COMPACT_WIDTH, newWidth));
-  }, []);
-
-  const calculateValidBottomHeight = useCallback((newHeight: number): number => {
-    if (!containerRef.current) return newHeight;
-    const containerHeight = containerRef.current.offsetHeight;
-    if (containerHeight <= 0) return newHeight;
-    const reserved = PANEL_COMMON_CONFIG.RESIZER_WIDTH + 220;
-    const dynamicMax = containerHeight - reserved;
-    const maxHeight = Math.min(BOTTOM_TERMINAL_PANEL_CONFIG.MAX_WIDTH, dynamicMax);
-    return Math.min(maxHeight, Math.max(BOTTOM_TERMINAL_PANEL_CONFIG.COMPACT_WIDTH, newHeight));
-  }, []);
-
-  const saveAndUpdateRightWidth = useCallback((width: number) => {
-    updateRightPanelWidth(width);
-    setLastRightWidth(width);
-    savePanelWidth(STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH, width);
-  }, [updateRightPanelWidth]);
 
   const saveAndUpdateBottomHeight = useCallback((height: number) => {
     updateBottomTerminalPanelHeight(height);
     savePanelWidth(STORAGE_KEYS.BOTTOM_TERMINAL_PANEL_LAST_HEIGHT, height);
   }, [updateBottomTerminalPanelHeight]);
 
-  const handleDoubleClick = useCallback(() => {
-    const nextMode = getNextMode(rightPanelMode);
-    const targetWidth = getModeWidth(nextMode, RIGHT_PANEL_CONFIG);
-    saveAndUpdateRightWidth(calculateValidRightWidth(targetWidth));
-  }, [rightPanelMode, calculateValidRightWidth, saveAndUpdateRightWidth]);
-
   const handleBottomDoubleClick = useCallback(() => {
-    const nextMode = getNextMode(bottomTerminalPanelMode);
-    const targetHeight = getModeWidth(nextMode, BOTTOM_TERMINAL_PANEL_CONFIG);
-    saveAndUpdateBottomHeight(calculateValidBottomHeight(targetHeight));
+    const target = getModeWidth(getNextMode(bottomTerminalPanelMode), BOTTOM_TERMINAL_PANEL_CONFIG);
+    saveAndUpdateBottomHeight(calculateValidBottomHeight(target));
   }, [bottomTerminalPanelMode, calculateValidBottomHeight, saveAndUpdateBottomHeight]);
-
-  const handleMouseDownResizer = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!containerRef.current) return;
-
-    const startX = e.clientX;
-    const startWidth = currentRightWidth;
-    let lastValidWidth = startWidth;
-
-    setIsDraggingRight(true);
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
-
-    const onMove = (ev: MouseEvent) => {
-      if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = requestAnimationFrame(() => {
-        const valid = calculateValidRightWidth(startWidth + (startX - ev.clientX));
-        lastValidWidth = valid;
-        if (auxPaneElementRef.current && !state.layout.chatCollapsed) {
-          auxPaneElementRef.current.style.width = `${valid}px`;
-        } else {
-          updateRightPanelWidth(valid);
-        }
-        animationFrameRef.current = null;
-      });
-    };
-
-    const onUp = () => {
-      if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-
-      const snapped = getSnappedWidth(lastValidWidth, RIGHT_PANEL_CONFIG, false);
-      if (snapped !== lastValidWidth) {
-        saveAndUpdateRightWidth(snapped);
-      } else {
-        updateRightPanelWidth(lastValidWidth);
-        setLastRightWidth(lastValidWidth);
-        savePanelWidth(STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH, lastValidWidth);
-      }
-      requestAnimationFrame(() => requestAnimationFrame(() => setIsDraggingRight(false)));
-    };
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }, [currentRightWidth, calculateValidRightWidth, updateRightPanelWidth, saveAndUpdateRightWidth, state.layout.chatCollapsed]);
 
   const handleMouseDownBottomResizer = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -257,32 +108,36 @@ const SessionScene: React.FC<SessionSceneProps> = ({
     const startY = e.clientY;
     const startHeight = currentBottomHeight;
     let lastValidHeight = startHeight;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
 
     setIsDraggingBottom(true);
     document.body.style.cursor = 'row-resize';
     document.body.style.userSelect = 'none';
 
     const onMove = (ev: MouseEvent) => {
+      lastValidHeight = calculateValidBottomHeight(startHeight + (startY - ev.clientY));
       if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = requestAnimationFrame(() => {
-        const valid = calculateValidBottomHeight(startHeight + (startY - ev.clientY));
-        lastValidHeight = valid;
         if (bottomTerminalPaneElementRef.current) {
-          bottomTerminalPaneElementRef.current.style.height = `${valid}px`;
-        } else {
-          updateBottomTerminalPanelHeight(valid);
+          bottomTerminalPaneElementRef.current.style.height = `${lastValidHeight}px`;
         }
         animationFrameRef.current = null;
       });
     };
 
-    const onUp = () => {
+    const cleanup = () => {
       if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
+      animationFrameRef.current = null;
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
-
+      bottomDragCleanupRef.current = null;
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+    function onUp(event: MouseEvent) {
+      lastValidHeight = calculateValidBottomHeight(startHeight + (startY - event.clientY));
+      cleanup();
       const snapped = getSnappedWidth(lastValidHeight, BOTTOM_TERMINAL_PANEL_CONFIG, false);
       if (snapped !== lastValidHeight) {
         saveAndUpdateBottomHeight(snapped);
@@ -290,345 +145,135 @@ const SessionScene: React.FC<SessionSceneProps> = ({
         updateBottomTerminalPanelHeight(lastValidHeight);
         savePanelWidth(STORAGE_KEYS.BOTTOM_TERMINAL_PANEL_LAST_HEIGHT, lastValidHeight);
       }
-      requestAnimationFrame(() => requestAnimationFrame(() => setIsDraggingBottom(false)));
-    };
+      animationFrameRef.current = requestAnimationFrame(() => {
+        animationFrameRef.current = requestAnimationFrame(() => {
+          animationFrameRef.current = null;
+          setIsDraggingBottom(false);
+        });
+      });
+    }
 
+    bottomDragCleanupRef.current = cleanup;
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   }, [calculateValidBottomHeight, currentBottomHeight, saveAndUpdateBottomHeight, updateBottomTerminalPanelHeight]);
 
-  // No-animation expansion
-  const [isAuxPaneExpandingImmediate, setIsAuxPaneExpandingImmediate] = useState(false);
-
-  useEffect(() => {
-    const handler = (event: CustomEvent) => {
-      if (event.detail?.noAnimation && state.layout.rightPanelCollapsed) {
-        setIsAuxPaneExpandingImmediate(true);
-        setTimeout(() => setIsAuxPaneExpandingImmediate(false), 0);
-      }
-    };
-    window.addEventListener('expand-right-panel-immediate', handler as EventListener);
-    return () => window.removeEventListener('expand-right-panel-immediate', handler as EventListener);
-  }, [state.layout.rightPanelCollapsed]);
 
   const expandBottomTerminalPanel = useCallback(() => {
-    const saved = loadPanelWidth(
-      STORAGE_KEYS.BOTTOM_TERMINAL_PANEL_LAST_HEIGHT,
-      BOTTOM_TERMINAL_PANEL_CONFIG.COMFORTABLE_DEFAULT,
-    );
+    const saved = loadPanelWidth(STORAGE_KEYS.BOTTOM_TERMINAL_PANEL_LAST_HEIGHT, BOTTOM_TERMINAL_PANEL_CONFIG.COMFORTABLE_DEFAULT);
     expandSessionBottomTerminalPane(calculateValidBottomHeight(saved));
   }, [calculateValidBottomHeight]);
 
-  // Responsive resize — also validate on mount to clamp widths restored from
-  // localStorage that may exceed the current (non-maximized) window size.
   useEffect(() => {
+    if (!isTerminalDockedBottom) return;
     const validate = () => {
-      const valid = calculateValidRightWidth(currentRightWidth);
-      if (valid !== currentRightWidth) updateRightPanelWidth(valid);
-      if (isTerminalDockedBottom) {
-        const validBottom = calculateValidBottomHeight(currentBottomHeight);
-        if (validBottom !== currentBottomHeight) updateBottomTerminalPanelHeight(validBottom);
-      }
+      const valid = calculateValidBottomHeight(currentBottomHeight);
+      if (valid !== currentBottomHeight) updateBottomTerminalPanelHeight(valid);
     };
-    const rafId = requestAnimationFrame(validate);
+    const frame = requestAnimationFrame(validate);
     window.addEventListener('resize', validate);
-    return () => {
-      cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', validate);
-    };
-  }, [
-    currentRightWidth,
-    currentBottomHeight,
-    calculateValidRightWidth,
-    calculateValidBottomHeight,
-    isTerminalDockedBottom,
-    updateRightPanelWidth,
-    updateBottomTerminalPanelHeight,
-  ]);
+    return () => { cancelAnimationFrame(frame); window.removeEventListener('resize', validate); };
+  }, [isTerminalDockedBottom, calculateValidBottomHeight, currentBottomHeight, updateBottomTerminalPanelHeight]);
 
-  // Restore right panel width when window regains visibility (e.g. after minimize → restore).
-  // This acts as a safety net in case any layout recalculation during the restore
-  // cycle lost the user's manual width adjustment.
-  const prevVisibleRef = useRef(true);
-  useEffect(() => {
-    const handleVisibility = () => {
-      const nowVisible = document.visibilityState === 'visible';
-      if (nowVisible && !prevVisibleRef.current) {
-        const saved = loadPanelWidth(STORAGE_KEYS.RIGHT_PANEL_LAST_WIDTH, currentRightWidth);
-        if (saved !== currentRightWidth && !state.layout.rightPanelCollapsed) {
-          updateRightPanelWidth(saved);
-        }
-      }
-      prevVisibleRef.current = nowVisible;
-    };
-    document.addEventListener('visibilitychange', handleVisibility);
-    return () => document.removeEventListener('visibilitychange', handleVisibility);
-  }, [currentRightWidth, updateRightPanelWidth, state.layout.rightPanelCollapsed]);
-
-  // Cleanup animation frames
   useEffect(() => () => {
+    bottomDragCleanupRef.current?.();
     if (animationFrameRef.current !== null) cancelAnimationFrame(animationFrameRef.current);
-    if (rightPanelTransitionTimerRef.current !== null) {
-      window.clearTimeout(rightPanelTransitionTimerRef.current);
-    }
-    if (bottomPanelTransitionTimerRef.current !== null) {
-      window.clearTimeout(bottomPanelTransitionTimerRef.current);
-    }
+    if (bottomPanelTransitionTimerRef.current !== null) window.clearTimeout(bottomPanelTransitionTimerRef.current);
   }, []);
 
-  const isRightAsMain = state.layout.chatCollapsed;
-  const isChatHidden = state.layout.centerPanelCollapsed || isRightAsMain;
-
-  // Terminal resize is suspended for the whole CSS transition. xterm.js reflows
-  // its buffer on every resize, so fitting through intermediate panel widths can
-  // permanently damage scrollback before the panel reaches its final size.
   useLayoutEffect(() => {
-    const transitionKey = [
-      state.layout.rightPanelCollapsed ? 'collapsed' : 'open',
-      currentRightWidth,
-      isRightAsMain ? 'main' : 'side',
-    ].join(':');
-
-    if (previousRightTransitionKeyRef.current === null) {
-      previousRightTransitionKeyRef.current = transitionKey;
-      return;
-    }
-
-    if (previousRightTransitionKeyRef.current === transitionKey) {
-      return;
-    }
-
-    previousRightTransitionKeyRef.current = transitionKey;
-
-    if (isDraggingRight || isAuxPaneExpandingImmediate) {
-      return;
-    }
-
-    startRightPanelTransition();
-  }, [
-    currentRightWidth,
-    isAuxPaneExpandingImmediate,
-    isDraggingRight,
-    isRightAsMain,
-    startRightPanelTransition,
-    state.layout.rightPanelCollapsed,
-  ]);
-
-  // Bottom docking uses the same suspension as the right panel. This keeps the
-  // compact final height usable while avoiding transient animation heights.
-  useLayoutEffect(() => {
-    const transitionKey = [
-      state.layout.bottomTerminalPanelCollapsed ? 'collapsed' : 'open',
-      currentBottomHeight,
-      isTerminalDockedBottom ? 'bottom' : 'right',
-    ].join(':');
-
-    if (previousBottomTransitionKeyRef.current === null) {
-      previousBottomTransitionKeyRef.current = transitionKey;
-      return;
-    }
-
-    if (previousBottomTransitionKeyRef.current === transitionKey) {
-      return;
-    }
-
-    previousBottomTransitionKeyRef.current = transitionKey;
-
-    if (isDraggingBottom || !isTerminalDockedBottom) {
-      return;
-    }
-
-    startBottomPanelTransition();
-  }, [
-    currentBottomHeight,
-    isDraggingBottom,
-    isTerminalDockedBottom,
-    startBottomPanelTransition,
-    state.layout.bottomTerminalPanelCollapsed,
-  ]);
-
-  const handleRightPanelTransitionEnd = useCallback((event: React.TransitionEvent<HTMLDivElement>) => {
-    if (event.currentTarget !== event.target) return;
-    if (event.propertyName !== 'width') return;
-    stopRightPanelTransition();
-  }, [stopRightPanelTransition]);
-
-  const handleBottomPanelTransitionEnd = useCallback((event: React.TransitionEvent<HTMLDivElement>) => {
-    if (event.currentTarget !== event.target) return;
-    if (event.propertyName !== 'height') return;
-    stopBottomPanelTransition();
-  }, [stopBottomPanelTransition]);
+    const key = `${isBottomHidden}:${currentBottomHeight}:${isTerminalDockedBottom}`;
+    const previous = previousBottomTransitionKeyRef.current;
+    previousBottomTransitionKeyRef.current = key;
+    if (previous !== null && key !== previous && !isDraggingBottom && isTerminalDockedBottom) startBottomPanelTransition();
+  }, [isBottomHidden, currentBottomHeight, isTerminalDockedBottom, isDraggingBottom, startBottomPanelTransition]);
 
   const panelModeLabels = useMemo(() => ({
-    collapsed:    t('layout.panelMode.collapsed'),
-    compact:      t('layout.panelMode.compact'),
-    comfortable:  t('layout.panelMode.comfortable'),
-    expanded:     t('layout.panelMode.expanded'),
+    collapsed: t('layout.panelMode.collapsed'), compact: t('layout.panelMode.compact'),
+    comfortable: t('layout.panelMode.comfortable'), expanded: t('layout.panelMode.expanded'),
   }), [t]);
 
-  const panelCollapseHintStyles = useMemo(() => {
-    const q = (v: string) => `"${v.replace(/"/g, '\\"')}"`;
-    return {
-      '--panel-collapse-hint-right': q(t('layout.panelCollapseHintRight')),
-    } as React.CSSProperties & Record<'--panel-collapse-hint-right', string>;
-  }, [t]);
-
   return (
-    <div
-      ref={containerRef}
+    <div ref={containerRef}
       className={[
-        'openbitfun-session-scene',
-        isDragging && 'openbitfun-session-scene--dragging',
+        'openbitfun-session-scene', isDragging && 'openbitfun-session-scene--dragging',
         isDraggingBottom && 'openbitfun-session-scene--dragging-bottom',
-        isTerminalDockedBottom && 'openbitfun-session-scene--terminal-bottom',
-        isEntering && 'layout-entering',
+        isTerminalDockedBottom && 'openbitfun-session-scene--terminal-bottom', isEntering && 'layout-entering',
       ].filter(Boolean).join(' ')}
-      style={panelCollapseHintStyles}
-      data-testid="session-scene"
-      data-openbitfun-scene="session"
-      data-openbitfun-part="root"
-      data-openbitfun-state={[
-        isDragging && 'dragging',
-        isDraggingBottom && 'dragging',
-        isTerminalDockedBottom && 'terminal-bottom',
-      ].filter(Boolean).join(' ') || undefined}
+      data-testid="session-scene" data-openbitfun-scene="session" data-openbitfun-part="root"
+      data-openbitfun-state={[isDragging && 'dragging', isTerminalDockedBottom && 'terminal-bottom'].filter(Boolean).join(' ') || undefined}
     >
       <div className="openbitfun-session-scene__main-row" data-openbitfun-scene="session" data-openbitfun-part="main">
-        {/* ChatPane — FlowChat conversation */}
-        {!isChatHidden && (
-          <div
-            className={`openbitfun-session-scene__chat-pane ${isDragging ? 'openbitfun-session-scene__chat-pane--dragging' : ''}`}
-            data-testid="session-chat-pane"
-            data-openbitfun-scene="session"
-            data-openbitfun-part="chat"
-          >
-            <ChatPane
-              width={0}
-              isFullscreen={false}
-              isSceneActive={isActive}
-              isDragging={false}
-              workspacePath={workspacePath}
-              showChatInput
-              isRightPanelOpen={!state.layout.rightPanelCollapsed}
-              onToggleRightPanel={toggleRightPanel}
-            />
-          </div>
-        )}
-
-        {/* Resizer — always rendered (when chat visible) for slide animation */}
-        {!isChatHidden && (
-          <div
-            ref={resizerRef}
-            className={[
-              'openbitfun-pane-resizer',
-              state.layout.rightPanelCollapsed && 'openbitfun-pane-resizer--collapsed',
-              isDraggingRight && 'openbitfun-pane-resizer--dragging',
-              isHovering && 'openbitfun-pane-resizer--hovering',
-            ].filter(Boolean).join(' ')}
-            onMouseDown={handleMouseDownResizer}
-            onDoubleClick={handleDoubleClick}
-            onMouseEnter={() => setIsHovering(true)}
-            onMouseLeave={() => setIsHovering(false)}
-            tabIndex={state.layout.rightPanelCollapsed ? -1 : 0}
-            role="separator"
-            aria-orientation="vertical"
-            aria-label={t('layout.resizer.rightAriaLabel')}
-            aria-valuenow={currentRightWidth}
-            aria-valuemin={RIGHT_PANEL_CONFIG.COMPACT_WIDTH}
-            aria-valuemax={RIGHT_PANEL_CONFIG.MAX_WIDTH}
-            title={t('layout.resizer.title', { mode: panelModeLabels[rightPanelMode] })}
-            data-testid="session-right-pane-resizer"
-          >
-            <div className="openbitfun-pane-resizer__line" />
-            <div className="openbitfun-pane-resizer__handle">
-              <LucideGripVertical width="16" height="16" className="openbitfun-pane-resizer__icon" aria-hidden="true" />
+        <SplitView
+          mode={pane.mode === 'chat-only' ? 'primary' : pane.mode === 'content-only' ? 'secondary' : 'split'}
+          secondarySide={pane.contentSide}
+          rightSize={pane.preferredRightPaneWidth}
+          minLeftSize={PANEL_COMMON_CONFIG.MIN_CENTER_WIDTH}
+          minRightSize={RIGHT_PANEL_CONFIG.COMPACT_WIDTH}
+          maxRightSize={RIGHT_PANEL_CONFIG.MAX_WIDTH}
+          defaultRightSize={RIGHT_PANEL_CONFIG.COMFORTABLE_DEFAULT}
+          onRightSizeChange={pane.resizeRightPane}
+          onResizeStateChange={setIsDraggingContent}
+          dividerLabel={tPane('canvas.resizePanes')}
+          primaryPaneProps={{ 'aria-label': tPane('canvas.chatPane') }}
+          secondaryPaneProps={{ 'aria-label': tPane('canvas.contentPane') }}
+          dividerActions={
+            <Tooltip content={tPane('canvas.swapPanes')} placement="top">
+              <IconButton size="sm" aria-label={tPane('canvas.swapPanes')}
+                icon={<Icon glyph={ArrowLeftRight} size="sm" />} onClick={pane.swapPanes} />
+            </Tooltip>
+          }
+          primary={
+            <div className="openbitfun-session-scene__chat-pane" data-testid="session-chat-pane"
+              data-openbitfun-scene="session" data-openbitfun-part="chat">
+              <ChatPane width={0} isFullscreen={false} isSceneActive={isActive && !isContentOnly}
+                isDragging={isDragging} workspacePath={workspacePath} showChatInput
+                isRightPanelOpen={pane.mode !== 'chat-only'} onToggleRightPanel={pane.toggleContent} />
             </div>
-          </div>
-        )}
-
-        {/* AuxPane — ContentCanvas */}
-        <div
-          ref={auxPaneElementRef}
-          className={[
-            'openbitfun-session-scene__aux-pane',
-            state.layout.rightPanelCollapsed         && 'openbitfun-session-scene__aux-pane--collapsed',
-            isDraggingRight                          && 'openbitfun-session-scene__aux-pane--dragging',
-            isRightAsMain                            && 'openbitfun-session-scene__aux-pane--editor-mode',
-            isAuxPaneExpandingImmediate              && 'openbitfun-session-scene__aux-pane--no-animation',
-          ].filter(Boolean).join(' ')}
-          style={{
-            width: state.layout.rightPanelCollapsed
-              ? undefined
-              : isRightAsMain ? undefined : `${currentRightWidth}px`,
-          }}
-          data-mode={rightPanelMode}
-          data-testid="session-aux-pane"
-          data-openbitfun-scene="session"
-          data-openbitfun-part="auxiliary"
-          onTransitionEnd={handleRightPanelTransitionEnd}
-        >
-          <AuxPane
-            ref={auxPaneRef}
-            workspacePath={workspacePath}
-            isSceneActive={isActive && !state.layout.rightPanelCollapsed}
-            terminalResizeSuspended={isRightPanelTransitioning || isDraggingRight}
-          />
-        </div>
+          }
+          secondary={
+            <div className="openbitfun-session-scene__aux-pane" data-testid="session-aux-pane"
+              data-openbitfun-scene="session" data-openbitfun-part="auxiliary">
+              <AuxPane workspacePath={workspacePath} isSceneActive={isActive && pane.mode !== 'chat-only'}
+                isFullscreen={isContentOnly} onToggleFullscreen={pane.toggleMaximized}
+                terminalResizeSuspended={isContentSettling || isDraggingContent} />
+            </div>
+          }
+        />
       </div>
-
-      {isTerminalDockedBottom ? (
-        <>
-          <div
-            className={[
-              'openbitfun-bottom-pane-resizer',
-              state.layout.bottomTerminalPanelCollapsed && 'openbitfun-bottom-pane-resizer--collapsed',
-              isDraggingBottom && 'openbitfun-bottom-pane-resizer--dragging',
-              isHoveringBottom && 'openbitfun-bottom-pane-resizer--hovering',
-            ].filter(Boolean).join(' ')}
-            onMouseDown={handleMouseDownBottomResizer}
-            onDoubleClick={handleBottomDoubleClick}
-            onMouseEnter={() => setIsHoveringBottom(true)}
-            onMouseLeave={() => setIsHoveringBottom(false)}
-            tabIndex={state.layout.bottomTerminalPanelCollapsed ? -1 : 0}
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label={t('layout.resizer.terminalBottomAriaLabel')}
-            aria-valuenow={currentBottomHeight}
-            aria-valuemin={BOTTOM_TERMINAL_PANEL_CONFIG.COMPACT_WIDTH}
-            aria-valuemax={BOTTOM_TERMINAL_PANEL_CONFIG.MAX_WIDTH}
-            title={t('layout.resizer.title', { mode: panelModeLabels[bottomTerminalPanelMode] })}
-          >
-            <div className="openbitfun-bottom-pane-resizer__line" />
-            <div className="openbitfun-bottom-pane-resizer__handle">
-              <LucideGripHorizontal width="16" height="16" className="openbitfun-bottom-pane-resizer__icon" aria-hidden="true" />
-            </div>
-          </div>
-
-          <div
-            ref={bottomTerminalPaneElementRef}
-            className={[
-              'openbitfun-session-scene__bottom-terminal-pane',
-              state.layout.bottomTerminalPanelCollapsed && 'openbitfun-session-scene__bottom-terminal-pane--collapsed',
-              isDraggingBottom && 'openbitfun-session-scene__bottom-terminal-pane--dragging',
-            ].filter(Boolean).join(' ')}
-            style={{
-              height: state.layout.bottomTerminalPanelCollapsed ? undefined : `${currentBottomHeight}px`,
-            }}
-            data-mode={bottomTerminalPanelMode}
-            data-openbitfun-scene="session"
-            data-openbitfun-part="terminal"
-            onTransitionEnd={handleBottomPanelTransitionEnd}
-          >
-            <BottomTerminalPane
-              workspacePath={workspacePath}
-              isSceneActive={isActive}
-              onExpand={expandBottomTerminalPanel}
-              onCollapse={collapseSessionBottomTerminalPane}
-              terminalResizeSuspended={isBottomTerminalPanelTransitioning || isDraggingBottom}
-            />
-          </div>
-        </>
-      ) : null}
+      {isTerminalDockedBottom && <>
+        <div
+          className={[
+            'openbitfun-bottom-pane-resizer', isBottomHidden && 'openbitfun-bottom-pane-resizer--collapsed',
+            isDraggingBottom && 'openbitfun-bottom-pane-resizer--dragging', isHoveringBottom && 'openbitfun-bottom-pane-resizer--hovering',
+          ].filter(Boolean).join(' ')}
+          onMouseDown={handleMouseDownBottomResizer} onDoubleClick={handleBottomDoubleClick}
+          onMouseEnter={() => setIsHoveringBottom(true)} onMouseLeave={() => setIsHoveringBottom(false)}
+          tabIndex={isBottomHidden ? -1 : 0} role="separator" aria-orientation="horizontal" aria-hidden={isBottomHidden}
+          aria-label={t('layout.resizer.terminalBottomAriaLabel')} aria-valuenow={currentBottomHeight}
+          aria-valuemin={BOTTOM_TERMINAL_PANEL_CONFIG.COMPACT_WIDTH} aria-valuemax={BOTTOM_TERMINAL_PANEL_CONFIG.MAX_WIDTH}
+          title={t('layout.resizer.title', { mode: panelModeLabels[bottomTerminalPanelMode] })}
+        >
+          <div className="openbitfun-bottom-pane-resizer__line" />
+          <div className="openbitfun-bottom-pane-resizer__handle"><GripHorizontal width="16" height="16" className="openbitfun-bottom-pane-resizer__icon" aria-hidden="true" /></div>
+        </div>
+        <div ref={bottomTerminalPaneElementRef}
+          className={[
+            'openbitfun-session-scene__bottom-terminal-pane', isBottomHidden && 'openbitfun-session-scene__bottom-terminal-pane--collapsed',
+            isDraggingBottom && 'openbitfun-session-scene__bottom-terminal-pane--dragging',
+          ].filter(Boolean).join(' ')}
+          style={{ height: isBottomHidden ? undefined : `${currentBottomHeight}px` }}
+          data-mode={bottomTerminalPanelMode} data-openbitfun-scene="session" data-openbitfun-part="terminal"
+          aria-hidden={isBottomHidden}
+          onTransitionEnd={event => {
+            if (event.currentTarget === event.target && event.propertyName === 'height') stopBottomPanelTransition();
+          }}
+        >
+          <BottomTerminalPane workspacePath={workspacePath} isSceneActive={isActive && !isBottomHidden}
+            onExpand={expandBottomTerminalPanel} onCollapse={collapseSessionBottomTerminalPane}
+            terminalResizeSuspended={isBottomTerminalPanelTransitioning || isDraggingBottom} />
+        </div>
+      </>}
     </div>
   );
 };

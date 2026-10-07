@@ -40,7 +40,7 @@ pub(crate) async fn list_models(client: &AIClient) -> Result<Vec<RemoteModelInfo
     let url = resolve_models_url(client);
     debug!("Gemini models list URL: {}", url);
 
-    let response = apply_headers(client, client.client.get(&url))
+    let response = apply_headers(client, client.client.get(&url), &url)
         .send()
         .await?
         .error_for_status()?;

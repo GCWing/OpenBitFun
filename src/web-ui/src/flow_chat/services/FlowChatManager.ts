@@ -69,6 +69,7 @@ import {
   updateSessionMetadata,
 } from './flow-chat-manager';
 import { ensureBackendSession } from './flow-chat-manager/SessionModule';
+import { prepareSessionDraftForCommand, selectDraftWorkspace } from './sessionDraftService';
 import { installPeerSessionRefresh } from './flow-chat-manager/PeerSessionRefreshModule';
 import { installDispatchJobObserver } from '../session-drivers/dispatch/install';
 import { driverForSession } from '../session-drivers/registry';
@@ -82,6 +83,8 @@ type FlowChatSendMessageOptions = Pick<
   | 'imageContexts'
   | 'imageDisplayData'
   | 'pendingQueueDraft'
+  | 'foregroundSubmission'
+  | 'sendImmediately'
   | 'userMessageMetadata'
   | 'execution'
   | 'turnId'
@@ -601,6 +604,15 @@ export class FlowChatManager {
     return createChatSessionModule(this.context, config, mode);
   }
 
+  /** User-facing new conversations acquire their host session on first submission. */
+  async createChatDraft(config: SessionConfig, mode?: string): Promise<string> {
+    return createChatSessionModule(this.context, config, mode, true);
+  }
+
+  selectDraftWorkspace(sessionId: string, workspaceId: string): void {
+    selectDraftWorkspace(this.context, sessionId, workspaceId);
+  }
+
   async createAcpChatSession(clientId: string, config: SessionConfig = {}): Promise<string> {
     const surfaceScope = getActiveSurfaceScope();
     const titleDescriptor = createDefaultSessionTitleDescriptor((key, options) => i18nService.t(key, options));
@@ -814,6 +826,8 @@ export class FlowChatManager {
 
   /** Manually compact a session's context through its driver. */
   async compactSession(sessionId: string): Promise<void> {
+    const draft = this.context.flowChatStore.getState().sessions.get(sessionId);
+    if (draft?.draft) await prepareSessionDraftForCommand(draft);
     const session = this.context.flowChatStore.getState().sessions.get(sessionId);
     return driverForSession(sessionId, session).compactSession(this.context, sessionId);
   }
@@ -823,7 +837,8 @@ export class FlowChatManager {
     sessionId: string,
     uiParams: import('../session-drivers/types').UsageReportUiParams,
   ): Promise<{ shown: boolean }> {
-    const session = this.context.flowChatStore.getState().sessions.get(sessionId);
+    let session = this.context.flowChatStore.getState().sessions.get(sessionId);
+    if (session?.draft) session = await prepareSessionDraftForCommand(session);
     return driverForSession(sessionId, session).runUsageReport(this.context, sessionId, uiParams);
   }
 

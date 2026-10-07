@@ -14,7 +14,7 @@ import {
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({ t: (key: string, options?: { field?: string }) => options?.field ? `${key}:${options.field}` : key }),
 }));
 
 vi.mock('@/infrastructure/api', () => ({
@@ -53,6 +53,7 @@ interface HarnessProps {
   skills?: readonly ContextPickerSkill[];
   skillsLoading?: boolean;
   skillsLoadFailed?: boolean;
+  skillDiagnostics?: ChatContextPickerProps['skillDiagnostics'];
   onRetrySkills?: ChatContextPickerProps['onRetrySkills'];
   onSelectSkill?: ChatContextPickerProps['onSelectSkill'];
   onAddImage?: ChatContextPickerProps['onAddImage'];
@@ -69,6 +70,7 @@ const Harness: React.FC<HarnessProps> = ({
   skills,
   skillsLoading,
   skillsLoadFailed,
+  skillDiagnostics,
   onRetrySkills,
   onSelectSkill,
   onAddImage,
@@ -96,6 +98,7 @@ const Harness: React.FC<HarnessProps> = ({
         skills={skills}
         skillsLoading={skillsLoading}
         skillsLoadFailed={skillsLoadFailed}
+        skillDiagnostics={skillDiagnostics}
         onRetrySkills={onRetrySkills}
         onSelectSkill={onSelectSkill}
         onAddImage={onAddImage}
@@ -111,6 +114,35 @@ const option = (kind: string) => document.querySelector<HTMLElement>(
 );
 
 describe('ChatContextPicker overlay', () => {
+  it('separates unavailable skill capabilities from scan errors in the picker', async () => {
+    const unsupported = {
+      path: '/remote/guard/SKILL.md', sourceId: 'claude-code',
+      message: 'unsupported hooks', unsupportedField: 'hooks',
+    };
+    const failure = { path: '/remote/missing', sourceId: 'claude-code', message: 'missing target' };
+    const render = (diagnostics: ChatContextPickerProps['skillDiagnostics']) => act(async () => root.render(
+      <Harness searchQuery="guard" skillDiagnostics={diagnostics} onSelectSkill={vi.fn()} />,
+    ));
+    await render([unsupported]);
+    expect(document.body.textContent).toContain('contextPicker.skillsUnsupported');
+    expect(document.body.textContent).not.toContain('contextPicker.skillsIncomplete');
+    const details = document.querySelector<HTMLDetailsElement>('details');
+    await act(async () => details?.querySelector<HTMLElement>('summary')?.click());
+    expect(document.body.textContent).toContain('/remote/guard/SKILL.md');
+    expect(document.body.textContent).toContain('contextPicker.skillsUnsupportedField:hooks');
+
+    await render([unsupported, failure]);
+    const disclosures = Array.from(document.querySelectorAll<HTMLDetailsElement>('details'));
+    expect(disclosures).toHaveLength(2);
+    for (const disclosure of disclosures) {
+      if (!disclosure.open) await act(async () => disclosure.querySelector<HTMLElement>('summary')?.click());
+    }
+    expect(disclosures[0].textContent).toContain('missing target');
+    expect(disclosures[0].textContent).not.toContain('/remote/guard');
+    expect(disclosures[1].textContent).toContain('contextPicker.skillsUnsupportedField:hooks');
+    expect(disclosures[1].textContent).not.toContain('missing target');
+  });
+
   const mcpCatalog = {
     modeRestricted: false,
     tools: [{ name: 'mcp__docs__search', serverId: 'docs', serverName: 'Docs', toolName: 'search', description: 'Find manuals' }],
@@ -383,9 +415,9 @@ describe('ChatContextPicker overlay', () => {
     expect(description?.getAttribute('data-marquee-active')).toBeNull();
     expect(description?.getAttribute('data-marquee-trigger')).toBe('interaction');
     expect(description?.getAttribute('data-overflow-style')).toBe('ellipsis');
-    expect(description?.getAttribute('title')).toBe('');
+    expect(description?.getAttribute('title')).toBeNull();
     expect(skillOptions[0]?.getAttribute('title')).toBe('');
-    expect(skillOptions[0]?.querySelector('[data-openbitfun-part="label"]')?.getAttribute('title')).toBe('');
+    expect(skillOptions[0]?.querySelector('[data-openbitfun-part="label"]')?.getAttribute('title')).toBeNull();
     expect(skillOptions[1]?.querySelector('[data-openbitfun-part="metadata"]')?.textContent)
       .toBe('Build presentations');
     expect(workspaceAPI.explorerGetChildren).not.toHaveBeenCalled();

@@ -11,15 +11,8 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   box-sizing: border-box;
-}
-
-.subagent-projection-container--expanded {
   max-height: min(48vh, 640px);
   padding: var(--openbitfun-control-flow-chat-card-expanded-padding-block) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
-}
-
-.subagent-projection-container--collapsed {
-  max-height: 0;
 }
 
 .subagent-projection-text--truncated {
@@ -30,12 +23,21 @@
 
 .subagent-projection-content {
   @include itemRhythm.apply($enclosed: true);
+  // Reserve the control column inside the card from the first render. Docking
+  // and hover keep the text width stable; the icon and focus ring stay inside.
+  padding-inline-start: calc(var(--openbitfun-control-icon-button-xs-size) + var(--openbitfun-control-flow-chat-row-icon-gap) + var(--openbitfun-focus-width) + var(--openbitfun-focus-offset));
+  box-sizing: border-box;
   min-width: 0;
 
   .flow-thinking-item .thinking-content {
     padding-left: 0;
     padding-right: 0;
   }
+}
+
+.subagent-projection-run {
+  @include itemRhythm.apply;
+  display: flow-root;
 }
 
 .subagent-projection-text__hint {

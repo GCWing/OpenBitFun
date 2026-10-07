@@ -167,6 +167,6 @@ mod tests {
         assert!(result_for_assistant
             .as_deref()
             .unwrap_or_default()
-            .contains("already loaded in the current conversation"));
+            .contains("already loaded in the current context"));
     }
 }

@@ -11,11 +11,6 @@ struct RemoteCommittedProjectionDecision: Equatable {
     let protectCommittedRowAndSelection: Bool
 }
 
-struct PairingAttemptProjectionTransition: Equatable {
-    let clearBoundRemoteProjection: Bool
-    let remoteConnected: Bool
-}
-
 struct RemoteTargetProjectionState: Equatable {
     var hasSessionRows: Bool
     var hasWorkspaceRows: Bool
@@ -41,11 +36,6 @@ struct RemoteTargetProjectionState: Equatable {
 struct RemoteTargetBoundTransition: Equatable {
     let scopeChanged: Bool
     let projection: RemoteTargetProjectionState
-}
-
-struct RetainedAccountAuthority: Equatable {
-    let targetKey: String
-    let epoch: UInt64
 }
 
 enum RemoteAuthorityInvalidationResult: Equatable {
@@ -166,31 +156,6 @@ enum RemoteAuthorityGate {
         currentEpoch: UInt64
     ) -> Bool {
         expectedTargetKey == currentTargetKey && expectedEpoch == currentEpoch
-    }
-
-    static func shouldRetainAccountAfterPairingFailure(
-        captured: RetainedAccountAuthority?,
-        adapterTargetKey: String?,
-        adapterEpoch: UInt64,
-        modelTargetKey: String?,
-        modelEpoch: UInt64,
-        healthyConnected: Bool
-    ) -> Bool {
-        guard let captured, captured.targetKey.hasPrefix("account:") else { return false }
-        return healthyConnected &&
-            adapterTargetKey == captured.targetKey && adapterEpoch == captured.epoch &&
-            modelTargetKey == captured.targetKey && modelEpoch == captured.epoch
-    }
-
-    static func pairingAttemptTransition(
-        authoritativeTargetKey: String?,
-        remoteConnected: Bool
-    ) -> PairingAttemptProjectionTransition {
-        let replacesPairing = authoritativeTargetKey == "pairing"
-        return PairingAttemptProjectionTransition(
-            clearBoundRemoteProjection: replacesPairing,
-            remoteConnected: replacesPairing ? false : remoteConnected
-        )
     }
 
     static func acceptsReady(

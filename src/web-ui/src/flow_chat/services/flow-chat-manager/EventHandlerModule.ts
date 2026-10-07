@@ -4,6 +4,8 @@
  */
 
 import { projectUserQuestionTiming } from '../../utils/userQuestionTiming';
+import { bindSubmittedMessageScrollIntent } from '../submittedMessageScrollIntent';
+import { finishSubmittedMessagePreview, getSubmittedMessagePreview } from '../submittedMessagePresentation';
 import { FlowChatStore, mergeModelRoundAttemptDiagnostics } from '../../store/FlowChatStore';
 import { initializeAcpPlanState } from '../acpPlanState';
 import { isSessionTurnRetired } from '../../store/sessionMutationStore';
@@ -29,6 +31,7 @@ import { resolveThreadGoalUserMessageDisplay } from '../../utils/threadGoalDispl
 import { cleanRemoteUserInput } from '../../utils/userInputText';
 import { getEffectiveToolName } from '../../utils/toolInvocationIdentity';
 import { absoluteSessionTurnIndexForId } from '../../utils/flowChatTurnOrdinal';
+import { normalizeSessionContinuationPolicy } from '../../utils/sessionMetadata';
 import type {
   DeepReviewQueueStateChangedEvent,
   ImageAnalysisEvent,
@@ -613,6 +616,12 @@ function handleSubagentSessionLinked(
     agentType,
     focusedReviewDisplayLabel,
   );
+  const continuationPolicy = normalizeSessionContinuationPolicy(
+    event.continuationPolicy ?? (event as any).continuation_policy,
+  );
+  if (continuationPolicy) {
+    FlowChatStore.getInstance().updateSessionRelationship(childSessionId, { continuationPolicy });
+  }
   if (typeof modelId === 'string' && modelId.trim()) {
     FlowChatStore.getInstance().updateSessionModelName(childSessionId, modelId.trim());
   }
@@ -1824,6 +1833,7 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
     // `surface: 'miniapp_agent'`. Register them as transient miniapp sessions
     // so they stay out of the session list and the agent companion bubbles.
     const isMiniAppAgentRun = userMessageMetadata?.surface === 'miniapp_agent';
+    const isBtwRun = userMessageMetadata?.kind === 'btw';
     const miniAppId = typeof userMessageMetadata?.appId === 'string'
       ? userMessageMetadata.appId
       : undefined;
@@ -1831,11 +1841,14 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
     const workspace = resolveExternalSessionWorkspace(context, event);
     store.addExternalSession(
       sessionId,
-      isMiniAppAgentRun ? (miniAppId ? `MiniApp: ${miniAppId}` : 'MiniApp Agent') : 'Remote Session',
+      isMiniAppAgentRun ? (miniAppId ? `MiniApp: ${miniAppId}` : 'MiniApp Agent') : isBtwRun ? 'Side thread' : 'Remote Session',
       'Standard',
       workspace.workspacePath,
       isMiniAppAgentRun
         ? { sessionKind: 'miniapp', isTransient: true, agentBackedTransient: true, workspaceId: workspace.workspaceId }
+        : isBtwRun
+          ? { sessionKind: 'btw', isTransient: true, agentBackedTransient: true,
+              parentSessionId: userMessageMetadata.parentSessionId, workspaceId: workspace.workspaceId }
         : { workspaceId: workspace.workspaceId },
       extractEventRemoteConnectionId(event),
       extractEventRemoteSshHost(event)
@@ -1863,6 +1876,7 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
     userMessageMetadata?.kind === 'manual_compaction' ? 'manual_compaction' : 'user_dialog';
 
   const freshSession = store.getState().sessions.get(sessionId);
+  const submittedPreview = getSubmittedMessagePreview(sessionId, turnId);
   let dialogTurn = freshSession?.dialogTurns.find((turn: DialogTurn) => turn.id === turnId);
   let projectedNewTurn = false;
 
@@ -1920,7 +1934,7 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
       sessionId,
       kind: turnKind,
       userMessage: {
-        id: `user_remote_${Date.now()}`,
+        id: submittedPreview?.message.id ?? `user_remote_${Date.now()}`,
         content: displayContent,
         timestamp: Date.now(),
         hasImages,
@@ -1933,6 +1947,7 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
       storageTurnIndex: typeof turnIndex === 'number' ? turnIndex : undefined,
       backendTurnIndex: typeof turnIndex === 'number' ? turnIndex : undefined,
     };
+    bindSubmittedMessageScrollIntent(sessionId, turnId, newTurn.userMessage.id);
     const replacedTempTurn = tempTurnId
       ? store.replaceOptimisticDialogTurn(sessionId, tempTurnId, newTurn)
       : false;
@@ -1940,6 +1955,10 @@ function handleDialogTurnStarted(context: FlowChatContext, event: any): void {
       store.addDialogTurn(sessionId, newTurn);
     }
     projectedNewTurn = true;
+  }
+
+  if (submittedPreview && (projectedNewTurn || dialogTurn?.userMessage.id === submittedPreview.message.id)) {
+    finishSubmittedMessagePreview(submittedPreview.scope, sessionId, turnId);
   }
 
   if (projectedNewTurn) {
@@ -2274,7 +2293,7 @@ function handleModelRoundStart(context: FlowChatContext, event: ModelRoundStarte
     ...(event.modelConfigId ? { modelConfigId: event.modelConfigId.trim() } : {}),
     ...(event.effectiveModelName ? { effectiveModelName: event.effectiveModelName.trim() } : {}),
     ...(disableExploreGrouping
-      ? { renderHints: { disableExploreGrouping: true } }
+      ? { renderHints: { disableExploreGrouping: true, disableExploreGroupingSource: 'host' } }
       : {}),
   };
 
@@ -2413,6 +2432,7 @@ function handleTokenUsageUpdate(context: FlowChatContext, event: any): void {
   const inputTokens = event.inputTokens ?? event.input_tokens;
   const outputTokens = event.outputTokens ?? event.output_tokens;
   const totalTokens = event.totalTokens ?? event.total_tokens;
+  const cachedTokens = event.cachedTokens ?? event.cached_tokens;
   const maxContextTokens = event.maxContextTokens ?? event.max_context_tokens;
   
   const store = FlowChatStore.getInstance();
@@ -2437,6 +2457,8 @@ function handleTokenUsageUpdate(context: FlowChatContext, event: any): void {
   store.updateTokenUsage(sessionId, {
     inputTokens,
     outputTokens: typeof outputTokens === 'number' ? outputTokens : undefined,
+    cachedTokens: typeof cachedTokens === 'number' && Number.isFinite(cachedTokens) && cachedTokens >= 0
+      ? cachedTokens : undefined,
     totalTokens,
     turnId,
     source: 'model_request',

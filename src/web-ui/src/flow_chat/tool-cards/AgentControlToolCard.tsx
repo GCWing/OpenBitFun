@@ -1,16 +1,15 @@
 import React, {
   useCallback,
-  useLayoutEffect,
-  useState,
   useSyncExternalStore,
 } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 
-import { MarkdownRenderer } from '@/infrastructure/markdown';
 import { flowChatStore } from '../store/FlowChatStore';
 import {
-  formatAgentIdForDisplay,
+  resolveSubagentAvatarAccent,
+  resolveSubagentNameKey,
   SubagentAvatar,
+  SubagentDelegationAvatar,
 } from '../subagent-identity';
 import type { FlowToolItem, ToolCardProps } from '../types/flow-chat';
 import {
@@ -19,7 +18,8 @@ import {
 } from '../utils/sessionLineage';
 import { openBtwSessionInAuxPane } from '../services/btwSessionPane';
 import { AgentControlToolCard as AgentControlToolCardView } from '@openbitfun/ui/flow-chat';
-import { useToolCardHeightContract } from './useToolCardHeightContract';
+import { AgentInteractionToolCard } from './AgentInteractionToolCard';
+import { resolveInteractionAgentSessionId } from './toolInteractionModel';
 
 const PARAMETER_STREAMING_STATUSES = new Set<FlowToolItem['status']>([
   'preparing',
@@ -45,6 +45,7 @@ function readString(source: unknown, ...keys: string[]): string {
 function fallbackLifecycle(status: FlowToolItem['status']): SessionLineageLifecycle {
   switch (status) {
     case 'completed':
+    case 'confirmed':
       return 'completed';
     case 'cancelled':
     case 'rejected':
@@ -98,6 +99,7 @@ function readLinkedAgentSnapshot(sessionId: string): string {
     session?.mode ?? '',
     session?.subagentType ?? '',
     session?.config?.agentType ?? '',
+    session?.config?.modelName ?? '',
     session?.needsUserAttention ?? false,
     session?.status ?? '',
     session?.persistedStatus ?? '',
@@ -108,19 +110,23 @@ function readLinkedAgentSnapshot(sessionId: string): string {
   ]);
 }
 
-export const AgentControlToolCard: React.FC<ToolCardProps> = ({
+const AgentSpawnCard: React.FC<ToolCardProps> = ({
   toolItem,
   sessionId,
 }) => {
-  const { t } = useTranslation('flow-chat');
+  const { t, currentLanguage } = useI18n('flow-chat');
   const { toolCall, status } = toolItem;
   const toolId = toolItem.id ?? toolCall?.id;
   const params = toolItem.partialParams ?? toolCall?.input;
-  const prompt = readString(params, 'prompt');
   const inputAgentType = readString(params, 'agent_type', 'agentType');
-  const agentId = readString(params, 'agent_id', 'agentId')
-    || readString(toolItem.toolResult?.result, 'agent_id', 'agentId');
-  const linkedSubagentSessionId = toolItem.subagentSessionId ?? '';
+  const readLinkedSession = useCallback(() => {
+    const { sessions } = flowChatStore.getState();
+    return resolveInteractionAgentSessionId(toolItem, sessionId ? sessions.get(sessionId) : undefined,
+      { sessions, parentSessionId: sessionId });
+  }, [toolItem, sessionId]);
+  const linkedSubagentSessionId = useSyncExternalStore(
+    subscribeToFlowChatStore, readLinkedSession, readLinkedSession,
+  );
   const readSnapshot = useCallback(
     () => readLinkedAgentSnapshot(linkedSubagentSessionId),
     [linkedSubagentSessionId],
@@ -138,45 +144,24 @@ export const AgentControlToolCard: React.FC<ToolCardProps> = ({
   const lifecycle = linkedSession
     ? sessionLineageLifecycleForSession(linkedSession)
     : fallbackLifecycle(status);
-  const agentName = agentId
-    || linkedSession?.subagentType?.trim()
-    || linkedSession?.mode?.trim()
-    || inputAgentType
-    || t('toolCards.taskTool.defaultAgentKind');
-  const agentDisplayName = agentId ? formatAgentIdForDisplay(agentId) : agentName;
+  const agentDisplayName = linkedSubagentSessionId
+    ? t(resolveSubagentNameKey(linkedSubagentSessionId)) : t('toolCards.interaction.unknownAgent');
   const stableAgentType = linkedSession?.mode?.trim()
     || linkedSession?.config?.agentType?.trim()
     || inputAgentType;
   const stableSubagentType = linkedSession?.subagentType?.trim() || inputAgentType;
+  const modelName = toolItem.subagentModelDisplayName?.trim()
+    || linkedSession?.config?.modelName?.trim()
+    || toolItem.subagentModelId?.trim()
+    || readString(params, 'model_id', 'modelId')
+    || t('subagentIdentity.preview.unknownModel');
   const isParameterStreaming = Boolean(toolItem.isParamsStreaming)
     || PARAMETER_STREAMING_STATUSES.has(status);
   const displayStatus = isParameterStreaming
     ? status
     : statusForLifecycle(lifecycle, status);
-  const canExpand = Boolean(prompt) && !isParameterStreaming;
   const canOpenSession = Boolean(linkedSubagentSessionId && sessionId);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
-    toolId,
-    toolName: toolItem.toolName,
-  });
-
-  const updateExpandedState = useCallback((nextExpanded: boolean) => {
-    applyExpandedState(isExpanded, nextExpanded, setIsExpanded);
-  }, [applyExpandedState, isExpanded]);
-
-  useLayoutEffect(() => {
-    if (isParameterStreaming && isExpanded) {
-      updateExpandedState(false);
-    }
-  }, [isExpanded, isParameterStreaming, updateExpandedState]);
-
-  const handleToggle = useCallback(() => {
-    if (!canExpand) {
-      return;
-    }
-    updateExpandedState(!isExpanded);
-  }, [canExpand, isExpanded, updateExpandedState]);
+  const isSpawn = toolItem.toolName === 'AgentSpawn';
 
   const handleOpenSession = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation();
@@ -218,34 +203,55 @@ export const AgentControlToolCard: React.FC<ToolCardProps> = ({
 
   return (
     <div
-      ref={cardRootRef}
       data-openbitfun-adapter="agent-control-tool-card"
       data-tool-card-id={toolId ?? ''}
     >
       <AgentControlToolCardView
+        lang={currentLanguage}
         status={displayStatus}
-        isExpanded={isExpanded}
-        onToggle={canExpand ? handleToggle : undefined}
         agentName={agentDisplayName}
-        avatar={linkedSubagentSessionId ? (
+        action={toolItem.toolName === 'AgentSendInput' ? t('toolCards.agentSendInput.action') : undefined}
+        accentColor={linkedSubagentSessionId ? resolveSubagentAvatarAccent(linkedSubagentSessionId) : undefined}
+        summary={readString(params, 'description', 'title', 'prompt', 'message', 'input') || t('subagentIdentity.preview.noDescription')}
+        avatar={isSpawn ? (
+          <SubagentDelegationAvatar
+            sessionId={linkedSubagentSessionId}
+            pending={['pending', 'queued', 'preparing', 'streaming', 'receiving', 'running'].includes(status)}
+            name={agentDisplayName} size={40} showStatus={false} status={lifecycle}
+          />
+        ) : linkedSubagentSessionId ? (
           <SubagentAvatar
             sessionId={linkedSubagentSessionId}
-            name={agentName}
-            size={20}
+            name={agentDisplayName}
+            size={40}
+            motion
+            showStatus={false}
             status={lifecycle}
           />
         ) : undefined}
-        statusLabel={t(`flowChatHeader.agentTreeStatus.${lifecycle}`)}
+        preview={{
+          avatar: linkedSubagentSessionId ? (
+            <SubagentAvatar sessionId={linkedSubagentSessionId} name={agentDisplayName}
+              size={40} showStatus={false} status={lifecycle} />
+          ) : isSpawn ? <SubagentDelegationAvatar pending={false} motion={false} size={40} showStatus={false} /> : undefined,
+          agentType: stableSubagentType || stableAgentType || t('toolCards.taskTool.defaultAgentKind'),
+          model: modelName,
+          labels: {
+            agentType: t('subagentIdentity.preview.agentType'),
+            model: t('subagentIdentity.preview.model'),
+            description: t('subagentIdentity.preview.description'),
+          },
+        }}
+        statusLabel={lifecycle === 'completed' ? undefined
+          : t(`flowChatHeader.agentTreeStatus.${lifecycle === 'finishing' ? 'running' : lifecycle}`)}
         statusTone={statusTone}
         onOpenAgent={canOpenSession ? handleOpenSession : undefined}
         openAgentLabel={t('toolCards.taskTool.openInPanel')}
-        prompt={prompt ? (
-          <MarkdownRenderer
-            content={prompt}
-            isStreaming={false}
-          />
-        ) : undefined}
+
       />
     </div>
   );
 };
+
+export const AgentControlToolCard: React.FC<ToolCardProps> = props => props.toolItem.toolName === 'AgentSpawn'
+  ? <AgentSpawnCard {...props} /> : <AgentInteractionToolCard {...props} />;

@@ -368,7 +368,7 @@
   <body>
     <script type="module" src="/src/main.tsx"></script>
     <div id="root"></div>
-    <div id="openbitfun-startup-overlay" data-tauri-drag-region>
+    <div id="openbitfun-startup-overlay">
       <div class="splash-screen">
         <div
           class="window-controls openbitfun-startup-window-controls"
@@ -406,11 +406,11 @@
         var isPetWindow = params.get('openbitfunWindow') === 'agent-companion';
         var messages = window.__OPENBITFUN_RESOLVE_BOOTSTRAP_MESSAGES__();
         var locale = window.__OPENBITFUN_RESOLVE_BOOTSTRAP_LOCALE__();
+        var startupOverlay = document.getElementById('openbitfun-startup-overlay');
         document.documentElement.setAttribute('lang', locale);
 
         if (isPetWindow) {
           document.body.classList.add('openbitfun-pet-preload-body');
-          var startupOverlay = document.getElementById('openbitfun-startup-overlay');
           if (startupOverlay) startupOverlay.remove();
           var root = document.getElementById('root');
           if (root) {
@@ -473,33 +473,64 @@
             }
           });
           controls.hidden = false;
-          var tauri = window.__TAURI_INTERNALS__;
-          var stateRequestVersion = 0;
-          var maximizeButton = controls.querySelector('[data-startup-window-action="toggle_maximize"]');
-          function applyWindowState(response) {
-            if (!response || typeof response.isMaximized !== 'boolean') return;
-            var isMaximized = response.isMaximized;
-            if (isMaximized) {
-              controls.setAttribute('data-openbitfun-state', 'maximized');
-            } else {
-              controls.removeAttribute('data-openbitfun-state');
-            }
-            setButtonLabel(maximizeButton, isMaximized ? messages.restore : messages.maximize);
-            if (maximizeButton) {
-              maximizeButton.querySelectorAll('[data-startup-window-control-state]').forEach(function (glyph) {
-                glyph.style.display = glyph.getAttribute('data-startup-window-control-state') === (isMaximized ? 'maximized' : 'normal') ? '' : 'none';
-              });
-            }
+        }
+        var tauri = window.__TAURI_INTERNALS__;
+        var stateRequestVersion = 0;
+        var maximizeButton = controls && controls.querySelector('[data-startup-window-action="toggle_maximize"]');
+        function applyWindowState(response) {
+          if (!controls || !response || typeof response.isMaximized !== 'boolean') return;
+          var isMaximized = response.isMaximized;
+          if (isMaximized) {
+            controls.setAttribute('data-openbitfun-state', 'maximized');
+          } else {
+            controls.removeAttribute('data-openbitfun-state');
           }
-          function invokeWindowControl(action) {
-            if (!tauri || typeof tauri.invoke !== 'function') return;
-            var requestVersion = ++stateRequestVersion;
-            tauri.invoke('startup_window_control', { request: { action: action } })
-              .then(function (response) {
-                if (requestVersion === stateRequestVersion) applyWindowState(response);
-              })
-              .catch(function () {});
+          setButtonLabel(maximizeButton, isMaximized ? messages.restore : messages.maximize);
+          if (maximizeButton) {
+            maximizeButton.querySelectorAll('[data-startup-window-control-state]').forEach(function (glyph) {
+              glyph.style.display = glyph.getAttribute('data-startup-window-control-state') === (isMaximized ? 'maximized' : 'normal') ? '' : 'none';
+            });
           }
+        }
+        function invokeWindowControl(action) {
+          if (!tauri || typeof tauri.invoke !== 'function') return;
+          var requestVersion = ++stateRequestVersion;
+          tauri.invoke('startup_window_control', { request: { action: action } })
+            .then(function (response) {
+              if (requestVersion === stateRequestVersion) applyWindowState(response);
+            })
+            .catch(function () {});
+        }
+
+        // The pre-React shell cannot use the runtime adapter yet. Match its
+        // live native-state guard instead of exposing an unchecked Tauri drag region.
+        var currentWindow = tauri && tauri.metadata && tauri.metadata.currentWindow;
+        if (startupOverlay && tauri && typeof tauri.invoke === 'function'
+          && currentWindow && typeof currentWindow.label === 'string') {
+          var windowLabel = currentWindow.label;
+          function canUseStartupWindowGesture(event) {
+            return !event.defaultPrevented && event.button === 0
+              && event.target === startupOverlay && startupOverlay.isConnected
+              && !startupOverlay.hasAttribute('inert');
+          }
+          startupOverlay.addEventListener('mousedown', function (event) {
+            if (!canUseStartupWindowGesture(event) || event.detail > 1) return;
+            Promise.all([
+              tauri.invoke('plugin:window|is_maximized', { label: windowLabel }),
+              tauri.invoke('plugin:window|is_fullscreen', { label: windowLabel })
+            ]).then(function (states) {
+              if (states[0] !== false || states[1] !== false
+                || !startupOverlay.isConnected || startupOverlay.hasAttribute('inert')) return;
+              return tauri.invoke('plugin:window|start_dragging', { label: windowLabel });
+            }).catch(function () {});
+          });
+          startupOverlay.addEventListener('dblclick', function (event) {
+            if (!canUseStartupWindowGesture(event)) return;
+            invokeWindowControl('toggle_maximize');
+          });
+        }
+
+        if (controls && window.__OPENBITFUN_SHOW_STARTUP_WINDOW_CONTROLS__) {
           controls.querySelectorAll('[data-startup-window-action]').forEach(function (button) {
             var action = button.getAttribute('data-startup-window-action');
             button.addEventListener('click', function (event) {

@@ -149,9 +149,6 @@ export interface NotificationConfig {
 export interface AIExperienceConfig {
   enable_session_title_generation: boolean;
 
-  /** Whether to enable visual mode (use Mermaid diagrams to illustrate complex logic and flows). */
-  enable_visual_mode: boolean;
-
   /** Whether to show the desktop Agent companion. */
   enable_agent_companion: boolean;
 
@@ -172,6 +169,8 @@ export interface AIExperienceConfig {
   voice_input: VoiceInputSettings;
   /** User-defined quick actions shown in the post-coding actions menu. */
   quick_actions?: Array<{ id: string; label: string; prompt: string; enabled: boolean }>;
+  /** Absent on older hosts that do not support commit co-author preferences. */
+  enable_git_commit_coauthor?: boolean;
 }
 
 export interface VoiceInputSettings {
@@ -237,6 +236,8 @@ export interface ReasoningPresetDescriptor {
   order: number;
   actions: ReasoningPresetAction[];
   source: ReasoningPresetSource;
+  /** Effective effort reported by the executing adapter; wire ids stay unchanged. */
+  effective_effort?: string;
 }
 
 export interface ReasoningCatalogProjection {
@@ -469,6 +470,8 @@ export interface SkillScanDiagnostic {
   path: string;
   sourceId: string;
   message: string;
+  /** Required declaration this host cannot honor; absent on older hosts. */
+  unsupportedField?: string | null;
 }
 
 export interface SkillScanReport<T = SkillInfo> {

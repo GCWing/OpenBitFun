@@ -2,6 +2,7 @@ import type { VirtualItem } from '../../store/modernFlowChatStore';
 
 /** Stable identity shared by React, the virtualizer and viewport snapshots. */
 export function getVirtualItemStableKey(item: VirtualItem): string {
+  if (item.timeline) return `block:${item.timeline.key}`;
   switch (item.type) {
     case 'user-message':
     case 'user-steering-message':

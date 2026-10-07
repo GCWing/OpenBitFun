@@ -5,26 +5,22 @@ import type {
   ReactNode,
 } from "react";
 import {
-  ArrowUpRight,
   FileEdit,
-  FilePlus,
+  FilePenLine,
   FileX2,
-  Info,
   TriangleAlert,
   XCircle,
 } from "lucide-react";
+import { Icon } from "../../components/Icon/Icon";
 import { IconButton } from "../../components/IconButton/IconButton";
 import { classNames } from "../../internal/classNames";
 import {
-  AmbientToolCard,
-  AmbientToolCardHeader,
   ProminentToolCard,
   ProminentToolCardSummary,
   ToolCardChangeSummary,
   ToolCardActions,
   type FlowChatToolStatus,
 } from "./FlowChatToolCard";
-import { ToolCardStatusSlot } from "./ToolCardStatusSlot";
 import { ToolProcessingDots } from "./ToolProcessingDots";
 import styles from "./FileOperationToolCard.module.css";
 
@@ -69,7 +65,7 @@ export interface FileOperationToolCardProps
 const OPERATION_ICONS = {
   delete: FileX2,
   edit: FileEdit,
-  write: FilePlus,
+  write: FilePenLine,
 } as const;
 
 const ACTIVE_STATUSES = new Set<FlowChatToolStatus>([
@@ -99,56 +95,16 @@ export function FileOperationToolCard({
   statusDetail,
   ...props
 }: FileOperationToolCardProps) {
-  const Icon = OPERATION_ICONS[operation];
+  const OperationIcon = OPERATION_ICONS[operation];
   const failed = status === "error";
   const loading = ACTIVE_STATUSES.has(status);
-
-  if (operation === "delete") {
-    return (
-      <div
-        {...props}
-        className={classNames(styles.root, className)}
-        data-openbitfun-component="file-operation-tool-card"
-        data-openbitfun-operation={operation}
-        data-openbitfun-part="root"
-        data-openbitfun-status={status}
-      >
-        <AmbientToolCard
-          header={(
-            <AmbientToolCardHeader
-              action={actionLabel}
-              content={(
-                <OverflowText
-                  className={styles.path}
-                  data-path={path}
-                  data-openbitfun-operation={operation}
-                  data-openbitfun-part="path"
-                  data-testid={pathTestId}
-                  title={path}
-                >
-                  {pathLabel}
-                </OverflowText>
-              )}
-              icon={(
-                <ToolCardStatusSlot
-                  status={status}
-                  toolIcon={<Icon aria-hidden="true" />}
-                />
-              )}
-            />
-          )}
-          isExpanded={false}
-          status={status}
-        />
-      </div>
-    );
-  }
+  const generating = loading && operation !== "delete";
 
   const errorContent = error ? (
     <div className={styles.error} data-guidance={error.guidance ? "true" : "false"}>
       {error.title != null && (
-        <div className={styles.errorTitle}>
-          {error.guidance ? <Info aria-hidden="true" /> : <XCircle aria-hidden="true" />}
+        <div className={styles.errorTitle} data-openbitfun-icon-slot="true">
+          {error.guidance ? <Icon name="info" size="sm" /> : <Icon glyph={XCircle} size="sm" />}
           <span>{error.title}</span>
         </div>
       )}
@@ -171,17 +127,18 @@ export function FileOperationToolCard({
         collapsibleErrorContent
         errorContent={errorContent}
         expandedContent={hasPreview ? <div className={styles.preview}>{preview}</div> : undefined}
+        expandedContentLayout="flush"
         summary={(
           <ProminentToolCardSummary
             action={actionLabel}
             actionTestId={actionTestId}
-            trailingActions={onOpenFile ? (
+            actions={onOpenFile ? (
               <ToolCardActions>
                 <IconButton
                   aria-label={onOpenFile.label}
                   data-openbitfun-affordance="open-panel-right"
                   data-openbitfun-part="openPanelButton"
-                  icon={<ArrowUpRight aria-hidden="true" data-openbitfun-icon="open-panel-right" />}
+                  icon={<Icon name="arrow-up-right" size="sm" data-openbitfun-icon="open-panel-right" />}
                   onClick={onOpenFile.onPress}
                   size="sm"
                   data-testid={onOpenFile.testId}
@@ -194,6 +151,7 @@ export function FileOperationToolCard({
               <OverflowText className={styles.inlineMessage}>{inlineMessage}</OverflowText>
             ) : (
               <OverflowText
+                behavior="marquee"
                 className={styles.path}
                 data-openbitfun-operation={operation}
                 data-path={path}
@@ -208,22 +166,23 @@ export function FileOperationToolCard({
             ) : changeSummary ? (
               <ToolCardChangeSummary
                 additions={changeSummary.additions}
+                animated={generating}
                 aria-label={changeSummary.label}
                 deletions={changeSummary.deletions}
               />
             ) : undefined}
-            icon={<Icon aria-hidden="true" />}
+            icon={loading ? <ToolProcessingDots size={16} /> : <Icon glyph={OperationIcon} size="sm" />}
+            textShimmer={generating && !inlineMessage}
             statusIcon={failed && !error?.guidance
               ? (
-                <TriangleAlert
-                  aria-hidden="true"
+                <Icon
+                  glyph={TriangleAlert}
+                  size="sm"
                   className={styles.warningStatusIcon}
                   data-openbitfun-icon="warning"
                 />
               )
-              : loading
-                ? <ToolProcessingDots size={16} />
-                : undefined}
+              : undefined}
           />
         )}
         summaryExpandAffordance={hasExpandedContent}

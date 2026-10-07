@@ -1,4 +1,4 @@
-import { Icon as CatalogIcon, type IconName } from "@openbitfun/ui";
+import { Button, Icon as CatalogIcon, type IconName } from "@openbitfun/ui";
 import { Blocks, FileCode2, Layers3 } from "lucide-react";
 import { useI18n, type MessageKey } from "../i18n";
 
@@ -28,86 +28,52 @@ const steps: readonly {
   },
 ];
 
-const contractKeys: readonly MessageKey[] = [
-  "gettingStarted.contract1",
-  "gettingStarted.contract2",
-  "gettingStarted.contract3",
-];
-
 export function GettingStartedPage({ onNavigate }: GettingStartedPageProps) {
   const { t } = useI18n();
 
   return (
     <main className="lab-page lab-page--guide" id="getting-started">
-      <header className="guide-hero">
-        <span className="page-kicker">{t("gettingStarted.kicker")}</span>
+      <header className="page-heading">
         <h1>{t("gettingStarted.title")}</h1>
-        <p>{t("gettingStarted.description")}</p>
-        <div className="overview-actions">
-          <button
-            className="lab-button lab-button--primary"
-            onClick={() => onNavigate("components")}
-            type="button"
-          >
-            {t("gettingStarted.browseComponents")}
-            <CatalogIcon name="arrow-right" size="md" aria-hidden="true" />
-          </button>
-          <button className="lab-button" onClick={() => onNavigate("tokens")} type="button">
-            {t("gettingStarted.openTokens")}
-          </button>
-        </div>
       </header>
 
-      <section className="guide-step-grid" aria-label={t("gettingStarted.stepsLabel")}>
-        {steps.map((step, index) => {
-          const Icon = step.icon;
-          return (
-            <article key={step.title}>
-              <span className="guide-step-number">0{index + 1}</span>
-              <span className="guide-step-icon">{typeof Icon === "string" ? <CatalogIcon name={Icon} size="lg" style={{ width: 19, height: 19 }} /> : <Icon aria-hidden="true" size={19} />}</span>
-              <h2>{t(step.title)}</h2>
-              <p>{t(step.description)}</p>
-            </article>
-          );
-        })}
-      </section>
-
-      <section className="guide-contract-panel">
-        <div className="guide-contract-copy">
-          <span className="page-kicker">{t("gettingStarted.workspaceKicker")}</span>
-          <h2>{t("gettingStarted.workspaceTitle")}</h2>
-          <p>{t("gettingStarted.workspaceDescription")}</p>
-          <ul>
-            {contractKeys.map((key) => (
-              <li key={key}><CatalogIcon name="check-line" size="lg" aria-hidden="true" style={{ width: 15, height: 15 }} />{t(key)}</li>
-            ))}
-          </ul>
-        </div>
+      <div className="guide-setup-layout">
+        <ol className="guide-step-list" aria-label={t("gettingStarted.stepsLabel")}>
+          {steps.map(step => {
+            const Icon = step.icon;
+            return <li key={step.title}>
+              <span className="guide-step-icon">{typeof Icon === "string" ? <CatalogIcon name={Icon} /> : <CatalogIcon glyph={Icon} />}</span>
+              <div><h2>{t(step.title)}</h2><p>{t(step.description)}</p></div>
+            </li>;
+          })}
+        </ol>
         <div className="guide-code-card">
-          <div><FileCode2 aria-hidden="true" size={15} /><span>App.tsx</span></div>
-          <pre><code>{`import { Button, ThemeRoot } from "@openbitfun/ui";
+          <div><CatalogIcon glyph={FileCode2} size="sm" /><span>App.tsx</span></div>
+          <pre><code>{`import "@openbitfun/theme-openbitfun/default.css";
+import "@openbitfun/ui/styles.css";
+import { Button, ThemeRoot } from "@openbitfun/ui";
 
 export function App() {
   return (
-    <ThemeRoot colorScheme="light">
-      <Button variant="fill">Continue</Button>
+    <ThemeRoot colorScheme="light" density="compact">
+      <Button variant="primary">Continue</Button>
     </ThemeRoot>
   );
 }`}</code></pre>
         </div>
-      </section>
+      </div>
 
-      <section className="guide-next-panel">
-        <div>
-          <span className="page-kicker">{t("gettingStarted.nextKicker")}</span>
-          <h2>{t("gettingStarted.nextTitle")}</h2>
-          <p>{t("gettingStarted.nextDescription")}</p>
-        </div>
-        <button className="lab-button" onClick={() => onNavigate("resources")} type="button">
+      <div className="guide-next-action">
+        <Button variant="text" onClick={() => onNavigate("components")} trailingIcon={<CatalogIcon name="arrow-right" size="sm" />}>
+          {t("gettingStarted.browseComponents")}
+        </Button>
+        <Button variant="text" onClick={() => onNavigate("tokens")}>
+          {t("gettingStarted.openTokens")}
+        </Button>
+        <Button variant="text" onClick={() => onNavigate("resources")} trailingIcon={<CatalogIcon name="arrow-right" size="sm" />}>
           {t("gettingStarted.viewResources")}
-          <CatalogIcon name="arrow-right" size="lg" aria-hidden="true" style={{ width: 15, height: 15 }} />
-        </button>
-      </section>
+        </Button>
+      </div>
     </main>
   );
 }

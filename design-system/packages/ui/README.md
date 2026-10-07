@@ -105,6 +105,15 @@ do not add press scaling in components or host-wide semantic selectors.
 Explicit content zoom, loading indicators, and enter/exit motion remain owned
 by the component that needs them.
 
+## Icons
+
+Use `Icon` for shared size, tone and accessible labels. General-purpose symbols
+use Lucide. Automatic reasoning uses the authored `reasoning-auto` SVG mark with
+a `currentColor` mask so it follows the active theme. Manual reasoning levels use
+the product slider and text labels.
+Product consumers own capability filtering, translated names and
+availability; the icon catalog does not imply runtime support for these modes.
+
 ## Native scrollbars
 
 `styles.css` owns scrollbar presentation inside `ThemeRoot` (or
@@ -358,7 +367,20 @@ focus ring. Use it for toolbar, dialog, and row utilities. `fill` and `primary`
 keep an opaque backing surface for persistent emphasis. Disabled quiet actions
 remain transparent and do not show hover or pressed feedback.
 
-Use `size="xs"` for 22px square controls with 14px glyphs and a 4px radius.
+For supplemental label annotations, compose `Tooltip trigger="hover-focus"
+openOnClick` with `IconButton variant="annotation" size="xs"` and an `info`
+icon. The annotation uses `color.content.muted` at rest and
+`color.content.secondary` on hover or keyboard focus, without a resting fill or
+border. Its glyph uses `control.icon.sizeXs` (12px); the existing xs hit area
+(22px), focus ring, disabled behavior, and shared icon stroke remain intact.
+Do not reduce opacity, stroke weight, or hit geometry in product CSS. Place the
+annotation beside the label, using `Field.labelAction` for form fields, and
+supply a localized accessible label. Hover/focus previews the explanation;
+click or keyboard activation pins it until dismissal, so touch users can read
+it too. Keep required instructions and validation messages visible in the
+field; annotations are for supplemental explanations.
+
+Use `size="xs"` for 22px square controls with 14px glyphs (12px for annotations) and a 4px radius.
 `size="standard" shape="circle" variant="outline"` provides the 30px outlined
 circle with a 16px glyph. Quiet and outline controls use the shared neutral
 hover surface for both hover and pressed states; outline keeps its border when
@@ -625,6 +647,8 @@ Compact tabs use `size="sm"` (30px, 14px icons, 4px icon gap); standard tabs ret
 
 Dialog titles use 24px bold type with their own 29px line box and normal tracking. `DialogHeader` and `DialogFooter` omit separators by default; pass `separator` for a deliberate divider. A direct `DialogBody` sibling of `DialogFooter appearance="floating"` owns the trailing scroll inset automatically. The floating footer provides the 68px centered action area and a masked blur/gradient using the current theme surface; reduced transparency and forced colors use an opaque fallback. Keep scrollable form content inside `DialogBody` instead of adding a second viewport with independent footer spacing.
 
+`ConfirmDialog secondaryActionPlacement="start"` presents an alternative action as a text button at the start of the footer, with cancel and confirm grouped at the end. The groups wrap when space is limited, keeping cancel and confirm together. The default `inline` placement retains the standard action order and outline secondary button.
+
 Extra-large (`xl`) dialogs have an 800px maximum width and continue shrinking within the viewport gutter. Provider editing uses the floating footer; small workspace creation retains its attached footer and existing button/input sizes. The Lab workspace pattern uses local sample paths and callbacks only.
 
 Keep `Dialog` and `Sheet` mounted and set `open={false}` to close them. They retain the last committed children during the exit animation, with interaction disabled, so clearing an owner selection does not collapse the surface. Reopening uses the latest children and cancels the pending exit. Owners that conditionally mount an editor can remove it in `onExitComplete`, which runs once after the surface unmounts.
@@ -657,3 +681,28 @@ Collapsed ambient tool runs use their 22px minimum line boxes without extra
 spacing between adjacent rows; expanded/prominent cards retain the section gap.
 The enclosing composition owns those gaps, and card bodies own their internal
 padding. The Lab tool sequence demonstrates both arrangements with real cards.
+
+`FlowChatTurnMetrics` pairs total usage with an input-cache ring and a four-level
+output-speed glyph. It uses `Icon` with Lucide `Circle` and `Signal` variants,
+the shared FlowChat metadata typography, and semantic colors. Total usage and the
+cache ring form one unit, hidden only when both values are missing. An unknown
+cache ratio retains a neutral dashed ring; a missing total adds no placeholder.
+Other unavailable metrics and detail rows are omitted; reported zero remains
+visible. The host owns measurements, speed thresholds and localized descriptions. `FlowChatMetric` and
+`FlowChatMetricDetails` provide the same capsule trigger and independent details
+card for elapsed time. Native button triggers support hover, focus, click and
+keyboard activation without resizing the row. `Tooltip openOnClick` opens
+immediately and keeps the card open until another trigger click, an outside
+press, Escape, or scrolling; ordinary action tooltips still dismiss on click.
+All shared Tooltips dismiss immediately on window or container scrolling,
+including click-open and cursor-following cards. Scrolling also cancels pending
+opening and clears click persistence; scrolling back does not reopen the card.
+Viewport-exit observation additionally closes cards when their trigger is clipped
+without a scroll event.
+Cards share the selected-text capsule's 80% raised surface, subtle
+half-width border, small shadow and base blur, using the existing Tooltip
+portal, positioning, dismissal and keyboard behavior.
+The outer animated surface owns both paint and backdrop blur; its content is
+transparent and unfiltered. An opaque fallback covers unsupported filters and
+reduced-transparency preferences. Tooltip declares ownership of its entrance
+motion to avoid the product's additional popup animation.

@@ -12,7 +12,7 @@ import { OverflowText,
 import React, { useEffect, useMemo, useState } from 'react';
 import { open } from '@tauri-apps/plugin-dialog';
 import { AlertTriangle, Camera, Github, History, Loader2, PackageOpen, Send } from 'lucide-react';
-import { GalleryEmpty, GalleryLayout, GalleryPageHeader } from '@/app/components';
+import { GalleryEmpty, GalleryLayout, GalleryPageHeader } from '@/app/components/GalleryLayout';
 import { useI18n } from '@/infrastructure/i18n';
 import { AccountIdentityControls } from '@/features/market-account';
 import { useAccountIdentity } from '@/infrastructure/account-identity';

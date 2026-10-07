@@ -50,6 +50,7 @@ const IS_MACOS_WEBVIEW = /\bMacintosh\b/i.test(window.navigator.userAgent);
 // capture on macOS too, so running direction and drag lifetime follow the pointer.
 const USE_CONTROLLED_PET_DRAG = IS_WINDOWS_WEBVIEW || IS_MACOS_WEBVIEW;
 const PET_COMMAND_EVENT = 'agent-companion://pet-command';
+const MAIN_WINDOW_STATE_EVENT = 'agent-companion://main-window-state';
 const MENU_EDGE_MARGIN = 4;
 
 interface TypewriterOutputState {
@@ -176,6 +177,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
   const [overlay, setOverlay] = useState<PetOverlayState>(null);
   const [menuAnchor, setMenuAnchor] = useState<MenuAnchor | null>(null);
   const [menuPosition, setMenuPosition] = useState<MenuAnchor | null>(null);
+  const [isMainWindowFocused, setIsMainWindowFocused] = useState(false);
   const [dismissedBubbles, setDismissedBubbles] = useState<Record<string, BubbleDismissBucket>>({});
   const [composerValue, setComposerValue] = useState('');
   const [isSendingComposer, setIsSendingComposer] = useState(false);
@@ -198,7 +200,13 @@ export const AgentCompanionDesktopPet: React.FC = () => {
     () => tasks.filter(task => dismissedBubbles[task.sessionId] !== bubbleDismissBucket(task.state)),
     [dismissedBubbles, tasks],
   );
-  const displayTasks = [...visibleTasks].reverse();
+  // Memoized so a focused main window (empty bubble list) does not hand the
+  // layout effect below a fresh array identity on every render.
+  const bubbleTasks = useMemo(
+    () => (isMainWindowFocused ? [] : visibleTasks),
+    [isMainWindowFocused, visibleTasks],
+  );
+  const displayTasks = [...bubbleTasks].reverse();
   const activePetSize = pet && petFrameSize
     ? petFrameSize
     : pet
@@ -252,6 +260,21 @@ export const AgentCompanionDesktopPet: React.FC = () => {
     });
 
     let removeActivityListener: (() => void) | null = null;
+    let removeMainWindowStateListener: (() => void) | null = null;
+    const mainWindowStateListenerReady = listen<{ focused: boolean }>(MAIN_WINDOW_STATE_EVENT, event => {
+      setIsMainWindowFocused(event.payload.focused);
+    }).then(unlisten => {
+      if (disposed) {
+        unlisten();
+        return false;
+      }
+      removeMainWindowStateListener = unlisten;
+      return true;
+    }).catch(error => {
+      log.warn('Failed to listen for main window state updates', error);
+      return false;
+    });
+
     const activityListenerReady = listen<AgentCompanionActivityPayload>('agent-companion://activity-updated', event => {
       const emittedAt = event.payload.emittedAt ?? 0;
       const sequence = event.payload.sequence ?? 0;
@@ -279,9 +302,9 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       return false;
     });
 
-    void Promise.all([settingsListenerReady, activityListenerReady])
-      .then(([settingsReady, activityReady]) => {
-        if (!disposed && settingsReady && activityReady) {
+    void Promise.all([settingsListenerReady, activityListenerReady, mainWindowStateListenerReady])
+      .then(([settingsReady, activityReady, mainWindowStateReady]) => {
+        if (!disposed && settingsReady && activityReady && mainWindowStateReady) {
           void emit('agent-companion://ready');
         }
       })
@@ -295,6 +318,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       disposed = true;
       removeTauriListener?.();
       removeActivityListener?.();
+      removeMainWindowStateListener?.();
       document.documentElement.classList.remove('openbitfun-agent-companion-window-root');
       document.body.classList.remove('openbitfun-agent-companion-window-body');
     };
@@ -429,7 +453,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
     // leave the count out of sync with the committed layout epoch.
     visibleTaskCountRef.current = visibleTasks.length;
     layoutEpochRef.current += 1;
-    const bubbleCount = visibleTasks.length;
+    const bubbleCount = bubbleTasks.length;
     const bubbleElements = Array.from(bubblesRef.current?.children ?? [])
       .slice(0, MAX_VISIBLE_BUBBLES);
     // Sum of the bubbles themselves: the slot's own vertical buffer is chrome
@@ -477,7 +501,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
       .catch(error => {
         log.warn('Failed to resize Agent companion window', error);
       });
-  }, [activePetSize.height, activePetSize.width, overlay, visibleTasks]);
+  }, [activePetSize.height, activePetSize.width, overlay, bubbleTasks, visibleTasks.length]);
 
   useEffect(() => {
     if (IS_WINDOWS_WEBVIEW && !trackPetLook) {
@@ -975,10 +999,10 @@ export const AgentCompanionDesktopPet: React.FC = () => {
     '--openbitfun-agent-companion-gap': `${WINDOW_HORIZONTAL_GAP}px`,
     '--openbitfun-agent-companion-vertical-buffer': `${WINDOW_VERTICAL_BUFFER}px`,
   } as React.CSSProperties;
-  const isSingleTask = visibleTasks.length === 1;
-  const hasAttentionTask = visibleTasks.some(task => task.state === 'attention');
+  const isSingleTask = bubbleTasks.length === 1;
+  const hasAttentionTask = bubbleTasks.some(task => task.state === 'attention');
   const overlayTask = overlay && overlay.kind !== 'pet-menu'
-    ? visibleTasks.find(task => task.sessionId === overlay.sessionId) ?? null
+    ? bubbleTasks.find(task => task.sessionId === overlay.sessionId) ?? null
     : null;
   const menuItems = overlay?.kind === 'pet-menu'
     ? [
@@ -1033,7 +1057,7 @@ export const AgentCompanionDesktopPet: React.FC = () => {
           ref={dockRef}
           className="openbitfun-agent-companion-window__dock"
          data-openbitfun-component="agent-companion-desktop-pet" data-openbitfun-part="dock">
-          {visibleTasks.length > 0 && (
+          {bubbleTasks.length > 0 && (
             <ScrollArea
               ref={bubblesRef}
               className={`openbitfun-agent-companion-window__bubbles${isSingleTask ? ' openbitfun-agent-companion-window__bubbles--single' : ''}`}

@@ -660,6 +660,10 @@ jobs:
         if: needs.build-impact.outputs.frontend_required != 'false'
         run: pnpm --dir src/mobile-web run type-check
 
+      - name: Validate mobile-web build cache contract
+        if: needs.build-impact.outputs.frontend_required != 'false'
+        run: node --test scripts/mobile-web-build.test.mjs
+
       - name: Test mobile web account login and reload
         if: needs.build-impact.outputs.frontend_required != 'false'
         run: pnpm --dir src/mobile-web run test:account-login

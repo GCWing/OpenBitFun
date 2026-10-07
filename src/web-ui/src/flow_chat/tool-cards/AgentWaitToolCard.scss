@@ -1,0 +1,100 @@
+// AgentWait is a single, non-expandable row. Let its width follow the IPs,
+// while the avatar viewport takes the overflow once the transcript row is full.
+.flowchat-flow-item:has(> .flow-tool-card-wrapper[data-openbitfun-component='flow-tool-card'][data-tool-capsule='true'][data-tool-name='AgentWait'][data-capsule-row='true']) {
+  inline-size: max-content;
+  max-inline-size: 100%;
+}
+
+.flow-tool-card-wrapper[data-tool-name='AgentWait'][data-capsule-row='true'] {
+  inline-size: max-content;
+  max-inline-size: 100%;
+}
+
+.flow-tool-card-wrapper[data-tool-name='AgentWait'][data-tool-capsule='true']
+  [data-openbitfun-tool-card='agent-wait'][data-openbitfun-part='root'][data-tool-capsule='true'] {
+  inline-size: max-content;
+  max-inline-size: 100%;
+
+  &:has(.agent-wait-avatars) [data-openbitfun-part='content'] {
+    // Preserve the wait label while the IP rail takes the overflow.
+    flex: 0 0 auto;
+    max-inline-size: 50%;
+  }
+
+  [data-openbitfun-part='extra'] {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+}
+
+.agent-wait-avatars {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-inline-size: calc(var(--openbitfun-space-8) + 2 * var(--openbitfun-space-1));
+  max-inline-size: 100%;
+  gap: var(--openbitfun-space-1);
+
+  &__viewport {
+    box-sizing: border-box;
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: center;
+    min-inline-size: calc(var(--openbitfun-space-8) + 2 * var(--openbitfun-space-1));
+    max-inline-size: 100%;
+    block-size: calc(var(--openbitfun-space-8) + var(--openbitfun-space-1));
+    margin-block: calc(-1 * var(--openbitfun-space-1) / 2);
+    padding-block: 2px;
+    padding-inline: var(--openbitfun-space-1);
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+
+    &::-webkit-scrollbar { display: none; }
+  }
+
+  &__track {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+  }
+
+  &__button {
+    display: inline-grid;
+    flex: 0 0 auto;
+    inline-size: var(--openbitfun-space-8);
+    block-size: var(--openbitfun-space-8);
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: var(--openbitfun-radius-pill);
+    background: transparent;
+    cursor: pointer;
+  }
+
+  &__scroll-button {
+    display: inline-grid;
+    flex: 0 0 auto;
+    inline-size: var(--openbitfun-space-5);
+    block-size: var(--openbitfun-space-8);
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: var(--openbitfun-radius-pill);
+    background: transparent;
+    color: var(--openbitfun-color-action-neutral-content);
+    cursor: pointer;
+
+    &:disabled { display: none; }
+  }
+
+  &__button:focus-visible,
+  &__scroll-button:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: calc(-1 * var(--openbitfun-focus-width));
+  }
+}

@@ -38,7 +38,7 @@
     background: var(--openbitfun-color-status-warning-surface);
     border-color: var(--openbitfun-color-status-warning-border);
 
-    > svg {
+    > :is(svg, [data-openbitfun-component='icon']) {
       color: var(--openbitfun-color-status-warning-emphasis);
     }
   }
@@ -55,7 +55,7 @@
     background: var(--openbitfun-color-status-success-surface);
     border-color: var(--openbitfun-color-status-success-border);
 
-    > svg {
+    > :is(svg, [data-openbitfun-component='icon']) {
       color: var(--openbitfun-color-status-success-emphasis);
     }
   }

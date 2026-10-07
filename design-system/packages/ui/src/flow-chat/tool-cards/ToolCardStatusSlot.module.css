@@ -18,6 +18,8 @@
     transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
+  .statusLayer > [data-openbitfun-component="icon"],
+  .iconLayer > [data-openbitfun-component="icon"],
   .statusLayer > :where(svg, img),
   .iconLayer > :where(svg, img) {
     display: block;
@@ -48,7 +50,7 @@
   }
 
   .statusLayer .processing {
-    color: var(--openbitfun-color-status-info-emphasis);
+    color: inherit;
   }
 
   .muted {

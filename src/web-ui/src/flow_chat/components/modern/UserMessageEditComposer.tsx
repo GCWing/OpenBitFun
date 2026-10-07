@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
-import { Composer, ComposerToolbar, IconButton, Icon } from '@openbitfun/ui';
+import { Button, Composer, ComposerToolbar } from '@openbitfun/ui';
 import { useImeOwnedKeyGuard } from '@/flow_chat/hooks/useImeOwnedKeyGuard';
 import type { ContextItem } from '@/shared/types/context';
 import { ConversationExcerptAttachments } from '../../selection/ConversationExcerptAttachments';
@@ -38,6 +37,58 @@ interface UserMessageEditComposerProps {
 }
 
 type RichUserMessageEditComposerProps = UserMessageEditComposerProps;
+
+type UserMessageEditActionsProps = Pick<
+  UserMessageEditComposerProps,
+  'isSubmitting' | 'submitLabel' | 'cancelLabel' | 'onCancel'
+> & {
+  canSubmit: boolean;
+  onSubmit: () => void;
+};
+
+const UserMessageEditActions: React.FC<UserMessageEditActionsProps> = ({
+  canSubmit,
+  isSubmitting,
+  submitLabel,
+  cancelLabel,
+  onSubmit,
+  onCancel,
+}) => (
+  <ComposerToolbar
+    className="user-message-edit-composer__actions"
+    data-openbitfun-product-component="user-message-edit-composer"
+    data-openbitfun-product-part="actions"
+    trailing={(
+      <>
+        <Button
+          aria-label={cancelLabel}
+          data-openbitfun-action="cancel"
+          data-openbitfun-product-component="user-message-edit-composer"
+          data-openbitfun-product-part="action"
+          disabled={isSubmitting}
+          onClick={onCancel}
+          size="sm"
+          variant="secondary"
+        >
+          {cancelLabel}
+        </Button>
+        <Button
+          aria-label={submitLabel}
+          data-openbitfun-action="submit"
+          data-openbitfun-product-component="user-message-edit-composer"
+          data-openbitfun-product-part="action"
+          disabled={!canSubmit}
+          loading={isSubmitting}
+          onClick={onSubmit}
+          size="sm"
+          variant="primary"
+        >
+          {submitLabel}
+        </Button>
+      </>
+    )}
+  />
+);
 
 function hasEditableInlineReference(value: string): boolean {
   return getMcpPromptReferenceMatches(value).length > 0
@@ -154,45 +205,13 @@ const RichUserMessageEditComposer: React.FC<RichUserMessageEditComposerProps> = 
       disabled={isSubmitting}
       onMouseDown={handleComposerMouseDown}
       toolbar={(
-        <ComposerToolbar
-          className="user-message-edit-composer__actions"
-          data-openbitfun-product-component="user-message-edit-composer"
-          data-openbitfun-product-part="actions"
-          trailing={(
-            <>
-              <IconButton
-                aria-label={cancelLabel}
-                data-openbitfun-action="cancel"
-                data-openbitfun-product-component="user-message-edit-composer"
-                data-openbitfun-product-part="action"
-                icon={<Icon name="xmark" size="sm" />}
-                onClick={onCancel}
-                size="xs"
-                title={cancelLabel}
-                variant="quiet"
-              />
-              <IconButton
-                aria-busy={isSubmitting || undefined}
-                aria-label={submitLabel}
-                data-openbitfun-action="submit"
-                data-openbitfun-product-component="user-message-edit-composer"
-                data-openbitfun-product-part="action"
-                disabled={!canSubmit}
-                icon={isSubmitting ? (
-                  <Loader2
-                    className="user-message-edit-composer__spinner"
-                    data-openbitfun-product-component="user-message-edit-composer"
-                    data-openbitfun-product-part="spinner"
-                    size={14}
-                  />
-                ) : <Icon name="check-line" size="sm" />}
-                onClick={handleSubmit}
-                size="xs"
-                title={submitLabel}
-                variant="primary"
-              />
-            </>
-          )}
+        <UserMessageEditActions
+          canSubmit={canSubmit}
+          isSubmitting={isSubmitting}
+          submitLabel={submitLabel}
+          cancelLabel={cancelLabel}
+          onSubmit={handleSubmit}
+          onCancel={onCancel}
         />
       )}
     >
@@ -330,45 +349,13 @@ export const UserMessageEditComposer: React.FC<UserMessageEditComposerProps> = (
       disabled={isSubmitting}
       onMouseDown={handleComposerMouseDown}
       toolbar={(
-        <ComposerToolbar
-          className="user-message-edit-composer__actions"
-          data-openbitfun-product-component="user-message-edit-composer"
-          data-openbitfun-product-part="actions"
-          trailing={(
-            <>
-              <IconButton
-                aria-label={cancelLabel}
-                data-openbitfun-action="cancel"
-                data-openbitfun-product-component="user-message-edit-composer"
-                data-openbitfun-product-part="action"
-                icon={<Icon name="xmark" size="sm" />}
-                onClick={onCancel}
-                size="xs"
-                title={cancelLabel}
-                variant="quiet"
-              />
-              <IconButton
-                aria-busy={isSubmitting || undefined}
-                aria-label={submitLabel}
-                data-openbitfun-action="submit"
-                data-openbitfun-product-component="user-message-edit-composer"
-                data-openbitfun-product-part="action"
-                disabled={!canSubmit}
-                icon={isSubmitting ? (
-                  <Loader2
-                    className="user-message-edit-composer__spinner"
-                    data-openbitfun-product-component="user-message-edit-composer"
-                    data-openbitfun-product-part="spinner"
-                    size={14}
-                  />
-                ) : <Icon name="check-line" size="sm" />}
-                onClick={handleSubmit}
-                size="xs"
-                title={submitLabel}
-                variant="primary"
-              />
-            </>
-          )}
+        <UserMessageEditActions
+          canSubmit={canSubmit}
+          isSubmitting={isSubmitting}
+          submitLabel={submitLabel}
+          cancelLabel={cancelLabel}
+          onSubmit={handleSubmit}
+          onCancel={onCancel}
         />
       )}
     >

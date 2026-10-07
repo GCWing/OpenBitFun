@@ -6,7 +6,6 @@ import { AppRootHostPort } from '../main/ets/pages/host/AppRootHostAdapter';
 import { AppRoute } from '../main/ets/pages/navigation/AppRouteContract';
 import { AppRootRuntime } from '../main/ets/pages/runtime/AppRootRuntime';
 import { FilePreviewRequest, FilePreviewTarget } from '../main/ets/model/FilePreviewTarget';
-import { CONNECT_INTENT_SCAN } from '../main/ets/pages/state/AppShellState';
 
 class FakeAppRootHost implements AppRootHostPort {
   externalLinks: string[] = [];
@@ -164,12 +163,22 @@ export default function appRootLifecycleUnitTest() {
       runtime.aboutToDisappear();
     });
 
-    it('opens the scanner directly when adding a desktop', 0, () => {
+    it('opens account settings, not a scanner, when adding a desktop', 0, () => {
       const runtime = new TestAppRootRuntime();
 
-      runtime.presentationActions.onSidebar.addDesktop();
-      expect(runtime.appShellState.showConnectSheet).assertTrue();
-      expect(runtime.appShellState.connectSheetIntent).assertEqual(CONNECT_INTENT_SCAN);
+      runtime.presentationActions.onSidebar.openAccountDevices();
+      expect(runtime.appShellState.showConnectSheet).assertFalse();
+      expect(runtime.appShellState.showSettings).assertTrue();
+      expect(runtime.appShellState.settingsMode).assertEqual('account');
+    });
+
+    it('returns to the single settings page after an account login settles', 0, () => {
+      const runtime = new TestAppRootRuntime();
+
+      runtime.presentationActions.onSettings.openAccount();
+      runtime.presentationActions.onSettings.accountSettled();
+      expect(runtime.appShellState.showSettings).assertTrue();
+      expect(runtime.appShellState.settingsMode).assertEqual('general');
     });
 
     it('invalidates and closes preview when the remote target changes', 0, () => {

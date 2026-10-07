@@ -312,7 +312,7 @@ export function collectReviewerProgress(session: Session): DeepReviewReviewerPro
   for (const turn of session.dialogTurns) {
     for (const round of turn.modelRounds) {
       for (const item of round.items) {
-        if (item.type !== 'tool' || getEffectiveToolName(item) !== 'Task') {
+        if (item.type !== 'tool' || !['Task', 'AgentSpawn', 'LaunchReviewAgent'].includes(getEffectiveToolName(item))) {
           continue;
         }
         const progress = getReviewerProgressFromTask(item);

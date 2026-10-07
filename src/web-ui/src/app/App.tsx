@@ -1,3 +1,5 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
+import { importWithRetry } from '@/shared/utils/moduleLoader';
 import { lazy, Suspense, useEffect, useCallback, useLayoutEffect, useState, useRef } from 'react';
 import { ChatProvider } from '../infrastructure/contexts/ChatProvider';
 import { ViewModeProvider } from '../infrastructure/contexts/ViewModeProvider';
@@ -54,7 +56,7 @@ interface AppLayoutStartupGateProps {
 const LazyAppLayout = lazy(async () => {
   startupTrace.markPhase('app_layout_import_start');
   try {
-    const module = await import('./layout/AppLayout');
+    const module = await importWithRetry(() => import('./layout/AppLayout'));
     clearStartupModuleReloadAttempt();
     startupTrace.markPhase('app_layout_import_end');
     return {
@@ -80,7 +82,7 @@ const LazyAppLayout = lazy(async () => {
   }
 });
 
-const LazyGlobalSearchRoot = lazy(() => import('./global-search/GlobalSearchRoot'));
+const LazyGlobalSearchRoot = lazyWithRecovery(() => import('./global-search/GlobalSearchRoot'));
 
 /**
  * OpenBitFun main application component.
@@ -771,6 +773,40 @@ function App() {
     return () => {
       disposed = true;
       unsubscribe?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void import('@tauri-apps/api/window')
+      .then(({ getCurrentWindow }) => getCurrentWindow().onFocusChanged(({ payload }) => {
+        if (disposed) return;
+        void import('@tauri-apps/api/event').then(({ emit }) => {
+          void emit('agent-companion://main-window-state', { focused: payload });
+        });
+      }))
+      .then(removeListener => {
+        if (disposed) {
+          removeListener();
+          return;
+        }
+        unlisten = removeListener;
+      })
+      .catch(error => {
+        if (!disposed) {
+          log.warn('Failed to listen for main window focus changes', error);
+        }
+      });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
     };
   }, []);
 

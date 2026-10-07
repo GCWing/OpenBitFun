@@ -147,7 +147,7 @@ export const SessionMenu: React.FC<SessionMenuProps> = ({ onOpenChange }) => {
               }}
               leading={(
                 <span className="openbitfun-session-menu__item-icon" data-openbitfun-component="session-menu" data-openbitfun-part="itemIcon">
-                  <Icon name="plus" size="lg" style={{ width: 13, height: 13 }} />
+                  <Icon name="plus" size="sm" />
                 </span>
               )}
             >

@@ -1,6 +1,7 @@
+import { OpenBitFunMark } from '@openbitfun/ui/brand';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { Phone } from 'lucide-react';
-import { OverflowText, IconButton, VoiceCallIdentity, VoiceCallControls, VoiceCallHeader } from '@openbitfun/ui';
+import { OverflowText, IconButton, VoiceCallIdentity, VoiceCallControls, VoiceCallHeader, Icon } from '@openbitfun/ui';
 import { useI18n } from '@/infrastructure/i18n';
 
 import { RealtimeVoiceCallPanel } from './RealtimeVoiceCallPanel';
@@ -110,7 +111,7 @@ export function ConversationModeSurface({
       {!isVoiceMode && renderHeader?.(integrated ? null : <IconButton
         size="sm"
         data-testid={switchTestId}
-        icon={<span className="openbitfun-conversation-mode-surface__logo" aria-hidden="true" />}
+        icon={<OpenBitFunMark className="openbitfun-conversation-mode-surface__logo" aria-hidden="true" />}
         aria-label={t(isVoiceMode ? 'voiceCall.call.switchToChat' : 'voiceCall.call.switchToVoice')}
         aria-pressed={isVoiceMode}
         title={t(isVoiceMode ? 'voiceCall.call.switchToChat' : 'voiceCall.call.switchToVoice')}
@@ -168,7 +169,7 @@ export function ConversationModeSurface({
             disabled={!ownsCall && (voiceStartDisabled || phase !== 'idle')}
             onClick={handleModeSwitch}
           >
-            <Phone size={15} aria-hidden="true" />
+            <Icon glyph={Phone} size="md" aria-hidden="true" />
             <OverflowText>
               {t('voiceCall.call.switchToVoice')}
             </OverflowText>

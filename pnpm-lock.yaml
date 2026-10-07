@@ -75,8 +75,8 @@ importers:
         specifier: ^25.8.0
         version: 25.8.0(typescript@5.8.3)
       lucide-react:
-        specifier: ^0.541.0
-        version: 0.541.0(react@18.3.1)
+        specifier: ^0.560.0
+        version: 0.560.0(react@18.3.1)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -122,6 +122,9 @@ importers:
       '@openbitfun/design-tokens':
         specifier: workspace:^
         version: link:../../packages/design-tokens
+      '@openbitfun/flow-chat-presentation':
+        specifier: workspace:*
+        version: link:../../../packages/flow-chat-presentation
       '@openbitfun/theme-openbitfun':
         specifier: workspace:^
         version: link:../../packages/theme-openbitfun
@@ -129,8 +132,8 @@ importers:
         specifier: workspace:^
         version: link:../../packages/ui
       lucide-react:
-        specifier: ^0.541.0
-        version: 0.541.0(react@18.3.1)
+        specifier: ^0.560.0
+        version: 0.560.0(react@18.3.1)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -182,8 +185,8 @@ importers:
         specifier: workspace:^
         version: link:../design-tokens
       lucide-react:
-        specifier: ^0.541.0
-        version: 0.541.0(react@18.3.1)
+        specifier: ^0.560.0
+        version: 0.560.0(react@18.3.1)
     devDependencies:
       '@types/node':
         specifier: ^20.10.0
@@ -214,6 +217,43 @@ importers:
 
   design-system/tooling/token-engine: {}
 
+  packages/flow-chat-presentation:
+    dependencies:
+      '@openbitfun/design-tokens':
+        specifier: workspace:^
+        version: link:../../design-system/packages/design-tokens
+      '@openbitfun/ui':
+        specifier: workspace:^
+        version: link:../../design-system/packages/ui
+      '@xterm/addon-fit':
+        specifier: ^0.12.0-beta.103
+        version: 0.12.0-beta.141(@xterm/xterm@6.1.0-beta.141)
+      '@xterm/xterm':
+        specifier: ^6.1.0-beta.101
+        version: 6.1.0-beta.141
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.0
+        version: 18.3.27
+      '@types/react-dom':
+        specifier: ^18.3.0
+        version: 18.3.7(@types/react@18.3.27)
+      jsdom:
+        specifier: ^29.0.1
+        version: 29.0.1(@noble/hashes@2.0.1)
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.0(@types/node@22.19.7)(jsdom@29.0.1(@noble/hashes@2.0.1))(vite@7.3.1(@types/node@22.19.7)(jiti@2.6.1)(sass@1.97.3)(terser@5.46.0)(tsx@4.21.0)(yaml@2.8.2))
+
   sdk/typescript:
     devDependencies:
       '@types/node':
@@ -235,8 +275,8 @@ importers:
         specifier: ^2.1.10
         version: 2.1.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       lucide-react:
-        specifier: ^0.541.0
-        version: 0.541.0(react@18.3.1)
+        specifier: ^0.560.0
+        version: 0.560.0(react@18.3.1)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -287,8 +327,8 @@ importers:
         specifier: 6.1.0-beta.141
         version: 6.1.0-beta.141
       lucide-react:
-        specifier: ^0.541.0
-        version: 0.541.0(react@18.3.1)
+        specifier: ^0.560.0
+        version: 0.560.0(react@18.3.1)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -351,8 +391,8 @@ importers:
         specifier: ^2.1.10
         version: 2.1.10(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       lucide-react:
-        specifier: ^0.541.0
-        version: 0.541.0(react@18.3.1)
+        specifier: ^0.560.0
+        version: 0.560.0(react@18.3.1)
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -387,6 +427,9 @@ importers:
       '@openbitfun/design-tokens':
         specifier: workspace:^
         version: link:../../design-system/packages/design-tokens
+      '@openbitfun/flow-chat-presentation':
+        specifier: workspace:*
+        version: link:../../packages/flow-chat-presentation
       '@openbitfun/theme-openbitfun':
         specifier: workspace:^
         version: link:../../design-system/packages/theme-openbitfun
@@ -440,7 +483,7 @@ importers:
         version: 3.20.4
       '@tiptap/react':
         specifier: ^3.20.4
-        version: 3.20.4(@floating-ui/dom@1.7.6)(@tiptap/core@3.20.4(@tiptap/pm@3.20.4))(@tiptap/pm@3.20.4)(@types/react-dom@18.3.7(@types/react@18.3.27))(@types/react@18.3.27)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 3.20.4(@floating-ui/dom@1.8.0)(@tiptap/core@3.20.4(@tiptap/pm@3.20.4))(@tiptap/pm@3.20.4)(@types/react-dom@18.3.7(@types/react@18.3.27))(@types/react@18.3.27)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@tiptap/starter-kit':
         specifier: ^3.20.4
         version: 3.20.4
@@ -478,8 +521,8 @@ importers:
         specifier: ^0.16.25
         version: 0.16.28
       lucide-react:
-        specifier: ^0.541.0
-        version: 0.541.0(react@18.3.1)
+        specifier: ^0.560.0
+        version: 0.560.0(react@18.3.1)
       markstream-react:
         specifier: 2.0.13
         version: 2.0.13(katex@0.16.28)(mermaid@11.12.2)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -2545,9 +2588,6 @@ packages:
   '@vitest/pretty-format@2.1.9':
     resolution: {integrity: sha512-KhRIdGV2U9HOUzxfiHmY8IFHTdqtOhIzCpd8WRdJiE7D/HUcZVD0EgQCVjm+Q9gkUXWgBvMmTtZgIG48wq7sOQ==}
 
-  '@vitest/pretty-format@4.0.18':
-    resolution: {integrity: sha512-P24GK3GulZWC5tz87ux0m8OADrQIUVDPIjjj65vBXYG17ZeU3qD7r+MNZ1RNv4l8CGU2vtTRqixrOi9fYk/yKw==}
-
   '@vitest/pretty-format@4.1.0':
     resolution: {integrity: sha512-3RZLZlh88Ib0J7NQTRATfc/3ZPOnSUn2uDBUoGNn5T36+bALixmzphN26OUD3LRXWkJu4H0s5vvUeqBiw+kS0A==}
 
@@ -2556,9 +2596,6 @@ packages:
 
   '@vitest/snapshot@2.1.9':
     resolution: {integrity: sha512-oBO82rEjsxLNJincVhLhaxxZdEtV0EFHMK5Kmx5sJ6H9L183dHECjiefOAdnqpIgT5eZwT04PoggUnW88vOBNQ==}
-
-  '@vitest/snapshot@4.0.18':
-    resolution: {integrity: sha512-PCiV0rcl7jKQjbgYqjtakly6T1uwv/5BQ9SwBLekVg/EaYeQFPiXcgrC2Y7vDMA8dM1SUEAEV82kgSQIlXNMvA==}
 
   '@vitest/snapshot@4.1.0':
     resolution: {integrity: sha512-0Vy9euT1kgsnj1CHttwi9i9o+4rRLEaPRSOJ5gyv579GJkNpgJK+B4HSv/rAWixx2wdAFci1X4CEPjiu2bXIMg==}
@@ -4393,8 +4430,8 @@ packages:
     resolution: {integrity: sha512-jumlc0BIUrS3qJGgIkWZsyfAM7NCWiBcCDhnd+3NNM5KbBmLTgHVfWBcg6W+rLUsIpzpERPsvwUP7CckAQSOoA==}
     engines: {node: '>=12'}
 
-  lucide-react@0.541.0:
-    resolution: {integrity: sha512-s0Vircsu5WaGv2KoJZ5+SoxiAJ3UXV5KqEM3eIFDHaHkcLIFdIWgXtZ412+Gh02UsdS7Was+jvEpBvPCWQISlg==}
+  lucide-react@0.560.0:
+    resolution: {integrity: sha512-NwKoUA/aBShsdL8WE5lukV2F/tjHzQRlonQs7fkNGI1sCT0Ay4a9Ap3ST2clUUkcY+9eQ0pBe2hybTQd2fmyDA==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
@@ -7394,9 +7431,9 @@ snapshots:
     dependencies:
       '@tiptap/extensions': 3.20.4(@tiptap/core@3.20.4(@tiptap/pm@3.20.4))(@tiptap/pm@3.20.4)
 
-  '@tiptap/extension-floating-menu@3.20.4(@floating-ui/dom@1.7.6)(@tiptap/core@3.20.4(@tiptap/pm@3.20.4))(@tiptap/pm@3.20.4)':
+  '@tiptap/extension-floating-menu@3.20.4(@floating-ui/dom@1.8.0)(@tiptap/core@3.20.4(@tiptap/pm@3.20.4))(@tiptap/pm@3.20.4)':
     dependencies:
-      '@floating-ui/dom': 1.7.6
+      '@floating-ui/dom': 1.8.0
       '@tiptap/core': 3.20.4(@tiptap/pm@3.20.4)
       '@tiptap/pm': 3.20.4
     optional: true
@@ -7503,7 +7540,7 @@ snapshots:
       prosemirror-transform: 1.11.0
       prosemirror-view: 1.41.7
 
-  '@tiptap/react@3.20.4(@floating-ui/dom@1.7.6)(@tiptap/core@3.20.4(@tiptap/pm@3.20.4))(@tiptap/pm@3.20.4)(@types/react-dom@18.3.7(@types/react@18.3.27))(@types/react@18.3.27)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
+  '@tiptap/react@3.20.4(@floating-ui/dom@1.8.0)(@tiptap/core@3.20.4(@tiptap/pm@3.20.4))(@tiptap/pm@3.20.4)(@types/react-dom@18.3.7(@types/react@18.3.27))(@types/react@18.3.27)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)':
     dependencies:
       '@tiptap/core': 3.20.4(@tiptap/pm@3.20.4)
       '@tiptap/pm': 3.20.4
@@ -7516,7 +7553,7 @@ snapshots:
       use-sync-external-store: 1.6.0(react@18.3.1)
     optionalDependencies:
       '@tiptap/extension-bubble-menu': 3.20.4(@tiptap/core@3.20.4(@tiptap/pm@3.20.4))(@tiptap/pm@3.20.4)
-      '@tiptap/extension-floating-menu': 3.20.4(@floating-ui/dom@1.7.6)(@tiptap/core@3.20.4(@tiptap/pm@3.20.4))(@tiptap/pm@3.20.4)
+      '@tiptap/extension-floating-menu': 3.20.4(@floating-ui/dom@1.8.0)(@tiptap/core@3.20.4(@tiptap/pm@3.20.4))(@tiptap/pm@3.20.4)
     transitivePeerDependencies:
       - '@floating-ui/dom'
 
@@ -7959,10 +7996,6 @@ snapshots:
     dependencies:
       tinyrainbow: 1.2.0
 
-  '@vitest/pretty-format@4.0.18':
-    dependencies:
-      tinyrainbow: 3.0.3
-
   '@vitest/pretty-format@4.1.0':
     dependencies:
       tinyrainbow: 3.0.3
@@ -7977,12 +8010,6 @@ snapshots:
       '@vitest/pretty-format': 2.1.9
       magic-string: 0.30.21
       pathe: 1.1.2
-
-  '@vitest/snapshot@4.0.18':
-    dependencies:
-      '@vitest/pretty-format': 4.0.18
-      magic-string: 0.30.21
-      pathe: 2.0.3
 
   '@vitest/snapshot@4.1.0':
     dependencies:
@@ -9369,7 +9396,7 @@ snapshots:
 
   expect-webdriverio@5.6.4(@wdio/globals@9.23.0)(@wdio/logger@9.18.0)(webdriverio@9.24.0(puppeteer-core@21.11.0)):
     dependencies:
-      '@vitest/snapshot': 4.0.18
+      '@vitest/snapshot': 4.1.0
       '@wdio/globals': 9.23.0(expect-webdriverio@5.6.4)(webdriverio@9.24.0(puppeteer-core@21.11.0))
       '@wdio/logger': 9.18.0
       deep-eql: 5.0.2
@@ -10228,7 +10255,7 @@ snapshots:
 
   lru-cache@7.18.3: {}
 
-  lucide-react@0.541.0(react@18.3.1):
+  lucide-react@0.560.0(react@18.3.1):
     dependencies:
       react: 18.3.1
 

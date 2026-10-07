@@ -40,7 +40,6 @@ export struct AppSidebar {
   @Event onOpenMiniApps: () => void = () => {};
   @Event onNewChat: (agentType: string) => void = (_agentType: string) => {};
   @Event onEnterCode: () => void = () => {};
-  @Event onScanDesktop: () => void = () => {};
   @Event onCollapse: () => void = () => {};
   @Event onOpenViewSettings: () => void = () => {};
   @Event onSearchQueryChange: (query: string) => void = (_query: string) => {};
@@ -262,26 +261,6 @@ export struct AppSidebar {
   @Builder
   private SignedOutFooter() {
     Column({ space: 8 }) {
-      if (SidebarConnectionActionPolicy.shouldShowScan(this.connectionState)) {
-        Button() {
-          Text(RemoteI18n.t('sidebar.scanToConnect'))
-            .fontSize(MobileDesignTypography.bodyMedium.size)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(SIDEBAR_INK)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Clip })
-        }
-          .width('100%')
-          .height(48)
-          .padding(0)
-          .backgroundColor(SIDEBAR_RAISED)
-          .border({ width: 1, color: SIDEBAR_LINE })
-          .borderRadius(16)
-          .onClick(() => {
-            this.onScanDesktop();
-          })
-      }
-
       Button() {
         Text(RemoteI18n.t('sidebar.signInOpenBitFunAccount'))
           .fontSize(MobileDesignTypography.bodyMedium.size)
@@ -317,7 +296,6 @@ export struct AppSidebar {
   }
 
   private usesCompactFooter(): boolean {
-    return this.shouldShowPrimaryNavigation() ||
-      !SidebarConnectionActionPolicy.shouldShowScan(this.connectionState);
+    return this.shouldShowPrimaryNavigation() || this.connectionState === 'connected';
   }
 }

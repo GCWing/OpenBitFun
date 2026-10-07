@@ -19,6 +19,7 @@
  * what the reader is looking for when they scroll back through history.
  */
 const TURN_ANCHOR_SELECTOR = '.virtual-item-wrapper[data-item-type="user-message"]';
+const BLOCK_ANCHOR_SELECTOR = '.virtual-item-wrapper[data-virtual-item-key]';
 
 /**
  * Where the user is reading, expressed as a Turn rather than an offset.
@@ -29,11 +30,13 @@ const TURN_ANCHOR_SELECTOR = '.virtual-item-wrapper[data-item-type="user-message
  */
 export interface ViewportAnchor {
   turnId: string;
+  itemKey?: string;
   offsetFromScrollerTop: number;
 }
 
 export interface ViewportAnchorCandidate {
   turnId: string | null;
+  itemKey?: string;
   offsetFromScrollerTop: number;
   bottomOffsetFromScrollerTop: number;
 }
@@ -148,6 +151,7 @@ export function selectViewportAnchor(
   if (!candidate?.turnId) return null;
   return {
     turnId: candidate.turnId,
+    ...(candidate.itemKey ? { itemKey: candidate.itemKey } : {}),
     offsetFromScrollerTop: candidate.offsetFromScrollerTop,
   };
 }
@@ -204,11 +208,12 @@ export function shouldCaptureViewportAnchorOnScroll(
 export function readViewportAnchorCandidates(scroller: HTMLElement): ViewportAnchorCandidate[] {
   const scrollerTop = scroller.getBoundingClientRect().top;
   return Array.from(
-    scroller.querySelectorAll<HTMLElement>(TURN_ANCHOR_SELECTOR),
+    scroller.querySelectorAll<HTMLElement>(`${BLOCK_ANCHOR_SELECTOR}, ${TURN_ANCHOR_SELECTOR}`),
   ).map(element => {
     const rect = element.getBoundingClientRect();
     return {
       turnId: element.dataset.turnId ?? null,
+      itemKey: element.dataset.virtualItemKey,
       offsetFromScrollerTop: rect.top - scrollerTop,
       bottomOffsetFromScrollerTop: rect.bottom - scrollerTop,
     };
@@ -218,10 +223,11 @@ export function readViewportAnchorCandidates(scroller: HTMLElement): ViewportAnc
 export function findRenderedTurnAnchorElement(
   scroller: HTMLElement | null,
   turnId: string,
+  itemKey?: string,
 ): HTMLElement | null {
   return Array.from(
-    scroller?.querySelectorAll<HTMLElement>(TURN_ANCHOR_SELECTOR) ?? [],
-  ).find(element => element.dataset.turnId === turnId) ?? null;
+    scroller?.querySelectorAll<HTMLElement>(itemKey ? BLOCK_ANCHOR_SELECTOR : TURN_ANCHOR_SELECTOR) ?? [],
+  ).find(element => itemKey ? element.dataset.virtualItemKey === itemKey : element.dataset.turnId === turnId) ?? null;
 }
 
 export function readTurnAnchorOffsetPx(scroller: HTMLElement, element: HTMLElement): number {

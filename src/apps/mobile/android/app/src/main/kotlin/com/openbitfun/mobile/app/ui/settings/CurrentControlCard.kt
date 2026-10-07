@@ -92,8 +92,8 @@ internal fun CurrentControlCard(
                     modifier = Modifier.testTag(CONTROL_ACTION_TEST_TAG),
                 )
 
-                // Nothing is paired, so there is neither a link to leave nor one
-                // to try again — the entry below is what makes the first one.
+                // Nothing is selected, so there is neither a link to leave nor one
+                // to try again; the account's device list below makes the first.
                 RemoteControlAction.NONE -> Unit
             }
         }
@@ -108,9 +108,7 @@ internal fun CurrentControlCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            // The same glyph the entry below the card uses for a pairing link:
-            // this row and that one are the two halves of one question, so the
-            // source marks both with it.
+            // How the link was made: today only through the signed-in account.
             Icon(
                 painterResource(R.drawable.ic_symbol_link),
                 contentDescription = null,

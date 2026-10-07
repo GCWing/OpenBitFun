@@ -11,8 +11,8 @@ const headerStyles = readSource('../../../infrastructure/config/components/commo
 const pageHeaderStyles = readSource('../../../../../../design-system/packages/ui/src/components/PageHeader/PageHeader.module.css');
 const layoutStyles = readSource('../../../infrastructure/config/components/common/ConfigPageLayout.scss');
 const formStyles = readSource('../../../infrastructure/config/components/ConfigForm.scss');
-const appearanceStyles = readSource('../../../infrastructure/config/components/AppearanceSettingsPage.scss');
-const shortcutStyles = readSource('./components/KeyboardShortcutsTab.scss');
+const appearanceStyles = readSource('./pages/application/AppearanceSettingsPage.scss');
+const shortcutStyles = readSource('./pages/application/KeyboardShortcutsSection.scss');
 
 describe('Settings content typography', () => {
   it('maps the shared settings hierarchy to canonical semantic type roles', () => {

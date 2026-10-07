@@ -329,7 +329,7 @@ export const SessionFileModificationsBar: React.FC<SessionFileModificationsBarPr
   const getOperationIcon = (operationType: 'write' | 'edit' | 'delete') => {
     switch (operationType) {
       case 'write':
-        return <FilePlus size={14} className="icon-write" />;
+        return <Icon glyph={FilePlus} size="sm" className="icon-write" />;
       case 'delete':
         return <Icon name="delete" size="sm" className="icon-delete" />;
       default:

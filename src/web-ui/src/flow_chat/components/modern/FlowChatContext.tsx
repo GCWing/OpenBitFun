@@ -5,6 +5,7 @@
 
 import { createContext, useContext } from 'react';
 import type React from 'react';
+import type { FlowGroupReceiveFeedback } from '@openbitfun/ui/flow-chat';
 import type { Session, ToolRejectOptions } from '../../types/flow-chat';
 import { type LineRange } from '@/shared/editor/LineRange';
 import type { SearchMatch } from './useFlowChatSearch';
@@ -51,9 +52,10 @@ export interface FlowChatContextValue {
   /** Hides transcript actions when the visible projection omits internal turn input. */
   allowTranscriptExport?: boolean;
 
-  // ========== Explore group collapse actions (stable callbacks) ==========
+  // Collection actions are shared by every group category.
+  onGroupToggle?: (groupId: string) => void;
   /**
-   * Toggle explore group expanded/collapsed state.
+   * Compatibility alias for existing hosts. Prefer onGroupToggle.
    */
   onExploreGroupToggle?: (groupId: string) => void;
 
@@ -71,6 +73,8 @@ export interface FlowChatContextValue {
    * Collapse the specified explore group.
    */
   onCollapseGroup?: (groupId: string) => void;
+  /** User-opened lightweight details, keyed by session/turn/item identity. */
+  onToolCapsuleExpandedChange?: (key: string, expanded: boolean) => void;
 }
 
 /**
@@ -79,6 +83,8 @@ export interface FlowChatContextValue {
  * Only components that actually depend on these fields should subscribe.
  */
 export interface FlowChatVolatileContextValue {
+  groupStates?: ReadonlyMap<string, boolean>;
+  groupReceiveFeedback?: ReadonlyMap<string, FlowGroupReceiveFeedback>;
   /** Tool-call IDs highlighted for active permission requests, including delegated parent Task calls. */
   pendingPermissionToolCallIds?: ReadonlySet<string>;
 
@@ -87,6 +93,7 @@ export interface FlowChatVolatileContextValue {
    * key: groupId, value: true means expanded.
    */
   exploreGroupStates?: Map<string, boolean>;
+  expandedToolCapsules?: ReadonlySet<string>;
 
   // Message search state
   searchQuery?: string;

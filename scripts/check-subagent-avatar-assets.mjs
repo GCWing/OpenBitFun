@@ -59,4 +59,27 @@ for (const character of palette.characters) {
   assert.deepEqual([...usedColors].sort(), [...colors].sort(), `${character.file}: palette contains stale colors.`);
 }
 
-console.log(`[subagent-avatar-assets] ok: ${expectedFiles.length} SVGs, ${bytes} bytes, exact palettes and runtime imports verified.`);
+const hatchPath = 'design-system/packages/ui/src/brand/assets';
+const hatchPalette = readJson(path.join(root, hatchPath, 'subagent-egg.palette.json'));
+assert.equal(hatchPalette.version, 1);
+assert.equal(hatchPalette.file, 'subagent-egg.svg');
+assert.ok(hatchPalette.owner && hatchPalette.reason.length >= 60);
+for (const role of ['stem', 'body', 'knob', 'face']) {
+  assert.equal(hatchPalette.colors[role], palette.characters[0][role], `The egg must preserve robot-01's ${role}.`);
+}
+const hatchSource = fs.readFileSync(path.join(root, hatchPath, hatchPalette.file), 'utf8');
+const hatchColors = Object.values(hatchPalette.colors);
+assert.ok(hatchColors.every(color => /^#[0-9A-F]{6}$/.test(color)));
+const usedHatchColors = [...hatchSource.matchAll(/\b(?:fill|stroke)="([^"]+)"/g)]
+  .map(match => match[1]).filter(color => color !== 'none');
+assert.deepEqual([...new Set(usedHatchColors)].sort(), [...new Set(hatchColors)].sort());
+assert.doesNotMatch(hatchSource, /\s(?:style|on\w+|(?:xlink:)?href)\s*=/i);
+for (const [, tag] of hatchSource.matchAll(/<\/?([\w:-]+)\b/g)) assert.ok(allowedTags.has(tag));
+for (const part of ['egg', 'peek', 'eyes', 'lid', 'shell-left', 'shell-right']) {
+  assert.ok(hatchSource.includes(`data-hatch-part="${part}"`), `The hatch rig needs ${part}.`);
+}
+const ui = registry.surfaces.find(surface => surface.id === 'design-system-ui');
+assert.deepEqual((ui.audit.excludePaths ?? []).filter(file => file.includes('subagent-egg')), ['src/brand/assets/subagent-egg.svg']);
+assert.ok(fs.readFileSync(path.join(root, hatchPalette.consumer), 'utf8').includes("../assets/subagent-egg.svg?raw"));
+
+console.log(`[subagent-avatar-assets] ok: ${expectedFiles.length} character SVGs (${bytes} bytes) and the hatch SVG, exact palettes and runtime imports verified.`);

@@ -191,7 +191,7 @@ export const RemediationSelectionPanel: React.FC<RemediationSelectionPanelProps>
                             <Icon name="check-circle" size="xs" className="deep-review-action-bar__completed-icon" />
                           )}
                           {isFixing && (
-                            <Loader2 size={12} className="deep-review-action-bar__fixing-icon" />
+                            <Icon glyph={Loader2} size="xs" className="deep-review-action-bar__fixing-icon" />
                           )}
                           {(isCompleted || isFixing) && (
                             <span className="deep-review-action-bar__remediation-status">

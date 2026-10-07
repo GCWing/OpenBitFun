@@ -1,10 +1,11 @@
 import { AppRoute } from '../navigation/AppRouteContract';
 import { SettingsSheetState } from './SettingsSheetState';
 
-/** The connect sheet decides for itself where to open. */
-export const CONNECT_INTENT_AUTO: string = 'auto';
-/** The user tapped something that promised a camera, so open the camera. */
-export const CONNECT_INTENT_SCAN: string = 'scan';
+/**
+ * Settings is one page ('general'). 'account' is the signed-out login step that
+ * returns to that page once the account settles.
+ */
+export type SettingsMode = 'general' | 'account';
 
 @ObservedV2
 export class AppShellState {
@@ -16,15 +17,8 @@ export class AppShellState {
   @Trace activeRoute: AppRoute = AppRoute.RemoteHome;
   @Trace showSidebar: boolean = false;
   @Trace showSettings: boolean = false;
-  @Trace settingsMode: string = 'general';
+  @Trace settingsMode: SettingsMode = 'general';
   @Trace showConnectSheet: boolean = false;
-  /**
-   * Why the connect sheet was opened, which is not something the sheet can work
-   * out for itself: a signed-in phone has an account device list to offer and a
-   * camera to offer, and only the entry point knows which one the user just
-   * asked for by name.
-   */
-  @Trace connectSheetIntent: string = CONNECT_INTENT_AUTO;
   /**
    * Mirror of the resolved master-detail layout mode. Only the presentation
    * layer measures the viewport, so runtime logic that must branch on compact
@@ -37,7 +31,7 @@ export class AppShellState {
    */
   @Trace localeRevision: number = 0;
   readonly settingsSheet: SettingsSheetState = new SettingsSheetState();
-  private accountReturnMode: string = '';
+  private accountReturnsToSettings: boolean = false;
 
   setSidebarVisible(visible: boolean): void {
     this.showSidebar = visible;
@@ -54,16 +48,16 @@ export class AppShellState {
   setSettingsVisible(visible: boolean): void {
     this.showSettings = visible;
     if (!visible) {
-      this.accountReturnMode = '';
+      this.accountReturnsToSettings = false;
       this.settingsSheet.resetOnClose();
     }
   }
 
-  openSettings(mode: string): void {
+  openSettings(mode: SettingsMode): void {
     if (mode === 'account') {
-      this.accountReturnMode = this.showSettings ? this.settingsMode : '';
+      this.accountReturnsToSettings = this.showSettings;
     } else {
-      this.accountReturnMode = '';
+      this.accountReturnsToSettings = false;
       if (mode === 'general' && !this.showSettings) {
         this.settingsSheet.resetOnClose();
       }
@@ -73,9 +67,9 @@ export class AppShellState {
   }
 
   leaveSettings(): void {
-    if (this.settingsMode === 'account' && this.accountReturnMode.length > 0) {
-      this.settingsMode = this.accountReturnMode;
-      this.accountReturnMode = '';
+    if (this.settingsMode === 'account' && this.accountReturnsToSettings) {
+      this.settingsMode = 'general';
+      this.accountReturnsToSettings = false;
       this.showSettings = true;
       return;
     }
@@ -83,21 +77,26 @@ export class AppShellState {
   }
 
   /**
-   * The intent is set on every open rather than cleared on close, because the
-   * sheet can also be dismissed by a drag that never reaches this class — and a
-   * default that only holds while nobody swipes is not a default.
+   * The account request is settled (signed in, or signed out from the inline
+   * account section). Stay in settings and land on the single settings page.
    */
-  setConnectSheetVisible(visible: boolean, intent: string = CONNECT_INTENT_AUTO): void {
-    if (visible) {
-      this.connectSheetIntent = intent;
+  settleAccountSettings(): void {
+    if (this.settingsMode !== 'account') {
+      return;
     }
+    this.settingsMode = 'general';
+    this.accountReturnsToSettings = false;
+    this.showSettings = true;
+  }
+
+  setConnectSheetVisible(visible: boolean): void {
     this.showConnectSheet = visible;
   }
 
   closeGlobalSurfaces(): void {
     this.showSidebar = false;
     this.showSettings = false;
-    this.accountReturnMode = '';
+    this.accountReturnsToSettings = false;
     this.settingsSheet.resetOnClose();
     this.showConnectSheet = false;
   }

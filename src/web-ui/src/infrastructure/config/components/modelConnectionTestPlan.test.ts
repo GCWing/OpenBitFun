@@ -51,6 +51,7 @@ describe('configsNeedingAutoTest', () => {
       ...previous[0],
       context_window: 200000,
       max_tokens: 32000,
+      metadata: { user_tags: ['planning', 'execution'] },
       reasoning: {
         catalog: { source: 'auto' as const },
         presets: [],
@@ -58,6 +59,7 @@ describe('configsNeedingAutoTest', () => {
     }];
 
     expect(configsNeedingAutoTest(previous, next, true)).toEqual([]);
+    expect(configsNeedingAutoTest(previous, next, false)).toEqual([]);
   });
 
   it('retests a model when its image probe requirement changes', () => {

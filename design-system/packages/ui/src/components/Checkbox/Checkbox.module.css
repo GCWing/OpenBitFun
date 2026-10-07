@@ -18,6 +18,7 @@
   .root[data-size="sm"] { --_checkbox-size: 12px; }
   .root[data-size="lg"] { --_checkbox-size: 16px; }
   .root[data-disabled="true"] { color: var(--openbitfun-color-content-disabled); cursor: not-allowed; }
+  .root[data-readonly="true"] { cursor: default; }
 
   .control {
     position: relative;

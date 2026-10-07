@@ -40,9 +40,7 @@
     width: 56px;
     height: 56px;
     flex-shrink: 0;
-    background-color: var(--openbitfun-color-content-primary);
-    -webkit-mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
-    mask: url('/brand/openbitfun-mark.svg') center / contain no-repeat;
+    color: var(--openbitfun-color-content-primary);
   }
 
   &__brand {

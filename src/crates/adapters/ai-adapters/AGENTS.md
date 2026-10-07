@@ -91,6 +91,7 @@ test clock and synthetic tokens; they do not authorize real accounts.
 cargo test -p openbitfun-agent-stream
 cargo test -p openbitfun-ai-adapters
 cargo test -p openbitfun-ai-adapters --lib opencode_catalog
+cargo test -p openbitfun-ai-adapters --lib models_dev::tests
 cargo test -p openbitfun-ai-adapters --features subscription-auth subscription_auth
 cargo test -p openbitfun-ai-adapters --lib providers::shared::tests
 cargo test -p openbitfun-ai-adapters --features subscription-auth --lib providers::shared::tests

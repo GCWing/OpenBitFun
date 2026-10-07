@@ -46,6 +46,21 @@ describe('isAppWindowFocused', () => {
   });
 });
 
+describe('external BTW turn projection', () => {
+  beforeEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+  afterEach(() => { resetFlowChatStore(); stateMachineManager.clear(); });
+
+  it('keeps a host-started side question transient and attached to its parent', () => {
+    __test_only__.handleDialogTurnStarted(createFlowChatContext(), {
+      sessionId: 'external-btw', turnId: 'btw-turn-question', turnIndex: 0,
+      userInput: 'Explain this', userMessageMetadata: { kind: 'btw', parentSessionId: 'parent' },
+    });
+    expect(FlowChatStore.getInstance().getState().sessions.get('external-btw')).toMatchObject({
+      sessionKind: 'btw', parentSessionId: 'parent', isTransient: true, agentBackedTransient: true,
+    });
+  });
+});
+
 describe('Claw bootstrap cancellation', () => {
   beforeEach(() => {
     resetFlowChatStore();
@@ -834,12 +849,14 @@ describe('subagent parent helpers', () => {
         parentToolCallId: 'task-review',
         agentType: 'ReviewWorker',
         focusedReviewDisplayLabel: 'Authentication boundary',
+        continuationPolicy: 'fresh_only',
       },
     );
 
     expect(
       FlowChatStore.getInstance().getState().sessions.get('review-child')?.focusedReviewDisplayLabel,
     ).toBe('Authentication boundary');
+    expect(FlowChatStore.getInstance().getState().sessions.get('review-child')?.continuationPolicy).toBe('fresh_only');
   });
 
   it('stores an absolute parent Turn index when linking from a partial restored tail', () => {
@@ -1294,7 +1311,7 @@ describe('handleModelRoundStart', () => {
     expect(turn?.modelRounds[0]?.effectiveModelName).toBeUndefined();
   });
 
-  it('trims and stores model identity fields when present', async () => {
+  it('trims model identity fields and preserves explicit host grouping policy', async () => {
     createSessionWithTurn({
       id: 'turn-1',
       sessionId: 'session-1',
@@ -1317,6 +1334,7 @@ describe('handleModelRoundStart', () => {
       roundIndex: 0,
       modelConfigId: '  config-1  ',
       effectiveModelName: '  gpt-4o  ',
+      renderHints: { disableExploreGrouping: true },
     } as any);
 
     const turn = FlowChatStore.getInstance()
@@ -1328,6 +1346,7 @@ describe('handleModelRoundStart', () => {
     expect(turn?.modelRounds[0]).toMatchObject({
       modelConfigId: 'config-1',
       effectiveModelName: 'gpt-4o',
+      renderHints: { disableExploreGrouping: true, disableExploreGroupingSource: 'host' },
     });
   });
 });
@@ -1918,6 +1937,32 @@ describe('handleTokenUsageUpdate', () => {
   afterEach(() => {
     resetFlowChatStore();
     stateMachineManager.clear();
+  });
+
+  it('accumulates reported cache hits across camel and snake case events without treating missing telemetry as zero', () => {
+    putFinishingSessionInStore();
+    const context = createFlowChatContext();
+    handleTokenUsageUpdate(context, {
+      sessionId: 'session-1', turnId: 'turn-1', inputTokens: 100,
+      outputTokens: 20, totalTokens: 120, cachedTokens: 0,
+    });
+    handleTokenUsageUpdate(context, {
+      session_id: 'session-1', turn_id: 'turn-1', input_tokens: 200,
+      output_tokens: 30, total_tokens: 230, cached_tokens: 150,
+    });
+    const current = () => FlowChatStore.getInstance().getState().sessions.get('session-1');
+    expect(current()?.dialogTurns[0].tokenUsage).toMatchObject({
+      inputTokens: 300, outputTokens: 50, totalTokens: 350, cachedTokens: 150,
+    });
+    handleTokenUsageUpdate(context, {
+      sessionId: 'session-1', turnId: 'turn-1', inputTokens: 50, totalTokens: 60, outputTokens: 10,
+    });
+    expect(current()?.dialogTurns[0].tokenUsage?.cachedTokens).toBeUndefined();
+    handleTokenUsageUpdate(context, {
+      sessionId: 'session-1', turnId: 'turn-1', inputTokens: 10, totalTokens: 12, outputTokens: 2, cachedTokens: 5,
+    });
+    expect(current()?.dialogTurns[0].tokenUsage?.cachedTokens).toBeUndefined();
+    expect(current()?.currentTokenUsage?.cachedTokens).toBe(5);
   });
 
   it('tracks the source turn on current usage without adding provenance to accumulated turn usage', () => {

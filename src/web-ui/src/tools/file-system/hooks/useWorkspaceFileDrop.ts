@@ -17,10 +17,10 @@ export interface UseWorkspaceFileDropOptions {
   workspacePath?: string;
   panelRef: RefObject<HTMLElement | null>;
   enabled?: boolean;
-  onProgress: (state: TransferProgressState | null) => void;
+  onProgress: (state: TransferProgressState | null, transferId: string) => void;
   onDragOver?: (overPanel: boolean) => void;
-  onComplete: (targetDirectory: string) => void;
-  onError: (error: unknown) => void;
+  onComplete: (targetDirectory: string, transferId: string) => void;
+  onError: (error: unknown, transferId: string) => void;
 }
 
 export function useWorkspaceFileDrop({
@@ -151,17 +151,23 @@ export function useWorkspaceFileDrop({
           isDragOverPanelRef.current = false;
 
           dropProcessingRef.current = true;
+          // One id per drop session: it keys the progress card and reaches the
+          // backend, so the card's stop action cancels this upload instead of
+          // sending an id no transfer ever registered.
+          const transferId = crypto.randomUUID();
           try {
             await uploadLocalPathsToWorkspaceDirectory(
               paths,
               targetDir,
               currentWorkspace,
-              onProgress
+              (state) => onProgress(state, transferId),
+              undefined,
+              transferId
             );
-            onComplete(targetDir);
+            onComplete(targetDir, transferId);
           } catch (error) {
             log.error('Failed to upload dropped files', error);
-            onError(error);
+            onError(error, transferId);
           } finally {
             dropProcessingRef.current = false;
           }

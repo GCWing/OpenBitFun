@@ -205,7 +205,6 @@
       "debugging": "偵錯",
       "coordination": "協作調度",
       "planning": "規劃",
-      "gstack": "gstack",
       "other": "其他"
     },
     "skillGroupPicker": {
@@ -304,7 +303,7 @@
       "descPlaceholder": "簡要描述該智能體的用途",
       "descRequired": "描述不能為空",
       "prompt": "系統提示詞",
-      "promptPlaceholder": "輸入系統提示詞，定義智能體的行為...\n\n支援以下佔位符\n{PERSONA}: SOUL.md/USER.md/IDENTITY.md\n{LANGUAGE_PREFERENCE}: 語言偏好",
+      "promptPlaceholder": "輸入系統提示詞，定義智能體的行為...\n\n支援以下佔位符\n{PERSONA}: SOUL.md/USER.md/IDENTITY.md\n{LANGUAGE_PREFERENCE}: 語言偏好\n{FILE_REFERENCES}: 檔案和圖片引用規範",
       "promptRequired": "系統提示詞不能為空",
       "readonly": "只讀模式",
       "model": "模型",
@@ -372,7 +371,6 @@
     "Explore": "探索子智能體：快速瀏覽程式碼庫，理解專案結構和關鍵檔案",
     "CodeReview": "程式碼審查子智能體：對程式碼進行品質檢查和改進建議",
     "DeepReview": "嚴格審查相容子智能體：用於歷史會話或命令中的審查流程。",
-    "GenerateDoc": "檔案生成子智能體：自動生成程式碼檔案和說明",
     "Init": "初始化智能體：幫助設定專案結構和初始設定",
     "ReviewFixer": "審查修復子智能體：根據審查結果自動修復程式碼問題",
     "Claw": "個人助理：結合您的偏好與上下文，協助處理日常任務。",

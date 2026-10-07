@@ -8,12 +8,13 @@ import { canAutoCheckForAppUpdates } from './tauriEnv';
 import {
   getSkippedVersion, readAppUpdateSnapshot, recordDailyPromptDismissed,
   recordSkipThisVersion, restoreVersionReminder, shouldShowDailyUpdatePrompt,
-  writeAppUpdateSnapshot,
+  writeAppUpdateSnapshot, recordAppUpdatePresented, deferAppUpdateReminder, getAppUpdateReminderAt,
+  APP_UPDATE_REMINDER_INTERVAL, type AppUpdateReminderStage,
 } from './appUpdateStorage';
+import { getNextAppUpdateCheckAt, type AppUpdateCheckSource } from './appUpdateSchedule';
+export { APP_UPDATE_CHECK_INTERVAL } from './appUpdateSchedule';
 
 const log = createLogger('UpdateInstallStore');
-export const APP_UPDATE_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
-const CHECK_RETRY_INTERVAL = 5 * 60 * 1000;
 
 export type UpdateInstallStatus = 'idle' | 'downloading' | 'ready' | 'installing' | 'error';
 export type UpdateNotice = 'available' | 'downloading' | 'error';
@@ -33,13 +34,20 @@ export interface UpdateInstallState {
   checkError: string | null;
   lastCheckedAt: number | null;
   lastCheckAttemptAt: number | null;
+  consecutiveCheckFailures: number;
+  reminderRevision: number;
+  reminderDeferrals: Partial<Record<AppUpdateReminderStage, { version: string; at: number }>>;
   skippedVersion: string | null;
   notice: UpdateNotice | null;
   noticeRevision: number;
   detailsOpen: boolean;
   releaseNotesOpen: boolean;
   initialize: () => Promise<void>;
-  checkForUpdates: (source?: 'manual' | 'automatic', force?: boolean) => Promise<void>;
+  checkForUpdates: (source?: AppUpdateCheckSource, force?: boolean) => Promise<void>;
+  refreshAvailableReminder: () => Promise<void>;
+  presentPendingInstall: () => void;
+  getReminderAt: (stage: AppUpdateReminderStage, version: string) => number | null;
+  deferReminder: (stage: AppUpdateReminderStage, version: string) => void;
   startInstall: (replacePending?: boolean, expectedVersion?: string) => Promise<void>;
   requestInstall: () => void;
   confirmInstall: () => Promise<void>;
@@ -60,12 +68,8 @@ let initialization: Promise<void> | null = null;
 let checking: Promise<void> | null = null;
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error);
 const isBusy = (state: UpdateInstallState) => state.status === 'downloading' || state.status === 'installing';
-const isRecent = (timestamp: number | null, interval: number) => {
-  const elapsed = timestamp === null ? -1 : Date.now() - timestamp;
-  return elapsed >= 0 && elapsed < interval;
-};
-const shouldDeferAutomaticCheck = (state: UpdateInstallState) =>
-  isRecent(state.lastCheckedAt, APP_UPDATE_CHECK_INTERVAL) || isRecent(state.lastCheckAttemptAt, CHECK_RETRY_INTERVAL);
+const shouldDeferAutomaticCheck = (state: UpdateInstallState, source: AppUpdateCheckSource) =>
+  getNextAppUpdateCheckAt(state, source) > Date.now();
 
 /** More owns undownloaded versions; the separate progress control owns prepared packages. */
 export function selectHasUpdateAttention(state: UpdateInstallState): boolean {
@@ -80,6 +84,7 @@ export const useUpdateInstallStore = create<UpdateInstallState>((set, get) => ({
   version: null, downloadVersion: null, promptOpen: false, initialized: false,
   currentVersion: null, availableUpdate: null, checkStatus: 'idle', checkError: null,
   lastCheckedAt: null, lastCheckAttemptAt: null, skippedVersion: getSkippedVersion(),
+  consecutiveCheckFailures: 0, reminderRevision: 0, reminderDeferrals: {},
   notice: null, noticeRevision: 0, detailsOpen: false, releaseNotesOpen: false,
 
   initialize: async () => {
@@ -114,12 +119,16 @@ export const useUpdateInstallStore = create<UpdateInstallState>((set, get) => ({
   },
 
   checkForUpdates: async (source = 'manual', force = false) => {
-    if (source === 'automatic' && !canAutoCheckForAppUpdates()) return;
+    const automatic = source !== 'manual';
+    if (automatic && !canAutoCheckForAppUpdates()) return;
     await get().initialize();
     if (checking) return checking;
     if (isBusy(get())) return;
-    if (source === 'automatic') {
-      if (!force && shouldDeferAutomaticCheck(get())) return;
+    if (automatic) {
+      if (!force && shouldDeferAutomaticCheck(get(), source)) {
+        await get().refreshAvailableReminder();
+        return;
+      }
       const checkedBeforePreference = get().lastCheckedAt;
       try {
         if (!await systemAPI.getAutoUpdateEnabled()) return;
@@ -130,7 +139,7 @@ export const useUpdateInstallStore = create<UpdateInstallState>((set, get) => ({
       // A pending preference read must not swallow a manual check or start a duplicate one.
       if (checking) return checking;
       if (isBusy(get()) || get().lastCheckedAt !== checkedBeforePreference) return;
-      if (!force && shouldDeferAutomaticCheck(get())) return;
+      if (!force && shouldDeferAutomaticCheck(get(), source)) return;
     }
     const check = (async () => {
       set({ checkStatus: 'checking', checkError: null, lastCheckAttemptAt: Date.now() });
@@ -145,30 +154,68 @@ export const useUpdateInstallStore = create<UpdateInstallState>((set, get) => ({
         writeAppUpdateSnapshot({ result, checkedAt });
         set({ availableUpdate: available ? result : null, currentVersion: result.currentVersion,
           checkStatus: available ? 'available' : 'latest', lastCheckedAt: checkedAt,
+          consecutiveCheckFailures: 0,
           ...(obsoleteDownloadFailure ? { error: null, status: previous.version ? 'ready' : 'idle', downloadVersion: null } : {}),
           ...(previous.notice === 'available' || (obsoleteDownloadFailure && previous.notice === 'error') ? { notice: null } : {}),
         });
         if (available && result.latestVersion) {
-          if (get().detailsOpen) recordDailyPromptDismissed(result.latestVersion);
-          else if (source === 'automatic' && get().status !== 'downloading' && get().status !== 'installing' &&
-              result.latestVersion !== get().version && result.latestVersion !== get().skippedVersion &&
-              shouldShowDailyUpdatePrompt(result.latestVersion) && await systemAPI.getAutoUpdateEnabled()) {
-            // The user may open details, skip, or download while the preference read is pending.
-            const current = get();
-            if (!current.detailsOpen && !current.promptOpen && current.status !== 'downloading' && current.status !== 'installing' &&
-                current.version !== result.latestVersion && current.availableUpdate?.latestVersion === result.latestVersion &&
-                current.skippedVersion !== result.latestVersion && shouldShowDailyUpdatePrompt(result.latestVersion)) {
-              set(state => ({ notice: 'available', noticeRevision: state.noticeRevision + 1 }));
-            }
-          }
+          if (get().detailsOpen) recordAppUpdatePresented('available', result.latestVersion);
+          else if (automatic) await get().refreshAvailableReminder();
         }
       } catch (error) {
         log.warn('Update check failed', error);
-        set({ checkStatus: 'error', checkError: errorText(error) });
+        set(state => ({ checkStatus: 'error', checkError: errorText(error),
+          consecutiveCheckFailures: state.consecutiveCheckFailures + 1 }));
       }
     })();
     checking = check;
     try { await check; } finally { if (checking === check) checking = null; }
+  },
+
+  refreshAvailableReminder: async () => {
+    if (!canAutoCheckForAppUpdates()) return;
+    const eligible = () => {
+      const state = get();
+      const target = state.availableUpdate?.latestVersion;
+      return state.initialized && !state.detailsOpen && !state.promptOpen && !isBusy(state) && !state.notice &&
+        target && target !== state.version && target !== state.skippedVersion &&
+        shouldShowDailyUpdatePrompt(target) && (state.getReminderAt('available', target) ?? Infinity) <= Date.now()
+        ? target : null;
+    };
+    const target = eligible();
+    if (!target) return;
+    try {
+      if (await systemAPI.getAutoUpdateEnabled() && eligible() === target) {
+        set(state => ({ notice: 'available', noticeRevision: state.noticeRevision + 1 }));
+      }
+    } catch (error) {
+      log.warn('Update reminders paused because the preference is unavailable', error);
+    }
+  },
+
+  // The shell calls this only when foreground presentation is available.
+  presentPendingInstall: () => {
+    const state = get();
+    if (state.status !== 'ready' || !state.version || state.error || state.downloadVersion || state.promptOpen || state.detailsOpen) return;
+    const due = state.getReminderAt('ready', state.version);
+    if (due !== null && due <= Date.now()) {
+      set({ promptOpen: true, notice: null });
+    }
+  },
+
+  getReminderAt: (stage, version) => {
+    const stored = getAppUpdateReminderAt(stage, version);
+    if (stored === null) return null;
+    const deferred = get().reminderDeferrals[stage];
+    return deferred?.version === version && deferred.at <= Date.now()
+      ? Math.max(stored, deferred.at + APP_UPDATE_REMINDER_INTERVAL) : stored;
+  },
+  deferReminder: (stage, version) => {
+    if (stage === 'available') recordDailyPromptDismissed(version);
+    else deferAppUpdateReminder(stage, version);
+    // Keep the user's decision for this run even when WebView storage is unavailable.
+    set(state => ({ reminderDeferrals: { ...state.reminderDeferrals, [stage]: { version, at: Date.now() } },
+      reminderRevision: state.reminderRevision + 1 }));
   },
 
   // Prepare a signed package only. No download outcome can authorize installation.
@@ -219,10 +266,19 @@ export const useUpdateInstallStore = create<UpdateInstallState>((set, get) => ({
     }
   },
   deferInstall: () => {
-    if (get().status === 'ready') set({ promptOpen: false });
+    if (get().status === 'ready' && get().version) {
+      get().deferReminder('ready', get().version!);
+      set({ promptOpen: false });
+    }
   },
   clearError: () => set({ status: get().version ? 'ready' : 'idle', error: null, promptOpen: false }),
-  dismissNotice: () => set({ notice: null }),
+  dismissNotice: () => {
+    const state = get();
+    if (state.notice === 'available' && state.availableUpdate?.latestVersion) {
+      state.deferReminder('available', state.availableUpdate.latestVersion);
+    }
+    set({ notice: null });
+  },
   showNotice: () => {
     const state = get();
     if (state.status === 'installing' || state.promptOpen) return;
@@ -233,7 +289,7 @@ export const useUpdateInstallStore = create<UpdateInstallState>((set, get) => ({
   },
   markNoticePresented: () => {
     const version = get().availableUpdate?.latestVersion;
-    if (get().notice === 'available' && version) recordDailyPromptDismissed(version);
+    if (get().notice === 'available' && version) recordAppUpdatePresented('available', version);
   },
   skipVersion: version => {
     recordSkipThisVersion(version);
@@ -245,13 +301,18 @@ export const useUpdateInstallStore = create<UpdateInstallState>((set, get) => ({
   },
   openDetails: () => {
     const version = get().availableUpdate?.latestVersion;
-    if (version) recordDailyPromptDismissed(version);
+    if (version) recordAppUpdatePresented('available', version);
     set({ detailsOpen: true, releaseNotesOpen: false, notice: null });
   },
   openReleaseNotes: () => {
     const version = get().availableUpdate?.latestVersion;
-    if (version) recordDailyPromptDismissed(version);
+    if (version) recordAppUpdatePresented('available', version);
     set({ detailsOpen: true, releaseNotesOpen: true, notice: null });
   },
-  closeDetails: () => set({ detailsOpen: false, releaseNotesOpen: false }),
+  closeDetails: () => {
+    const state = get();
+    if (state.availableUpdate?.latestVersion) state.deferReminder('available', state.availableUpdate.latestVersion);
+    if (state.status === 'ready' && state.version) state.deferReminder('ready', state.version);
+    set({ detailsOpen: false, releaseNotesOpen: false });
+  },
 }));

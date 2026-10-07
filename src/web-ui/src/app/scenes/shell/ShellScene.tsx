@@ -1,7 +1,8 @@
-import React, { Suspense, lazy } from 'react';
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
+import React, { Suspense } from 'react';
 import './ShellScene.scss';
 
-const TerminalScene = lazy(() => import('../terminal/TerminalScene'));
+const TerminalScene = lazyWithRecovery(() => import('../terminal/TerminalScene'));
 
 interface ShellSceneProps {
   isActive?: boolean;

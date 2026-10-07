@@ -62,7 +62,16 @@ export const queueStorage: QueueStorage = {
   async remove(key) { await transaction('readwrite', store => store.delete(key)); },
 };
 export interface QueueView { snapshot: QueueSnapshot | null; error: string | null; pending: QueueOutboxRecord[] }
-const newId = () => crypto.randomUUID();
+const newId = (): string => {
+  // `crypto.randomUUID` exists only in secure contexts, so a page served over
+  // plain HTTP (LAN remote control) or an older WebView must still queue sends.
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+};
 function messageIdentity(message: Omit<QueueMessage, 'turnId'>): string {
   // Reopening the composer can allocate fresh image IDs. An ambiguous retry
   // must send the stored payload, including its original IDs, unchanged.

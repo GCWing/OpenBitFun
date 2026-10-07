@@ -1,7 +1,7 @@
 // The transcript reserves a lane for turn navigation before sizing its column.
 // Keep the lane geometry shared with the rail so narrow panes cannot overlap it.
-$turn-rail-offset: 4px;
-$turn-rail-width: 20px;
+$turn-rail-offset: var(--openbitfun-control-flow-chat-turn-rail-offset);
+$turn-rail-width: var(--openbitfun-control-flow-chat-turn-rail-width);
 
 @mixin viewport {
   container: flow-chat-transcript / inline-size;
@@ -11,23 +11,14 @@ $turn-rail-width: 20px;
   box-sizing: border-box;
   min-width: 0;
   width: 100%;
-  max-width: 900px;
+  max-width: var(--openbitfun-control-flow-chat-transcript-max-width);
   margin-inline: auto;
 
-  // The column shares the panel axis with the composer, the header, and the
-  // welcome surface, so both lateral insets stay equal: the rail lane is split
-  // evenly instead of riding on the rail side alone.
-  //
-  // Reserve only the rail side plus a small opposite inset and the column stays
-  // centred only while the centring slack covers the lane. Below that width the
-  // lane won and moved the whole column — cards, text, tool metadata — up to
-  // 10px to the trailing side of the axis the composer was still centred on.
-  //
-  // The rail still clears the column content: rail offset + rail width is 24px,
-  // and the content starts 18px of inset plus 12px of content padding, so 30px,
-  // from the panel edge.
+  // Share the panel axis with the composer, header, and welcome surface.
+  // The width still reserves the tokenized turn-rail lane, while auto margins
+  // split the remaining space evenly instead of shifting the reading column.
   @container flow-chat-transcript (min-width: 0px) {
-    width: calc(100% - #{$turn-rail-offset + $turn-rail-width} - var(--openbitfun-space-1) - var(--openbitfun-space-2));
+    width: calc(100% - #{$turn-rail-offset} - #{$turn-rail-width} - var(--openbitfun-space-1) - var(--openbitfun-space-2));
   }
 }
 
@@ -42,7 +33,7 @@ $turn-rail-width: 20px;
   }
 }
 
-$action-size: 28px;
+$action-size: var(--openbitfun-control-flow-chat-metadata-action-size);
 
 @mixin metadata-row {
   box-sizing: border-box;

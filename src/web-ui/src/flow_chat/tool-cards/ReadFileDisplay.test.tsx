@@ -186,4 +186,67 @@ describe('ReadFileDisplay', () => {
     expect(onOpenInEditor).toHaveBeenCalledTimes(2);
     expect(onOpenInEditor).toHaveBeenLastCalledWith('src/keyboard.ts');
   });
+
+  it('opens a completed file once from its trailing button and preserves the row action', () => {
+    const onOpenInEditor = vi.fn();
+    const toolItem: FlowToolItem = {
+      id: 'tool-read-action',
+      type: 'tool',
+      toolName: 'Read',
+      status: 'completed',
+      timestamp: Date.now(),
+      toolCall: {
+        id: 'call-read-action',
+        input: { file_path: 'src/action.ts' },
+      },
+    };
+
+    act(() => {
+      root.render(
+        <ReadFileDisplay
+          toolItem={toolItem}
+          config={readConfig}
+          onOpenInEditor={onOpenInEditor}
+        />
+      );
+    });
+
+    const openButton = container.querySelector<HTMLButtonElement>(
+      '[data-openbitfun-part="actionRegion"] button',
+    );
+    expect(openButton).not.toBeNull();
+    expect(openButton?.type).toBe('button');
+    expect(openButton?.disabled).toBe(false);
+    expect(openButton?.getAttribute('aria-label')).toBeTruthy();
+
+    act(() => {
+      openButton?.querySelector('svg')?.dispatchEvent(new dom.window.MouseEvent('click', {
+        bubbles: true,
+      }));
+    });
+    expect(onOpenInEditor).toHaveBeenCalledTimes(1);
+    expect(onOpenInEditor).toHaveBeenLastCalledWith('src/action.ts');
+
+    openButton?.focus();
+    expect(dom.window.document.activeElement).toBe(openButton);
+    for (const key of ['Enter', ' ']) {
+      const event = new dom.window.KeyboardEvent('keydown', {
+        bubbles: true,
+        cancelable: true,
+        key,
+      });
+      act(() => { openButton?.dispatchEvent(event); });
+      // Let the native button own activation; the row must not cancel or handle it.
+      expect(event.defaultPrevented).toBe(false);
+      expect(onOpenInEditor).toHaveBeenCalledTimes(1);
+    }
+
+    act(() => { openButton?.click(); });
+    expect(onOpenInEditor).toHaveBeenCalledTimes(2);
+
+    const surface = container.querySelector<HTMLElement>('[data-openbitfun-part="surface"]');
+    act(() => { surface?.click(); });
+    expect(onOpenInEditor).toHaveBeenCalledTimes(3);
+    expect(onOpenInEditor).toHaveBeenLastCalledWith('src/action.ts');
+  });
 });

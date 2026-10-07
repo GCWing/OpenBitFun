@@ -116,7 +116,7 @@
     background: var(--openbitfun-color-status-warning-surface);
     color: var(--openbitfun-color-content-secondary);
 
-    > svg {
+    > :is(svg, [data-openbitfun-component='icon']) {
       color: var(--openbitfun-color-status-warning-emphasis);
     }
   }
@@ -126,7 +126,7 @@
     background: var(--openbitfun-color-status-danger-surface);
     color: var(--openbitfun-color-status-danger-content);
 
-    > svg {
+    > :is(svg, [data-openbitfun-component='icon']) {
       color: var(--openbitfun-color-status-danger-emphasis);
     }
   }

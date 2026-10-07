@@ -1260,6 +1260,85 @@ private struct CollapsedToolsRow: View {
     }
 }
 
+
+private struct MobileTodoItem: Identifiable {
+    let id: String
+    let content: String
+    let status: String
+}
+
+private struct TodoToolCard: View {
+    let tool: MobileTimelineTool
+    @ObservedObject var model: MobileAppModel
+    @Binding var expandedToolID: String?
+    private var expanded: Bool { expandedToolID == tool.id }
+
+    private var items: [MobileTodoItem] {
+        let values = [tool.input, tool.output]
+        for value in values {
+            guard let data = value.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let todos = object["todos"] as? [[String: Any]] else { continue }
+            let parsed = todos.enumerated().compactMap { index, raw -> MobileTodoItem? in
+                guard let content = raw["content"] as? String, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+                return MobileTodoItem(id: "\(tool.id)-\(index)", content: content, status: raw["status"] as? String ?? "pending")
+            }
+            if !parsed.isEmpty { return parsed }
+        }
+        return []
+    }
+
+    var body: some View {
+        let done = items.filter { $0.status.lowercased() == "completed" }.count
+        let active = items.first(where: { $0.status.lowercased() == "in_progress" }) ?? items.first(where: { $0.status.lowercased() == "pending" })
+        let summary = items.isEmpty ? tool.target : (done == items.count ? model.localized("已完成") : active?.content ?? items[0].content)
+        VStack(alignment: .leading, spacing: 9) {
+            Button { withAnimation(.easeOut(duration: 0.18)) { expandedToolID = expanded ? nil : tool.id } } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "checklist").font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(OpenBitFunTheme.statusSuccess).frame(width: 22, height: 22)
+                        .background(OpenBitFunTheme.statusSuccess.opacity(0.12), in: RoundedRectangle(cornerRadius: 6))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.localized("更新待办")).font(MobileDesignTypography.bodySmall.font.weight(.semibold))
+                        Text(summary).font(MobileDesignTypography.labelSmall.font)
+                            .foregroundStyle(OpenBitFunTheme.muted).lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    if !items.isEmpty { Text("\(done)/\(items.count)").font(MobileDesignTypography.labelSmall.font).foregroundStyle(OpenBitFunTheme.muted) }
+                    Image(systemName: expanded ? "chevron.down" : "chevron.right").font(MobileDesignTypography.labelSmall.font).foregroundStyle(OpenBitFunTheme.muted)
+                }.frame(minHeight: 32).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("tool.toggle.\(tool.id)")
+            if expanded && !items.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(OpenBitFunTheme.line)
+                            Capsule().fill(OpenBitFunTheme.muted).frame(width: geometry.size.width * CGFloat(done) / CGFloat(max(items.count, 1)))
+                        }
+                    }.frame(height: 2)
+
+                    ForEach(items) { item in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(item.status.lowercased() == "completed" ? "✓" : item.status.lowercased() == "cancelled" ? "×" : item.status.lowercased() == "in_progress" ? "•" : "○")
+                                .foregroundStyle(OpenBitFunTheme.muted)
+                            Text(item.content).font(MobileDesignTypography.bodySmall.font)
+                                .foregroundStyle(item.status.lowercased() == "in_progress" ? OpenBitFunTheme.ink : OpenBitFunTheme.muted)
+                        }
+                    }
+                }.padding(.leading, 31)
+            }
+            if expanded && items.isEmpty && !tool.output.isEmpty {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.localized("输出")).font(MobileDesignTypography.labelSmall.font).foregroundStyle(OpenBitFunTheme.muted)
+                    Text(tool.output).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(OpenBitFunTheme.muted).lineLimit(5)
+                }
+            }
+        }
+        .padding(10).background(OpenBitFunTheme.soft, in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(OpenBitFunTheme.line, lineWidth: 1))
+    }
+}
+
 private struct ToolStatusRow: View {
     let tool: MobileTimelineTool
     @ObservedObject var model: MobileAppModel
@@ -1291,7 +1370,11 @@ private struct ToolStatusRow: View {
         }
     }
 
+    @ViewBuilder
     private var toolRow: some View {
+        if isTodoTool {
+            TodoToolCard(tool: tool, model: model, expandedToolID: $expandedToolID)
+        } else {
         VStack(alignment: .leading, spacing: 8) {
             Button {
                 if !tool.input.isEmpty || !tool.output.isEmpty || !tool.filePath.isEmpty {
@@ -1374,6 +1457,11 @@ private struct ToolStatusRow: View {
         .padding(emphasized ? 10 : 0).background(emphasized ? OpenBitFunTheme.soft : OpenBitFunTheme.transparent)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay { if emphasized { RoundedRectangle(cornerRadius: 14).stroke(OpenBitFunTheme.line, lineWidth: 1) } }
+        }
+    }
+
+    private var isTodoTool: Bool {
+        tool.kind == "TODO" || tool.operation == "UPDATE_TODOS" || tool.name.lowercased() == "todowrite"
     }
 
     private func compactApprovalAction(_ title: String, primary: Bool, action: @escaping () -> Void) -> some View {

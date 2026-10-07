@@ -23,6 +23,7 @@ export type PanelContentType =
   | 'plan-viewer'
   | 'btw-session'
   | 'session-usage'
+  | 'thinking-detail'
   | 'background-command-output'
   | 'review-platform'
   | 'review-platform-pr-detail'

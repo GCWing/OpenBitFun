@@ -329,6 +329,7 @@
     }
   },
   "tooltip": {
+    "openDetails": "打开详情",
     "copy": "复制",
     "copied": "已复制",
     "close": "关闭",
@@ -337,6 +338,11 @@
   },
   "tabs": {
     "close": "关闭",
+    "closeBtwTitle": "关闭侧问？",
+    "confirmCloseBtw": "关闭后对话将消失，无法恢复。",
+    "saveBtwAsFork": "保存为 Fork 会话",
+    "saveBtwFailed": "保存失败，侧问已保留，请重试。",
+    "closeBtwFailed": "暂时无法关闭侧问，标签页已保留，请重试。",
     "popOut": "弹出为独立场景",
     "closeOthers": "关闭其他",
     "closeAll": "全部关闭",
@@ -543,6 +549,13 @@
     "devWingExpand": "展开开发工具"
   },
   "canvas": {
+    "resizePanes": "调整窗格宽度",
+    "chatPane": "聊天",
+    "contentPane": "内容",
+    "swapPanes": "交换左右窗格",
+    "hidePanel": "隐藏面板",
+    "maximizePanel": "面板全屏",
+    "restorePanel": "退出面板全屏",
     "noContentOpen": "暂未打开任何内容",
     "filesCount": "{{count}} 个文件",
     "searchPlaceholder": "搜索文件名或路径...",

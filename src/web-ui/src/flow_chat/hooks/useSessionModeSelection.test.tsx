@@ -21,14 +21,17 @@ vi.mock('@/infrastructure/api/service-api/AgentAPI', () => ({
 
 function Probe({
   sessionId = 'session-1',
+  draft = false,
   publish = mocks.publish,
 }: {
   sessionId?: string;
+  draft?: boolean;
   publish?: (modeId: string) => void;
 }) {
   const selection = useSessionModeSelection(
     {
       sessionId,
+      draft,
       workspacePath: 'D:/workspace/project',
     },
     publish,
@@ -67,6 +70,16 @@ describe('useSessionModeSelection', () => {
     act(() => root.unmount());
     container.remove();
     vi.clearAllMocks();
+  });
+
+  it('keeps an explicit draft selection local until a host session exists', async () => {
+    await act(async () => root.render(<Probe draft />));
+    const select = Array.from(container.querySelectorAll('button'))[2];
+    act(() => select.click());
+    expect(mocks.publish).toHaveBeenCalledWith('ask');
+    expect(mocks.committed).toHaveBeenCalledWith('ask');
+    expect(mocks.updateSessionMode).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="pending"]')?.textContent).toBe('false');
   });
 
   it('keeps passive hydration local and rebinds an explicit same-id selection', async () => {

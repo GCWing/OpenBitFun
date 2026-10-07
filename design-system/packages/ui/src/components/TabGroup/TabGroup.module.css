@@ -151,7 +151,8 @@
     align-items: center;
   }
 
-  .endAction > :where(button, [role="button"]) {
+  /* Composed IconButtons own their variants, geometry and interaction states. */
+  .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])) {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -170,21 +171,21 @@
       color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
-  .endAction > :where(button, [role="button"]):hover {
+  .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):hover {
     color: var(--openbitfun-color-action-neutral-content);
     background: var(--openbitfun-color-action-neutral-surface-hover);
   }
 
-  .endAction > :where(button, [role="button"]):active {
+  .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):active {
     background: var(--openbitfun-color-action-neutral-surface-pressed);
   }
 
-  .endAction > :where(button, [role="button"]):focus-visible {
+  .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):focus-visible {
     outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
     outline-offset: var(--openbitfun-focus-offset);
   }
 
-  .endAction > :where(button, [role="button"]):disabled {
+  .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):disabled {
     color: var(--openbitfun-color-action-neutral-content-disabled);
     cursor: not-allowed;
   }
@@ -204,7 +205,7 @@
   @media (prefers-reduced-motion: reduce) {
     .tab,
     .endAction,
-    .endAction > :where(button, [role="button"]) {
+    .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])) {
       transition: none;
     }
   }
@@ -224,7 +225,7 @@
       outline-color: Highlight;
     }
 
-    .endAction > :where(button, [role="button"]):focus-visible {
+    .endAction > :where(button, [role="button"]):where(:not([data-openbitfun-component="icon-button"])):focus-visible {
       outline-color: Highlight;
     }
 

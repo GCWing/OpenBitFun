@@ -149,7 +149,7 @@ describe('composer context track layout', () => {
     expect(mixin).toContain('height: 18px;');
     expect(mixin).toContain('border-radius: 999px;');
     expect(mixin).toContain('background: transparent;');
-    expect(mixin).toMatch(/> svg \{[\s\S]*?width: 12px;/);
+    expect(mixin).toMatch(/> :is\(svg, \[data-openbitfun-component='icon'\]\) \{[\s\S]*?width: var\(--openbitfun-control-icon-size-xs\);/);
 
     for (const control of [
       '    .dispatch-target-picker__trigger {\n      @include strip-control;',
@@ -265,7 +265,7 @@ describe('composer context track layout', () => {
     // their real path, while assistants expose their product role instead of
     // leaking the internal assistant workspace directory.
     expect(component).toContain('workspace.rootPath?.trim()');
-    expect(component).toContain('workspaceContext.primaryAssistantWorkspaceId');
+    expect(component).toContain('workspace.assistantId');
     expect(component).toContain("'workspaceStrip.primaryAssistant'");
     expect(component).toContain("'workspaceStrip.personalAssistant'");
     expect(component).toContain('__workspace-option-detail');
@@ -427,10 +427,7 @@ describe('composer context track layout', () => {
     const component = readLocalFile('ChatInput.tsx');
 
     expect(component).toContain(
-      'const effectiveTargetSessionStarted = effectiveTargetSessionHasTurns',
-    );
-    expect(component).toContain(
-      "|| Boolean(effectiveTargetSession?.lastSubmittedMode?.trim());",
+      'const effectiveTargetSessionStarted = effectiveTargetSession ? hasSessionStarted(effectiveTargetSession) : false;',
     );
     expect(component).toContain(
       'const isNewSessionComposer = !effectiveTargetSessionStarted;',
@@ -445,7 +442,7 @@ describe('composer context track layout', () => {
       /const measureIsMultiLine = useCallback[\s\S]*?if \(isNewSessionComposer && !compactComposer\) \{\s*setIsMultiLine\(true\);\s*return;/,
     );
     expect(component).toContain(
-      'const harnessProfileLocked = effectiveTargetSessionStarted;',
+      'isSessionBindingLocked(effectiveTargetSession, isWorkspaceSubmitting)',
     );
   });
 
@@ -527,15 +524,14 @@ describe('composer context track layout', () => {
     expect(stylesheet).not.toMatch(/__trigger-value \{[\s\S]*?display: none;/);
   });
 
-  it('uses a text reasoning label in ChatInput while preserving the default meter', () => {
+  it('uses text for manual reasoning while retaining the compact automatic icon', () => {
     const component = readLocalFile('ReasoningPresetSelector.tsx');
     const stylesheet = readLocalFile('ReasoningPresetSelector.scss');
     const chatInput = readLocalFile('ChatInput.tsx');
 
-    expect(component).toContain('__status-meter');
-    expect(component).toContain("triggerPresentation === 'label'");
+    expect(component).toContain("triggerPresentation === 'label' || Boolean(selected)");
     expect(component).toContain('__trigger-label');
-    expect(component).toContain('<ReasoningIntensityMark level={intensityLevel} compact />');
+    expect(component).toContain('<Icon name="reasoning-auto" size="xs" />');
     expect(component).toContain('aria-label={tooltip}');
     expect(stylesheet).toMatch(/&__trigger \{[\s\S]*?width: 18px;[\s\S]*?height: 18px;/);
     expect(stylesheet).toMatch(

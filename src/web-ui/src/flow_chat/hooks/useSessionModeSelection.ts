@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { agentAPI } from '@/infrastructure/api/service-api/AgentAPI';
 
 export interface SessionModeSelectionTarget {
+  draft?: boolean;
   sessionId: string;
   workspacePath?: string;
   remoteConnectionId?: string;
@@ -58,6 +59,7 @@ export function useSessionModeSelection(
   }, []);
 
   const sessionId = target?.sessionId;
+  const draft = target?.draft;
   const workspacePath = target?.workspacePath;
   const remoteConnectionId = target?.remoteConnectionId;
   const remoteSshHost = target?.remoteSshHost;
@@ -67,7 +69,7 @@ export function useSessionModeSelection(
   }, []);
 
   const requestModeChange = useCallback((modeId: string) => {
-    if (!sessionId) {
+    if (!sessionId || draft) {
       publishRef.current(modeId);
       committedRef.current?.(modeId);
       return;
@@ -121,7 +123,7 @@ export function useSessionModeSelection(
       }
     };
     void run(intent);
-  }, [notifyQueueChanged, remoteConnectionId, remoteSshHost, sessionId, workspacePath]);
+  }, [draft, notifyQueueChanged, remoteConnectionId, remoteSshHost, sessionId, workspacePath]);
 
   return {
     isModeChangePending: Boolean(sessionId && sessionQueuesRef.current.has(sessionId)),

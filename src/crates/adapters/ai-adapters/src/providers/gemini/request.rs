@@ -11,12 +11,21 @@ use anyhow::{anyhow, Result};
 use log::debug;
 use reqwest::RequestBuilder;
 
-pub(crate) fn apply_headers(client: &AIClient, builder: RequestBuilder) -> RequestBuilder {
+pub(crate) fn apply_headers(
+    client: &AIClient,
+    builder: RequestBuilder,
+    url: &str,
+) -> RequestBuilder {
     shared::apply_header_policy(client, builder, |mut builder| {
         builder = builder
             .header("Content-Type", "application/json")
-            .header("x-goog-api-key", &client.config.api_key)
-            .header("Authorization", format!("Bearer {}", client.config.api_key));
+            .header("x-goog-api-key", &client.config.api_key);
+
+        // Google interprets Authorization as an OAuth access token, not an AI
+        // Studio API key. Keep Bearer compatibility for third-party gateways.
+        if !shared::is_https_endpoint(url, "generativelanguage.googleapis.com", "") {
+            builder = builder.header("Authorization", format!("Bearer {}", client.config.api_key));
+        }
 
         if client.config.base_url.contains("openbitfun.com") {
             builder = builder.header("X-Verification-Code", "from_openbitfun");
@@ -541,10 +550,136 @@ pub(crate) async fn send_stream(
         max_tries,
         ttft_timeout,
         trace,
-        || apply_headers(client, client.client.post(&url)),
+        || apply_headers(client, client.client.post(&url), &url),
         move |response, tx, tx_raw, remaining_ttft_timeout| {
             handle_gemini_stream(response, tx, tx_raw, remaining_ttft_timeout, idle_timeout)
         },
     )
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::gemini::{code_assist, discovery};
+
+    fn api_key_client(base_url: &str) -> AIClient {
+        AIClient::new(
+            serde_json::from_value(serde_json::json!({
+                "name": "Google Gemini",
+                "base_url": base_url,
+                "request_url": resolve_request_url(base_url, "gemini-2.5-flash"),
+                "api_key": "synthetic-api-key",
+                "model": "gemini-2.5-flash",
+                "format": "gemini",
+                "context_window": 4096,
+                "inline_think_in_text": false,
+                "skip_ssl_verify": false
+            }))
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn google_api_key_authentication_covers_generation_and_model_discovery() {
+        for base_url in [
+            "https://generativelanguage.googleapis.com",
+            "https://generativelanguage.googleapis.com/v1beta",
+        ] {
+            let client = api_key_client(base_url);
+            let stream_url = resolve_request_url(&client.config.request_url, &client.config.model);
+            let models_url = discovery::resolve_models_url(&client);
+            assert_eq!(
+                stream_url,
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+            );
+            assert_eq!(
+                models_url,
+                "https://generativelanguage.googleapis.com/v1beta/models"
+            );
+
+            for (method, url) in [
+                (reqwest::Method::POST, stream_url),
+                (reqwest::Method::GET, models_url),
+            ] {
+                let request = apply_headers(&client, client.client.request(method, &url), &url)
+                    .build()
+                    .unwrap();
+                assert_eq!(request.headers()["x-goog-api-key"], "synthetic-api-key");
+                assert_eq!(request.headers()["content-type"], "application/json");
+                assert!(!request.headers().contains_key("authorization"));
+            }
+        }
+    }
+
+    #[test]
+    fn gemini_authentication_follows_request_origin_and_preserves_gateway_bearer() {
+        let client = api_key_client("https://generativelanguage.googleapis.com");
+        for url in [
+            "https://gateway.example.com/v1beta/models",
+            "https://generativelanguage.googleapis.com.gateway.example.com/v1beta/models",
+            "https://gateway.example.com/generativelanguage.googleapis.com/v1beta/models",
+        ] {
+            let request = apply_headers(&client, client.client.get(url), url)
+                .build()
+                .unwrap();
+            assert_eq!(request.headers()["x-goog-api-key"], "synthetic-api-key");
+            assert_eq!(
+                request.headers()["authorization"],
+                "Bearer synthetic-api-key"
+            );
+        }
+
+        let client = api_key_client("https://gateway.example.com");
+        let url = "https://generativelanguage.googleapis.com/v1beta/models";
+        let request = apply_headers(&client, client.client.get(url), url)
+            .build()
+            .unwrap();
+        assert!(!request.headers().contains_key("authorization"));
+    }
+
+    #[test]
+    fn gemini_explicit_custom_authentication_preserves_merge_and_replace_modes() {
+        for mode in ["merge", "replace"] {
+            let mut client = api_key_client("https://generativelanguage.googleapis.com");
+            client.config.custom_headers_mode = Some(mode.to_string());
+            client.config.custom_headers = Some(std::collections::HashMap::from([(
+                "Authorization".to_string(),
+                "Bearer synthetic-custom-token".to_string(),
+            )]));
+            let url = discovery::resolve_models_url(&client);
+            let request = apply_headers(&client, client.client.get(&url), &url)
+                .build()
+                .unwrap();
+            assert_eq!(
+                request.headers()["authorization"],
+                "Bearer synthetic-custom-token"
+            );
+            assert_eq!(request.headers().get_all("authorization").iter().count(), 1);
+            assert_eq!(
+                request.headers().contains_key("x-goog-api-key"),
+                mode == "merge"
+            );
+        }
+    }
+
+    #[test]
+    fn code_assist_keeps_oauth_bearer_without_api_key_header() {
+        let mut client = api_key_client("https://cloudcode-pa.googleapis.com");
+        client.config.format = "gemini-code-assist".to_string();
+        client.config.api_key = "synthetic-oauth-token".to_string();
+        let request = code_assist::apply_headers(
+            &client,
+            client
+                .client
+                .post("https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"),
+        )
+        .build()
+        .unwrap();
+        assert_eq!(
+            request.headers()["authorization"],
+            "Bearer synthetic-oauth-token"
+        );
+        assert!(!request.headers().contains_key("x-goog-api-key"));
+    }
 }

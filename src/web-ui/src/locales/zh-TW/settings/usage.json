@@ -1,9 +1,9 @@
 {
   "title": "調用統計",
-  "subtitle": "目前執行主機本機儲存的歷史模型調用統計，不會跨主機合併或同步；包含按模型、供應商與端點統計的請求數、Token 用量與快取命中率",
+  "subtitle": "目前 OpenBitFun 主機跨工作區已記錄的模型用量，包含子代理調用",
   "overview": {
-    "title": "統計概覽",
-    "description": "顯示目前執行主機在「{{timeRange}}」範圍內的調用資料，日期與小時依 {{timeZone}} 時區劃分；調整篩選後會自動重新整理"
+    "title": "所選時段用量",
+    "description": "依 {{timeZone}} 統計"
   },
   "timeRange": {
     "label": "時間範圍",
@@ -21,16 +21,16 @@
   "filter": {
     "kind": {
       "label": "篩選欄位",
-      "all": "全部",
+      "all": "所有欄位",
       "provider": "供應商",
       "model": "模型"
     },
-    "placeholder": "篩選供應商或模型",
-    "inputLabel": "篩選調用統計",
+    "placeholder": "搜尋目前明細",
+    "inputLabel": "搜尋用量來源",
     "clear": "清除篩選",
     "empty": {
-      "title": "沒有符合的調用資料",
-      "description": "目前篩選條件下沒有調用記錄"
+      "title": "沒有符合項目",
+      "description": "請試試其他關鍵字"
     }
   },
   "refresh": "重新整理",
@@ -39,11 +39,15 @@
   "unsupported": "目前連線裝置的 OpenBitFun 版本較舊，暫不支援調用統計。",
   "empty": {
     "title": "暫無調用資料",
-    "description": "開始與模型對話後，這裡會顯示模型調用統計"
+    "description": "開始與模型對話後，這裡會顯示模型調用統計",
+    "periodTitle": "此時段暫無調用資料",
+    "periodDescription": "可切換時間範圍查看其他記錄"
   },
   "summary": {
-    "requests": "請求數",
+    "requests": "已記錄模型請求",
     "tokens": "Token 總量",
+    "inputTokens": "輸入 Token",
+    "outputTokens": "輸出 Token",
     "cachedTokens": "快取命中 Token",
     "cacheHitRate": "快取命中率"
   },
@@ -51,11 +55,31 @@
     "totalTokens": "Token 總量：{{count}}",
     "tokensUnit": "Token"
   },
+  "activity": {
+    "title": "近半年每日用量",
+    "description": "固定近半年 · {{timeZone}}",
+    "day": "{{date}}：{{tokens}} Token",
+    "total": "累計 {{tokens}} Token",
+    "less": "少",
+    "more": "多"
+  },
   "distributions": {
-    "title": "使用分佈",
+    "title": "用量來源",
     "byModel": "模型分佈",
-    "byGroup": "分組使用分佈",
-    "byEndpoint": "端點分佈"
+    "byGroup": "供應商分佈",
+    "byEndpoint": "端點明細",
+    "more": "更多來源",
+    "showAll": "查看全部",
+    "showLess": "收起"
+  },
+  "details": {
+    "title": "更多明細"
+  },
+  "cache": {
+    "title": "快取資料",
+    "description": "僅在模型服務提供資料時計算",
+    "unavailable": "未提供",
+    "note": "快取讀取 Token 已包含於輸入 Token；命中率僅依有快取資料的請求計算。"
   },
   "cacheHitRate": {
     "title": "模型快取命中率"
@@ -68,23 +92,29 @@
     "unknownEndpoint": "未知端點"
   },
   "trend": {
-    "title": "Token 使用趨勢",
-    "description": "依時間查看輸入、輸出、快取寫入、快取讀取 Token 與快取命中率的變化",
+    "title": "詳細趨勢",
+    "summary": "查看所選時段的輸入與輸出變化",
+    "description": "輸入與輸出 Token 用量變化",
+    "range": "{{start}} 至 {{end}}",
+    "partial": "僅顯示最近的趨勢，總量仍依完整時段統計",
     "dataTableCaption": "Token 使用趨勢明細",
     "time": "時間",
     "legend": {
-      "input": "Input",
-      "output": "Output",
-      "cacheRead": "Cache Read",
+      "input": "輸入",
+      "output": "輸出",
+      "cacheRead": "快取讀取",
       "cacheHitRate": "快取命中率"
     }
   },
   "table": {
     "caption": "{{dimension}}明細",
     "model": "模型",
-    "group": "分組",
+    "group": "供應商",
     "endpoint": "端點",
     "requests": "請求",
-    "tokens": "Token"
+    "requestsCount": "{{count}} 次請求",
+    "tokens": "Token",
+    "share": "占比",
+    "shareValue": "占 {{share}}"
   }
 }

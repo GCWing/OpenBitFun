@@ -1,0 +1,199 @@
+.lab-page.design-home {
+  padding-block: var(--openbitfun-space-6) var(--openbitfun-space-12);
+}
+
+.design-home-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: var(--openbitfun-space-12);
+  min-height: 520px;
+  padding-block: var(--openbitfun-space-8) var(--openbitfun-space-12);
+}
+
+.design-home-heading {
+  min-width: 0;
+}
+
+.design-home-heading h1 {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--openbitfun-space-2);
+  margin: 0 0 var(--openbitfun-space-6);
+  font-family: var(--openbitfun-type-display-xxl-font-family);
+  font-size: var(--openbitfun-type-display-xxl-font-size);
+  font-weight: var(--openbitfun-type-display-xxl-font-weight);
+  line-height: var(--openbitfun-type-display-xxl-line-height);
+  letter-spacing: var(--openbitfun-type-display-xxl-letter-spacing);
+  text-wrap: balance;
+}
+
+.design-home-name {
+  font-family: var(--openbitfun-type-display-md-font-family);
+  font-size: var(--openbitfun-type-display-md-font-size);
+  font-weight: var(--openbitfun-type-display-md-font-weight);
+  line-height: var(--openbitfun-type-display-md-line-height);
+  letter-spacing: var(--openbitfun-type-display-md-letter-spacing);
+}
+
+.design-home-title {
+  /* typography-audit: allow -- Scale the homepage brand heading to its hero slot; interface text retains the canonical display roles. */
+  font-size: clamp(var(--openbitfun-type-display-xxl-font-size), 9vw, calc(var(--openbitfun-type-display-xxl-font-size) * 2));
+}
+
+.design-home-emblem {
+  display: grid;
+  place-items: center;
+  justify-self: end;
+  width: min(100%, 460px);
+  min-width: 0;
+  aspect-ratio: 1;
+  color: var(--openbitfun-color-content-primary);
+  pointer-events: none;
+}
+
+.design-home-mark {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+.design-home-description {
+  margin: 0;
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-body-md-font-size);
+  line-height: var(--openbitfun-type-body-md-line-height);
+}
+
+.design-home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--openbitfun-space-3);
+  margin-top: var(--openbitfun-space-6);
+}
+
+.design-destination-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--openbitfun-space-6);
+}
+
+.design-destination {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: var(--openbitfun-space-8);
+  padding: var(--openbitfun-space-6);
+  border-radius: var(--openbitfun-radius-lg);
+  background: var(--openbitfun-color-surface-subtle);
+}
+
+.design-destination h2 {
+  margin: 0;
+  font-family: var(--openbitfun-type-heading-section-font-family);
+  font-size: var(--openbitfun-type-heading-section-font-size);
+  font-weight: var(--openbitfun-type-heading-section-font-weight);
+  line-height: var(--openbitfun-type-heading-section-line-height);
+  letter-spacing: var(--openbitfun-type-heading-section-letter-spacing);
+}
+
+.design-destination h2 a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--openbitfun-space-3);
+  color: inherit;
+  text-decoration: none;
+}
+
+.design-destination h2 a::after {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--openbitfun-radius-lg);
+  content: "";
+}
+
+.design-destination h2 a:focus-visible {
+  outline: none;
+}
+
+.design-destination:focus-within {
+  outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+  outline-offset: var(--openbitfun-focus-offset);
+}
+
+.design-destination-arrow {
+  flex: none;
+  color: var(--openbitfun-color-content-muted);
+}
+
+.design-destination:hover .design-destination-arrow,
+.design-destination:focus-within .design-destination-arrow {
+  color: var(--openbitfun-color-content-primary);
+}
+
+.design-destination p {
+  margin: var(--openbitfun-space-2) 0 0;
+  color: var(--openbitfun-color-content-secondary);
+  font-size: var(--openbitfun-type-body-sm-font-size);
+  line-height: var(--openbitfun-type-body-sm-line-height);
+}
+
+.design-destination-specimen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--openbitfun-space-3);
+  min-height: var(--openbitfun-space-16);
+  margin-top: auto;
+  pointer-events: none;
+}
+
+.design-home-type-sample {
+  font-family: var(--openbitfun-type-display-md-font-family);
+  font-size: var(--openbitfun-type-display-md-font-size);
+  font-weight: var(--openbitfun-type-display-md-font-weight);
+  line-height: var(--openbitfun-type-display-md-line-height);
+  letter-spacing: var(--openbitfun-type-display-md-letter-spacing);
+}
+
+.design-home-palette {
+  display: flex;
+  margin-inline-start: var(--openbitfun-space-2);
+  overflow: hidden;
+  border-radius: var(--openbitfun-radius-pill);
+}
+
+.design-home-palette i {
+  width: var(--openbitfun-space-6);
+  height: var(--openbitfun-space-8);
+  background: var(--openbitfun-color-content-primary);
+}
+
+.design-home-palette i:nth-child(2) { background: var(--openbitfun-color-content-secondary); }
+.design-home-palette i:nth-child(3) { background: var(--openbitfun-color-content-muted); }
+.design-home-palette i:nth-child(4) { background: var(--openbitfun-color-accent-default); }
+.design-destination-specimen--brand { gap: var(--openbitfun-space-4); }
+.design-destination-specimen--brand img { display: block; object-fit: contain; }
+
+@media (max-width: 860px) {
+  .design-home-hero { min-height: 400px; gap: var(--openbitfun-space-6); }
+  .design-destination-grid { grid-template-columns: minmax(0, 1fr); gap: var(--openbitfun-space-4); }
+  .design-destination { flex-direction: row; align-items: center; justify-content: space-between; }
+  .design-destination-specimen { flex: none; max-width: 50%; margin-top: 0; }
+}
+
+@media (max-width: 600px) {
+  .lab-page.design-home { padding-block: var(--openbitfun-space-6); }
+  .design-home-hero { grid-template-columns: minmax(0, 1fr); min-height: 0; padding-block: var(--openbitfun-space-4) var(--openbitfun-space-8); }
+  .design-home-heading { text-align: center; }
+  .design-home-heading h1 { align-items: center; }
+  .design-home-title { font-size: var(--openbitfun-type-display-xxl-font-size); }
+  .design-home-emblem { grid-row: 1; justify-self: center; width: min(70%, 280px); }
+  .design-home-actions { justify-content: center; }
+  .design-destination { flex-direction: column; align-items: stretch; gap: var(--openbitfun-space-5); padding: var(--openbitfun-space-5); }
+  .design-destination-specimen { max-width: none; min-height: var(--openbitfun-space-12); }
+}

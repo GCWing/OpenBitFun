@@ -648,10 +648,12 @@ impl<'a> BrowserActions<'a> {
         format!(
             r#"(function(){{
                 {js}
-                el.scrollIntoView({{ block: 'center', inline: 'center', behavior: 'instant' }});
-                const rect = el.getBoundingClientRect();
-                const localX = rect.x + rect.width / 2;
-                const localY = rect.y + rect.height / 2;
+                // Reveal the target without repositioning already visible content.
+                el.scrollIntoView({{ block: 'nearest', inline: 'nearest', behavior: 'instant' }});
+                const rect = el.getClientRects()[0] || el.getBoundingClientRect();
+                const ownerWindow = el.ownerDocument.defaultView || window;
+                const localX = (Math.max(0, rect.left) + Math.min(ownerWindow.innerWidth, rect.right)) / 2;
+                const localY = (Math.max(0, rect.top) + Math.min(ownerWindow.innerHeight, rect.bottom)) / 2;
                 let x = localX;
                 let y = localY;
                 try {{
@@ -721,7 +723,7 @@ impl<'a> BrowserActions<'a> {
     pub async fn fill(&self, selector: &str, value: &str) -> OpenBitFunResult<Value> {
         let js = Self::resolve_element_js(selector);
         let focus_js = format!(
-            r#"(function(){{ {} el.focus(); el.value = ''; el.dispatchEvent(new Event('input', {{ bubbles: true }})); return true; }})()"#,
+            r#"(function(){{ {} el.scrollIntoView({{ block: 'nearest', inline: 'nearest', behavior: 'instant' }}); el.focus({{ preventScroll: true }}); el.value = ''; el.dispatchEvent(new Event('input', {{ bubbles: true }})); return true; }})()"#,
             js
         );
         self.evaluate(&focus_js).await?;

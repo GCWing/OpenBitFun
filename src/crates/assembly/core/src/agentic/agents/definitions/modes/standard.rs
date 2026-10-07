@@ -52,10 +52,6 @@ impl Agent for StandardHarness {
         self.default_tools.clone()
     }
 
-    fn tool_exposure_overrides(&self) -> &crate::agentic::agents::AgentToolPolicyOverrides {
-        crate::agentic::agents::direct_computer_use_policy()
-    }
-
     fn user_context_policy(&self) -> UserContextPolicy {
         standard_harness_user_context_policy()
     }

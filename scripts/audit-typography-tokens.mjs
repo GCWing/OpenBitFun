@@ -10,6 +10,7 @@ const SOURCE_GROUPS = Object.freeze({
   'design-system': [
     'design-system/apps/design-lab/src',
     'design-system/packages/ui/src',
+    'packages/flow-chat-presentation/src',
   ],
   'web-ui': [
     'src/web-ui/src',
@@ -41,6 +42,7 @@ const SEMANTIC_ROLE_COMPONENT_STYLE_EXCEPTIONS = new Set([
 ]);
 
 const SEMANTIC_ROLE_PRODUCT_STYLE_ROOTS = [
+  'packages/flow-chat-presentation/src/',
   'src/web-ui/src/',
   'src/mobile-web/src/',
   'OpenBitFun-Installer/src/',

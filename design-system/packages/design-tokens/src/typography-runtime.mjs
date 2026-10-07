@@ -1,3 +1,52 @@
+import { cssVariables, tokens } from "./index.js";
+
+/** Canonical values for non-CSS renderers and server-side consumers. */
+export function getTypographyTokenValue(name) {
+  return String(tokens[name]);
+}
+
+function finiteNumber(name, value) {
+  const number = Number.parseFloat(value);
+  if (!Number.isFinite(number)) {
+    throw new TypeError(`Typography token ${name} must resolve to a finite number.`);
+  }
+  return number;
+}
+
+function pixels(name, value) {
+  if (!value.endsWith("px")) {
+    throw new TypeError(`Typography token ${name} must resolve to pixels.`);
+  }
+  return finiteNumber(name, value);
+}
+
+export function getTypographyTokenPx(name) {
+  return pixels(name, getTypographyTokenValue(name));
+}
+
+export function getTypographyTokenNumber(name) {
+  return finiteNumber(name, getTypographyTokenValue(name));
+}
+
+/** Read at use time so scoped profiles and runtime preferences reach renderers. */
+export function readActiveTypographyTokenValue(name, target) {
+  const element = target ?? (typeof document !== "undefined" ? document.documentElement : null);
+  const view = element?.ownerDocument.defaultView;
+  if (view) {
+    const value = view.getComputedStyle(element).getPropertyValue(cssVariables[name]).trim();
+    if (value) return value;
+  }
+  return getTypographyTokenValue(name);
+}
+
+export function readActiveTypographyTokenPx(name, target) {
+  return pixels(name, readActiveTypographyTokenValue(name, target));
+}
+
+export function readActiveTypographyTokenNumber(name, target) {
+  return finiteNumber(name, readActiveTypographyTokenValue(name, target));
+}
+
 export const TYPOGRAPHY_BASE_MIN_PX = 12;
 export const TYPOGRAPHY_BASE_MAX_PX = 20;
 

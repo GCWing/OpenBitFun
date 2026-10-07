@@ -28,20 +28,25 @@ const expandableProps = [
 
 export const agentControlToolCardMeta = {
   category: "flow-chat",
-  description: "A prominent subagent card with shared tool-card status, actions, execution metadata, and expandable detail.",
+  description: "An avatar-led agent card with visible type, model and lifecycle status that opens the agent in the host detail pane.",
   maturity: "stable",
   name: "AgentControlToolCard",
   props: [
-    ...expandableProps,
+    { name: "status", type: "FlowChatToolStatus" },
     { name: "agentName", type: "ReactNode" },
-    { name: "agentModel", type: "ReactNode" },
+    { name: "avatar", type: "ReactNode" },
     { name: "summary", type: "ReactNode" },
-    { name: "statusMeta", type: "ReactNode" },
-    { name: "interruptAction", type: "AgentControlToolCardAction" },
+    { name: "preview", type: "AgentControlToolCardProps['preview']" },
+    { name: "statusLabel", type: "ReactNode" },
     { name: "onOpenAgent", type: "(event: MouseEvent<HTMLButtonElement>) => void" },
+    { name: "openAgentLabel", type: "string" },
   ],
-  states: ["default", "hover", "loading", "expanded", "error"],
-  tokens: prominentTokens,
+  states: ["default", "hover", "loading", "error"],
+  tokens: [
+    ...prominentTokens, "color.surface.panel", "control.activityItem.surfaceHeight",
+    "control.activityItem.surfaceRadius", "control.flowChat.cardGap", "control.flowChat.transcriptMaxWidth",
+    "layout.card.paddingMd", "layout.card.gapMd", "layout.card.gapSm",
+  ],
 } as const satisfies ComponentMeta;
 
 export const fileDiffToolCardMeta = {

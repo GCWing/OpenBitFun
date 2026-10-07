@@ -1,0 +1,27 @@
+@layer openbitfun.components {
+  .root {
+    display: inline-block;
+    flex: 0 0 auto;
+    inline-size: var(--openbitfun-control-icon-size-sm);
+    block-size: var(--openbitfun-control-icon-size-sm);
+    color: inherit;
+    vertical-align: -0.125em;
+  }
+
+  .root[data-size="2xs"] { inline-size: var(--openbitfun-control-icon-size2xs); block-size: var(--openbitfun-control-icon-size2xs); }
+  .root[data-size="xs"] { inline-size: var(--openbitfun-control-icon-size-xs); block-size: var(--openbitfun-control-icon-size-xs); }
+  .root[data-size="md"] { inline-size: var(--openbitfun-control-icon-size-md); block-size: var(--openbitfun-control-icon-size-md); }
+  .root[data-size="lg"] { inline-size: var(--openbitfun-control-icon-size-lg); block-size: var(--openbitfun-control-icon-size-lg); }
+
+  .root > svg { display: block; inline-size: 100%; block-size: 100%; }
+  .signal > path, .signal > circle { opacity: 0; }
+
+  .root[data-active="true"] [data-playing="true"] .track,
+  .root[data-active="true"] [data-playing="true"] .nodes { opacity: 0; }
+
+  @media (prefers-reduced-motion: reduce), (forced-colors: active), print {
+    .root[data-active="true"] [data-playing="true"] .track,
+    .root[data-active="true"] [data-playing="true"] .nodes { opacity: 1; }
+    .signal { display: none; }
+  }
+}

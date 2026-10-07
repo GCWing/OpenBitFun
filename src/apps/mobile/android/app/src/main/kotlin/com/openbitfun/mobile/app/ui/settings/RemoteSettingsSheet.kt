@@ -36,7 +36,7 @@ internal const val MODEL_CATALOG_RETRY_TEST_TAG: String = "model-catalog-retry"
  *
  * Everything a desktop carries as a whole — which desktop, how it was reached,
  * who is signed in, and what it is allowed to run without asking — lives on
- * [SettingsScreen] to match `RemoteControlSettingsSheet.ets`. What stays here is
+ * the one [SettingsScreen]. What stays here is
  * addressed to a session id on the wire and so has nowhere else to live.
  */
 @Composable

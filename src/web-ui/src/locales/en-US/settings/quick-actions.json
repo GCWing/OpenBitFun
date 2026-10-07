@@ -4,6 +4,13 @@
     "subtitle": "Run common AI prompts quickly from chat."
   },
   "loading": "Loading...",
+  "commitAttribution": {
+    "title": "Commit attribution",
+    "scope": "Shared across workspaces on this execution host. Applies the next time a built-in commit workflow is loaded.",
+    "label": "Add OpenBitFun as a co-author",
+    "description": "Credit OpenBitFun ({{account}}) as a co-author of new commits created by the built-in commit workflow.",
+    "unsupported": "This execution host does not support this setting. Upgrade OpenBitFun on the host."
+  },
   "quickActions": {
     "defaults": {
       "commit": {
@@ -18,11 +25,13 @@
   },
   "sections": {
     "builtin": {
-      "title": "Built-in actions"
+      "title": "Built-in actions",
+      "description": "Edit the names and prompts of built-in actions, or turn off actions you do not need"
     },
     "custom": {
       "title": "Custom actions",
-      "empty": "No custom actions yet."
+      "empty": "No custom actions yet.",
+      "description": "Save your own prompts for recurring tasks; triggering an action sends its prompt to the current session"
     }
   },
   "edit": {
@@ -44,7 +53,7 @@
     "labelPlaceholder": "e.g. Generate unit tests",
     "promptField": "Prompt",
     "promptPlaceholder": "e.g. Generate unit tests for the current code changes",
-    "promptHint": "This prompt is sent to the AI when you run the action.",
+    "promptHint": "Send this prompt to the AI when the action is triggered",
     "cancel": "Cancel",
     "saveEdit": "Save",
     "confirmAdd": "Add",

@@ -9,16 +9,16 @@
     "retry": "重試"
   },
   "capacity": {
-    "title": "容量",
-    "description": "選擇補充審核工作逐項或兩路執行，並設定等待供應商容量的時長",
+    "title": "審核容量",
     "maxParallelReviewers": {
       "label": "審核並行數",
-      "description": "控制補充審核工作逐項或兩路執行；只改變並行方式，不改變審核範圍"
+      "description": "補充審核任務可逐個執行或同時執行兩個"
     },
     "maxQueueWaitSeconds": {
-      "label": "容量等待視窗",
-      "description": "可選審核工作等待供應商容量的時長；已經執行的檢查可能讓審核總耗時更長"
-    }
+      "label": "容量等待時間",
+      "description": "可選審核任務等待供應商可用容量的時長，不包含已開始執行的檢查耗時"
+    },
+    "description": "決定補充審核如何使用模型容量；調整並行數不改變審核範圍"
   },
   "messages": {
     "loadFailed": "載入 Review 容量失敗。",

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Button, VoiceCallPanel, VoiceParticleLogo, type VoiceCallPhase } from "@openbitfun/ui";
+import { Button, VoiceCallPanel, type VoiceCallPhase } from "@openbitfun/ui";
+import { VoiceParticleLogo } from "@openbitfun/ui/brand";
 import { useI18n } from "../i18n";
 import "./VoiceCallPreview.css";
 

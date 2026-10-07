@@ -255,18 +255,28 @@ impl RelayClient {
                         state.sender = Some(connection.sender());
                         state.state = ConnectionState::Connected;
                     }
-                    let _ = events.try_send(if first {
-                        RelayEvent::Connected
-                    } else {
-                        RelayEvent::Reconnected
-                    });
                     if events
-                        .try_send(RelayEvent::AuthOk {
+                        .send(if first {
+                            RelayEvent::Connected
+                        } else {
+                            RelayEvent::Reconnected
+                        })
+                        .await
+                        .is_err()
+                    {
+                        log::info!("Relay event receiver closed after connection");
+                        connection.close().await;
+                        return;
+                    }
+                    if events
+                        .send(RelayEvent::AuthOk {
                             user_id: connection.user_id.clone(),
                             device_id: connection.device_id.clone(),
                         })
+                        .await
                         .is_err()
                     {
+                        log::info!("Relay event receiver closed after authentication");
                         connection.close().await;
                         return;
                     }
@@ -274,9 +284,20 @@ impl RelayClient {
                         let _ = ready.send(Ok(()));
                     }
                     delay = Duration::from_secs(1);
-                    while let Ok(incoming) = connection.receive().await {
-                        if !Self::route(&owner, &events, epoch, incoming) {
-                            break;
+                    loop {
+                        let incoming = match connection.receive().await {
+                            Ok(incoming) => incoming,
+                            Err(error) => {
+                                log::warn!(
+                                    "Relay receive loop ended; scheduling reconnect: {error}"
+                                );
+                                break;
+                            }
+                        };
+                        if !Self::route(&owner, &events, epoch, incoming).await {
+                            log::info!("Relay event receiver closed; stopping reconnect loop");
+                            connection.close().await;
+                            return;
                         }
                     }
                     connection.close().await;
@@ -298,7 +319,8 @@ impl RelayClient {
                 state.replies.clear();
                 state.state = ConnectionState::Reconnecting;
             }
-            if events.try_send(RelayEvent::Disconnected).is_err() {
+            if events.send(RelayEvent::Disconnected).await.is_err() {
+                log::info!("Relay event receiver closed while reporting disconnect");
                 return;
             }
             let jitter = rand::random::<u32>() as u64 % (delay.as_millis() as u64 + 1);
@@ -306,21 +328,17 @@ impl RelayClient {
             delay = (delay * 2).min(Duration::from_secs(5));
         }
     }
-    fn route(
+    async fn route(
         owner: &Arc<Mutex<Owner>>,
         events: &mpsc::Sender<RelayEvent>,
         epoch: u64,
         event: Incoming,
     ) -> bool {
-        let mut state = owner.lock().unwrap();
-        if state.epoch != epoch {
+        if owner.lock().unwrap().epoch != epoch {
             return false;
         }
         match event {
             Incoming::RpcRequest(event) => {
-                state
-                    .replies
-                    .retain(|_, reply| reply.deadline > Instant::now());
                 let value = event.payload.0;
                 let Some(source) = value["sourceDeviceId"].as_str() else {
                     return false;
@@ -332,21 +350,31 @@ impl RelayClient {
                     return false;
                 };
                 let correlation = format!("rpc-{}", uuid::Uuid::new_v4());
-                state.replies.insert(
-                    correlation.clone(),
-                    Reply {
-                        id: event.id,
-                        deadline: reply_deadline(&value),
-                        source: source.into(),
-                    },
-                );
+                {
+                    let mut state = owner.lock().unwrap();
+                    if state.epoch != epoch {
+                        return false;
+                    }
+                    state
+                        .replies
+                        .retain(|_, reply| reply.deadline > Instant::now());
+                    state.replies.insert(
+                        correlation.clone(),
+                        Reply {
+                            id: event.id,
+                            deadline: reply_deadline(&value),
+                            source: source.into(),
+                        },
+                    );
+                }
                 events
-                    .try_send(RelayEvent::DeviceMessageReceived {
+                    .send(RelayEvent::DeviceMessageReceived {
                         source_device_id: source.into(),
                         correlation_id: correlation,
                         encrypted_data: data.into(),
                         nonce: nonce.into(),
                     })
+                    .await
                     .is_ok()
             }
             Incoming::Ephemeral(event) => {
@@ -354,7 +382,8 @@ impl RelayClient {
                 if value["type"] == "device-presence" {
                     match serde_json::from_value(value["devices"].clone()) {
                         Ok(devices) => events
-                            .try_send(RelayEvent::DevicePresence { devices })
+                            .send(RelayEvent::DevicePresence { devices })
+                            .await
                             .is_ok(),
                         Err(_) => false,
                     }
@@ -367,12 +396,13 @@ impl RelayClient {
                         return false;
                     };
                     events
-                        .try_send(RelayEvent::DeviceMessageReceived {
+                        .send(RelayEvent::DeviceMessageReceived {
                             source_device_id: source.into(),
                             correlation_id: String::new(),
                             encrypted_data: data.into(),
                             nonce: nonce.into(),
                         })
+                        .await
                         .is_ok()
                 } else {
                     true
@@ -482,6 +512,9 @@ fn reply_deadline(payload: &serde_json::Value) -> Instant {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use sioc::prelude::Event;
+
     #[test]
     fn presence_metadata_and_legacy_round_trip() {
         let legacy = serde_json::json!({"device_id":"id", "device_name":"technical"});
@@ -571,7 +604,50 @@ mod tests {
         }
     }
 
-    use super::*;
+    #[tokio::test]
+    async fn route_waits_for_event_capacity_instead_of_dropping_connection() {
+        let owner = Arc::new(Mutex::new(Owner {
+            epoch: 1,
+            state: ConnectionState::Connected,
+            url: None,
+            task: None,
+            sender: None,
+            replies: HashMap::new(),
+        }));
+        let (events, mut received) = mpsc::channel(1);
+        events.send(RelayEvent::Connected).await.unwrap();
+
+        let route_owner = owner.clone();
+        let mut route_task = tokio::spawn(async move {
+            RelayClient::route(
+                &route_owner,
+                &events,
+                1,
+                Incoming::Ephemeral(Event {
+                    payload: super::super::realtime_client::Ephemeral(serde_json::json!({
+                        "type": "device-presence",
+                        "devices": [],
+                    })),
+                    id: (),
+                    attachments: (),
+                }),
+            )
+            .await
+        });
+
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut route_task)
+                .await
+                .is_err()
+        );
+        assert!(matches!(received.recv().await, Some(RelayEvent::Connected)));
+        assert!(route_task.await.unwrap());
+        assert!(matches!(
+            received.recv().await,
+            Some(RelayEvent::DevicePresence { devices }) if devices.is_empty()
+        ));
+    }
+
     #[test]
     fn reply_deadline_respects_forwarded_timeout() {
         let now = Instant::now();

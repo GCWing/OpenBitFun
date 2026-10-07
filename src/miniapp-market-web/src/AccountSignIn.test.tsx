@@ -11,6 +11,7 @@ let root: ReturnType<typeof createRoot>;
 beforeEach(async () => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   vi.resetAllMocks();
+  sessionStorage.clear();
   window.history.replaceState(null, '', '/sign-in?locale=en-US#ticket=device-ticket');
   api.config.mockResolvedValue({ emailAuthConfigured: true, githubAuthConfigured: true });
   api.sendEmailCode.mockResolvedValue({ challengeId: 'challenge', retryAfterSeconds: 60 });
@@ -22,6 +23,7 @@ beforeEach(async () => {
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  sessionStorage.clear();
 });
 async function input(id: string, value: string) {
   const element = container.querySelector<HTMLInputElement>(`#${id}`)!;
@@ -63,4 +65,18 @@ it('distinguishes mail delivery failures from invalid verification codes', async
   await submit();
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("couldn't send the email");
   expect(container.querySelector('form')).not.toBeNull();
+});
+
+it('remembers only the exact native app callback target', async () => {
+  window.history.replaceState(null, '', '/sign-in?returnTo=openbitfun%3A%2F%2Fauth%2Fcallback#ticket=device-ticket');
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(<AccountSignIn />));
+  expect(sessionStorage.getItem('openbitfun.auth.returnTo')).toBe('openbitfun://auth/callback');
+
+  window.history.replaceState(null, '', '/sign-in?returnTo=https%3A%2F%2Fevil.example%2F#ticket=device-ticket');
+  await act(async () => root.unmount());
+  root = createRoot(container);
+  await act(async () => root.render(<AccountSignIn />));
+  expect(sessionStorage.getItem('openbitfun.auth.returnTo')).toBeNull();
 });

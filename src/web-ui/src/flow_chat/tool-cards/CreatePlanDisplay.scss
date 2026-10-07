@@ -9,7 +9,7 @@
   flex-direction: column;
   background: var(--openbitfun-color-surface-scene);
   border: 1px solid var(--openbitfun-color-border-default);
-  border-radius: 8px;
+  border-radius: var(--openbitfun-control-flow-chat-card-radius);
   margin: var(--openbitfun-control-flow-chat-card-gap) 0;
   overflow: hidden;
   transition: border-color 180ms ease;
@@ -20,10 +20,10 @@
   }
 
   &--loading {
-    padding: var(--openbitfun-control-flow-chat-card-padding-block) var(--openbitfun-control-flow-chat-card-padding-inline);
+    padding: var(--openbitfun-space-3) var(--openbitfun-control-flow-chat-card-padding-inline);
     /* Same chrome as the filled card when params are not ready yet (streaming start). */
     border: 1px solid var(--openbitfun-color-border-default);
-    border-radius: 8px;
+    border-radius: var(--openbitfun-control-flow-chat-card-radius);
     background: var(--openbitfun-color-surface-scene);
     box-sizing: border-box;
 
@@ -45,16 +45,9 @@
     align-items: center;
     justify-content: space-between;
     gap: var(--openbitfun-control-flow-chat-inline-gap);
-    padding: var(--openbitfun-control-flow-chat-card-padding-block) var(--openbitfun-control-flow-chat-card-padding-inline);
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--openbitfun-color-status-warning-content) 7%, transparent) 0%,
-      color-mix(in srgb, var(--openbitfun-color-status-warning-content) 4%, transparent) 50%,
-      color-mix(in srgb, var(--openbitfun-color-content-on-dark) 4%, transparent) 100%
-    );
+    padding: var(--openbitfun-space-3) var(--openbitfun-control-flow-chat-card-padding-inline);
+    background: transparent;
     border-bottom: 1px solid var(--openbitfun-color-border-default);
-    /* Match parent .create-plan-display top corners (8px) */
-    border-radius: 8px 8px 0 0;
 
     .create-plan-header-main {
       display: flex;
@@ -98,15 +91,16 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 28px;
-      height: 28px;
+      width: var(--openbitfun-control-flow-chat-row-icon-size);
+      height: var(--openbitfun-control-flow-chat-row-icon-size);
+      flex-shrink: 0;
       background: transparent;
       border-radius: 4px;
-      color: var(--openbitfun-color-status-warning-content);
+      color: var(--openbitfun-color-content-secondary);
 
-      svg {
-        width: 18px;
-        height: 18px;
+      > :is(svg, [data-openbitfun-component='icon']) {
+        width: var(--openbitfun-control-icon-size-md);
+        height: var(--openbitfun-control-icon-size-md);
       }
     }
 
@@ -141,7 +135,7 @@
     display: flex;
     align-items: flex-start;
     gap: var(--openbitfun-control-flow-chat-card-gap);
-    padding: var(--openbitfun-control-flow-chat-card-padding-block) var(--openbitfun-control-flow-chat-card-padding-inline);
+    padding: var(--openbitfun-space-3) var(--openbitfun-control-flow-chat-card-padding-inline);
 
     .plan-content-left {
       flex: 1;
@@ -167,7 +161,7 @@
 
   .create-plan-todos {
     border-top: 1px solid var(--openbitfun-color-border-default);
-    padding: var(--openbitfun-control-flow-chat-card-padding-block) var(--openbitfun-control-flow-chat-card-padding-inline);
+    padding: var(--openbitfun-space-3) var(--openbitfun-control-flow-chat-card-padding-inline);
 
     .todos-list {
       display: flex;
@@ -176,29 +170,32 @@
       max-height: 200px;
       overflow-x: hidden;
       overflow-y: auto;
-      
+
     }
 
     .todo-item {
       display: flex;
       align-items: flex-start;
       gap: var(--openbitfun-control-flow-chat-inline-gap);
-      padding: 5px 0;
-      transition: background 0.15s ease;
-      border-radius: 4px;
-      margin: 0 -4px;
-      padding-left: 4px;
-      padding-right: 4px;
+      padding-block: var(--openbitfun-space-2);
+      min-inline-size: 0;
+
+      .todo-icon-slot {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 0 0 var(--openbitfun-control-flow-chat-row-icon-size);
+        inline-size: var(--openbitfun-control-flow-chat-row-icon-size);
+        block-size: 1lh;
+      }
 
       .todo-icon {
         flex-shrink: 0;
-        margin-top: 0.15em;
         width: 12px;
         height: 12px;
 
         &--pending {
           color: var(--openbitfun-color-content-muted);
-          opacity: 0.5;
         }
 
         &--in-progress {
@@ -211,11 +208,12 @@
 
         &--cancelled {
           color: var(--openbitfun-color-status-danger-content);
-          opacity: 0.6;
         }
       }
 
       .todo-content {
+        min-inline-size: 0;
+        overflow-wrap: anywhere;
         font-size: var(--openbitfun-type-flow-control-font-size);
         line-height: var(--openbitfun-type-flow-support-line-height);
         color: var(--openbitfun-color-content-secondary);
@@ -228,8 +226,7 @@
       }
 
       &.status-in_progress {
-        background: color-mix(in srgb, var(--openbitfun-color-accent-hover) 8%, transparent);
-        
+
         .todo-content {
           color: var(--openbitfun-color-content-primary);
           font-weight: var(--openbitfun-type-label-sm-font-weight);
@@ -240,13 +237,11 @@
         .todo-content {
           text-decoration: line-through;
           color: var(--openbitfun-color-content-muted);
-          opacity: 0.6;
         }
       }
 
       &.status-cancelled {
-        opacity: 0.5;
-        
+
         .todo-content {
           text-decoration: line-through;
           color: var(--openbitfun-color-content-muted);
@@ -258,12 +253,12 @@
   .create-plan-footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: var(--openbitfun-control-flow-chat-card-padding-block) var(--openbitfun-control-flow-chat-card-padding-inline);
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-2);
+    padding: var(--openbitfun-space-3) var(--openbitfun-control-flow-chat-card-padding-inline);
     border-top: 1px solid var(--openbitfun-color-border-default);
-    background: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 4%, transparent);
-    /* Match parent .create-plan-display bottom corners (8px) */
-    border-radius: 0 0 8px 8px;
+    background: transparent;
 
     &--generating-only {
       justify-content: flex-end;

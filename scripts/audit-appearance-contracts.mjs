@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import ts from 'typescript';
-import { collectForwardedTabProps, collectForwardedOverlayProps, findDomAttribute } from './appearance-dom-contracts.mjs';
+import { collectForwardedTabProps, collectForwardedOverlayProps, collectForwardedFlowGroupParts, findDomAttribute, flowChatAppearanceSources, collectFlowChatAppearanceHostTags } from './appearance-dom-contracts.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const sourceRoot = path.join(repoRoot, 'src', 'web-ui', 'src');
@@ -9,7 +9,11 @@ const sceneRoot = path.join(sourceRoot, 'app', 'scenes');
 const registryFile = path.join(sourceRoot, 'infrastructure', 'appearance', 'registry', 'defaultAppearanceRegistry.ts');
 const retiredOwnershipFile = path.join(sourceRoot, 'infrastructure', 'appearance', 'registry', 'appearanceSourceOwnership.ts');
 const externalAppearanceContractFiles = [
+  path.join(repoRoot, 'design-system', 'packages', 'ui', 'src', 'components', 'SplitView', 'SplitView.tsx'),
   path.join(repoRoot, 'design-system', 'packages', 'ui', 'src', 'components', 'ConfirmDialog', 'ConfirmDialog.tsx'),
+  ...Object.values(flowChatAppearanceSources).map(file => path.join(repoRoot, file)),
+  path.join(repoRoot, 'packages/flow-chat-presentation/src/terminal/TerminalOutputRenderer.tsx'),
+  path.join(repoRoot, 'packages/flow-chat-presentation/src/terminal/LazyTerminalOutputRenderer.tsx'),
 ];
 const crossBoundaryRoots = [
   path.join(repoRoot, 'MiniApp'),
@@ -313,6 +317,7 @@ const sharedToolCardHostTags = new Set([
 
 function analyzeStyledOwnerContract(file, source, visualClassIds) {
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const flowChatHosts = collectFlowChatAppearanceHostTags(ast);
   let hasIntrinsicContract = false;
   let hasSharedToolCardContract = false;
   let hasConfigPageLayoutContract = false;
@@ -348,7 +353,7 @@ function analyzeStyledOwnerContract(file, source, visualClassIds) {
       }
 
       const tagName = jsxTagName(node);
-      if (sharedToolCardHostTags.has(tagName)) {
+      if (sharedToolCardHostTags.has(tagName) || flowChatHosts.has(tagName)) {
         hasSharedToolCardContract = true;
       }
       if (tagName === 'ConfigPageLayout' && surface && part) {
@@ -484,10 +489,13 @@ const domContractSources = [
     .map(([file, source]) => [file, source, true]),
   ...externalAppearanceContractSources.map(([file, source]) => [file, source, false]),
 ];
+const flowGroupOwnerPath = path.join(repoRoot, flowChatAppearanceSources.FlowGroup);
+const flowGroupOwnerAst = ts.createSourceFile(flowGroupOwnerPath, fs.readFileSync(flowGroupOwnerPath, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 
 for (const [file, source, strictContractOwnership] of domContractSources) {
   const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const forwardedProps = new Set([...collectForwardedTabProps(ast), ...collectForwardedOverlayProps(ast)]);
+  const forwardedFlowGroupParts = collectForwardedFlowGroupParts(ast, flowGroupOwnerAst);
   const visit = node => {
     if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node) || forwardedProps.has(node)) {
       const component = jsxAttribute(node, 'data-openbitfun-component');
@@ -527,7 +535,12 @@ for (const [file, source, strictContractOwnership] of domContractSources) {
       }
 
       const contracts = [
-        { surface: component, part, kind: 'component', attribute: 'data-openbitfun-component' },
+        ...(forwardedFlowGroupParts.has(node)
+          ? forwardedFlowGroupParts.get(node).map(ownerNode => ({
+            surface: component, part: jsxAttribute(ownerNode, 'data-openbitfun-part'),
+            kind: 'component', attribute: 'data-openbitfun-component', ownerNode,
+          }))
+          : [{ surface: component, part, kind: 'component', attribute: 'data-openbitfun-component' }]),
         { surface: productComponent, part: productPart, kind: 'component', attribute: 'data-openbitfun-product-component' },
         { surface: scene, part, kind: 'scene', attribute: 'data-openbitfun-scene' },
       ];
@@ -562,7 +575,8 @@ for (const [file, source, strictContractOwnership] of domContractSources) {
         } else {
           domSurfaceParts.get(surfaceId)?.add(contract.part.value);
         }
-        const stateAttribute = jsxAttributeStringLiterals(node, 'data-openbitfun-state');
+        const contractNode = contract.ownerNode ?? node;
+        const stateAttribute = jsxAttributeStringLiterals(contractNode, 'data-openbitfun-state');
         if (stateAttribute.present && stateAttribute.dynamic) {
           domSurfaceDynamicStates.add(surfaceId);
         }
@@ -578,7 +592,7 @@ for (const [file, source, strictContractOwnership] of domContractSources) {
           }
         });
         for (const facet of descriptor.facets) {
-          const facetAttribute = jsxAttributeStringLiterals(node, facet.attribute);
+          const facetAttribute = jsxAttributeStringLiterals(contractNode, facet.attribute);
           if (!facetAttribute.present) continue;
           const facetEntry = domSurfaceFacets.get(surfaceId)?.get(facet.attribute) ?? { dynamic: false, values: new Set() };
           facetEntry.dynamic ||= facetAttribute.dynamic;

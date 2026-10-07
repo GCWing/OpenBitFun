@@ -33,7 +33,8 @@
       },
       "mono": {
         "$type": "fontFamily",
-        "$value": "'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, 'Cascadia Mono', 'Cascadia Code', Consolas, 'Liberation Mono', 'Courier New', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', monospace"
+        "$description": "Shared code font for code, diffs, editors and terminals. Prefer bundled Fira Code; missing glyphs follow the localized body font.",
+        "$value": "'Fira Code', 'Cascadia Mono', 'Cascadia Code', Consolas, 'Liberation Mono', SFMono-Regular, 'SF Mono', Menlo, Monaco, 'Courier New', {font.family.sans}, monospace"
       }
     },
     "size": {
@@ -303,6 +304,14 @@
       }
     },
     "code": {
+      "output": {
+        "$description": "Compact terminal output grid shared by the renderer and its text preview.",
+        "fontFamily": { "$value": "{font.family.mono}" },
+        "fontSize": { "$value": "{font.size.xs}" },
+        "fontWeight": { "$value": "{font.weight.regular}" },
+        "lineHeight": { "$value": "{lineHeight.ui}" },
+        "letterSpacing": { "$value": "{letterSpacing.normal}" }
+      },
       "meta": {
         "fontFamily": { "$value": "{font.family.mono}" },
         "fontSize": { "$value": "{font.size.meta}" },
@@ -511,9 +520,31 @@
     "flowChat": {
       "$description": "Shared FlowChat rhythm for product and package-owned conversation surfaces.",
       "$type": "dimension",
+      "transcriptMaxWidth": { "$value": "900px" },
+      "turnRailOffset": { "$value": "{space.1}" },
+      "turnRailWidth": { "$value": "30px" },
+      "metadataActionSize": { "$value": "28px" },
+      "userMessageMaxWidth": { "$value": "min(72%, 48rem)" },
+      "userMessageRadius": { "$value": "calc({control.flowChat.cardRadius} + 2px)" },
+      "userMessagePaddingBlock": { "$value": "0.46rem" },
+      "userMessageMarginBlockStart": { "$value": "0.06rem" },
+      "modelNameMaxWidth": { "$value": "100px" },
+      "modelIdleOpacity": { "$type": "number", "$value": 0.72 },
       "rowIconSize": { "$value": "{control.icon.sizeSm}" },
       "rowIconGap": { "$value": "{space.1}" },
+      "capsuleInlineSize": {
+        "$description": "Shared resting width for tool, exploration and agent capsules, capped by the available container width.",
+        "$value": "18rem"
+      },
       "flowItemGap": { "$value": "{space.2}" },
+      "paragraphGap": {
+        "$description": "Shared gap between body paragraphs and between consecutive collapsed ambient tool cards.",
+        "$value": "{space.3}"
+      },
+      "streamViewportBlockSize": {
+        "$description": "Maximum live reasoning and collection viewport height; shorter content keeps its natural height.",
+        "$value": "min(300px, 45dvh)"
+      },
       "turnGap": { "$value": "{space.4}" },
       "inlineGap": { "$value": "{space.1}" },
       "controlGap": { "$value": "{space.2}" },
@@ -524,9 +555,9 @@
       "cardGap": { "$value": "{control.flowChat.flowItemGap}" },
       "cardRadius": { "$value": "{radius.base}" },
       "cardPaddingBlock": { "$value": "0.625rem" },
-      "cardPaddingInline": { "$value": "0.75rem" },
+      "cardPaddingInline": { "$value": "{space.3}" },
       "cardExpandedPaddingBlock": { "$value": "{space.2}" },
-      "cardExpandedPaddingInline": { "$value": "0.625rem" },
+      "cardExpandedPaddingInline": { "$value": "{control.flowChat.cardPaddingInline}" },
       "codeBlockPaddingBlock": { "$value": "0.55rem" },
       "codeBlockPaddingInline": { "$value": "0.75rem" }
     },
@@ -534,13 +565,17 @@
       "$description": "Shared tool-card header and expanded-content geometry.",
       "$type": "dimension",
       "ambientRowMinBlockSize": {
-        "$description": "Compact one-line floor; the component may grow with its text line box.",
-        "$value": "22px"
+        "$description": "One FlowChat body text line, so collapsed ambient rows follow the same rhythm as a line break and scale with typography.",
+        "$value": "calc({type.flow.body.fontSize} * {type.flow.body.lineHeight})"
       },
       "headerPaddingBlock": { "$value": "0.44rem" },
       "headerPaddingInlineEnd": { "$value": "0.625rem" },
       "headerIconSlot": { "$value": "34px" },
-      "expandedPaddingInline": { "$value": "0.625rem" }
+      "expandedPaddingInline": { "$value": "{control.flowChat.cardPaddingInline}" },
+      "fieldLabelWidth": {
+        "$description": "Shared label column for public tool-card fields and product-owned detail rows.",
+        "$value": "7rem"
+      }
     },
     "icon": {
       "size2xs": { "$type": "dimension", "$value": "8px" },
@@ -724,6 +759,9 @@
     },
     "overflowText": {
       "fadeExtent": { "$value": "{space.4}" }
+    },
+    "scrollArea": {
+      "fadeExtent": { "$description": "Inner fade depth at overflowing viewport edges.", "$value": "{space.4}" }
     },
     "empty": {
       "$description": "Shared empty-state media geometry. Callers select a semantic size and do not size artwork directly.",

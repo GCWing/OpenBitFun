@@ -2,12 +2,12 @@
  * @vitest-environment jsdom
  */
 
-import { act, useState, type ComponentProps } from 'react';
+import { act, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Menu, MenuItem } from '@openbitfun/ui';
+import { Menu, MenuItem, Portal, subscribeOverlayInteraction } from '@openbitfun/ui';
 
 import { ChatInputBoostSubmenu } from './ChatInputBoostSubmenu';
 import { HarnessProfileSelector } from './HarnessProfileSelector';
@@ -25,7 +25,7 @@ function ControlledSubmenu(props: Omit<ComponentProps<typeof ChatInputBoostSubme
   return <ChatInputBoostSubmenu {...props} open={open} onOpenChange={setOpen} />;
 }
 
-function SiblingMenus() {
+function SiblingMenus({ onSelectionComplete }: { onSelectionComplete?: () => void }) {
   const [active, setActive] = useState<string | null>(null);
   const disclosure = (id: string) => ({
     open: active === id,
@@ -34,20 +34,46 @@ function SiblingMenus() {
   return (
     <Menu>
       <ChatInputBoostSubmenu {...disclosure('modes')} label="Additional modes" icon={null} testId="modes">
-        <MenuItem>Plan</MenuItem>
+        <MenuItem onClick={onSelectionComplete}>Plan</MenuItem>
       </ChatInputBoostSubmenu>
       <ChatInputBoostSubmenu {...disclosure('skills')} label="Skills" icon={null} testId="skills">
-        <MenuItem>Skill A</MenuItem>
+        <MenuItem onClick={onSelectionComplete}>Skill A</MenuItem>
       </ChatInputBoostSubmenu>
       <HarnessProfileSelector
         {...disclosure('harness')}
         presentation="menu-item"
-        selectedProfile="balanced"
+        selectedProfile="Minimal"
         otherAgents={[{ id: 'research', name: 'Research' }]}
         onSelectProfile={() => {}}
+        onSelectionComplete={onSelectionComplete}
       />
     </Menu>
   );
+}
+
+function PortalledAddMenu() {
+  const [open, setOpen] = useState(true);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    return subscribeOverlayInteraction(menuRef, 'mousedown', event => {
+      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
+    });
+  }, [open]);
+  return open ? (
+    <Portal>
+      <div ref={menuRef} data-testid="add-menu">
+        <SiblingMenus onSelectionComplete={() => setOpen(false)} />
+      </div>
+    </Portal>
+  ) : null;
+}
+
+function clickWithPointer(target: HTMLElement) {
+  // Flush capture-phase dismissal before click, as a real pointer gesture does.
+  act(() => target.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })));
+  act(() => target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  act(() => { target.focus(); target.click(); });
 }
 
 describe('ChatInputBoostSubmenu', () => {
@@ -185,6 +211,53 @@ describe('ChatInputBoostSubmenu', () => {
     expect(document.querySelector('.openbitfun-chat-input__boost-submenu-panel')).toBeNull();
     act(() => root.render(<SiblingMenus />));
     expect(container.querySelector('[aria-expanded="true"]')).toBeNull();
+  });
+
+  it('keeps the add menu open while navigating to and back from the agent list', () => {
+    act(() => root.render(<PortalledAddMenu />));
+    clickWithPointer(document.querySelector<HTMLElement>('[data-testid="harness-profile-selector"]')!);
+    clickWithPointer(document.querySelector<HTMLElement>('[data-testid="harness-profile-other"]')!);
+
+    expect(document.querySelector('[data-testid="add-menu"]')).not.toBeNull();
+    expect(document.querySelector('.openbitfun-harness-selector__menu')?.getAttribute('data-openbitfun-page'))
+      .toBe('agents');
+
+    clickWithPointer(document.querySelector<HTMLElement>('[data-testid="harness-agent-back"]')!);
+    expect(document.querySelector('.openbitfun-harness-selector__menu')?.getAttribute('data-openbitfun-page'))
+      .toBe('profiles');
+    clickWithPointer(document.querySelector<HTMLElement>('[data-testid="harness-profile-other"]')!);
+    clickWithPointer(document.querySelector<HTMLElement>('[data-testid="harness-agent-research"]')!);
+    expect(document.querySelector('[data-testid="add-menu"]')).toBeNull();
+    expect(document.querySelector('.openbitfun-harness-selector__menu')).toBeNull();
+  });
+
+  it.each(['modes', 'skills'])('keeps the %s flyout mounted until its item receives the click', id => {
+    act(() => root.render(<PortalledAddMenu />));
+    clickWithPointer(document.querySelector<HTMLElement>(`[data-testid="${id}"] [aria-haspopup="menu"]`)!);
+    const item = document.querySelector<HTMLElement>('.openbitfun-chat-input__boost-submenu-panel [role="menuitem"]')!;
+
+    act(() => item.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true })));
+    act(() => item.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+    expect(item.isConnected).toBe(true);
+    expect(document.querySelector('[data-testid="add-menu"]')).not.toBeNull();
+    act(() => item.click());
+    expect(document.querySelector('[data-testid="add-menu"]')).toBeNull();
+  });
+
+  it.each(['harness', 'modes', 'skills'])('dismisses the %s flyout without cascading through the parent in one gesture', id => {
+    act(() => root.render(<PortalledAddMenu />));
+    const selector = id === 'harness'
+      ? '[data-testid="harness-profile-selector"]'
+      : `[data-testid="${id}"] [aria-haspopup="menu"]`;
+    const trigger = document.querySelector<HTMLElement>(selector)!;
+    clickWithPointer(trigger);
+
+    clickWithPointer(document.body);
+    expect(trigger.getAttribute('aria-expanded')).toBe('false');
+    expect(document.querySelector('[data-testid="add-menu"]')).not.toBeNull();
+
+    clickWithPointer(document.body);
+    expect(document.querySelector('[data-testid="add-menu"]')).toBeNull();
   });
 
   it('wires all ChatInput flyouts to one owner and clears it when the add menu closes', () => {

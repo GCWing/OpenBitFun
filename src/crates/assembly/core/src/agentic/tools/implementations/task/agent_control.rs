@@ -2,7 +2,6 @@ use super::*;
 
 const AGENT_SPAWN_FIELDS: &[&str] = &["agent_id", "prompt", "agent_type", "model_id"];
 const AGENT_SEND_INPUT_FIELDS: &[&str] = &["agent_id", "prompt", "model_id"];
-const AGENT_INTERRUPT_FIELDS: &[&str] = &["agent_id", "cascade"];
 
 fn input_object<'a>(
     input: &'a Value,
@@ -55,16 +54,6 @@ fn optional_string(object: &Map<String, Value>, field: &str) -> OpenBitFunResult
     }
 }
 
-fn optional_bool(object: &Map<String, Value>, field: &str) -> OpenBitFunResult<Option<bool>> {
-    match object.get(field) {
-        None | Some(Value::Null) => Ok(None),
-        Some(value) => value
-            .as_bool()
-            .map(Some)
-            .ok_or_else(|| OpenBitFunError::tool(format!("{field} must be a boolean"))),
-    }
-}
-
 fn insert_optional_model_id(task_input: &mut Value, model_id: Option<String>) {
     if let Some(model_id) = model_id {
         task_input["model_id"] = Value::String(model_id);
@@ -74,12 +63,13 @@ fn insert_optional_model_id(task_input: &mut Value, model_id: Option<String>) {
 fn validate_task_input(task_input: OpenBitFunResult<Value>, tool_name: &str) -> ValidationResult {
     let task_input = match task_input {
         Ok(task_input) => task_input,
-        Err(error) => return TaskTool::invalid_input(error.to_string()),
+        Err(error) => return AgentExecutionTool::invalid_input(error.to_string()),
     };
-    if let Err(error) = TaskTool::parse_invocation(&task_input, false) {
-        return TaskTool::invalid_input(error.to_string());
+    if let Err(error) = AgentExecutionTool::parse_invocation(&task_input, false) {
+        return AgentExecutionTool::invalid_input(error.to_string());
     }
-    if let Some(result) = TaskTool::validate_prompt_size_for_tool(&task_input, tool_name) {
+    if let Some(result) = AgentExecutionTool::validate_prompt_size_for_tool(&task_input, tool_name)
+    {
         return result;
     }
     ValidationResult::default()
@@ -188,7 +178,9 @@ impl Tool for AgentSpawnTool {
     fn is_concurrency_safe(&self, input: Option<&Value>) -> bool {
         input
             .and_then(|input| Self::task_input(input).ok())
-            .is_some_and(|task_input| TaskTool::new().is_concurrency_safe(Some(&task_input)))
+            .is_some_and(|task_input| {
+                AgentExecutionTool::new().is_concurrency_safe(Some(&task_input))
+            })
     }
 
     fn permission_intents(
@@ -196,7 +188,7 @@ impl Tool for AgentSpawnTool {
         input: &Value,
         context: &ToolUseContext,
     ) -> OpenBitFunResult<Vec<PermissionIntent>> {
-        TaskTool::new().permission_intents(&Self::task_input(input)?, context)
+        AgentExecutionTool::new().permission_intents(&Self::task_input(input)?, context)
     }
 
     fn render_tool_use_message(&self, input: &Value, options: &ToolRenderOptions) -> String {
@@ -226,7 +218,7 @@ impl Tool for AgentSpawnTool {
         input: &Value,
         context: &ToolUseContext,
     ) -> OpenBitFunResult<Vec<ToolResult>> {
-        let results = TaskTool::new()
+        let results = AgentExecutionTool::new()
             .call_task_impl(&Self::task_input(input)?, context)
             .await?;
         Ok(Self::render_results(results))
@@ -331,7 +323,7 @@ impl Tool for AgentSendInputTool {
         input: &Value,
         context: &ToolUseContext,
     ) -> OpenBitFunResult<Vec<PermissionIntent>> {
-        TaskTool::new().permission_intents(&Self::task_input(input)?, context)
+        AgentExecutionTool::new().permission_intents(&Self::task_input(input)?, context)
     }
 
     fn render_tool_use_message(&self, input: &Value, options: &ToolRenderOptions) -> String {
@@ -361,124 +353,7 @@ impl Tool for AgentSendInputTool {
         input: &Value,
         context: &ToolUseContext,
     ) -> OpenBitFunResult<Vec<ToolResult>> {
-        let results = TaskTool::new()
-            .call_task_impl(&Self::task_input(input)?, context)
-            .await?;
-        Ok(Self::render_results(results))
-    }
-}
-
-impl Default for AgentInterruptTool {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl AgentInterruptTool {
-    pub fn new() -> Self {
-        Self
-    }
-
-    pub(super) fn task_input(input: &Value) -> OpenBitFunResult<Value> {
-        let object = input_object(input, "AgentInterrupt", AGENT_INTERRUPT_FIELDS)?;
-        let agent_id = required_string(object, "agent_id", "AgentInterrupt")?;
-        let cascade = optional_bool(object, "cascade")?.unwrap_or(false);
-        Ok(json!({
-            "action": "cancel",
-            "agent_id": agent_id,
-            "cancel_descendants": cascade
-        }))
-    }
-
-    fn render_results(results: Vec<ToolResult>) -> Vec<ToolResult> {
-        results
-            .into_iter()
-            .map(|result| match result {
-                ToolResult::Result {
-                    data,
-                    image_attachments,
-                    ..
-                } => {
-                    let agent_id = data
-                        .get("agent_id")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default();
-                    let interrupted_count = data
-                        .get("cancelled_background_tasks")
-                        .and_then(Value::as_u64)
-                        .unwrap_or_default();
-                    ToolResult::Result {
-                        data: json!({
-                            "action": "interrupt",
-                            "status": "interrupted",
-                            "agent_id": agent_id,
-                            "cascade": data.get("cascade").and_then(Value::as_bool).unwrap_or(false),
-                            "interrupted_background_tasks": interrupted_count
-                        }),
-                        result_for_assistant: Some(format!(
-                            "Interrupted {interrupted_count} active background run(s) for agent {agent_id}."
-                        )),
-                        image_attachments,
-                    }
-                }
-                other => other,
-            })
-            .collect()
-    }
-}
-
-#[async_trait]
-impl Tool for AgentInterruptTool {
-    fn name(&self) -> &str {
-        "AgentInterrupt"
-    }
-
-    async fn description(&self) -> OpenBitFunResult<String> {
-        Ok(self.render_agent_interrupt_description())
-    }
-
-    fn short_description(&self) -> String {
-        "Interrupt an agent's active background work.".to_string()
-    }
-
-    fn input_schema(&self) -> Value {
-        Self::agent_interrupt_input_schema()
-    }
-
-    fn is_readonly(&self) -> bool {
-        false
-    }
-
-    fn permission_intents(
-        &self,
-        input: &Value,
-        context: &ToolUseContext,
-    ) -> OpenBitFunResult<Vec<PermissionIntent>> {
-        TaskTool::new().permission_intents(&Self::task_input(input)?, context)
-    }
-
-    fn render_tool_use_message(&self, input: &Value, _options: &ToolRenderOptions) -> String {
-        input
-            .get("agent_id")
-            .and_then(Value::as_str)
-            .map(|agent_id| format!("Interrupting agent: {agent_id}"))
-            .unwrap_or_else(|| "Interrupting agent".to_string())
-    }
-
-    async fn validate_input(
-        &self,
-        input: &Value,
-        _context: Option<&ToolUseContext>,
-    ) -> ValidationResult {
-        validate_task_input(Self::task_input(input), self.name())
-    }
-
-    async fn call_impl(
-        &self,
-        input: &Value,
-        context: &ToolUseContext,
-    ) -> OpenBitFunResult<Vec<ToolResult>> {
-        let results = TaskTool::new()
+        let results = AgentExecutionTool::new()
             .call_task_impl(&Self::task_input(input)?, context)
             .await?;
         Ok(Self::render_results(results))

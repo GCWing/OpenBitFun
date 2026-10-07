@@ -5,6 +5,8 @@ import { JSDOM } from 'jsdom';
 
 import { activateSurface, getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import { FileOperationToolCard } from './FileOperationToolCard';
+import { FileEditGroupContext } from '../grouping/FileEditGroupContext';
+import { FileEditGroupView } from '../components/modern/FileEditGroupView';
 import type { FlowToolItem, ToolCardConfig } from '../types/flow-chat';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -14,7 +16,9 @@ const mocks = vi.hoisted(() => ({
   openDispatchFile: vi.fn<(...args: unknown[]) => Promise<void>>(async () => undefined),
   snapshotsAvailable: true,
   emitSnapshotEvent: vi.fn(),
-  getOperationSummary: vi.fn(async () => null),
+  getOperationSummary: vi.fn<(sessionId: string, operationId: string) => Promise<{
+    linesAdded: number; linesRemoved: number;
+  } | null>>(async () => null),
   currentWorkspace: undefined as undefined | { rootPath: string; connectionId?: string },
   createDiffEditorTab: vi.fn(),
   openFile: vi.fn(),
@@ -46,8 +50,8 @@ vi.mock('./WritePlanDisplay', () => ({
 }));
 
 vi.mock('../hooks/useTypewriter', () => ({
-  useTypewriter: (targetText: string, animate: boolean) => {
-    if (mocks.typewriterMode === 'partial' && animate) {
+  useTypewriter: (targetText: string, animate: boolean, options?: { revealImmediately?: boolean }) => {
+    if (mocks.typewriterMode === 'partial' && animate && !options?.revealImmediately) {
       return {
         displayText: targetText.slice(0, Math.max(0, Math.floor(targetText.length / 2))),
         isRevealing: true,
@@ -72,6 +76,10 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
   }),
+}));
+
+vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
+  useI18n: () => ({ t: (key: string) => key, formatNumber: String }),
 }));
 
 vi.mock('../../tools/snapshot_system/hooks/useSnapshotState', () => ({
@@ -158,7 +166,7 @@ describe('FileOperationToolCard', () => {
     mocks.currentWorkspace = undefined;
     mocks.snapshotsAvailable = true;
     mocks.emitSnapshotEvent.mockClear();
-    mocks.getOperationSummary.mockClear();
+    mocks.getOperationSummary.mockReset().mockResolvedValue(null);
     mocks.createDiffEditorTab.mockReset();
     mocks.openFile.mockReset();
     mocks.codePreviewProps = [];
@@ -171,6 +179,84 @@ describe('FileOperationToolCard', () => {
       modifiedContent: '',
       anchorLine: undefined,
     });
+  });
+
+  const groupConfig = { toolName: 'Edit', displayName: 'Edit', requiresConfirmation: false } as ToolCardConfig;
+  function groupItems(recorded = false): FlowToolItem[] {
+    return ['one', 'two'].map(id => ({ id, type: 'tool', timestamp: 1, toolName: 'Edit', status: 'completed',
+      toolCall: { id, input: { file_path: '/target/file.ts', old_string: 'before\n', new_string: 'after\n' } },
+      toolResult: { success: true, result: { snapshot_recorded: recorded } },
+    } as FlowToolItem));
+  }
+  const groupHeader = () => container.querySelector('[data-openbitfun-component="file-edit-group"][data-openbitfun-part="header"]');
+  async function renderFileGroup(items: FlowToolItem[], expanded = false, sessionId = 'session') {
+    await act(async () => root.render(<FileEditGroupView items={items} sessionId={sessionId}
+      expanded={expanded} summary="2 edits" itemCount={items.length}
+      fileRevision={{ path: '/target/file.ts', label: 'file.ts', countLabel: '2 edits:' }}>
+      {items.map(toolItem => <FileOperationToolCard key={toolItem.id} toolItem={toolItem} config={groupConfig} sessionId={sessionId} />)}
+    </FileEditGroupView>));
+    await act(async () => { await vi.dynamicImportSettled(); });
+  }
+
+  it('resolves cumulative snapshot totals while collapsed and shares them with the member cards', async () => {
+    mocks.getOperationSummary.mockImplementation(async (_session, operationId) => operationId === 'one'
+      ? { linesAdded: 7, linesRemoved: 3 } : { linesAdded: 2, linesRemoved: 1 });
+    const items = groupItems();
+    await renderFileGroup(items);
+    expect(mocks.getOperationSummary.mock.calls).toEqual([['session', 'one'], ['session', 'two']]);
+    expect(container.querySelectorAll('[data-testid="chat-file-change-card"]')).toHaveLength(0);
+    expect(groupHeader()?.querySelector('[data-openbitfun-change="added"]')?.textContent).toBe('+9');
+    expect(groupHeader()?.querySelector('[data-openbitfun-change="removed"]')?.textContent).toBe('-4');
+    await renderFileGroup(items, true);
+    expect(container.querySelector('[data-tool-card-id="one"] [data-openbitfun-change="added"]')?.textContent).toBe('+7');
+    expect(container.querySelector('[data-tool-card-id="two"] [data-openbitfun-change="removed"]')?.textContent).toBe('-1');
+    expect(mocks.getOperationSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['remote workspace', 'dispatch'])('uses member fallback totals without controller snapshot IO for %s', async scenario => {
+    mocks.dispatchSession = scenario === 'dispatch';
+    mocks.snapshotsAvailable = false;
+    try {
+      await renderFileGroup(groupItems(mocks.dispatchSession));
+      expect(groupHeader()?.querySelector('[data-openbitfun-change="added"]')?.textContent).toBe('+2');
+      expect(groupHeader()?.querySelector('[data-openbitfun-change="removed"]')?.textContent).toBe('-2');
+      expect(mocks.getOperationSummary).not.toHaveBeenCalled();
+    } finally {
+      mocks.dispatchSession = false;
+    }
+  });
+
+  it('discards late totals from the previous device and session', async () => {
+    let resolveSummary!: (value: { linesAdded: number; linesRemoved: number }) => void;
+    mocks.getOperationSummary.mockReturnValue(new Promise(resolve => { resolveSummary = resolve; }));
+    const items = groupItems();
+    await renderFileGroup(items);
+    activateSurface('peer-b');
+    mocks.snapshotsAvailable = false;
+    await renderFileGroup(items, false, 'other-session');
+    await act(async () => resolveSummary({ linesAdded: 99, linesRemoved: 99 }));
+    expect(groupHeader()?.querySelector('[data-openbitfun-change="added"]')?.textContent).toBe('+2');
+    expect(groupHeader()?.querySelector('[data-openbitfun-change="removed"]')?.textContent).toBe('-2');
+  });
+
+  it('uses the shared revision label while retaining the target and native open action', async () => {
+    const toolItem = { id: 'revision', type: 'tool', toolName: 'Edit', status: 'completed',
+      toolCall: { id: 'revision-call', input: { file_path: '/target/file.ts', old_string: 'before', new_string: 'after' } },
+      toolResult: { success: true, result: {} } } as FlowToolItem;
+    const config = { toolName: 'Edit', displayName: 'Edit', requiresConfirmation: false } as ToolCardConfig;
+    await act(async () => root.render(<FileEditGroupContext.Provider value={{
+      revisionLabels: new Map([['revision', 'Edit 2']]), diffStats: new Map([['revision', { additions: 7, deletions: 3 }]]),
+    }}>
+      <FileOperationToolCard toolItem={toolItem} config={config} sessionId="session" />
+    </FileEditGroupContext.Provider>));
+    expect(container.querySelector('[data-testid="chat-file-change-action"]')?.textContent).toBe('Edit 2');
+    expect(container.querySelector('[data-testid="chat-file-change-path"]')?.textContent).toBe('');
+    expect(container.querySelector('[data-testid="chat-file-change-card"]')?.getAttribute('data-path')).toBe('/target/file.ts');
+    expect(container.querySelector('[data-openbitfun-change="added"]')?.textContent).toBe('+7');
+    expect(container.querySelector('[data-openbitfun-change="removed"]')?.textContent).toBe('-3');
+    expect(mocks.getOperationSummary).not.toHaveBeenCalled();
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-testid="chat-file-change-open-file"]')?.click());
+    expect(mocks.getOperationDiff).toHaveBeenCalledWith('session', '/target/file.ts', 'revision-call');
   });
 
   it('routes recorded target snapshots through the target file query without controller snapshot IO', async () => {
@@ -547,7 +633,7 @@ describe('FileOperationToolCard', () => {
     expect(container.textContent).toContain('Arguments are invalid JSON.');
   });
 
-  it('collapses an open edit preview when the operation changes to failed', async () => {
+  it('preserves manual expansion when an edit fails', async () => {
     const config: ToolCardConfig = {
       toolName: 'Edit',
       displayName: 'Edit',
@@ -576,6 +662,8 @@ describe('FileOperationToolCard', () => {
     await act(async () => {
       root.render(<FileOperationToolCard toolItem={running} config={config} sessionId="session-1" />);
     });
+    expect(container.querySelector('[data-testid="chat-file-change-card"]')?.getAttribute('data-expanded')).toBe('false');
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click());
     expect(container.querySelector('[data-testid="chat-file-change-card"]')?.getAttribute('data-expanded')).toBe('true');
 
     await act(async () => {
@@ -592,9 +680,9 @@ describe('FileOperationToolCard', () => {
       );
     });
 
-    expect(container.querySelector('[data-testid="chat-file-change-card"]')?.getAttribute('data-expanded')).toBe('false');
-    expect(container.querySelector('[data-openbitfun-part="error"]')).toBeNull();
-    expect(container.textContent).not.toContain('The target text was not found.');
+    expect(container.querySelector('[data-testid="chat-file-change-card"]')?.getAttribute('data-expanded')).toBe('true');
+    expect(container.querySelector('[data-openbitfun-part="error"]')).not.toBeNull();
+    expect(container.textContent).toContain('The target text was not found.');
     expect(container.querySelector('[data-openbitfun-icon="warning"]')).not.toBeNull();
   });
 
@@ -663,7 +751,7 @@ describe('FileOperationToolCard', () => {
     }));
   });
 
-  it('renders only the expand and open-panel controls after change metadata', async () => {
+  it('keeps the open-panel control in the trailing action region after change metadata', async () => {
     const toolItem: FlowToolItem = {
       id: 'tool-1',
       type: 'tool',
@@ -731,12 +819,14 @@ describe('FileOperationToolCard', () => {
     ) as HTMLButtonElement | null;
 
     expect(container.querySelector('[data-testid="chat-file-change-open-diff"]')).toBeNull();
-    expect(actionButtons).toHaveLength(2);
-    expect(actionButtons[0]?.getAttribute('data-openbitfun-part')).toBe('affordanceButton');
-    expect(actionButtons[1]).toBe(openButton);
+    expect(actionButtons).toEqual([openButton]);
+    expect(container.querySelector('.lucide-chevron-down')).toBeNull();
     expect(openButton?.getAttribute('data-openbitfun-affordance')).toBe('open-panel-right');
     expect(openButton?.querySelector('[data-openbitfun-icon="open-panel-right"]')).not.toBeNull();
-    expect(openButton?.closest('[data-openbitfun-part="trailingActions"]')?.getAttribute('data-divider')).toBe('true');
+    expect(contentRegion?.querySelector('button')).toBeNull();
+    expect(actionRegion?.previousElementSibling).toBe(extraRegion);
+    expect(actionRegion?.parentElement?.lastElementChild).toBe(actionRegion);
+    expect(openButton?.closest('[data-openbitfun-part="actionRegion"]')).toBe(actionRegion);
 
     await act(async () => {
       openButton?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -1082,7 +1172,7 @@ describe('FileOperationToolCard', () => {
     expect(container.textContent).not.toContain('toolCards.file.parsingPath');
   });
 
-  it('disables nested code-preview autoscroll while write content is streaming', async () => {
+  it('mounts the streaming preview only on request and keeps nested autoscroll disabled', async () => {
     const toolItem: FlowToolItem = {
       id: 'tool-1',
       type: 'tool',
@@ -1123,8 +1213,9 @@ describe('FileOperationToolCard', () => {
       );
     });
 
-    expect(mocks.codePreviewProps).toHaveLength(1);
-    expect(mocks.codePreviewProps[0]).toMatchObject({
+    expect(mocks.codePreviewProps).toHaveLength(0);
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click());
+    expect(mocks.codePreviewProps.at(-1)).toMatchObject({
       isStreaming: true,
       autoScrollToBottom: false,
     });
@@ -1173,112 +1264,64 @@ describe('FileOperationToolCard', () => {
       );
     });
 
-    expect(mocks.codePreviewProps).toHaveLength(1);
-    const previewContent = String(mocks.codePreviewProps[0].content ?? '');
+    expect(mocks.codePreviewProps).toHaveLength(0);
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click());
+    const previewContent = String(mocks.codePreviewProps.at(-1)?.content ?? '');
     expect(previewContent.length).toBeGreaterThan(0);
     expect(previewContent.length).toBeLessThan(fullContent.length);
-    expect(mocks.codePreviewProps[0]).toMatchObject({
+    expect(mocks.codePreviewProps.at(-1)).toMatchObject({
       isStreaming: true,
       autoScrollToBottom: false,
     });
-    // Status still reflects received bytes, not only revealed characters.
-    expect(container.textContent).toContain(`${fullContent.length} chars received`);
+    // Summary counts use received lines, independently of typewriter progress.
+    expect(container.querySelector('[data-openbitfun-change="added"]')?.textContent).toBe('+3');
   });
 
-  it('retains a compact completed write preview until newer content supersedes it', async () => {
-    const config: ToolCardConfig = {
-      toolName: 'Write',
-      displayName: 'Write',
-      icon: 'WRITE',
-      requiresConfirmation: false,
-      resultDisplayType: 'detailed',
-      description: 'Write a file',
-      displayMode: 'standard',
-    };
-    const streamingToolItem: FlowToolItem = {
-      id: 'tool-1',
-      type: 'tool',
-      toolName: 'Write',
-      status: 'streaming',
-      isParamsStreaming: true,
-      toolCall: {
-        id: 'call-1',
-        name: 'Write',
-        input: {
-          file_path: 'src/generated.ts',
-          content: 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6',
-        },
-      },
-      partialParams: {
-        file_path: 'src/generated.ts',
-        content: 'line 1\nline 2\nline 3\nline 4\nline 5\nline 6',
-      },
-    } as FlowToolItem;
-    const completedToolItem: FlowToolItem = {
-      ...streamingToolItem,
-      status: 'completed',
-      isParamsStreaming: false,
-      toolResult: {
-        success: true,
-        result: {
-          file_path: 'src/generated.ts',
-        },
-      },
-    } as FlowToolItem;
-
-    await act(async () => {
-      root.render(
-        <FileOperationToolCard
-          toolItem={streamingToolItem}
-          config={config}
-          sessionId="session-1"
-          isLastItem
-        />
-      );
+  it.each(['Write', 'Edit'] as const)('keeps %s compact with live line counts and preserves manual disclosure', async toolName => {
+    const config = { toolName, displayName: toolName, requiresConfirmation: false,
+      resultDisplayType: 'detailed', displayMode: 'standard' } as ToolCardConfig;
+    const content = (count: number) => Array.from({ length: count }, (_, index) => `new line ${index}`).join('\n');
+    const item = (count: number): FlowToolItem => ({
+      id: 'live-file', type: 'tool', toolName, timestamp: 1, status: 'streaming', isParamsStreaming: true,
+      toolCall: { id: 'live-call', input: {} },
+      partialParams: { file_path: 'src/file.ts', ...(toolName === 'Write'
+        ? { content: content(count) } : { old_string: 'old line\n', new_string: content(count) }) },
     });
-
-    mocks.codePreviewProps = [];
-    mocks.inlineDiffPreviewProps = [];
-
-    await act(async () => {
-      root.render(
-        <FileOperationToolCard
-          toolItem={completedToolItem}
-          config={config}
-          sessionId="session-1"
-          isLastItem
-        />
-      );
-    });
-
-    expect(container.querySelector('[data-testid="chat-file-change-preview"]')).not.toBeNull();
-    expect(mocks.codePreviewProps).toHaveLength(2);
-    expect(mocks.codePreviewProps.at(-1)).toMatchObject({
-      isStreaming: false,
-      maxHeight: 88,
-    });
-    expect(mocks.inlineDiffPreviewProps).toHaveLength(0);
-
-    await act(async () => {
-      root.render(
-        <FileOperationToolCard
-          toolItem={completedToolItem}
-          config={config}
-          sessionId="session-1"
-          isLastItem={false}
-        />
-      );
-    });
-
-    // Auto-collapse animates closed; wait for SmoothHeightCollapse to unmount children.
-    expect(container.querySelector('[data-testid="chat-file-change-card"]')?.getAttribute('data-expanded')).toBe('false');
-    expect(mocks.inlineDiffPreviewProps).toHaveLength(0);
-    await act(async () => {
-      await new Promise((resolve) => {
-        window.setTimeout(resolve, 350);
-      });
-    });
-    expect(container.querySelector('[data-testid="chat-file-change-preview"]')).toBeNull();
+    const render = (toolItem: FlowToolItem, isLastItem = true) => act(async () => root.render(
+      <FileOperationToolCard toolItem={toolItem} config={config} isLastItem={isLastItem} />));
+    const card = () => container.querySelector('[data-testid="chat-file-change-card"]')!;
+    const toggle = () => container.querySelector<HTMLButtonElement>('button[aria-expanded]')!;
+    await render(item(9));
+    expect(card().getAttribute('data-expanded')).toBe('false');
+    expect(mocks.codePreviewProps).toHaveLength(0);
+    expect(container.querySelector('[data-openbitfun-change="added"]')?.textContent).toBe('+9');
+    expect(container.querySelector('[data-openbitfun-change="removed"]')?.textContent).toBe(toolName === 'Edit' ? '-1' : '-0');
+    const shimmer = container.querySelector('[data-openbitfun-component="shimmer-text"][data-active="true"]')!;
+    expect(shimmer.querySelector('[data-openbitfun-part="action"]')).not.toBeNull();
+    expect(shimmer.querySelector('[data-path="src/file.ts"]')?.textContent).toBe('file.ts');
+    expect(shimmer.querySelector('[data-openbitfun-part="changeSummary"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="icon"] [data-openbitfun-part="processing"]')).not.toBeNull();
+    expect(container.querySelector('[data-openbitfun-part="status"] [data-openbitfun-part="processing"]')).toBeNull();
+    await render(item(10));
+    expect(card().getAttribute('data-expanded')).toBe('false');
+    expect(container.querySelector('[data-openbitfun-change="added"]')?.textContent).toBe('+10');
+    await act(async () => toggle().click());
+    await render(item(11));
+    expect(mocks.codePreviewProps.at(-1)).toMatchObject({ content: content(11), isStreaming: true, maxHeight: 88 });
+    const completed = { ...item(11), status: 'completed' as const, isParamsStreaming: false,
+      toolResult: { success: true, result: { file_path: 'src/file.ts' } } };
+    await render(completed, false);
+    expect(card().getAttribute('data-expanded')).toBe('true');
+    expect(mocks.inlineDiffPreviewProps.at(-1)).toMatchObject({ modifiedContent: content(11), maxHeight: 330 });
+    expect(container.querySelector('[data-openbitfun-component="shimmer-text"][data-active="true"]')).toBeNull();
+    expect(container.querySelector('[data-openbitfun-component="shimmer-text"]')).toBe(shimmer);
+    expect(container.querySelector('[data-openbitfun-part="processing"]')).toBeNull();
+    expect(container.querySelector(`[data-openbitfun-part="icon"] .lucide-${toolName === 'Write' ? 'file-pen-line' : 'file-pen'}`)).not.toBeNull();
+    await act(async () => toggle().click());
+    await render(item(12));
+    expect(card().getAttribute('data-expanded')).toBe('false');
+    await render({ ...completed, partialParams: item(12).partialParams });
+    expect(card().getAttribute('data-expanded')).toBe('false');
   });
 
   it('uses the larger diff preview height after a completed write card is manually expanded', async () => {
@@ -1325,13 +1368,26 @@ describe('FileOperationToolCard', () => {
 
     mocks.inlineDiffPreviewProps = [];
 
-    const card = container.querySelector(
-      '[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="surface"][data-openbitfun-attention="prominent"]',
+    const summary = container.querySelector(
+      '[data-openbitfun-component="flow-chat-tool-card"][data-openbitfun-part="summary"]',
     ) as HTMLDivElement | null;
+    const toggle = summary?.querySelector<HTMLButtonElement>('[data-openbitfun-part="affordanceButton"]');
+    expect(toggle?.tagName).toBe('BUTTON');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    expect(summary?.querySelector('[data-openbitfun-part="actionRegion"] [data-openbitfun-affordance="expand"]')).toBeNull();
+
     await act(async () => {
-      card?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      summary?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
     expect(mocks.inlineDiffPreviewProps.map(props => props.maxHeight)).toContain(330);
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+
+    toggle?.focus();
+    expect(dom.window.document.activeElement).toBe(toggle);
+    await act(async () => {
+      toggle?.click();
+    });
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
   });
 });

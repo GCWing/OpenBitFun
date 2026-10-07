@@ -1,6 +1,6 @@
 [package]
 name = "openbitfun-page-function-runtime"
-version = "1.0.2"
+version = "1.0.3"
 authors = ["OpenBitFun Team"]
 edition = "2021"
 description = "Embedded JS Page Function runtime for OpenBitFun Pages (rquickjs)"

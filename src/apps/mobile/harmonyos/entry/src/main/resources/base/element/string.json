@@ -13,14 +13,6 @@
       "value": "OpenBitFun"
     },
     {
-      "name": "permission_camera_reason",
-      "value": "Used to scan the OpenBitFun desktop remote connection QR code."
-    },
-    {
-      "name": "permission_read_pasteboard_reason",
-      "value": "Used to paste the OpenBitFun desktop remote connection link."
-    },
-    {
       "name": "permission_microphone_reason",
       "value": "Used to turn speech into text to send in a conversation."
     },

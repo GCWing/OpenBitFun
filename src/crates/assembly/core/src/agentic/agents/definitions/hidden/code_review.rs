@@ -51,7 +51,7 @@ impl Agent for CodeReviewAgent {
     }
 
     fn description(&self) -> &str {
-        r#"Independent adversarial, read-only code reviewer. Direct Task calls use one isolated instance. Multi-reviewer execution is owned by the unified Review decision and launch plan. Reviewers report evidence-backed findings and never implement fixes."#
+        r#"Independent adversarial, read-only code reviewer. Direct AgentSpawn calls use one isolated instance. Multi-reviewer execution is owned by the unified Review decision and launch plan. Reviewers report evidence-backed findings and never implement fixes."#
     }
 
     fn prompt_template_name(&self, _model_name: Option<&str>) -> &str {

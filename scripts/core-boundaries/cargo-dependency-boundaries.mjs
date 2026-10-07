@@ -199,7 +199,7 @@ const CORE_TOKIO_AGGREGATES = new Set([
   'tools-mcp',
 ]);
 const AGENT_RUNTIME_TOKIO_FEATURES = new Map([
-  ['native-hook-runtime', ['io-util', 'macros', 'process', 'rt', 'time']],
+  ['native-hook-runtime', ['io-util', 'macros', 'process', 'rt', 'sync', 'time']],
   ['agent-runtime', ['io-util', 'macros', 'process', 'rt', 'sync', 'time']],
 ]);
 
@@ -574,7 +574,8 @@ const THIRD_PARTY_CAPABILITY_PROFILES = new Map([
       ['openbitfun-skin-market-service', dependencyProfile(['gif', 'jpeg', 'png', 'webp'], {
         useDefaultFeatures: false,
       })],
-      ['openbitfun-webdriver', dependencyProfile(['png'], {
+      // The embedded bridge captures PNG and encodes JPEG previews itself.
+      ['openbitfun-webdriver', dependencyProfile(['jpeg', 'png'], {
         useDefaultFeatures: false,
       })],
     ]),

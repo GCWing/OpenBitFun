@@ -48,10 +48,6 @@ import { AccountDeviceSelectionPolicy } from '../main/ets/pages/policy/AccountDe
 import { SidebarConnectionActionPolicy } from '../main/ets/pages/policy/SidebarConnectionActionPolicy';
 import { SidebarDeviceProjectionPolicy } from '../main/ets/pages/policy/SidebarDeviceProjectionPolicy';
 import { HarnessProfilePolicy } from '../main/ets/pages/policy/HarnessProfilePolicy';
-import { CONNECT_INTENT_AUTO, CONNECT_INTENT_SCAN } from '../main/ets/pages/state/AppShellState';
-import {
-  DetectedUrlAction
-} from '../main/ets/services/ConnectScanDecisionPolicy';
 
 interface LoginFailureFixture { code?: number; statusCode?: number; }
 
@@ -746,7 +742,7 @@ export default function conversationPresentationUnitTest() {
       expect(RemoteI18n.t('sidebar.devices')).assertEqual('设备');
       expect(RemoteI18n.t('sidebar.newChat')).assertEqual('聊天');
       expect(RemoteI18n.t('sidebar.connectDesktop')).assertEqual('连接电脑');
-      expect(RemoteI18n.t('sidebar.scanToConnect')).assertEqual('扫码连接电脑');
+      expect(RemoteI18n.t('sidebar.scanToConnect')).assertEqual('sidebar.scanToConnect');
       expect(RemoteI18n.t('sidebar.signInOpenBitFunAccount')).assertEqual('使用邮箱或 GitHub 登录');
       expect(RemoteI18n.t('connect.chooseConnectionTitle')).assertEqual('连接电脑');
       expect(RemoteI18n.t('sidebar.local')).assertEqual('sidebar.local');
@@ -761,7 +757,7 @@ export default function conversationPresentationUnitTest() {
       expect(RemoteI18n.t('sidebar.addWorkspace')).assertEqual('添加工作区');
     });
 
-    it('hides the redundant scan action after a QR connection succeeds', 0, () => {
+    it('routes sidebar chat and session creation by connection state', 0, () => {
       expect(SidebarConnectionActionPolicy.chatAction('normal', true)).assertEqual('choose-harness');
       expect(SidebarConnectionActionPolicy.chatAction('remote', true)).assertEqual('choose-harness');
       expect(SidebarConnectionActionPolicy.chatAction('normal', false)).assertEqual('code');
@@ -771,8 +767,6 @@ export default function conversationPresentationUnitTest() {
       expect(SidebarConnectionActionPolicy.canCreateSession('connected', true)).assertFalse();
       expect(SidebarConnectionActionPolicy.canCreateSession('reconnecting', false)).assertFalse();
       expect(SidebarConnectionActionPolicy.canCreateSession('idle', false)).assertFalse();
-      expect(SidebarConnectionActionPolicy.shouldShowScan('disconnected')).assertTrue();
-      expect(SidebarConnectionActionPolicy.shouldShowScan('connected')).assertFalse();
     });
 
     it('uses the complete chat and settings shell for QR access without an account', 0, () => {
@@ -804,26 +798,9 @@ export default function conversationPresentationUnitTest() {
   });
 
   describe('ConnectSheetLandingPolicy', () => {
-    it('opens unsigned-in automatic entry on the explainer, not the camera', 0, () => {
-      expect(ConnectSheetLandingPolicy.initialStep(CONNECT_INTENT_AUTO, false))
-        .assertEqual(ConnectSheetStep.Intro);
-      expect(ConnectSheetLandingPolicy.initialStep(CONNECT_INTENT_AUTO, true))
-        .assertEqual(ConnectSheetStep.Account);
-      expect(ConnectSheetLandingPolicy.initialStep(CONNECT_INTENT_SCAN, false))
-        .assertEqual(ConnectSheetStep.Scan);
-      expect(ConnectSheetLandingPolicy.initialStep(CONNECT_INTENT_SCAN, true))
-        .assertEqual(ConnectSheetStep.Scan);
-    });
-
-    it('keeps the current pairing step while a URL is present or pairing is busy', 0, () => {
-      expect(ConnectSheetLandingPolicy.visibleStep(ConnectSheetStep.Intro, false))
-        .assertEqual(ConnectSheetStep.Intro);
-      expect(ConnectSheetLandingPolicy.visibleStep(ConnectSheetStep.Scan, false))
-        .assertEqual(ConnectSheetStep.Scan);
-      expect(ConnectSheetLandingPolicy.visibleStep(ConnectSheetStep.Account, true))
-        .assertEqual(ConnectSheetStep.Account);
-      expect(ConnectSheetLandingPolicy.visibleStep(ConnectSheetStep.Account, false))
-        .assertEqual(ConnectSheetStep.Intro);
+    it('lands on the account device list when signed in and on sign-in otherwise', 0, () => {
+      expect(ConnectSheetLandingPolicy.step(false)).assertEqual(ConnectSheetStep.Intro);
+      expect(ConnectSheetLandingPolicy.step(true)).assertEqual(ConnectSheetStep.Account);
     });
 
     it('maps a failed pair to the matching reconnect hint', 0, () => {
@@ -843,8 +820,6 @@ export default function conversationPresentationUnitTest() {
       expect(RemoteSurfaceEntryPolicy.shouldOpenConnectSheet(RemoteConnectEntryKind.EnterSurface))
         .assertFalse();
       expect(RemoteSurfaceEntryPolicy.shouldOpenConnectSheet(RemoteConnectEntryKind.OpenConnect))
-        .assertTrue();
-      expect(RemoteSurfaceEntryPolicy.shouldOpenConnectSheet(RemoteConnectEntryKind.OpenScan))
         .assertTrue();
     });
   });

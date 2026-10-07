@@ -16,7 +16,7 @@ const DIRECT_TOOL_LISTING_GUIDANCE: &str = r#"Their definitions are already avai
 Each entry below is a directly callable tool name."#;
 const DEFERRED_TOOL_LISTING_TITLE: &str = "## Deferred tools";
 const DEFERRED_TOOL_LISTING_GUIDANCE: &str = r#"Their definitions are not loaded at the start of the conversation.
-You must obtain the tool definition using GetToolSpec before you first invoke a deferred tool. Once its definition is available in the conversation, you can call it through CallDeferredTool.
+Use GetToolSpec to read a deferred tool's full definition before invoking it through CallDeferredTool. Reuse it while the successful GetToolSpec result remains in the current context. If compaction or truncation removed that result, load it again; a summary or a past call does not keep the definition loaded.
 Each entry below is a deferred tool name with an optional short description."#;
 
 pub fn render_direct_tool_listing_body<'a>(
@@ -150,30 +150,14 @@ pub struct RuntimeContextFacts {
     pub remote_execution: Option<RemoteExecutionHints>,
     pub local_shell: Option<RuntimeShellFacts>,
     pub supports_image_understanding: Option<bool>,
-    pub inline_markdown_image_display: bool,
 }
 
 pub fn render_runtime_context_reminder(facts: &RuntimeContextFacts) -> Option<String> {
-    if facts.needs.is_empty() && !facts.inline_markdown_image_display {
+    if facts.needs.is_empty() {
         return None;
     }
 
     let mut lines = vec!["# Runtime Context".to_string()];
-
-    if facts.inline_markdown_image_display {
-        push_runtime_context_section(
-            &mut lines,
-            "Chat Image Display",
-            vec![
-                "- The current Desktop/Web chat renders Markdown images inline. To show an image to the user, use `![concise alt text](source)` in the response."
-                    .to_string(),
-                "- Supported sources are verified HTTP(S) image URLs and workspace-relative image paths. Prefer PNG, JPEG, GIF, or WebP for reliable rendering."
-                    .to_string(),
-                "- Do not invent image URLs, and do not call image-analysis tools solely to display an image. Use a URL you verified or a path to a file that exists in the active workspace."
-                    .to_string(),
-            ],
-        );
-    }
 
     if facts.needs.workspace_tools {
         let mut workspace_lines = Vec::new();

@@ -25,6 +25,7 @@ import type {
   SessionCreationSeed,
   SessionDriver,
   SessionDriverNavigationStatusSource,
+  SessionDriverOwnershipSource,
   StartTurnInput,
   StartTurnResult,
   SubmissionDraft,
@@ -85,6 +86,10 @@ const dispatchNavigationStatusSource: SessionDriverNavigationStatusSource = {
       : undefined;
     return reachability ? { reachability } : {};
   },
+};
+
+const dispatchOwnershipSource: SessionDriverOwnershipSource = {
+  subscribe: listener => dispatchJobStore.subscribe(listener),
 };
 
 /**
@@ -312,6 +317,7 @@ export const dispatchSessionDriver: SessionDriver = {
   fileAccess: { open: openDispatchSessionFile, readImage: readDispatchSessionImage, download: downloadDispatchSessionFile },
   id: 'dispatch',
   navigationStatusSource: dispatchNavigationStatusSource,
+  ownershipSource: dispatchOwnershipSource,
 
   async createSession(context: FlowChatContext, seed: SessionCreationSeed): Promise<string> {
     const {

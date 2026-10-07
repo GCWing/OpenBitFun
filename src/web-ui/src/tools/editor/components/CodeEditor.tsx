@@ -13,6 +13,7 @@ import { monacoInitManager } from '../services/MonacoInitManager';
 import { getMonacoRuntime, monacoApi } from '../services/monacoRuntime';
 import { monacoModelManager } from '../services/MonacoModelManager';
 import { useEditorDocument } from '../services/EditorDocument';
+import { useRetainedEditorView } from '../hooks/useRetainedEditorView';
 import { standaloneEditorFileAccess, type EditorFileAccess } from '../services/editorFileAccess';
 import { applyModelIndentation, readModelIndentation, setModelIndentation, type Indentation } from '../services/ModelIndentation';
 import { activeEditTargetService, createMonacoEditTarget } from '../services/ActiveEditTargetService';
@@ -52,6 +53,7 @@ import largeFileExpansionLabels from './largeFileExpansionLabels.json';
 import {
   DEFAULT_EDITOR_CONFIG,
   DEFAULT_EDITOR_FONT_FAMILY,
+  resolveEditorFontFamily,
   DEFAULT_EDITOR_FONT_SIZE,
   DEFAULT_EDITOR_FONT_WEIGHT,
   DEFAULT_EDITOR_INLAY_FONT_SIZE,
@@ -192,6 +194,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   autoSaveDelayMs = 800,
 }) => {
   const documentSession = useEditorDocument();
+  const [composing, setComposing] = useState(false);
+  const [hasFindInteraction, setHasFindInteraction] = useState(false);
+  const viewResident = useRetainedEditorView(isActiveTab || composing || hasFindInteraction || !documentSession);
   // Decode URL-encoded paths before handing them to the editor.
   const filePath = useMemo(() => {
     if (documentSession) return rawFilePath;
@@ -529,7 +534,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     const fs = editorConfig.font_size ?? DEFAULT_EDITOR_FONT_SIZE;
     editorRef.current.updateOptions({
       fontSize: fs,
-      fontFamily: editorConfig.font_family || DEFAULT_EDITOR_FONT_FAMILY,
+      fontFamily: resolveEditorFontFamily(editorConfig.font_family),
       fontWeight: editorConfig.font_weight || DEFAULT_EDITOR_FONT_WEIGHT,
       lineHeight: editorConfig.line_height ? Math.round(fs * editorConfig.line_height) : 0,
     });
@@ -556,7 +561,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       if (editorRef.current) {
         editorRef.current.updateOptions({
           fontSize: appliedFontSize,
-          fontFamily: config.font_family || DEFAULT_EDITOR_FONT_FAMILY,
+          fontFamily: resolveEditorFontFamily(config.font_family),
           fontWeight: config.font_weight || DEFAULT_EDITOR_FONT_WEIGHT,
           lineHeight: config.line_height 
             ? Math.round(appliedFontSize * config.line_height)
@@ -656,7 +661,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
   }, [filePath, largeFileMode, shouldBlockLargeFileExpansionClick]);
 
   useEffect(() => {
-    if (!containerRef.current) {
+    if (!containerRef.current || !viewResident) {
       return;
     }
 
@@ -664,6 +669,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
     let editor: monaco.editor.IStandaloneCodeEditor | null = null;
     let model: monaco.editor.ITextModel | null = null;
     let indentationListener: monaco.IDisposable | undefined;
+    let findStateListener: monaco.IDisposable | undefined;
     let cancelled = false;
     isUnmountedRef.current = false;
     setMonacoReady(false);
@@ -676,12 +682,12 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         }
         
         let createFontSize = DEFAULT_EDITOR_FONT_SIZE;
-        let createFontFamily = editorConfigRuntimeRef.current.font_family || DEFAULT_EDITOR_FONT_FAMILY;
+        let createFontFamily = resolveEditorFontFamily(editorConfigRuntimeRef.current.font_family);
         let createFontWeight = editorConfigRuntimeRef.current.font_weight || DEFAULT_EDITOR_FONT_WEIGHT;
         let createLineHeight = 0;
         const applyFontConfig = (c: Partial<EditorConfigType>) => {
           createFontSize = c.font_size ?? DEFAULT_EDITOR_FONT_SIZE;
-          createFontFamily = c.font_family || createFontFamily;
+          createFontFamily = resolveEditorFontFamily(c.font_family);
           createFontWeight = c.font_weight || createFontWeight;
           createLineHeight = c.line_height ? Math.round(createFontSize * c.line_height) : 0;
         };
@@ -773,7 +779,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           inlayHints: {
             enabled: initialLargeFileMode ? 'off' : 'on',
             fontSize: DEFAULT_EDITOR_INLAY_FONT_SIZE,
-            fontFamily: DEFAULT_EDITOR_FONT_FAMILY,
+            fontFamily: resolveEditorFontFamily(),
             padding: false
           },
 
@@ -828,6 +834,22 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         editor = monacoApi.editor.create(container, editorOptions);
         editorRef.current = editor;
         if (documentSession?.viewState) editor.restoreViewState(documentSession.viewState as monaco.editor.ICodeEditorViewState);
+        // Monaco's viewState does not serialize find/replace state. Keep the
+        // view while it owns a query, including a closed widget used by F3.
+        // Only consume the contribution's state API; never copy its internals.
+        const findState = editor.getContribution<monaco.editor.IEditorContribution & {
+          getState(): {
+            isRevealed: boolean;
+            searchString: string;
+            replaceString: string;
+            onFindReplaceStateChange(listener: () => void): monaco.IDisposable;
+          };
+        }>('editor.contrib.findController')?.getState();
+        const syncFindInteraction = () => setHasFindInteraction(Boolean(
+          findState?.isRevealed || findState?.searchString || findState?.replaceString,
+        ));
+        syncFindInteraction();
+        findStateListener = findState?.onFindReplaceStateChange(syncFindInteraction);
         const editTarget = createMonacoEditTarget(editor);
         const unbindEditTarget = activeEditTargetService.bindTarget(editTarget);
         const focusDisposable = editor.onDidFocusEditorText(() => {
@@ -857,7 +879,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
           const fs = c.font_size ?? DEFAULT_EDITOR_FONT_SIZE;
           editor!.updateOptions({
             fontSize: fs,
-            fontFamily: c.font_family || DEFAULT_EDITOR_FONT_FAMILY,
+            fontFamily: resolveEditorFontFamily(c.font_family),
             fontWeight: c.font_weight || DEFAULT_EDITOR_FONT_WEIGHT,
             lineHeight: c.line_height ? Math.round(fs * c.line_height) : 0,
           });
@@ -1042,7 +1064,10 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       isUnmountedRef.current = true;
       encodingReloadIdRef.current += 1;
       indentationListener?.dispose();
-      if (modelRef.current === model) modelRef.current = null;
+      findStateListener?.dispose();
+      // The document retains this exact model, including its undo stack. Keep
+      // access to it for saves from an inactive tab's close guard.
+      if (!documentSession && modelRef.current === model) modelRef.current = null;
       clearScheduledNavigationSettlement();
       pendingNavigationRef.current = null;
       completedNavigationKeyRef.current = null;
@@ -1072,7 +1097,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
       monacoModelManager.releaseModel(modelKey);
 
     };
-  }, [clearScheduledNavigationSettlement, detectedLanguage, detectLargeFileMode, documentSession, filePath, modelKey]);
+  }, [clearScheduledNavigationSettlement, detectedLanguage, detectLargeFileMode, documentSession, filePath, modelKey, viewResident]);
 
   useEffect(() => {
     if (monacoReady && pendingModelContentRef.current !== null) {
@@ -2229,6 +2254,8 @@ const CodeEditor: React.FC<CodeEditorProps> = ({
         largeFileMode && 'large-file',
       ].filter(Boolean).join(' ') || undefined}
       onKeyDownCapture={handleContainerKeyDown}
+      onCompositionStartCapture={() => setComposing(true)}
+      onCompositionEndCapture={() => setComposing(false)}
     >
       {showBreadcrumb && (
         <EditorBreadcrumb

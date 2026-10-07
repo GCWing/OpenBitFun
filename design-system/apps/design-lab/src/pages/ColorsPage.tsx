@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState, type CSSProperties } from "react";
 import { Contrast, LayoutGrid, Moon, Sun } from "lucide-react";
-import { Icon, type DensityMode } from "@openbitfun/ui";
+import { Button, Icon, SearchField, Select, TabGroup, type DensityMode } from "@openbitfun/ui";
 import {
   themeContractVersion,
   themeTokenCatalog,
@@ -137,12 +137,12 @@ function formatColorValue(value: string): string {
 
 function ModeIcon({ mode }: { mode: ThemeDataName }) {
   if (mode === "light") {
-    return <Sun aria-hidden="true" size={17} />;
+    return <Icon glyph={Sun} />;
   }
   if (mode === "dark") {
-    return <Moon aria-hidden="true" size={17} />;
+    return <Icon glyph={Moon} />;
   }
-  return <Contrast aria-hidden="true" size={17} />;
+  return <Icon glyph={Contrast} />;
 }
 
 function ColorValue({ value }: { value: string }) {
@@ -207,123 +207,47 @@ export function ColorsPage({
     return tokens.length > 0 ? [{ group, tokens }] : [];
   });
 
-  function scrollToSection(section: ColorSection) {
-    setActiveSection(section);
-    document.getElementById(`colors-${section}`)?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
-    });
-  }
-
   return (
     <main className="lab-page lab-page--colors" id="colors">
-      <nav aria-label={t("colors.breadcrumbLabel")} className="colors-breadcrumb">
-        <span>{t("nav.foundations")}</span>
-        <Icon name="chevron-right" size="sm" aria-hidden="true" />
-        <strong>Colors</strong>
-      </nav>
-
       <header className="colors-page-heading">
         <div className="colors-heading-copy">
-          <h1>Colors</h1>
-          <p>{t("colors.description")}</p>
+          <h1>{t("nav.colors")}</h1>
         </div>
 
         <div className="colors-context-controls">
-          <label className="colors-context-control colors-context-control--theme">
+          <div className="colors-context-control">
             <span>{t("colors.theme")}</span>
-            <span className="colors-select-field">
-              <select
-                aria-label={t("colors.theme")}
-                onChange={() => undefined}
-                value="openbitfun"
-              >
-                <option value="openbitfun">
-                  {t("colors.themeName", { version: themeContractVersion })}
-                </option>
-              </select>
-              <Icon name="chevron-down" size="lg" aria-hidden="true" style={{ width: 15, height: 15 }} />
-            </span>
-          </label>
-
+            <span className="colors-theme-value">{t("colors.themeName", { version: themeContractVersion })}</span>
+          </div>
           <label className="colors-context-control">
             <span>{t("colors.mode")}</span>
-            <span className="colors-select-field colors-select-field--with-icon">
-              <ModeIcon mode={mode} />
-              <select
-                aria-label={t("colors.mode")}
-                onChange={(event) => onModeChange(event.target.value as ThemeDataName)}
-                value={mode}
-              >
-                {Object.entries(modeLabelKeys).map(([value, label]) => (
-                  <option key={value} value={value}>{t(label)}</option>
-                ))}
-              </select>
-              <Icon name="chevron-down" size="lg" aria-hidden="true" style={{ width: 15, height: 15 }} />
-            </span>
+            <Select aria-label={t("colors.mode")} leading={<ModeIcon mode={mode} />} value={mode}
+              onValueChange={value => onModeChange(value as ThemeDataName)}
+              options={Object.entries(modeLabelKeys).map(([value, label]) => ({ value, label: t(label) }))} />
           </label>
-
           <label className="colors-context-control">
             <span>{t("colors.density")}</span>
-            <span className="colors-select-field colors-select-field--with-icon">
-              <LayoutGrid aria-hidden="true" size={16} />
-              <select
-                aria-label={t("colors.density")}
-                onChange={(event) => onDensityChange(event.target.value as DensityMode)}
-                value={density}
-              >
-                <option value="compact">{t("settings.compact")}</option>
-                <option value="comfortable">{t("settings.comfortable")}</option>
-                <option value="touch">{t("settings.touch")}</option>
-              </select>
-              <Icon name="chevron-down" size="lg" aria-hidden="true" style={{ width: 15, height: 15 }} />
-            </span>
+            <Select aria-label={t("colors.density")} leading={<Icon glyph={LayoutGrid} />} value={density}
+              onValueChange={value => onDensityChange(value as DensityMode)}
+              options={(["compact", "comfortable", "touch"] as const).map(value => ({ value, label: t(`settings.${value}`) }))} />
           </label>
         </div>
       </header>
 
-      <div aria-label={t("colors.tabsLabel")} className="colors-section-tabs" role="tablist">
-        {sectionTabs.map((tab) => (
-          <button
-            aria-selected={activeSection === tab.id}
-            data-active={activeSection === tab.id || undefined}
-            key={tab.id}
-            onClick={() => scrollToSection(tab.id)}
-            role="tab"
-            type="button"
-          >
-            {t(tab.label)}
-          </button>
-        ))}
-      </div>
+      <TabGroup aria-label={t("colors.tabsLabel")} className="colors-section-navigation"
+        value={activeSection} onValueChange={value => setActiveSection(value as ColorSection)}
+        items={sectionTabs.map(tab => ({ value: tab.id, label: t(tab.label), id: `colors-tab-${tab.id}`, panelId: `colors-${tab.id}` }))} />
 
-      <section className="colors-doc-card colors-semantic-card" id="colors-semantic">
+      <section className="colors-doc-card colors-semantic-card" id="colors-semantic" role="tabpanel" aria-labelledby="colors-tab-semantic" hidden={activeSection !== "semantic"} tabIndex={0}>
         <header className="colors-card-heading colors-semantic-heading">
           <h2>{t("colors.semantic.title")}</h2>
           <div className="colors-semantic-tools">
-            <label className="colors-search-field">
-              <Icon name="search" size="md" aria-hidden="true" />
-              <input
-                aria-label={t("colors.semantic.searchLabel")}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={t("colors.semantic.searchPlaceholder")}
-                type="search"
-                value={query}
-              />
-            </label>
-            <label className="colors-filter-field">
-              <select
-                aria-label={t("colors.semantic.categoryLabel")}
-                onChange={(event) => setCategory(event.target.value as "all" | SemanticColorGroup)}
-                value={category}
-              >
-                <option value="all">{t("colors.semantic.allCategories")}</option>
-                {semanticGroupOrder.map((group) => (
-                  <option key={group} value={group}>{t(groupLabelKeys[group])}</option>
-                ))}
-              </select>
-              <Icon name="chevron-down" size="lg" aria-hidden="true" style={{ width: 15, height: 15 }} />
-            </label>
+            <SearchField aria-label={t("colors.semantic.searchLabel")} placeholder={t("colors.semantic.searchPlaceholder")}
+              value={query} onChange={event => setQuery(event.target.value)} leadingIcon={<Icon name="search" />} />
+            <Select aria-label={t("colors.semantic.categoryLabel")} size="sm" value={category}
+              onValueChange={value => setCategory(value as "all" | SemanticColorGroup)}
+              options={[{ value: "all", label: t("colors.semantic.allCategories") },
+                ...semanticGroupOrder.map(group => ({ value: group, label: t(groupLabelKeys[group]) }))]} />
           </div>
         </header>
 
@@ -389,37 +313,23 @@ export function ColorsPage({
         </div>
 
         {category === "all" && normalizedQuery.length === 0 && (
-          <button
-            aria-expanded={expanded}
-            className="colors-expand-button"
-            onClick={() => setExpanded((current) => !current)}
-            type="button"
-          >
-            {expanded ? t("colors.collapse") : t("colors.expand")}
-            <Icon name="chevron-down" size="lg" aria-hidden="true" data-expanded={expanded || undefined} style={{ width: 15, height: 15 }} />
-          </button>
+          <div className="colors-expand-action">
+            <Button aria-expanded={expanded} onClick={() => setExpanded(current => !current)} variant="text" size="sm"
+              trailingIcon={<Icon name={expanded ? "chevron-up" : "chevron-down"} size="sm" />}>
+              {expanded ? t("colors.collapse") : t("colors.expand")}
+            </Button>
+          </div>
         )}
       </section>
 
-      <section className="colors-doc-card colors-scale-card" id="colors-scale">
+      <section className="colors-doc-card colors-scale-card" id="colors-scale" role="tabpanel" aria-labelledby="colors-tab-scale" hidden={activeSection !== "scale"} tabIndex={0}>
         <header className="colors-card-heading">
           <h2>{t("colors.scale.title")}</h2>
           <label className="colors-scale-selector">
             <span>{t("colors.scale.paletteLabel")}</span>
-            <span className="colors-filter-field">
-              <select
-                aria-label={t("colors.scale.paletteLabel")}
-                onChange={(event) => setSelectedScale(event.target.value as ReferenceColorScaleName)}
-                value={selectedScale}
-              >
-                {referenceScaleNames.map((scale) => (
-                  <option key={scale} value={scale}>
-                    {scale[0]?.toUpperCase()}{scale.slice(1)}
-                  </option>
-                ))}
-              </select>
-              <Icon name="chevron-down" size="lg" aria-hidden="true" style={{ width: 15, height: 15 }} />
-            </span>
+            <Select aria-label={t("colors.scale.paletteLabel")} size="sm" value={selectedScale}
+              onValueChange={value => setSelectedScale(value as ReferenceColorScaleName)}
+              options={referenceScaleNames.map(scale => ({ value: scale, label: `${scale[0]?.toUpperCase()}${scale.slice(1)}` }))} />
           </label>
         </header>
         <div className="colors-scale-scroll">
@@ -435,7 +345,7 @@ export function ColorsPage({
         </div>
       </section>
 
-      <section className="colors-doc-card colors-palette-card" id="colors-palette">
+      <section className="colors-doc-card colors-palette-card" id="colors-palette" role="tabpanel" aria-labelledby="colors-tab-palette" hidden={activeSection !== "palette"} tabIndex={0}>
         <header className="colors-card-heading colors-card-heading--copy">
           <div>
             <h2>{t("colors.palette.title")}</h2>
@@ -468,7 +378,7 @@ export function ColorsPage({
         </div>
       </section>
 
-      <section className="colors-doc-card colors-mapping-card" id="colors-mapping">
+      <section className="colors-doc-card colors-mapping-card" id="colors-mapping" role="tabpanel" aria-labelledby="colors-tab-mapping" hidden={activeSection !== "mapping"} tabIndex={0}>
         <header className="colors-card-heading colors-card-heading--copy">
           <div>
             <h2>{t("colors.mapping.title")}</h2>

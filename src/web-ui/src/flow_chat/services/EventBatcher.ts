@@ -114,6 +114,7 @@ export class EventBatcher {
   private scheduled = false;
   private onFlush: (events: Array<{ key: string; payload: any }>) => void;
   private frameId: number | null = null;
+  private frameDeadlineId: ReturnType<typeof setTimeout> | null = null;
 
   private lastUpdateTime = 0;
   private timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -171,6 +172,10 @@ export class EventBatcher {
   }
 
   private cancelScheduledFlush(): void {
+    if (this.frameDeadlineId !== null) {
+      clearTimeout(this.frameDeadlineId);
+      this.frameDeadlineId = null;
+    }
     if (this.frameId !== null) {
       cancelAnimationFrame(this.frameId);
       this.frameId = null;
@@ -187,27 +192,17 @@ export class EventBatcher {
     this.scheduled = true;
     this.scheduledDelayMs = delayMs;
 
-    if (delayMs <= 0) {
-      this.frameId = requestAnimationFrame(() => {
-        this.flush();
-        this.scheduled = false;
-        this.frameId = null;
-        this.scheduledDelayMs = null;
-        this.lastUpdateTime = nowMs();
-      });
-      return;
-    }
-
-    this.timeoutId = setTimeout(() => {
+    const flushAtDeadline = () => this.flushNow();
+    const requestFrame = () => {
       this.timeoutId = null;
-      this.frameId = requestAnimationFrame(() => {
-        this.flush();
-        this.scheduled = false;
-        this.frameId = null;
-        this.scheduledDelayMs = null;
-        this.lastUpdateTime = nowMs();
-      });
-    }, delayMs);
+      // Facts must keep advancing when WebView suspends animation frames.
+      // Also covers a window minimized after the frame was already requested.
+      if (typeof document !== 'undefined' && document.hidden) { flushAtDeadline(); return; }
+      this.frameId = requestAnimationFrame(flushAtDeadline);
+      this.frameDeadlineId = setTimeout(flushAtDeadline, TEXT_CHUNK_MAX_LATENCY_MS);
+    };
+    if (delayMs <= 0) requestFrame();
+    else this.timeoutId = setTimeout(requestFrame, delayMs);
   }
 
   private scheduleFlush(): void {

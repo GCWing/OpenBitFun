@@ -3,11 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const source = readFileSync(
-  fileURLToPath(new URL('./ModelSettingsPage.tsx', import.meta.url)),
+  fileURLToPath(new URL('../../../app/scenes/settings/pages/ai/ModelSettingsPage.tsx', import.meta.url)),
   'utf8',
 );
 const styles = readFileSync(
-  fileURLToPath(new URL('./ModelSettingsPage.scss', import.meta.url)),
+  fileURLToPath(new URL('../../../app/scenes/settings/pages/ai/ModelSettingsPage.scss', import.meta.url)),
   'utf8',
 );
 

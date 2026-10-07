@@ -24,7 +24,11 @@ test('mobile-web lifecycle prepares its generated design-system package entries'
   const packageJson = JSON.parse(
     readFileSync(new URL('../src/mobile-web/package.json', import.meta.url), 'utf8'),
   );
-  const prepareCommand = 'pnpm --dir ../../design-system run prepare:consumer-dev';
+  // Unlike src/web-ui, mobile-web has no @openbitfun/ui source alias and
+  // design-system/packages/ui/dist is generated rather than committed, so dev,
+  // build, and type-check all resolve @openbitfun/ui through its package
+  // exports. Every hook therefore needs the full build:packages run.
+  const prepareCommand = 'pnpm --dir ../../design-system run build:packages';
 
   assert.equal(packageJson.scripts['prepare:design-system'], prepareCommand);
   assert.equal(packageJson.scripts.predev, 'pnpm run prepare:design-system');
@@ -32,7 +36,11 @@ test('mobile-web lifecycle prepares its generated design-system package entries'
   assert.equal(packageJson.scripts.prebuild, 'pnpm run prepare:design-system');
 });
 
-test('requests a mobile-web rebuild when a theme source changes', async () => {
+/**
+ * Writes a mobile-web dist whose build marker is newer than everything except
+ * the single changed design-system input under test.
+ */
+async function createInputChangeFixture(changedInput) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'openbitfun-mobile-web-build-'));
   const mobileWebDir = path.join(root, 'src/mobile-web');
   const output = write(root, 'src/mobile-web/dist/index.html', '<main>old</main>');
@@ -41,20 +49,58 @@ test('requests a mobile-web rebuild when a theme source changes', async () => {
     'src/mobile-web/node_modules/.cache/openbitfun-mobile-web-build-marker',
     'old build\n',
   );
-  const themeSource = write(
-    root,
-    'design-system/packages/theme-openbitfun/src/light.tokens.json',
-    '{}\n',
-  );
+  const changedFile = write(root, changedInput, '{}\n');
   const now = Date.now() / 1000;
   setMtime(output, now - 20);
   setMtime(marker, now - 10);
-  setMtime(themeSource, now);
+  setMtime(changedFile, now);
+  return { mobileWebDir, root };
+}
+
+test('requests a mobile-web rebuild when a theme source changes', async () => {
+  const { mobileWebDir, root } = await createInputChangeFixture(
+    'design-system/packages/theme-openbitfun/src/light.tokens.json',
+  );
 
   const plan = getMobileWebRebuildPlan(mobileWebDir, false, root);
 
   assert.equal(plan.shouldBuild, true);
   assert.match(plan.reason, /design-system[\\/]packages[\\/]theme-openbitfun[\\/]src[\\/]light\.tokens\.json/);
+});
+
+test('requests a mobile-web rebuild when a shared ui package source changes', async () => {
+  const { mobileWebDir, root } = await createInputChangeFixture(
+    'design-system/packages/ui/src/mobile/MobileButton/MobileButton.tsx',
+  );
+
+  const plan = getMobileWebRebuildPlan(mobileWebDir, false, root);
+
+  assert.equal(plan.shouldBuild, true);
+  assert.match(plan.reason, /design-system[\\/]packages[\\/]ui[\\/]src[\\/]mobile[\\/]MobileButton[\\/]MobileButton\.tsx/);
+});
+
+test('requests a mobile-web rebuild when a design-system package-root config changes', async () => {
+  // Regression: a package-root file that is neither src/ nor scripts/ still
+  // changes the @openbitfun/ui exports mobile-web bundles.
+  const { mobileWebDir, root } = await createInputChangeFixture(
+    'design-system/packages/ui/vite.mobile.config.ts',
+  );
+
+  const plan = getMobileWebRebuildPlan(mobileWebDir, false, root);
+
+  assert.equal(plan.shouldBuild, true);
+  assert.match(plan.reason, /design-system[\\/]packages[\\/]ui[\\/]vite\.mobile\.config\.ts/);
+});
+
+test('requests a mobile-web rebuild when the shared design-system tsconfig changes', async () => {
+  const { mobileWebDir, root } = await createInputChangeFixture(
+    'design-system/tsconfig.base.json',
+  );
+
+  const plan = getMobileWebRebuildPlan(mobileWebDir, false, root);
+
+  assert.equal(plan.shouldBuild, true);
+  assert.match(plan.reason, /design-system[\\/]tsconfig\.base\.json/);
 });
 
 test('reuses mobile-web output when only generated design-system output is newer', async () => {
@@ -72,11 +118,25 @@ test('reuses mobile-web output when only generated design-system output is newer
     'design-system/packages/theme-openbitfun/dist/index.js',
     'export {};\n',
   );
+  // Generated ui output is watched through its source tree only: treating dist
+  // as an input would make every design-system build invalidate itself.
+  const generatedUiBundle = write(
+    root,
+    'design-system/packages/ui/dist/mobile.js',
+    'export {};\n',
+  );
+  const generatedUiTypes = write(
+    root,
+    'design-system/packages/ui/dist/types/index.d.ts',
+    'export {};\n',
+  );
   const now = Date.now() / 1000;
   setMtime(mobileSource, now - 30);
   setMtime(output, now - 20);
   setMtime(marker, now - 10);
   setMtime(generatedTheme, now);
+  setMtime(generatedUiBundle, now);
+  setMtime(generatedUiTypes, now);
 
   assert.deepEqual(getMobileWebRebuildPlan(mobileWebDir, false, root), {
     shouldBuild: false,

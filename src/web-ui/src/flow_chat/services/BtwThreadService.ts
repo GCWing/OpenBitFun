@@ -1,4 +1,5 @@
 import { agentAPI, btwAPI } from '@/infrastructure/api';
+import { i18nService } from '@/infrastructure/i18n';
 import { notificationService } from '@/shared/notification-system';
 import { flowChatStore } from '../store/FlowChatStore';
 import { stateMachineManager } from '../state-machine';
@@ -13,6 +14,8 @@ import type { ImagePayload } from '../utils/imagePayload';
 import { absoluteSessionTurnIndexForId } from '../utils/flowChatTurnOrdinal';
 import { requireSessionWorkspaceId, sessionWorkspaceId } from '../utils/sessionWorkspace';
 import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
+import { assertSessionConversationCanSubmit } from '../session-drivers/conversationCapability';
+import { trackBtwSessionSubmission } from './btwSessionSubmission';
 
 export function createBtwRequestId(prefix = 'btw'): string {
   try {
@@ -191,8 +194,8 @@ export async function createBtwChildSession(params: {
       executionTarget:
         createdSession?.executionTarget || inheritedExecutionTarget,
       workspaceId: createdSession?.workspaceId || workspaceId,
-      isTransient: params.isTransient ?? false,
-      agentBackedTransient: params.isTransient ?? false,
+      isTransient: childSessionKind === 'btw' || (params.isTransient ?? false),
+      agentBackedTransient: childSessionKind === 'btw' || (params.isTransient ?? false),
     },
     remoteConnectionId,
     remoteSshHost
@@ -261,12 +264,14 @@ export function createBtwSessionPlaceholder(params: {
         parentDialogTurnId,
         parentTurnIndex,
       },
-      isTransient: false,
-      agentBackedTransient: false,
+      isTransient: true,
+      agentBackedTransient: true,
       projectWorkspacePath:
         parentSession.projectWorkspacePath
         || parentSession.config.projectWorkspacePath
         || workspacePath,
+      projectWorkspaceId:
+        parentSession.projectWorkspaceId || parentSession.config.projectWorkspaceId,
       executionTarget: parentSession.config.executionTarget,
       workspaceId,
     },
@@ -306,9 +311,11 @@ export async function sendMessageToBtwSession(params: {
   }
 
   const childSession = requireSession(params.childSessionId);
-  if (childSession.sessionKind !== 'btw' || childSession.isTransient) {
-    throw new Error(`Session is not a persistent /btw session: ${params.childSessionId}`);
+  if (childSession.sessionKind !== 'btw') {
+    throw new Error(`Session is not a /btw session: ${params.childSessionId}`);
   }
+  assertSessionConversationCanSubmit(params.childSessionId, childSession,
+    i18nService.t('flow-chat:chatInput.targetUnavailable'));
 
   const scope = getActiveSurfaceScope();
   const requestId = params.requestId ?? createBtwRequestId('btw');
@@ -320,7 +327,7 @@ export async function sendMessageToBtwSession(params: {
     parentTurnIndex: params.parentTurnIndex ?? childSession.btwOrigin?.parentTurnIndex,
   }, 'btw');
   const modelId = params.modelId?.trim();
-  await btwAPI.askStream({
+  await trackBtwSessionSubmission(params.childSessionId, () => btwAPI.askStream({
     requestId,
     sessionId: params.parentSessionId,
     childSessionId: params.childSessionId,
@@ -332,7 +339,7 @@ export async function sendMessageToBtwSession(params: {
     imageContexts: params.imagePayload?.imageContexts,
     ...(params.userMessageMetadata ? { userMessageMetadata: params.userMessageMetadata } : {}),
     ...(params.initialModelSelection ? { initialModelSelection: params.initialModelSelection } : {}),
-  });
+  }));
   if (modelId && scope.isCurrent()) {
     flowChatStore.updateSessionModelName(params.childSessionId, modelId);
   }

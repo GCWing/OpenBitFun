@@ -1,3 +1,4 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { OverflowText, Button, Icon, IconButton, Textarea, Tooltip } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { AlertTriangle, EyeOff, Loader2, Send } from 'lucide-react';
@@ -22,7 +23,7 @@ import MiniAppPermissionDiffDialog from './MiniAppPermissionDiffDialog';
 
 const log = createLogger('MiniAppCustomizePanel');
 
-const BtwSessionPanel = React.lazy(() =>
+const BtwSessionPanel = lazyWithRecovery(() =>
   import('@/flow_chat/components/btw/BtwSessionPanel').then((module) => ({
     default: module.BtwSessionPanel,
   }))

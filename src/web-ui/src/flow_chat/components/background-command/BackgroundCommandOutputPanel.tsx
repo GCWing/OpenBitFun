@@ -1,3 +1,4 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { OverflowText, Button, IconButton } from '@openbitfun/ui';
 import React, { Suspense, useEffect, useRef, useState } from 'react';
 import { AlertCircle, Keyboard, Loader2 } from 'lucide-react';
@@ -16,7 +17,7 @@ import {
 } from '@/infrastructure/peer-device/peerModeFlag';
 import './BackgroundCommandOutputPanel.scss';
 
-const BackgroundTerminalProjection = React.lazy(() => import('./BackgroundTerminalProjection'));
+const BackgroundTerminalProjection = lazyWithRecovery(() => import('./BackgroundTerminalProjection'));
 const BACKGROUND_COMMAND_OUTPUT_POLL_INTERVAL_MS = 1000;
 
 export interface BackgroundCommandOutputPanelData {
@@ -329,7 +330,7 @@ export const BackgroundCommandOutputPanel: React.FC<BackgroundCommandOutputPanel
               </>
             ) : loading ? (
               <span className="background-command-output-panel__loading">
-                <Loader2 size={13} aria-hidden="true" />
+                <Icon glyph={Loader2} size="sm" aria-hidden="true" />
                 {t('backgroundCommandOutput.loading')}
               </span>
             ) : null}
@@ -338,14 +339,14 @@ export const BackgroundCommandOutputPanel: React.FC<BackgroundCommandOutputPanel
 
         {metadata?.truncatedFromStart || projection?.incomplete ? (
           <div data-openbitfun-component="background-command-output-panel" data-openbitfun-part="notice" className="background-command-output-panel__notice">
-            <AlertCircle size={14} aria-hidden="true" />
+            <Icon glyph={AlertCircle} size="sm" aria-hidden="true" />
             <span>{t(projection?.incomplete ? 'backgroundCommandOutput.replayIncomplete' : 'backgroundCommandOutput.truncatedFromStart')}</span>
           </div>
         ) : null}
 
         {error ? (
           <div data-openbitfun-component="background-command-output-panel" data-openbitfun-part="error" className="background-command-output-panel__error">
-            <AlertCircle size={14} aria-hidden="true" />
+            <Icon glyph={AlertCircle} size="sm" aria-hidden="true" />
             <span>{t('backgroundCommandOutput.error', { message: error })}</span>
           </div>
         ) : null}

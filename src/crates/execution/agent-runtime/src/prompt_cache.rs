@@ -451,7 +451,7 @@ mod tests {
         store.set_system_prompt(
             "session-1",
             CachedSystemPrompt::new(
-                SystemPromptCacheIdentity::new("template:agentic_mode"),
+                SystemPromptCacheIdentity::new("template:standard_mode"),
                 "prompt-a",
             ),
         );
@@ -459,7 +459,7 @@ mod tests {
         assert_eq!(
             match store.lookup_system_prompt(
                 "session-1",
-                &SystemPromptCacheIdentity::new("template:agentic_mode"),
+                &SystemPromptCacheIdentity::new("template:standard_mode"),
                 None,
             ) {
                 PromptCacheLookup::Hit(value) => Some(value),
@@ -511,7 +511,7 @@ mod tests {
         store.set_system_prompt(
             "session-1",
             CachedSystemPrompt::new(
-                SystemPromptCacheIdentity::new("template:agentic_mode"),
+                SystemPromptCacheIdentity::new("template:standard_mode"),
                 "prompt-a",
             ),
         );

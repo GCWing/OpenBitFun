@@ -1546,19 +1546,62 @@ public class RemoteSessionStore internal constructor(
                 }
                 if (!isCurrentWork(operationToken)) return@launch
                 val ready = (_state.value as? RemoteSessionUiState.Ready) ?: current
-                publishAuthorityReady(ready.copy(
+                val afterDelete = ready.copy(
                     sessions = ready.sessions.filterNot { it.id == normalized },
                     selectedSessionId = ready.selectedSessionId.takeUnless { closingOpenSession },
                     timeline = if (closingOpenSession) null else ready.timeline,
                     permissionMode = if (closingOpenSession) null else ready.permissionMode,
                     busy = false,
-                ))
+                )
+                publishAuthorityReady(afterDelete)
+
+                // Keep the visible page full after a deletion, matching the
+                // Harmony controller's backfill behavior. The deleted row is
+                // removed locally first so the sidebar updates immediately;
+                // only then do we fetch the next row when the server says more
+                // sessions exist. This also preserves the current selection
+                // when a non-current row is deleted.
+                val pageLimit = if (afterDelete.agentFilter == SessionAgentFilter.ALL) PAGE_SIZE else FILTER_PAGE_SIZE
+                if (afterDelete.hasMore && afterDelete.sessions.size < pageLimit) {
+                    val refillToken = beginWork()
+                    work = scope.launch {
+                        try {
+                            setBusy(afterDelete, true)
+                            val page = listSessions(afterDelete.sessions.size, afterDelete.query, afterDelete.agentFilter)
+                            if (!isCurrentWork(refillToken)) return@launch
+                            val latest = (_state.value as? RemoteSessionUiState.Ready) ?: afterDelete
+                            val known = latest.sessions.mapTo(mutableSetOf()) { it.id }
+                            val sessions = latest.sessions + page.sessions.filterNot { it.id in known }
+                            if (persistenceEnabled && latest.query.isEmpty() && latest.agentFilter == SessionAgentFilter.ALL) {
+                                savePersistedSessions(sessions, page.hasMore)
+                            }
+                            publishAuthorityReady(latest.copy(
+                                sessions = sessions,
+                                hasMore = page.hasMore,
+                                busy = false,
+                            ))
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Throwable) {
+                            if (isCurrentWork(refillToken)) {
+                                setBusy((_state.value as? RemoteSessionUiState.Ready) ?: afterDelete, false)
+                            }
+                        }
+                    }
+                }
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Throwable) {
                 if (isCurrentWork(operationToken)) {
                     setBusy((_state.value as? RemoteSessionUiState.Ready) ?: current, false)
                     handleFailure(error, (_state.value as? RemoteSessionUiState.Ready) ?: current)
+                    // beginWork() cancels the live transcript while the
+                    // destructive command is in flight. If the host rejects
+                    // the delete, keep the existing conversation usable by
+                    // restoring that subscription before returning control.
+                    if (current.selectedSessionId == normalized && isCurrentWork(operationToken)) {
+                        runCatching { openSession(normalized, operationToken) }
+                    }
                 }
             }
         }

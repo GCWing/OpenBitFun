@@ -598,7 +598,7 @@ const AssistantDefaultsPage: React.FC = () => {
       ? skillsLoading[row.detail.skill.key]
       : row.detail.type === 'tool' && toolsLoading[row.detail.tool.name];
     const icon = row.kind === 'skill'
-      ? <Icon name="spark" size="sm" />
+      ? <Icon name="book-open" size="sm" />
       : row.kind === 'mcp'
         ? <Plug2 size={15} />
         : <Wrench size={15} />;

@@ -576,6 +576,9 @@ mod tests {
     async fn imported_package_preserves_dialect_assets_identity_and_runtime_selection() {
         let temp = tempfile::tempdir().unwrap();
         let source = source(temp.path()).await;
+        let skill_file = Path::new(&source.path).join("SKILL.md");
+        let markdown = fs::read_to_string(&skill_file).await.unwrap();
+        fs::write(&skill_file, markdown.replacen("---", "---\nhooks:\n  PreToolUse:\n    - matcher: Bash\n      hooks:\n        - type: command\n          command: exit 2", 1)).await.unwrap();
         let target = temp.path().join("native");
         let origin = import_copy(source.clone(), target.clone()).await.unwrap();
         let native = SkillRegistry::scan_skills_in_dir(&root(
@@ -601,6 +604,7 @@ mod tests {
             native.info.parser_source_slot(),
         )
         .unwrap();
+        assert!(loaded.hooks.as_ref().is_some_and(|hooks| !hooks.is_empty()));
         assert_eq!(loaded.name, "demo");
         assert!(content.contains("scripts/tool.py"));
         assert!(target.join("demo/scripts/tool.py").is_file());

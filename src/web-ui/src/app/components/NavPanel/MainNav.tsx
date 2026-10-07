@@ -539,7 +539,7 @@ const MainNav: React.FC = () => {
                     data-testid="skill-tab"
                     leading={(
                       <span className="openbitfun-nav-panel__top-action-icon-slot">
-                        <Icon name="extension" size="sm" />
+                        <Icon name="book-open" size="sm" />
                       </span>
                     )}
                     selected={isSkillsActive}

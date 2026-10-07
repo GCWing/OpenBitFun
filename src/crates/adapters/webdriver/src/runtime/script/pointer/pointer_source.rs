@@ -35,9 +35,7 @@ pub(super) fn script() -> &'static str {
           if (action.duration) {
             await sleep(action.duration);
           }
-          if (typeof target.focus === "function") {
-            target.focus();
-          }
+          focusWithoutScroll(target);
           runtime.pointer.buttons |= buttonMask;
           dispatchMouseEvent(target, "mousedown", runtime.pointer.x, runtime.pointer.y, button, runtime.pointer.buttons, frameContext);
           continue;

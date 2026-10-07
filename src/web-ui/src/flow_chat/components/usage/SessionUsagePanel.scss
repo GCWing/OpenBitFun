@@ -1,9 +1,7 @@
 @use '../../flat-markdown-surfaces' as flatMarkdownSurfaces;
-@use '../../markdown-typography' as markdownTypography;
 
 .session-usage-panel {
   @include flatMarkdownSurfaces.apply;
-  @include markdownTypography.apply;
 
   display: flex;
   flex-direction: column;
@@ -249,7 +247,7 @@
     color: var(--openbitfun-color-content-secondary);
     font-size: var(--openbitfun-type-flow-control-font-size);
 
-    svg {
+    > :is(svg, [data-openbitfun-component='icon']) {
       flex: 0 0 auto;
       color: var(--openbitfun-color-status-warning-emphasis);
     }
@@ -272,8 +270,7 @@
     border-radius: 6px;
     background: color-mix(in srgb, var(--openbitfun-color-action-quiet-hover) 56%, transparent);
 
-    svg,
-    [data-openbitfun-component='icon'] {
+    > :is(svg, [data-openbitfun-component='icon']) {
       flex: 0 0 auto;
       margin-top: 1px;
       color: var(--openbitfun-color-content-secondary);
@@ -344,7 +341,7 @@
     padding: 10px 0 0;
     border-top: 1px dashed color-mix(in srgb, var(--openbitfun-color-border-default) 70%, transparent);
 
-    svg {
+    > :is(svg, [data-openbitfun-component='icon']) {
       flex: 0 0 auto;
       color: var(--openbitfun-color-status-success-content);
     }

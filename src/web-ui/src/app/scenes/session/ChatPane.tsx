@@ -5,13 +5,13 @@
  * Renamed from panels/CenterPanel. All logic preserved.
  */
 
-import React, { useCallback, memo, useEffect, useRef, useState, useMemo, useContext } from 'react';
+import React, { useCallback, memo, useRef, useState, useMemo, useContext } from 'react';
 import { ChatFileDropOverlay } from './ChatFileDropOverlay';
 import type { FileDropPreview, FileDropPosition } from '@/shared/types/fileDropPreview';
 import { ModernFlowChatContainer as FlowChatContainer } from '../../../flow_chat/components/modern/ModernFlowChatContainer';
 import { ChatInput } from '../../../flow_chat/components/ChatInput';
 import type { ChatInputRegistration } from '../../../flow_chat/components/chatInputRegistration';
-import { useCanvasStore } from '../../components/panels/content-canvas/stores/canvasStore';
+import { createTab } from '@/shared/utils/tabUtils';
 import { type LineRange } from '@/shared/editor/LineRange';
 import path from 'path-browserify';
 import { createLogger } from '@/shared/utils/logger';
@@ -26,11 +26,6 @@ import type { ConversationSessionRef } from '@/flow_chat/contexts/conversationVi
 import { ConversationTextVisibilityContext } from '@/flow_chat/contexts/conversationViewScope';
 
 const log = createLogger('ChatPane');
-const TASK_DETAIL_PANEL_EXPAND_DEFER_MS = 520;
-const TASK_DETAIL_IDLE_TIMEOUT_MS = 300;
-
-const preloadTaskDetailPanel = () => import('@/flow_chat/components/TaskDetailPanel');
-
 interface ChatPaneProps {
   sessionRef?: ConversationSessionRef;
   presentation?: 'standard' | 'compact';
@@ -68,7 +63,6 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
   chatInputRegistration,
 }) => {
   const isSceneActive = useContext(ConversationTextVisibilityContext) && hostActive;
-  const addTab = useCanvasStore(state => state.addTab);
   const fileDropTargetRef = useRef<HTMLDivElement>(null);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
   const [filePreview, setFilePreview] = useState<FileDropPreview | null>(null);
@@ -76,8 +70,6 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
   const updateFileDragPosition = useCallback((position: FileDropPosition | null) => {
     fileDragPosition.current = position;
   }, []);
-  const deferredTaskDetailTimersRef = useRef<number[]>([]);
-  const deferredTaskDetailIdleCallbacksRef = useRef<number[]>([]);
 
   const handleFileViewRequest = useCallback(async (
     filePath: string,
@@ -116,28 +108,6 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
     });
   }, [workspacePath, sessionRef]);
 
-  useEffect(() => {
-    return () => {
-      deferredTaskDetailTimersRef.current.forEach(timerId => window.clearTimeout(timerId));
-      deferredTaskDetailTimersRef.current = [];
-      if ('cancelIdleCallback' in window) {
-        deferredTaskDetailIdleCallbacksRef.current.forEach(id => {
-          window.cancelIdleCallback(id);
-        });
-      }
-      deferredTaskDetailIdleCallbacksRef.current = [];
-    };
-  }, []);
-
-  const addPanelTab = useCallback((tabInfo: any) => {
-    addTab({
-      type: tabInfo.type,
-      title: tabInfo.title || 'New Tab',
-      data: tabInfo.data,
-      metadata: tabInfo.metadata
-    });
-  }, [addTab]);
-
   const handleTabOpen = useCallback((tabInfo: any) => {
     log.info('Opening tab', { tabInfo });
     if (!tabInfo || !tabInfo.type) {
@@ -149,39 +119,8 @@ const ChatPaneInner: React.FC<ChatPaneProps> = ({
         { scope: { surfaceId: sessionRef.surfaceId, workspacePath, remoteConnectionId: flowChatStore.getState().sessions.get(sessionRef.sessionId)?.remoteConnectionId } });
       return;
     }
-    if (tabInfo.type !== 'task-detail') {
-      addPanelTab(tabInfo);
-      return;
-    }
-
-    void preloadTaskDetailPanel();
-    window.dispatchEvent(new CustomEvent('expand-right-panel'));
-
-    const timerId = window.setTimeout(() => {
-      deferredTaskDetailTimersRef.current = deferredTaskDetailTimersRef.current.filter(id => id !== timerId);
-
-      const mountDetail = () => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            addPanelTab(tabInfo);
-          });
-        });
-      };
-
-      if ('requestIdleCallback' in window) {
-        const idleId = window.requestIdleCallback(() => {
-          deferredTaskDetailIdleCallbacksRef.current = deferredTaskDetailIdleCallbacksRef.current.filter(id => id !== idleId);
-          mountDetail();
-        }, { timeout: TASK_DETAIL_IDLE_TIMEOUT_MS });
-        deferredTaskDetailIdleCallbacksRef.current.push(idleId);
-        return;
-      }
-
-      mountDetail();
-    }, TASK_DETAIL_PANEL_EXPAND_DEFER_MS);
-
-    deferredTaskDetailTimersRef.current.push(timerId);
-  }, [addPanelTab, sessionRef, workspacePath]);
+    createTab({ ...tabInfo, title: tabInfo.title || 'New Tab', mode: 'agent' });
+  }, [sessionRef, workspacePath]);
 
   return (
     <div data-openbitfun-component="chat-pane" data-openbitfun-part="root"

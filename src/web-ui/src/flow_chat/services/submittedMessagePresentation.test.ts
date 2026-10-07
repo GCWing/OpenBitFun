@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { activateSurface, getActiveSurfaceScope, LOCAL_SURFACE_ID } from '@/infrastructure/peer-device/deviceSurface';
 import {
+  beginSubmittedMessagePreview,
+  consumeSubmittedMessageFailure,
   consumeSubmittedMessageArrival,
+  failSubmittedMessagePreview,
+  finishSubmittedMessagePreview,
+  getSubmittedMessagePreviews,
   registerSubmittedMessage,
   submittedMessageStatusDelay,
 } from './submittedMessagePresentation';
@@ -65,5 +70,30 @@ describe('submittedMessagePresentation', () => {
     expect(consume()).toBeDefined();
     vi.advanceTimersByTime(60);
     expect(submittedMessageStatusDelay('session', 'turn')).toBe(0);
+  });
+
+  it('keeps a foreground preview scoped to its device and hands off a failed shell once', () => {
+    const scope = getActiveSurfaceScope();
+    const preview = beginSubmittedMessagePreview(scope, 'session', 'turn', {
+      id: 'message', content: 'Hello', timestamp: Date.now(),
+    });
+    expect(getSubmittedMessagePreviews(scope, 'session')).toEqual([preview]);
+    expect(getSubmittedMessagePreviews(scope, 'other-session')).toHaveLength(0);
+    failSubmittedMessagePreview(scope, 'session', 'turn', 'Unavailable');
+    expect(getSubmittedMessagePreviews(scope, 'session')[0].phase).toBe('failed');
+    expect(consumeSubmittedMessageFailure('session', 'turn', 'message')).toBeDefined();
+    expect(consumeSubmittedMessageFailure('session', 'turn', 'message')).toBeUndefined();
+    finishSubmittedMessagePreview(scope, 'session', 'turn');
+    expect(getSubmittedMessagePreviews(scope, 'session')).toHaveLength(0);
+  });
+
+  it('drops a preview on device activation change', () => {
+    const scope = getActiveSurfaceScope();
+    beginSubmittedMessagePreview(scope, 'session', 'turn', {
+      id: 'message', content: 'Hello', timestamp: Date.now(),
+    });
+    activateSurface('peer-device');
+    expect(getSubmittedMessagePreviews(scope, 'session')).toHaveLength(0);
+    expect(getSubmittedMessagePreviews(getActiveSurfaceScope(), 'session')).toHaveLength(0);
   });
 });

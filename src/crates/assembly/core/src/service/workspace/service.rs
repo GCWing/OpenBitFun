@@ -507,8 +507,13 @@ impl WorkspaceService {
                     "Remote workspace path is not a directory",
                 ));
             }
+            // The root path has no basename. Keep a friendly stable label for
+            // this common remote workspace instead of letting the manager use
+            // its generic "Unknown" placeholder.
+            let display_name = (path == "/").then(|| config.name.clone());
             let options = WorkspaceOpenOptions {
                 workspace_kind: WorkspaceKind::Remote,
+                display_name,
                 remote_connection_id: Some(connection_id.to_string()),
                 remote_ssh_host: Some(host.clone()),
                 stable_workspace_id: Some(remote_workspace_stable_id(&host, &path)),

@@ -1,0 +1,49 @@
+@layer openbitfun.components {
+  .root {
+    display: inline-flex;
+    position: relative;
+    vertical-align: bottom;
+  }
+
+  .wheels {
+    display: inline-flex;
+    block-size: 1lh;
+  }
+
+  .window {
+    display: inline-block;
+    inline-size: 1ch;
+    block-size: 1lh;
+    overflow: hidden;
+  }
+
+  .strip {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .digit {
+    flex: 0 0 1lh;
+    block-size: 1lh;
+    text-align: center;
+  }
+
+  .accessibleValue {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  @media print, (prefers-reduced-motion: reduce) {
+    .wheels { display: none; }
+    .accessibleValue {
+      position: static;
+      inline-size: auto;
+      block-size: auto;
+      clip-path: none;
+    }
+  }
+}

@@ -154,6 +154,8 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
   onAddImage,
 }) => {
   const { t } = useTranslation('flow-chat');
+  const skillScanFailures = skillDiagnostics.filter(item => !item.unsupportedField);
+  const unsupportedSkills = skillDiagnostics.filter(item => item.unsupportedField);
   const [results, setResults] = useState<FileItem[]>([]);
   const [sessionResults, setSessionResults] = useState<SessionReferenceCandidate[]>([]);
   const [workspaceReferences, setWorkspaceReferences] = useState<WorkspaceReferenceEntry[]>([]);
@@ -802,7 +804,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
             />
           </Tooltip>
         )}
-        {isSearchMode ? <><Icon name="search" size="lg" style={{ width: 11, height: 11 }} /><span>{t('contextPicker.searchResults')}</span></> : (
+        {isSearchMode ? <><Icon name="search" size="xs" /><span>{t('contextPicker.searchResults')}</span></> : (
           <div className="chat-context-picker__directory-label" title={currentViewLabel}>
             {view === 'files' ? (
               <span
@@ -857,7 +859,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
               : 'contextPicker.browseUnavailable')}</span>
           </ListboxEmpty>
         ) : displayItems.length === 0 && isLoading ? (
-          <ListboxEmpty className="chat-context-picker__loading"><Loader2 size={14} className="chat-context-picker__spinner" /><span>{t('contextPicker.loading')}</span></ListboxEmpty>
+          <ListboxEmpty className="chat-context-picker__loading"><Icon glyph={Loader2} size="sm" className="chat-context-picker__spinner" /><span>{t('contextPicker.loading')}</span></ListboxEmpty>
         ) : displayItems.length === 0 ? (
           <ListboxEmpty className="chat-context-picker__empty"><span>{emptyLabel}</span></ListboxEmpty>
         ) : (
@@ -907,13 +909,13 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
                   leading={selection.kind === 'source'
                     ? selection.id === 'mcp'
                       ? <Plug aria-hidden="true" />
-                      : <Icon name={selection.id === 'files' ? 'files' : 'spark'} size="lg" aria-hidden="true" />
+                      : <Icon name={selection.id === 'files' ? 'files' : 'book-open'} size="lg" aria-hidden="true" />
                     : selection.kind === 'action'
                       ? selection.id === 'add-image'
                         ? <Icon name="image" size="lg" aria-hidden="true" />
                         : <RotateCcw aria-hidden="true" />
                       : skill
-                        ? <Icon name="spark" size="lg" aria-hidden="true" />
+                        ? <Icon name="book-open" size="lg" aria-hidden="true" />
                         : mcp
                           ? <Plug aria-hidden="true" />
                         : isSession
@@ -955,7 +957,7 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
             })}
             {isLoading && (
               <ListboxEmpty className="chat-context-picker__loading">
-                <Loader2 size={14} className="chat-context-picker__spinner" />
+                <Icon glyph={Loader2} size="sm" className="chat-context-picker__spinner" />
                 <span>{t('contextPicker.loading')}</span>
               </ListboxEmpty>
             )}
@@ -975,9 +977,23 @@ export const ChatContextPicker: React.FC<ChatContextPickerProps> = ({
         </Listbox>
       </div>
       {(view === 'skills' || isSearchMode) && !skillsLoading && !skillsLoadFailed && (
-        skillDiagnostics.length > 0 ? <Disclosure presentation="native" className="chat-context-picker__diagnostics" summary={t('contextPicker.skillsIncomplete')}>
-          {skillDiagnostics.map((item, index) => <p key={index}>{item.path}: {item.message}</p>)}
-        </Disclosure> : !skillDiagnosticsAvailable && <p role="status">{t('contextPicker.skillsDiagnosticsUnavailable')}</p>
+        <>
+          {skillScanFailures.length > 0 && (
+            <Disclosure presentation="native" className="chat-context-picker__diagnostics" summary={t('contextPicker.skillsIncomplete')}>
+              {skillScanFailures.map((item, index) => <p key={index}>{item.path}: {item.message}</p>)}
+            </Disclosure>
+          )}
+          {unsupportedSkills.length > 0 && (
+            <Disclosure presentation="native" className="chat-context-picker__diagnostics" summary={t('contextPicker.skillsUnsupported')}>
+              {unsupportedSkills.map((item, index) => (
+                <p key={index}>{item.path}: {t('contextPicker.skillsUnsupportedField', { field: item.unsupportedField })}</p>
+              ))}
+            </Disclosure>
+          )}
+          {skillDiagnostics.length === 0 && !skillDiagnosticsAvailable && (
+            <p role="status">{t('contextPicker.skillsDiagnosticsUnavailable')}</p>
+          )}
+        </>
       )}
       <div data-openbitfun-component="chat-context-picker" data-openbitfun-part="footer" className="chat-context-picker__footer">
         <span><KeyHint>↑</KeyHint><KeyHint>↓</KeyHint> {t('contextPicker.navHint')}</span>

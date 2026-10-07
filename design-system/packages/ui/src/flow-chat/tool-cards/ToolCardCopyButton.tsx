@@ -1,5 +1,5 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
-import { Check, Copy } from "lucide-react";
+import { Icon } from "../../components/Icon/Icon";
 import { IconButton } from "../../components/IconButton/IconButton";
 
 export interface ToolCardCopyButtonProps {
@@ -31,7 +31,7 @@ export function ToolCardCopyButton({
       data-openbitfun-part="copyButton"
       data-openbitfun-state={copied ? "copied" : undefined}
       disabled={disabled}
-      icon={copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+      icon={<Icon name={copied ? "check-line" : "duplicate"} size="sm" />}
       onClick={onPress}
       size="sm"
       data-testid={testId}

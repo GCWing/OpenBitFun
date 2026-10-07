@@ -24,7 +24,10 @@ function filesIn(directory: string): string[] {
 
 describe('catalog icon consumer integration', () => {
   it('renders general-purpose icons through Lucide while retaining reviewed authored artwork', () => {
-    const preserved = new Set(['minimal', 'standard', 'ultimate', 'creative', 'git', 'thinking']);
+    const preserved = new Set([
+      'minimal', 'standard', 'ultimate', 'creative', 'git', 'thinking',
+      'reasoning-auto',
+    ]);
     for (const name of iconNames) {
       const markup = renderToStaticMarkup(createElement(Icon, { name }));
       if (preserved.has(name)) {

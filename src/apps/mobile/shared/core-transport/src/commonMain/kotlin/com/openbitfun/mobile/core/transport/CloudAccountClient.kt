@@ -477,6 +477,8 @@ public class CloudAccountClient internal constructor(
         token: String,
         timeoutMs: Long,
     ): Response {
+        val authorizationPath = path.startsWith("/api/auth/github") || path == "/api/auth/login"
+        if (authorizationPath) log.info("account request started method=${method.value} path=$path")
         val response = try {
             client.request(requireNotNull(normalizeAccountRelayUrl(relayUrl)) + path) {
                 this.method = method
@@ -496,12 +498,15 @@ public class CloudAccountClient internal constructor(
             throw CloudAccountException(CloudAccountFailure.NETWORK, null, cause)
         }
         val text = response.bodyAsText()
+        if (authorizationPath) log.info("account response received path=$path status=${response.status.value} bytes=${text.length}")
         if (response.status.value !in 200..299) {
             log.warn("account request rejected path=$path status=${response.status.value}")
             throw statusFailure(response.status.value)
         }
         return try {
-            withContext(processingDispatcher) { RelayJson.decodeFromString(deserializer, text) }
+            withContext(processingDispatcher) { RelayJson.decodeFromString(deserializer, text) }.also {
+                if (authorizationPath) log.info("account response decoded path=$path")
+            }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (cause: Throwable) {

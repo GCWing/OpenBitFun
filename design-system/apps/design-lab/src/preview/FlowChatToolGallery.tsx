@@ -1,10 +1,9 @@
+import { Button, Icon } from "@openbitfun/ui";
 import {
-  ArrowRight,
   Eye,
 } from "lucide-react";
-import { useState } from "react";
-import { TabGroup } from "@openbitfun/ui";
-import { AgentWaitToolCard, SkillToolCard, TerminalControlToolCard, TodoToolCard } from "@openbitfun/ui/flow-chat";
+import { productOwnedToolNames } from '@openbitfun/flow-chat-presentation/registry';
+import { FlowChatScenarios } from './FlowChatScenarios';
 import { useI18n } from "../i18n";
 import { getComponentDescription } from "../i18n/componentMetadata";
 import {
@@ -16,60 +15,6 @@ import "./FlowChatToolGallery.css";
 
 interface FlowChatToolGalleryProps {
   onOpenComponent: (name: string) => void;
-}
-
-const productOwnedToolExamples = [
-  "CreatePlan",
-  "submit_code_review",
-  "MCP",
-  "InitMiniApp",
-  "GenerativeUI",
-  "ComputerUse",
-  "CreateCanvas",
-  "ReadCanvas",
-  "UpdateCanvas",
-  "PatchCanvas",
-] as const;
-
-function ToolSequencePreview() {
-  const { t } = useI18n();
-  const [status, setStatus] = useState<"running" | "completed" | "error">("running");
-  const [expanded, setExpanded] = useState(false);
-  const completed = status === "completed";
-  return <section className="flow-chat-tool-sequence" data-openbitfun-pattern="tool-sequence">
-    <TabGroup
-      size="sm"
-      value={status}
-      onValueChange={(value) => setStatus(value as typeof status)}
-      items={[
-        { value: "running", label: t("components.preview.flowChat.running") },
-        { value: "completed", label: t("components.preview.flowChat.completed") },
-        { value: "error", label: t("components.preview.flowChat.failed") },
-      ]}
-    />
-    <div className="flow-chat-tool-sequence__rows">
-      <SkillToolCard action="Skill" status="completed" summary="Read the public component contract" />
-      <TodoToolCard
-        title="Tasks"
-        status={status}
-        summary="Align long workspace paths and tool summaries with the conversation text column"
-        mode="standard"
-        loading={status === "running"}
-        allCompleted={completed}
-        completedCount={completed ? 3 : 1}
-        totalCount={3}
-        items={[
-          { key: "columns", content: "Align public and product row columns", status: "completed" },
-          { key: "detail", content: "Verify expansion with long text and file paths", status: completed ? "completed" : "in_progress" },
-          { key: "replay", content: "Review the completed transcript", status: completed ? "completed" : "pending" },
-        ]}
-        isExpanded={expanded}
-        onToggle={() => setExpanded(!expanded)}
-      />
-      <AgentWaitToolCard action="AgentWait" status={status} summary={t(`components.preview.flowChat.${status === "error" ? "failed" : status}`)} />
-      <TerminalControlToolCard action="TerminalControl" status="completed" summary="src/features/workspace/remote/connection-profile-with-a-long-name.ts" />
-    </div>
-  </section>;
 }
 
 function ToolSpecimenCard({
@@ -98,7 +43,7 @@ export function FlowChatToolGallery({
 }: FlowChatToolGalleryProps) {
   const { t } = useI18n();
   const toolCardEntries = flowChatPreviewRegistry.filter(
-    ({ definition }) => definition.section === "tool-card",
+    ({ definition }) => definition.section === "tool-card" && definition.specimens.length > 0,
   );
 
   return (
@@ -111,7 +56,7 @@ export function FlowChatToolGallery({
         <p>{t("components.flowChat.toolsDescription")}</p>
       </header>
 
-      <ToolSequencePreview />
+      <FlowChatScenarios />
 
       {toolCardEntries.map(({ component, definition }) => (
         <section className="flow-chat-tool-group" key={component.name}>
@@ -123,7 +68,7 @@ export function FlowChatToolGallery({
               <h3>{component.name}</h3>
               <p>{getComponentDescription(component.name, component.description, t)}</p>
             </div>
-            <button
+            <Button size="sm" variant="text" trailingIcon={<Icon name="arrow-right" size="sm" />}
               aria-label={t("components.flowChat.openComponent", { name: component.name })}
               onClick={() => onOpenComponent(component.name)}
               type="button"
@@ -131,8 +76,7 @@ export function FlowChatToolGallery({
               <span>{t("components.flowChat.toolCount", {
                 count: definition.specimens.length,
               })}</span>
-              <ArrowRight aria-hidden="true" />
-            </button>
+            </Button>
           </header>
           <div className="flow-chat-tool-grid">
             {definition.specimens.map((specimen) => (
@@ -147,13 +91,12 @@ export function FlowChatToolGallery({
       ))}
 
       <aside className="flow-chat-dedicated-note">
-        <Eye aria-hidden="true" />
+        <Icon glyph={Eye} />
         <div>
           <strong>{t("components.flowChat.dedicatedTitle")}</strong>
           <p>{t("components.flowChat.dedicatedDescription")}</p>
-          <code>ModelThinkingDisplay · ExploreGroupRenderer · RuntimeStatusSlot</code>
         </div>
-        <code>{productOwnedToolExamples.join(" · ")}</code>
+        <code>{[...productOwnedToolNames, "mcp__*"].join(" · ")}</code>
       </aside>
     </section>
   );

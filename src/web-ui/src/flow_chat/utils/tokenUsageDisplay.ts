@@ -270,7 +270,7 @@ export function buildModelRoundCompletionMeta(params: {
   const { completedAt, durationMs, status, formatTime, t } = params;
   const items: ModelRoundCompletionMetaItem[] = [];
 
-  if (typeof completedAt === 'number') {
+  if (typeof completedAt === 'number' && Number.isFinite(completedAt)) {
     items.push({
       key: 'completed',
       label: status === 'cancelled'
@@ -280,7 +280,7 @@ export function buildModelRoundCompletionMeta(params: {
     });
   }
 
-  if (typeof durationMs === 'number') {
+  if (typeof durationMs === 'number' && Number.isFinite(durationMs) && durationMs >= 0) {
     items.push({
       key: 'duration',
       label: t('modelRound.meta.duration'),

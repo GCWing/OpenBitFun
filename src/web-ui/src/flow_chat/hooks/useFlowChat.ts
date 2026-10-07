@@ -58,7 +58,7 @@ export const useFlowChat = () => {
   // Create a session using Agentic API v2.
   const createSession = useCallback(async (config?: Partial<SessionConfig>): Promise<string> => {
     if (!workspacePath) throw new Error('Workspace path is required to create a session');
-    return flowChatManager.createChatSession({
+    return flowChatManager.createChatDraft({
       ...config,
       ...(workspace ? flowChatSessionConfigForWorkspace(workspace) : { workspacePath }),
       workspaceId: workspace?.id ?? config?.workspaceId,

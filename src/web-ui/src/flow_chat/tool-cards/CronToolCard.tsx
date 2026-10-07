@@ -1,8 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import { useToolCardDisclosure } from '../timeline/readerState';
+import React, { useMemo } from 'react';
 import { CronToolCard as CronToolCardView } from '@openbitfun/ui/flow-chat';
 import { useI18n } from '@/infrastructure/i18n';
 import type { CronSchedule } from '@/infrastructure/api';
 import { formatDateTime, formatScheduleSummary } from '@/app/scenes/todos/todoPresentation';
+import { getToolCardStatus, getToolCardStatusDescription } from './toolCardStatus';
 import type { ToolCardProps } from '../types/flow-chat';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
 
@@ -112,8 +114,8 @@ function nextExecutionAtMs(state: CronToolJobState | undefined): number | null {
 export const CronToolCard: React.FC<ToolCardProps> = React.memo(({ toolItem }) => {
   const { t, formatDate } = useI18n('flow-chat');
   const { t: tTodos } = useI18n('scenes/todos');
-  const { toolCall, toolResult, status } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const { toolCall, toolResult } = toolItem;
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
     toolId,
@@ -130,6 +132,7 @@ export const CronToolCard: React.FC<ToolCardProps> = React.memo(({ toolItem }) =
     [toolResult?.result]
   );
 
+  const status = getToolCardStatus(toolItem, resultData?.success === false);
   const action = resultData?.action ?? inputData.action ?? 'list';
   const job = resultData?.job;
   const jobs = useMemo(
@@ -166,12 +169,7 @@ export const CronToolCard: React.FC<ToolCardProps> = React.memo(({ toolItem }) =
         : [];
     }
 
-    if (action === 'list') {
-      return jobs.map((item) => ({
-        label: `${item.name ?? item.id ?? t('toolCards.cron.unknownJob')}:`,
-        value: describeSchedule(item.schedule) ?? item.id ?? '-',
-      }));
-    }
+    if (action === 'list') return [];
 
     return [
       scheduleText ? { label: `${t('toolCards.cron.schedule')}:`, value: scheduleText } : null,
@@ -188,10 +186,8 @@ export const CronToolCard: React.FC<ToolCardProps> = React.memo(({ toolItem }) =
     ].filter((field): field is NonNullable<typeof field> => Boolean(field));
   }, [
     action,
-    describeSchedule,
     enabled,
     jobId,
-    jobs,
     lastError,
     lastRunStatus,
     nextRunText,
@@ -202,55 +198,46 @@ export const CronToolCard: React.FC<ToolCardProps> = React.memo(({ toolItem }) =
     workspace,
   ]);
 
-  const emptyState = action === 'list' && jobs.length === 0 && status === 'completed'
+  const records = action === 'list' ? jobs.map((item, index) => {
+    const nextRun = nextExecutionAtMs(item.state);
+    const schedule = describeSchedule(item.schedule);
+    return {
+      key: item.id ?? String(index),
+      title: item.name ?? item.id ?? t('toolCards.cron.unknownJob'),
+      fields: [
+        schedule ? { label: t('toolCards.cron.schedule'), value: schedule } : null,
+        nextRun != null ? { label: t('toolCards.cron.nextRun'), value: formatDateTime(nextRun, formatDate) } : null,
+        item.enabled !== undefined ? {
+          label: t('toolCards.cron.enabled'),
+          value: item.enabled ? t('toolCards.cron.enabledYes') : t('toolCards.cron.enabledNo'),
+        } : null,
+        item.id ? { label: t('toolCards.cron.jobId'), value: item.id } : null,
+      ].filter((field): field is NonNullable<typeof field> => Boolean(field)),
+    };
+  }) : [];
+
+  const emptyState = action === 'list' && Array.isArray(resultData?.jobs) && jobs.length === 0 && status === 'completed'
     ? t('toolCards.cron.noJobs')
     : undefined;
   const message = action === 'add' || action === 'update' ? payload : undefined;
-  const hasDetails = Boolean(fields.length || emptyState || message || toolResult?.error);
+  const hasDetails = Boolean(fields.length || records.length || emptyState || message || toolResult?.error);
 
-  const renderSummary = () => {
-    if (status === 'error' || status === 'cancelled') {
-      return t('toolCards.cron.actionFailed');
-    }
-
-    const running = status === 'running' || status === 'streaming';
-
-    switch (action) {
-      case 'get_time':
-        if (status === 'completed') {
-          return t('toolCards.cron.gotTime', { time: resultData?.now ?? '' });
-        }
-        return running ? t('toolCards.cron.gettingTime') : t('toolCards.cron.preparingGetTime');
-      case 'add':
-        if (status === 'completed') return t('toolCards.cron.addedJob', { name: jobName });
-        return running
-          ? t('toolCards.cron.addingJob', { name: jobName })
-          : t('toolCards.cron.preparingAdd', { name: jobName });
-      case 'update':
-        if (status === 'completed') return t('toolCards.cron.updatedJob', { name: jobName });
-        return running
-          ? t('toolCards.cron.updatingJob', { name: jobName })
-          : t('toolCards.cron.preparingUpdate', { name: jobName });
-      case 'remove':
-        if (status === 'completed') {
-          return resultData?.deleted === false
-            ? t('toolCards.cron.jobNotFound', { name: jobName })
-            : t('toolCards.cron.removedJob', { name: jobName });
-        }
-        return running
-          ? t('toolCards.cron.removingJob', { name: jobName })
-          : t('toolCards.cron.preparingRemove', { name: jobName });
-      case 'run':
-        if (status === 'completed') return t('toolCards.cron.ranJob', { name: jobName });
-        return running
-          ? t('toolCards.cron.runningJob', { name: jobName })
-          : t('toolCards.cron.preparingRun', { name: jobName });
-      case 'list':
-      default:
-        if (status === 'completed') return t('toolCards.cron.listedJobs', { count: jobCount });
-        return running ? t('toolCards.cron.listingJobs') : t('toolCards.cron.preparingList');
-    }
+  const actionLabels: Record<CronAction, string> = {
+    get_time: t('toolCards.cron.actions.getTime'),
+    list: t('toolCards.cron.actions.list'),
+    add: t('toolCards.cron.actions.add'),
+    update: t('toolCards.cron.actions.update'),
+    remove: t('toolCards.cron.actions.remove'),
+    run: t('toolCards.cron.actions.run'),
   };
+  const subject = action === 'get_time' ? undefined
+    : action === 'list' ? workspace || t('toolCards.sessionControl.currentWorkspace') : jobName;
+  const hasJobCount = typeof resultData?.count === 'number' || Array.isArray(resultData?.jobs);
+  const resultSummary = status !== 'completed' ? undefined
+    : action === 'get_time' ? resultData?.now
+      : action === 'list' && hasJobCount ? t('toolCards.cron.resultCount', { count: jobCount })
+        : action === 'remove' && resultData?.deleted === false ? t('toolCards.cron.jobNotFound', { name: jobName })
+          : undefined;
 
   return (
     <div ref={cardRootRef} data-openbitfun-adapter="cron" data-tool-card-id={toolId ?? ''}>
@@ -260,9 +247,13 @@ export const CronToolCard: React.FC<ToolCardProps> = React.memo(({ toolItem }) =
         onToggle={hasDetails
           ? () => applyExpandedState(isExpanded, !isExpanded, setIsExpanded)
           : undefined}
-        action={`${t('toolCards.cron.title')}:`}
-        summary={renderSummary()}
+        timeQuery={action === 'get_time'}
+        action={actionLabels[action]}
+        summary={subject}
+        resultSummary={resultSummary}
+        statusDescription={getToolCardStatusDescription(status, t, toolResult?.error)}
         fields={fields}
+        records={records}
         message={message}
         messageLabel={message ? t('toolCards.cron.payload') : undefined}
         emptyState={emptyState}

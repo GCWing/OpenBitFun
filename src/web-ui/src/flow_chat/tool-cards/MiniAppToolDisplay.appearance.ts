@@ -5,7 +5,7 @@ export const miniAppToolDisplayAppearanceDescriptor: AppearanceSurfaceDescriptor
   parts: [
     { id: 'root' }, { id: 'info' }, { id: 'operation' }, { id: 'command' },
     { id: 'output' }, { id: 'errorIndicator' }, { id: 'result' }, { id: 'rows' },
-    { id: 'row' }, { id: 'label' }, { id: 'value' }, { id: 'footer' },
+    { id: 'row' }, { id: 'label' }, { id: 'value' }, { id: 'actions' },
     { id: 'error' },
   ],
   states: [

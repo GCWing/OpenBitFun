@@ -175,11 +175,8 @@ describe('SessionsSection layout styles', () => {
     expect(labelBlock).toContain('overflow: hidden;');
     expect(labelBlock).not.toContain('text-overflow: ellipsis;');
     expect(readSessionsSectionSource()).toMatch(/<OverflowText[^>]*behavior="marquee"[^>]*className="openbitfun-nav-panel__inline-item-label"/);
-    expect(btwBadgeBlock).toContain('white-space: nowrap;');
-    expect(btwBadgeBlock).toContain('overflow: visible;');
-    expect(btwBadgeBlock).toContain('color: color-mix(in srgb, color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent) 62%, var(--openbitfun-color-content-primary));');
-    expect(btwBadgeBlock).toContain('font-weight: var(--openbitfun-type-label-selected-font-weight);');
-    expect(btwBadgeBlock).toContain('opacity: 0.96;');
+    expect(btwBadgeBlock).toContain('flex: 0 0 auto;');
+    expect(readSessionsSectionSource()).toMatch(/<StatusPill[^>]*className="openbitfun-nav-panel__inline-item-btw-badge"[^>]*tone="neutral">\s*\{childSessionBadge\}\s*<\/StatusPill>/);
     expect(reviewBadgeBlock).toContain('white-space: nowrap;');
     expect(reviewBadgeBlock).toContain('color: color-mix(in srgb, color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent) 82%, var(--openbitfun-color-content-primary));');
     expect(reviewBadgeBlock).toContain('font-weight: var(--openbitfun-type-label-selected-font-weight);');

@@ -15,7 +15,7 @@
     "prepare:consumer-dev": "pnpm run build:tokens && pnpm run build:theme",
     "build": "pnpm run build:packages && pnpm run build:lab",
     "dev": "pnpm run build:tokens && pnpm run build:theme && pnpm --filter @openbitfun/design-lab run dev",
-    "test": "pnpm run build:tokens && pnpm run build:theme && pnpm --filter @openbitfun/token-engine run test && pnpm --filter @openbitfun/design-tokens run test && pnpm --filter @openbitfun/theme-openbitfun run test && pnpm --filter @openbitfun/ui run test && pnpm --filter @openbitfun/package-contract run test && pnpm --filter @openbitfun/design-lab run test",
+    "test": "pnpm run build:tokens && pnpm run build:theme && pnpm --filter @openbitfun/token-engine run test && pnpm --filter @openbitfun/design-tokens run test && pnpm --filter @openbitfun/theme-openbitfun run test && pnpm --filter @openbitfun/ui run test && pnpm --filter @openbitfun/package-contract run test && pnpm --filter @openbitfun/flow-chat-presentation run type-check && pnpm --filter @openbitfun/flow-chat-presentation run test && pnpm --filter @openbitfun/design-lab run test",
     "typography:audit": "node ../scripts/audit-typography-tokens.mjs --scope design-system",
     "check": "pnpm run build && pnpm run test && pnpm run typography:audit"
   }

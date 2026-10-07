@@ -38,8 +38,9 @@ pub use call::{HookCall, HookCallPayload};
 pub use engine::{AgentHookEngine, PluginHookDispatchResult, MAX_HOOK_MODEL_OUTPUT_BYTES};
 #[cfg(feature = "native-hook-runtime")]
 pub use handler::{
-    BuiltinHookExecutor, HookHandler, HookHandlerResult, PluginHookCall, PluginHookExecutor,
-    PluginHookGenerationIdentity, PluginHookResult, RuntimeHookRegistration,
+    BuiltinHookExecutor, CommandHookOptions, HookHandler, HookHandlerResult, HookInputAdapter,
+    HookToolMapping, PluginHookCall, PluginHookExecutor, PluginHookGenerationIdentity,
+    PluginHookResult, RuntimeHookRegistration,
 };
 #[cfg(feature = "native-hook-runtime")]
 pub use kind::{RuntimeHookKind, RuntimeHookSource};

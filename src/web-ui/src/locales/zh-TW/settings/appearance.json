@@ -1,9 +1,9 @@
 {
   "title": "外觀",
-  "subtitle": "介面語言、外觀與全域字體大小",
+  "subtitle": "調整介面語言、主題與字體大小",
   "package": {
     "title": "外觀",
-    "description": "選擇內建主題或已安裝的外觀包；懸停縮圖可預覽，資源僅儲存在目前裝置",
+    "description": "外觀套件儲存在目前裝置；將游標停留在縮圖上可預覽",
     "import": "匯入外觀包",
     "importSuccess": "已匯入 {{name}}",
     "importFailed": "無法匯入外觀包，請查看問題詳情。",
@@ -93,7 +93,7 @@
         "manual": {
           "open": "上傳外觀包",
           "title": "手動投稿",
-          "hint": "選擇本機的 .openbitfun-appearance 檔案。OpenBitFun 會在上傳前驗證，Skin 伺服器會在進入審核前再次驗證",
+          "hint": "上傳本機的 .openbitfun-appearance 檔案；上傳前及送審前都會驗證",
           "package": "外觀包檔案",
           "packagePlaceholder": "選擇 .openbitfun-appearance 檔案",
           "choose": "選擇檔案",

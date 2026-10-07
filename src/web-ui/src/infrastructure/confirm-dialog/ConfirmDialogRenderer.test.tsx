@@ -29,15 +29,19 @@ describe('shared confirmation action roles', () => {
     host.remove();
   });
 
-  it.each(['cancel', 'secondary', 'confirm'] as const)('keeps %s distinct in a three-choice dialog', async (choice) => {
+  it.each((['inline', 'start'] as const).flatMap(secondaryActionPlacement =>
+    (['cancel', 'secondary', 'confirm'] as const).map(choice => ({ secondaryActionPlacement, choice })),
+  ))('keeps $choice distinct with $secondaryActionPlacement secondary placement', async ({ secondaryActionPlacement, choice }) => {
     let result!: ReturnType<typeof confirmDialogChoice>;
     act(() => {
-      result = confirmDialogChoice({ title: 'Run command?', cancelText: 'Cancel', secondaryText: 'Always allow', confirmText: 'Allow once' });
+      result = confirmDialogChoice({ title: 'Run command?', cancelText: 'Cancel', secondaryText: 'Always allow', confirmText: 'Allow once', secondaryActionPlacement });
     });
     const buttons = document.querySelectorAll<HTMLButtonElement>('[role="alertdialog"] footer button');
-    expect([...buttons].map(button => button.textContent)).toEqual(['Cancel', 'Always allow', 'Allow once']);
-    expect([...buttons].map(button => button.getAttribute('data-openbitfun-variant'))).toEqual(['fill', 'outline', 'primary']);
-    act(() => buttons[['cancel', 'secondary', 'confirm'].indexOf(choice)].click());
+    const atStart = secondaryActionPlacement === 'start';
+    const order = atStart ? ['secondary', 'cancel', 'confirm'] : ['cancel', 'secondary', 'confirm'];
+    expect([...buttons].map(button => button.textContent)).toEqual(atStart ? ['Always allow', 'Cancel', 'Allow once'] : ['Cancel', 'Always allow', 'Allow once']);
+    expect([...buttons].map(button => button.getAttribute('data-openbitfun-variant'))).toEqual(atStart ? ['text', 'fill', 'primary'] : ['fill', 'outline', 'primary']);
+    act(() => buttons[order.indexOf(choice)].click());
     await expect(result).resolves.toBe(choice);
   });
 

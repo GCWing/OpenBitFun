@@ -1,26 +1,27 @@
 {
   "title": "编辑器",
-  "subtitle": "编辑器外观和行为设置",
+  "subtitle": "调整代码的显示、缩进与自动格式化",
   "sections": {
     "appearance": {
       "title": "外观设置",
-      "description": "编辑器的视觉外观配置"
+      "description": "仅影响编辑器内的文字与光标；界面和对话字号在外观页调整"
     },
     "behavior": {
       "title": "编辑行为",
-      "description": "编辑器的交互行为设置"
+      "description": "缩进设置影响新输入的文本，自动换行只改变显示方式"
     },
     "display": {
       "title": "显示设置",
-      "description": "编辑器的视觉辅助功能"
+      "description": "用视觉标记辅助定位代码和识别空白字符，不会改动文件内容"
     },
     "advanced": {
       "title": "高级功能",
-      "description": "编辑器增强功能开关"
+      "description": "高亮只改变显示，格式化与空白清理会改动文本"
     }
   },
   "appearance": {
     "font": "字体",
+    "fontDefault": "跟随应用代码字体",
     "fontWeight": "字体粗细",
     "fontWeightNormal": "正常",
     "fontWeightBold": "粗体",
@@ -43,7 +44,7 @@
       "expand": "扩展",
       "solid": "常亮"
     },
-    "lineHeightDesc": "相对于字号的倍数（em）。例如，14 px 字号配合 1.5 em 行高，实际为 21 px"
+    "lineHeightDesc": "字号的倍数；例如 14 px 字号配合 1.5 倍行高，实际为 21 px"
   },
   "behavior": {
     "tabSize": "Tab 宽度",
@@ -64,10 +65,9 @@
       "interval": "间隔显示"
     },
     "smoothScrolling": "平滑滚动",
-    "smoothScrollingDesc": "启用平滑滚动动画",
     "scrollBeyondLastLine": "允许滚动超过最后一行",
     "scrollBeyondLastLineDesc": "可以将文件末尾滚动到屏幕中央",
-    "tabSizeDesc": "制表位的字符列数（ch），默认为 4。使用空格缩进时，也决定每级缩进的宽度",
+    "tabSizeDesc": "每个制表位占用的字符列数；使用空格缩进时，也决定每级缩进宽度",
     "detectIndentation": "自动检测缩进",
     "detectIndentationDesc": "打开文件时优先识别已有缩进，否则使用上方默认值。关闭后始终使用默认值。状态栏中的调整仅作用于当前文件",
     "detectIndentationUnsupported": "当前主机不支持保存缩进检测设置，升级主机后可启用此选项。"
@@ -100,15 +100,13 @@
   },
   "advanced": {
     "semanticHighlighting": "语义高亮",
-    "semanticHighlightingDesc": "使用语义信息改进代码高亮",
+    "semanticHighlightingDesc": "根据变量、函数等符号的含义区分代码颜色",
     "bracketPairColorization": "括号对着色",
     "bracketPairColorizationDesc": "用不同颜色区分嵌套的括号对",
     "formatOnSave": "保存时格式化",
-    "formatOnSaveDesc": "保存文件时自动格式化代码",
     "formatOnPaste": "粘贴时格式化",
-    "formatOnPasteDesc": "粘贴代码时自动格式化",
-    "trimAutoWhitespace": "自动删除行尾空格",
-    "trimAutoWhitespaceDesc": "保存时移除行尾多余的空格"
+    "trimAutoWhitespace": "清理自动插入的空白",
+    "trimAutoWhitespaceDesc": "移除自动缩进等操作留下的行尾空白"
   },
   "messages": {
     "loading": "加载中...",

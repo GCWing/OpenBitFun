@@ -1,0 +1,211 @@
+{
+  "pages": {
+    "basics": {
+      "pageId": "application.general"
+    },
+    "appearance": {
+      "pageId": "application.appearance"
+    },
+    "font": {
+      "pageId": "application.appearance"
+    },
+    "fonts": {
+      "pageId": "application.appearance"
+    },
+    "session-personalization": {
+      "pageId": "application.pet"
+    },
+    "application.voice": {
+      "pageId": "application.input",
+      "sectionId": "voice"
+    },
+    "application.shortcuts": {
+      "pageId": "application.input",
+      "sectionId": "shortcuts"
+    },
+    "keyboard": {
+      "pageId": "application.input",
+      "sectionId": "shortcuts"
+    },
+    "shortcuts": {
+      "pageId": "application.input",
+      "sectionId": "shortcuts"
+    },
+    "keybindings": {
+      "pageId": "application.input",
+      "sectionId": "shortcuts"
+    },
+    "hotkeys": {
+      "pageId": "application.input",
+      "sectionId": "shortcuts"
+    },
+    "voice-input": {
+      "pageId": "application.input",
+      "sectionId": "voice"
+    },
+    "application.development": {
+      "pageId": "development.terminal"
+    },
+    "application.terminal": {
+      "pageId": "development.terminal"
+    },
+    "application.editor": {
+      "pageId": "development.editor"
+    },
+    "editor": {
+      "pageId": "development.editor"
+    },
+    "terminal": {
+      "pageId": "development.terminal"
+    },
+    "models": {
+      "pageId": "ai.models"
+    },
+    "ai.memory": {
+      "pageId": "ai.session-memory",
+      "sectionId": "memory"
+    },
+    "memories": {
+      "pageId": "ai.session-memory",
+      "sectionId": "memory"
+    },
+    "workspace.session": {
+      "pageId": "ai.session-memory",
+      "sectionId": "session"
+    },
+    "session-config": {
+      "pageId": "ai.session-memory",
+      "sectionId": "session"
+    },
+    "session-permissions": {
+      "pageId": "ai.permissions"
+    },
+    "tools.execution": {
+      "pageId": "ai.execution"
+    },
+    "tools.device-control": {
+      "pageId": "tools.desktop-control"
+    },
+    "tools.browser-control": {
+      "pageId": "tools.desktop-control"
+    },
+    "review": {
+      "pageId": "ai.execution"
+    },
+    "deep-review": {
+      "pageId": "ai.execution"
+    },
+    "code-review": {
+      "pageId": "ai.execution"
+    },
+    "review-team": {
+      "pageId": "ai.execution"
+    },
+    "workspace.worktrees": {
+      "pageId": "development.workspace",
+      "sectionId": "worktrees"
+    },
+    "worktrees": {
+      "pageId": "development.workspace",
+      "sectionId": "worktrees"
+    },
+    "quick-actions": {
+      "pageId": "tools.automation",
+      "sectionId": "quick-actions"
+    },
+    "hooks": {
+      "pageId": "tools.automation",
+      "sectionId": "hooks"
+    },
+    "tools.webSearch": {
+      "pageId": "tools.web-search"
+    },
+    "mcp-tools": {
+      "pageId": "tools.mcp"
+    },
+    "tools.acp": {
+      "pageId": "tools.external-agents"
+    },
+    "acp-agents": {
+      "pageId": "tools.external-agents"
+    },
+    "usage-statistics": {
+      "pageId": "data.usage"
+    },
+    "archived-sessions": {
+      "pageId": "data.archived"
+    },
+    "data.history": {
+      "pageId": "data.usage"
+    },
+    "logging": {
+      "pageId": "data.diagnostics"
+    }
+  },
+  "views": {
+    "tools.execution": {
+      "common": {
+        "pageId": "ai.permissions"
+      },
+      "advanced": {
+        "pageId": "ai.execution"
+      }
+    },
+    "tools.automation": {
+      "quick-actions": {
+        "pageId": "tools.automation",
+        "sectionId": "quick-actions"
+      },
+      "hooks": {
+        "pageId": "tools.automation",
+        "sectionId": "hooks"
+      }
+    }
+  },
+  "capabilities": {
+    "feature.computer-use": {
+      "destination": {
+        "pageId": "tools.desktop-control"
+      }
+    },
+    "setting.application.appearance": {
+      "items": {
+        "language": {
+          "pageId": "application.general"
+        }
+      }
+    },
+    "setting.workspace.session": {
+      "items": {
+        "accelerated-search": {
+          "pageId": "development.workspace",
+          "sectionId": "workspace-search"
+        },
+        "search-index": {
+          "pageId": "development.workspace",
+          "sectionId": "workspace-search"
+        },
+        "remote-behavior": {
+          "pageId": "development.workspace",
+          "sectionId": "workspace-search"
+        }
+      }
+    },
+    "setting.tools.execution": {
+      "items": {
+        "computer-use": {
+          "pageId": "tools.desktop-control"
+        },
+        "computer-use-permissions": {
+          "pageId": "tools.desktop-control"
+        },
+        "browser-auto-connect": {
+          "pageId": "tools.desktop-control"
+        },
+        "browser-setup": {
+          "pageId": "tools.desktop-control"
+        }
+      }
+    }
+  }
+}

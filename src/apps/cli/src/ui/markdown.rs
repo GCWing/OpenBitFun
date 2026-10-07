@@ -61,6 +61,7 @@ impl MarkdownRenderer {
         let mut list_level: usize = 0;
         let mut in_code_block = false;
         let mut code_block_lang = String::new();
+        let mut image_context: Option<(String, String)> = None;
         let wrap_width = if width > 0 { width } else { 80 };
 
         // Table state
@@ -158,11 +159,8 @@ impl MarkdownRenderer {
                     Tag::Link { .. } => {
                         style_stack.push(StyleModifier::Link);
                     }
-                    Tag::Image { .. } => {
-                        current_line_spans.push(Span::styled(
-                            "[Image]".to_string(),
-                            self.theme.style(StyleKind::Info),
-                        ));
+                    Tag::Image { dest_url, .. } => {
+                        image_context = Some((String::new(), dest_url.to_string()));
                     }
                     Tag::Table(alignment) => {
                         flush_with_wrap(&mut current_line_spans, &mut lines, wrap_width, true);
@@ -274,6 +272,22 @@ impl MarkdownRenderer {
                                 }
                             }
                         }
+                        TagEnd::Image => {
+                            if let Some((alt, destination)) = image_context.take() {
+                                let label = if alt.is_empty() { "Image" } else { &alt };
+                                let span = Span::styled(
+                                    format!("[{label}]({destination})"),
+                                    self.theme
+                                        .style(StyleKind::Info)
+                                        .add_modifier(Modifier::UNDERLINED),
+                                );
+                                if table_state.in_cell {
+                                    table_state.push_span(span);
+                                } else {
+                                    current_line_spans.push(span);
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
@@ -281,7 +295,9 @@ impl MarkdownRenderer {
                 Event::Text(text) => {
                     let style = self.compute_style(&style_stack, in_code_block);
 
-                    if in_code_block {
+                    if let Some((alt, _)) = image_context.as_mut() {
+                        alt.push_str(&text);
+                    } else if in_code_block {
                         for line in text.lines() {
                             // Code blocks preserve style but still wrap to viewport width.
                             wrap_spans_to_lines(
@@ -299,6 +315,10 @@ impl MarkdownRenderer {
                 }
 
                 Event::Code(code) => {
+                    if let Some((alt, _)) = image_context.as_mut() {
+                        alt.push_str(&code);
+                        continue;
+                    }
                     let span =
                         Span::styled(format!("`{}`", code), self.theme.style(StyleKind::Success));
                     if table_state.in_cell {
@@ -309,7 +329,9 @@ impl MarkdownRenderer {
                 }
 
                 Event::SoftBreak | Event::HardBreak => {
-                    if !in_code_block && !table_state.in_table {
+                    if let Some((alt, _)) = image_context.as_mut() {
+                        alt.push(' ');
+                    } else if !in_code_block && !table_state.in_table {
                         flush_with_wrap(&mut current_line_spans, &mut lines, wrap_width, true);
                     }
                 }
@@ -381,6 +403,24 @@ impl MarkdownRenderer {
             || text.contains("[")
             || text.contains(">")
             || text.contains("```")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MarkdownRenderer, Theme};
+
+    #[test]
+    fn renders_images_as_plain_links_in_the_terminal() {
+        let renderer = MarkdownRenderer::new(Theme::dark_ansi16());
+        let lines = renderer.render("![diagram](images/diagram.png)", 80);
+        let rendered = lines
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert_eq!(rendered, "[diagram](images/diagram.png)");
     }
 }
 

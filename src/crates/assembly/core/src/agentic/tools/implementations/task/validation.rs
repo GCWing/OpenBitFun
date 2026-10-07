@@ -1,6 +1,6 @@
 use super::*;
 
-impl TaskTool {
+impl AgentExecutionTool {
     pub(super) fn context_mode_from_input(input: &Value) -> OpenBitFunResult<SubagentContextMode> {
         match input.get("fork_context") {
             None | Some(Value::Null) => Ok(SubagentContextMode::Fresh),
@@ -27,7 +27,7 @@ impl TaskTool {
     }
 
     pub(super) fn validate_prompt_size(input: &Value) -> Option<ValidationResult> {
-        Self::validate_prompt_size_for_tool(input, "Task")
+        Self::validate_prompt_size_for_tool(input, "AgentSpawn")
     }
 
     pub(super) fn validate_prompt_size_for_tool(
@@ -43,9 +43,9 @@ impl TaskTool {
             return None;
         }
 
-        let message = if tool_name == "Task" {
+        let message = if tool_name == "AgentSpawn" {
             format!(
-                "Large Task prompt: {} lines, {} bytes. This is allowed when necessary, but prefer staged delegation: split large work into multiple Task calls with clear ownership, and pass file paths, symbols, constraints, and exact questions instead of large pasted context.",
+                "Large AgentSpawn prompt: {} lines, {} bytes. This is allowed when necessary, but prefer staged delegation: split large work into multiple AgentSpawn calls with clear ownership, and pass file paths, symbols, constraints, and exact questions instead of large pasted context.",
                 line_count, byte_count
             )
         } else {

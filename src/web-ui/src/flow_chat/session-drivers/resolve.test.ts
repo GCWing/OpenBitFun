@@ -6,6 +6,7 @@ import {
   resolveSessionDriverIdForCreation,
   resolveSessionDriverIdWith,
 } from './resolve';
+import { sessionDriverOwnershipSources } from './registry';
 import { dispatchJobStore } from '@/features/dispatch/dispatchJobStore';
 import type { DispatchObserverJob } from '@/features/dispatch/dispatchJobStore';
 
@@ -99,6 +100,18 @@ describe('resolveSessionDriverId (dispatchJobStore integration)', () => {
     expect(dispatchJobStoreObservesSession('session-1')).toBe(true);
     expect(resolveSessionDriverId('session-1', { config: {} })).toBe('dispatch');
     expect(resolveSessionDriverId('other-session', { config: {} })).toBe('local');
+  });
+
+  it('publishes driver ownership when an observer job arrives before metadata', () => {
+    const [source] = sessionDriverOwnershipSources();
+    expect(source).toBeDefined();
+    const observed: string[] = [];
+    const unsubscribe = source.subscribe(() => {
+      observed.push(resolveSessionDriverId('session-1', { config: {} }));
+    });
+    dispatchJobStore.getState().registerJob(observerJob({ sessionId: 'session-1' }));
+    expect(observed.at(-1)).toBe('dispatch');
+    unsubscribe();
   });
 });
 

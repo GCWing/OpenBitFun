@@ -30,7 +30,7 @@
   .error-expand-indicator {
     display: flex;
     align-items: center;
-    
+
     .error-text {
       font-size: var(--openbitfun-type-flow-control-font-size);
       color: color-mix(in srgb, var(--openbitfun-color-status-danger-content) 90%, transparent);
@@ -39,13 +39,9 @@
   }
 
   .mcp-expanded-content {
-    .content-item {
-      &:not(:last-child) {
-        margin-bottom: var(--openbitfun-control-flow-chat-card-gap);
-        padding-bottom: var(--openbitfun-control-flow-chat-card-gap);
-        border-bottom: 1px solid color-mix(in srgb, var(--openbitfun-color-content-on-dark) 8%, transparent);
-      }
-    }
+    display: grid;
+    min-inline-size: 0;
+    gap: var(--openbitfun-space-3);
 
     .content-item-input {
       display: flex;
@@ -63,52 +59,8 @@
       img {
         display: block;
         max-inline-size: 100%;
-      }
-    }
-
-    .mcp-copyable-content {
-      position: relative;
-      min-width: 0;
-    }
-
-    .mcp-copy-action {
-      position: absolute;
-      z-index: 1;
-      top: var(--openbitfun-space-1);
-      right: var(--openbitfun-space-1);
-    }
-
-    .mcp-input-code {
-      max-height: 240px;
-      margin: 0;
-      overflow: auto;
-      padding: var(--openbitfun-control-flow-chat-card-expanded-padding-block) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
-      padding-inline-end: calc(var(--openbitfun-control-flow-chat-card-expanded-padding-inline) + var(--openbitfun-space-8));
-      border: 1px solid var(--openbitfun-color-border-subtle);
-      border-radius: var(--openbitfun-radius-sm);
-      background: var(--openbitfun-color-action-neutral-surface);
-      color: var(--openbitfun-color-content-primary);
-      font-family: inherit;
-      font-size: var(--openbitfun-type-flow-control-font-size);
-      line-height: var(--openbitfun-type-flow-support-line-height);
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-
-    .text-content {
-      pre {
-        max-height: 240px;
-        margin: 0;
-        overflow: auto;
-        padding: var(--openbitfun-control-flow-chat-card-expanded-padding-block) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
-        padding-inline-end: calc(var(--openbitfun-control-flow-chat-card-expanded-padding-inline) + var(--openbitfun-space-8));
-        background: color-mix(in srgb, var(--openbitfun-color-content-on-light) 20%, transparent);
-        border-radius: 4px;
-        font-size: var(--openbitfun-type-flow-control-font-size);
-        line-height: var(--openbitfun-type-flow-support-line-height);
-        color: var(--openbitfun-color-content-primary);
-        white-space: pre-wrap;
-        word-wrap: break-word;
+        max-block-size: 20rem;
+        object-fit: contain;
       }
     }
 
@@ -134,39 +86,33 @@
     .mcp-app-iframe {
       width: 100%;
       min-height: 320px;
-      border: 1px solid color-mix(in srgb, var(--openbitfun-color-accent-secondary) 20%, transparent);
-      border-radius: 6px;
+      border: 1px solid var(--openbitfun-color-border-subtle);
+      border-radius: var(--openbitfun-radius-sm);
       background: var(--openbitfun-color-action-neutral-surface);
     }
 
     .resource-content {
-      padding: var(--openbitfun-control-flow-chat-card-expanded-padding-block) var(--openbitfun-control-flow-chat-card-expanded-padding-inline);
-      background: color-mix(in srgb, var(--openbitfun-color-accent-secondary) 5%, transparent);
-      border-left: 3px solid color-mix(in srgb, var(--openbitfun-color-accent-secondary) 50%, transparent);
-      border-radius: 4px;
+      display: grid;
+      gap: var(--openbitfun-space-1);
+      overflow-wrap: anywhere;
 
       .resource-name {
         font-weight: var(--openbitfun-type-label-selected-font-weight);
         color: var(--openbitfun-color-content-primary);
-        margin-bottom: var(--openbitfun-control-flow-chat-inline-gap);
       }
 
-      .resource-uri {
-        font-size: var(--openbitfun-type-flow-support-font-size);
-        color: color-mix(in srgb, var(--openbitfun-color-accent-secondary) 70%, transparent);
-        margin-bottom: var(--openbitfun-control-flow-chat-inline-gap);
-      }
-
+      .resource-uri,
       .resource-description {
-        font-size: var(--openbitfun-type-flow-control-font-size);
+        font-size: var(--openbitfun-type-flow-support-font-size);
+        line-height: var(--openbitfun-type-flow-support-line-height);
         color: var(--openbitfun-color-content-secondary);
       }
     }
   }
 
   .error-content {
-    background: color-mix(in srgb, var(--openbitfun-color-status-danger-content) 5%, transparent);
-    border-radius: 4px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 
     .error-message {
       color: color-mix(in srgb, var(--openbitfun-color-status-danger-content) 90%, transparent);
@@ -198,7 +144,7 @@
       background-color 160ms ease,
       color 160ms ease,
       opacity 160ms ease;
-    
+
     &:disabled {
       opacity: 0.4;
       cursor: default;
@@ -211,7 +157,7 @@
 
   .mcp-confirm-btn {
     color: color-mix(in srgb, var(--openbitfun-color-status-success-content) 80%, transparent);
-    
+
     &:hover:not(:disabled) {
       background: var(--openbitfun-color-status-success-surface);
       color: var(--openbitfun-color-status-success-content);
@@ -224,7 +170,7 @@
 
   .mcp-reject-btn {
     color: color-mix(in srgb, var(--openbitfun-color-status-danger-content) 80%, transparent);
-    
+
     &:hover:not(:disabled) {
       background: color-mix(in srgb, var(--openbitfun-color-status-danger-content) 15%, transparent);
       color: var(--openbitfun-color-status-danger-content);

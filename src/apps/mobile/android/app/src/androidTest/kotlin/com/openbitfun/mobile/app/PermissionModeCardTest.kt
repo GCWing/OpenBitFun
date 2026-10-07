@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.openbitfun.mobile.app.ui.settings.FULL_ACCESS_CONFIRM_TEST_TAG
+import com.openbitfun.mobile.app.ui.settings.PERMISSION_SECTION_TEST_TAG
 import com.openbitfun.mobile.app.ui.settings.PermissionSection
 import com.openbitfun.mobile.app.ui.theme.OpenBitFunTheme
 import com.openbitfun.mobile.core.feature.session.RemoteSessionIntent
@@ -93,6 +94,32 @@ class PermissionModeCardTest {
         composeRule.onNodeWithText(testString(R.string.permission_ask)).assertIsNotEnabled()
         composeRule.onNodeWithText(testString(R.string.permission_auto)).assertIsNotEnabled()
         composeRule.onNodeWithText(testString(R.string.permission_full)).assertIsNotEnabled()
+    }
+
+    @Test
+    fun withoutAReadySessionTheSectionStaysVisibleButDisabled() {
+        val intents = mutableListOf<RemoteSessionIntent>()
+        composeRule.setContent {
+            OpenBitFunTheme(dark = false) {
+                PermissionSection(
+                    state = null,
+                    connected = false,
+                    onIntent = { intents += it },
+                    modifier = Modifier,
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(PERMISSION_SECTION_TEST_TAG).assertIsDisplayed()
+        composeRule
+            .onNodeWithText(testString(R.string.permission_needs_connection))
+            .assertIsDisplayed()
+        composeRule.onNodeWithText(testString(R.string.permission_ask)).assertIsNotEnabled()
+        composeRule.onNodeWithText(testString(R.string.permission_auto)).assertIsNotEnabled()
+        composeRule.onNodeWithText(testString(R.string.permission_full)).assertIsNotEnabled()
+        composeRule.onNodeWithText(testString(R.string.permission_full)).performClick()
+        composeRule.onNodeWithTag(FULL_ACCESS_CONFIRM_TEST_TAG).assertDoesNotExist()
+        assertTrue(intents.isEmpty())
     }
 
     private fun setPermissionContent(

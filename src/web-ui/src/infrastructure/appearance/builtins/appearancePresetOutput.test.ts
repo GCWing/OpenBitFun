@@ -1,6 +1,8 @@
 import { themeCssVariables, themes, type ThemeTokenName } from '@openbitfun/theme-openbitfun';
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import avatarPalette from '../../../flow_chat/assets/subagent-avatars/palette.json';
+import { APPEARANCE_ROOT_TOKEN_NAMES } from '../appearanceTokenContract';
 
 import { builtinAppearancePalettes } from './palettes';
 import {
@@ -45,6 +47,24 @@ function statusContrast(content: string, tint: string, background: string): numb
 }
 
 describe('builtin appearance preset output', () => {
+  it('keeps subagent hover colors distinct and readable in every conversation theme', () => {
+    for (const palette of builtinAppearancePalettes) {
+      const tokens = getBuiltinAppearanceThemeTokens(palette.id);
+      for (const character of avatarPalette.characters) {
+        const name = `--openbitfun-domain-subagent-${character.file.replace('.svg', '')}` as const;
+        const accent = tokens[name];
+        expect(APPEARANCE_ROOT_TOKEN_NAMES).toContain(name);
+        expect(accent).not.toBe(palette.colors.text.primary);
+        if (palette.id === 'openbitfun-dark') {
+          expect([character.body, character.knob, character.stem, character.face]).toContain(accent);
+        }
+        const background = palette.colors.background.scene;
+        expect(statusContrast(accent!, background, background), `${palette.id}: ${name}`)
+          .toBeGreaterThanOrEqual(4.5);
+      }
+    }
+  });
+
   it('keeps published light field states in root and chrome while preserving named palettes', () => {
     const settings = getBuiltinAppearance('openbitfun-light')?.renderers?.['theme-tokens']?.settings;
     for (const tokens of [settings?.tokens, settings?.scopes?.chrome].filter(Boolean)) {

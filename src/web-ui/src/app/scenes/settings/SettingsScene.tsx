@@ -1,6 +1,3 @@
-import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ConfirmDialog } from '@openbitfun/ui';
-import { useTranslation } from 'react-i18next';
 import { NavigationTransitionBoundary } from '@/app/navigation/NavigationTransitionBoundary';
 import {
   cancelPendingSettingsNavigation,
@@ -8,14 +5,17 @@ import {
   saveAndContinueSettingsNavigation,
   useSettingsDraftSnapshot,
 } from '@/infrastructure/config/settingsDraftRegistry';
+import { ConfirmDialog } from '@openbitfun/ui';
+import React, { Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   getSettingsPageManifest,
   isSettingsPageReady,
   preloadSettingsPage,
 } from './settingsRegistry';
+import './SettingsScene.scss';
 import { useSettingsStore } from './settingsStore';
 import type { SettingsPageId } from './settingsTypes';
-import './SettingsScene.scss';
 
 function SettingsSceneLoading() {
   return (
@@ -42,6 +42,7 @@ const SettingsScene: React.FC<SettingsSceneProps> = ({ isActive = true }) => {
   const { t } = useTranslation('settings');
   const activePageId = useSettingsStore((state) => state.activePageId);
   const activeViewId = useSettingsStore((state) => state.activeViewId);
+  const activeSectionId = useSettingsStore((state) => state.activeSectionId);
   const navigationRequestId = useSettingsStore((state) => state.navigationRequestId);
   const pageTransitionTarget = useSettingsStore((state) => state.pageTransitionTarget);
   const pageTransitionMotion = useSettingsStore((state) => state.pageTransitionMotion);
@@ -106,6 +107,7 @@ const SettingsScene: React.FC<SettingsSceneProps> = ({ isActive = true }) => {
               <Content
                 isActive={isActive}
                 viewId={activeViewId ?? undefined}
+                sectionId={activeSectionId ?? undefined}
                 navigationRequestId={navigationRequestId}
               />
             </Suspense>
@@ -119,8 +121,8 @@ const SettingsScene: React.FC<SettingsSceneProps> = ({ isActive = true }) => {
         message={pendingNavigation?.failed
           ? t('changeGuard.saveFailed')
           : t('changeGuard.message', {
-              count: pendingNavigation?.resourceLabels.length ?? 0,
-            })}
+            count: pendingNavigation?.resourceLabels.length ?? 0,
+          })}
         preview={pendingNavigation?.resourceLabels.length ? (
           <ul className="openbitfun-settings-scene__draft-list">
             {pendingNavigation.resourceLabels.map((label, index) => (

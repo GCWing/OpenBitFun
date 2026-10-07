@@ -8,12 +8,6 @@
     --_tool-card-action-size: var(--openbitfun-space-6);
     --_flow-chat-tool-card-icon-size: var(--openbitfun-font-size-xl);
     --_tool-card-transition: var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
-    /* One inset owns both ends of a summary row, so trailing metadata (+N -N
-       counts, status summaries) keeps the same distance to the card edge as the
-       leading icon or action label. Only the revealed action region serves
-       itself; a separate row end inset for that gutter pulls metadata to the
-       edge as soon as the region is hidden. */
-    --_tool-card-summary-inset: var(--openbitfun-space-3);
 
     box-sizing: border-box;
     display: flex;
@@ -28,19 +22,16 @@
   }
 
   .prominentRoot {
+    --_tool-card-action-size: var(--openbitfun-space-5);
     overflow: hidden;
-    margin-block: var(--openbitfun-space-1);
+    margin-block: 0;
     border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
-    border-radius: var(--openbitfun-radius-md);
+    border-radius: var(--openbitfun-control-activity-item-surface-radius);
     background: var(--openbitfun-color-surface-panel);
     box-shadow: none;
     transition:
       border-color var(--_tool-card-transition),
       background-color var(--_tool-card-transition);
-  }
-
-  .prominentRoot[data-openbitfun-tool-card="agent-control"] {
-    --_flow-chat-tool-card-icon-size: var(--openbitfun-space-5);
   }
 
   .prominentRoot:is(:hover, :focus-within),
@@ -51,7 +42,6 @@
 
   .prominentRoot[data-openbitfun-state~="confirmation"] {
     border-color: var(--openbitfun-color-status-warning-border);
-    background: var(--openbitfun-color-status-warning-surface);
   }
 
   .prominentRoot[data-openbitfun-status="cancelled"],
@@ -88,11 +78,32 @@
   }
 
   .prominentSummary {
-    min-block-size: var(--openbitfun-control-height-sm);
+    position: relative;
+    /* The root owns the two border pixels; the summary owns a 20px line and
+       9px padding at each edge. Larger user typography can still grow the row. */
+    min-block-size: calc(var(--openbitfun-control-activity-item-surface-height) - 2 * var(--openbitfun-border-width-default));
     gap: var(--openbitfun-space-2);
-    padding-block: var(--openbitfun-space-1);
-    padding-inline: var(--_tool-card-summary-inset);
-    line-height: var(--openbitfun-type-heading-page-line-height);
+    padding-block: var(--openbitfun-control-activity-item-surface-padding-block);
+    padding-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+  }
+
+  /* The summary owns disclosure; its native keyboard target takes no row space
+     and leaves pointer events to the summary and its independent actions. */
+  .summaryToggleButton {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    pointer-events: none;
+  }
+
+  .summaryToggleButton:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: calc(-1 * var(--openbitfun-focus-width));
   }
 
   .actionLabel,
@@ -115,6 +126,7 @@
   .extra > *,
   .ambientAction > *,
   .ambientContent > *,
+  .ambientSubject > *,
   .ambientExtra > * {
     font: inherit;
   }
@@ -122,23 +134,18 @@
   .actionLabel {
     min-inline-size: 0;
     overflow: hidden;
-    flex: 0 1 auto;
+    /* Preserve the action label; the adjacent content owns truncation. */
+    flex: 0 0 auto;
     color: var(--openbitfun-color-content-primary);
     font-weight: var(--_tool-card-title-font-weight);
     white-space: nowrap;
   }
 
-  .prominentRoot[data-openbitfun-tool-card="agent-control"] .prominentSummary:has(> .content) .actionLabel {
-    /* Share the row with a task summary; a standalone name can use the full row. */
-    max-inline-size: min(18rem, 38%);
-  }
 
   .content {
     display: flex;
     overflow: hidden;
-    /* Zero basis keeps long content out of the shrink budget, so the extra
-       slot (status summaries, change stats) keeps its natural width until the
-       fixed slots alone no longer fit. */
+    min-inline-size: 0;
     flex: 1 1 0;
     align-items: center;
     gap: var(--openbitfun-space-2);
@@ -149,6 +156,46 @@
 
   .content > * {
     min-inline-size: 0;
+  }
+
+  .summaryTextRegion {
+    display: flex;
+    flex: 1 1 0;
+    min-inline-size: 0;
+  }
+
+  /* Keep the sweep sized to the label and subject, with shared truncation. */
+  .prominentSummary .summaryText {
+    display: flex;
+    flex: 0 1 auto;
+    align-items: center;
+    min-inline-size: 0;
+    gap: var(--openbitfun-space-2);
+  }
+
+  .summaryText .content {
+    flex: 0 1 auto;
+  }
+
+  /* Full-size button hit targets stay centered in the text line. Mounting or
+     revealing actions must not add their control height to the summary. */
+  .prominentSummary .actionRegion {
+    block-size: var(--openbitfun-space-5);
+    margin-inline-start: auto;
+  }
+
+  /* Remove the hidden controls and their flex gap from the row while keeping
+     their keyboard targets mounted. Primary actions stay in the normal flow. */
+  .prominentSummary .hoverActions {
+    position: absolute;
+    inset-inline-end: var(--openbitfun-control-flow-chat-card-padding-inline);
+    pointer-events: none;
+  }
+
+  .prominentSummary:is(:hover, :has(:focus-visible)) .hoverActions,
+  :global([data-openbitfun-preview-state="hover"]) .prominentSummary .hoverActions {
+    position: static;
+    pointer-events: auto;
   }
 
   .statusIcon,
@@ -179,6 +226,13 @@
     display: none;
   }
 
+  /* Diff totals and hover controls take turns in the trailing slot. Remove the
+     whole extra slot so revealing an action cannot push the totals left. */
+  .prominentSummary:has(.hoverActions):is(:hover, :has(:focus-visible)) > .extra:has(> .changeSummary),
+  :global([data-openbitfun-preview-state="hover"]) .prominentSummary:has(.hoverActions) > .extra:has(> .changeSummary) {
+    display: none;
+  }
+
   .extra:empty + .statusIcon[data-divider="true"] {
     margin-inline-start: 0;
     padding-inline-start: 0;
@@ -198,53 +252,54 @@
   }
 
   .changeSummary [data-openbitfun-change="added"] {
-    color: var(--openbitfun-color-code-change-added);
+    color: var(--openbitfun-color-code-diff-added-marker);
   }
 
   .changeSummary [data-openbitfun-change="removed"] {
-    color: var(--openbitfun-color-code-change-removed);
+    color: var(--openbitfun-color-code-diff-removed-marker);
   }
 
   .actionRegion {
-    overflow: hidden;
-    min-inline-size: 0;
-    max-inline-size: 0;
     gap: var(--openbitfun-space-1);
-    /* The hidden slot owns no row space: cancel the summary gap it would add, so
-       the released space goes to the text. Mirrors the summary gap, and never
-       claims the row's end inset, which belongs to trailing metadata. */
-    margin-inline-start: calc(-1 * var(--openbitfun-space-2));
-    margin-inline-end: 0;
-    padding-inline-start: 0;
-    border-inline-start: 0 solid transparent;
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(var(--openbitfun-space-1));
-    transition:
-      max-inline-size var(--_tool-card-transition),
-      margin-inline-start var(--_tool-card-transition),
-      margin-inline-end var(--_tool-card-transition),
-      padding-inline-start var(--_tool-card-transition),
-      border-color var(--_tool-card-transition),
-      opacity var(--_tool-card-transition),
-      transform var(--_tool-card-transition);
   }
 
-  .prominentRoot:is(:hover, :focus-within) .actionRegion,
-  .prominentRoot[data-openbitfun-preview-state="hover"] .actionRegion,
-  :global([data-openbitfun-preview-state="hover"]) .prominentRoot .actionRegion,
-  .prominentRoot[data-actions-visible="true"] .actionRegion {
-    max-inline-size: 24rem;
-    margin-inline-start: var(--openbitfun-space-1);
-    /* Revealed actions keep their tight corner gutter, owned by the region
-       itself instead of by a smaller row inset. */
-    margin-inline-end: calc(-1 * var(--openbitfun-space-2));
-    padding-inline-start: var(--openbitfun-space-2);
-    border-inline-start-width: var(--openbitfun-border-width-default);
-    border-inline-start-color: var(--openbitfun-color-border-subtle);
+  .subject {
+    display: inline-flex;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+  }
+
+  .subjectText {
+    display: inline-flex;
+    min-inline-size: 0;
+    flex: 0 1 auto;
+    align-items: center;
+  }
+
+  .subjectText > * { min-inline-size: 0; max-inline-size: 100%; }
+
+  /* Inline controls retain their footprint; prominent trailing controls use
+     hoverActions above to release their space while hidden. */
+  .toolCardActions[data-reveal="hover"] {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  .toolCardActions[data-reveal="hover"]:has(:focus-visible),
+  .prominentSummary:is(:hover, :has(:focus-visible)) .toolCardActions[data-reveal="hover"],
+  .ambientSurface:is(:hover, :focus-visible, :has(:focus-visible)) .toolCardActions[data-reveal="hover"],
+  .ambientRoot:focus-visible > .ambientSurface .toolCardActions[data-reveal="hover"],
+  .subject:is(:hover, :focus-visible, :has(:focus-visible)) > .actionRegion > .toolCardActions[data-reveal="hover"],
+  :global([data-tool-card-action-scope]):is(:hover, :focus-visible, :has(:focus-visible)) > .toolCardActions[data-reveal="hover"],
+  :global([data-tool-card-action-scope]):is(:hover, :focus-visible, :has(:focus-visible)) > .subject > .actionRegion > .toolCardActions[data-reveal="hover"],
+  :global([data-tool-card-action-scope]):is(:hover, :focus-visible, :has(:focus-visible)) > :global([data-tool-card-action-heading]) > .toolCardActions[data-reveal="hover"],
+  :global([data-openbitfun-preview-state="hover"]) .toolCardActions[data-reveal="hover"] {
     opacity: 1;
     pointer-events: auto;
-    transform: translateX(0);
   }
 
   .affordanceButton {
@@ -276,7 +331,7 @@
     outline-offset: var(--openbitfun-focus-offset);
   }
 
-  .affordanceButton > :where(svg, img) {
+  .affordanceButton > :where(svg, img, [data-openbitfun-component="icon"]) {
     display: block;
     inline-size: var(--openbitfun-font-size-base);
     block-size: var(--openbitfun-font-size-base);
@@ -291,6 +346,8 @@
   }
 
   .toolCardActions {
+    display: inline-flex;
+    align-items: center;
     gap: var(--openbitfun-space-1);
   }
 
@@ -350,8 +407,10 @@
       transform var(--_tool-card-transition);
   }
 
+  .mainIcon [data-openbitfun-component="icon"],
+  .statusIcon > [data-openbitfun-component="icon"],
   .mainIcon :where(svg, img),
-  .inlineAffordance > :where(svg, img),
+  .inlineAffordance > :where(svg, img, [data-openbitfun-component="icon"]),
   .statusIcon > :where(svg, img) {
     display: block;
     inline-size: 100%;
@@ -363,7 +422,7 @@
     opacity: 0;
   }
 
-  .inlineAffordance[data-expanded="true"] > :where(svg, img) {
+  .inlineAffordance[data-expanded="true"] > :where(svg, img, [data-openbitfun-component="icon"]) {
     transform: rotate(180deg);
   }
 
@@ -449,11 +508,15 @@
   .expanded,
   .error {
     box-sizing: border-box;
-    padding: var(--openbitfun-space-3);
+    padding: var(--openbitfun-space-3) var(--openbitfun-control-flow-chat-card-padding-inline);
     border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
     color: var(--openbitfun-color-content-secondary);
     font-size: var(--openbitfun-type-body-sm-font-size);
     line-height: var(--openbitfun-type-body-md-line-height);
+  }
+
+  .expandedFlush {
+    padding: 0;
   }
 
   .error {
@@ -461,6 +524,7 @@
   }
 
   .ambientRoot {
+    --_tool-card-confirmation-icon-color: var(--openbitfun-color-status-warning-emphasis);
     position: relative;
     gap: 0;
     border-radius: var(--openbitfun-radius-md);
@@ -468,17 +532,6 @@
     background-color: transparent;
     line-height: var(--openbitfun-type-body-md-line-height);
     transition: background-color var(--_tool-card-transition);
-  }
-
-  .ambientRoot::after {
-    position: absolute;
-    inset: 0;
-    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
-    border-radius: inherit;
-    content: "";
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--_tool-card-transition);
   }
 
   .ambientRoot[data-openbitfun-direct-action="true"] {
@@ -496,6 +549,7 @@
     min-block-size: max(1lh, var(--openbitfun-control-tool-card-ambient-row-min-block-size));
     align-items: center;
     gap: var(--openbitfun-control-flow-chat-row-icon-gap);
+    padding-block: 0;
     padding-inline: 0 var(--openbitfun-space-2);
     border: 0;
     background: transparent;
@@ -504,6 +558,14 @@
     transition:
       color var(--_tool-card-transition),
       opacity var(--_tool-card-transition);
+  }
+
+  /* Disclosure keeps the same body-line header, including hidden copy actions.
+     Capsules retain their own control geometry. */
+  .ambientRoot:not([data-tool-capsule="true"])
+    > .ambientSurface .toolCardActions [data-openbitfun-component="icon-button"] {
+    inline-size: var(--openbitfun-control-tool-card-ambient-row-min-block-size);
+    block-size: var(--openbitfun-control-tool-card-ambient-row-min-block-size);
   }
 
   .ambientSurface[data-openbitfun-interactive="true"] {
@@ -521,20 +583,83 @@
     --_flow-chat-tool-card-icon-size: var(--openbitfun-control-flow-chat-row-icon-size);
   }
 
+  .iconSlot:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: var(--openbitfun-focus-offset);
+    border-radius: var(--openbitfun-radius-sm);
+  }
+
+  /* Confirmation changes the leading icon, not the ambient card's frame.
+     The enclosing state also covers permission requests delivered separately. */
+  :is(
+    .ambientRoot[data-openbitfun-state~="confirmation"],
+    :global([data-openbitfun-state~="permission-pending"]) .ambientRoot
+  ) > .ambientSurface :is(.iconSlot, .inlineAffordance, [data-openbitfun-part="processing"]) {
+    color: var(--_tool-card-confirmation-icon-color);
+  }
+
+  :is(
+    .ambientRoot[data-openbitfun-state~="confirmation"],
+    :global([data-openbitfun-state~="permission-pending"]) .ambientRoot
+  ) > .ambientSurface .iconSlot
+    [data-openbitfun-part="statusSlot"]:has(> [data-openbitfun-part="toolIconLayer"])
+    > [data-openbitfun-part="statusLayer"] {
+    opacity: 0;
+  }
+
+  :is(
+    .ambientRoot[data-openbitfun-state~="confirmation"],
+    :global([data-openbitfun-state~="permission-pending"]) .ambientRoot
+  ) > .ambientSurface .iconSlot [data-openbitfun-part="toolIconLayer"] {
+    opacity: 1;
+  }
+
   .ambientAction {
     overflow: hidden;
-    flex: 0 1 auto;
+    /* Long commands and paths must not squeeze the action or its separator. */
+    flex: 0 0 auto;
     color: inherit;
     font-weight: var(--_tool-card-title-font-weight);
     white-space: nowrap;
   }
 
   .ambientContent {
-    overflow: hidden;
-    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    min-inline-size: 0;
+    flex: 0 1 auto;
     color: inherit;
     font-weight: var(--_tool-card-content-font-weight);
     white-space: nowrap;
+  }
+
+  /* Targets and returned evidence share an inline reading path. */
+  .ambientSubject,
+  .ambientResult {
+    box-sizing: border-box;
+    display: inline-flex;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    align-items: center;
+    flex: 0 1 auto;
+  }
+
+  .ambientSubject:empty {
+    display: none;
+  }
+
+  .ambientResult,
+  .ambientSubject[data-variant="tinted"] {
+    padding-inline: var(--openbitfun-space-1);
+    border-radius: var(--openbitfun-radius-sm);
+    background: var(--openbitfun-color-action-neutral-surface);
+  }
+
+  .ambientSubject > *,
+  .ambientResult > * {
+    min-inline-size: 0;
+    max-inline-size: 100%;
   }
 
   .ambientExtra {
@@ -545,36 +670,43 @@
   }
 
   .ambientExpandedShell {
-    overflow: hidden;
-    background-color: var(--openbitfun-color-surface-panel);
+    background-color: transparent;
     box-shadow: none;
   }
 
-  .ambientExpandedShell::after {
-    opacity: 1;
+  /* Expanded headers and evidence use the same content edges. Collapsed traces
+     retain their conversation baseline; specialized shells own their header. */
+  .ambientExpandedShell > .ambientSurface {
+    padding-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
   }
 
-  .ambientExpandedShell .ambientSurface {
-    /* Once enclosed, use the same header geometry as prominent cards.
-       Collapsed traces retain their compact, flush transcript alignment. */
-    min-block-size: var(--openbitfun-control-height-sm);
-    gap: var(--openbitfun-space-2);
-    padding-block: var(--openbitfun-space-1);
-    padding-inline: var(--_tool-card-summary-inset);
-    line-height: var(--openbitfun-type-heading-page-line-height);
-    color: var(--openbitfun-color-content-primary);
+  /* Keep the gap inside the retained collapse, so closing leaves no empty
+     space. Flush bodies still own their existing output and footer padding. */
+  .ambientExpanded {
+    overflow: hidden;
+    margin-block-start: var(--openbitfun-space-2);
+    border-block-start: 0;
+    border-radius: var(--openbitfun-radius-md);
+    background: var(--openbitfun-color-surface-tertiary);
   }
 
-  .ambientExpandedShell .ambientSurface .iconSlot {
-    --_tool-card-action-size: var(--openbitfun-space-6);
-    --_flow-chat-tool-card-icon-size: var(--openbitfun-font-size-xl);
+  /* Ambient evidence shares one surface, including host-provided code fields.
+     Override base code-block chrome without changing text or scroll ownership. */
+  .ambientExpanded :where(pre, code) {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
   }
 
-  .ambientRoot[data-openbitfun-state~="loading"] .ambientAction,
-  .ambientRoot[data-openbitfun-state~="loading"] .ambientContent,
   .prominentRoot[data-openbitfun-state~="loading"] .actionLabel,
   .prominentRoot[data-openbitfun-state~="loading"] .content {
     animation: openbitfun-flow-chat-tool-loading var(--openbitfun-motion-duration-loop) var(--openbitfun-motion-easing-standard) infinite alternate;
+  }
+
+  .prominentRoot[data-openbitfun-state~="loading"] .summaryText[data-active="true"] :is(.actionLabel, .content) {
+    animation: none;
   }
 
   @keyframes openbitfun-flow-chat-tool-loading {
@@ -587,17 +719,188 @@
     }
   }
 
-  .ambientRoot[data-openbitfun-status="error"] .ambientAction,
-  .ambientRoot[data-openbitfun-status="error"] .ambientContent,
-  .ambientRoot[data-openbitfun-status="error"] .ambientExtra {
+  .ambientRoot[data-tool-capsule="true"] {
+    inline-size: var(--openbitfun-control-flow-chat-capsule-inline-size);
+    max-inline-size: 100%;
+    border-radius: var(--openbitfun-radius-pill);
+    color: var(--openbitfun-color-content-secondary);
+  }
+
+  .ambientRoot[data-tool-capsule="true"] .ambientSurface {
+    position: relative;
+    z-index: var(--openbitfun-layer-content);
+    isolation: isolate;
+    min-inline-size: 0;
+    min-block-size: var(--openbitfun-control-height-sm);
+    max-inline-size: 100%;
+    gap: var(--openbitfun-control-flow-chat-row-icon-gap);
+    padding: var(--openbitfun-space-1) var(--openbitfun-space-2);
+    border-radius: var(--openbitfun-radius-pill);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    line-height: var(--openbitfun-type-flow-support-line-height);
+  }
+
+  .capsuleSkin {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--openbitfun-color-action-quiet-hover);
+    pointer-events: none;
+    transition: background-color var(--_tool-card-transition);
+  }
+
+  .ambientRoot[data-tool-capsule="true"] .ambientSurface[data-openbitfun-interactive="true"]:is(:hover, :focus-visible) > .capsuleSkin {
+    background: var(--openbitfun-color-action-quiet-pressed);
+  }
+
+  .ambientRoot[data-tool-capsule="true"][data-openbitfun-status="error"]:not(.ambientExpandedShell) .ambientSurface {
+    border-radius: var(--openbitfun-radius-md);
+  }
+
+  .ambientRoot[data-capsule-motion="failure"] {
+    overflow: visible;
+  }
+
+  .ambientRoot[data-tool-capsule="true"] .ambientSurface:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: calc(-1 * var(--openbitfun-focus-width));
+  }
+
+  .ambientRoot[data-tool-capsule="true"] .ambientContent {
+    min-inline-size: 0;
+    flex: 1 1 0;
+    animation: none;
+  }
+
+  .ambientRoot[data-tool-capsule="true"] .ambientSurface .iconSlot {
+    --_tool-card-action-size: var(--openbitfun-control-flow-chat-row-icon-size);
+    --_flow-chat-tool-card-icon-size: var(--openbitfun-control-flow-chat-row-icon-size);
+  }
+
+  .ambientRoot[data-tool-capsule="true"].ambientExpandedShell {
+    inline-size: 100%;
+    border-radius: var(--openbitfun-radius-md);
+  }
+
+  .ambientRoot[data-tool-capsule="true"] > .collapse {
+    --_tool-card-expanded-inline-size: 100%;
+    /* Retained exit content must never determine the compact capsule width. */
+    contain: inline-size;
+    overflow: hidden;
+  }
+
+  .ambientRoot[data-capsule-motion="recall"] > .collapse {
+    /* The inner recall owns opacity; keep the outer collapse from fading twice. */
+    opacity: 1;
+    transition-timing-function: var(--openbitfun-motion-easing-smooth);
+  }
+
+  .ambientRoot[data-tool-capsule="true"]:not(.ambientExpandedShell) > .collapse .collapseInner {
+    inline-size: var(--_tool-card-expanded-inline-size);
+  }
+
+  .capsuleStatus {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-label-sm-font-size);
+  }
+
+  .capsuleExtra {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    min-inline-size: 0;
+  }
+
+  /* AgentWait shares the Subagent card's transparent leading edge. */
+  .ambientRoot[data-tool-capsule="true"][data-openbitfun-tool-card="agent-wait"] {
+    border-radius: var(--openbitfun-radius-sm);
+  }
+
+  .ambientRoot[data-tool-capsule="true"][data-openbitfun-tool-card="agent-wait"] .ambientSurface {
+    align-items: flex-end;
+    align-items: last baseline;
+    gap: var(--openbitfun-control-flow-chat-row-icon-gap);
+    padding-block: 0;
+    padding-inline: var(--openbitfun-space-1) var(--openbitfun-space-2);
+    border-radius: var(--openbitfun-radius-sm);
+  }
+
+  .ambientRoot[data-tool-capsule="true"][data-openbitfun-tool-card="agent-wait"] .capsuleExtra {
+    align-self: flex-end;
+  }
+
+  .ambientRoot[data-tool-capsule="true"][data-openbitfun-tool-card="agent-wait"] .capsuleSkin {
+    display: none;
+  }
+
+  .ambientRoot[data-tool-capsule="true"][data-openbitfun-status="error"] .capsuleStatus {
     color: var(--openbitfun-color-status-danger-content);
   }
 
+  .capsuleChevron {
+    inline-size: var(--openbitfun-space-3);
+    block-size: var(--openbitfun-space-3);
+    flex: 0 0 auto;
+    transition: transform var(--_tool-card-transition);
+  }
+
+  .ambientExpandedShell .capsuleChevron {
+    transform: rotate(180deg);
+  }
+
+  .capsuleDetails {
+    display: grid;
+    gap: var(--openbitfun-space-3);
+    min-inline-size: 0;
+  }
+
+  .capsuleDetailLabel {
+    color: var(--openbitfun-color-content-muted);
+  }
+
+  .capsuleDetails pre {
+    max-block-size: 18rem;
+    overflow: auto;
+    margin: var(--openbitfun-space-1) 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: inherit;
+    font-size: var(--openbitfun-type-body-sm-font-size);
+  }
+
+  @media (pointer: coarse) {
+    .ambientRoot[data-tool-capsule="true"] .ambientSurface {
+      min-block-size: var(--openbitfun-control-height-lg);
+    }
+  }
+
+  @media (hover: none), (pointer: coarse) {
+    .prominentSummary .hoverActions {
+      position: static;
+      pointer-events: auto;
+    }
+
+    .toolCardActions[data-reveal="hover"] {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
+    .capsuleSkin,
+    .capsuleChevron,
+    .ambientRoot[data-tool-capsule="true"] .ambientSurface {
+      transition: none;
+    }
     .prominentRoot,
     .ambientRoot,
-    .ambientRoot::after,
-    .actionRegion,
+    .toolCardActions,
     .mainIcon,
     .inlineAffordance,
     .collapse,
@@ -615,12 +918,24 @@
   }
 
   @media (forced-colors: active) {
+    .ambientRoot {
+      --_tool-card-confirmation-icon-color: Highlight;
+    }
+
+    .ambientRoot[data-tool-capsule="true"] .ambientSurface {
+      outline: var(--openbitfun-border-width-default) solid ButtonText;
+      outline-offset: calc(-1 * var(--openbitfun-border-width-default));
+    }
+
     .prominentRoot {
       border-color: CanvasText;
     }
 
-    .ambientExpandedShell::after {
-      border-color: CanvasText;
+    .ambientResult,
+    .ambientSubject[data-variant="tinted"],
+    .ambientExpanded {
+      outline: var(--openbitfun-border-width-default) solid CanvasText;
+      outline-offset: calc(-1 * var(--openbitfun-border-width-default));
     }
 
     .iconAffordanceHit:focus-visible {

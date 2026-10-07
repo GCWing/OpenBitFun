@@ -1,3 +1,6 @@
+import { useEffect, useRef, useState } from "react";
+import { ComponentDetailPage } from "./ComponentDetailPage";
+import { BrandPreview } from "../preview/BrandPreview";
 import { AppWindow, Heading, Keyboard, List, Rows3, MousePointerClick, PanelTop, ToggleLeft } from "lucide-react";
 import { VoiceCallPreview, VoiceParticlePreview } from "../components/VoiceCallPreview";
 import {
@@ -8,6 +11,7 @@ import {
   Avatar,
   AvatarGroup,
   Button,
+  OverflowText,
   Card,
   CardHeader,
   ChangeCount,
@@ -93,7 +97,6 @@ import {
 } from "../i18n/componentMetadata";
 import {
   FlowChatComponentPreview,
-  flowChatPreviewRegistry,
   getFlowChatPreviewDefinition,
 } from "../preview/FlowChatPreviewRegistry";
 import { FlowChatToolGallery } from "../preview/FlowChatToolGallery";
@@ -102,9 +105,10 @@ import { RollingTextPreview } from "../preview/RollingTextPreview";
 interface ComponentsPageProps {
   category?: ComponentMeta["category"];
   colorScheme: ColorScheme;
+  component?: ComponentMeta;
   contrast: ContrastMode;
   density: DensityMode;
-  onInspectTokens: () => void;
+  onInspectTokens: (name?: string) => void;
   onOpenComponent: (name: string) => void;
   tokenOverrides: TokenOverrides;
 }
@@ -167,8 +171,9 @@ const componentIcons = {
   Tooltip: <CatalogIcon name="session" style={{ width: 19, height: 19 }} />,
 } as const;
 
-function ComponentCardPreview({ component }: { component: ComponentMeta }) {
+export function ComponentCardPreview({ component }: { component: ComponentMeta }) {
   const { t } = useI18n();
+  if (component.category === "brand") return <BrandPreview name={component.name} active={false} />;
   if (component.name === "VoiceCallPanel") return <VoiceCallPreview compact />;
   if (component.name === "VoiceParticleLogo") return <VoiceParticlePreview />;
   if (component.name === "Combobox") return <Combobox label={t("components.preview.modalProviderName")} defaultValue="openbitfun" options={[{ value: "openbitfun", label: "OpenBitFun" }, { value: "custom", label: t("components.preview.add") }]} />;
@@ -582,6 +587,7 @@ function ComponentCardPreview({ component }: { component: ComponentMeta }) {
         <ScrollArea
           aria-label={t("components.preview.scrollAreaLabel")}
           className="component-scroll-area-card-preview"
+          edgeFade="vertical"
         >
           <div className="component-scroll-area-example__content">
             {Array.from({ length: 5 }, (_, index) => (
@@ -716,6 +722,7 @@ function ComponentCardPreview({ component }: { component: ComponentMeta }) {
 export function ComponentsPage({
   category,
   colorScheme,
+  component,
   contrast,
   density,
   onInspectTokens,
@@ -723,121 +730,102 @@ export function ComponentsPage({
   tokenOverrides,
 }: ComponentsPageProps) {
   const { t } = useI18n();
-  const isFlowChatCategory = category === "flow-chat";
-  const isMobileCategory = category === "mobile";
-  const visibleComponents = componentRegistry.filter((component) =>
-    category
-      ? component.category === category
-      : component.category !== "flow-chat" && component.category !== "mobile",
+  const [query, setQuery] = useState("");
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [toolReferenceOpen, setToolReferenceOpen] = useState(false);
+  const listRef = useRef<HTMLElement>(null);
+  const activeLinkRef = useRef<HTMLAnchorElement>(null);
+  const selectedComponent = component
+    ?? componentRegistry.find(item => category ? item.category === category : item.name === "Button")
+    ?? componentRegistry[0];
+  const categories = Array.from(new Set(componentRegistry.map(component => component.category)));
+  const normalizedQuery = query.trim().toLowerCase();
+  const catalogComponents = componentRegistry.filter(component =>
+    `${component.name} ${component.category} ${component.description} ${getComponentDescription(component.name, component.description, t)} ${getComponentCategoryLabel(component.category, t)}`.toLowerCase().includes(normalizedQuery),
   );
-  const catalogComponents = isFlowChatCategory
-    ? flowChatPreviewRegistry
-      .filter(({ definition }) => definition.section === "framework")
-      .map(({ component }) => component)
-    : visibleComponents;
+
+  useEffect(() => {
+    const list = listRef.current;
+    const activeLink = activeLinkRef.current;
+    if (!list) return;
+    if (!activeLink) {
+      list.scrollTop = 0;
+      return;
+    }
+    // Keep selection visible inside the directory without scrolling the preview.
+    const listBounds = list.getBoundingClientRect();
+    const linkBounds = activeLink.getBoundingClientRect();
+    if (linkBounds.top < listBounds.top) list.scrollTop += linkBounds.top - listBounds.top;
+    else if (linkBounds.bottom > listBounds.bottom) list.scrollTop += linkBounds.bottom - listBounds.bottom;
+  }, [selectedComponent?.name, normalizedQuery, catalogOpen]);
 
   return (
-    <main className="lab-page" id={isFlowChatCategory ? "flow-chat" : isMobileCategory ? "mobile" : "components"}>
-      <header className="page-heading page-heading--split">
-        <div>
-          <span className="page-kicker">{t(isFlowChatCategory
-            ? "components.flowChat.kicker"
-            : isMobileCategory
-              ? "components.mobile.kicker"
-              : "components.kicker")}</span>
-          <h1>{t(isFlowChatCategory
-            ? "components.flowChat.title"
-            : isMobileCategory
-              ? "components.mobile.title"
-              : "components.title")}</h1>
-          <p>{t(isFlowChatCategory
-            ? "components.flowChat.description"
-            : isMobileCategory
-              ? "components.mobile.description"
-              : "components.description")}</p>
+    <main className="lab-page design-component-library" id="components">
+      <aside className="design-library-sidebar" aria-labelledby="component-library-title" data-open={catalogOpen || undefined}>
+        <div className="design-library-heading">
+          <h2 id="component-library-title">{t("design.components")}</h2>
+          <span className="design-library-count" role="status">{t("design.results", { count: catalogComponents.length })}</span>
+          <IconButton className="design-library-toggle" aria-controls="component-library-index" aria-expanded={catalogOpen}
+            aria-label={t("design.browseComponents")} onClick={() => setCatalogOpen(open => !open)}
+            icon={<CatalogIcon name={catalogOpen ? "chevron-up" : "chevron-down"} />} />
         </div>
-        <button className="lab-button" onClick={onInspectTokens} type="button">
-          {t("components.inspectAllTokens")}
-        </button>
-      </header>
-
-      <div className="component-summary-strip" aria-label={t("components.summaryLabel")}>
-        <span><strong>{visibleComponents.length}</strong> {t("components.registeredCount")}</span>
-        <span><strong>{visibleComponents.reduce((total, item) => total + item.states.length, 0)}</strong> {t("components.statesCount")}</span>
-        <span><CatalogIcon name="check-line" aria-hidden="true" style={{ width: 15, height: 15 }} /> {t("components.accessibilityContracts")}</span>
-      </div>
-
-      {isFlowChatCategory && (
-        <section className="component-catalog-section-heading">
-          <div>
-            <span className="page-kicker">{t("components.flowChat.templatesKicker")}</span>
-            <h2>{t("components.flowChat.templatesTitle")}</h2>
+        <div className="design-library-index" id="component-library-index">
+          <SearchField aria-label={t("design.search")} placeholder={t("design.search")} value={query}
+            onChange={event => setQuery(event.target.value)} clearLabel={t("design.clear")} onClear={() => setQuery("")}
+            leadingIcon={<CatalogIcon name="search" />} />
+          <nav className="design-library-list" aria-label={t("design.all")} ref={listRef}>
+            {categories.map(group => {
+              const items = catalogComponents.filter(item => item.category === group).sort((a, b) => a.name.localeCompare(b.name));
+              if (!items.length) return null;
+              return (
+                <section className="design-library-group" key={group} aria-labelledby={`component-group-${group}`}>
+                  <h3 id={`component-group-${group}`}>{getComponentCategoryLabel(group, t)}</h3>
+                  <ul>
+                    {items.map(item => (
+                      <li key={item.name}>
+                        <a data-overflow-trigger className="design-library-link" href={`#component/${item.name.toLowerCase()}`}
+                          aria-current={selectedComponent?.name === item.name ? "page" : undefined}
+                          ref={selectedComponent?.name === item.name ? activeLinkRef : undefined}
+                          title={`${item.name} · ${getComponentDescription(item.name, item.description, t)}`}
+                          onClick={event => {
+                            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                            event.preventDefault();
+                            setCatalogOpen(false);
+                            onOpenComponent(item.name);
+                          }}>
+                          <OverflowText>{item.name}</OverflowText>
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              );
+            })}
+            {catalogComponents.length === 0 && <div className="design-library-empty"><p>{t("design.noResults")}</p><Button size="sm" variant="text" onClick={() => setQuery("")}>{t("design.clear")}</Button></div>}
+          </nav>
+          <footer className="design-library-footer">
+            <a href="#patterns">{t("design.contexts")}<CatalogIcon name="arrow-right" size="sm" /></a>
+            <a href="#flow-chat-mock">{t("design.conversation")}<CatalogIcon name="arrow-right" size="sm" /></a>
+          </footer>
+        </div>
+      </aside>
+      {selectedComponent && (
+        <div className="design-library-content">
+          <ComponentDetailPage key={selectedComponent.name} embedded component={selectedComponent}
+            colorScheme={colorScheme} contrast={contrast} density={density}
+            onInspectTokens={onInspectTokens} tokenOverrides={tokenOverrides} />
+          {selectedComponent.category === "flow-chat" && (
+            <details className="design-tool-reference" onToggle={event => setToolReferenceOpen(event.currentTarget.open)}>
+              <summary>{t("components.flowChat.templatesTitle")}</summary>
+              {toolReferenceOpen && <ThemeRoot colorScheme={colorScheme} contrast={contrast} density={density} tokenOverrides={tokenOverrides}>
+                <FlowChatToolGallery onOpenComponent={onOpenComponent} />
+              </ThemeRoot>}
+            </details>
+          )}
+          <div className="design-directory-footer">
+            <Button onClick={() => onInspectTokens(selectedComponent.name)} trailingIcon={<CatalogIcon name="arrow-right" size="sm" />}>{t("design.tokens")}</Button>
           </div>
-          <p>{t("components.flowChat.templatesDescription")}</p>
-        </section>
-      )}
-
-      <ThemeRoot
-        className="component-catalog-grid"
-        colorScheme={colorScheme}
-        contrast={contrast}
-        density={density}
-        tokenOverrides={tokenOverrides}
-      >
-        {catalogComponents.map((component) => {
-          const FlowIcon = getFlowChatPreviewDefinition(component.name)?.icon;
-          const glyph = FlowIcon ? <FlowIcon aria-hidden="true" size={19} />
-            : componentIcons[component.name as keyof typeof componentIcons];
-          return (
-            <button
-              className="component-card"
-              key={component.name}
-              onClick={() => onOpenComponent(component.name)}
-              type="button"
-            >
-              <span className="component-card__topline">
-                <span className="component-card__icon">
-                  {glyph ?? null}
-                </span>
-              </span>
-              <span className="component-card__preview">
-                <ComponentCardPreview component={component} />
-              </span>
-              <span className="component-card__body">
-                <span className="component-card__category">{getComponentCategoryLabel(component.category, t)}</span>
-                <strong>{component.name}</strong>
-                <span>{getComponentDescription(component.name, component.description, t)}</span>
-              </span>
-              <span className="component-card__footer">
-                {t("components.cardStats", {
-                  states: component.states.length,
-                  tokens: component.tokens.length,
-                })}
-                <CatalogIcon name="arrow-right" size="md" aria-hidden="true" />
-              </span>
-            </button>
-          );
-        })}
-      </ThemeRoot>
-
-      {isFlowChatCategory ? (
-        <ThemeRoot
-          className="flow-chat-tool-gallery-theme"
-          colorScheme={colorScheme}
-          contrast={contrast}
-          density={density}
-          tokenOverrides={tokenOverrides}
-        >
-          <FlowChatToolGallery onOpenComponent={onOpenComponent} />
-        </ThemeRoot>
-      ) : (
-        <section className="primitive-note">
-          <div>
-            <span className="page-kicker">{t("components.primitivesKicker")}</span>
-            <h2>{t("components.primitivesTitle")}</h2>
-          </div>
-          <p>{t("components.primitivesDescription")}</p>
-        </section>
+        </div>
       )}
     </main>
   );

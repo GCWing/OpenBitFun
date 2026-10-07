@@ -16,11 +16,16 @@ import {
 export class RemoteResponseMapper {
   static workspaceFromInitialSync(response: InitialSyncResponse): WorkspaceInfo {
     const workspacePath = response.path || '';
-    const workspaceName = response.project_name || RemoteResponseMapper.basename(workspacePath);
+    const workspaceName = RemoteResponseMapper.workspaceDisplayName(
+      response.project_name,
+      workspacePath,
+      response.remote_ssh_host,
+      response.remote_connection_id
+    );
     return {
       workspaceId: response.workspace_id,
       path: workspacePath,
-      name: workspaceName || 'Workspace',
+      name: workspaceName,
       hasWorkspace: response.has_workspace !== false && workspacePath.length > 0,
       gitBranch: response.git_branch || '',
       workspaceKind: response.workspace_kind || 'normal',
@@ -32,11 +37,16 @@ export class RemoteResponseMapper {
 
   static workspaceFromResponse(response: WorkspaceInfoResponse): WorkspaceInfo {
     const workspacePath = response.path || response.workspace_path || '';
-    const workspaceName = response.project_name || response.workspace_name || RemoteResponseMapper.basename(workspacePath);
+    const workspaceName = RemoteResponseMapper.workspaceDisplayName(
+      response.project_name || response.workspace_name,
+      workspacePath,
+      response.remote_ssh_host,
+      response.remote_connection_id
+    );
     return {
       workspaceId: response.workspace_id,
       path: workspacePath,
-      name: workspaceName || 'Workspace',
+      name: workspaceName,
       hasWorkspace: response.has_workspace !== false && workspacePath.length > 0,
       gitBranch: response.git_branch || '',
       workspaceKind: response.workspace_kind || 'normal',
@@ -51,7 +61,12 @@ export class RemoteResponseMapper {
       const workspace: RecentWorkspaceEntry = {
         workspaceId: item.workspace_id,
         path: item.path || '',
-        name: item.name || RemoteResponseMapper.basename(item.path || '') || 'Workspace',
+        name: RemoteResponseMapper.workspaceDisplayName(
+          item.name,
+          item.path || '',
+          item.remote_ssh_host,
+          item.remote_connection_id
+        ),
         lastOpened: RemoteResponseMapper.firstTimeValue([
           item.last_opened,
           item.lastOpened,
@@ -64,6 +79,31 @@ export class RemoteResponseMapper {
       };
       return workspace;
     }).filter((item: RecentWorkspaceEntry) => item.path.length > 0);
+  }
+
+  /** Keep remote root workspaces readable when older hosts persisted "Unknown". */
+  private static workspaceDisplayName(
+    rawName: string | undefined,
+    path: string,
+    remoteSshHost?: string,
+    remoteConnectionId?: string
+  ): string {
+    const name = (rawName || '').trim();
+    const normalized = name.toLowerCase();
+    const host = (remoteSshHost || '').trim();
+    const connection = (remoteConnectionId || '').trim();
+    const isTransportName = (host.length > 0 && name === host) ||
+      (connection.length > 0 && name === connection);
+    if (name.length > 0 && !isTransportName && normalized !== 'unknown' && normalized !== 'unknown project' && name !== '未知' && name !== '未知项目') {
+      return name;
+    }
+    const basename = RemoteResponseMapper.basename(path);
+    if (basename.length > 0 && basename !== '/') {
+      return basename;
+    }
+    // Keep the remote root addressable without presenting the transport
+    // address as if it were a workspace name.
+    return '/';
   }
 
   static sessions(items: SessionItemResponse[]): RemoteSession[] {

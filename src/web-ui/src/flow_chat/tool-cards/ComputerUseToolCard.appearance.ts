@@ -5,7 +5,7 @@ export const computerUseToolCardAppearanceDescriptor: AppearanceSurfaceDescripto
   parts: [
     { id: 'root' }, { id: 'content' }, { id: 'permissionDenied' },
     { id: 'expanded' }, { id: 'row' },
-    { id: 'loopWarning' }, { id: 'actionCode' },
+    { id: 'loopWarning' },
   ],
   states: [
     { id: 'expanded', selector: { kind: 'self', suffix: '[data-openbitfun-state~="expanded"]' } },

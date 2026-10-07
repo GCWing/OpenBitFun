@@ -1,5 +1,27 @@
 # FlowChat History Paging
 
+## Inactive history residency
+
+Reader bookmarks retain the semantic snapshot, intent and ordinal range, never
+the Turn bodies. A mounted primary, BTW or subagent transcript holds a history
+lease. The store accounts the union of canonical and paged Turns, which can alias
+the same objects, in the shared reconstructable-resource budget. Derived caches
+are reclaimed before inactive history when that budget is exceeded.
+
+Unleased local history can return to metadata-only under resource-budget pressure,
+only when its Turns are unchanged persisted-read objects. Idle time alone does
+not evict history; keep the warm path when resources fit the budget. Selection,
+hydration, in-flight reads, runtime interactions and live or unsaved projections
+prevent eviction. Relay replicas and dispatch observers keep their existing
+owners. Drafts, catalogs, permission mailboxes and runtime state are outside this
+cache lifecycle.
+
+On return, a bookmark resolves through the store's existing range reader before
+the transcript paints. The viewport owner restores its semantic anchor; a cold
+read never navigates to the tail as a fallback. Session, surface and navigation
+generation fence the result. Failures expose retry, while stale reads may warm
+the cache without replacing a newer reader intent.
+
 ## Prepend geometry snapshot
 
 `FlowChatPrependSnapshot` captures the old DOM scroll height in React's

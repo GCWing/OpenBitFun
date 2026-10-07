@@ -84,7 +84,9 @@ export struct AppRootPresentation {
   @Local wideDetailContentWidth: number = 0;
   @Local wideCollapsedDetailContentOffset: number = 0;
   @Local wideCollapsedDetailContentWidth: number = 0;
-  @Local wideWorkspacePresentationMode: WideWorkspacePresentationMode = WideWorkspacePresentationMode.Default;
+  // Every launch starts with the wide sidebar collapsed; the toggle only lasts for this run.
+  @Local wideWorkspacePresentationMode: WideWorkspacePresentationMode =
+    WideWorkspacePresentationMode.SidebarCollapsed;
   @Local wideMasterPaneMotionActive: boolean = false;
   @Local showRemoteViewSettings: boolean = false;
   @Local remoteSurfaceState: RemoteSurfaceState = new RemoteSurfaceState();
@@ -627,7 +629,6 @@ export struct AppRootPresentation {
     AppConnectSurface({
       remotePageState: this.remotePageState,
       deviceId: this.deviceId,
-      openIntent: this.shellState.connectSheetIntent,
       actions: this.actions
     })
   }

@@ -1,8 +1,9 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 /**
  * PagePublish tool card — shows publish slug / version / URLs.
  */
-import React, { useCallback, useMemo, useState } from 'react';
-import { Button, Icon } from '@openbitfun/ui';
+import React, { useCallback, useMemo } from 'react';
+import { IconButton, Icon } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
 
 import type { ToolCardProps } from '../types/flow-chat';
@@ -24,7 +25,7 @@ async function openPage(slug: string, knownGeneration?: string, versionId?: stri
 export const PagePublishDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
   const { t } = useTranslation('flow-chat');
   const { status, toolResult, partialParams, isParamsStreaming, toolCall } = toolItem;
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
 
   const toolId = toolItem.id ?? toolCall?.id;
   const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
@@ -52,6 +53,7 @@ export const PagePublishDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
     (toolResult?.result?.preview_url as string | undefined) ||
     (toolResult?.result?.preview_url_path as string | undefined);
   const deployed = toolResult?.result?.deployed === true;
+  const hasPreview = toolResult?.result?.deployed === false || Boolean(previewPath);
   const success = toolResult?.success === true;
   const isLoading = status === 'running' || status === 'streaming' || status === 'preparing';
   const isFailed =
@@ -63,7 +65,7 @@ export const PagePublishDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
 
   const toggleExpanded = useCallback(() => {
     applyExpandedState(isExpanded, !isExpanded, setIsExpanded);
-  }, [applyExpandedState, isExpanded]);
+  }, [applyExpandedState, isExpanded, setIsExpanded]);
 
   const getErrorMessage = () => {
     if (toolResult && 'error' in toolResult && toolResult.error) {
@@ -99,41 +101,48 @@ export const PagePublishDisplay: React.FC<ToolCardProps> = ({ toolItem }) => {
         status={isFailed ? 'error' : status}
         isExpanded={isExpanded}
         onToggle={hasExpandableDetails ? toggleExpanded : undefined}
-        action={`${t('toolCards.pagePublish.title')}:`}
+        action={status === 'completed' && success
+          ? deployed ? t('toolCards.pagePublish.publishedTitle')
+            : hasPreview ? t('toolCards.pagePublish.previewTitle') : t('toolCards.pagePublish.title')
+          : t('toolCards.pagePublish.title')}
+        preview={status === 'completed' && success && !deployed && hasPreview}
         subject={commandText}
+        statusLabel={status === 'cancelled' ? t('toolCards.default.cancelled')
+          : status === 'rejected' ? t('toolCards.default.rejected')
+            : isFailed ? t('toolCards.default.failed') : undefined}
         version={versionId || undefined}
         loading={isLoading}
         fields={fields}
         error={isFailed ? getErrorMessage() : undefined}
-        actions={success ? (
+        actions={success && !isFailed && status === 'completed' && slug ? (
           <>
             {deployed && urlPath && (
-              <Button
+              <IconButton
                 type="button"
-                variant="primary"
+                variant="quiet"
                 size="sm"
-                leadingIcon={<Icon name="arrow-up-right" size="xs" />}
+                icon={<Icon name="arrow-up-right" size="sm" />}
+                aria-label={t('toolCards.pagePublish.openProduction')}
+                title={t('toolCards.pagePublish.openProduction')}
                 data-testid="chat-page-publish-open-prod-btn"
                 onClick={() => void openPage(slug, generation).catch(() => {
                   notificationService.error(t('toolCards.pagePublish.openFailed'));
                 })}
-              >
-                {t('toolCards.pagePublish.openProduction')}
-              </Button>
+              />
             )}
-            {previewPath && (
-              <Button
+            {previewPath && versionId && (
+              <IconButton
                 type="button"
-                variant="outline"
+                variant="quiet"
                 size="sm"
-                leadingIcon={<Icon name="arrow-up-right" size="xs" />}
+                icon={<Icon name="eye" size="sm" />}
+                aria-label={t('toolCards.pagePublish.openPreview')}
+                title={t('toolCards.pagePublish.openPreview')}
                 data-testid="chat-page-publish-open-preview-btn"
                 onClick={() => void openPage(slug, generation, versionId).catch(() => {
                   notificationService.error(t('toolCards.pagePublish.openFailed'));
                 })}
-              >
-                {t('toolCards.pagePublish.openPreview')}
-              </Button>
+              />
             )}
           </>
         ) : undefined}

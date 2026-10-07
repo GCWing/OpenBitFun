@@ -1,17 +1,6 @@
 import React from 'react';
 import { Icon } from '@openbitfun/ui';
-import {
-  BookOpenCheck,
-  Compass,
-  FileText,
-  Gavel,
-  ListTree,
-  Scale,
-  SearchCheck,
-  ShieldCheck,
-  Swords,
-  UsersRound,
-} from 'lucide-react';
+import { BookOpenCheck, Compass, Gavel, ListTree, Scale, SearchCheck, ShieldCheck, Swords, UsersRound } from 'lucide-react';
 import { StatusPill, type StatusPillTone } from '@openbitfun/ui';
 import { AmbientToolCard, AmbientToolCardHeader } from '@openbitfun/ui/flow-chat';
 import { useI18n } from '@/infrastructure/i18n';
@@ -36,14 +25,14 @@ const PHASE_PRESENTATION: Record<DeepResearchPhaseId, {
   current: number;
   icon: React.ReactNode;
 }> = {
-  'phase-0-orient': { current: 1, icon: <Compass aria-hidden="true" /> },
-  'phase-1-specialists': { current: 2, icon: <UsersRound aria-hidden="true" /> },
-  'phase-2-citations': { current: 3, icon: <BookOpenCheck aria-hidden="true" /> },
-  'phase-3-debate-r1': { current: 4, icon: <Swords aria-hidden="true" /> },
-  'phase-3-debate-r2': { current: 5, icon: <Scale aria-hidden="true" /> },
-  'phase-4-factcheck': { current: 6, icon: <ShieldCheck aria-hidden="true" /> },
-  'phase-5-arbitration': { current: 7, icon: <Gavel aria-hidden="true" /> },
-  'phase-6-report': { current: 8, icon: <FileText aria-hidden="true" /> },
+  'phase-0-orient': { current: 1, icon: <Icon glyph={Compass} size="sm" aria-hidden="true" /> },
+  'phase-1-specialists': { current: 2, icon: <Icon glyph={UsersRound} size="sm" aria-hidden="true" /> },
+  'phase-2-citations': { current: 3, icon: <Icon glyph={BookOpenCheck} size="sm" aria-hidden="true" /> },
+  'phase-3-debate-r1': { current: 4, icon: <Icon glyph={Swords} size="sm" aria-hidden="true" /> },
+  'phase-3-debate-r2': { current: 5, icon: <Icon glyph={Scale} size="sm" aria-hidden="true" /> },
+  'phase-4-factcheck': { current: 6, icon: <Icon glyph={ShieldCheck} size="sm" aria-hidden="true" /> },
+  'phase-5-arbitration': { current: 7, icon: <Icon glyph={Gavel} size="sm" aria-hidden="true" /> },
+  'phase-6-report': { current: 8, icon: <Icon name="file-text" size="sm" aria-hidden="true" /> },
   complete: { current: 8, icon: <Icon name="check-circle" size="md" /> },
 };
 
@@ -150,7 +139,7 @@ const SubquestionGroup: React.FC<{ markers: SubquestionMarker[] }> = ({ markers 
       isExpanded
       header={(
         <AmbientToolCardHeader
-          icon={<ListTree aria-hidden="true" />}
+          icon={<Icon glyph={ListTree} size="sm" aria-hidden="true" />}
           content={t('deepResearchProtocol.subquestions.title')}
           extra={<StatusPill tone="info">{t('deepResearchProtocol.subquestions.count', { count })}</StatusPill>}
         />
@@ -202,7 +191,7 @@ const CitationGroup: React.FC<{ markers: CitationMarker[] }> = ({ markers }) => 
       status="completed"
       header={(
         <AmbientToolCardHeader
-          icon={<SearchCheck aria-hidden="true" />}
+          icon={<Icon glyph={SearchCheck} size="sm" aria-hidden="true" />}
           content={t('deepResearchProtocol.citations.title')}
           extra={(
             <span

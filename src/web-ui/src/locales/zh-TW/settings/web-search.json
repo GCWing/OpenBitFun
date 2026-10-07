@@ -8,10 +8,10 @@
     "openbitfunSearchHttp": "自訂 HTTP 服務"
   },
   "providerDescriptions": {
-    "exaMcpFree": "使用 Exa 提供的免費搜尋服務，無需 API Key 或額外設定。",
-    "exaSearchApi": "使用你的 Exa API Key 存取搜尋服務，請在下方填寫並儲存憑據。",
-    "tavily": "使用你的 Tavily API Key 存取搜尋服務，請在下方填寫並儲存憑據。",
-    "openbitfunSearchHttp": "連接實作 OpenBitFun 搜尋協定的自建或企業內部服務，請在下方填寫服務位址，並視需要設定驗證。"
+    "exaMcpFree": "無需 API Key 或額外設定",
+    "exaSearchApi": "需要 Exa API Key，在下方填寫並儲存",
+    "tavily": "需要 Tavily API Key，在下方填寫並儲存",
+    "openbitfunSearchHttp": "接入自建或企業內部搜尋服務，需填寫服務位址並按需設定驗證"
   },
   "auth": {
     "none": "無需驗證",
@@ -20,25 +20,26 @@
   },
   "sections": {
     "provider": {
-      "title": "搜尋服務"
+      "title": "搜尋服務",
+      "description": "搜尋服務獨立於對話模型；所需位址和憑據取決於所選服務"
     },
     "http": {
-      "title": "OpenBitFun Search HTTP Protocol v1",
-      "description": "連接實作固定 OpenBitFun 協定的自建或企業內部端點"
+      "title": "自訂搜尋服務",
+      "description": "服務需實作 OpenBitFun Search HTTP Protocol v1"
     },
     "protocol": {
       "title": "協定說明",
       "description": "實作自訂搜尋端點需要遵循的請求與回應格式。"
     },
     "credential": {
-      "title": "裝置憑據",
-      "description": "Secret 僅在執行 WebSearch 的主機上加密儲存，不會同步"
+      "title": "搜尋服務憑證",
+      "description": "金鑰僅在執行搜尋的主機上加密儲存，不會同步至其他裝置"
     }
   },
   "fields": {
     "provider": {
       "label": "服務提供者",
-      "description": "切換服務後，儲存設定即可生效",
+      "description": "儲存後用於後續網頁搜尋",
       "placeholder": "選擇搜尋服務"
     },
     "providerHelp": {
@@ -46,33 +47,31 @@
       "description": "選擇搜尋服務後，這裡會顯示所需的設定。"
     },
     "endpoint": {
-      "label": "端點",
+      "label": "服務位址",
       "description": "必須使用 HTTPS；僅 localhost 或迴環 IP 可使用明文 HTTP",
       "placeholder": "https://search.example.com/search"
     },
     "authMode": {
-      "label": "驗證方式",
-      "description": "可選無需驗證、Bearer 憑據或一個受限自訂 Header"
+      "label": "驗證方式"
     },
     "headerName": {
-      "label": "Header 名稱",
-      "description": "用於填寫 X-API-Key 等自訂憑據 Header；Bearer 驗證請選擇「Bearer 憑據」",
+      "label": "憑證請求標頭名稱",
+      "description": "填寫 X-API-Key 等自訂請求標頭；使用 Authorization 時請選擇 Bearer 憑證",
       "placeholder": "X-Search-Key"
     },
     "credentialStatus": {
-      "label": "狀態",
-      "description": "目前執行主機的憑據狀態"
+      "label": "狀態"
     },
     "credential": {
       "label": "API Key 或 Secret",
-      "description": "儲存新值會取代目前裝置上的 Secret",
+      "description": "儲存新值會取代執行主機上此服務的金鑰",
       "placeholder": "輸入憑據",
       "replacePlaceholder": "輸入新憑據以取代已儲存的值"
     }
   },
   "status": {
-    "configured": "已在此裝置設定",
-    "missing": "此裝置缺少憑據"
+    "configured": "執行主機已設定",
+    "missing": "執行主機缺少憑證"
   },
   "protocol": {
     "request": {
@@ -106,11 +105,11 @@
     "saved": "網頁搜尋設定已儲存。",
     "saveFailed": "儲存網頁搜尋設定失敗。",
     "credentialRequired": "請先輸入憑據。",
-    "credentialSaved": "憑據已儲存到此裝置。",
-    "credentialSaveFailed": "儲存裝置憑據失敗。",
-    "credentialSaveFailedAfterConfigSaved": "網頁搜尋設定已儲存，但裝置憑據儲存失敗。請重新輸入憑據後重試。",
-    "credentialCleared": "已從此裝置清除憑據。",
-    "credentialClearFailed": "清除裝置憑據失敗。",
+    "credentialSaved": "憑證已儲存至執行主機",
+    "credentialSaveFailed": "儲存執行主機憑證失敗",
+    "credentialSaveFailedAfterConfigSaved": "搜尋設定已儲存，但執行主機憑證儲存失敗。請重新輸入憑證後重試",
+    "credentialCleared": "已從執行主機清除憑證",
+    "credentialClearFailed": "清除執行主機憑證失敗",
     "protocolCopied": "協定已複製。",
     "protocolCopyFailed": "複製協定失敗。"
   }

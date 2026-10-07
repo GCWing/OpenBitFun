@@ -3,12 +3,11 @@
  * A4-like reading width with centered content.
  */
 @use '../../flat-markdown-surfaces' as flatMarkdownSurfaces;
-@use '../../markdown-typography' as markdownTypography;
 @use '../../transcript-layout' as transcriptLayout;
+@use '../../item-rhythm' as itemRhythm;
 
 .virtual-item-wrapper {
   @include flatMarkdownSurfaces.apply;
-  @include markdownTypography.apply;
   @include transcriptLayout.reading-column;
 
   // Keep descendant margins inside the border box measured by the virtualizer.
@@ -27,6 +26,11 @@
   min-height: 1px;
   padding: 0;
   position: relative;
+
+  // Collected model rounds retain their virtual key without stacking blank pixels.
+  &[data-collected-empty='true'] {
+    min-height: 0;
+  }
 
   // A regular user message starts a new Turn. Give it a clear boundary from
   // the preceding Turn, balancing the reserved action row below its bubble.
@@ -53,6 +57,8 @@
       .flow-thinking-item,
       .flowchat-flow-item
     ):is(:last-child, :has(+ .model-round-item__footer)),
+    > .flowchat-timeline-content > .model-round-item > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item):last-child,
+    > .flowchat-timeline-members.explore-region--collapsible > .explore-region__content > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item):last-child,
     > .explore-region .explore-region__content > :is(
       .flow-text-block,
       .flow-thinking-item,
@@ -61,33 +67,24 @@
       margin-bottom: 0;
     }
 
-    > .model-round-item
-      > .task-with-subagent-wrapper:is(
-        :last-child,
-        :has(+ .model-round-item__footer)
-      ),
-    > .model-round-item
-      > .task-with-subagent-wrapper:is(
-        :last-child,
-        :has(+ .model-round-item__footer)
-      )
-      > .flowchat-flow-item {
-      margin-bottom: 0;
-    }
+
   }
 
   /* Adjacent model rounds are runtime structure, not visual sections. The
    * projection marks ambient-to-ambient boundaries from the full list so this rule
    * remains stable when either virtual row enters or leaves the rendered
-   * window. Only collapsed, line-like tools lose their trailing item gap;
-   * expanded cards keep section spacing. */
-  &[data-ambient-tool-run-continuation-after='true']
-    > .model-round-item
-    > .flowchat-flow-item:last-child:has(
-      > .flow-tool-card-wrapper[data-openbitfun-attention='ambient']
-        [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='root'][data-openbitfun-expanded-shell='false']
-    ) {
-    margin-bottom: 0;
+   * window. Ambient continuations retain the same paragraph gap as every
+   * other desktop transcript item. */
+  &[data-ambient-tool-run-continuation-after='true'] {
+    > .model-round-item,
+    > .flowchat-timeline-content > .model-round-item {
+      > .flowchat-flow-item:last-child:has(
+        > .flow-tool-card-wrapper[data-openbitfun-attention='ambient']:not([data-tool-capsule='true']):not(.flow-tool-card-wrapper--permission-pending)
+          [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='root'][data-openbitfun-expanded-shell='false']
+      ) {
+        margin-bottom: var(--openbitfun-control-flow-chat-paragraph-gap);
+      }
+    }
   }
 
   /*
@@ -109,6 +106,23 @@
     animation: none;
   }
 
+}
+
+// Collection geometry is expressed in one transcript, including when only its
+// middle is resident. The public header and card anatomy stay unchanged.
+.virtual-item-wrapper[data-timeline-kind='group-header'] > .explore-region--expanded {
+  margin-block-end: 0;
+}
+.flowchat-timeline-members.explore-region--collapsible {
+  margin-block: 0;
+  > .explore-region__content {
+    // Each virtual member owns its trailing gap, even when it is the sole child.
+    @include itemRhythm.spacing;
+    padding-block-start: 0;
+  }
+  &[data-group-first='true'] > .explore-region__content {
+    padding-block-start: var(--openbitfun-control-flow-chat-paragraph-gap);
+  }
 }
 
 // The current text line is a passive overlay, never a new transcript surface.

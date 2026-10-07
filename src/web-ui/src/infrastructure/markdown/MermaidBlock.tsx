@@ -1,3 +1,4 @@
+import { BoundedResourceCache } from '@/shared/utils/BoundedResourceCache';
 import { Icon as CatalogIcon } from '@openbitfun/ui';
 /**
  * MermaidBlock component
@@ -14,7 +15,7 @@ import './MermaidBlock.scss';
 
 const log = createLogger('MermaidBlock');
 
-const svgCache = new Map<string, string>();
+const svgCache = new BoundedResourceCache<string, string>(8 * 1024 * 1024);
 
 let appearanceRevision = 0;
 
@@ -92,7 +93,7 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
     try {
       const svg = await mermaidService.current.renderDiagram(trimmedCode);
       if (currentCodeRef.current === trimmedCode) {
-        svgCache.set(key, svg);
+        svgCache.set(key, svg, (key.length + svg.length) * 2);
         setSvgContent(svg);
         setState('rendered');
       }

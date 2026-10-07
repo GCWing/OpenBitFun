@@ -175,6 +175,10 @@ pub struct ReasoningPresetDescriptor {
     pub order: i32,
     pub actions: Vec<ReasoningPresetAction>,
     pub source: ReasoningPresetSource,
+    /// Adapter-resolved effort for display and alias grouping. Request actions
+    /// and persisted preset ids remain unchanged; older peers may omit this.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_effort: Option<String>,
     /// Catalog identity used only by the host-side adapter compiler. It is
     /// intentionally omitted from Web/remote projections.
     #[serde(skip)]
@@ -879,6 +883,25 @@ pub struct RemoteModelRouting {
 
 #[cfg(test)]
 mod remote_model_routing_compatibility {
+    #[test]
+    fn reasoning_preset_old_payload_round_trips_without_display_metadata() {
+        let old = serde_json::json!({
+            "id": "medium", "label": "Medium", "order": 10,
+            "actions": [{"type": "effort", "value": "medium"}], "source": "models_dev"
+        });
+        let preset: super::ReasoningPresetDescriptor = serde_json::from_value(old.clone()).unwrap();
+        assert!(preset.effective_effort.is_none());
+        assert_eq!(serde_json::to_value(&preset).unwrap(), old);
+
+        let mut enriched = preset;
+        enriched.effective_effort = Some("high".to_string());
+        let serialized = serde_json::to_value(&enriched).unwrap();
+        let restored: super::ReasoningPresetDescriptor =
+            serde_json::from_value(serialized).unwrap();
+        assert_eq!(restored, enriched);
+        assert_eq!(restored.id, "medium");
+    }
+
     #[test]
     fn old_discovery_payload_round_trips_without_route_fields() {
         let old = serde_json::json!({"id":"legacy-model", "display_name":"Legacy"});

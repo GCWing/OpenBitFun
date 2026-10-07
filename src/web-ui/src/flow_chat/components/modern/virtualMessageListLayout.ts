@@ -1,6 +1,7 @@
 import type { AnyFlowItem, FlowItem, FlowToolItem } from '../../types/flow-chat';
 import type { VirtualItem } from '../../store/modernFlowChatStore';
 import { getEffectiveToolName } from '../../utils/toolInvocationIdentity';
+import { getProjectedModelRoundGroups } from './modelRoundItemGrouping';
 import {
   estimateFlowItemHeight as estimateFlowItemHeightByOwner,
   estimateVirtualItemHeight as estimateVirtualItemHeightByOwner,
@@ -97,7 +98,7 @@ function describeFlowItemEstimate(
 /** Bounded, content-free estimate details for FlowChat viewport diagnostics. */
 export function describeVirtualItemEstimate(item: VirtualItem): Record<string, unknown> {
   if (item.type === 'model-round') {
-    const flowItems = item.data.items ?? [];
+    const flowItems = getProjectedModelRoundGroups(item).flatMap(group => group.type !== 'critical' ? group.items : [group.item]);
     const expandedThinkingItemIds = item.layoutHints?.expandedThinkingItemIds ?? [];
     const itemEstimates = flowItems.map((flowItem, index) => describeFlowItemEstimate(
       flowItem,

@@ -193,7 +193,9 @@ impl RealtimeConnection {
         }
     }
     pub async fn close(self) {
-        self.sender.disconnect().await;
+        // A server-initiated close may already have stopped the Socket.IO
+        // manager. Do not let graceful teardown block the reconnect owner.
+        let _ = tokio::time::timeout(Duration::from_secs(5), self.sender.disconnect()).await;
         drop(self.sender);
         drop(self.receiver);
         // Joining releases the Engine.IO heartbeat and socket tasks as well as

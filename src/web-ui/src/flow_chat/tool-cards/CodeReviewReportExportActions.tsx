@@ -1,6 +1,5 @@
 import { Button, IconButton } from '@openbitfun/ui';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Tooltip, Icon } from '@openbitfun/ui';
 import { notificationService } from '@/shared/notification-system';
@@ -188,7 +187,7 @@ export const CodeReviewReportExportActions: React.FC<CodeReviewReportExportActio
             type="button"
             variant="outline"
             size="sm"
-            leadingIcon={<Icon name="edit" size="md" />}
+            leadingIcon={<Icon name="arrow-up-right" size="md" />}
             onClick={handleOpenInEditor}
             disabled={!reviewData}
           >
@@ -206,6 +205,8 @@ export const CodeReviewReportExportActions: React.FC<CodeReviewReportExportActio
           <IconButton
             type="button"
             className="code-review-report-actions__button"
+            size="sm"
+            variant="quiet"
             onClick={handleCopy}
             disabled={!reviewData}
             aria-label={t('toolCards.codeReview.export.copyMarkdown')}
@@ -218,10 +219,12 @@ export const CodeReviewReportExportActions: React.FC<CodeReviewReportExportActio
           <IconButton
             type="button"
             className="code-review-report-actions__button"
+            size="sm"
+            variant="quiet"
             onClick={handleOpenInEditor}
             disabled={!reviewData}
             aria-label={t('toolCards.codeReview.export.openMarkdown')}
-            icon={<Icon name="edit" size="sm" />}
+            icon={<Icon name="arrow-up-right" size="sm" />}
           />
         </Tooltip>
       )}
@@ -230,10 +233,12 @@ export const CodeReviewReportExportActions: React.FC<CodeReviewReportExportActio
           <IconButton
             type="button"
             className="code-review-report-actions__button"
+            size="sm"
+            variant="quiet"
             onClick={handleSave}
             disabled={saving || !reviewData}
             aria-label={t('toolCards.codeReview.export.saveMarkdown')}
-            icon={saving ? <Loader2 className="animate-spin" size={14} /> : <Icon name="arrow-down" size="sm" />}
+            icon={saving ? <Icon name="progress-25" className="animate-spin" size="sm" /> : <Icon name="arrow-down" size="sm" />}
           />
         </Tooltip>
       )}

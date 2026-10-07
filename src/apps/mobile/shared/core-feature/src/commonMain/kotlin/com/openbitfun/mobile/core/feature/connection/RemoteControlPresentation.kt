@@ -47,10 +47,13 @@ public object RemoteControlPresenter {
             source = RemoteControlSource.ACCOUNT_DEVICE,
             desktopName = accountDeviceName.ifBlank { accountDeviceId },
             phase = accountPhase,
-            // There is no release for an account device — the binding is the
-            // selection — so the only thing left to offer is re-binding it,
-            // which is exactly what re-tapping its row in the account does.
-            action = RemoteControlAction.RECONNECT,
+            // Same rule as HarmonyOS and iOS: a link that is up or coming up can
+            // be left; once it is down, re-binding the selection is the offer.
+            action = if (accountPhase.allowsRemoteCommands()) {
+                RemoteControlAction.DISCONNECT
+            } else {
+                RemoteControlAction.RECONNECT
+            },
         )
 
         else -> RemoteControlSummary(

@@ -1,26 +1,27 @@
 {
   "title": "Editor",
-  "subtitle": "Editor appearance and behavior settings",
+  "subtitle": "Adjust code display, indentation, and automatic formatting",
   "sections": {
     "appearance": {
       "title": "Appearance",
-      "description": "Visual appearance configuration"
+      "description": "These settings affect editor text and the cursor; adjust interface and chat text size on the Appearance page"
     },
     "behavior": {
       "title": "Editing Behavior",
-      "description": "Interaction behavior settings"
+      "description": "Indentation settings affect newly entered text; word wrapping only changes how it is displayed"
     },
     "display": {
       "title": "Display Settings",
-      "description": "Visual assistance features"
+      "description": "Visual guides help you navigate code and identify whitespace without changing file contents"
     },
     "advanced": {
       "title": "Advanced Features",
-      "description": "Enhanced feature toggles"
+      "description": "Highlighting changes how code looks; formatting and whitespace cleanup change the text"
     }
   },
   "appearance": {
     "font": "Font",
+    "fontDefault": "Follow application code font",
     "fontWeight": "Font Weight",
     "fontWeightNormal": "Normal",
     "fontWeightBold": "Bold",
@@ -43,7 +44,7 @@
       "expand": "Expand",
       "solid": "Solid"
     },
-    "lineHeightDesc": "Line height relative to font size (em). For example, 1.5 em at 14 px is 21 px."
+    "lineHeightDesc": "A multiple of the font size; for example, 14 px text at 1.5 gives a 21 px line height"
   },
   "behavior": {
     "tabSize": "Tab Width",
@@ -64,10 +65,9 @@
       "interval": "Interval"
     },
     "smoothScrolling": "Smooth Scrolling",
-    "smoothScrollingDesc": "Enable smooth scrolling animation",
     "scrollBeyondLastLine": "Scroll Beyond Last Line",
     "scrollBeyondLastLineDesc": "Scroll past the end of file to center content",
-    "tabSizeDesc": "Width of a tab stop in character columns (ch). Default: 4. Also sets the indentation width when inserting spaces.",
+    "tabSizeDesc": "Character columns per tab stop; also sets the indentation width when using spaces",
     "detectIndentation": "Detect Indentation",
     "detectIndentationDesc": "Use the file’s indentation when opening it; otherwise use the defaults above. Turn off to always use your defaults. The status bar changes only the current file.",
     "detectIndentationUnsupported": "This host does not support saving indentation detection settings. Upgrade the host to enable this option."
@@ -100,15 +100,13 @@
   },
   "advanced": {
     "semanticHighlighting": "Semantic Highlighting",
-    "semanticHighlightingDesc": "Use semantic information to improve code highlighting",
+    "semanticHighlightingDesc": "Color code by the meaning of symbols such as variables and functions",
     "bracketPairColorization": "Bracket Pair Colorization",
     "bracketPairColorizationDesc": "Use different colors for nested bracket pairs",
     "formatOnSave": "Format on Save",
-    "formatOnSaveDesc": "Auto format code when saving",
     "formatOnPaste": "Format on Paste",
-    "formatOnPasteDesc": "Auto format when pasting code",
-    "trimAutoWhitespace": "Trim Trailing Whitespace",
-    "trimAutoWhitespaceDesc": "Remove trailing whitespace on save"
+    "trimAutoWhitespace": "Trim automatically inserted whitespace",
+    "trimAutoWhitespaceDesc": "Remove trailing whitespace left by automatic indentation and similar editor actions"
   },
   "messages": {
     "loading": "Loading...",

@@ -37,3 +37,15 @@ pnpm --dir tests/e2e exec wdio run ./config/wdio.conf.ts --spec "./specs/<file>.
 ## 验证
 
 优先运行最窄的相关 spec，必要时再扩大范围。
+
+验证内置 WebDriver 的滚动、聚焦与外层布局时，先构建 Desktop 和当前前端资源，再运行：
+
+```bash
+node tests/e2e/scripts/run-interaction-scroll.mjs
+```
+
+该脚本使用真实产品控件、独立的打包前端快照、临时应用存储和私有 WebView 存储，检查点击、
+指针与滚轮动作、元素截图、输入清空与填写、屏外控件定位和超大元素点击坐标。证据 `result.json`
+保存在输出的临时目录；不使用 Mock 页面，也不代表远程场景或其他平台已经验证。
+并行构建时，可用 `OPENBITFUN_E2E_FRONTEND_DIR` 指向含 `frontend-revision.json` 的已完成构建快照。
+脚本也复制可执行文件；默认 exe 被开发实例锁定时，可用 `OPENBITFUN_E2E_DESKTOP_BINARY` 指向新链接的产物。

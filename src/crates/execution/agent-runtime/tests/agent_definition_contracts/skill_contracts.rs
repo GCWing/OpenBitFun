@@ -238,7 +238,6 @@ fn claude_skill_rejects_unavailable_runtime_semantics() {
     for field in [
         "context: fork",
         "agent: Explore",
-        "hooks: {}",
         "paths: src/**",
         "shell: bash",
         "runtime: node",
@@ -255,7 +254,21 @@ fn claude_skill_rejects_unavailable_runtime_semantics() {
             "claude",
         )
         .expect_err("unsupported Claude behavior must fail closed");
-        assert!(matches!(error, SkillParseError::InvalidFormat(_)));
+        assert_eq!(
+            error,
+            SkillParseError::UnsupportedClaudeField(field.split_once(':').unwrap().0.into())
+        );
+        let diagnostic = openbitfun_agent_runtime::skills::SkillScanDiagnostic::from_parse_error(
+            "/workspace/.claude/skills/unsafe/SKILL.md",
+            "claude-code",
+            &error,
+        );
+        assert_eq!(
+            diagnostic.unsupported_field.as_deref(),
+            Some(field.split_once(':').unwrap().0)
+        );
+        assert!(diagnostic.message.contains("this skill was not loaded"));
+        assert!(!diagnostic.message.contains("Invalid SKILL.md format"));
     }
 }
 
@@ -475,7 +488,6 @@ fn builtin_skill_catalog_and_mode_policy_are_runtime_owned() {
     assert_eq!(builtin_skill_group_key("docs-canvas"), Some("canvas"));
     assert_eq!(builtin_skill_group_key("multitask"), Some("coordination"));
     assert_eq!(builtin_skill_group_key("plan"), Some("planning"));
-    assert_eq!(builtin_skill_group_key("gstack-review"), Some("gstack"));
     assert_eq!(builtin_skill_group_key("unknown-skill"), None);
 
     assert_eq!(
@@ -1302,21 +1314,21 @@ fn global_skill_disable_overrides_mode_selection_without_changing_mode_defaults(
 }
 
 #[test]
-fn explicit_invocation_hidden_builtin_fallback_is_runtime_owned() {
+fn explicit_invocation_requires_an_agent_and_resolves_default_hidden_builtin() {
     let candidate = SkillCandidate {
-        info: builtin_skill("gstack-review"),
+        info: builtin_skill("agent-browser"),
         priority: 10,
     };
 
     match resolve_default_hidden_builtin_for_explicit_invocation(
-        "gstack-review",
+        "agent-browser",
         vec![candidate.clone()],
         Some("Standard"),
     ) {
         ExplicitSkillInvocationResolution::Found(skill) => {
-            assert_eq!(skill.key, "user::openbitfun-system::gstack-review");
+            assert_eq!(skill.key, "user::openbitfun-system::agent-browser");
         }
-        other => panic!("expected hidden gstack fallback, got {other:?}"),
+        other => panic!("expected hidden built-in fallback, got {other:?}"),
     }
 
     assert!(matches!(
@@ -1329,7 +1341,7 @@ fn explicit_invocation_hidden_builtin_fallback_is_runtime_owned() {
     ));
     assert!(matches!(
         resolve_default_hidden_builtin_for_explicit_invocation(
-            "gstack-review",
+            "agent-browser",
             vec![candidate],
             None
         ),
@@ -1380,9 +1392,36 @@ fn skill_scan_reports_tolerate_older_shapes_and_escape_diagnostics() {
         path: "/remote/<path>".into(),
         source_id: "codex".into(),
         message: "read & parse failed".into(),
+        unsupported_field: None,
     };
     assert!(diagnostic.to_xml().contains("&lt;path&gt;"));
     assert!(diagnostic.to_xml().contains("read &amp; parse failed"));
+    let legacy_diagnostic = serde_json::json!({
+        "path": "/remote/<path>", "sourceId": "codex", "message": "read & parse failed"
+    });
+    let decoded: SkillScanDiagnostic = serde_json::from_value(legacy_diagnostic.clone()).unwrap();
+    assert_eq!(decoded.unsupported_field, None);
+    assert_eq!(serde_json::to_value(decoded).unwrap(), legacy_diagnostic);
+
+    let unsupported = SkillScanDiagnostic::from_parse_error(
+        "/remote/guard/SKILL.md",
+        "claude-code",
+        &SkillParseError::UnsupportedClaudeField("hooks".into()),
+    );
+    let encoded = serde_json::to_value(&unsupported).unwrap();
+    assert_eq!(encoded["unsupportedField"], "hooks");
+    assert_eq!(
+        serde_json::from_value::<SkillScanDiagnostic>(encoded.clone()).unwrap(),
+        unsupported
+    );
+    #[derive(serde::Deserialize)]
+    struct LegacyDiagnostic {
+        path: String,
+        message: String,
+    }
+    let legacy: LegacyDiagnostic = serde_json::from_value(encoded).unwrap();
+    assert_eq!(legacy.path, unsupported.path);
+    assert_eq!(legacy.message, unsupported.message);
 }
 
 #[test]
@@ -1409,4 +1448,52 @@ fn workspace_skill_disable_blocks_all_modes_without_reclassifying_the_source() {
         assert_eq!(info.skill.source_id, "agent-skills");
     }
     assert!(is_skill_globally_enabled(&skill, &HashSet::new()));
+}
+
+#[test]
+fn claude_skill_hooks_validate_whole_declaration_without_execution() {
+    use openbitfun_agent_runtime::skills::SkillHooks;
+    let valid = r#"PreToolUse:
+  - matcher: "Bash|Edit|Write"
+    hooks:
+      - type: command
+        command: echo guard
+        once: true
+        timeout: 5
+Stop:
+  - hooks:
+      - type: command
+        command: echo finished
+"#;
+    let hooks = SkillHooks::from_yaml(&serde_yaml::from_str(valid).unwrap()).unwrap();
+    assert!(!hooks.is_empty());
+    for invalid in [
+        valid.replace("type: command", "type: prompt"),
+        valid.replace("once: true", "once: maybe"),
+        valid.replace("timeout: 5", "timeout: invalid"),
+        valid.replace("Bash|Edit|Write", "["),
+        valid.replace("once: true", "async: true"),
+        valid.replace("PreToolUse:", "UnknownEvent:"),
+    ] {
+        assert!(
+            SkillHooks::from_yaml(&serde_yaml::from_str(&invalid).unwrap()).is_err(),
+            "{invalid}"
+        );
+    }
+    let markdown = format!(
+        "---\nname: guarded\ndescription: guarded work\nhooks:\n{}---\nGuard tools.\n",
+        valid
+            .lines()
+            .map(|line| format!("  {line}\n"))
+            .collect::<String>()
+    );
+    let skill = SkillData::from_markdown_for_source_slot(
+        "/skills/guarded".into(),
+        &markdown,
+        SkillLocation::User,
+        true,
+        "claude",
+    )
+    .unwrap();
+    assert!(skill.hooks.is_some());
 }

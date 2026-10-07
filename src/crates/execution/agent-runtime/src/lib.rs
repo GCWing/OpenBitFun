@@ -34,8 +34,6 @@ pub mod evidence_ledger;
 #[cfg(feature = "native-hook-settings")]
 pub mod native_hooks;
 #[cfg(feature = "agent-runtime")]
-pub mod output_surface;
-#[cfg(feature = "agent-runtime")]
 pub mod permission;
 #[cfg(feature = "agent-runtime")]
 pub mod post_call_hooks;

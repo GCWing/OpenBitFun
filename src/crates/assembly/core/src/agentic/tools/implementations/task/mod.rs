@@ -1,6 +1,5 @@
 use crate::agentic::agents::{
-    get_agent_registry, is_swarm_planner_agent_type, AgentInfo, SubagentListScope,
-    SubagentQueryContext, SWARM_DELEGATE_AGENT_TYPES,
+    get_agent_registry, AgentInfo, SubagentListScope, SubagentQueryContext,
 };
 use crate::agentic::coordination::{get_global_coordinator, SubagentExecutionRequest};
 use crate::agentic::deep_review::task_adapter::{
@@ -48,9 +47,9 @@ mod validation;
 pub use launch_review_agent::LaunchReviewAgentTool;
 
 pub struct TaskTool;
+pub(crate) struct AgentExecutionTool;
 pub struct AgentSpawnTool;
 pub struct AgentSendInputTool;
-pub struct AgentInterruptTool;
 
 const LARGE_TASK_PROMPT_SOFT_LINE_LIMIT: usize = 180;
 const LARGE_TASK_PROMPT_SOFT_BYTE_LIMIT: usize = 16 * 1024;
@@ -63,6 +62,26 @@ impl Default for TaskTool {
 
 impl TaskTool {
     pub fn new() -> Self {
+        Self
+    }
+
+    fn render_legacy_description() -> String {
+        AgentExecutionTool::new()
+            .render_description()
+            .replace("AgentSpawn", "Task")
+            .replace("AgentSendInput", "Task")
+            .replace("AgentControl", "Task")
+    }
+}
+
+impl Default for AgentExecutionTool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AgentExecutionTool {
+    pub(crate) fn new() -> Self {
         Self
     }
 
@@ -86,12 +105,6 @@ impl TaskTool {
     pub(crate) async fn build_available_agents_context_section(
         context: Option<&ToolUseContext>,
     ) -> Option<String> {
-        if context
-            .and_then(|context| context.agent_type.as_deref())
-            .is_some_and(is_swarm_planner_agent_type)
-        {
-            return None;
-        }
         let agents = Self::get_enabled_agents(context).await;
         let agent_descriptions = Self::format_agent_descriptions(&agents);
         if agent_descriptions.trim().is_empty() {
@@ -118,15 +131,6 @@ impl TaskTool {
     }
 
     async fn get_agents_types(&self, context: Option<&ToolUseContext>) -> Vec<String> {
-        if context
-            .and_then(|context| context.agent_type.as_deref())
-            .is_some_and(is_swarm_planner_agent_type)
-        {
-            return SWARM_DELEGATE_AGENT_TYPES
-                .iter()
-                .map(|agent_type| (*agent_type).to_string())
-                .collect();
-        }
         let mut agent_types: Vec<String> = Self::get_enabled_agents(context)
             .await
             .into_iter()
@@ -147,9 +151,9 @@ impl TaskTool {
 }
 
 #[async_trait]
-impl Tool for TaskTool {
+impl Tool for AgentExecutionTool {
     fn name(&self) -> &str {
-        "Task"
+        "AgentSpawn"
     }
 
     fn manages_own_execution_timeout(&self) -> bool {
@@ -161,16 +165,16 @@ impl Tool for TaskTool {
     }
 
     async fn is_available_in_context(&self, _context: Option<&ToolUseContext>) -> bool {
-        // Keep Task prompt-visible even when no fresh subagents are currently
+        // Keep the internal delegation contract available even when no fresh subagents are currently
         // available. Hiding it based on transient subagent availability makes
         // the tool manifest drift across turns and causes provider prefix/KV
-        // cache misses. Task also still supports `fork_context=true` in that
+        // cache misses. The internal contract also still supports `fork_context=true` in that
         // state, so removing it from the manifest would be behaviorally wrong.
         true
     }
 
     fn short_description(&self) -> String {
-        "Delegate work to a subagent task and collect the result.".to_string()
+        "Delegate work to a subagent and collect the result.".to_string()
     }
 
     async fn description_with_context(
@@ -273,21 +277,21 @@ impl Tool for TaskTool {
                 .and_then(Value::as_str)
                 .map(|agent_id| {
                     if options.verbose {
-                        format!("Sending input to task: {}", agent_id)
+                        format!("Sending input to agent: {}", agent_id)
                     } else {
-                        format!("Task input: {}", agent_id)
+                        format!("Agent input: {}", agent_id)
                     }
                 })
-                .unwrap_or_else(|| "Sending input to task".to_string()),
+                .unwrap_or_else(|| "Sending input to agent".to_string()),
             Some(TaskAction::Spawn) | None => {
                 if let Some(agent_id) = input.get("agent_id").and_then(|v| v.as_str()) {
                     if options.verbose {
-                        format!("Creating task: {}", agent_id)
+                        format!("Launching agent: {}", agent_id)
                     } else {
-                        format!("Task: {}", agent_id)
+                        format!("Agent: {}", agent_id)
                     }
                 } else {
-                    "Creating task".to_string()
+                    "Launching agent".to_string()
                 }
             }
         }
@@ -299,6 +303,122 @@ impl Tool for TaskTool {
         context: &ToolUseContext,
     ) -> OpenBitFunResult<Vec<ToolResult>> {
         self.call_task_impl(input, context).await
+    }
+}
+
+/// Compatibility implementation for custom agents that still explicitly list
+/// the original combined collaboration tool. Built-in modes use the split
+/// Agent* tools above, while this entry point keeps existing custom-agent
+/// definitions executable without a configuration migration.
+#[async_trait]
+impl Tool for TaskTool {
+    fn name(&self) -> &str {
+        "Task"
+    }
+
+    fn manages_own_execution_timeout(&self) -> bool {
+        true
+    }
+
+    async fn description(&self) -> OpenBitFunResult<String> {
+        Ok(Self::render_legacy_description())
+    }
+
+    async fn is_available_in_context(&self, _context: Option<&ToolUseContext>) -> bool {
+        true
+    }
+
+    fn short_description(&self) -> String {
+        "Delegate work to a subagent task and collect the result.".to_string()
+    }
+
+    async fn description_with_context(
+        &self,
+        _context: Option<&ToolUseContext>,
+    ) -> OpenBitFunResult<String> {
+        Ok(Self::render_legacy_description())
+    }
+
+    fn input_schema(&self) -> Value {
+        AgentExecutionTool::regular_input_schema()
+    }
+
+    async fn input_schema_for_model_with_context(
+        &self,
+        _context: Option<&ToolUseContext>,
+    ) -> Value {
+        AgentExecutionTool::regular_input_schema()
+    }
+
+    fn is_readonly(&self) -> bool {
+        false
+    }
+
+    fn is_concurrency_safe(&self, input: Option<&Value>) -> bool {
+        AgentExecutionTool::new().is_concurrency_safe(input)
+    }
+
+    fn permission_intents(
+        &self,
+        input: &Value,
+        context: &ToolUseContext,
+    ) -> OpenBitFunResult<Vec<PermissionIntent>> {
+        AgentExecutionTool::new().permission_intents(input, context)
+    }
+
+    async fn validate_input(
+        &self,
+        input: &Value,
+        context: Option<&ToolUseContext>,
+    ) -> ValidationResult {
+        AgentExecutionTool::validate_invocation_input(
+            input,
+            false,
+            context.and_then(ToolUseContext::workspace_root),
+        )
+        .await
+    }
+
+    fn render_tool_use_message(&self, input: &Value, options: &ToolRenderOptions) -> String {
+        match TaskAction::parse(input).ok() {
+            Some(TaskAction::Cancel) => input
+                .get("agent_id")
+                .and_then(Value::as_str)
+                .map(|agent_id| format!("Cancelling background task: {agent_id}"))
+                .unwrap_or_else(|| "Cancelling background task".to_string()),
+            Some(TaskAction::SendInput) => input
+                .get("agent_id")
+                .and_then(Value::as_str)
+                .map(|agent_id| {
+                    if options.verbose {
+                        format!("Sending input to task: {agent_id}")
+                    } else {
+                        format!("Task input: {agent_id}")
+                    }
+                })
+                .unwrap_or_else(|| "Sending input to task".to_string()),
+            Some(TaskAction::Spawn) | None => input
+                .get("agent_id")
+                .and_then(Value::as_str)
+                .map(|agent_id| {
+                    if options.verbose {
+                        format!("Creating task: {agent_id}")
+                    } else {
+                        format!("Task: {agent_id}")
+                    }
+                })
+                .unwrap_or_else(|| "Creating task".to_string()),
+        }
+    }
+
+    async fn call_impl(
+        &self,
+        input: &Value,
+        context: &ToolUseContext,
+    ) -> OpenBitFunResult<Vec<ToolResult>> {
+        AgentExecutionTool::new()
+            .call_task_impl(input, context)
+            .await
     }
 }
 

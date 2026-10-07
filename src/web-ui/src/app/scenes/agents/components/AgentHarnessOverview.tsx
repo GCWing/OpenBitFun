@@ -3,7 +3,7 @@ import { HARNESS_IDS, type HarnessId } from '@/shared/agents/identity';
 import { HARNESS_PRESENTATION } from '@/shared/agents/harnessPresentation';
 import React from 'react';
 import { Icon } from '@openbitfun/ui';
-import { GalleryZone } from '@/app/components';
+import { GalleryZone } from '@/app/components/GalleryLayout';
 import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
 
 const HARNESS_STRATEGIES = HARNESS_IDS.map(id => ({ id, ...HARNESS_PRESENTATION[id] }));

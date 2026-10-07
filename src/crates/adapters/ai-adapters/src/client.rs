@@ -797,6 +797,7 @@ mod tests {
             order: 0,
             actions,
             source: openbitfun_core_types::ReasoningPresetSource::ModelConfig,
+            effective_effort: None,
             execution_provider: None,
             execution_model: None,
         }
@@ -814,6 +815,7 @@ mod tests {
             order: 0,
             actions,
             source: openbitfun_core_types::ReasoningPresetSource::ModelsDev,
+            effective_effort: None,
             execution_provider: Some(execution_provider.to_string()),
             execution_model: Some(execution_model.to_string()),
         }
@@ -829,6 +831,7 @@ mod tests {
             order: 0,
             actions,
             source: openbitfun_core_types::ReasoningPresetSource::AdapterFallback,
+            effective_effort: None,
             execution_provider: Some(GENERIC_REASONING_PROVIDER_ID.to_string()),
             execution_model: Some("unlisted-model".to_string()),
         }

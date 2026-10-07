@@ -49,7 +49,7 @@ export const ImageAnalysisCard: React.FC<ImageAnalysisCardProps> = ({
           
           {status === 'analyzing' && (
             <div data-openbitfun-component="image-analysis-card" data-openbitfun-part="status" className="image-analysis-card__status analyzing">
-              <Loader className="spinner" size={14} />
+              <Icon glyph={Loader} size="sm" className="spinner" />
               <span>AI is analyzing the image...</span>
             </div>
           )}
@@ -66,7 +66,7 @@ export const ImageAnalysisCard: React.FC<ImageAnalysisCardProps> = ({
           
           {status === 'error' && (
             <div data-openbitfun-component="image-analysis-card" data-openbitfun-part="status" className="image-analysis-card__status error">
-              <AlertCircle className="icon" size={14} />
+              <Icon glyph={AlertCircle} size="sm" className="icon" />
               <span>Analysis failed</span>
               {onRetry && (
                 <Button
@@ -134,7 +134,7 @@ export const ImageAnalysisCard: React.FC<ImageAnalysisCardProps> = ({
       
       {status === 'error' && error && (
         <div data-openbitfun-component="image-analysis-card" data-openbitfun-part="error" className="image-analysis-card__error">
-          <AlertCircle size={16} />
+          <Icon glyph={AlertCircle} size="md" />
           <span>{error}</span>
         </div>
       )}

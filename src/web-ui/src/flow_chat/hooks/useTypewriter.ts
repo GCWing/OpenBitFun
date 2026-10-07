@@ -220,6 +220,7 @@ export function useTypewriter(
   const revealedRef = useRef(shouldReplayInitialText ? 0 : targetText.length);
   const targetRef = useRef(targetText);
   const animateRef = useRef(animate);
+  const revealImmediatelyRef = useRef(revealImmediately);
   const rafRef = useRef<number | null>(null);
   const lastTickMsRef = useRef<number | null>(null);
   const lastPaintMsRef = useRef(0);
@@ -229,6 +230,8 @@ export function useTypewriter(
     && (animate || displayText.length < targetText.length);
 
   useEffect(() => {
+    const wasRevealImmediately = revealImmediatelyRef.current;
+    revealImmediatelyRef.current = revealImmediately;
     animateRef.current = animate;
     targetRef.current = targetText;
 
@@ -243,8 +246,22 @@ export function useTypewriter(
       lastPaintMsRef.current = 0;
       fractionalCarryRef.current = 0;
       revealedRef.current = targetText.length;
-      setDisplayText(targetText);
+      // The immediate result is returned directly below. Avoid scheduling a
+      // React state update for every streaming chunk while the owner is
+      // collapsed. When the mode changes later, the animated branch syncs the
+      // state once before deciding whether a reveal is needed.
+      if (!revealImmediately || !wasRevealImmediately) {
+        setDisplayText(targetText);
+      }
       return;
+    }
+
+    if (wasRevealImmediately) {
+      // The state was intentionally left untouched while immediate mode was
+      // active. Seed it once when the content becomes visible again so a
+      // subsequent animated update starts from the current target.
+      setDisplayText(targetText);
+      revealedRef.current = targetText.length;
     }
 
     // Reset when target shrinks (e.g. new round).

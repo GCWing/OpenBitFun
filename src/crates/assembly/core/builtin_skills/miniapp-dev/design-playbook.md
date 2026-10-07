@@ -66,7 +66,7 @@
 
 - `cargo build`（如果改到了 Rust 端）
 - 在 Toolbox 里启动应用，分别截图 4 种状态：light + zh / light + en / dark + zh / dark + en
-- 用 Task subagent fork 一个"fresh eyes" review（可以参考 `gstack-design-review` skill），让它对截图列 issue
+- 用 Task subagent fork 一个"fresh eyes" review，让它对截图列 issue
 - 检查清单见本文末"视觉 QA Checklist"
 
 ---

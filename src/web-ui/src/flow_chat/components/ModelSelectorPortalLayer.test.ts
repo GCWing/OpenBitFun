@@ -23,10 +23,11 @@ describe('ModelSelector portal layer', () => {
     expect(dropdownBlock).not.toContain('z-index: var(--openbitfun-layer-dropdown);');
   });
 
-  it('keeps every model and reasoning menu in the shared overlay host', () => {
+  it('uses one shared overlay surface for summary, model and reasoning views', () => {
     const component = readSource('./ModelSelector.tsx');
 
-    expect(component).toContain("'chat-model-selector-submenu'");
-    expect(component.match(/getAppearanceOverlayHost\(\)/g)).toHaveLength(2);
+    expect(component).toContain('data-testid="chat-model-selector-options"');
+    expect(component.match(/getAppearanceOverlayHost\(\)/g)).toHaveLength(1);
+    expect(component).not.toContain('chat-model-selector-submenu');
   });
 });

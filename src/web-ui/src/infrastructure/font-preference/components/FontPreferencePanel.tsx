@@ -81,7 +81,6 @@ export function FontPreferencePanel() {
       >
         <ConfigPageRow
           label={t('appearance.fontSize.uiSizeLabel')}
-          description={t('appearance.fontSize.uiSizeHint')}
           align="center"
         >
           <Select

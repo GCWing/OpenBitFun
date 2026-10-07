@@ -14,8 +14,6 @@ export * from './services/ConfigManager';
 export * from './services/modelConfigs';
 export * from './services/PermissionConfigService';
 
-// Components
-export { default as ModelSettingsPage } from './components/ModelSettingsPage';
 
 // Default instance
 export { configManager } from './services/ConfigManager';

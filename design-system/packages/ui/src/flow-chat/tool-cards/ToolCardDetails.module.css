@@ -1,0 +1,151 @@
+@layer openbitfun.components {
+  .section {
+    display: flex;
+    min-inline-size: 0;
+    flex-direction: column;
+    gap: var(--openbitfun-space-2);
+  }
+
+  .heading {
+    display: flex;
+    min-inline-size: 0;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+  }
+
+  .label,
+  .fieldLabel {
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-label-lg-font-weight);
+    line-height: var(--openbitfun-type-body-md-line-height);
+    overflow-wrap: anywhere;
+  }
+
+  .actions {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: var(--openbitfun-space-1);
+  }
+
+  .fields {
+    display: grid;
+    min-inline-size: 0;
+    margin: 0;
+    gap: var(--openbitfun-space-2);
+    container: tool-card-fields / inline-size;
+  }
+
+  .field {
+    display: grid;
+    min-inline-size: 0;
+    grid-template-columns: var(--openbitfun-control-tool-card-field-label-width) minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--openbitfun-space-2);
+  }
+
+  .fieldValue {
+    min-inline-size: 0;
+    margin: 0;
+    color: var(--openbitfun-color-content-secondary);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-md-line-height);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .viewport {
+    min-inline-size: 0;
+    max-block-size: 20rem;
+  }
+
+  .text {
+    margin: 0;
+    color: var(--openbitfun-color-content-secondary);
+    font-family: var(--openbitfun-type-flow-code-font-family);
+    font-size: var(--openbitfun-type-flow-code-font-size);
+    font-weight: var(--openbitfun-type-flow-code-font-weight);
+    line-height: var(--openbitfun-type-flow-code-line-height);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .text[data-variant="prose"] {
+    font-family: var(--openbitfun-type-body-sm-font-family);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-md-line-height);
+  }
+
+  .disclosureTrigger {
+    display: flex;
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    min-block-size: var(--openbitfun-layout-disclosure-trigger-min-block-size);
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--openbitfun-radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .disclosureTrigger:disabled {
+    opacity: var(--openbitfun-opacity-muted);
+    cursor: default;
+  }
+
+  .disclosureTrigger:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: var(--openbitfun-focus-offset);
+  }
+
+  .disclosureHeading {
+    display: grid;
+    min-inline-size: 0;
+    gap: var(--openbitfun-space-1);
+  }
+
+  .description {
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-md-line-height);
+    overflow-wrap: anywhere;
+  }
+
+  .disclosureIndicator {
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--openbitfun-color-content-muted);
+    transition: transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  .disclosureTrigger[aria-expanded="true"] .disclosureIndicator {
+    transform: rotate(90deg);
+  }
+
+  .disclosure > [data-openbitfun-part="content"] > .disclosureContent {
+    padding-inline: 0;
+  }
+
+  .disclosure[data-open="true"] > [data-openbitfun-part="content"] > .disclosureContent {
+    padding-block: var(--openbitfun-space-2) 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .disclosureIndicator { transition: none; }
+  }
+
+  @container tool-card-fields (max-width: 22rem) {
+    .field {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--openbitfun-space-1);
+    }
+  }
+}

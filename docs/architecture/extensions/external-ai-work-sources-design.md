@@ -479,9 +479,14 @@ Plugin Host Runtime、已退役的 LSP Runtime，以及通用动态模型路由�
   Claude runtime 变量与动态 shell 表达式保留为未展开、未执行的文本，加载说明明确它们不是实际值或命令结果；
   如任务需要这些数据，Agent 必须通过当前工作区的正常工具与权限流程获取。行内 shell 表达式的识别要求行首或空白边界及闭合
   反引号；普通 Markdown 中的感叹号、Excel `Sheet1!A1` 和错误值不会触发兼容性警告。
-  `context`（包括 `fork`）、`agent`、`hooks`、`paths`、`shell`、`runtime`、`background`、`disallowed-tools`
+  `context`（包括 `fork`）、`agent`、`paths`、`shell`、`runtime`、`background`、`disallowed-tools`
   涉及未实现的执行方式或约束，仍阻止加载；格式损坏及无效调用控制字段也仍返回错误。本地与 Remote、名称与稳定键加载共享
   同一兼容性判断和模型说明。此切片不增加插件 Skill、祖先活动目录、文件 watcher、URL 来源或另一条 reload 命令。
+- Claude Skill 的同步 command `hooks` 在显式 Skill 调用时注册到会话的共享 HookRegistry，扫描与导入不执行。
+  Skill 调用形成工具预检边界，同轮后续工具也接受新增 Hook；Bash/ExecCommand 与 Write 参数由方言适配转换，
+  ask 进入现有权限邮箱，deny/exit 2 阻断，updatedInput 继续接受原参数约束和最终校验。
+  once、会话隔离、幂等注册与退出取消由现有 portable Hook 引擎持有；配置 gating 与生命周期清理在 Core owner。
+  Remote 工作区激活明确不支持，其他控制面复用目标 runtime；详见 [Agent Hooks](../../features/agent-hooks.zh-CN.md)。
 - Claude Subagent 扫描用户与逐层项目 `.claude/agents/**/*.md`，近工作目录定义整项覆盖；Claude MCP 保留
   `local > project > user` 的整项覆盖，local 只读取与规范化当前工作区严格匹配的项目项。
 - Codex Subagent 从用户与逐层项目 `[agents]`、角色文件合并，缺失字段按 Codex 层级继承；`enabled`、默认模型、角色级

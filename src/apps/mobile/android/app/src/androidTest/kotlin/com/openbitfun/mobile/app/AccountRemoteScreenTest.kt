@@ -15,7 +15,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.openbitfun.mobile.app.ui.remote.CONNECT_ACCOUNT_DEVICE_REFRESH_TEST_TAG
 import com.openbitfun.mobile.app.ui.remote.CONNECT_ACCOUNT_DEVICE_ROW_TEST_TAG_PREFIX
-import com.openbitfun.mobile.app.ui.remote.CONNECT_ACCOUNT_DEVICE_SCAN_TEST_TAG
 import com.openbitfun.mobile.app.ui.remote.ConnectAccountDeviceScreen
 import com.openbitfun.mobile.app.ui.remote.AccountRemoteScreen
 import com.openbitfun.mobile.app.ui.theme.OpenBitFunTheme
@@ -109,10 +108,9 @@ class AccountRemoteScreenTest {
     }
 
     @Test
-    fun aSignedInAccountWithoutATargetCanRefreshSelectOrScan() {
+    fun aSignedInAccountWithoutATargetCanRefreshOrSelect() {
         var refreshes = 0
         var selected = ""
-        var scans = 0
         composeRule.setContent {
             OpenBitFunTheme(dark = false) {
                 ConnectAccountDeviceScreen(
@@ -129,7 +127,6 @@ class AccountRemoteScreenTest {
                     onBack = {},
                     onRefresh = { refreshes += 1 },
                     onSelect = { selected = it },
-                    onOpenScanner = { scans += 1 },
                     modifier = Modifier,
                 )
             }
@@ -139,11 +136,9 @@ class AccountRemoteScreenTest {
         composeRule.onNodeWithTag(CONNECT_ACCOUNT_DEVICE_REFRESH_TEST_TAG).performClick()
         composeRule.onNodeWithTag(CONNECT_ACCOUNT_DEVICE_ROW_TEST_TAG_PREFIX + "desk-1").performClick()
         composeRule.onNodeWithTag(CONNECT_ACCOUNT_DEVICE_ROW_TEST_TAG_PREFIX + "desk-2").performClick()
-        composeRule.onNodeWithTag(CONNECT_ACCOUNT_DEVICE_SCAN_TEST_TAG).performClick()
 
         assertEquals(1, refreshes)
         assertEquals("desk-1", selected)
-        assertEquals(1, scans)
     }
 
     @Test
@@ -165,7 +160,6 @@ class AccountRemoteScreenTest {
                     onBack = {},
                     onRefresh = {},
                     onSelect = { selected = it },
-                    onOpenScanner = {},
                     modifier = Modifier,
                 )
             }

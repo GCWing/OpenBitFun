@@ -1,0 +1,62 @@
+export const brandAssetsEn = {
+  "brandAssets.identityTitle": "Identity",
+  "brandAssets.motionTitle": "Motion",
+  "brandAssets.charactersTitle": "Characters",
+  "brandAssets.usageTitle": "Usage notes",
+  "brandAssets.silverDescription": "Transparent artwork. Preserve the silver material and original proportions.",
+  "brandAssets.appDescription": "PNG for general use, ICO for Windows, ICNS for macOS. Keep the black tile.",
+  "brandAssets.outlineDescription": "Monochrome vector. The component inherits the surrounding text color.",
+  "brandAssets.wordmarkDescription": "Use on light surfaces and keep the horizontal composition intact.",
+  "brandAssets.aboutDescription": "For brand introductions. This motion does not indicate progress.",
+  "brandAssets.voiceDescription": "This preview is idle. Audio feedback comes from a real voice conversation.",
+  "brandAssets.backgroundFor": "{asset} preview background",
+  "brandAssets.downloadLabel": "Download {asset} ({format})",
+  "brandAssets.chooseMotion": "Motion style",
+  "brandAssets.breathe": "Breathe",
+  "brandAssets.flow": "Flow",
+  "brandAssets.particles": "Particles",
+  "brandAssets.voiceIdle": "Idle",
+  "brandAssets.motionPreference": "Motion respects system preferences and pauses when out of view."
+} as const;
+
+export const brandAssetsZhCN = {
+  "brandAssets.identityTitle": "标识",
+  "brandAssets.motionTitle": "动效",
+  "brandAssets.charactersTitle": "角色",
+  "brandAssets.usageTitle": "使用说明",
+  "brandAssets.silverDescription": "透明底。保留银色材质与原始比例。",
+  "brandAssets.appDescription": "PNG 通用，ICO 用于 Windows，ICNS 用于 macOS。保留黑色底板。",
+  "brandAssets.outlineDescription": "单色矢量，组件颜色随界面文字变化。",
+  "brandAssets.wordmarkDescription": "使用浅色背景，保留完整横向组合。",
+  "brandAssets.aboutDescription": "用于品牌介绍，不表示工作进度。",
+  "brandAssets.voiceDescription": "此处为待机效果，音频反馈来自真实通话。",
+  "brandAssets.backgroundFor": "{asset}预览背景",
+  "brandAssets.downloadLabel": "下载{asset}（{format}）",
+  "brandAssets.chooseMotion": "动效样式",
+  "brandAssets.breathe": "呼吸",
+  "brandAssets.flow": "流光",
+  "brandAssets.particles": "粒子",
+  "brandAssets.voiceIdle": "待机",
+  "brandAssets.motionPreference": "动效遵循系统偏好，并在不可见时暂停。"
+} satisfies Record<keyof typeof brandAssetsEn, string>;
+
+export const brandAssetsZhTW = {
+  "brandAssets.identityTitle": "標誌",
+  "brandAssets.motionTitle": "動效",
+  "brandAssets.charactersTitle": "角色",
+  "brandAssets.usageTitle": "使用說明",
+  "brandAssets.silverDescription": "透明背景。保留銀色材質與原始比例。",
+  "brandAssets.appDescription": "PNG 通用，ICO 用於 Windows，ICNS 用於 macOS。保留黑色底板。",
+  "brandAssets.outlineDescription": "單色向量，元件色彩隨介面文字變化。",
+  "brandAssets.wordmarkDescription": "使用淺色背景，保留完整橫向組合。",
+  "brandAssets.aboutDescription": "用於品牌介紹，不表示工作進度。",
+  "brandAssets.voiceDescription": "此處為待機效果，音訊回應來自真實通話。",
+  "brandAssets.backgroundFor": "{asset}預覽背景",
+  "brandAssets.downloadLabel": "下載{asset}（{format}）",
+  "brandAssets.chooseMotion": "動效樣式",
+  "brandAssets.breathe": "呼吸",
+  "brandAssets.flow": "流光",
+  "brandAssets.particles": "粒子",
+  "brandAssets.voiceIdle": "待機",
+  "brandAssets.motionPreference": "動效遵循系統偏好，並在不可見時暫停。"
+} satisfies Record<keyof typeof brandAssetsEn, string>;

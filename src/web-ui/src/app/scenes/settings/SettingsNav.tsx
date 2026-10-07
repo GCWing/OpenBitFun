@@ -1,3 +1,18 @@
+import { useSettingsDraftSnapshot } from '@/infrastructure/config/settingsDraftRegistry';
+import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
+import { getInteractionMotion } from '@/shared/utils/motionPreference';
+import {
+  Icon,
+  NavigationPanel,
+  NavigationPanelBody,
+  NavigationPanelContent,
+  NavigationPanelHeader,
+  NavigationPanelItem,
+  NavigationPanelSection,
+  OverflowText,
+  SearchField,
+} from '@openbitfun/ui';
+import type { i18n as I18nApi } from 'i18next';
 import React, {
   startTransition,
   useCallback,
@@ -6,21 +21,8 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import type { i18n as I18nApi } from 'i18next';
 import { useTranslation } from 'react-i18next';
-import { OverflowText,
-  Icon,
-  NavigationPanel,
-  NavigationPanelBody,
-  NavigationPanelContent,
-  NavigationPanelHeader,
-  NavigationPanelItem,
-  NavigationPanelSection,
-  SearchField,
-} from '@openbitfun/ui';
-import { useI18n } from '@/infrastructure/i18n/hooks/useI18n';
-import { useSettingsDraftSnapshot } from '@/infrastructure/config/settingsDraftRegistry';
-import { getInteractionMotion } from '@/shared/utils/motionPreference';
+import './SettingsNav.scss';
 import {
   SETTINGS_CATEGORIES,
   SETTINGS_PAGE_MANIFESTS,
@@ -29,7 +31,6 @@ import {
 } from './settingsRegistry';
 import { useSettingsStore } from './settingsStore';
 import type { SettingsDestination, SettingsPageId } from './settingsTypes';
-import './SettingsNav.scss';
 
 const SEARCH_DEBOUNCE_MS = 150;
 type SettingsT = (key: string, options?: Record<string, unknown>) => unknown;
@@ -38,7 +39,7 @@ export interface SettingsSearchRow {
   destination: SettingsDestination;
   categoryLabel: string;
   pageLabel: string;
-  viewLabel?: string;
+  targetLabel?: string;
   description: string;
   haystack: string;
 }
@@ -70,33 +71,35 @@ function buildSettingsSearchIndex(t: SettingsT, i18n: I18nApi): SettingsSearchRo
     const pageContent = resolvePhrases(i18n, page.searchPhrases);
     const base = [categoryLabel, pageLabel, description, page.id, ...page.keywords, pageContent];
 
-    if (!page.views?.length) {
-      return [{
+    const targets = [
+      ...(page.sections ?? []).map(section => ({ ...section, destination: { pageId: page.id, sectionId: section.id } })),
+      ...(page.views ?? []).map(view => ({ ...view, destination: { pageId: page.id, viewId: view.id } })),
+    ];
+    return [
+      {
         destination: { pageId: page.id },
         categoryLabel,
         pageLabel,
         description,
         haystack: base.join(' ').toLowerCase(),
-      }];
-    }
-
-    return page.views.map((view) => {
-      const viewLabel = translateString(t, view.labelKey, view.id);
-      return {
-        destination: { pageId: page.id, viewId: view.id },
-        categoryLabel,
-        pageLabel,
-        viewLabel,
-        description,
-        haystack: [
-          ...base,
-          viewLabel,
-          view.id,
-          ...view.keywords,
-          resolvePhrases(i18n, view.searchPhrases),
-        ].join(' ').toLowerCase(),
-      };
-    });
+      },
+      ...targets.map((target) => {
+        const targetLabel = translateString(t, target.labelKey, target.id);
+        return {
+          destination: target.destination,
+          categoryLabel,
+          pageLabel,
+          targetLabel,
+          description,
+          haystack: [
+            targetLabel,
+            target.id,
+            ...target.keywords,
+            resolvePhrases(i18n, target.searchPhrases),
+          ].join(' ').toLowerCase(),
+        };
+      }),
+    ];
   });
 }
 
@@ -125,6 +128,7 @@ const SettingsNav: React.FC = () => {
   const { t: tComponents } = useI18n('components');
   const activePageId = useSettingsStore((state) => state.activePageId);
   const activeViewId = useSettingsStore((state) => state.activeViewId);
+  const activeSectionId = useSettingsStore((state) => state.activeSectionId);
   const { resources: draftResources } = useSettingsDraftSnapshot();
   const openDestination = useSettingsStore((state) => state.openDestination);
   const searchQuery = useSettingsStore((state) => state.searchQuery);
@@ -143,7 +147,12 @@ const SettingsNav: React.FC = () => {
   const searchIndex = useMemo(() => buildSettingsSearchIndex(t, i18n), [i18n, t]);
   const results = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    return query ? searchIndex.filter((row) => row.haystack.includes(query)) : [];
+    if (!query) return [];
+    const matches = searchIndex.filter((row) => row.haystack.includes(query));
+    const matchedSections = new Set(matches
+      .filter((row) => row.targetLabel)
+      .map((row) => row.destination.pageId));
+    return matches.filter((row) => row.targetLabel || !matchedSections.has(row.destination.pageId));
   }, [searchIndex, searchQuery]);
   const isSearchMode = draftQuery.trim().length > 0;
   const dirtyPageIds = useMemo(() => new Set(
@@ -266,102 +275,103 @@ const SettingsNav: React.FC = () => {
       <NavigationPanelBody>
         <NavigationPanelContent className="openbitfun-settings-nav__content">
           {isSearchMode ? (
-        results.length ? (
-          <div
-            ref={resultsRef}
-            id="settings-nav-results"
-            className="openbitfun-settings-nav__search-results"
-            data-openbitfun-component="settings-nav"
-            data-openbitfun-part="searchResults"
-            role="listbox"
-            tabIndex={results.length ? 0 : undefined}
-            onKeyDown={handleResultsKeyDown}
-            aria-activedescendant={highlightedIndex >= 0
-              ? `settings-nav-result-${highlightedIndex}`
-              : undefined}
-          >
-            {results.map((row, index) => {
-              const active = activePageId === row.destination.pageId
-                && (!row.destination.viewId || row.destination.viewId === activeViewId);
-              const selected = index === highlightedIndex;
-              const path = [row.categoryLabel, row.pageLabel, row.viewLabel].filter(Boolean).join(' › ');
-              return (
-                <NavigationPanelItem data-overflow-trigger
-                  key={`${row.destination.pageId}:${row.destination.viewId ?? ''}`}
-                  id={`settings-nav-result-${index}`}
-                  role="option"
-                  aria-selected={active}
-                  selected={active}
+            results.length ? (
+              <div
+                ref={resultsRef}
+                id="settings-nav-results"
+                className="openbitfun-settings-nav__search-results"
+                data-openbitfun-component="settings-nav"
+                data-openbitfun-part="searchResults"
+                role="listbox"
+                tabIndex={results.length ? 0 : undefined}
+                onKeyDown={handleResultsKeyDown}
+                aria-activedescendant={highlightedIndex >= 0
+                  ? `settings-nav-result-${highlightedIndex}`
+                  : undefined}
+              >
+                {results.map((row, index) => {
+                  const active = activePageId === row.destination.pageId
+                    && (!row.destination.viewId || row.destination.viewId === activeViewId)
+                    && (!row.destination.sectionId || row.destination.sectionId === activeSectionId);
+                  const selected = index === highlightedIndex;
+                  const path = [row.categoryLabel, row.pageLabel, row.targetLabel].filter(Boolean).join(' › ');
+                  return (
+                    <NavigationPanelItem data-overflow-trigger
+                      key={`${row.destination.pageId}:${row.destination.sectionId ?? row.destination.viewId ?? ''}`}
+                      id={`settings-nav-result-${index}`}
+                      role="option"
+                      aria-selected={active}
+                      selected={active}
+                      data-openbitfun-component="settings-nav"
+                      data-openbitfun-part="searchResult"
+                      data-openbitfun-state={[active && 'active', selected && 'selected'].filter(Boolean).join(' ') || undefined}
+                      className={[
+                        'openbitfun-settings-nav__search-result-item',
+                        selected && 'is-highlighted',
+                        active && 'is-active',
+                      ].filter(Boolean).join(' ')}
+                      onClick={() => activate(row.destination, true)}
+                      onMouseEnter={() => {
+                        setHighlightedIndex(index);
+                        preload(row.destination.pageId);
+                      }}
+                      onFocus={() => preload(row.destination.pageId)}
+                    >
+                      <span className="openbitfun-settings-nav__search-result-copy">
+                        <OverflowText behavior="marquee" className="openbitfun-settings-nav__search-result-line">
+                          {highlightFirstMatch(path, searchQuery)}
+                        </OverflowText>
+                        <OverflowText behavior="marquee" className="openbitfun-settings-nav__search-result-desc">
+                          {highlightFirstMatch(row.description, searchQuery)}
+                        </OverflowText>
+                      </span>
+                      {dirtyMarker(row.destination.pageId)}
+                    </NavigationPanelItem>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="openbitfun-settings-nav__search-empty" role="status" data-openbitfun-component="settings-nav" data-openbitfun-part="searchEmpty">
+                {t('navigation.search.empty')}
+              </div>
+            )
+          ) : SETTINGS_CATEGORIES.map((category) => (
+            <NavigationPanelSection
+              key={category.id}
+              className="openbitfun-settings-nav__category"
+              data-openbitfun-component="settings-nav"
+              data-openbitfun-part="category"
+              title={(
+                <span
+                  className="openbitfun-settings-nav__category-label"
                   data-openbitfun-component="settings-nav"
-                  data-openbitfun-part="searchResult"
-                  data-openbitfun-state={[active && 'active', selected && 'selected'].filter(Boolean).join(' ') || undefined}
-                  className={[
-                    'openbitfun-settings-nav__search-result-item',
-                    selected && 'is-highlighted',
-                    active && 'is-active',
-                  ].filter(Boolean).join(' ')}
-                  onClick={() => activate(row.destination, true)}
-                  onMouseEnter={() => {
-                    setHighlightedIndex(index);
-                    preload(row.destination.pageId);
-                  }}
-                  onFocus={() => preload(row.destination.pageId)}
+                  data-openbitfun-part="categoryHeader"
                 >
-                  <span className="openbitfun-settings-nav__search-result-copy">
-                    <OverflowText behavior="marquee" className="openbitfun-settings-nav__search-result-line">
-                      {highlightFirstMatch(path, searchQuery)}
-                    </OverflowText>
-                    <OverflowText behavior="marquee" className="openbitfun-settings-nav__search-result-desc">
-                      {highlightFirstMatch(row.description, searchQuery)}
-                    </OverflowText>
-                  </span>
-                  {dirtyMarker(row.destination.pageId)}
-                </NavigationPanelItem>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="openbitfun-settings-nav__search-empty" role="status" data-openbitfun-component="settings-nav" data-openbitfun-part="searchEmpty">
-            {t('navigation.search.empty')}
-          </div>
-        )
-      ) : SETTINGS_CATEGORIES.map((category) => (
-        <NavigationPanelSection
-          key={category.id}
-          className="openbitfun-settings-nav__category"
-          data-openbitfun-component="settings-nav"
-          data-openbitfun-part="category"
-          title={(
-            <span
-              className="openbitfun-settings-nav__category-label"
-              data-openbitfun-component="settings-nav"
-              data-openbitfun-part="categoryHeader"
+                  {t(category.labelKey)}
+                </span>
+              )}
             >
-              {t(category.labelKey)}
-            </span>
-          )}
-        >
-          <div className="openbitfun-settings-nav__items" data-openbitfun-component="settings-nav" data-openbitfun-part="items">
-          {category.pages.map((page) => (
-            <NavigationPanelItem data-overflow-trigger
-              key={page.id}
-              data-testid="settings-nav-page"
-              data-settings-page={page.id}
-              data-openbitfun-component="settings-nav"
-              data-openbitfun-part="item"
-              data-openbitfun-state={activePageId === page.id ? 'active' : undefined}
-              className="openbitfun-settings-nav__item"
-              selected={activePageId === page.id}
-              onClick={() => activate({ pageId: page.id })}
-              onPointerEnter={() => preload(page.id)}
-              onFocus={() => preload(page.id)}
-            >
-              <OverflowText className="openbitfun-settings-nav__item-label">{t(page.labelKey)}</OverflowText>
-              {dirtyMarker(page.id)}
-            </NavigationPanelItem>
-          ))}
-          </div>
-        </NavigationPanelSection>
+              <div className="openbitfun-settings-nav__items" data-openbitfun-component="settings-nav" data-openbitfun-part="items">
+                {category.pages.map((page) => (
+                  <NavigationPanelItem data-overflow-trigger
+                    key={page.id}
+                    data-testid="settings-nav-page"
+                    data-settings-page={page.id}
+                    data-openbitfun-component="settings-nav"
+                    data-openbitfun-part="item"
+                    data-openbitfun-state={activePageId === page.id ? 'active' : undefined}
+                    className="openbitfun-settings-nav__item"
+                    selected={activePageId === page.id}
+                    onClick={() => activate({ pageId: page.id })}
+                    onPointerEnter={() => preload(page.id)}
+                    onFocus={() => preload(page.id)}
+                  >
+                    <OverflowText className="openbitfun-settings-nav__item-label">{t(page.labelKey)}</OverflowText>
+                    {dirtyMarker(page.id)}
+                  </NavigationPanelItem>
+                ))}
+              </div>
+            </NavigationPanelSection>
           ))}
         </NavigationPanelContent>
       </NavigationPanelBody>

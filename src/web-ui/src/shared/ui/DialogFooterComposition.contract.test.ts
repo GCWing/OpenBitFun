@@ -38,9 +38,9 @@ const footerSurfaces: FooterSurfaceContract[] = [
     selector: '&__footer',
   },
   {
-    source: '../../infrastructure/config/components/QuickActionsConfig.tsx',
+    source: '../../app/scenes/settings/pages/tools/QuickActionsSettingsSection.tsx',
     marker: 'className="quick-actions-config__modal-footer"',
-    stylesheet: '../../infrastructure/config/components/QuickActionsConfig.scss',
+    stylesheet: '../../app/scenes/settings/pages/tools/QuickActionsSettingsSection.scss',
     selector: '&__modal-footer',
   },
   {
@@ -62,11 +62,11 @@ const footerSurfaces: FooterSurfaceContract[] = [
     selector: '&__actions',
   },
   {
-    source: '../../infrastructure/config/components/RuntimeSettingsPages.tsx',
+    source: '../../app/scenes/settings/pages/tools/DeviceControlSettingsPage.tsx',
     marker: 'className="openbitfun-debug-config__modal-footer"',
   },
   {
-    source: '../../infrastructure/config/components/HooksConfig.tsx',
+    source: '../../app/scenes/settings/pages/tools/HooksSettingsSection.tsx',
     marker: '<DialogFooter separator>',
   },
   {

@@ -12,7 +12,8 @@ release packages.
 - Copyright: Copyright 2021 Huawei Device Co., Ltd.
 
 Non-Apple OpenBitFun GUI distributions bundle unmodified copies of the Base and
-Simplified Chinese Regular, Medium, and Bold fonts. They do not bundle the
+Simplified Chinese variable fonts (Version 2.040), exposing the design system's
+Regular (400), Medium (500), Semibold (600), and Bold (700) weights. They do not bundle the
 Traditional Chinese font family. Apple GUI distributions and Traditional
 Chinese UI text use platform system fonts instead.
 

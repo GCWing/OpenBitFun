@@ -1124,7 +1124,7 @@ impl PersistenceManager {
         }
     }
 
-    async fn build_session_metadata(
+    pub(super) async fn build_session_metadata(
         &self,
         workspace_path: &Path,
         session: &Session,

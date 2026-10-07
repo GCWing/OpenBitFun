@@ -139,7 +139,7 @@ describe('ReasoningPresetSelector', () => {
     ))).toBe(true);
   });
 
-  it('uses the concentric series in the compact trigger and accessible name', async () => {
+  it('uses the automatic icon and named manual levels in the trigger', async () => {
     const projection = {
       status: 'known' as const,
       default_preset: 'medium',
@@ -163,23 +163,14 @@ describe('ReasoningPresetSelector', () => {
     const trigger = container.querySelector<HTMLElement>(
       '[data-testid="chat-reasoning-preset-selector-btn"]',
     );
-    // No word beside the mark: the shape is the reading, and the level survives
-    // for anyone who cannot see it as the control's own name.
     expect(trigger?.textContent).toBe('');
     expect(trigger?.getAttribute('aria-label')).toBe('Thinking: auto (Medium)');
-    const meter = trigger?.querySelector<HTMLElement>(
-      '.openbitfun-reasoning-preset-selector__status-meter',
-    );
-    expect(meter?.dataset.intensity).toBe('2');
-    expect(meter?.querySelectorAll('.openbitfun-reasoning-preset-selector__status-ring'))
-      .toHaveLength(2);
-    expect(trigger?.querySelectorAll('.openbitfun-reasoning-preset-selector__status-meter')).toHaveLength(1);
-    expect(trigger?.querySelector('.openbitfun-reasoning-preset-selector__label')).toBeNull();
+    expect(trigger?.querySelector('[data-openbitfun-name="reasoning-auto"]')).not.toBeNull();
 
-    for (const [presetId, expectedIntensity, expectedRings, hasPeak] of [
-      ['low', '1', 1, false],
-      ['high', '3', 3, false],
-      ['xhigh', '4', 3, true],
+    for (const [presetId, label] of [
+      ['low', 'Low'],
+      ['high', 'High'],
+      ['xhigh', 'Extra high'],
     ] as const) {
       await act(async () => {
         root.render(
@@ -190,14 +181,8 @@ describe('ReasoningPresetSelector', () => {
           />,
         );
       });
-      const updatedMeter = container.querySelector<HTMLElement>(
-        '.openbitfun-reasoning-preset-selector__status-meter',
-      );
-      expect(updatedMeter?.dataset.intensity).toBe(expectedIntensity);
-      expect(updatedMeter?.querySelectorAll('.openbitfun-reasoning-preset-selector__status-ring'))
-        .toHaveLength(expectedRings);
-      expect(Boolean(updatedMeter?.querySelector('.openbitfun-reasoning-preset-selector__status-peak')))
-        .toBe(hasPeak);
+      expect(trigger?.textContent).toBe(label);
+      expect(trigger?.querySelector('[data-openbitfun-component="icon"]')).toBeNull();
     }
 
     expect(
@@ -246,7 +231,7 @@ describe('ReasoningPresetSelector', () => {
     expect(options[2]?.getAttribute('aria-checked')).toBe('true');
   });
 
-  it('preserves the actual choices in a merged toggle and effort catalog', async () => {
+  it('presents an older enabled selection as Auto without rewriting it', async () => {
     const onSelect = vi.fn();
     await act(async () => {
       root.render(
@@ -262,7 +247,7 @@ describe('ReasoningPresetSelector', () => {
               { id: 'low', label: 'Low', order: 10, source: 'models_dev', actions: [{ type: 'effort', value: 'low' }] },
             ],
           }}
-          selectedPreset="low"
+          selectedPreset="on"
           onSelect={onSelect}
         />,
       );
@@ -280,19 +265,22 @@ describe('ReasoningPresetSelector', () => {
       ),
     );
     expect(options.map(option => option.dataset.presetId))
-      .toEqual(['off', 'on', 'low', 'high', 'max']);
+      .toEqual(['off', 'low', 'high', 'max']);
     expect(options.map(option => option.querySelector(
       '.openbitfun-reasoning-preset-selector__option-label',
     )?.textContent))
-      .toEqual(['Off', 'On', 'Low', 'High', 'Maximum']);
+      .toEqual(['Off', 'Low', 'High', 'Maximum']);
     expect(options.every(option => option.querySelector('small, svg') === null)).toBe(true);
 
     const trigger = container.querySelector<HTMLButtonElement>(
       '[data-testid="chat-reasoning-preset-selector-btn"]',
     );
-    expect(trigger?.getAttribute('aria-label')).toBe('Thinking: Low');
+    expect(trigger?.getAttribute('aria-label')).toBe('Thinking: Auto');
+    expect(options.find(option => option.dataset.presetId === 'low')?.getAttribute('aria-checked')).toBe('false');
+    expect(document.body.querySelector('.openbitfun-reasoning-preset-selector__auto-row [aria-checked="true"]')).not.toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
 
-    for (const [label, presetId] of [['Low', 'low'], ['On', 'on']] as const) {
+    for (const [label, presetId] of [['Low', 'low'], ['Off', 'off']] as const) {
       if (trigger?.getAttribute('aria-expanded') !== 'true') {
         await act(async () => trigger?.click());
       }
@@ -302,13 +290,14 @@ describe('ReasoningPresetSelector', () => {
       expect(visibleChoice).toBeDefined();
       await act(async () => visibleChoice?.click());
       expect(onSelect).toHaveBeenLastCalledWith(presetId);
+      expect(trigger?.getAttribute('aria-expanded')).toBe('true');
     }
 
     expect(zhCnFlowChat.reasoningSelector.levels)
-      .toMatchObject({ off: '关闭', on: '开启', low: '低', medium: '中', high: '高', max: '最高' });
+      .toMatchObject({ off: '关闭', low: '轻', medium: '中', high: '高', max: '最大' });
   });
 
-  it('returns focus to the trigger and keeps keyboard motion suppressed while exiting', async () => {
+  it('keeps the reasoning menu open and its focused choice available after selection', async () => {
     const onSelect = vi.fn();
     await act(async () => {
       root.render(
@@ -339,13 +328,13 @@ describe('ReasoningPresetSelector', () => {
       option?.click();
     });
 
-    const exitingMenu = document.body.querySelector<HTMLElement>(
+    const menu = document.body.querySelector<HTMLElement>(
       '[data-testid="chat-reasoning-preset-selector-menu"]',
     );
     expect(onSelect).toHaveBeenCalledWith('high');
-    expect(document.activeElement).toBe(trigger);
-    expect(exitingMenu?.getAttribute('aria-hidden')).toBe('true');
-    expect(exitingMenu?.dataset.keyboardOpen).toBe('true');
+    expect(document.activeElement).toBe(option);
+    expect(menu?.getAttribute('aria-hidden')).toBe('false');
+    expect(menu?.dataset.keyboardOpen).toBe('true');
   });
 
   it('restores trigger focus when Escape closes a focused menu', async () => {

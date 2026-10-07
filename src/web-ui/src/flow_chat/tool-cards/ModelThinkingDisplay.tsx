@@ -1,31 +1,28 @@
 /**
  * Model thinking display component.
- * Ordinary reasoning defaults expanded while this is still the active last
- * step; reasoning summaries use their compact collapsed presentation by
- * default.
- * If the component mounts after later content already appeared
- * (for example after a parent remount), start collapsed directly
- * to avoid a visible expand-then-collapse flash.
- * Applies typewriter effect during streaming.
+ * Streaming reasoning shares one line with its icon; activation opens a
+ * seven-line viewport. Completion folds that same viewport without enlarging
+ * it; completed reasoning opens the details panel. History starts collapsed.
  */
 
-import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
-import { OverflowText, Icon } from '@openbitfun/ui';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useFlowChatReaderValue } from '../timeline/readerState';
+import { ThinkingBlock } from '@openbitfun/ui/flow-chat';
 import { useTranslation } from 'react-i18next';
 import type { FlowThinkingItem } from '../types/flow-chat';
 import { useTypewriter } from '../hooks/useTypewriter';
 import { useReportTypewriterReveal } from '../hooks/typewriterRevealGateContext';
 import { useToolCardHeightContract } from './useToolCardHeightContract';
-import {
-  nextEasedScrollTopPx,
-  shouldEaseTailFollow,
-} from '../utils/flowChatTailEase';
+import { useContainedTailFollow } from '@openbitfun/flow-chat-presentation/scroll';
 import {
   isTailFollowDiagnosticsEnabled,
   noteTailFollowStep,
 } from '@/infrastructure/diagnostics/flowChatTailFollowDiagnostics';
 import { latestReasoningSummaryPreview } from '../utils/reasoningSummaryPresentation';
 import { ThinkingMarkdownRenderer } from '@/infrastructure/markdown';
+import { useFlowChatContext } from '../components/modern/FlowChatContext';
+import { openThinkingPanel } from '../services/openThinkingPanel';
+import { getActiveSurfaceScope } from '@/infrastructure/peer-device/deviceSurface';
 import './ModelThinkingDisplay.scss';
 
 interface ModelThinkingDisplayProps {
@@ -33,298 +30,183 @@ interface ModelThinkingDisplayProps {
   /** Whether this is the last item in the current round. */
   isLastItem?: boolean;
   forceExpanded?: boolean;
+  /** An explicit search match may reveal live content; automatic layout hints may not. */
+  revealStreamingContent?: boolean;
   displayContext?: 'default' | 'subagent-projection';
+  withinGroup?: boolean;
+  /** Keep the outgoing body stable while an automatically completing group closes. */
+  retainForGroupCollapse?: boolean;
+  hidden?: boolean;
+  /** Original session for reasoning projected into another conversation. */
+  sourceSessionId?: string;
+}
+
+/** Model rounds are virtual rows. Keep reasoning in its source row while
+ * resolving the first content of the next round, or the preceding card when
+ * another reasoning block starts that round. The two controls then have
+ * distinct hover owners instead of stacking beside the same answer. */
+function resolveNextRoundContinuation(root: HTMLDivElement) {
+  const stack = root.parentElement;
+  if (!stack?.hasAttribute('data-flow-item-stack') || root.nextElementSibling) return null;
+  const row = root.closest<HTMLElement>('.virtual-item-wrapper[data-item-type="model-round"]');
+  const list = row?.parentElement;
+  if (!row?.dataset.turnId || !list?.classList.contains('virtual-message-list__items')) return null;
+
+  let peer = row.nextElementSibling as HTMLElement | null;
+  while (peer?.matches('.virtual-item-wrapper[data-collected-empty="true"]')
+    && peer.dataset.turnId === row.dataset.turnId) peer = peer.nextElementSibling as HTMLElement | null;
+
+  const sameTurnRound = Boolean(peer?.matches('.virtual-item-wrapper[data-item-type="model-round"]')
+    && peer?.dataset.turnId === row.dataset.turnId);
+  // The desktop timeline adds a block wrapper around the source stack. Keep
+  // legacy rounds and flattened leaves on the same continuation contract.
+  const peerStack = sameTurnRound ? peer?.querySelector('[data-flow-item-stack]') : null;
+  const first = peerStack?.hasAttribute('data-flow-item-stack') ? peerStack.firstElementChild : null;
+  const previous = root.previousElementSibling;
+  const previousCard = previous instanceof HTMLElement && previous.hasAttribute('data-thinking-continuation')
+    ? previous : null;
+  return {
+    element: first instanceof HTMLElement && first.hasAttribute('data-thinking-continuation') ? first
+      : first?.classList.contains('flow-thinking-item') ? previousCard : null,
+    observeRoot: list,
+    observeSubtree: sameTurnRound ? peer : null,
+  };
 }
 
 export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
   thinkingItem,
   isLastItem = true,
   forceExpanded = false,
+  revealStreamingContent: revealFromGroup = false,
   displayContext = 'default',
+  retainForGroupCollapse = false,
+  hidden,
+  sourceSessionId,
 }) => {
   const { t } = useTranslation('flow-chat');
+  const { sessionId, workspaceId, workspacePath, remoteConnectionId } = useFlowChatContext();
+  // Search temporarily reveals the recorded source in place. Activating the
+  // ordinary completed-thinking control opens its reader panel instead.
+  const [navigationThinking] = useFlowChatReaderValue('navigation:thinking', '');
+  const revealStreamingContent = revealFromGroup || navigationThinking === thinkingItem.id;
   const { content, isStreaming, status } = thinkingItem;
   const isSummary = thinkingItem.reasoningKind === 'summary';
-  const contentRef = useRef<HTMLDivElement>(null);
-  const shouldFollowTailRef = useRef(true);
-  const tailFollowPauseVersionRef = useRef(0);
-  const tailFollowUserPauseUntilMsRef = useRef(0);
-  /** Frame the follow has booked, and the sign that it is still travelling. */
-  const tailFollowFrameRef = useRef<number | null>(null);
-  const touchScrollStartYRef = useRef<number | null>(null);
-  const lastScrollPositionRef = useRef<{
-    top: number;
-    height: number;
-    viewport: number;
-  } | null>(null);
-
   const isActive = isStreaming || status === 'streaming';
-  const shouldDefaultExpanded = forceExpanded || (!isSummary && (
-    displayContext === 'subagent-projection'
-      ? isActive || isLastItem
-      : isLastItem
-  ));
-
-  const [isExpanded, setIsExpanded] = useState(shouldDefaultExpanded);
-  const [retainClosingContent, setRetainClosingContent] = useState(shouldDefaultExpanded);
+  const surface = getActiveSurfaceScope();
+  const streamIdentity = JSON.stringify([
+    surface.surfaceId, surface.epoch,
+    sessionId, sourceSessionId, workspaceId, remoteConnectionId,
+    thinkingItem.id, thinkingItem.attemptId, thinkingItem.attemptIndex,
+  ]);
+  const [retainedContent, setRetainedContent] = useState(() => ({
+    identity: streamIdentity,
+    mounted: (isActive && !isSummary) || forceExpanded || revealStreamingContent,
+  }));
+  const retainClosingContent = retainedContent.identity === streamIdentity && retainedContent.mounted;
+  const [streamingChoice, setStreamingChoice] = useFlowChatReaderValue<string>(`thinking:${streamIdentity}:live`, 'auto');
+  const [successor, setSuccessor] = useState<{ identity: string; ready: boolean; immediate: boolean; pending: boolean }>();
+  const coordinateContinuation = !revealStreamingContent && (!forceExpanded || isActive);
+  const successorReady = coordinateContinuation && successor?.identity === streamIdentity && successor.ready;
+  const readerChoice = streamingChoice === 'auto' ? undefined : streamingChoice === 'open';
+  // Compact previews yield as soon as real output exists. A reader who opened
+  // seven lines can finish its reveal; attention states always take precedence.
+  const yieldToSuccessor = successorReady && (!(readerChoice ?? revealStreamingContent) || successor.immediate);
+  const lastPreview = useRef('');
   const expandContainerRef = useRef<HTMLDivElement>(null);
-  const shouldMountContent = isExpanded || retainClosingContent;
   const { displayText: displayContent, isRevealing } = useTypewriter(
     isSummary ? '' : content,
     isActive && !isSummary,
     // Keep playback through the closing transition, then release the reveal
     // gate and track current content without animating an invisible backlog.
-    { revealImmediately: !shouldMountContent },
+    { revealImmediately: !retainClosingContent || yieldToSuccessor },
   );
-  useReportTypewriterReveal(thinkingItem.id, isRevealing);
-
-  // Keep the existing collapse transition, but never build a hidden Markdown
-  // tree on an initially collapsed virtual-row mount. Observe actual CSS
-  // transitions so reduced motion and cancelled transitions also release it.
+  // Keep footer presentation behind the handoff as well. A parent-owned fold
+  // must not wait for its own retained child to close (a circular reveal gate).
+  useReportTypewriterReveal(thinkingItem.id, isRevealing
+    || Boolean(successorReady && successor.pending && !retainForGroupCollapse));
+  const { cardRootRef, dispatchToolCardToggle, applyExpandedState } = useToolCardHeightContract({
+    toolId: thinkingItem.id,
+    toolName: 'thinking',
+  });
+  const isVisuallyStreaming = !yieldToSuccessor && (isActive || isRevealing);
   useLayoutEffect(() => {
-    if (isExpanded) {
-      setRetainClosingContent(true);
+    if (!isVisuallyStreaming && streamingChoice !== 'auto') setStreamingChoice('auto');
+  }, [isVisuallyStreaming, streamingChoice, setStreamingChoice]);
+  const lastLiveIdentity = useRef<string>();
+  useLayoutEffect(() => {
+    if (isVisuallyStreaming) lastLiveIdentity.current = streamIdentity;
+  }, [isVisuallyStreaming, streamIdentity]);
+  // forceExpanded also comes from automatic trailing-item layout hints. Only a
+  // reader action may turn the live one-line viewport into seven lines.
+  const streamingViewportExpanded = isVisuallyStreaming && (readerChoice ?? revealStreamingContent);
+  const previousExpanded = useRef({ identity: streamIdentity, expanded: retainClosingContent });
+  const isContentExpanded = (forceExpanded && !yieldToSuccessor) || revealStreamingContent
+    || (isVisuallyStreaming && (!isSummary || streamingViewportExpanded))
+    || (retainForGroupCollapse && retainClosingContent
+      && previousExpanded.current.identity === streamIdentity && previousExpanded.current.expanded);
+  const shouldMountContent = isContentExpanded || retainClosingContent;
+  useLayoutEffect(() => {
+    if (previousExpanded.current.expanded !== isContentExpanded) dispatchToolCardToggle();
+    previousExpanded.current = { identity: streamIdentity, expanded: isContentExpanded };
+  }, [dispatchToolCardToggle, isContentExpanded, streamIdentity]);
+
+  // Historical reasoning starts without inline Markdown. Retain a streamed or
+  // forced body through its closing transition, then release it.
+  useLayoutEffect(() => {
+    if (isContentExpanded) {
+      if (!retainClosingContent) setRetainedContent({ identity: streamIdentity, mounted: true });
       return;
     }
     if (!retainClosingContent) return;
     const transitions = expandContainerRef.current?.getAnimations?.().filter(animation => (
-      'transitionProperty' in animation && animation.transitionProperty === 'grid-template-rows'
+      'transitionProperty' in animation && ['grid-template-rows', 'opacity'].includes(String(animation.transitionProperty))
     )) ?? [];
     if (transitions.length === 0) {
-      setRetainClosingContent(false);
+      setRetainedContent({ identity: streamIdentity, mounted: false });
       return;
     }
     let cancelled = false;
     void Promise.allSettled(transitions.map(animation => animation.finished)).then(() => {
-      if (!cancelled) setRetainClosingContent(false);
+      if (!cancelled) setRetainedContent({ identity: streamIdentity, mounted: false });
     });
     return () => { cancelled = true; };
-  }, [isExpanded, retainClosingContent]);
-  const userToggledRef = useRef(false);
-  const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
-    toolId: thinkingItem.id,
-    toolName: 'thinking',
-  });
-
-  useLayoutEffect(() => {
-    if (userToggledRef.current) return;
-    if (isExpanded !== shouldDefaultExpanded) {
-      applyExpandedState(isExpanded, shouldDefaultExpanded, setIsExpanded);
-    }
-  }, [applyExpandedState, isExpanded, shouldDefaultExpanded]);
+  }, [isContentExpanded, retainClosingContent, streamIdentity]);
 
   // Keep rendering the typewriter output while it drains after the stream
   // ends. Snapping to full `content` here would make the drain invisible
   // while `isRevealing` still holds the reveal gate, delaying the round
   // footer for no visible reason.
-  const renderedContent = !isSummary && isRevealing ? displayContent : content;
-  // Cover the whole reveal with Markdown streaming mode so the Prism upgrade
-  // does not land mid-drain.
-  const isVisuallyStreaming = isActive || isRevealing;
-
-  const getThinkingScrollGap = useCallback((el: HTMLElement) => (
-    el.scrollHeight - el.scrollTop - el.clientHeight
-  ), []);
-
-  const stopTailFollow = useCallback(() => {
-    if (tailFollowFrameRef.current === null) return;
-    cancelAnimationFrame(tailFollowFrameRef.current);
-    tailFollowFrameRef.current = null;
-  }, []);
-
-  const pauseTailFollowForUserScroll = useCallback(() => {
-    shouldFollowTailRef.current = false;
-    tailFollowPauseVersionRef.current += 1;
-    tailFollowUserPauseUntilMsRef.current = performance.now() + 700;
-    stopTailFollow();
-  }, [stopTailFollow]);
-
-  const recordScrollPosition = useCallback((el: HTMLElement) => {
-    lastScrollPositionRef.current = {
-      top: el.scrollTop,
-      height: el.scrollHeight,
-      viewport: el.clientHeight,
-    };
-  }, []);
-
-  const detectUpwardScroll = useCallback((el: HTMLElement) => {
-    const previous = lastScrollPositionRef.current;
-    // Scrollbar drags have no wheel/key event. Compare with our last actual
-    // offset, allowing rounding noise and excluding layout-driven movement.
-    const movedUp = isExpanded && previous !== null &&
-      el.scrollHeight >= previous.height &&
-      el.clientHeight === previous.viewport &&
-      el.scrollTop < previous.top - 1;
-    recordScrollPosition(el);
-    if (movedUp) pauseTailFollowForUserScroll();
-    return movedUp;
-  }, [isExpanded, pauseTailFollowForUserScroll, recordScrollPosition]);
-
+  const renderedContent = yieldToSuccessor && retainClosingContent ? lastPreview.current
+    : !isSummary && isRevealing ? displayContent : content;
+  useLayoutEffect(() => { if (!yieldToSuccessor) lastPreview.current = renderedContent; }, [renderedContent, yieldToSuccessor]);
+  const previousStreamViewport = useRef({ identity: streamIdentity, expanded: false, active: false });
+  const scrollViewportExpanded = isVisuallyStreaming ? streamingViewportExpanded
+    : forceExpanded || revealStreamingContent || (retainForGroupCollapse
+      && previousStreamViewport.current.identity === streamIdentity && previousStreamViewport.current.expanded);
+  const { contentRef, contentProps, scrollState, resume } = useContainedTailFollow({
+    // Compact output replaces its last typeset line without any scroll writer.
+    // Only the expanded reading viewport follows the bounded inner tail.
+    enabled: isContentExpanded && scrollViewportExpanded, active: isVisuallyStreaming, contentVersion: renderedContent,
+    followOnOpen: !revealStreamingContent,
+    onStep: step => {
+      if (isTailFollowDiagnosticsEnabled()) noteTailFollowStep('thinking', step);
+    },
+  });
   useLayoutEffect(() => {
-    lastScrollPositionRef.current = null;
-  }, [isExpanded]);
-
-  /**
-   * Follow the tail across the frames it is given, rather than in one write.
-   *
-   * The card's box stops growing at its `max-height` and everything after that
-   * happens inside it, so this moves a scroll offset and no layout outside the
-   * card — which is why it can afford to run every frame where the message list
-   * cannot. Below that height it snaps, because easing there would mean easing
-   * a height and charging the virtualizer for each step.
-   *
-   * The pause version is captured for the whole run: a reader who scrolls up
-   * mid-follow bumps it, and the next frame stands down rather than dragging
-   * them back. A call arriving while a run is in flight is ignored — the run
-   * re-reads its target every frame and has already seen what prompted it.
-   */
-  const scheduleTailFollow = useCallback((expectedPauseVersion: number) => {
-    if (tailFollowFrameRef.current !== null) return;
-
-    const runFrame = () => {
-      tailFollowFrameRef.current = null;
-      const el = contentRef.current;
-      if (!el) return;
-      // The browser may update the offset before delivering its scroll event.
-      if (detectUpwardScroll(el)) return;
-      if (expectedPauseVersion !== tailFollowPauseVersionRef.current) return;
-      if (!shouldFollowTailRef.current) return;
-
-      const beforePx = el.scrollTop;
-      const targetPx = el.scrollHeight - el.clientHeight;
-      const step = shouldEaseTailFollow({
-        scrollHeightPx: el.scrollHeight,
-        clientHeightPx: el.clientHeight,
-      })
-        ? nextEasedScrollTopPx(beforePx, targetPx)
-        : { offsetPx: targetPx, outcome: 'snapped' as const };
-
-      el.scrollTop = step.offsetPx;
-      recordScrollPosition(el);
-      // Read back rather than taken from the step: the browser clamps to the
-      // scrollable range, and a platform without fractional scroll offsets
-      // rounds the last part of an ease away entirely. Believing the step there
-      // would book frames forever over a fraction of a pixel nobody can see.
-      const movedPx = el.scrollTop - beforePx;
-      shouldFollowTailRef.current = true;
-      if (step.outcome === 'eased' && movedPx !== 0) {
-        tailFollowFrameRef.current = requestAnimationFrame(runFrame);
-      }
-
-      if (isTailFollowDiagnosticsEnabled()) {
-        noteTailFollowStep('thinking', {
-          stepPx: movedPx,
-          lagPx: targetPx - beforePx,
-          // Below the card's `max-height` the box is still growing, so each of
-          // these steps also costs the list a re-measure. Above it, none do.
-          innerScroll: el.scrollHeight > el.clientHeight,
-          snapped: step.outcome === 'snapped',
-        });
-      }
+    const previous = previousStreamViewport.current;
+    if (isVisuallyStreaming && streamingViewportExpanded && !revealStreamingContent
+      && (!previous.expanded || !previous.active || previous.identity !== streamIdentity)) {
+      resume();
+    }
+    previousStreamViewport.current = {
+      identity: streamIdentity, active: isVisuallyStreaming,
+      expanded: isVisuallyStreaming ? streamingViewportExpanded
+        : previous.identity === streamIdentity && previous.expanded,
     };
-
-    tailFollowFrameRef.current = requestAnimationFrame(runFrame);
-  }, [detectUpwardScroll, recordScrollPosition]);
-
-  /** A follow in flight outlives neither the card nor its collapse. */
-  useEffect(() => stopTailFollow, [isExpanded, stopTailFollow]);
-
-  // Auto-scroll to bottom while content grows.
-  useEffect(() => {
-    if (isExpanded && contentRef.current) {
-      const el = contentRef.current;
-      const gap = getThinkingScrollGap(el);
-      const wasNearBottom = gap < 20;
-      const userPauseActive = performance.now() <= tailFollowUserPauseUntilMsRef.current;
-      if (wasNearBottom && !userPauseActive) {
-        shouldFollowTailRef.current = true;
-      }
-      const shouldScroll = shouldFollowTailRef.current || (wasNearBottom && !userPauseActive);
-      if (shouldScroll) {
-        scheduleTailFollow(tailFollowPauseVersionRef.current);
-      }
-    }
-  }, [
-    displayContent,
-    getThinkingScrollGap,
-    isExpanded,
-    scheduleTailFollow,
-  ]);
-
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el || !isExpanded) {
-      return;
-    }
-
-    const observer = new ResizeObserver(() => {
-      if (isActive && shouldFollowTailRef.current) {
-        scheduleTailFollow(tailFollowPauseVersionRef.current);
-      }
-    });
-
-    observer.observe(el);
-    const markdownEl = el.querySelector('.thinking-markdown');
-    if (markdownEl instanceof HTMLElement) {
-      observer.observe(markdownEl);
-    }
-
-    return () => observer.disconnect();
-  }, [isActive, isExpanded, scheduleTailFollow]);
-
-  // Scroll-state detection for fade gradients.
-  const [scrollState, setScrollState] = useState({ hasScroll: false, atTop: true, atBottom: true });
-
-  const checkScrollState = useCallback(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    detectUpwardScroll(el);
-    const gap = getThinkingScrollGap(el);
-    const nextScrollState = {
-      hasScroll: el.scrollHeight > el.clientHeight,
-      atTop: el.scrollTop <= 5,
-      /**
-       * A follow still travelling counts as being at the bottom.
-       *
-       * The bottom fade means "there is more below that you have not seen". An
-       * eased follow rides a little behind the tail by design, and what it is
-       * behind is arriving on its own — fading that would put a gradient under
-       * every streaming thinking card, which is the opposite of what the fade
-       * is for.
-       */
-      atBottom: gap <= 5 || tailFollowFrameRef.current !== null,
-    };
-    if (
-      nextScrollState.atBottom &&
-      performance.now() > tailFollowUserPauseUntilMsRef.current
-    ) {
-      shouldFollowTailRef.current = true;
-    }
-    // Scroll events arrive every frame once the follow is eased, and each one
-    // that changes nothing would still re-render the card.
-    setScrollState((current) => (
-      current.hasScroll === nextScrollState.hasScroll &&
-      current.atTop === nextScrollState.atTop &&
-      current.atBottom === nextScrollState.atBottom
-        ? current
-        : {
-          hasScroll: nextScrollState.hasScroll,
-          atTop: nextScrollState.atTop,
-          atBottom: nextScrollState.atBottom,
-        }
-    ));
-  }, [detectUpwardScroll, getThinkingScrollGap]);
-
-  useEffect(() => {
-    if (isExpanded) {
-      const timer = setTimeout(checkScrollState, 50);
-      return () => clearTimeout(timer);
-    }
-  }, [isExpanded, checkScrollState]);
+  }, [isVisuallyStreaming, streamingViewportExpanded, revealStreamingContent, streamIdentity, resume]);
 
   const contentLengthText = useMemo(() => {
-    if (!content || content.length === 0) return t('toolCards.think.thinkingComplete');
-    return t('toolCards.think.thinkingCharacters', { count: content.length });
+    return t('toolCards.think.thinkingCharacters', { count: Array.from(content).length });
   }, [content, t]);
 
   const summaryPreview = useMemo(
@@ -334,135 +216,72 @@ export const ModelThinkingDisplay: React.FC<ModelThinkingDisplayProps> = ({
     [content, isSummary],
   );
 
-  const handleToggleClick = () => {
-    const nextExpanded = !isExpanded;
-    userToggledRef.current = true;
-    applyExpandedState(isExpanded, nextExpanded, setIsExpanded);
-  };
-
-  const handleContentWheelCapture = useCallback((event: React.WheelEvent<HTMLDivElement>) => {
-    if (event.deltaY < 0) {
-      pauseTailFollowForUserScroll();
-    }
-  }, [pauseTailFollowForUserScroll]);
-
-  const handleContentTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    touchScrollStartYRef.current = event.touches[0]?.clientY ?? null;
-  }, []);
-
-  const handleContentTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
-    const startY = touchScrollStartYRef.current;
-    const currentY = event.touches[0]?.clientY;
-    if (startY === null || currentY === undefined) {
-      return;
-    }
-
-    if (currentY - startY > 6) {
-      touchScrollStartYRef.current = currentY;
-      pauseTailFollowForUserScroll();
-    }
-  }, [pauseTailFollowForUserScroll]);
-
-  const handleContentTouchEnd = useCallback(() => {
-    touchScrollStartYRef.current = null;
-  }, []);
-
-  const handleContentKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (
-      event.key === 'ArrowUp' ||
-      event.key === 'PageUp' ||
-      event.key === 'Home' ||
-      (event.key === ' ' && event.shiftKey)
-    ) {
-      pauseTailFollowForUserScroll();
-    }
-  }, [pauseTailFollowForUserScroll]);
-
   const headerLabel = isSummary
-    ? (isExpanded
+    ? (isContentExpanded
       ? t('toolCards.think.thinkingSummary')
       : summaryPreview || t('toolCards.think.thinkingSummary'))
-    : (isExpanded
-      ? (isActive ? t('toolCards.think.thinking') : t('toolCards.think.thinkingProcess'))
+    : (isContentExpanded
+      ? (isVisuallyStreaming ? t('toolCards.think.thinking') : t('toolCards.think.thinkingProcess'))
       : contentLengthText).replace(/ /g, '\u00A0');
 
-  const wrapperClassName = [
-    'flow-thinking-item',
-    isSummary ? 'summary' : 'reasoning',
-    isExpanded ? 'expanded' : 'collapsed',
-  ].filter(Boolean).join(' ');
-
   return (
-    <div
+    <ThinkingBlock
+      virtualized
+      hidden={hidden}
       ref={cardRootRef}
-      data-testid="chat-thinking-panel"
       data-tool-card-id={thinkingItem.id}
-      data-status={status}
-      data-streaming={isActive ? 'true' : 'false'}
-      data-expanded={isExpanded ? 'true' : 'false'}
-      data-reasoning-kind={thinkingItem.reasoningKind ?? 'reasoning'}
-      className={wrapperClassName}
-     data-openbitfun-component="model-thinking-display" data-openbitfun-part="root" data-openbitfun-context={displayContext} data-openbitfun-state={[isExpanded && 'expanded', isVisuallyStreaming && 'streaming'].filter(Boolean).join(' ')}>
-      <div data-overflow-trigger
-        data-openbitfun-component="model-thinking-display"
-        data-openbitfun-part="header"
-        data-testid="chat-thinking-toggle"
-        className="thinking-collapsed-header"
-        onClick={handleToggleClick}
-      >
-        <span
-          aria-hidden="true"
-          className="thinking-leading-icon"
-          data-openbitfun-component="model-thinking-display"
-          data-openbitfun-part="leadingIcon"
-        >
-          <Icon name="thinking" size="sm" className="thinking-leading-icon__default" />
-          <Icon name="chevron-right" size="sm" className="thinking-leading-icon__collapsed-hover" />
-          <Icon name="chevron-down" size="sm" className="thinking-leading-icon__expanded" />
-        </span>
-        <OverflowText
-          data-openbitfun-component="model-thinking-display"
-          data-openbitfun-part="label"
-          className="thinking-label"
-          title={isSummary && !isExpanded ? headerLabel : undefined}
-        >
-          {headerLabel}
-        </OverflowText>
-      </div>
-
-      <div
-        ref={expandContainerRef}
-        className={[
-          'thinking-expand-container',
-          isExpanded ? 'thinking-expand-container--open' : '',
-        ].filter(Boolean).join(' ')}
-        data-openbitfun-component="model-thinking-display"
-        data-openbitfun-part="expandContainer"
-      >
-        {shouldMountContent && <div className={`thinking-content-wrapper ${scrollState.hasScroll ? 'has-scroll' : ''} ${scrollState.atTop ? 'at-top' : ''} ${scrollState.atBottom ? 'at-bottom' : ''}`} data-openbitfun-component="model-thinking-display" data-openbitfun-part="contentWrapper">
-          <div
-            ref={contentRef}
-            data-openbitfun-component="model-thinking-display"
-            data-openbitfun-part="content"
-            data-testid="chat-thinking-content"
-            data-status={status}
-            data-streaming={isActive ? 'true' : 'false'}
-            className={`thinking-content expanded`}
-            onScroll={checkScrollState}
-            onWheelCapture={handleContentWheelCapture}
-            onTouchStart={handleContentTouchStart}
-            onTouchMove={handleContentTouchMove}
-            onTouchEnd={handleContentTouchEnd}
-            onKeyDown={handleContentKeyDown}
-          >
-            <ThinkingMarkdownRenderer
-              content={renderedContent}
-              isStreaming={isVisuallyStreaming}
-              className="thinking-markdown"
-            />
-          </div>
-        </div>}
-      </div>
-    </div>
+      status={status}
+      streaming={isActive}
+      visuallyStreaming={isVisuallyStreaming}
+      expanded={isContentExpanded}
+      streamingExpanded={streamingViewportExpanded}
+      retainStreamingViewport={retainForGroupCollapse}
+      onStreamingExpandedChange={next => applyExpandedState(streamingViewportExpanded, next,
+        expanded => setStreamingChoice(expanded ? 'open' : 'closed'))}
+      collapseIntoNext={(!isLastItem || successorReady) && (!forceExpanded || isActive)}
+      resolveContinuation={resolveNextRoundContinuation}
+      coordinateContinuation={coordinateContinuation}
+      handoffIdentity={streamIdentity}
+      onContinuationReadyChange={(ready, immediate, pending) => setSuccessor(current => (
+        current?.identity === streamIdentity && current.ready === ready && current.immediate === immediate && current.pending === pending
+          ? current : { identity: streamIdentity, ready, immediate, pending }
+      ))}
+      scrollOwner="self"
+      reasoningKind={thinkingItem.reasoningKind}
+      context={displayContext}
+      label={headerLabel}
+      capsuleLabel={contentLengthText}
+      onOpenDetails={() => {
+        const root = cardRootRef.current;
+        // A projected thought belongs to the child stream, while its visible
+        // location belongs to the enclosing task in the left conversation.
+        const location = displayContext === 'subagent-projection'
+          ? root?.parentElement?.closest<HTMLElement>('[data-flow-item-id]')
+          : root;
+        openThinkingPanel({
+          thinkingItem,
+          sessionId: sourceSessionId ?? thinkingItem.subagentSessionId ?? sessionId,
+          workspaceId,
+          workspacePath,
+          remoteConnectionId,
+          navigationTarget: sessionId ? {
+            sessionId,
+            turnId: root?.closest<HTMLElement>('[data-turn-id]')?.dataset.turnId,
+            itemId: location?.dataset.flowItemId ?? thinkingItem.id,
+          } : undefined,
+          title: isSummary ? t('toolCards.think.thinkingSummary') : t('toolCards.think.thinkingProcess'),
+        });
+      }}
+      contentRef={contentRef}
+      expandContainerRef={expandContainerRef}
+      mountContent={shouldMountContent}
+      scrollState={scrollState}
+      contentProps={contentProps}
+    >
+      <ThinkingMarkdownRenderer content={renderedContent} singleLinePreview
+        isStreaming={isVisuallyStreaming || (retainClosingContent && lastLiveIdentity.current === streamIdentity
+          && !forceExpanded && !revealStreamingContent)}
+        className="thinking-markdown" />
+    </ThinkingBlock>
   );
 };

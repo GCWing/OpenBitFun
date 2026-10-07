@@ -719,6 +719,7 @@ export interface SubagentSessionLinkedEvent extends AgenticEvent {
   parentToolCallId: string;
   agentType?: string;
   modelId?: string;
+  continuationPolicy?: import('@/shared/types/session-history').SessionContinuationPolicy;
   focusedReviewDisplayLabel?: string;
 }
 

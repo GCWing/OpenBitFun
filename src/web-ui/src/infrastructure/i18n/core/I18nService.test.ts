@@ -104,4 +104,32 @@ describe('I18nService shared namespace contract', () => {
     expect(service.getCurrentLocale()).toBe(initialLocale);
     vi.unstubAllGlobals();
   });
+
+  it('reuses equivalent date and number formatters', () => {
+    const service = new I18nService();
+    const createDateTimeFormatter = (
+      service as unknown as {
+        createDateTimeFormatter(options?: Intl.DateTimeFormatOptions): Intl.DateTimeFormat;
+      }
+    ).createDateTimeFormatter.bind(service);
+
+    const dateFormatter = createDateTimeFormatter({ year: 'numeric', month: '2-digit' });
+    expect(createDateTimeFormatter({ month: '2-digit', year: 'numeric' })).toBe(dateFormatter);
+
+    const firstNumber = service.formatNumber(1234.5, { style: 'decimal', useGrouping: true });
+    const secondNumber = service.formatNumber(1234.5, { useGrouping: true, style: 'decimal' });
+    expect(secondNumber).toBe(firstNumber);
+  });
+
+  it('does not cache options with custom prototypes', () => {
+    const service = new I18nService();
+    const createDateTimeFormatter = (
+      service as unknown as {
+        createDateTimeFormatter(options?: Intl.DateTimeFormatOptions): Intl.DateTimeFormat;
+      }
+    ).createDateTimeFormatter.bind(service);
+    const options = Object.create({ dateStyle: 'medium' }) as Intl.DateTimeFormatOptions;
+
+    expect(createDateTimeFormatter(options)).not.toBe(createDateTimeFormatter(options));
+  });
 });

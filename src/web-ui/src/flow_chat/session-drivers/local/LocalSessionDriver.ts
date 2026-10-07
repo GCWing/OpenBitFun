@@ -1,4 +1,5 @@
 import { hostQueueSupported, hostDialogQueue, queueImageAttachments } from '../../services/hostDialogQueue';
+import { promoteAcceptedHostMessage } from '../../services/hostQueueSubmission';
 import { requireSessionOwningWorkspaceId, sessionOwningWorkspaceId } from '../../utils/sessionOrdering';
 /**
  * Local session driver: the default flavor backed by this machine's (or the
@@ -44,6 +45,7 @@ import { sessionWorktreeMaterializationPlan } from '../../utils/sessionWorktree'
 import { cleanupSaveState, updateSessionMetadata } from '../../services/flow-chat-manager/PersistenceModule';
 import { cleanupSessionBuffers } from '../../services/flow-chat-manager/TextChunkModule';
 import { addSubmittedDialogTurn, applyGeneratingTitlePlaceholder } from '../shared';
+import { finishSubmittedMessagePreview, getSubmittedMessagePreview } from '../../services/submittedMessagePresentation';
 import { initializeSessionTitleMetadata } from '../../services/sessionTitleMetadata';
 import { inheritReviewPermissionMode } from '../../services/inheritReviewPermissionMode';
 
@@ -71,6 +73,19 @@ export const localSessionDriver: SessionDriver = {
     const reasoningPreset = config.reasoningPreset
       ?? await resolveReasoningPresetForSessionCreation(explicitModelName);
     surfaceScope.assertCurrent('resolve session creation reasoning preset');
+
+    if (seed.draftId && agentType !== 'Claw' && !config.executionTargetRequest) {
+      if (!workspaceId) throw new Error('Draft workspace ID is unavailable');
+      const maxContextTokens = await getModelMaxTokens(explicitModelName, agentType);
+      surfaceScope.assertCurrent('prepare conversation draft');
+      context.flowChatStore.createSession(seed.draftId, {
+        ...config, workspaceId, workspacePath, projectWorkspacePath, reasoningPreset,
+      }, undefined, sessionName, maxContextTokens, agentType, workspacePath,
+      remoteConnectionId, remoteSshHost, titleDescriptor, {
+        workspaceId, phase: 'editing', turnId: crypto.randomUUID(),
+      });
+      return seed.draftId;
+    }
 
     const response = await agentAPI.createSession({
       sessionName,
@@ -169,9 +184,9 @@ export const localSessionDriver: SessionDriver = {
       throw new Error(`Session does not exist: ${sessionId}`);
     }
 
-    await sessionAPI.archiveSession(
-      sessionId,
-      requireSessionOwningWorkspaceId(session));
+    if (session.draft?.phase !== 'editing') {
+      await sessionAPI.archiveSession(sessionId, requireSessionOwningWorkspaceId(session));
+    }
 
     context.flowChatStore.removeSession(
       sessionId,
@@ -195,6 +210,10 @@ export const localSessionDriver: SessionDriver = {
     const session = context.flowChatStore.getState().sessions.get(sessionId);
     if (!session) {
       throw new Error(`Session does not exist: ${sessionId}`);
+    }
+    if (session.draft?.phase === 'editing') {
+      await context.flowChatStore.updateSessionTitle(sessionId, title, 'generated');
+      return title;
     }
     const updatedTitle = await agentAPI.updateSessionTitle({
       sessionId,
@@ -372,15 +391,24 @@ export const localSessionDriver: SessionDriver = {
       await inheritReviewPermissionMode(readySession, context.flowChatStore.getState().sessions,
         () => surfaceScope.assertCurrent('inherit review session permission mode'));
       tracker.hostSubmitStarted = true;
-      await hostDialogQueue(sessionId).submit({ content: message, displayContent: displayMessage,
+      const queue = hostDialogQueue(sessionId);
+      const accepted = await queue.submit({ content: message, displayContent: displayMessage,
         agentType: currentAgentType, attachments: queueImageAttachments(options?.imageContexts),
         metadata: options?.userMessageMetadata ?? {} },
         { composerDraft: options?.pendingQueueDraft, imageContexts: options?.imageContexts, imageDisplayData: options?.imageDisplayData }, options?.turnId);
       tracker.hostAcceptedTurn = true;
       surfaceScope.assertCurrent('accept host message');
+      if (options?.turnId && accepted.receipt?.turnId && accepted.receipt.turnId !== options.turnId) {
+        // An existing outbox record can deduplicate the request under its older Turn id.
+        finishSubmittedMessagePreview(surfaceScope, sessionId, options.turnId);
+      }
+      if (options?.sendImmediately) {
+        await promoteAcceptedHostMessage(queue, accepted);
+        surfaceScope.assertCurrent('accept immediate host message');
+      }
       context.flowChatStore.updateSessionLastSubmittedMode(sessionId, currentAgentType);
       if (isFirstMessage) await updateSessionMetadata(context, sessionId, ['titleMetadata']);
-      return 'completed';
+      return accepted.receipt?.status === 'started' ? 'completed' : 'queued';
     }
 
     const dialogTurnId = options?.turnId?.trim() ||
@@ -406,7 +434,7 @@ export const localSessionDriver: SessionDriver = {
       sessionId: sessionId,
       agentType: currentAgentType,
       userMessage: {
-        id: `user_${Date.now()}`,
+        id: getSubmittedMessagePreview(sessionId, dialogTurnId)?.message.id ?? `user_${Date.now()}`,
         content: displayMessage || message,
         timestamp: Date.now(),
         hasImages,

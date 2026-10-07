@@ -10,7 +10,6 @@ const PRIMARY_CODE_CHANGE_SURFACES = [
   '../../flow_chat/components/modern/SessionFilesBadge.scss',
   '../../flow_chat/components/modern/SessionFileModificationsBar.scss',
   '../../flow_chat/components/usage/SessionUsageReportCard.scss',
-  '../../flow_chat/components/InlineDiffPreview.scss',
   '../../flow_chat/tool-cards/SnapshotFullscreenDiffViewer.css',
   '../../tools/editor/components/DiffEditor.scss',
   '../../tools/git/components/BranchQuickSwitch.scss',
@@ -42,5 +41,11 @@ describe('code-change color integration', () => {
 
       expect(source).not.toMatch(/--openbitfun-domain-git-(?:added|deleted|staged)/);
     }
+  });
+
+  it('uses dedicated diff colors for the inline code viewer', () => {
+    const source = readFileSync(new URL('../../flow_chat/components/InlineDiffPreview.scss', import.meta.url), 'utf8');
+    expect(source).toContain('--openbitfun-color-code-diff-added-marker');
+    expect(source).toContain('--openbitfun-color-code-diff-removed-marker');
   });
 });

@@ -58,7 +58,7 @@ Write the role prompt in the Markdown body, not in a YAML `prompt` field. Use in
 
 Prefer an explicit tool list tailored to the role. If `tools` is omitted, these defaults apply:
 
-- Mode: `Read`, `Glob`, `Grep`, `Write`, `Edit`, `Delete`, `ExecCommand`, `WriteStdin`, `ExecControl`, `Task`, `ListModels`, `Skill`, `WebSearch`, `WebFetch`, `get_goal`, `create_goal`, `update_goal`.
+- Mode: `Read`, `Glob`, `Grep`, `Write`, `Edit`, `Delete`, `ExecCommand`, `WriteStdin`, `ExecControl`, `AgentSpawn`, `AgentSendInput`, `AgentControl`, `ListModels`, `AgentWait`, `Skill`, `WebSearch`, `WebFetch`, `get_goal`, `create_goal`, `update_goal`.
 - Subagent: `LS`, `Read`, `Glob`, `Grep`.
 
 An explicit `tools: []` gives the role no tools. Setting `readonly: false` alone does not add write tools.

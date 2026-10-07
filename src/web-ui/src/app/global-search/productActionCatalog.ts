@@ -6,7 +6,7 @@ export type ProductActionIcon =
   | 'terminal'
   | 'files'
   | 'users'
-  | 'puzzle'
+  | 'book-open'
   | 'blocks'
   | 'check-square'
   | 'chart'
@@ -103,7 +103,7 @@ export const PRODUCT_ACTION_CATALOG: readonly ProductActionDefinition[] = [
     labelKey: 'nav.search.actions.openSkills',
     descriptionKey: 'nav.search.actionDescriptions.openSkills',
     aliases: ['skills', 'skill'],
-    icon: 'puzzle',
+    icon: 'book-open',
     defaultPriority: 80,
   },
   {

@@ -1,31 +1,31 @@
 {
   "defaultHarness": {
     "title": "Default Agent Harness",
-    "description": "Choose how regular new sessions select a Harness. Assistant, ACP, and explicitly requested modes are unaffected.",
+    "description": "Applies to new standard sessions; assistants, ACP, and sessions with an explicit mode are unaffected",
     "strategy": "Default behavior",
     "followLast": "Follow last selection",
     "fixed": "Use a fixed default",
-    "followLastDescription": "New sessions use the Harness most recently selected in ChatInput. Currently remembered: {{name}}.",
-    "followLastEmptyDescription": "No Harness selection is remembered yet. New sessions use {{name}} until you choose one in ChatInput.",
+    "followLastDescription": "New sessions use the runtime last selected in the message input: {{name}}",
+    "followLastEmptyDescription": "No selection recorded yet; new sessions use {{name}} until you choose a runtime in the message input",
     "fixedDescription": "New sessions always use the selected Harness; existing sessions are unchanged.",
     "fixedMode": "Default Harness",
-    "fixedModeDescription": "Used only for regular new sessions without an explicitly requested mode.",
     "compatibilityMode": "{{id}} (compatibility setting)",
     "loadFailed": "Default Harness settings could not be read. This setting is locked to avoid overwriting the existing configuration."
   },
   "features": {
     "pet": {
       "title": "Desktop pet",
-      "subtitle": "Control whether the OpenBitFun desktop pet appears and which character it uses.",
       "enable": "Show pet",
       "petLabel": "Pet appearance",
-      "petDescription": "Choose a preset, or import a Petdex zip downloaded from petdex.dev.",
+      "petDescription": "Import a Petdex ZIP pack or choose a built-in pet",
       "petPlaceholder": "Choose pet appearance",
+      "current": "Current",
+      "previewUnavailable": "Preview unavailable",
       "groupPreset": "Presets",
       "groupImported": "Imported",
       "import": "Import",
       "importing": "Importing",
-      "importHint": "Download an appearance zip from https://petdex.dev/, then import it here.",
+      "importHint": "Download a Petdex ZIP from petdex.dev to import",
       "importDialogTitle": "Choose Petdex appearance zip",
       "loadFailed": "This pet could not be loaded. Check its package and sprite version in Pet settings.",
       "importFailed": "Failed to import pet appearance",
@@ -38,7 +38,8 @@
         "blueGolden": {
           "name": "困困"
         }
-      }
+      },
+      "subtitle": "Turning display off hides the pet and keeps your selected and imported appearances"
     },
     "workspaceSearch": {
       "title": "Accelerated workspace search",
@@ -48,11 +49,11 @@
   },
   "toolExecution": {
     "sectionTitle": "Tool execution",
-    "sectionDescription": "Set timeouts for tool execution and user questions."
+    "sectionDescription": "Tool execution and waiting for an answer have separate timers; set either to 0 for no timeout"
   },
   "permissionPolicy": {
     "sectionTitle": "Tool permissions",
-    "sectionDescription": "Choose when OpenBitFun asks you to confirm tool actions.",
+    "sectionDescription": "Choose when tool actions need approval and which actions are allowed or denied",
     "mode": "Default permission mode",
     "ask": "Ask for confirmation",
     "askDescription": "Confirm before files change, commands run, or external services are accessed.",
@@ -67,7 +68,7 @@
     "showInChatInput": "Show permission mode selector",
     "showInChatInputDescription": "Show the permission mode below the chat input so it can be changed for the current session.",
     "globalRules": "Global rules",
-    "globalRulesDescription": "Set shared allow, ask, or deny rules for every workspace.",
+    "globalRulesDescription": "Applies to all workspaces; project and agent rules can override these, while mandatory product restrictions always take precedence",
     "manageGlobalRules": "Manage rules",
     "globalRulesDialogTitle": "Global tool permission rules",
     "globalRulesDialogDescription": "These user-level rules apply to every workspace. Later project and Agent rules can override them; enforced product restrictions remain authoritative.",
@@ -124,7 +125,7 @@
   },
   "deferredToolLoading": {
     "sectionTitle": "Load tools as needed",
-    "sectionDescription": "Load tool details only when they are needed.",
+    "sectionDescription": "Provide tool details to the model on demand to reduce context usage",
     "warning": "Turning this off loads every tool definition and may increase model usage."
   },
   "computerUse": {
@@ -154,7 +155,7 @@
   },
   "browserControl": {
     "sectionTitle": "Browser control",
-    "sectionDescription": "Choose the browser OpenBitFun uses and how it connects.",
+    "sectionDescription": "Allow agents to inspect and interact with browser pages after connecting",
     "desktopOnly": "Browser control is only available in the OpenBitFun desktop app.",
     "peerUnsupported": "Browser control runs on the connected peer host. This peer host (CLI) does not support it, so it cannot be configured here.",
     "defaultBrowser": "System default browser",

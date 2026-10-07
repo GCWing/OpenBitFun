@@ -95,6 +95,10 @@ export function createDesignSystemSourceAliases(command: 'serve' | 'build') {
 
   return [
     {
+      find: /^@openbitfun\/ui\/brand$/,
+      replacement: path.join(designSystemUiSourceDirectory, 'brand.ts'),
+    },
+    {
       find: /^@openbitfun\/ui\/flow-chat$/,
       replacement: path.join(designSystemUiSourceDirectory, 'flow-chat.ts'),
     },
@@ -158,6 +162,9 @@ export default defineConfig(({ mode, command }) => {
   }
 
   return {
+    // Independent dev ports must not replace each other's optimized deps.
+    // In-process generators use their own config and cache directory.
+    cacheDir: path.resolve(__dirname, 'node_modules/.vite', `dev-${devPort}`),
     plugins: [
       createWebFontProfilePlugin(fontProfile, command),
       react(),
@@ -168,7 +175,7 @@ export default defineConfig(({ mode, command }) => {
 
     // Path resolution
     resolve: {
-      dedupe: ['react', 'react-dom'],
+      dedupe: ['react', 'react-dom', 'lucide-react'],
       alias: [
         // @xterm/headless 6.1.0-beta.141 advertises a missing lib/xterm.mjs.
         // Resolve its published ESM entry for both dev optimization and builds.

@@ -1,37 +1,60 @@
 // Composition owns inter-item space. Leaf views own only their content padding.
 // A model round retains its trailing gap across virtual rows; enclosed content
 // drops it so the enclosing section does not count the last gap twice.
-@mixin apply($enclosed: false) {
-  > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
-    .task-with-subagent-wrapper, .subagent-projection-text--truncated) {
-    margin: 0 0 var(--openbitfun-control-flow-chat-flow-item-gap) 0;
-  }
-
-  // A card may render nothing for a settled state: an errored exploration tool
-  // (Read/Grep/Glob/LS/WebSearch...) hides its row on purpose. The item wrapper
-  // still measures zero height, so giving it a gap leaves invisible space
-  // behind — a boundary between two visible rows then reads as 16px or 24px
-  // instead of the one 8px item gap.
-  > .flowchat-flow-item:has(> .flow-tool-card-wrapper:empty) {
-    margin-bottom: 0;
-  }
-
-  // Consecutive collapsed ambient tools form a continuous run of 22px lines.
-  > .flowchat-flow-item:has(
-    > .flow-tool-card-wrapper[data-openbitfun-attention='ambient']
-      [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='root'][data-openbitfun-expanded-shell='false']
-  ):has(
-    + .flowchat-flow-item
-      > .flow-tool-card-wrapper[data-openbitfun-attention='ambient']
-        [data-openbitfun-component='flow-chat-tool-card'][data-openbitfun-part='root'][data-openbitfun-expanded-shell='false']
-  ) {
-    margin-bottom: 0;
-  }
-
-  @if $enclosed {
+@mixin spacing($enclosed: false) {
+  // The desktop composition owns one paragraph gap for every presentation.
+  // Include the stack identity so shared compact/prominent-card rules cannot
+  // replace it, including the public last-child reset on a virtual member row.
+  &:is([data-flow-item-stack], .explore-region__content, .flow-group-content-segment):not([data-agent-card-grid])
     > :is(.flow-text-block, .flow-thinking-item, .flowchat-flow-item,
-      .task-with-subagent-wrapper, .subagent-projection-text--truncated):last-child {
+      .subagent-projection-text--truncated):not([hidden]):not([data-thinking-attachment='side']) {
+    margin: 0 0 var(--openbitfun-control-flow-chat-paragraph-gap) 0;
+
+    // A renderer with no content must not leave an empty paragraph behind.
+    &:has(> .flow-tool-card-wrapper:empty) {
       margin-bottom: 0;
     }
+
+    @if $enclosed {
+      &:is(:last-child, :has(+ .flowchat-capsule-row-break:last-child)) {
+        margin-bottom: 0;
+      }
+    }
+  }
+}
+
+@mixin apply($enclosed: false) {
+  @include spacing($enclosed);
+
+  // Side-docked reasoning occupies the next item's gutter, not a transcript row.
+  > .flow-thinking-item[data-thinking-attachment='side'] {
+    margin-bottom: 0;
+  }
+
+  // Compact geometry is independent of concurrency; serial calls keep a row.
+  > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-tool-capsule='true']) {
+    inline-size: 100%;
+    max-inline-size: 100%;
+    interpolate-size: allow-keywords;
+  }
+
+  > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row='true']) {
+    display: block;
+    inline-size: var(--openbitfun-control-flow-chat-capsule-inline-size);
+    max-inline-size: 100%;
+    vertical-align: top;
+
+    // Retract directly to the shared resting width in the detail exit interval.
+    @media (prefers-reduced-motion: no-preference) {
+      transition:
+        inline-size 520ms var(--openbitfun-motion-easing-smooth),
+        max-inline-size 520ms var(--openbitfun-motion-easing-smooth);
+    }
+  }
+
+  > .flowchat-flow-item:has(> .flow-tool-card-wrapper[data-capsule-row='true'][data-capsule-parallel='true']) {
+    display: inline-block;
+    max-inline-size: calc(100% - var(--openbitfun-space-2));
+    margin-inline-end: var(--openbitfun-space-2);
   }
 }

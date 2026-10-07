@@ -1,8 +1,9 @@
 import React, { createContext, memo, useContext, useId, useLayoutEffect, useMemo, useRef } from 'react';
 import type { Components } from 'react-markdown';
 import { renderNode, type CustomComponentMap, type NodeComponentProps, type RenderContext } from 'markstream-react';
-import { getMarkdown, parseMarkdownToStructure, type BaseNode, type ParsedNode } from 'stream-markdown-parser';
+import { getMarkdown, parseMarkdownToStructure, type ParsedNode } from 'stream-markdown-parser';
 import { stabilizeThinkingNodes } from './stabilizeThinkingNodes';
+import { getThinkingPreview, type ThinkingNode as ProductNode } from './thinkingPreview';
 
 interface ThinkingMarkdownProps {
   content: string;
@@ -13,31 +14,12 @@ interface ThinkingMarkdownProps {
   renderFragment: (content: string, inline: boolean, math: boolean) => React.ReactNode;
   /** Changes to resource ownership must refresh memoized blocks even without new text. */
   environment?: object;
+  /** Keep a rich inline preview beside the retained full Markdown tree. */
+  singleLinePreview?: boolean;
 }
 
 type ProductRenderers = Pick<ThinkingMarkdownProps, 'components' | 'urlTransform' | 'renderFragment'>;
 const ProductContext = createContext<ProductRenderers | null>(null);
-
-// This is a presentation adapter for the library's AST, not a second parser.
-interface ProductNode extends BaseNode {
-  children?: ParsedNode[];
-  content?: string;
-  language?: string;
-  level?: number;
-  ordered?: boolean;
-  start?: number;
-  items?: ParsedNode[];
-  header?: ProductNode;
-  rows?: ProductNode[];
-  cells?: ProductNode[];
-  align?: string;
-  href?: string;
-  src?: string;
-  alt?: string;
-  title?: string | null;
-  checked?: boolean;
-  id?: string;
-}
 
 type ThinkingContext = RenderContext & { insideLink?: boolean };
 
@@ -142,7 +124,7 @@ const ThinkingBlock = memo(function ThinkingBlock({ node, index, context }: {
   return renderNode(node, `${context.indexKey}-${index}`, context);
 });
 
-export default function ThinkingMarkdown({ content, isStreaming, isDark, components, urlTransform, renderFragment, environment }: ThinkingMarkdownProps) {
+export default function ThinkingMarkdown({ content, isStreaming, isDark, components, urlTransform, renderFragment, environment, singleLinePreview = false }: ThinkingMarkdownProps) {
   const id = useId();
   const parser = useMemo(() => getMarkdown(id, {
     enableContainers: false,
@@ -168,12 +150,19 @@ export default function ThinkingMarkdown({ content, isStreaming, isDark, compone
     typewriter: false, fade: false, showTooltips: false, renderCodeBlocksAsPre: true, events: {},
   }), [id, isStreaming, isDark]);
   const product = useMemo(() => ({ components, urlTransform, renderFragment, environment }), [components, urlTransform, renderFragment, environment]);
+  const preview = useMemo(() => singleLinePreview ? getThinkingPreview(nodes) : [], [nodes, singleLinePreview]);
+  const fullContent = nodes.map((node, index) => <ThinkingBlock key={index} node={node} index={index} context={context} />);
 
-  // Use Markstream's public node renderer directly: no extra wrapper, scheduler,
+  // Use Markstream's public node renderer directly: no library scheduler,
   // viewport virtualization, CSS theme, or global custom-component registrations.
   // The parser owns incremental parsing; adapter stabilization lets memo skip
   // settled blocks even when the parser cannot reuse its structured nodes.
   return <ProductContext.Provider value={product}>
-    {nodes.map((node, index) => <ThinkingBlock key={index} node={node} index={index} context={context} />)}
+    {singleLinePreview ? <>
+      <div className="thinking-markdown-full">{fullContent}</div>
+      <div className="thinking-markdown-preview" aria-hidden="true">
+        {preview.map((node, index) => <ThinkingBlock key={index} node={node} index={index} context={context} />)}
+      </div>
+    </> : fullContent}
   </ProductContext.Provider>;
 }

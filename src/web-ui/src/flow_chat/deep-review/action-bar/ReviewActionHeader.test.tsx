@@ -16,11 +16,10 @@ describe('ReviewActionHeader', () => {
   });
 
   it('renders export actions, status, error, and minimize control', () => {
-    const Icon = () => <span>phase icon</span>;
     const html = renderToStaticMarkup(
       <ReviewActionHeader
         reviewData={{ summary: { recommended_action: 'request_changes' } } as any}
-        PhaseIcon={Icon}
+        phaseIcon={{ name: 'clock' }}
         phaseIconClass="phase-class"
         phaseTitle="Review completed"
         errorMessage="Network warning"
@@ -40,7 +39,7 @@ describe('ReviewActionHeader', () => {
       'Details: ' + 'long-unbroken-diagnostic-'.repeat(30);
     const html = renderToStaticMarkup(
       <ReviewActionHeader
-        PhaseIcon={() => <span />}
+        phaseIcon={{ name: 'clock' }}
         phaseIconClass="phase-error"
         phaseTitle="Fix failed"
         errorMessage={error}
@@ -63,12 +62,11 @@ describe('ReviewActionHeader', () => {
   });
 
   it.each([null, { summary: { recommended_action: 'request_changes' } }])('keeps compact export actions while running with report data %j', (reviewData) => {
-    const Icon = () => <span>phase icon</span>;
     renderToStaticMarkup(
       <ReviewActionHeader
         reviewData={reviewData as any}
         isReviewRunning
-        PhaseIcon={Icon}
+        phaseIcon={{ name: 'clock' }}
         phaseIconClass="phase-class"
         phaseTitle="Review in progress"
         minimizeLabel="Minimize"

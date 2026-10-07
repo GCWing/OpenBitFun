@@ -5,14 +5,13 @@
  * @module components/MarkdownEditor
  */
 
-import { Button, Icon, IconButton, SegmentedControl, Toolbar, ToolbarGroup } from '@openbitfun/ui';
+import { Button, Empty, Icon, IconButton, SegmentedControl, Toolbar, ToolbarGroup } from '@openbitfun/ui';
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { MEditor } from '../meditor';
 import { resourcePathKey } from '@/shared/utils/resourcePath';
 import { useEditorDocument } from '../services/EditorDocument';
 import { standaloneEditorFileAccess, type EditorFileAccess } from '../services/editorFileAccess';
 import type { EditorInstance } from '../meditor';
-import { AlertCircle } from 'lucide-react';
 import { createLogger } from '@/shared/utils/logger';
 import { sendDebugProbe } from '@/shared/utils/debugProbe';
 import { elapsedMs, nowMs } from '@/shared/utils/timing';
@@ -645,15 +644,17 @@ const MarkdownEditor: React.FC<MarkdownEditorProps> = ({
   if (error) {
     return (
       <div className={`openbitfun-markdown-editor-error ${className}`} data-openbitfun-product-component="markdown-editor" data-openbitfun-product-part="error" data-openbitfun-state="error">
-        <div className="error-content">
-          <AlertCircle className="error-icon" />
-          <p>{error}</p>
-          {filePath && (
+        <Empty
+          role="alert"
+          imageSize="sm"
+          icon={<Icon name="file-x-2" />}
+          description={error}
+          actions={filePath ? (
             <Button variant="outline" size="sm" onClick={loadFileContent}>
               {t('editor.common.retry')}
             </Button>
-          )}
-        </div>
+          ) : undefined}
+        />
       </div>
     );
   }

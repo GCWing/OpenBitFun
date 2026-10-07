@@ -29,7 +29,7 @@ Manage built-in, custom, and subagents so specialized roles can handle research,
   - Inspect each agent's tools, Skills, read-only state, and capability summary
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 按智能体选择工具组、单个工具、Skill 组与 Skills
   - Choose tool groups, individual tools, skill groups, and Skills per agent
-- **由专用智能体工具控制 / Delegated Agent tool** · `Task` / `AgentSpawn` / `AgentWait` / `AgentSendInput` / `AgentInterrupt` / `AgentList` / `AgentDelete` · 让主智能体委派并行研究、编码和评审任务并协调生命周期
+- **由专用智能体工具控制 / Delegated Agent tool** · `AgentSpawn` / `AgentWait` / `AgentSendInput` / `AgentControl` / `AgentList` · 让主智能体委派并行研究、编码和评审任务并协调生命周期
   - Let the primary agent delegate parallel research, coding, and review work and coordinate their lifecycle
 
 ## 怎么用 / How to use it

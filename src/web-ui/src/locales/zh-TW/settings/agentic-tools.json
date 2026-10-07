@@ -12,27 +12,26 @@
     },
     "subagents": {
       "title": "子智慧體",
-      "description": "設定子智慧體的預設模型、任務並行方式與並行上限"
+      "description": "一般子智能體與 Swarm 的並行上限分別生效"
     }
   },
   "config": {
     "autoExecute": "自動執行",
     "autoExecuteDesc": "跳過工具執行前的用戶確認步驟",
     "subagentMaxConcurrency": "同時執行任務數",
-    "subagentMaxConcurrencyDesc": "可同時執行的任務數量",
+    "subagentMaxConcurrencyDesc": "同時執行的一般子智能體任務數量上限",
     "swarmMaxConcurrency": "Swarm 工作並發上限",
-    "swarmMaxConcurrencyDesc": "同一時間允許並行執行的 Swarm Worker 和 Reviewer 數量，與普通子智能體上限獨立",
+    "swarmMaxConcurrencyDesc": "Swarm 中工作智能體和審核智能體的並行上限",
     "confirmTimeout": "確認超時",
     "confirmTimeoutDesc": "等待用戶確認工具調用的最長時間（秒）。",
     "confirmTimeoutHint": "設為 0 可關閉確認超時。",
     "executionTimeout": "工具逾時",
-    "executionTimeoutDesc": "單次工具操作的最長時間。設為 0 表示不限制",
+    "executionTimeoutDesc": "單次工具操作允許持續的最長時間",
     "executionTimeoutHint": "設為 0 表示不限制",
     "userQuestionTimeout": "提問逾時",
-    "userQuestionTimeoutDesc": "等待使用者開始回答提問的最長時間。設為 0 表示不限制，預設 180 秒。",
+    "userQuestionTimeoutDesc": "等待你開始回答提問的最長時間",
     "subagentBatchPolicy": {
       "label": "任務並行方式",
-      "desc": "選擇多個任務同時開始時的執行方式。",
       "tooltipLabel": "任務並行方式說明",
       "safeOnly": "安全並行",
       "safeOnlyDesc": "只同時執行不會修改內容的任務",
@@ -42,7 +41,7 @@
     "seconds": "秒",
     "subagentModelSettings": "前往智慧體頁面為子智慧體個別設定模型",
     "subagentModelInherit": "繼承父會話",
-    "subagentDefaultModel": "Subagent 預設模型",
+    "subagentDefaultModel": "子智能體預設模型",
     "subagentDefaultModelDesc": "未個別指定模型的子智慧體使用此設定。"
   },
   "filters": {

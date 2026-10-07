@@ -11,6 +11,7 @@ const out = requireArg(args, 'out');
 const requiredPlatforms = parseListArg(args['required-platforms'] || '');
 const manualAssetsDir = args['manual-assets-dir'];
 const installerAssetsDir = args['installer-assets-dir'];
+const notesFile = args['notes-file'];
 
 if (!existsSync(assetsDir)) {
   fail(`Assets directory does not exist: ${assetsDir}`);
@@ -52,7 +53,7 @@ if (missingPlatforms.length > 0) {
 
 const manifest = {
   version,
-  notes: '',
+  notes: notesFile && existsSync(notesFile) ? readFileSync(notesFile, 'utf8').trim() : '',
   pub_date: new Date().toISOString(),
   platforms,
 };

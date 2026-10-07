@@ -9,7 +9,6 @@ use crate::agentic::workspace::WorkspaceBackend;
 use crate::agentic::WorkspaceBinding;
 use crate::infrastructure::try_get_path_manager_arc;
 use crate::service::bootstrap::build_workspace_persona_prompt;
-use crate::service::config::global::GlobalConfigManager;
 use crate::service::config::{get_app_language_code, get_global_config_service};
 use crate::service::filesystem::get_formatted_directory_listing;
 use crate::service::i18n::LocaleId;
@@ -34,12 +33,50 @@ use std::path::Path;
 /// Placeholder constants
 const PLACEHOLDER_PERSONA: &str = "{PERSONA}";
 const PLACEHOLDER_LANGUAGE_PREFERENCE: &str = "{LANGUAGE_PREFERENCE}";
-const PLACEHOLDER_CLAW_WORKSPACE: &str = "{CLAW_WORKSPACE}";
-const PLACEHOLDER_VISUAL_MODE: &str = "{VISUAL_MODE}";
 const PLACEHOLDER_SESSION_ID: &str = "{SESSION_ID}";
 const PLACEHOLDER_DEEP_RESEARCH_REPORT_LINK: &str = "{DEEP_RESEARCH_REPORT_LINK}";
 const PLACEHOLDER_MEMORY_ROOT: &str = "{MEMORY_ROOT}";
 const PLACEHOLDER_READ_TERMINAL: &str = "{READ_TERMINAL}";
+const PLACEHOLDER_COMPUTER_USE_GUIDANCE: &str = "{COMPUTER_USE_GUIDANCE}";
+const PLACEHOLDER_FILE_REFERENCES: &str = "{FILE_REFERENCES}";
+
+const COMPUTER_USE_GUIDANCE: &str = r#"# Direct desktop work
+
+For ComputerUse handoffs, preserve the original user's request and any relevant approval as quotations, separate from your proposed plan. Delegate the desired outcome, target, exact approved content and verification criteria; let the desktop agent select actions from current observations. Default to background app control. Do not add application activation, foreground takeover, global input or clipboard scripts to an ordinary app task. A request such as "control my computer and send a message" does not request foreground takeover. Confirmation of message content does not authorize a change of control mode, even if your preceding narration suggested taking over the mouse and keyboard. An agent-written plan is not evidence of user authorization.
+
+Use `ComputerUse` directly for native application and OS UI tasks when it appears in your current tool list. Keep the user's conversation and observations in this agent; a separate ComputerUse subagent is optional for independently delegated work, not a prerequisite for desktop control. If neither the tool nor an available ComputerUse subagent can handle the executing host, report the missing capability without local fallback. Default to background app control.
+
+For a model that can see images, observe the selected window and act on its attached screenshot, including controls with no AX/OCR text. Use image coordinates and the exact screenshot ID; accessibility and OCR are optional precision aids, not prerequisites for a visible button, canvas or game. Group already-decided inputs with `app_batch` and typed `steps` (`app_click`, `app_type_text`, `app_key_chord`, `app_scroll`, `app_drag`, `wait`); inspect the single final observation before the next decision. For an observed search field with known Return-to-search behavior, batch `app_type_text` with `focus` plus `app_key_chord` with `["return"]`, then inspect the results before choosing one. Focus-and-type alone is already one `app_type_text` call; do not split it into click, observation and typing. A batch uses the same native input route and authorization as single calls, so it cannot repair an unavailable route. Do not batch a later target that is not yet visible, or wait through an unknown result. Reuse returned observations instead of taking an extra screenshot after every input. `app_drag` uses observed `from`/`to` image targets and `duration_ms`."#;
+
+const FILE_REFERENCES: &str = r#"# File and Image References
+IMPORTANT: Whenever you mention a file path in normal prose that the user might want to open, make it a clickable markdown link: [text](url). For an image file, use standard Markdown image syntax: ![concise alt text](url).
+
+**Link URL path**:
+- For files inside the workspace, use the workspace-relative path: [filename.ts](src/filename.ts)
+- For files outside the workspace, use the absolute path as the URL: [settings.json](/absolute/path/to/settings.json)
+- For images, use workspace-relative path or absolute path or verified HTTP(S) image URLs
+
+**Line targets**:
+- For a specific line, append `#L<line>` to URL: [filename.ts:42](src/filename.ts#L42)
+- For a line range, append `#L<start>-L<end>`: [filename.ts:42-51](src/filename.ts#L42-L51)
+
+**Link text and formatting**:
+- Link text should be the bare filename, optionally with line numbers; do not include directory prefixes.
+- Do not output bare paths as plain text in normal prose. Raw paths are appropriate inside commands, code/config snippets, or when the user explicitly asks for a copyable path.
+- Do not wrap link text or the whole markdown link in backticks.
+
+<good-examples>
+- Source file: [filename.ts](src/filename.ts)
+- Specific line: [filename.ts:42](src/filename.ts#L42)
+- External file line: [settings.json:12](/absolute/path/to/settings.json#L12)
+</good-examples>
+<bad-examples>
+- Bare path: src/filename.ts
+- Backticks in link text: [`filename.ts:42`](src/filename.ts)
+- Whole link wrapped in backticks: `[report.md](deep-research/report.md)`
+- Full path in link text: [src/filename.ts](src/filename.ts)
+- Absolute path as plain text: /absolute/path/to/deep-research/report.md
+</bad-examples>"#;
 
 #[derive(Debug, Clone)]
 pub struct PromptBuilderContext {
@@ -61,8 +98,6 @@ pub struct PromptBuilderContext {
     pub runtime_context_needs: RuntimeContextNeeds,
     /// Remote mobile/bot turns need `computer://` links for file delivery.
     pub remote_file_delivery_channel: bool,
-    /// The active response surface can render Markdown image syntax inline.
-    pub inline_markdown_image_display: bool,
     /// Resolved through the active local or remote workspace filesystem provider.
     pub workspace_instruction_files_context: Option<String>,
     /// Distinguishes a resolved empty result from a caller that has not resolved instructions.
@@ -87,7 +122,6 @@ impl PromptBuilderContext {
             tool_listing_sections: ToolListingSections::default(),
             runtime_context_needs: RuntimeContextNeeds::default(),
             remote_file_delivery_channel: false,
-            inline_markdown_image_display: false,
             workspace_instruction_files_context: None,
             workspace_instruction_files_context_resolved: false,
         }
@@ -130,11 +164,6 @@ impl PromptBuilderContext {
 
     pub fn with_remote_file_delivery_channel(mut self, enabled: bool) -> Self {
         self.remote_file_delivery_channel = enabled;
-        self
-    }
-
-    pub fn with_inline_markdown_image_display(mut self, enabled: bool) -> Self {
-        self.inline_markdown_image_display = enabled;
         self
     }
 
@@ -297,7 +326,6 @@ impl PromptBuilder {
             remote_execution: self.context.remote_execution.clone(),
             local_shell,
             supports_image_understanding: self.context.supports_image_understanding,
-            inline_markdown_image_display: self.context.inline_markdown_image_display,
         })
     }
 
@@ -449,32 +477,6 @@ impl PromptBuilder {
         }
     }
 
-    /// Get visual mode instruction from user config
-    ///
-    /// Reads `app.ai_experience.enable_visual_mode` from global config.
-    /// Returns a prompt snippet when enabled, or empty string when disabled.
-    async fn get_visual_mode_instruction(&self) -> String {
-        let enabled = match GlobalConfigManager::get_service().await {
-            Ok(service) => service
-                .get_config::<bool>(Some("app.ai_experience.enable_visual_mode"))
-                .await
-                .unwrap_or(false),
-            Err(e) => {
-                debug!("Failed to read visual mode config: {}", e);
-                false
-            }
-        };
-
-        if enabled {
-            r"# Visualizing complex logic as you explain
-Use Mermaid diagrams to visualize complex logic, workflows, architectures, and data flows whenever it helps clarify the explanation.
-Output Mermaid in fenced code blocks (```mermaid) so the UI can render them.
-".to_string()
-        } else {
-            String::new()
-        }
-    }
-
     fn build_terminal_transcript_prompt_guidance(&self) -> String {
         if self.context.remote_execution.is_some() {
             return String::new();
@@ -533,25 +535,15 @@ For instructions on locating and reading the transcripts, read: `{}`
         Ok(format!("# Language Preference\nYou MUST respond in {} regardless of the user's input language. This is the system language setting and should be followed unless the user explicitly specifies a different language. This is crucial for smooth communication and user experience\n", language))
     }
 
-    /// Get Claw-specific workspace boundary instruction
-    fn get_claw_workspace_instruction(&self) -> String {
-        "# Workspace
-Your dedicated operating space is the workspace root shown in the current user context.
-Prefer doing work inside this workspace and keep it well organized with clear structure, sensible filenames, and minimal clutter.
-Do not read from, modify, create, move, or delete files outside this workspace unless the user has explicitly granted permission for that external action.
-"
-        .to_string()
-    }
-
     /// Build prompt from template, automatically fill content based on placeholders
     ///
     /// Supported placeholders:
     /// - `{PERSONA}` - Workspace persona files (BOOTSTRAP.md, SOUL.md, USER.md, IDENTITY.md)
     /// - `{LANGUAGE_PREFERENCE}` - User language preference (read from global config)
-    /// - `{CLAW_WORKSPACE}` - Claw-specific workspace ownership and boundary rules
-    /// - `{VISUAL_MODE}` - Visual mode instruction (Mermaid diagrams, read from global config)
     /// - `{MEMORY_ROOT}` - OpenBitFun memory workspace root, used by internal memory agents
     /// - `{READ_TERMINAL}` - Local user terminal transcript guidance
+    /// - `{COMPUTER_USE_GUIDANCE}` - Shared native desktop interaction guidance
+    /// - `{FILE_REFERENCES}` - Shared file and image reference guidance
     ///
     /// If a placeholder is not in the template, corresponding content will not be added
     pub async fn build_prompt_from_template(&self, template: &str) -> OpenBitFunResult<String> {
@@ -585,21 +577,17 @@ Do not read from, modify, create, move, or delete files outside this workspace u
             result = result.replace(PLACEHOLDER_LANGUAGE_PREFERENCE, &language_preference);
         }
 
-        // Replace {CLAW_WORKSPACE}
-        if result.contains(PLACEHOLDER_CLAW_WORKSPACE) {
-            let claw_workspace = self.get_claw_workspace_instruction();
-            result = result.replace(PLACEHOLDER_CLAW_WORKSPACE, &claw_workspace);
-        }
-
-        // Replace {VISUAL_MODE}
-        if result.contains(PLACEHOLDER_VISUAL_MODE) {
-            let visual_mode = self.get_visual_mode_instruction().await;
-            result = result.replace(PLACEHOLDER_VISUAL_MODE, &visual_mode);
-        }
-
         if result.contains(PLACEHOLDER_READ_TERMINAL) {
             let read_terminal = self.build_terminal_transcript_prompt_guidance();
             result = result.replace(PLACEHOLDER_READ_TERMINAL, &read_terminal);
+        }
+
+        if result.contains(PLACEHOLDER_COMPUTER_USE_GUIDANCE) {
+            result = result.replace(PLACEHOLDER_COMPUTER_USE_GUIDANCE, COMPUTER_USE_GUIDANCE);
+        }
+
+        if result.contains(PLACEHOLDER_FILE_REFERENCES) {
+            result = result.replace(PLACEHOLDER_FILE_REFERENCES, FILE_REFERENCES);
         }
 
         // Replace {SESSION_ID} — used by deep-research Pro mode to anchor a per-session

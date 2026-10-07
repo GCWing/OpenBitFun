@@ -1,10 +1,10 @@
 {
-  "title": "Voice Input",
-  "subtitle": "Local transcription stays on this device and does not upload audio; realtime voice calls use a separate cloud configuration.",
+  "title": "Voice",
+  "subtitle": "Configure voice dictation on this device",
   "loading": "Loading voice input settings...",
   "sections": {
     "basic": "Voice input",
-    "basicDescription": "Recognition runs on this device. Recordings and transcription audio are not uploaded."
+    "basicDescription": "Transcribe speech on this device without uploading audio"
   },
   "languages": {
     "auto": "Auto",
@@ -41,8 +41,7 @@
   },
   "composer": {
     "enabled": {
-      "label": "Show voice button in the input",
-      "description": "Use the microphone to enter text in the conversation input."
+      "label": "Show voice button in the input"
     },
     "language": {
       "label": "Recognition language",
@@ -51,15 +50,15 @@
   },
   "voiceCall": {
     "title": "Realtime voice call",
-    "description": "When enabled, microphone audio is sent from this controller to Volcengine for realtime processing. This is separate from local transcription.",
+    "description": "The controlling device sends microphone audio to Volcengine for live processing, independently of local dictation",
     "loading": "Loading realtime voice settings…",
     "enabled": {
       "label": "Enable the client voice assistant",
-      "description": "Talk to Volcengine's end-to-end realtime voice model from the bottom-right client launcher, let it understand workspace state, and start OpenBitFun tasks."
+      "description": "Allow the voice assistant to read workspace status and start tasks; open a call from the bottom right of the app"
     },
     "apiKey": {
       "label": "Volcengine API key",
-      "description": "Used only by this controller for the voice connection; it is not sent to a remote workspace or peer device with a task.",
+      "description": "Used only by the controlling device for voice calls; not sent with tasks to remote workspaces or peer devices",
       "placeholder": "Enter the end-to-end realtime voice API key"
     },
     "voice": {
@@ -68,7 +67,7 @@
     },
     "status": {
       "label": "Connection setup",
-      "description": "Saving stores this configuration without verifying the API key or connection. Then open Hello at the bottom-right of the client and switch from text chat to realtime voice."
+      "description": "Saving does not verify the key or connection; open Hello at the bottom right to switch to live voice and test it"
     },
     "save": "Save realtime voice",
     "messages": {
@@ -76,7 +75,8 @@
       "saved": "Realtime voice settings saved",
       "saveFailed": "Failed to save realtime voice settings",
       "required": "Enter an API key and voice before enabling realtime voice.",
-      "unsaved": "You have unsaved realtime voice changes."
+      "unsaved": "You have unsaved realtime voice changes.",
+      "unsupported": "Real-time voice calls are only available in OpenBitFun Desktop."
     },
     "call": {
       "title": "Live Call",

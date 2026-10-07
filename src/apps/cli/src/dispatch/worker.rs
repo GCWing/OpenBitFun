@@ -803,6 +803,7 @@ mod tests {
             agent_type: Some("GeneralPurpose".to_string()),
             model_id: None,
             focused_review_display_label: None,
+            continuation_policy: None,
         };
         assert!(scope.admit(&linked));
         assert!(scope.admit(&child_chunk));
@@ -817,6 +818,7 @@ mod tests {
             agent_type: None,
             model_id: None,
             focused_review_display_label: None,
+            continuation_policy: None,
         };
         assert!(scope.admit(&grandchild_link));
 
@@ -830,6 +832,7 @@ mod tests {
             agent_type: None,
             model_id: None,
             focused_review_display_label: None,
+            continuation_policy: None,
         };
         assert!(!scope.admit(&foreign_link));
 

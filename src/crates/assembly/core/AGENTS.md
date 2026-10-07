@@ -283,6 +283,13 @@ Skill discovery, installation provenance, and local/remote registry regressions:
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::tools::implementations::skills::
 ```
 
+Skill hook activation, session cleanup, and tool preflight/permission ordering:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib native_hooks
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::tools::pipeline::tool_pipeline::tests
+```
+
 For configured OpenCode discovery and explicit skill loading, include their owner feature and tool tests:
 
 ```bash

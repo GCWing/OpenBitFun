@@ -34,7 +34,7 @@ describe('activateInteractiveCapability', () => {
 
     expect(mocks.openDestination).toHaveBeenCalledWith({
       kind: 'settings',
-      pageId: 'application.shortcuts',
+      pageId: 'application.input', sectionId: 'shortcuts',
     });
     expect(mocks.openScene).toHaveBeenCalledWith('settings');
   });
@@ -45,7 +45,7 @@ describe('activateInteractiveCapability', () => {
     });
     expect(mocks.openDestination).toHaveBeenLastCalledWith({
       kind: 'settings',
-      pageId: 'application.terminal',
+      pageId: 'development.terminal',
     });
 
     await activateInteractiveCapability('setting.application.development', {
@@ -53,8 +53,24 @@ describe('activateInteractiveCapability', () => {
     });
     expect(mocks.openDestination).toHaveBeenLastCalledWith({
       kind: 'settings',
-      pageId: 'application.editor',
+      pageId: 'development.editor',
     });
+  });
+
+
+  it.each([
+    ['feature.computer-use', undefined, { pageId: 'tools.desktop-control' }],
+    ['setting.application.input', 'voice-enabled', { pageId: 'application.input', sectionId: 'voice' }],
+    ['setting.application.appearance', 'language', { pageId: 'application.general' }],
+    ['setting.workspace.session', 'default-agent-harness', { pageId: 'ai.session-memory', sectionId: 'session' }],
+    ['setting.workspace.session', 'accelerated-search', { pageId: 'development.workspace', sectionId: 'workspace-search' }],
+    ['setting.tools.execution', 'permission-mode', { pageId: 'ai.permissions' }],
+    ['setting.tools.execution', 'timeouts', { pageId: 'ai.execution' }],
+    ['setting.tools.execution', 'computer-use', { pageId: 'tools.desktop-control' }],
+    ['setting.tools.automation', 'hooks-enabled', { pageId: 'tools.automation', sectionId: 'hooks' }],
+  ])('opens the reorganized destination for %s / %s using the stable host ID', async (capabilityId, itemId, destination) => {
+    await activateInteractiveCapability(capabilityId, { itemId });
+    expect(mocks.openDestination).toHaveBeenLastCalledWith({ kind: 'settings', ...destination });
   });
 
   it('rejects stale item IDs instead of silently opening the wrong place', async () => {

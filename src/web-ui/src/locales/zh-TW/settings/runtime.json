@@ -1,31 +1,31 @@
 {
   "defaultHarness": {
     "title": "預設智能體執行框架",
-    "description": "設定一般新工作階段如何選擇執行框架。助理、ACP 與明確指定模式的工作階段不受影響。",
+    "description": "用於一般新會話；助理、ACP 與已指定模式的會話不受影響",
     "strategy": "預設方式",
     "followLast": "跟隨上一次選擇",
     "fixed": "固定預設模式",
-    "followLastDescription": "新工作階段沿用最近一次在 ChatInput 主動選擇的執行框架。目前記憶：{{name}}。",
-    "followLastEmptyDescription": "尚未記住執行框架選擇；在 ChatInput 主動選擇前，新工作階段使用 {{name}}。",
+    "followLastDescription": "新會話沿用你最近在輸入框中選擇的執行框架：{{name}}",
+    "followLastEmptyDescription": "尚未記錄選擇；在輸入框中選擇執行框架前，新會話使用 {{name}}",
     "fixedDescription": "新工作階段一律使用指定執行框架；目前工作階段不會變更。",
     "fixedMode": "預設執行框架",
-    "fixedModeDescription": "僅用於未明確指定模式的一般新工作階段。",
     "compatibilityMode": "{{id}}（相容設定）",
     "loadFailed": "無法讀取預設執行框架設定。為避免覆蓋現有設定，此設定已鎖定。"
   },
   "features": {
     "pet": {
       "title": "桌面寵物",
-      "subtitle": "控制 OpenBitFun 桌面寵物是否顯示以及使用的形象",
       "enable": "顯示寵物",
       "petLabel": "寵物形象",
-      "petDescription": "選擇預置形象，或匯入從 petdex.dev 下載的 Petdex zip。",
+      "petDescription": "可匯入 Petdex ZIP 造型套件，或選擇預置造型",
       "petPlaceholder": "選擇寵物形象",
+      "current": "目前使用",
+      "previewUnavailable": "預覽無法使用",
       "groupPreset": "預置",
       "groupImported": "已匯入",
       "import": "匯入",
       "importing": "匯入中",
-      "importHint": "可以去 https://petdex.dev/ 下載形象 zip 後匯入",
+      "importHint": "從 petdex.dev 下載 Petdex ZIP 後匯入",
       "importDialogTitle": "選擇 Petdex 形象 zip",
       "loadFailed": "無法載入此寵物，請在寵物設定中檢查寵物套件和圖集版本。",
       "importFailed": "匯入寵物形象失敗",
@@ -38,7 +38,8 @@
         "blueGolden": {
           "name": "困困"
         }
-      }
+      },
+      "subtitle": "關閉顯示會隱藏寵物，已選擇和匯入的形象仍會保留"
     },
     "workspaceSearch": {
       "title": "加速工作區搜尋",
@@ -48,11 +49,11 @@
   },
   "toolExecution": {
     "sectionTitle": "工具執行",
-    "sectionDescription": "設定工具執行和使用者提問的逾時時間。"
+    "sectionDescription": "工具執行和等待回答分別計時，設為 0 可取消對應時限"
   },
   "permissionPolicy": {
     "sectionTitle": "工具權限",
-    "sectionDescription": "設定 OpenBitFun 何時需要你確認工具操作。",
+    "sectionDescription": "決定工具操作是否需要確認，以及哪些操作允許或拒絕",
     "mode": "預設權限模式",
     "ask": "需要確認",
     "askDescription": "修改檔案、執行命令或存取外部服務時先確認。",
@@ -67,7 +68,7 @@
     "showInChatInput": "顯示權限模式選擇器",
     "showInChatInputDescription": "在輸入框下方顯示權限模式，可隨時為目前工作階段切換。",
     "globalRules": "全域規則",
-    "globalRulesDescription": "為所有工作區設定通用的允許、詢問或拒絕規則。",
+    "globalRulesDescription": "適用於所有工作區；專案與智能體規則可覆寫，產品強制限制始終優先",
     "manageGlobalRules": "管理規則",
     "globalRulesDialogTitle": "全域工具權限規則",
     "globalRulesDialogDescription": "這些使用者級規則會套用至所有工作區。後續專案和智能體規則可以覆蓋它們；產品強制限制始終優先。",
@@ -124,7 +125,7 @@
   },
   "deferredToolLoading": {
     "sectionTitle": "按需載入工具",
-    "sectionDescription": "僅在需要時載入工具詳情。",
+    "sectionDescription": "按需向模型提供工具詳情，減少上下文佔用",
     "warning": "關閉後會載入所有工具詳情，可能增加模型用量。"
   },
   "computerUse": {
@@ -154,7 +155,7 @@
   },
   "browserControl": {
     "sectionTitle": "瀏覽器控制",
-    "sectionDescription": "選擇 OpenBitFun 使用的瀏覽器和連線方式。",
+    "sectionDescription": "連線後，智能體可查看及操作瀏覽器頁面",
     "desktopOnly": "瀏覽器控制僅在 OpenBitFun 桌面應用中可用。",
     "peerUnsupported": "瀏覽器控制執行於所連接的 Peer 主機。該 Peer 主機（CLI）不支援此功能，無法在此設定。",
     "status": "連接狀態",

@@ -245,6 +245,38 @@ describe('ApiClient startup trace classification', () => {
     }
   });
 
+  it('lets a streamed transfer opt out of the request deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      let settle: (value: unknown) => void = () => {};
+      adapterMocks.request.mockReturnValueOnce(
+        new Promise((resolve) => {
+          settle = resolve;
+        }),
+      );
+      const client = new ApiClient({ enableLogging: false, retries: 0 });
+
+      const pending = client.invoke(
+        'remote_download_to_local_path',
+        {},
+        { timeout: 0 },
+      );
+      // Any wall-clock budget is longer than the default 30s deadline, so a
+      // transfer that is still running must not be aborted.
+      await vi.advanceTimersByTimeAsync(24 * 60 * 60 * 1000);
+      settle('transferred');
+
+      await expect(pending).resolves.toBe('transferred');
+      expect(client.getStats()).toMatchObject({
+        successfulRequests: 1,
+        failedRequests: 0,
+        activeRequests: 0,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('uses the message from plain structured Tauri errors', async () => {
     const transportError = {
       code: 'worktree_not_found',

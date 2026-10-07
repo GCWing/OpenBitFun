@@ -6,6 +6,7 @@ import {
 } from '@/infrastructure/peer-device/deviceSurface';
 import {
   askUserQuestionDraftKey,
+  askUserQuestionFollowUpDraftKey,
   askUserQuestionDraftStore,
 } from './askUserQuestionDraftStore';
 
@@ -66,6 +67,24 @@ describe('askUserQuestionDraftStore', () => {
     expect(askUserQuestionDraftStore.getState().drafts[retainedKey]).toBeDefined();
     expect(askUserQuestionDraftStore.getState().drafts[removedKey]).toBeUndefined();
     expect(askUserQuestionDraftStore.getState().drafts[otherSessionKey]).toBeDefined();
+  });
+
+  it('retains follow-up drafts through mailbox reconciliation and removes them with their session', () => {
+    const pending = askUserQuestionDraftKey('session-a', 'tool-1');
+    const followUp = askUserQuestionFollowUpDraftKey('session-a', 'tool-1');
+    const peerFollowUp = askUserQuestionFollowUpDraftKey('session-a', 'tool-1', 'peer-a');
+    const store = askUserQuestionDraftStore.getState();
+    store.setSingleAnswer(pending, 0, 'Old pending answer');
+    store.setSingleAnswer(followUp, 0, 'Follow-up answer');
+    store.setSingleAnswer(peerFollowUp, 0, 'Peer answer');
+    store.reconcilePendingTools(LOCAL_SURFACE_ID, 'session-a', []);
+    expect(askUserQuestionDraftStore.getState().drafts[pending]).toBeUndefined();
+    expect(askUserQuestionDraftStore.getState().drafts[followUp].answers[0]).toBe('Follow-up answer');
+    store.removeSessionDrafts(['session-a']);
+    expect(askUserQuestionDraftStore.getState().drafts[followUp]).toBeUndefined();
+    expect(askUserQuestionDraftStore.getState().drafts[peerFollowUp]).toBeDefined();
+    store.removeSurfaceDrafts('peer-a');
+    expect(askUserQuestionDraftStore.getState().drafts).toEqual({});
   });
 
   it('keeps submission phase across remounts without recreating a cleared draft', () => {

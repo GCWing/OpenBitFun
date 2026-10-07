@@ -1589,6 +1589,26 @@ class RemoteSessionStoreTest {
     }
 
     @Test
+    fun deleteSessionDropsNonCurrentRowAndKeepsTheOpenConversation() = runTest {
+        val transport = FakeSessionTransport()
+        val store = RemoteSessionStore(this, transport)
+        store.dispatch(RemoteSessionIntent.Load)
+        advanceUntilIdle()
+        store.dispatch(RemoteSessionIntent.Open("s-code"))
+        runCurrent()
+
+        store.dispatch(RemoteSessionIntent.DeleteSession("s-cowork"))
+        runCurrent()
+
+        val ready = assertIs<RemoteSessionUiState.Ready>(store.state.value)
+        assertEquals(listOf("s-code", "s-agentic"), ready.sessions.map { it.id })
+        assertEquals("s-code", ready.selectedSessionId)
+        assertEquals("s-code", ready.timeline?.sessionId)
+        assertEquals("s-cowork", transport.commands.first { it.cmd == "delete_session" }.sessionId)
+        store.stop()
+    }
+
+    @Test
     fun refreshCancellingSendDoesNotLeavePendingTurnForever() = runTest {
         val transport = FakeSessionTransport()
         val store = RemoteSessionStore(this, transport)

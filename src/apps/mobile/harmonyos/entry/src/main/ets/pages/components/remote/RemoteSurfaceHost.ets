@@ -203,7 +203,6 @@ export struct RemoteSurfaceHost {
           this.actions.onSettings.openAccount();
         }
       },
-      onScan: this.actions.onSidebar.scanDesktop,
       onMiniApps: this.actions.onRemoteHome.openMiniApps
     })
   }

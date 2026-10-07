@@ -1,0 +1,45 @@
+{
+  "name": "@openbitfun/flow-chat-presentation",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./registry": "./src/registry.ts",
+    "./exec": "./src/exec/index.ts",
+    "./exec/model": "./src/exec/model.ts",
+    "./text": "./src/sessionViewPreview.ts",
+    "./search": "./src/search.ts",
+    "./scenarios": "./src/scenarios.ts",
+    "./thinking": "./src/thinking.ts",
+    "./scroll": "./src/scroll.ts",
+    "./deferred-content": "./src/deferredContent.tsx",
+    "./terminal": "./src/terminal/index.ts",
+    "./terminal/model": "./src/terminal/terminalOutputPresentation.ts",
+    "./terminal/renderer": "./src/terminal/TerminalOutputRenderer.tsx",
+    "./explore": "./src/explore.ts",
+    "./context-load": "./src/context-load.ts"
+  },
+  "dependencies": {
+    "@openbitfun/ui": "workspace:^",
+    "@openbitfun/design-tokens": "workspace:^",
+    "@xterm/xterm": "^6.1.0-beta.101",
+    "@xterm/addon-fit": "^0.12.0-beta.103"
+  },
+  "peerDependencies": {
+    "react": ">=18.3.0 <20",
+    "react-dom": ">=18.3.0 <20"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "react": "^18.3.1",
+    "@types/react-dom": "^18.3.0",
+    "react-dom": "^18.3.1",
+    "jsdom": "^29.0.1",
+    "vitest": "^4.1.0",
+    "typescript": "~5.8.3"
+  },
+  "scripts": {
+    "test": "vitest run --maxWorkers=2",
+    "type-check": "tsc --noEmit"
+  }
+}

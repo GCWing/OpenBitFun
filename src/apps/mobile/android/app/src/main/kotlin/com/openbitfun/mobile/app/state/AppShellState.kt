@@ -21,18 +21,6 @@ internal enum class MobileSurface {
 }
 
 /**
- * Which settings page the one settings sheet is showing.
- *
- * `AppShellState.ets` keeps the same field because root settings, remote-control
- * settings, and account details share one overlay host. The sidebar gear always
- * selects [GENERAL]; remote-specific entry points select [REMOTE].
- */
-internal enum class SettingsMode {
-    GENERAL,
-    REMOTE,
-}
-
-/**
  * The shell's own navigation and overlay state, ported from
  * `pages/state/AppShellState.ets`.
  *
@@ -46,23 +34,18 @@ internal enum class SettingsMode {
 internal class AppShellState(
     surface: MobileSurface,
     showSettings: Boolean,
-    settingsMode: SettingsMode,
     showAccount: Boolean,
     accountReturnsToSettings: Boolean,
     searchOpen: Boolean,
     sidebarQuery: String,
     remoteSessionId: String? = null,
     remoteCreating: Boolean = false,
-    remoteScanRequested: Boolean = false,
     remoteConnectOpen: Boolean = false,
 ) {
     internal var surface: MobileSurface by mutableStateOf(surface)
         private set
 
     internal var showSettings: Boolean by mutableStateOf(showSettings)
-        private set
-
-    internal var settingsMode: SettingsMode by mutableStateOf(settingsMode)
         private set
 
     /** Whether closing the account lands back on the page that opened it. */
@@ -83,15 +66,11 @@ internal class AppShellState(
     internal var remoteCreating: Boolean by mutableStateOf(remoteCreating)
         private set
 
-    internal var remoteScanRequested: Boolean by mutableStateOf(remoteScanRequested)
-        private set
-
     internal var remoteConnectOpen: Boolean by mutableStateOf(remoteConnectOpen)
         private set
 
     internal fun closeRemoteConnect() {
         remoteConnectOpen = false
-        remoteScanRequested = false
     }
 
     internal fun show(next: MobileSurface) {
@@ -108,7 +87,6 @@ internal class AppShellState(
     internal fun createRemoteSession() {
         closeRemoteConnect()
         surface = MobileSurface.REMOTE
-        remoteScanRequested = false
         remoteCreating = true
         remoteSessionId = null
     }
@@ -120,35 +98,24 @@ internal class AppShellState(
     }
 
     /**
-     * Opens the remote surface's connect page without launching the scanner.
+     * Opens the account-device picker on the remote surface.
      *
-     * The sidebar's "Connect a computer" row is a door to the choose-connection
-     * page, not a camera trigger: scanning stays a named action the user taps.
-     * [openRemoteScanner] remains for entry points whose whole job is to scan.
+     * The only way to reach a desktop is through the signed-in account, so the
+     * caller decides between this and [openAccount] by whether an account is
+     * ready; the sheet itself never offers another way in.
      */
     internal fun openRemoteConnect() {
         remoteConnectOpen = true
         surface = MobileSurface.REMOTE
         remoteCreating = false
         remoteSessionId = null
-        remoteScanRequested = false
     }
 
-    internal fun openRemoteScanner() {
-        remoteConnectOpen = true
-        surface = MobileSurface.REMOTE
-        remoteCreating = false
-        remoteSessionId = null
-        remoteScanRequested = true
-    }
-
-    internal fun closeRemoteScanner() {
-        remoteScanRequested = false
-    }
-
-    /** Opens the requested settings surface in the shared overlay host. */
-    internal fun openSettings(mode: SettingsMode) {
-        settingsMode = mode
+    /**
+     * Opens the one settings page. The sidebar gear and the remote home header
+     * both land here: there is no separate remote-control settings page.
+     */
+    internal fun openSettings() {
         showSettings = true
     }
 
@@ -157,16 +124,33 @@ internal class AppShellState(
     }
 
     /**
-     * One sheet at a time: the account replaces settings rather than stacking on
-     * it. It is remembered as the page to come back to, though — the source's
-     * `accountReturnMode` — because the account is reached through a row on a
-     * settings page and closing it should put that page back rather than drop the
-     * user onto the conversation two steps below.
+     * The account lives inside the settings page (the way `SettingsSheet.ets`
+     * embeds `AccountProfilePanel`), so a signed-in account is shown by opening
+     * settings. Only a signed-out user gets a separate step: the login sheet.
+     *
+     * One sheet at a time: login replaces settings rather than stacking on it, and
+     * whether settings asked for it is remembered — the source's
+     * `accountReturnMode` — so cancelling puts that page back.
      */
-    internal fun openAccount() {
+    internal fun openAccount(signedIn: Boolean) {
+        if (signedIn) {
+            if (!showSettings) openSettings()
+            return
+        }
         accountReturnsToSettings = showSettings
         showSettings = false
         showAccount = true
+    }
+
+    /**
+     * Login finished: the account now shows inside settings, so the user lands
+     * there whether or not settings sent them.
+     */
+    internal fun completeLogin() {
+        if (!showAccount) return
+        showAccount = false
+        accountReturnsToSettings = false
+        openSettings()
     }
 
     internal fun dismissAccount() {
@@ -188,6 +172,8 @@ internal class AppShellState(
     }
 
     internal companion object {
+        private const val SETTINGS_PAGE_PLACEHOLDER = "GENERAL"
+
         // Enums are not saveable, so the surface crosses as its name — a stable
         // identifier, unlike an ordinal, if a case is ever inserted.
         val Saver: Saver<AppShellState, Any> = listSaver(
@@ -195,14 +181,20 @@ internal class AppShellState(
                 listOf(
                     it.surface.name,
                     it.showSettings,
-                    it.settingsMode.name,
+                    // Index 2 held the settings page, when there were two
+                    // (GENERAL and REMOTE). There is one now; the slot keeps
+                    // the name every build can read so positions line up.
+                    SETTINGS_PAGE_PLACEHOLDER,
                     it.showAccount,
                     it.accountReturnsToSettings,
                     it.searchOpen,
                     it.sidebarQuery,
                     it.remoteSessionId,
                     it.remoteCreating,
-                    it.remoteScanRequested,
+                    // Index 9 held the retired scanner request. It stays a
+                    // placeholder so the positions older builds wrote still
+                    // line up with what [restore] reads.
+                    false,
                     it.remoteConnectOpen,
                 )
             },
@@ -210,14 +202,16 @@ internal class AppShellState(
                 AppShellState(
                     surface = MobileSurface.REMOTE,
                     showSettings = it[1] as Boolean,
-                    settingsMode = SettingsMode.valueOf(it[2] as String),
+                    // Index 2 is ignored: an old "REMOTE" and "GENERAL" both
+                    // restore to the single settings page.
                     showAccount = it[3] as Boolean,
                     accountReturnsToSettings = it[4] as Boolean,
                     searchOpen = it[5] as Boolean,
                     sidebarQuery = it[6] as String,
                     remoteSessionId = it.getOrNull(7) as String?,
                     remoteCreating = it.getOrNull(8) as? Boolean ?: false,
-                    remoteScanRequested = it.getOrNull(9) as? Boolean ?: false,
+                    // A state saved before index 10 existed only knew the
+                    // scanner request, which opened the connect sheet.
                     remoteConnectOpen = it.getOrNull(10) as? Boolean
                         ?: (it.getOrNull(9) as? Boolean ?: false),
                 )
@@ -231,13 +225,11 @@ internal fun rememberAppShellState(): AppShellState = rememberSaveable(saver = A
     AppShellState(
         surface = MobileSurface.REMOTE,
         showSettings = false,
-        settingsMode = SettingsMode.GENERAL,
         showAccount = false,
         accountReturnsToSettings = false,
         searchOpen = false,
         sidebarQuery = "",
         remoteSessionId = null,
         remoteCreating = false,
-        remoteScanRequested = false,
     )
 }

@@ -1,6 +1,6 @@
 use crate::agentic::agents::{
-    get_agent_registry, is_swarm_planner_agent_type, render_direct_tool_listing_body,
-    PromptBuilder, SubagentListScope, SubagentQueryContext, ToolListingSections, UserContextPolicy,
+    get_agent_registry, render_direct_tool_listing_body, PromptBuilder, SubagentListScope,
+    SubagentQueryContext, ToolListingSections, UserContextPolicy,
 };
 use crate::agentic::tools::implementations::skills::{get_skill_registry, SkillInfo};
 use crate::agentic::tools::manifest_resolver::{resolve_tool_manifest, ResolvedToolManifest};
@@ -106,7 +106,7 @@ async fn build_skill_agent_snapshot(
         snapshot.skills = load_skill_entries(workspace, workspace_services, Some(agent_type)).await;
     }
 
-    if (has_tool("Task") || has_tool("AgentSpawn")) && !is_swarm_planner_agent_type(agent_type) {
+    if has_tool("Task") || has_tool("AgentSpawn") {
         snapshot.subagents =
             load_subagent_entries(workspace, Some(agent_type), runtime_tool_restrictions).await;
     }

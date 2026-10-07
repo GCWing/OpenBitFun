@@ -17,11 +17,6 @@ function Icon({ name }: { name: string }) {
   return <svg data-icon={name} />;
 }
 
-vi.mock('lucide-react', async importOriginal => ({
-  ...await importOriginal<typeof import('lucide-react')>(),
-  Loader2: () => <Icon name="loader" />,
-}));
-
 vi.mock('@openbitfun/ui', async importOriginal => ({
   IconButton: (await importOriginal<typeof import('@openbitfun/ui')>()).IconButton,
   Button: ({
@@ -171,7 +166,7 @@ describe('CodeReviewReportExportActions', () => {
     expect(save).toHaveBeenCalledTimes(1);
     expect(button.disabled).toBe(true);
     expect(button.getAttribute('data-loading')).toBe('false');
-    expect(button.querySelector('[data-icon="loader"]')).not.toBeNull();
+    expect(button.querySelector('[data-icon="progress-25"]')).not.toBeNull();
     act(() => button.click());
     expect(save).toHaveBeenCalledTimes(1);
     expect(parentClick).not.toHaveBeenCalled();

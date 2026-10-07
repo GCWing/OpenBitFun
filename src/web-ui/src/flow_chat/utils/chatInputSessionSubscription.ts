@@ -13,7 +13,16 @@ export function chatInputSessionSubscriptionKey(session: Session): string {
   const latestTurn = session.dialogTurns.at(-1);
   const recoveryFacts = JSON.stringify([
     session.sessionKind,
+    session.parentSessionId,
     session.subagentType,
+    session.continuationPolicy,
+    session.isTransient,
+    session.agentBackedTransient,
+    session.draft?.workspaceId,
+    session.draft?.phase,
+    session.draft?.permissionMode,
+    session.historyState,
+    session.contextRestoreState,
     session.status,
     session.persistedStatus,
     session.hasUnreadCompletion,
@@ -39,6 +48,7 @@ export function chatInputSessionSubscriptionKey(session: Session): string {
     `${session.needsUserAttention ? '1' : '0'}|${session.dialogTurns.length}|` +
     `${session.totalTurnCount ?? ''}|${session.turnCatalog?.totalTurnCount ?? ''}|` +
     `${JSON.stringify(session.config.dispatchTarget ?? null)}|` +
+    `${JSON.stringify(session.config.dispatchTargetRequest ?? null)}|` +
     `${session.config.dispatchApprovalPolicy ?? ''}|${session.config.dispatchJobState ?? ''}|` +
     `${sessionWorktreeBindingSubscriptionKey(session)}|${recoveryFacts}`
   );

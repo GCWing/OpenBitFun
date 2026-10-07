@@ -220,12 +220,21 @@ describe('message copy and image export controls', () => {
       ],
     };
     act(() => root.render(<ModelRoundItem round={withHistory} turnId="turn-1" isLastRound isTurnComplete />));
-    const historyToggle = container.querySelector<HTMLButtonElement>('.model-round-item__retry-toggle')!;
-    expect(historyToggle.getAttribute('data-openbitfun-component')).toBe('button');
-    expect(historyToggle.querySelector('[data-overflow-behavior]')).toBeNull();
-    expectCompiledRuleMatches(compileLegacyPackage(), historyToggle, '0.6');
+    const historyCard = container.querySelector<HTMLElement>('.model-round-item__retry-toggle')!;
+    expect(historyCard.getAttribute('data-openbitfun-component')).toBe('flow-chat-tool-card');
+    expect(historyCard.getAttribute('data-openbitfun-attention')).toBe('ambient');
+    expectCompiledRuleMatches(compileLegacyPackage(), historyCard, '0.6');
+    const historyToggle = historyCard.querySelector<HTMLButtonElement>('[data-openbitfun-part="iconAffordanceButton"]')!;
+    expect(historyToggle.getAttribute('aria-expanded')).toBe('false');
     act(() => historyToggle.click());
+    expect(historyToggle.getAttribute('aria-expanded')).toBe('true');
     const toggle = container.querySelector<HTMLButtonElement>('.model-round-item__attempt-diagnostic-toggle')!;
+    expect(toggle.tagName).toBe('BUTTON');
+    const attemptLabel = toggle.querySelector<HTMLElement>('[data-openbitfun-product-part="attemptLabel"]')!;
+    act(() => attemptLabel.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    act(() => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
     act(() => toggle.querySelector('svg')!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(document.getElementById(toggle.getAttribute('aria-controls')!)?.textContent).toContain('Request timed out');
@@ -238,6 +247,8 @@ describe('message copy and image export controls', () => {
     expect(container.querySelector('.model-round-item__attempt-diagnostic-details')).toBeNull();
     expect(container.querySelector('.model-round-item__retry-attempt')).not.toBeNull();
     act(() => historyToggle.click());
+    expect(historyToggle.getAttribute('aria-expanded')).toBe('false');
+    act(() => vi.runOnlyPendingTimers());
     expect(container.querySelector('.model-round-item__retry-attempt')).toBeNull();
   });
 });

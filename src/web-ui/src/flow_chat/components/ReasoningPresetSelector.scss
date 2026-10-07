@@ -50,43 +50,6 @@
     white-space: nowrap;
   }
 
-  &__status-meter {
-    position: relative;
-    display: inline-grid;
-    place-items: center;
-    flex: none;
-    color: var(--openbitfun-color-content-secondary);
-
-    &[data-size='compact'] {
-      width: 14px;
-      height: 14px;
-    }
-
-    &[data-size='option'] {
-      width: 24px;
-      height: 24px;
-    }
-  }
-
-  &__status-ring,
-  &__status-peak,
-  &__status-off {
-    position: absolute;
-    flex: none;
-  }
-
-  &__status-ring {
-    stroke: currentColor;
-  }
-
-  &__status-peak {
-    color: var(--openbitfun-color-accent-default);
-  }
-
-  &__status-off {
-    color: var(--openbitfun-color-content-muted);
-  }
-
   &__menu {
     --reasoning-preset-menu-offset: -4px;
     --openbitfun-overlay-menu-inline-size: min(232px, calc(100vw - 16px));

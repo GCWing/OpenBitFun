@@ -52,7 +52,7 @@ import com.openbitfun.mobile.core.feature.session.RemoteSessionUiState
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceIntent
 import com.openbitfun.mobile.core.feature.workspace.RemoteWorkspaceUiState
 
-/** The account-device route, which bypasses the QR pairing form entirely. */
+/** The account-device route: the only way this app reaches a desktop. */
 @Composable
 internal fun AccountRemoteScreen(
     remoteState: RemoteSessionUiState,
@@ -75,6 +75,10 @@ internal fun AccountRemoteScreen(
     requestedSessionId: String? = null,
     creatingSession: Boolean = false,
     onOpenSession: (String) -> Unit = {},
+    // CreateSession is already opened by the shared store. Keep its route
+    // callback separate from the sidebar callback, which also dispatches an
+    // Open intent for an existing row.
+    onCreatedSession: (String) -> Unit = onOpenSession,
     onCreateSession: () -> Unit = {},
     onRemoteHome: () -> Unit = {},
     modifier: Modifier,
@@ -99,6 +103,7 @@ internal fun AccountRemoteScreen(
         requestedSessionId = requestedSessionId,
         creatingSession = creatingSession,
         onOpenSession = onOpenSession,
+        onCreatedSession = onCreatedSession,
         onCreateSession = onCreateSession,
         onRemoteHome = onRemoteHome,
         connectionDetails = {
@@ -129,6 +134,7 @@ private fun RemoteConnectedScreen(
     requestedSessionId: String?,
     creatingSession: Boolean,
     onOpenSession: (String) -> Unit,
+    onCreatedSession: (String) -> Unit,
     onCreateSession: () -> Unit,
     onRemoteHome: () -> Unit,
     connectionDetails: @Composable () -> Unit,
@@ -207,7 +213,7 @@ private fun RemoteConnectedScreen(
             compact = compact,
             onDevicePick = onCreateDevicePick,
             onBack = onRemoteHome,
-            onCreated = onOpenSession,
+            onCreated = onCreatedSession,
             onWorkspaceIntent = onWorkspaceIntent,
             onIntent = onSessionIntent,
             modifier = modifier,
@@ -334,7 +340,7 @@ private fun RemoteShellHeader(
         if (onOpenRemoteSettings != null) CircleControl(
             icon = R.drawable.ic_symbol_gearshape,
             glyphSize = 19,
-            contentDescription = stringResource(R.string.remote_settings_title),
+            contentDescription = stringResource(R.string.navigation_settings),
             onClick = onOpenRemoteSettings,
             modifier = Modifier,
         ) else Box(Modifier.size(com.openbitfun.mobile.app.ui.theme.generated.MobileDesignGeometry.ControlTouchSize))

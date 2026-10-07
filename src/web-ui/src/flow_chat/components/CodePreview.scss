@@ -9,8 +9,13 @@
   border-radius: 6px;
 
   &__content {
-    overflow-y: auto;
-    overflow-x: hidden;
+    cursor: text;
+    scrollbar-gutter: auto;
+
+    &[data-inset="true"] {
+      padding-block: 0;
+      padding-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
+    }
 
     // Prism container overrides for a clean embed
     pre {
@@ -22,16 +27,19 @@
       overflow: visible !important;
 
       code {
+        display: block;
+        min-inline-size: 100%;
+        inline-size: max-content;
         background: transparent !important;
-        white-space: pre-wrap !important;
-        word-break: break-word !important;
+        white-space: pre !important;
+        word-break: normal !important;
         cursor: text;
-        font-family:var(--openbitfun-type-code-md-font-family);
-        font-weight: var(--openbitfun-type-body-sm-font-weight) !important;
+        font-family:var(--openbitfun-type-flow-code-font-family);
+        font-weight: var(--openbitfun-type-flow-code-font-weight) !important;
 
         // Prism themes mark many tokens bold; match markdown body / code blocks (regular weight).
         span[style] {
-          font-weight: var(--openbitfun-type-body-sm-font-weight) !important;
+          font-weight: var(--openbitfun-type-flow-code-font-weight) !important;
         }
 
         > span[style] {
@@ -68,27 +76,27 @@
     background: transparent;
     border: 0;
     overflow: visible;
-    white-space: pre-wrap;
-    word-break: break-word;
-    font-family:var(--openbitfun-type-code-md-font-family);
-    font-size: var(--openbitfun-type-flow-control-font-size);
+    white-space: pre;
+    word-break: normal;
+    font-family:var(--openbitfun-type-flow-code-font-family);
+    font-size: var(--openbitfun-type-flow-code-font-size);
+    font-weight: var(--openbitfun-type-flow-code-font-weight);
     line-height: var(--openbitfun-type-flow-code-line-height);
 
     code {
       display: block;
       background: transparent;
-      font-family:var(--openbitfun-type-body-sm-font-family);
+      font-family:var(--openbitfun-type-flow-code-font-family);
     }
   }
 
   &__plain-line {
     display: flex;
-    min-width: 0;
-    margin-left: -3px;
-    padding-left: 3px;
-    border-left: 3px solid transparent;
+    min-width: 100%;
+    width: max-content;
+    padding: 0;
     cursor: text;
-    transition: background-color 0.15s ease, border-color 0.15s ease;
+    transition: background-color 0.15s ease;
 
     &:hover {
       background-color: color-mix(in srgb, var(--openbitfun-color-content-on-dark) 8%, transparent);
@@ -96,7 +104,7 @@
 
     &--highlighted {
       background-color: color-mix(in srgb, var(--openbitfun-color-accent-default) 15%, transparent);
-      border-left-color: var(--openbitfun-color-accent-default);
+      box-shadow: -3px 0 var(--openbitfun-color-accent-default);
 
       &:hover {
         background-color: color-mix(in srgb, var(--openbitfun-color-accent-default) 20%, transparent);
@@ -131,7 +139,7 @@
 
 
   &--streaming {
-    .code-preview__content {
+    .code-preview__content:not([data-inset="true"]) {
       padding-bottom: 4px;
     }
   }
@@ -167,7 +175,6 @@
 }
 
 // Light theme line numbers use a soft blue-gray tone
-:root[data-openbitfun-appearance-mode="light"] .code-preview,
 :root[data-openbitfun-appearance-mode="light"] .code-preview,
 .light .code-preview {
   .code-preview__content {

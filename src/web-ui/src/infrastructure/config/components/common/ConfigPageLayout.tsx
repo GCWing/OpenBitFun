@@ -141,7 +141,7 @@ export const ConfigPageSection: React.FC<ConfigPageSectionProps> = ({
   );
 };
 
-export interface ConfigPageRowProps {
+export interface ConfigPageRowProps extends React.HTMLAttributes<HTMLDivElement> {
   label: React.ReactNode;
   /** Marks the row label as required. The control still owns its native required or aria-required state. */
   required?: boolean;
@@ -170,6 +170,7 @@ export const ConfigPageRow: React.FC<ConfigPageRowProps> = ({
   multiline = false,
   wide = false,
   balanced = false,
+  ...props
 }) => {
   const hasControl = children !== null && children !== undefined && children !== false;
   const cls = [
@@ -190,6 +191,7 @@ export const ConfigPageRow: React.FC<ConfigPageRowProps> = ({
       data-openbitfun-align={align}
       data-openbitfun-layout={wide ? 'wide' : balanced ? 'balanced' : multiline ? 'multiline' : 'default'}
       data-required={required ? 'true' : 'false'}
+      {...props}
     >
       <div className="openbitfun-config-page-row__meta">
         {/* div (not p): label may contain buttons; button-in-p freezes React event path */}

@@ -3,7 +3,11 @@
 
 use axum::http::StatusCode;
 use serde::Deserialize;
-use std::{sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 pub(crate) const IDENTITY_ME_URL: &str = "https://auth.openbitfun.com/api/v1/me";
 
@@ -25,6 +29,63 @@ pub(crate) struct VerifiedIdentity {
 #[derive(Deserialize)]
 struct IdentityResponse {
     user: VerifiedIdentity,
+}
+
+/// A completed poll response kept long enough to make the authority's
+/// single-use transaction safe to retry after a lost HTTP response.
+struct CompletedPoll {
+    payload: serde_json::Value,
+    expires_at: i64,
+}
+
+/// Terminal sign-in outcomes are keyed by both transaction id and secret.
+/// A different secret must never overwrite the valid client's replay entry.
+fn completed_authorizations() -> &'static Mutex<HashMap<(String, String), CompletedPoll>> {
+    static COMPLETED: OnceLock<Mutex<HashMap<(String, String), CompletedPoll>>> = OnceLock::new();
+    COMPLETED.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+const POLL_REPLAY_SECS: i64 = 900;
+
+fn now_secs() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+fn replay_completed_poll(
+    transaction_id: &str,
+    transaction_secret: &str,
+) -> Option<serde_json::Value> {
+    let key = (transaction_id.to_string(), transaction_secret.to_string());
+    let mut completed = completed_authorizations()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    completed.retain(|_, poll| poll.expires_at > now_secs());
+    completed.get(&key).map(|poll| poll.payload.clone())
+}
+
+fn remember_completed_poll(
+    transaction_id: &str,
+    transaction_secret: &str,
+    payload: &serde_json::Value,
+) {
+    if payload.get("status").and_then(|status| status.as_str()) == Some("pending") {
+        return;
+    }
+    let key = (transaction_id.to_string(), transaction_secret.to_string());
+    let mut completed = completed_authorizations()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    completed.retain(|_, poll| poll.expires_at > now_secs());
+    completed.insert(
+        key,
+        CompletedPoll {
+            payload: payload.clone(),
+            expires_at: now_secs() + POLL_REPLAY_SECS,
+        },
+    );
 }
 
 impl IdentityVerifier {
@@ -55,14 +116,20 @@ impl IdentityVerifier {
         {
             return Err(StatusCode::BAD_REQUEST);
         }
-        self.auth_request(
-            "auth/desktop/poll",
-            serde_json::json!({
-                "transactionId": transaction_id,
-                "transactionSecret": transaction_secret,
-            }),
-        )
-        .await
+        if let Some(payload) = replay_completed_poll(transaction_id, transaction_secret) {
+            return Ok(payload);
+        }
+        let payload = self
+            .auth_request(
+                "auth/desktop/poll",
+                serde_json::json!({
+                    "transactionId": transaction_id,
+                    "transactionSecret": transaction_secret,
+                }),
+            )
+            .await?;
+        remember_completed_poll(transaction_id, transaction_secret, &payload);
+        Ok(payload)
     }
 
     async fn auth_request(
@@ -278,6 +345,50 @@ mod tests {
             assert_eq!(client.verify("account-token").await.unwrap_err(), expected);
             task.abort();
         }
+    }
+
+    #[tokio::test]
+    async fn poll_replays_a_completed_transaction_after_a_mismatched_secret() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let upstream_calls = Arc::new(AtomicUsize::new(0));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let transaction_id = format!("replayed-{}", listener.local_addr().unwrap().port());
+        let url = format!("http://{}/me", listener.local_addr().unwrap());
+        let counter = upstream_calls.clone();
+        let app = Router::new().route(
+            "/auth/desktop/poll",
+            axum::routing::post(move || {
+                let counter = counter.clone();
+                async move {
+                    if counter.fetch_add(1, Ordering::SeqCst) == 0 {
+                        axum::Json(serde_json::json!({
+                            "status": "authorized",
+                            "tokens": { "accessToken": "token-1" },
+                        }))
+                    } else {
+                        axum::Json(serde_json::json!({ "status": "consumed" }))
+                    }
+                }
+            }),
+        );
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        let client = IdentityVerifier::with_url(&url).unwrap();
+
+        let first = client.poll_auth(&transaction_id, "secret-1").await.unwrap();
+        let repeated = client.poll_auth(&transaction_id, "secret-1").await.unwrap();
+        let other_secret = client.poll_auth(&transaction_id, "secret-2").await.unwrap();
+        let repeated_after_other_secret =
+            client.poll_auth(&transaction_id, "secret-1").await.unwrap();
+
+        assert_eq!(first["status"], "authorized");
+        assert_eq!(repeated, first);
+        assert_eq!(other_secret["status"], "consumed");
+        assert_eq!(repeated_after_other_secret, first);
+        assert_eq!(upstream_calls.load(Ordering::SeqCst), 2);
+        task.abort();
     }
 }
 

@@ -4,8 +4,8 @@
     // upgrades retain encrypted sessions, preferences, and watch handoff data.
     "bundleName": "com.bitfun.app",
     "vendor": "OpenBitFun",
-    "versionCode": 1,
-    "versionName": "1.0.2", // x-release-please-version
+    "versionCode": 5,
+    "versionName": "1.0.0", // x-release-please-version
     "buildVersion": "1",
     "icon": "$media:openbitfun_app_icon",
     "label": "$string:app_name",

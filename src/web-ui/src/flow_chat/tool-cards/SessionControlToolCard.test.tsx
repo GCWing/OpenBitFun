@@ -1,15 +1,15 @@
+// @vitest-environment jsdom
 import React, { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRoot, type Root } from 'react-dom/client';
-import { JSDOM } from 'jsdom';
 
 import { SessionControlToolCard } from './SessionControlToolCard';
 import type { FlowToolItem, ToolCardConfig } from '../types/flow-chat';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
-vi.mock('react-i18next', () => ({
-  useTranslation: () => ({
+vi.mock('@/infrastructure/i18n/hooks/useI18n', () => ({
+  useI18n: () => ({
     t: (key: string, values?: Record<string, unknown>) => [
       key,
       values?.session,
@@ -21,7 +21,7 @@ vi.mock('react-i18next', () => ({
 vi.mock('./useToolCardHeightContract', () => ({
   useToolCardHeightContract: () => ({
     cardRootRef: { current: null },
-    applyExpandedState: vi.fn(),
+    applyExpandedState: (_current: boolean, next: boolean, set: (value: boolean) => void) => set(next),
   }),
 }));
 
@@ -53,19 +53,12 @@ function renameToolItem(status: FlowToolItem['status']): FlowToolItem {
 }
 
 describe('SessionControlToolCard', () => {
-  let dom: JSDOM;
   let container: HTMLDivElement;
   let root: Root;
 
   beforeEach(() => {
-    dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
-      pretendToBeVisual: true,
-    });
-    vi.stubGlobal('window', dom.window);
-    vi.stubGlobal('document', dom.window.document);
-    vi.stubGlobal('HTMLElement', dom.window.HTMLElement);
-
-    container = dom.window.document.getElementById('root') as HTMLDivElement;
+    container = document.createElement('div');
+    document.body.appendChild(container);
     root = createRoot(container);
   });
 
@@ -73,8 +66,7 @@ describe('SessionControlToolCard', () => {
     act(() => {
       root.unmount();
     });
-    dom.window.close();
-    vi.unstubAllGlobals();
+    container.remove();
   });
 
   it('renders a completed rename instead of falling back to list', () => {
@@ -87,9 +79,12 @@ describe('SessionControlToolCard', () => {
       );
     });
 
-    expect(container.textContent).toContain(
-      'toolCards.sessionControl.renamedSession|worker-1|Release review'
-    );
+    expect(container.querySelector('[data-openbitfun-part="target"]')?.textContent).toBe('Release review');
+    expect(container.textContent).toContain('toolCards.interaction.renamed');
+    expect(container.querySelector('[aria-expanded]')).toBeNull();
+    act(() => container.querySelector<HTMLElement>('[data-openbitfun-part="result"]')!.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('worker-1');
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Release review');
     expect(container.textContent).not.toContain('toolCards.sessionControl.listedSessions');
   });
 
@@ -103,9 +98,9 @@ describe('SessionControlToolCard', () => {
       );
     });
 
-    expect(container.textContent).toContain(
-      'toolCards.sessionControl.renamingSession|worker-1|Release review'
-    );
+    expect(container.querySelector('[data-operation]')?.getAttribute('data-operation')).toBe('rename');
+    expect(container.textContent).toContain('toolCards.interaction.renaming');
+    expect(container.querySelector('[aria-expanded]')).toBeNull();
     expect(container.textContent).not.toContain('toolCards.sessionControl.listingSessions');
   });
 });

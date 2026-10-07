@@ -31,9 +31,12 @@ Use these tables to select tools for the user's tasks, then put their exact name
 
 | Tool name | Purpose |
 | --- | --- |
-| `Task` | Delegate work to a subagent task and collect its result. |
-| `ListModels` | List enabled OpenBitFun model configurations. |
+| `AgentSpawn` | Launch an agent to work independently in the background. |
+| `AgentSendInput` | Send an instruction to an existing agent. |
 | `AgentWait` | Wait for selected background agent results. |
+| `AgentList` | List direct child agents and their status. |
+| `AgentControl` | Interrupt or delete agent subtrees recursively. |
+| `ListModels` | List enabled OpenBitFun model configurations. |
 | `Skill` | Discover and load reusable skills for specialized workflows. |
 
 ## Web access
@@ -113,8 +116,3 @@ Use these tables to select tools for the user's tasks, then put their exact name
 | `PagePublish` | Upload, save a version of, and deploy an OpenBitFun Page. |
 | `PageDeploy` | Deploy a saved OpenBitFun Page version to production. |
 | `GetTime` | Return the current time, weekday, and Unix timestamp. |
-| `AgentSpawn` | Launch an agent to work independently in the background. |
-| `AgentSendInput` | Send an instruction to an existing agent. |
-| `AgentInterrupt` | Interrupt an agent's active background work. |
-| `AgentList` | List direct child agents and their status. |
-| `AgentDelete` | Permanently delete direct child agent subtrees. |

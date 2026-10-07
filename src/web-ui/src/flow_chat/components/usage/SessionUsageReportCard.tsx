@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Checkbox, OverflowText, Button, Card, Icon, IconButton, Tooltip } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
-import { Activity, AlertTriangle, Database, FileText, Wrench, type LucideProps } from 'lucide-react';
+import { Activity, AlertTriangle, Database, FileText, Wrench } from 'lucide-react';
 import { MarkdownRenderer } from '@/infrastructure/markdown';
 import { ToolProcessingDots } from '@openbitfun/ui/flow-chat';
 import type { SessionUsageReport } from '@/infrastructure/api/service-api/SessionAPI';
@@ -34,15 +34,6 @@ import type { SessionUsagePanelTab } from './sessionUsagePanelTypes';
 import './SessionUsageReportCard.scss';
 
 const SUMMARY_LIST_LIMIT = 3;
-
-const UsageClockIcon: React.FC<LucideProps> = ({ className, size = 18, style }) => (
-  <Icon
-    name="clock"
-    size="lg"
-    className={className}
-    style={{ width: size, height: size, ...style }}
-  />
-);
 
 interface SessionUsageReportCardProps {
   report?: SessionUsageReport;
@@ -386,41 +377,41 @@ export const SessionUsageReportCard: React.FC<SessionUsageReportCardProps> = ({
       key: 'wall',
       label: t('usage.metrics.wall'),
       value: formatUsageDuration(report.time.wallTimeMs, t),
-      icon: UsageClockIcon,
+      icon: { name: 'clock' } as const,
       help: t('usage.help.wall'),
     },
     {
       key: 'active',
       label: t('usage.metrics.active'),
       value: formatUsageDuration(report.time.activeTurnMs, t),
-      icon: Activity,
+      icon: { glyph: Activity },
       help: t('usage.help.active'),
     },
     {
       key: 'tokens',
       label: t('usage.metrics.tokens'),
       value: formatTokenCount(tokenTotal, t),
-      icon: Database,
+      icon: { glyph: Database },
     },
     {
       key: 'cached',
       label: t('usage.metrics.cached'),
       value: cachedTokenText,
-      icon: Database,
+      icon: { glyph: Database },
       help: cachedTokenHelp,
     },
     {
       key: 'files',
       label: t('usage.metrics.files'),
       value: getFileSummaryLabel(report, t),
-      icon: FileText,
+      icon: { glyph: FileText },
       help: fileMetricHelp,
     },
     {
       key: 'errors',
       label: t('usage.metrics.errors'),
       value: formatUsageNumber(report.errors.totalErrors, t),
-      icon: AlertTriangle,
+      icon: { glyph: AlertTriangle },
       tone: report.errors.totalErrors > 0 ? 'warning' : undefined,
       help: t('usage.help.errors'),
     },
@@ -489,13 +480,12 @@ export const SessionUsageReportCard: React.FC<SessionUsageReportCardProps> = ({
 
       <div className="session-usage-report-card__metrics" data-openbitfun-component="session-usage-report-card" data-openbitfun-part="metrics">
         {metrics.map(metric => {
-          const Icon = metric.icon;
           return (
             <div data-openbitfun-component="session-usage-report-card" data-openbitfun-part="metric"
               className={`session-usage-report-card__metric${metric.tone ? ` session-usage-report-card__metric--${metric.tone}` : ''}`}
               key={metric.key}
             >
-              <Icon size={14} aria-hidden />
+              <Icon {...metric.icon} size="sm" />
               <OverflowText className="session-usage-report-card__metric-label">{metric.label}</OverflowText>
               <UsageMetricValue value={metric.value} help={metric.help} />
             </div>

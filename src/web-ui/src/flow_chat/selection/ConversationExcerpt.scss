@@ -77,8 +77,18 @@
     gap: var(--openbitfun-space-4);
   }
 
+  &__source {
+    display: flex;
+    align-items: flex-start;
+    min-inline-size: 0;
+    gap: var(--openbitfun-space-2);
+  }
+
+  &__locate { flex: 0 0 auto; }
+
   &__quote {
     display: flex;
+    flex: 1;
     align-items: center;
     min-inline-size: 0;
     padding-block: var(--openbitfun-space-1);
@@ -92,7 +102,27 @@
     letter-spacing: var(--openbitfun-type-body-sm-letter-spacing);
   }
 
-  &__quote-text { flex: 0 1 auto; min-inline-size: 0; }
+  &__quote-text {
+    display: -webkit-box;
+    min-inline-size: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  &__input [data-openbitfun-part='input'] {
+    max-block-size: 40vh;
+    overflow-y: auto;
+  }
+
+  &__footer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--openbitfun-space-2);
+    margin-inline-start: auto;
+  }
 
   &__comment {
     max-block-size: 40vh;

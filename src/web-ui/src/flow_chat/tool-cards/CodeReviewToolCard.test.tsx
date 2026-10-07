@@ -30,7 +30,8 @@ vi.mock('react-i18next', async () => {
   };
 });
 
-vi.mock('@openbitfun/ui', () => ({
+vi.mock('@openbitfun/ui', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@openbitfun/ui')>(),
   Icon: ({ name }: { name: string }) => <span data-openbitfun-component="icon" data-openbitfun-name={name} />,
   OverflowText: ({ children, behavior: _behavior, marqueeActive: _marqueeActive, ...props }: any) => <span {...props}>{children}</span>,
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -176,6 +177,33 @@ describe('CodeReviewToolCard', () => {
     });
     vi.unstubAllGlobals();
     dom.window.close();
+  });
+
+  it('keeps actionable deep reports compact and preserves section choices across result updates', () => {
+    const report = {
+      review_mode: 'deep',
+      summary: { overall_assessment: 'Fix validation.', risk_level: 'high', recommended_action: 'request_changes' },
+      issues: [{ severity: 'high', file: 'src/App.tsx', title: 'Missing validation', description: 'Validate input.' }],
+      remediation_plan: ['Validate input in src/App.tsx'],
+      reviewers: [],
+    };
+    const item: FlowToolItem = { id: 'actionable-report', type: 'tool', timestamp: 1, toolName: 'submit_code_review',
+      status: 'completed', toolCall: { id: 'review-call', input: {} }, toolResult: { success: true, result: report } };
+    const render = (result: typeof report) => act(() => root.render(<CodeReviewToolCard
+      toolItem={{ ...item, toolResult: { success: true, result } }} config={{} as ToolCardConfig} />));
+    const toggle = () => container.querySelector<HTMLButtonElement>('[data-openbitfun-part="affordanceButton"]')!;
+    render(report);
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+    act(() => toggle().click());
+    const section = container.querySelector<HTMLButtonElement>('.review-report-section button[aria-expanded="true"]')!;
+    expect(section).not.toBeNull();
+    act(() => section.click());
+    render({ ...report, summary: { ...report.summary, overall_assessment: 'Additional evidence received.' } });
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(section.getAttribute('aria-expanded')).toBe('false');
+    act(() => toggle().click());
+    render({ ...report, remediation_plan: [...report.remediation_plan, 'Add regression coverage'] });
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
   });
 
   it('summarizes deep review coverage without exposing the run manifest', () => {
@@ -498,7 +526,7 @@ describe('CodeReviewToolCard', () => {
       );
     });
     const issuesSectionButton = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('.review-report-section__header'),
+      container.querySelectorAll<HTMLButtonElement>('.review-report-section [data-openbitfun-component="disclosure"] button[aria-expanded]'),
     ).find((button) => button.textContent?.includes('Issues'));
     expect(issuesSectionButton).toBeTruthy();
     act(() => {

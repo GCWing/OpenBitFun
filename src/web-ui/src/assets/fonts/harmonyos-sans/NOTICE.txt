@@ -3,5 +3,17 @@ HarmonyOS Sans Fonts Notice
 Non-Apple OpenBitFun GUI distributions use unmodified copies of HarmonyOS Sans
 Fonts. Copyright 2021 Huawei Device Co., Ltd.
 
+Bundled faces: HarmonyOS Sans and HarmonyOS Sans SC, Version 2.040.
+These are the unmodified variable TTF files from Huawei's official download:
+https://developer.huawei.com/consumer/cn/design/resource/
+Resource date: 2026/06/12. Retrieved: 2026/09/27.
+
+The Web UI exposes the design system's regular (400), medium (500), semibold
+(600), and bold (700) weights through a 400-700 variable font-face range.
+The original font variation axis covers 40-900. CSS uses the requested numeric
+weight, not the font's named-instance coordinates (SemiBold is 603).
+
 The complete HarmonyOS Sans Fonts License Agreement is provided in the
-adjacent LICENSE.txt file.
+adjacent LICENSE.txt file, copied unchanged from LICENSE-update.txt in the
+official archive. Source byte sizes and SHA-256 hashes are verified by
+scripts/web-font-profile.mjs.

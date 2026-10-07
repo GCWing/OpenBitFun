@@ -1,4 +1,5 @@
-import { useMemo, type ReactNode } from "react";
+import { useContext, useMemo, type ReactNode } from "react";
+import { ApplicationTitleTooltips, ApplicationTitleTooltipsContext } from "./ApplicationTitleTooltips";
 import type {
   ColorScheme,
   ContrastMode,
@@ -25,6 +26,8 @@ export interface DesignSystemProviderProps {
   messages?: Partial<DesignSystemMessages>;
   portalHost?: OverlayPortalTarget;
   tooltipDelay?: number;
+  /** Set at the document root to route legacy HTML title hints through Tooltip. */
+  nativeTooltipPolicy?: "native" | "application";
 }
 
 export function DesignSystemProvider({
@@ -36,8 +39,12 @@ export function DesignSystemProvider({
   messages,
   portalHost,
   tooltipDelay = defaultDesignSystemContext.tooltipDelay,
+  nativeTooltipPolicy = "native",
 }: DesignSystemProviderProps) {
-  const layerStack = getOverlayLayerStack(resolvePortalTarget(portalHost)?.ownerDocument);
+  const ownerDocument = resolvePortalTarget(portalHost)?.ownerDocument;
+  const layerStack = getOverlayLayerStack(ownerDocument);
+  const inheritedTitlePolicy = useContext(ApplicationTitleTooltipsContext);
+  const applicationTitles = inheritedTitlePolicy || nativeTooltipPolicy === "application";
   const value = useMemo<DesignSystemContextValue>(() => ({
     colorScheme,
     contrast,
@@ -51,7 +58,12 @@ export function DesignSystemProvider({
   return (
     <DesignSystemContext.Provider value={value}>
       <LayerStackContext.Provider value={layerStack}>
-        {children}
+        <ApplicationTitleTooltipsContext.Provider value={applicationTitles}>
+          {children}
+          {applicationTitles && !inheritedTitlePolicy && ownerDocument && (
+            <ApplicationTitleTooltips ownerDocument={ownerDocument} />
+          )}
+        </ApplicationTitleTooltipsContext.Provider>
       </LayerStackContext.Provider>
     </DesignSystemContext.Provider>
   );

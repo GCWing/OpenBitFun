@@ -124,9 +124,9 @@ fn tool_display_mode(tool_name: &str, tool_state: &ToolDisplayState) -> ToolDisp
                 ToolDisplayMode::Inline
             }
         }
-        // Task always renders as Block — even during early detection / params streaming,
+        // Agent launches always render as Block — even during early detection / params streaming,
         // we want to show the subagent card with real-time progress rather than inline "Delegating...".
-        "Task" => ToolDisplayMode::Block,
+        "Task" | "AgentSpawn" => ToolDisplayMode::Block,
 
         // Always block tools
         "TodoWrite" | "AskUserQuestion" | "CreatePlan" => ToolDisplayMode::Block,
@@ -424,7 +424,7 @@ fn inline_pending_text(canonical: &str, tool_state: &ToolDisplayState) -> String
         "LS" => "Listing directory...".to_string(),
         "WebSearch" => "Searching web...".to_string(),
         "WebFetch" => "Fetching from the web...".to_string(),
-        "Task" => "Delegating...".to_string(),
+        "Task" | "AgentSpawn" => "Launching agent...".to_string(),
         "TodoWrite" => "Updating todos...".to_string(),
         "HmosCompilation" => "Compiling HarmonyOS project...".to_string(),
         "Skill" => "Loading skill...".to_string(),
@@ -635,7 +635,9 @@ fn render_block_dispatch(
             available_width,
         ),
         "Delete" => render_delete_block(tool_state, theme, focused, spinner_frame, available_width),
-        "Task" => render_task_block(tool_state, theme, focused, spinner_frame, available_width),
+        "Task" | "AgentSpawn" => {
+            render_task_block(tool_state, theme, focused, spinner_frame, available_width)
+        }
         "TodoWrite" => {
             render_todo_block(tool_state, theme, focused, spinner_frame, available_width)
         }
@@ -1416,7 +1418,7 @@ fn render_delete_block(
     })
 }
 
-/// Render a Task tool as a block (sub-agent type + description + real-time progress)
+/// Render an agent launch as a block (agent type + prompt + real-time progress)
 fn render_task_block(
     tool_state: &ToolDisplayState,
     theme: &Theme,
@@ -1424,16 +1426,17 @@ fn render_task_block(
     spinner_frame: &str,
     available_width: u16,
 ) -> ToolCardRenderOutput {
-    let subagent_type = param_str_opt(&tool_state.parameters, &["subagent_type"])
+    let subagent_type = param_str_opt(&tool_state.parameters, &["subagent_type", "agent_type"])
         .unwrap_or_else(|| "Unknown".to_string());
     let description = param_str_opt(&tool_state.parameters, &["description"])
-        .unwrap_or_else(|| "Task".to_string());
+        .or_else(|| param_str_opt(&tool_state.parameters, &["prompt"]))
+        .unwrap_or_else(|| "Agent".to_string());
     let is_running = matches!(
         tool_state.status,
         ToolDisplayStatus::Running | ToolDisplayStatus::Streaming
     );
 
-    let title = format!("{} Task", capitalize_first(&subagent_type));
+    let title = format!("{} Agent", capitalize_first(&subagent_type));
 
     // Build description line with tool call count (if available)
     let desc_text = if let Some(ref progress) = tool_state.subagent_progress {

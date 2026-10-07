@@ -162,6 +162,11 @@
   "core": {
     "initializationFailed": "Core system initialization failed"
   },
+  "moduleLoad": {
+    "title": "此檢視暫時無法載入",
+    "description": "可以重試；若仍無法載入，請先儲存尚未完成的編輯，再重新載入應用程式。",
+    "retry": "重試"
+  },
   "boundary": {
     "title": "Application Error",
     "reload": "Reload",

@@ -1,3 +1,4 @@
+import { OpenBitFunMark } from '@openbitfun/ui/brand';
 import { ActionItem, Button, Card, CardBody, CardFooter, CardHeader, Icon, IconButton, OverlayLayer, OverflowText, useHasModalOverlay } from '@openbitfun/ui';
 import { useEffect, useMemo, useRef, type MouseEvent } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
@@ -100,7 +101,7 @@ function UpdateNoticeCard({ notice }: { notice: UpdateNotice }) {
             <div className="openbitfun-update-notice__empty-introduction" aria-hidden="true"
               data-testid="app-update-release-artwork"
               data-openbitfun-component="update" data-openbitfun-part="releaseArtwork">
-              <span className="openbitfun-update-notice__brand-mark" />
+              <OpenBitFunMark className="openbitfun-update-notice__brand-mark" />
             </div>
           )}
           {notice === 'error' && <div className="openbitfun-update-notice__feedback">
@@ -130,11 +131,14 @@ function UpdateNoticeCard({ notice }: { notice: UpdateNotice }) {
           <div className="openbitfun-update-notice__footer" data-openbitfun-component="update" data-openbitfun-part="actions">
             <CardFooter align={notice === 'available' ? 'between' : 'end'} className="openbitfun-update-notice__actions">
               {notice === 'available' && version && (
-                <Button className="openbitfun-update-notice__action" size="sm" variant="outline" onClick={() => state.skipVersion(version)}>
+                <Button data-testid="app-update-skip" className="openbitfun-update-notice__action" size="sm" variant="outline" onClick={() => state.skipVersion(version)}>
                   {t('update.skipVersion')}
                 </Button>
               )}
-              {notice === 'available' && <Button className="openbitfun-update-notice__action" size="sm" variant="primary" onClick={event => startDownload(event, Boolean(state.version), version ?? undefined)}>
+              {notice === 'available' && <Button data-testid="app-update-later" className="openbitfun-update-notice__action" size="sm" variant="fill" onClick={state.dismissNotice}>
+                {t('update.restartLater')}
+              </Button>}
+              {notice === 'available' && <Button data-testid="app-update-download" className="openbitfun-update-notice__action" size="sm" variant="primary" onClick={event => startDownload(event, Boolean(state.version), version ?? undefined)}>
                 {t('update.downloadUpdate')}
               </Button>}
               {notice === 'error' && <Button className="openbitfun-update-notice__action" size="sm" variant="primary" onClick={event => {

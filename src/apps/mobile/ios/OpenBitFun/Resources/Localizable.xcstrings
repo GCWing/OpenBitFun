@@ -47,26 +47,6 @@
         }
       }
     },
-    "OpenBitFun 桌面版": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OpenBitFun Desktop"
-          }
-        }
-      }
-    },
-    "不再询问，允许桌面端执行所有操作。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Allow the desktop to perform all operations without asking."
-          }
-        }
-      }
-    },
     "其他": {
       "localizations": {
         "en": {
@@ -83,16 +63,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Other ways to connect"
-          }
-        }
-      }
-    },
-    "启用完全访问": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enable full access"
           }
         }
       }
@@ -117,16 +87,6 @@
         }
       }
     },
-    "执行需要授权的操作前先询问。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ask before performing an operation that requires approval."
-          }
-        }
-      }
-    },
     "扫码配对": {
       "localizations": {
         "en": {
@@ -137,92 +97,12 @@
         }
       }
     },
-    "扫描二维码连接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan QR code to connect"
-          }
-        }
-      }
-    },
-    "控制桌面端执行工具时采用的确认方式。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose how the desktop confirms tool operations."
-          }
-        }
-      }
-    },
     "断开": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Disconnect"
-          }
-        }
-      }
-    },
-    "未连接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not connected"
-          }
-        }
-      }
-    },
-    "正在重新连接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reconnecting"
-          }
-        }
-      }
-    },
-    "完全访问会取消所有操作确认。仅在你信任当前桌面端时启用。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Full access removes all operation confirmations. Enable it only when you trust this desktop."
-          }
-        }
-      }
-    },
-    "确认完全访问": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Confirm full access"
-          }
-        }
-      }
-    },
-    "自动允许": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Allow automatically"
-          }
-        }
-      }
-    },
-    "自动允许常规操作，高风险操作仍会询问。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Allow routine operations automatically and still ask for high-risk operations."
           }
         }
       }
@@ -243,36 +123,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connection lost"
-          }
-        }
-      }
-    },
-    "连接来源": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connection source"
-          }
-        }
-      }
-    },
-    "适用于临时配对或未登录账号的桌面端。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Use this for a temporary pair or a desktop that is not signed in."
-          }
-        }
-      }
-    },
-    "远程控制": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remote control"
           }
         }
       }
@@ -417,16 +267,6 @@
         }
       }
     },
-    "个人资料": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Profile"
-          }
-        }
-      }
-    },
     "当前账号": {
       "localizations": {
         "en": {
@@ -463,16 +303,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Only files in a remote workspace can be previewed"
-          }
-        }
-      }
-    },
-    "从剪贴板粘贴": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Paste from clipboard"
           }
         }
       }
@@ -1127,36 +957,6 @@
         }
       }
     },
-    "扫描二维码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan QR code"
-          }
-        }
-      }
-    },
-    "扫描桌面端显示的二维码，开始远程处理任务。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan the QR code on the desktop to start remote work."
-          }
-        }
-      }
-    },
-    "扫描桌面端显示的二维码，或粘贴连接链接。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan the QR code shown on the desktop, or paste the connection link."
-          }
-        }
-      }
-    },
     "找不到桌面端房间，请确认桌面端仍在等待连接": {
       "localizations": {
         "en": {
@@ -1737,16 +1537,6 @@
         }
       }
     },
-    "每次询问": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ask every time"
-          }
-        }
-      }
-    },
     "比较三端的输入框、消息气泡和标题栏。": {
       "localizations": {
         "en": {
@@ -1943,16 +1733,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "简体中文"
-          }
-        }
-      }
-    },
-    "粘贴桌面端连接链接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Paste the desktop connection link"
           }
         }
       }
@@ -2357,16 +2137,6 @@
         }
       }
     },
-    "远程权限": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remote permissions"
-          }
-        }
-      }
-    },
     "连接": {
       "localizations": {
         "en": {
@@ -2383,16 +2153,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connection unavailable"
-          }
-        }
-      }
-    },
-    "连接失败，请检查桌面端链接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connection failed. Check the desktop link."
           }
         }
       }
@@ -2433,16 +2193,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connection timed out. Try again."
-          }
-        }
-      }
-    },
-    "连接链接无效，请重新扫描或粘贴桌面端链接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Invalid connection link. Scan or paste it again."
           }
         }
       }
@@ -2907,82 +2657,12 @@
         }
       }
     },
-    "从桌面端获取配对码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Get a pairing code from desktop"
-          }
-        }
-      }
-    },
     "在桌面端打开 OpenBitFun，然后进入远程连接。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Open OpenBitFun on desktop, then go to Remote Connect."
-          }
-        }
-      }
-    },
-    "点击“添加设备”获取配对二维码。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose Add device to get a pairing QR code."
-          }
-        }
-      }
-    },
-    "我有配对码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "I have a pairing code"
-          }
-        }
-      }
-    },
-    "手动输入配对码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter pairing code manually"
-          }
-        }
-      }
-    },
-    "输入桌面端显示的配对链接或代码。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter the pairing link or code shown on desktop."
-          }
-        }
-      }
-    },
-    "配对码或连接链接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pairing code or connection link"
-          }
-        }
-      }
-    },
-    "账号认证配对": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Account-authenticated pairing"
           }
         }
       }
@@ -3017,26 +2697,6 @@
         }
       }
     },
-    "账号凭据只用于本次加密配对，不会保存。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Account credentials are used only for this encrypted pairing attempt and are not saved."
-          }
-        }
-      }
-    },
-    "配对": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pair"
-          }
-        }
-      }
-    },
     "OpenBitFun 账号": {
       "localizations": {
         "en": {
@@ -3053,26 +2713,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Signed in"
-          }
-        }
-      }
-    },
-    "当前以 %@ 登录。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Currently signed in as %@."
-          }
-        }
-      }
-    },
-    "设备管理": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Device management"
           }
         }
       }
@@ -3097,32 +2737,12 @@
         }
       }
     },
-    "个人资料详情": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Profile details"
-          }
-        }
-      }
-    },
     "用户 ID": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "User ID"
-          }
-        }
-      }
-    },
-    "设备 ID": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Device ID"
           }
         }
       }
@@ -3433,16 +3053,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Choose how to connect"
-          }
-        }
-      }
-    },
-    "扫码连接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan to connect"
           }
         }
       }
@@ -4177,16 +3787,6 @@
         }
       }
     },
-    "扫码连接电脑": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan to connect"
-          }
-        }
-      }
-    },
     "收起侧边栏": {
       "localizations": {
         "en": {
@@ -4293,16 +3893,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connect a local workspace"
-          }
-        }
-      }
-    },
-    "扫码或粘贴连接链接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan or paste a connection link"
           }
         }
       }
@@ -4667,16 +4257,6 @@
         }
       }
     },
-    "扫码连接时，如果桌面端要求账号验证，手机会在本次配对中完成认证。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "If the desktop asks for account verification while scanning, the phone completes it for this pairing."
-          }
-        }
-      }
-    },
     "登录后即可同步设备、会话和远程控制状态。": {
       "localizations": {
         "en": {
@@ -4902,7 +4482,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Auto-approve"
+            "value": "Auto approve"
           }
         }
       }
@@ -4922,7 +4502,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Allow every tool action without asking again."
+            "value": "Every tool action is allowed without asking again."
           }
         }
       }
@@ -4932,7 +4512,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reading desktop permission settings…"
+            "value": "Reading the desktop's permission setting…"
           }
         }
       }
@@ -4962,7 +4542,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Connect a desktop before changing the permission mode."
+            "value": "Connect a desktop to change the permission mode."
           }
         }
       }
@@ -5007,46 +4587,6 @@
         }
       }
     },
-    "获取配对码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Get a pairing code"
-          }
-        }
-      }
-    },
-    "在电脑端打开 OpenBitFun 的远程控制，获取二维码或配对码。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open Remote Control in OpenBitFun Desktop to get a QR code or pairing code."
-          }
-        }
-      }
-    },
-    "在 OpenBitFun 桌面版侧边栏中，点击“设置 远程控制”以获取配对码。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In the OpenBitFun Desktop sidebar, tap Settings > Remote control to get a pairing code."
-          }
-        }
-      }
-    },
-    "扫描二维码以配对": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan the QR code to pair"
-          }
-        }
-      }
-    },
     "选择一台在线桌面继续工作。": {
       "localizations": {
         "en": {
@@ -5067,62 +4607,12 @@
         }
       }
     },
-    "改为手动配对": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pair manually instead"
-          }
-        }
-      }
-    },
-    "手动配对": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Manual pairing"
-          }
-        }
-      }
-    },
-    "请输入桌面上显示的配对码。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter the pairing code shown on the desktop."
-          }
-        }
-      }
-    },
-    "账号配对验证": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Account pairing"
-          }
-        }
-      }
-    },
     "桌面端已使用邮箱或 GitHub 登录，需要验证同一账号后继续连接。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "The desktop is signed in to a OpenBitFun account. Verify the same account to continue."
-          }
-        }
-      }
-    },
-    "密码只用于本次加密配对，不会保存到手机。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The password is only used for this encrypted pairing and is not saved on the phone."
           }
         }
       }
@@ -5137,72 +4627,12 @@
         }
       }
     },
-    "配对码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pairing code"
-          }
-        }
-      }
-    },
-    "需要相机权限才能扫码，请在系统设置中允许 OpenBitFun 访问相机，或改为手动配对。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Camera access is required to scan. Allow OpenBitFun to use the camera in system settings, or pair manually."
-          }
-        }
-      }
-    },
-    "无法打开相机，请检查权限后重试，或改为手动配对。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The camera could not be opened. Check permissions and retry, or pair manually."
-          }
-        }
-      }
-    },
     "连接步骤": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "How to connect"
-          }
-        }
-      }
-    },
-    "在桌面端 OpenBitFun 打开远程控制入口，扫描二维码或复制连接链接。扫码会打开系统扫码界面，粘贴适合模拟器和远程调试。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open remote control in OpenBitFun Desktop, then scan the QR code or copy the connection link. Scanning opens the system camera; pasting works well on simulators and remote debugging."
-          }
-        }
-      }
-    },
-    "扫描桌面端二维码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan the desktop QR code"
-          }
-        }
-      }
-    },
-    "在 OpenBitFun 桌面端点击「连接移动端」\n扫描二维码完成连接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "On OpenBitFun Desktop, tap Connect mobile\nthen scan the QR code"
           }
         }
       }
@@ -5243,26 +4673,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connecting..."
-          }
-        }
-      }
-    },
-    "粘贴远程连接链接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Paste remote connection link"
-          }
-        }
-      }
-    },
-    "远程连接链接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remote connection link"
           }
         }
       }
@@ -5333,16 +4743,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "No desktop selected"
-          }
-        }
-      }
-    },
-    "扫描二维码或粘贴远程连接链接后会显示桌面端连接状态。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Desktop connection status appears after you scan a QR code or paste a remote link."
           }
         }
       }
@@ -5437,16 +4837,6 @@
         }
       }
     },
-    "连接二维码已过期或房间不存在，请在桌面端重新打开移动端连接并扫码。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The connection QR code expired or the room does not exist. Reopen mobile connect on the desktop and scan again."
-          }
-        }
-      }
-    },
     "手机无法访问中继服务，请检查网络、代理或桌面端中继地址后重试。": {
       "localizations": {
         "en": {
@@ -5463,16 +4853,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "This connection is bound to a user ID. Continue with the user ID confirmed on the desktop."
-          }
-        }
-      }
-    },
-    "连接链接不完整，请重新扫描二维码或粘贴完整远程连接链接。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The connection link is incomplete. Scan again or paste the full remote link."
           }
         }
       }
@@ -5553,16 +4933,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reconnect"
-          }
-        }
-      }
-    },
-    "清除配对": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clear pairing"
           }
         }
       }
@@ -6497,26 +5867,6 @@
         }
       }
     },
-    "正在配对": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pairing"
-          }
-        }
-      }
-    },
-    "已清除配对信息": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pairing cleared"
-          }
-        }
-      }
-    },
     "已断开连接": {
       "localizations": {
         "en": {
@@ -6543,56 +5893,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Clipboard has no usable text"
-          }
-        }
-      }
-    },
-    "已从剪贴板填入远程连接链接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Filled the remote connection link from the clipboard"
-          }
-        }
-      }
-    },
-    "剪贴板内容已填入，请确认远程连接链接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clipboard content was filled. Confirm the remote connection link."
-          }
-        }
-      }
-    },
-    "打开扫码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open scanner"
-          }
-        }
-      }
-    },
-    "未识别到连接二维码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No connection QR code was recognized"
-          }
-        }
-      }
-    },
-    "已扫描远程连接链接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scanned remote connection link"
           }
         }
       }
@@ -7167,26 +6467,6 @@
         }
       }
     },
-    "中继拒绝了配对请求，请在桌面端重新生成连接二维码后再试。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The relay rejected the pairing request. Generate a new connection QR code on the desktop and retry."
-          }
-        }
-      }
-    },
-    "没有找到这个远程房间，请确认二维码未过期，或在桌面端重新打开移动端连接。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This remote room was not found. Confirm the QR code has not expired, or reopen mobile connect on the desktop."
-          }
-        }
-      }
-    },
     "连接中继超时，请检查网络后重试。": {
       "localizations": {
         "en": {
@@ -7217,32 +6497,12 @@
         }
       }
     },
-    "中继返回 HTTP %@，请重新配对后再试。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The relay returned HTTP %@. Pair again and retry."
-          }
-        }
-      }
-    },
     "连接中继超时，请确认手机和桌面端网络可访问。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
             "value": "Timed out connecting to the relay. Confirm the phone and desktop can reach the network."
-          }
-        }
-      }
-    },
-    "无法连接到中继服务，请检查远程链接、网络或代理设置。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Could not reach the relay. Check the remote link, network, or proxy settings."
           }
         }
       }
@@ -7273,26 +6533,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "The remote URL is missing the room or pk parameter."
-          }
-        }
-      }
-    },
-    "远程连接链接格式不正确，请重新扫描二维码或粘贴完整链接。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The remote connection link is invalid. Scan again or paste the full link."
-          }
-        }
-      }
-    },
-    "没有获得所需权限，请允许扫码或剪贴板访问后重试。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Required permission was denied. Allow camera or clipboard access and retry."
           }
         }
       }
@@ -7443,16 +6683,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "The phone is handling another device request. Try again later."
-          }
-        }
-      }
-    },
-    "需要先在手机上扫码连接桌面端，才能给手表授权。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Scan and connect a desktop on the phone before authorizing a watch."
           }
         }
       }
@@ -7891,22 +7121,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Open OpenBitFun authorization"
-          }
-        }
-      }
-    },
-    "请使用当前版本的 OpenBitFun 设备二维码。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Use a current OpenBitFun device QR code."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "请使用当前版本的 OpenBitFun 设备二维码。"
           }
         }
       }
@@ -8965,6 +8179,56 @@
           "stringUnit": {
             "state": "translated",
             "value": "加载更早消息失败，点按重试。"
+          }
+        }
+      }
+    },
+    "此设置会同步到当前桌面，并应用于所有新的工具调用。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This setting syncs to the connected desktop and applies to every new tool call."
+          }
+        }
+      }
+    },
+    "需要确认": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask"
+          }
+        }
+      }
+    },
+    "原本需要确认的操作会自动通过。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actions that would ask for confirmation are approved automatically."
+          }
+        }
+      }
+    },
+    "确认开启完全访问？": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turn on full access?"
+          }
+        }
+      }
+    },
+    "权限设置读取失败，请重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not read the permission setting. Try again."
           }
         }
       }

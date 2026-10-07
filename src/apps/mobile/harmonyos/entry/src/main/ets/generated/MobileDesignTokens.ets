@@ -14,6 +14,7 @@ export class MobileDesignColors {
   static readonly startWindowBackground: MobileColorPair = new MobileColorPair("#FFFFFF", "#000000");
   static readonly transparent: MobileColorPair = new MobileColorPair("#00000000", "#00000000");
   static readonly pageBg: MobileColorPair = new MobileColorPair("#FFFFFF", "#151514");
+  static readonly welcomePageBg: MobileColorPair = new MobileColorPair("#FFFFFF", "#252522");
   static readonly pageBgFade: MobileColorPair = new MobileColorPair("#00FFFFFF", "#00151514");
   static readonly pageBgOverlay: MobileColorPair = new MobileColorPair("#B8FFFFFF", "#B8151514");
   static readonly ink: MobileColorPair = new MobileColorPair("#171717", "#F4F3EF");
@@ -66,7 +67,7 @@ export class MobileDesignColors {
   static readonly codeProperty: MobileColorPair = new MobileColorPair("#466D78", "#9CC8D0");
   static readonly codeTargetBg: MobileColorPair = new MobileColorPair("#FFF1BE", "#5A4E24");
   static readonly brandDot: MobileColorPair = new MobileColorPair("#16B9CE", "#16B9CE");
-  static readonly welcomeDock: MobileColorPair = new MobileColorPair("#171917", "#171917");
+  static readonly welcomeDock: MobileColorPair = new MobileColorPair("#171917", "#000000");
   static readonly welcomeButton: MobileColorPair = new MobileColorPair("#FFFFFF", "#FFFFFF");
   static readonly welcomeButtonLabel: MobileColorPair = new MobileColorPair("#171917", "#171917");
   static readonly welcomeSecondary: MobileColorPair = new MobileColorPair("#B9BCB9", "#B9BCB9");

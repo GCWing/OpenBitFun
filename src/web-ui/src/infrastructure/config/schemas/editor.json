@@ -17,9 +17,14 @@
           "key": "fontFamily",
           "title": "字体",
           "description": "编辑器使用的字体",
-          "default": "JetBrains Mono",
+          "default": "",
           "ui": {
             "options": [
+              {
+                "value": "",
+                "label": "跟随应用代码字体",
+                "description": "使用设计系统统一配置的代码字体"
+              },
               {
                 "value": "JetBrains Mono",
                 "label": "JetBrains Mono",

@@ -471,6 +471,7 @@ mod tests {
                 value: "high".to_string(),
             }],
             source: ReasoningPresetSource::ModelConfig,
+            effective_effort: None,
             execution_provider: None,
             execution_model: None,
         });

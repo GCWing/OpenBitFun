@@ -1,9 +1,9 @@
 {
   "title": "Call Statistics",
-  "subtitle": "Historical model calls stored on the current execution host. Data is not merged or synced across hosts; view requests, tokens, and cache hit rates by model, provider, and endpoint.",
+  "subtitle": "Recorded model usage across workspaces on this OpenBitFun host, including subagents",
   "overview": {
-    "title": "Usage Overview",
-    "description": "Calls from the current execution host for {{timeRange}}, with dates and hours grouped in {{timeZone}}. Changing filters refreshes the data automatically."
+    "title": "Selected Period",
+    "description": "Calculated in {{timeZone}}"
   },
   "timeRange": {
     "label": "Time range",
@@ -21,16 +21,16 @@
   "filter": {
     "kind": {
       "label": "Filter field",
-      "all": "All",
+      "all": "All fields",
       "provider": "Provider",
       "model": "Model"
     },
-    "placeholder": "Filter providers or models",
-    "inputLabel": "Filter usage statistics",
+    "placeholder": "Search these details",
+    "inputLabel": "Search usage sources",
     "clear": "Clear filter",
     "empty": {
-      "title": "No matching usage data",
-      "description": "No calls match the current filter."
+      "title": "No matches",
+      "description": "Try a different search term."
     }
   },
   "refresh": "Refresh",
@@ -39,11 +39,15 @@
   "unsupported": "The connected device uses an older OpenBitFun version that does not support usage statistics.",
   "empty": {
     "title": "No usage data yet",
-    "description": "Model call statistics will appear here once you start chatting with a model."
+    "description": "Model call statistics will appear here once you start chatting with a model.",
+    "periodTitle": "No calls in this period",
+    "periodDescription": "Choose another time range to see other records."
   },
   "summary": {
-    "requests": "Requests",
+    "requests": "Recorded model requests",
     "tokens": "Total Tokens",
+    "inputTokens": "Input Tokens",
+    "outputTokens": "Output Tokens",
     "cachedTokens": "Cached Tokens",
     "cacheHitRate": "Cache Hit Rate"
   },
@@ -51,11 +55,31 @@
     "totalTokens": "{{count}} tokens",
     "tokensUnit": "Tokens"
   },
+  "activity": {
+    "title": "Daily Usage: Past Six Months",
+    "description": "Fixed six-month range · {{timeZone}}",
+    "day": "{{date}}: {{tokens}} tokens",
+    "total": "{{tokens}} tokens in total",
+    "less": "Less",
+    "more": "More"
+  },
   "distributions": {
-    "title": "Usage Distribution",
+    "title": "Usage Sources",
     "byModel": "Model Distribution",
-    "byGroup": "Group Usage Distribution",
-    "byEndpoint": "Endpoint Distribution"
+    "byGroup": "Provider Distribution",
+    "byEndpoint": "Endpoint Details",
+    "more": "More sources",
+    "showAll": "Show all",
+    "showLess": "Show less"
+  },
+  "details": {
+    "title": "More Details"
+  },
+  "cache": {
+    "title": "Cache Data",
+    "description": "Calculated only when the model provider reports cache data",
+    "unavailable": "Not provided",
+    "note": "Cache read tokens are included in input tokens. The hit rate uses only requests with reported cache data."
   },
   "cacheHitRate": {
     "title": "Model Cache Hit Rate"
@@ -68,8 +92,11 @@
     "unknownEndpoint": "Unknown endpoint"
   },
   "trend": {
-    "title": "Token Usage Trend",
-    "description": "Track input, output, cache-write, cache-read tokens, and cache hit rate over time.",
+    "title": "Detailed Trend",
+    "summary": "See how input and output changed during the selected period",
+    "description": "Input and output token usage over time",
+    "range": "{{start}} to {{end}}",
+    "partial": "Showing the most recent trend; the total covers the full selected period",
     "dataTableCaption": "Token usage trend details",
     "time": "Time",
     "legend": {
@@ -82,9 +109,12 @@
   "table": {
     "caption": "{{dimension}} details",
     "model": "Model",
-    "group": "Group",
+    "group": "Provider",
     "endpoint": "Endpoint",
     "requests": "Requests",
-    "tokens": "Token"
+    "requestsCount": "{{count}} requests",
+    "tokens": "Token",
+    "share": "Share",
+    "shareValue": "{{share}} of total"
   }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "openbitfun-installer"
-version = "1.0.2"
+version = "1.0.3"
 authors = ["OpenBitFun Team"]
 edition = "2021"
 description = "OpenBitFun Custom Installer - Modern branded installation experience"
@@ -15,10 +15,16 @@ path = "src/main.rs"
 
 [build-dependencies]
 tauri-build = { version = "=2.6.3", features = [] }
+# This standalone app does not commit a Cargo.lock. Keep the Tauri build-time
+# crates aligned with the patched 2.11 runtime instead of resolving 2.7/2.10.
+tauri-codegen = "=2.6.3"
 zip = "0.6"
 
 [dependencies]
 tauri = { version = "=2.11.5", features = [] }
+tauri-macros = "=2.6.3"
+tauri-plugin = "=2.6.3"
+tauri-utils = "=2.9.3"
 tauri-plugin-dialog = "=2.7.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -34,6 +40,16 @@ openbitfun-services-core = { path = "../../src/crates/services/services-core", f
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
 mslnk = "0.1"
+
+[patch.crates-io]
+# The installer is a standalone Cargo workspace without a committed lockfile.
+# Keep its Tauri runtime family aligned with the main workspace's reviewed fix.
+tauri-runtime = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-utils = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-macros = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-codegen = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
+tauri-plugin = { git = "https://github.com/tauri-apps/tauri.git", rev = "7cc68e74ff6981f5c50a52a67d56c5eb2d227188" }
 
 [dev-dependencies]
 tempfile = "3"

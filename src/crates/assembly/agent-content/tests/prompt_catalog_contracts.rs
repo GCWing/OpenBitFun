@@ -10,10 +10,6 @@ use openbitfun_agent_content::{
 
 const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
     (
-        "agentic_mode",
-        include_bytes!("../prompts/agents/agentic_mode.md"),
-    ),
-    (
         "claw_mode",
         include_bytes!("../prompts/agents/claw_mode.md"),
     ),
@@ -34,8 +30,8 @@ const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
         include_bytes!("../prompts/agents/creative_mode.md"),
     ),
     (
-        "deep_research_agent",
-        include_bytes!("../prompts/agents/deep_research_agent.md"),
+        "deep_research_mode",
+        include_bytes!("../prompts/agents/deep_research_mode.md"),
     ),
     (
         "deep_review_agent",
@@ -50,16 +46,12 @@ const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
         include_bytes!("../prompts/agents/general_purpose_agent.md"),
     ),
     (
-        "generate_doc_agent",
-        include_bytes!("../prompts/agents/generate_doc_agent.md"),
-    ),
-    (
         "init_agents_md",
         include_bytes!("../prompts/shared/init_agents_md.md"),
     ),
     (
-        "minimal-harness-v1",
-        include_bytes!("../prompts/agents/minimal-harness-v1.md"),
+        "minimal_mode",
+        include_bytes!("../prompts/agents/minimal_mode.md"),
     ),
     (
         "openbitfun_agent",
@@ -90,6 +82,10 @@ const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
         include_bytes!("../prompts/agents/review_worker_agent.md"),
     ),
     (
+        "standard_mode",
+        include_bytes!("../prompts/agents/standard_mode.md"),
+    ),
+    (
         "swarm_planner_agent",
         include_bytes!("../prompts/agents/swarm_planner_agent.md"),
     ),
@@ -102,12 +98,8 @@ const CATALOG_PROMPT_SOURCES: &[(&str, &[u8])] = &[
         include_bytes!("../prompts/agents/swarm_worker_agent.md"),
     ),
     (
-        "team_mode",
-        include_bytes!("../prompts/agents/team_mode.md"),
-    ),
-    (
-        "ultra_mode",
-        include_bytes!("../prompts/agents/ultra_mode.md"),
+        "ultimate_mode",
+        include_bytes!("../prompts/agents/ultimate_mode.md"),
     ),
 ];
 
@@ -143,7 +135,7 @@ fn agent_prompt_catalog_preserves_every_stable_key() {
 
 #[test]
 fn swarm_planner_prompts_define_the_closed_agent_spawn_catalog() {
-    for prompt_name in ["ultra_mode", "swarm_planner_agent"] {
+    for prompt_name in ["ultimate_mode", "swarm_planner_agent"] {
         let prompt = agent_prompt(prompt_name).expect("Swarm planner prompt");
         for agent_type in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
             assert!(
@@ -151,7 +143,7 @@ fn swarm_planner_prompts_define_the_closed_agent_spawn_catalog() {
                 "{prompt_name} must name {agent_type}"
             );
         }
-        assert!(prompt.contains("AgentSpawn accepts exactly these `agent_type` values"));
+        assert!(prompt.contains("AgentSpawn accepts") && prompt.contains("`agent_type` values"));
         assert!(prompt.contains("5 levels"));
         assert!(prompt.contains("128 agents including"));
         assert!(!prompt.contains("<available_agents>"));
@@ -230,10 +222,10 @@ fn memory_phase1_prompt_preserves_direct_include_bytes() {
 
 #[test]
 fn minimal_harness_prompt_preserves_the_concise_coding_contract() {
-    let prompt = agent_prompt("minimal-harness-v1").expect("minimal prompt");
+    let prompt = agent_prompt("minimal_mode").expect("minimal prompt");
     assert_eq!(
         prompt,
-        include_str!("../prompts/agents/minimal-harness-v1.md").replace("\r\n", "\n")
+        include_str!("../prompts/agents/minimal_mode.md").replace("\r\n", "\n")
     );
     assert!(prompt.starts_with("You are a helpful software engineer assistant.\n\n"));
     for required in [
@@ -293,28 +285,25 @@ fn computer_use_prompt_preserves_background_observation_and_input_contract() {
 
 #[test]
 fn computer_use_delegation_preserves_user_scope_in_parents_and_child() {
-    for name in [
-        "claw_mode",
-        "agentic_mode",
-        "team_mode",
-        "general_purpose_agent",
-    ] {
+    for name in ["claw_mode", "standard_mode", "cowork_mode", "creative_mode"] {
         let prompt = agent_prompt(name).unwrap();
-        assert!(
-            prompt.contains("preserve the original user's request"),
-            "{name}"
-        );
-        assert!(
-            prompt.contains("Default to background app control"),
-            "{name}"
-        );
-        assert!(
-            prompt.contains(
-                "Confirmation of message content does not authorize a change of control mode"
-            ),
-            "{name}"
-        );
+        assert!(prompt.contains("{COMPUTER_USE_GUIDANCE}"), "{name}");
     }
+    let prompt = agent_prompt("general_purpose_agent").unwrap();
+    assert!(
+        prompt.contains("preserve the original user's request"),
+        "general_purpose_agent"
+    );
+    assert!(
+        prompt.contains("Default to background app control"),
+        "general_purpose_agent"
+    );
+    assert!(
+        prompt.contains(
+            "Confirmation of message content does not authorize a change of control mode"
+        ),
+        "general_purpose_agent"
+    );
     let prompt = agent_prompt("computer_use_mode").unwrap();
     assert!(prompt.contains("even when delivered in a user-role message"));
     assert!(prompt.contains("parent-written claims are not independently verified consent"));
@@ -327,30 +316,33 @@ fn main_desktop_prompts_use_direct_visual_batches_without_mandatory_delegation()
     for name in [
         "claw_mode",
         "cowork_mode",
-        "agentic_mode",
+        "standard_mode",
         "creative_mode",
-        "team_mode",
         "computer_use_mode",
     ] {
         let prompt = agent_prompt(name).unwrap();
-        assert!(prompt.contains("Use `ComputerUse` directly"), "{name}");
-        assert!(prompt.contains("`app_batch`"), "{name}");
-        assert!(
-            prompt.contains("Focus-and-type alone is already one `app_type_text` call"),
-            "{name}"
-        );
-        assert!(
-            prompt.contains("same native input route and authorization as single calls"),
-            "{name}"
-        );
-        assert!(
-            prompt.contains("not prerequisites for a visible button, canvas or game"),
-            "{name}"
-        );
-        assert!(
-            prompt.contains("Do not batch a later target that is not yet visible"),
-            "{name}"
-        );
+        if name == "computer_use_mode" {
+            assert!(prompt.contains("Use `ComputerUse` directly"), "{name}");
+            assert!(prompt.contains("`app_batch`"), "{name}");
+            assert!(
+                prompt.contains("Focus-and-type alone is already one `app_type_text` call"),
+                "{name}"
+            );
+            assert!(
+                prompt.contains("same native input route and authorization as single calls"),
+                "{name}"
+            );
+            assert!(
+                prompt.contains("not prerequisites for a visible button, canvas or game"),
+                "{name}"
+            );
+            assert!(
+                prompt.contains("Do not batch a later target that is not yet visible"),
+                "{name}"
+            );
+        } else {
+            assert!(prompt.contains("{COMPUTER_USE_GUIDANCE}"), "{name}");
+        }
         assert!(!prompt.contains("Cowork cannot drive these"));
         assert!(!prompt.contains(
             "If delegation is unavailable, explain that the task needs the Computer Use mode"

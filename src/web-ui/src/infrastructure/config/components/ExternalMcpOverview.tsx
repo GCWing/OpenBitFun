@@ -429,6 +429,7 @@ const ExternalMcpOverview: React.FC = () => {
       data-openbitfun-component="external-mcp-overview"
       data-openbitfun-part="root"
       title={t('external.title')}
+      description={t('external.description')}
       titleSuffix={snapshot ? (
         <span className="openbitfun-mcp-tools__external-summary" data-openbitfun-component="external-mcp-overview" data-openbitfun-part="summary">
           {snapshot.discoveryPending ? (

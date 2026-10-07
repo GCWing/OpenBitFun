@@ -1,3 +1,4 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import { captureContentScope } from '@/shared/services/workbenchContentService';
 import React, { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Icon, IconButton } from '@openbitfun/ui';
@@ -24,7 +25,7 @@ import './OpenBitFunCanvasPanel.scss';
 
 const log = createLogger('OpenBitFunCanvasPanel');
 
-const CanvasSourceCodeEditor = React.lazy(() =>
+const CanvasSourceCodeEditor = lazyWithRecovery(() =>
   import('@/tools/editor/components/CodeEditor').then(module => ({
     default: module.default,
   })),

@@ -2,8 +2,10 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var model: MobileAppModel
+    var onClose: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
-    @State private var accountOpen = false
+    /// Sign-in stays its own step; the signed-in account is inline below.
+    @State private var loginOpen = false
 
     private var appVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
@@ -18,25 +20,19 @@ struct SettingsView: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             VStack(spacing: 0) {
-                OpenBitFunModalHeader(title: "设置", onClose: { dismiss() })
+                OpenBitFunModalHeader(title: "设置", onClose: { if let onClose { onClose() } else { dismiss() } })
                     .padding(.horizontal, MobileDesignGeometry.sheetHorizontalPadding)
                 Divider().overlay(OpenBitFunTheme.line)
 
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
-                        SettingsGroup(title: "账号") {
-                            Button { accountOpen = true } label: {
-                                SettingsProfileRow(
-                                    subtitle: model.accountUser ?? model.localized("未登录"),
-                                    authenticated: model.accountUser != nil
-                                ).contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
+                        AccountIdentityCard(model: model, onSignIn: { loginOpen = true })
 
                         if showsCurrentConnection {
                             currentConnectionSection
                         }
+
+                        RemotePermissionSection(model: model)
 
                         SettingsGroup(title: "通用") {
                             Button { model.languagePickerOpen = true } label: {
@@ -64,7 +60,7 @@ struct SettingsView: View {
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("settings.notifications")
                         }
-                        accountDevicesSection
+                        AccountDevicesSection(model: model)
                         SettingsGroup(title: "关于") {
                             VStack(spacing: 0) {
                                 SettingsValueRow(
@@ -77,25 +73,7 @@ struct SettingsView: View {
                             }
                         }
                         if model.accountUser != nil {
-                            Button(role: .destructive) {
-                                model.logoutAccount()
-                            } label: {
-                                HStack(spacing: 14) {
-                                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                                        .font(.system(size: 20, weight: .regular))
-                                        .frame(width: 24, height: 24)
-                                    Text(model.localized("退出账号"))
-                                        .font(MobileDesignTypography.bodyLarge.font.weight(.medium))
-                                    Spacer(minLength: 0)
-                                }
-                                .foregroundStyle(OpenBitFunTheme.statusDanger)
-                                .padding(.horizontal, 20)
-                                .frame(minHeight: 62)
-                            }
-                            .buttonStyle(.plain)
-                            .overlay(alignment: .top) {
-                                Divider().overlay(OpenBitFunTheme.line).padding(.horizontal, 8)
-                            }
+                            AccountLogoutButton(model: model)
                         }
                     }
                     .padding(.horizontal, MobileDesignGeometry.sheetHorizontalPadding)
@@ -108,14 +86,25 @@ struct SettingsView: View {
             if model.languagePickerOpen {
                 LanguagePickerSheet(model: model)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else if accountOpen {
-                AccountSettingsView(model: model, onClose: { accountOpen = false })
+            } else if loginOpen {
+                AccountLoginView(model: model, onClose: { loginOpen = false })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .background(OpenBitFunTheme.page)
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .background(OpenBitFunTheme.page)
         .animation(.easeInOut(duration: 0.2), value: model.languagePickerOpen)
-        .animation(.easeInOut(duration: 0.2), value: accountOpen)
+        .animation(.easeInOut(duration: 0.2), value: loginOpen)
+        .onAppear {
+            if model.remoteConnected { model.refreshRemotePermissionMode() }
+        }
+        .onChange(of: model.accountUser) { _ in closeLoginWhenDone() }
+        .onChange(of: model.accountFailureStage) { _ in closeLoginWhenDone() }
+    }
+
+    private func closeLoginWhenDone() {
+        if loginOpen && !AccountLoginView.isNeeded(model) { loginOpen = false }
     }
 
     private var showsCurrentConnection: Bool {
@@ -151,7 +140,7 @@ struct SettingsView: View {
                 Divider().overlay(OpenBitFunTheme.line).padding(.horizontal, 18)
 
                 HStack(spacing: 8) {
-                    Text(model.localized(model.accountDeviceName == nil ? "扫码连接" : "账号设备"))
+                    Text(model.localized(model.accountDeviceName == nil ? "扫码配对" : "账号设备"))
                         .font(MobileDesignTypography.bodySmall.font)
                         .foregroundStyle(OpenBitFunTheme.muted)
                         .padding(.horizontal, 10)
@@ -159,16 +148,19 @@ struct SettingsView: View {
                         .background(OpenBitFunTheme.soft)
                         .clipShape(Capsule())
                     Spacer(minLength: 0)
+                    // Same rule as Android and HarmonyOS: one action, leave a link
+                    // that is up or coming up, re-bind once it is down.
                     if model.connectionPhase == .disconnected {
-                        Button(model.localized("重新连接"), action: model.verifyRemoteConnection)
+                        Button(model.localized("重新连接"), action: model.reconnectRemote)
                             .font(MobileDesignTypography.bodyMedium.font.weight(.medium))
                             .foregroundStyle(OpenBitFunTheme.ink)
                             .buttonStyle(.plain)
+                    } else {
+                        Button(model.localized("断开"), action: model.disconnectRemote)
+                            .font(MobileDesignTypography.bodyMedium.font.weight(.medium))
+                            .foregroundStyle(OpenBitFunTheme.statusDanger)
+                            .buttonStyle(.plain)
                     }
-                    Button(model.localized("断开"), action: model.disconnectRemote)
-                        .font(MobileDesignTypography.bodyMedium.font.weight(.medium))
-                        .foregroundStyle(OpenBitFunTheme.statusDanger)
-                        .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 18)
                 .frame(minHeight: 54)
@@ -182,73 +174,6 @@ struct SettingsView: View {
         case .reconnecting: model.localized("正在重连")
         case .disconnected: model.localized("连接已断开")
         }
-    }
-
-    private var accountDevicesSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(model.localized("设备"))
-                    .font(MobileDesignTypography.bodySmall.font.weight(.medium))
-                    .foregroundStyle(OpenBitFunTheme.muted)
-                Spacer(minLength: 0)
-                Button(action: model.refreshRemoteDevices) {
-                    Group {
-                        if model.accountRefreshing {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "arrow.clockwise")
-                                .font(.system(size: 17, weight: .regular))
-                        }
-                    }
-                    .foregroundStyle(OpenBitFunTheme.ink)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(model.accountUser == nil || model.accountRefreshing)
-                .opacity(model.accountUser == nil || model.accountRefreshing ? 0.55 : 1)
-                .accessibilityLabel(model.localized("刷新"))
-            }
-            .padding(.leading, 8)
-            .padding(.trailing, 4)
-            .frame(minHeight: 48)
-
-            VStack(spacing: 4) {
-                if model.accountUser == nil {
-                    emptyDeviceMessage("登录云账号后可查看该账号下的所有设备。")
-                } else if model.accountRefreshing && model.accountDevices.isEmpty {
-                    emptyDeviceMessage("正在加载设备…")
-                } else if model.accountDevices.isEmpty {
-                    emptyDeviceMessage("账号下还没有其他已注册设备。")
-                } else {
-                    ForEach(model.accountDevices) { device in
-                        Button {
-                            guard device.online,
-                                  !(device.selected && model.connectionPhase == .connected) else { return }
-                            model.selectRemoteDevice(device)
-                        } label: {
-                            EmbeddedSettingsDeviceRow(
-                                device: device,
-                                connected: device.selected && model.connectionPhase == .connected
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(8)
-            .background(OpenBitFunTheme.card)
-            .clipShape(RoundedRectangle(cornerRadius: MobileDesignGeometry.settingsCardRadius))
-        }
-        .padding(.bottom, 24)
-    }
-
-    private func emptyDeviceMessage(_ text: String) -> some View {
-        Text(model.localized(text))
-            .font(MobileDesignTypography.bodySmall.font)
-            .foregroundStyle(OpenBitFunTheme.muted)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(8)
     }
 }
 
@@ -294,20 +219,180 @@ private struct LanguagePickerSheet: View {
         .clipShape(RoundedRectangle(cornerRadius: MobileDesignGeometry.selectionTopRadius))
     }
 }
-private struct SettingsGroup<Content: View>: View {
+private struct SettingsGroup<Content: View, Accessory: View>: View {
     let title: String
+    @ViewBuilder let accessory: () -> Accessory
     @ViewBuilder let content: () -> Content
+
+    init(
+        title: String,
+        @ViewBuilder accessory: @escaping () -> Accessory,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
+        self.title = title
+        self.accessory = accessory
+        self.content = content
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(MobileLocalization.text(title))
-                .font(MobileDesignTypography.bodySmall.font.weight(.medium))
-                .foregroundStyle(OpenBitFunTheme.muted)
-                .padding(.leading, 8)
-                .padding(.bottom, 2)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(MobileLocalization.text(title))
+                    .font(MobileDesignTypography.bodySmall.font.weight(.medium))
+                    .foregroundStyle(OpenBitFunTheme.muted)
+                Spacer(minLength: 0)
+                accessory()
+            }
+            .padding(.leading, 8)
+            // A trailing action ends on the card's inner edge (row padding 18).
+            .padding(.trailing, 18)
+            .padding(.bottom, 2)
             SettingsCard(content: content)
         }
         .padding(.bottom, 24)
+    }
+}
+
+extension SettingsGroup where Accessory == EmptyView {
+    init(title: String, @ViewBuilder content: @escaping () -> Content) {
+        self.init(title: title, accessory: { EmptyView() }, content: content)
+    }
+}
+
+/// Remote permission mode for the controlled desktop (`set_permission_mode`).
+/// Labels mirror the desktop's permission-mode copy. Always visible so the
+/// setting is discoverable; without a live connection the rows are disabled
+/// and the connection-required hint explains why.
+private struct RemotePermissionSection: View {
+    @ObservedObject var model: MobileAppModel
+    @State private var confirmingFullAccess = false
+
+    private var loading: Bool { model.remoteConnected && !model.remotePermissionModeLoaded }
+    private var editable: Bool { model.remoteConnected && !model.busy && !loading }
+
+    private var hint: String {
+        if !model.remoteConnected { return "连接桌面后可修改权限模式。" }
+        if loading && model.remotePermissionFailure != "LOAD" { return "正在读取桌面权限设置…" }
+        return "此设置会同步到当前桌面，并应用于所有新的工具调用。"
+    }
+
+    private var failureText: String? {
+        guard model.remoteConnected else { return nil }
+        switch model.remotePermissionFailure {
+        case "LOAD": return "权限设置读取失败，请重试。"
+        case "SAVE": return "权限模式保存失败，请重试。"
+        default: return nil
+        }
+    }
+
+    var body: some View {
+        SettingsGroup(title: "权限模式", accessory: {
+            if model.remoteConnected {
+                Button(model.localized("刷新")) { model.refreshRemotePermissionMode() }
+                    .font(MobileDesignTypography.bodyMedium.font.weight(.medium))
+                    .foregroundStyle(OpenBitFunTheme.ink)
+                    .buttonStyle(.plain)
+                    .disabled(model.busy)
+            }
+        }) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(model.localized(hint))
+                    .font(MobileDesignTypography.bodySmall.font)
+                    .foregroundStyle(OpenBitFunTheme.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 4)
+                    .accessibilityIdentifier("settings.permission.hint")
+                permissionRow("ASK", title: "需要确认", detail: "高风险操作会等待你确认。")
+                Divider().overlay(OpenBitFunTheme.line).padding(.horizontal, 18)
+                permissionRow("AUTO", title: "自动批准", detail: "原本需要确认的操作会自动通过。")
+                Divider().overlay(OpenBitFunTheme.line).padding(.horizontal, 18)
+                permissionRow("FULL_ACCESS", title: "完全访问", detail: "允许所有工具操作，不再请求确认。")
+
+                if let failureText {
+                    Text(model.localized(failureText))
+                        .font(.system(size: 12)).foregroundStyle(OpenBitFunTheme.statusDanger)
+                        .padding(.horizontal, 18).padding(.bottom, 10)
+                        .accessibilityIdentifier("settings.permission.failure")
+                }
+
+                if confirmingFullAccess && model.remoteConnected {
+                    fullAccessConfirmation
+                }
+            }
+        }
+        .onChange(of: model.remoteConnected) { connected in
+            if !connected { confirmingFullAccess = false }
+        }
+    }
+
+    private var fullAccessConfirmation: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(model.localized("确认开启完全访问？"))
+                .font(.system(size: 15, weight: .bold)).foregroundStyle(OpenBitFunTheme.statusDanger)
+            Text(model.localized("开启后，桌面端工具可以直接执行命令和修改文件。"))
+                .font(.system(size: 13)).foregroundStyle(OpenBitFunTheme.ink).lineSpacing(4)
+            HStack(spacing: 10) {
+                confirmationButton("取消", destructive: false) { confirmingFullAccess = false }
+                confirmationButton("开启完全访问", destructive: true) {
+                    model.setRemotePermissionMode("FULL_ACCESS")
+                    confirmingFullAccess = false
+                }
+            }
+        }
+        .padding(16)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(OpenBitFunTheme.statusDanger, lineWidth: 1))
+        .padding(.horizontal, 12).padding(.bottom, 14)
+    }
+
+    private func permissionRow(_ mode: String, title: String, detail: String) -> some View {
+        Button {
+            if mode == "FULL_ACCESS" { confirmingFullAccess = true }
+            else {
+                confirmingFullAccess = false
+                model.setRemotePermissionMode(mode)
+            }
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    if model.remoteConnected && !loading && model.remotePermissionMode == mode {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 20)).foregroundStyle(OpenBitFunTheme.ink)
+                    }
+                }
+                .frame(width: 22, height: 24)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.localized(title))
+                        .font(.system(size: 16, weight: .medium)).foregroundStyle(OpenBitFunTheme.ink)
+                    Text(model.localized(detail))
+                        .font(.system(size: 12)).foregroundStyle(OpenBitFunTheme.muted)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 18)
+            .frame(minHeight: 72)
+            .contentShape(Rectangle())
+            .opacity(editable ? 1 : 0.54)
+        }
+        .buttonStyle(.plain)
+        .disabled(!editable)
+        .accessibilityIdentifier("settings.permission.\(mode)")
+    }
+
+    private func confirmationButton(
+        _ title: String,
+        destructive: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Text(model.localized(title))
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(destructive ? OpenBitFunTheme.contentOnAction : OpenBitFunTheme.ink)
+                .frame(maxWidth: .infinity, minHeight: 42)
+                .background(destructive ? OpenBitFunTheme.statusDanger : OpenBitFunTheme.soft)
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -320,41 +405,6 @@ struct SettingsCard<Content: View>: View {
             bordered: false,
             content: content
         )
-    }
-}
-
-private struct SettingsProfileRow: View {
-    let subtitle: String
-    let authenticated: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "person.crop.circle")
-                .font(.system(size: 24, weight: .regular))
-                .foregroundStyle(OpenBitFunTheme.muted)
-                .frame(width: 34, height: 34)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(MobileLocalization.text(authenticated ? "当前账号" : "当前身份"))
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(OpenBitFunTheme.ink)
-                Text(MobileLocalization.text(subtitle))
-                    .font(.system(size: 13))
-                    .foregroundStyle(OpenBitFunTheme.muted)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            if authenticated {
-                Text(MobileLocalization.text("已登录"))
-                    .font(MobileDesignTypography.bodySmall.font.weight(.medium))
-                    .foregroundStyle(OpenBitFunTheme.statusSuccess)
-            } else {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(OpenBitFunTheme.muted.opacity(0.72))
-            }
-        }
-        .padding(.horizontal, 18)
-        .frame(height: 64)
     }
 }
 
@@ -395,50 +445,5 @@ private struct SettingsValueRow: View {
         }
         .padding(.horizontal, 18)
         .frame(minHeight: 56)
-    }
-}
-
-private struct EmbeddedSettingsDeviceRow: View {
-    let device: MobileAccountDevice
-    let connected: Bool
-
-    private var status: String {
-        if connected {
-            return "\(MobileLocalization.text("当前控制")) · \(MobileLocalization.text("在线"))"
-        }
-        return MobileLocalization.text(device.online ? "在线" : "离线")
-    }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "desktopcomputer")
-                .font(.system(size: 20, weight: .regular))
-                .foregroundStyle(connected ? OpenBitFunTheme.ink : OpenBitFunTheme.muted)
-                .frame(width: 28, height: 28)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(device.name.isEmpty ? device.id : device.name)
-                    .font(MobileDesignTypography.titleSmall.font.weight(.medium))
-                    .foregroundStyle(OpenBitFunTheme.ink)
-                    .lineLimit(1)
-                Text(status)
-                    .font(MobileDesignTypography.bodySmall.font)
-                    .foregroundStyle(device.online ? OpenBitFunTheme.statusSuccess : OpenBitFunTheme.muted)
-            }
-            Spacer(minLength: 8)
-            if device.online && !connected {
-                Text(MobileLocalization.text("连接"))
-                    .font(MobileDesignTypography.bodyMedium.font)
-                    .foregroundStyle(OpenBitFunTheme.ink)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(OpenBitFunTheme.soft)
-                    .clipShape(Capsule())
-            }
-        }
-        .padding(.horizontal, 10)
-        .frame(minHeight: 62)
-        .background(connected ? OpenBitFunTheme.soft : OpenBitFunTheme.card)
-        .clipShape(RoundedRectangle(cornerRadius: MobileDesignGeometry.settingsCompactCardRadius))
-        .opacity(device.online ? 1 : 0.48)
     }
 }

@@ -329,6 +329,7 @@
     }
   },
   "tooltip": {
+    "openDetails": "Open details",
     "copy": "Copy",
     "copied": "Copied",
     "close": "Close",
@@ -337,6 +338,11 @@
   },
   "tabs": {
     "close": "Close",
+    "closeBtwTitle": "Close side conversation?",
+    "saveBtwAsFork": "Save as fork",
+    "saveBtwFailed": "Could not save. The side thread is still open; try again.",
+    "confirmCloseBtw": "Closing discards the conversation permanently.",
+    "closeBtwFailed": "Could not close the side conversation. The tab is still open; please try again.",
     "popOut": "Pop out as scene",
     "closeOthers": "Close Others",
     "closeAll": "Close All",
@@ -543,6 +549,13 @@
     "devWingExpand": "Expand dev tools"
   },
   "canvas": {
+    "resizePanes": "Resize panes",
+    "chatPane": "Chat",
+    "contentPane": "Content",
+    "swapPanes": "Swap panes",
+    "hidePanel": "Hide panel",
+    "maximizePanel": "Maximize panel",
+    "restorePanel": "Restore panel",
     "noContentOpen": "No content open",
     "filesCount": "{{count}} files",
     "searchPlaceholder": "Search file name or path...",

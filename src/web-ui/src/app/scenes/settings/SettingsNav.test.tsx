@@ -10,15 +10,24 @@ vi.mock('./settingsRegistry', () => {
   const pages = [
     { id: 'application.general', categoryId: 'application', labelKey: 'General' },
     { id: 'application.appearance', categoryId: 'application', labelKey: 'Appearance' },
+    {
+      id: 'application.pet', categoryId: 'application', labelKey: 'Pet & assistant',
+      descriptionKey: 'Desktop pet and realtime voice calls',
+      sections: [
+        { id: 'pet', labelKey: 'Pet', keywords: ['companion'], searchPhrases: [] },
+        { id: 'voice-call', labelKey: 'Realtime voice calls', keywords: ['volcengine'], searchPhrases: [] },
+      ],
+    },
     { id: 'ai.models', categoryId: 'ai', labelKey: 'Models' },
-  ].map((page) => ({ ...page, descriptionKey: 'Description', keywords: ['settings'], searchPhrases: [] }));
+  ].map((page) => ({ descriptionKey: 'Description', keywords: ['settings'], searchPhrases: [], ...page }));
   return {
     DEFAULT_SETTINGS_PAGE_ID: 'application.general',
     SETTINGS_PAGE_MANIFESTS: pages,
     SETTINGS_CATEGORIES: [
-      { id: 'application', labelKey: 'Application', pages: pages.slice(0, 2) },
-      { id: 'ai', labelKey: 'AI', pages: pages.slice(2) },
+      { id: 'application', labelKey: 'Application', pages: pages.slice(0, 3) },
+      { id: 'ai', labelKey: 'AI', pages: pages.slice(3) },
     ],
+    getSettingsPageManifest: (id: string) => pages.find(page => page.id === id),
     isSettingsPageId: (value: string) => pages.some((page) => page.id === value),
     preloadSettingsPage: vi.fn(async () => undefined),
   };
@@ -91,7 +100,7 @@ describe('SettingsNav shared component composition', () => {
     expect(content.querySelectorAll('[data-openbitfun-part="heading-label"]')).toHaveLength(2);
     const caption = content.querySelector('.openbitfun-settings-nav__category-label')!;
     expect(caption.parentElement?.getAttribute('data-openbitfun-part')).toBe('heading-label');
-    expect(content.querySelectorAll('[data-testid="settings-nav-page"]')).toHaveLength(3);
+    expect(content.querySelectorAll('[data-testid="settings-nav-page"]')).toHaveLength(4);
   });
 
   it('drives the shared selected state from the active destination', async () => {
@@ -113,7 +122,7 @@ describe('SettingsNav shared component composition', () => {
   it('keeps two-line search results and keyboard selection working with real navigation items', async () => {
     const input = await search('settings');
     const results = container.querySelector<HTMLDivElement>('[role="listbox"]')!;
-    expect(results.querySelectorAll('[role="option"]')).toHaveLength(3);
+    expect(results.querySelectorAll('[role="option"]')).toHaveLength(4);
     const first = results.querySelector('[role="option"]')!;
     const label = first.querySelector('[data-openbitfun-part="label"]')!;
     expect(label.querySelector('.openbitfun-settings-nav__search-result-line')).not.toBeNull();
@@ -137,7 +146,7 @@ describe('SettingsNav shared component composition', () => {
     expect(container.querySelector('[role="status"]')).not.toBeNull();
     act(() => pressKey(input, 'Escape'));
     expect(input.value).toBe('');
-    expect(container.querySelectorAll('[data-testid="settings-nav-page"]')).toHaveLength(3);
+    expect(container.querySelectorAll('[data-testid="settings-nav-page"]')).toHaveLength(4);
     expect(container.querySelector('[role="status"]')).toBeNull();
   });
 
@@ -157,5 +166,21 @@ describe('SettingsNav shared component composition', () => {
     const general = container.querySelector('[data-settings-page="application.general"]');
     expect(models?.querySelector('[data-openbitfun-part="dirtyMarker"]')).not.toBeNull();
     expect(general?.querySelector('[data-openbitfun-part="dirtyMarker"]')).toBeNull();
+  });
+
+  it('opens a matching inline section without matching its siblings through the page description', async () => {
+    const input = await search('realtime');
+    expect(container.querySelectorAll('[role="option"]')).toHaveLength(1);
+    await act(async () => pressKey(input, 'Enter'));
+    expect(useSettingsStore.getState().activePageId).toBe('application.pet');
+    expect(useSettingsStore.getState().activeSectionId).toBe('voice-call');
+  });
+
+  it('offers the page when only its shared name matches', async () => {
+    const input = await search('assistant');
+    expect(container.querySelectorAll('[role="option"]')).toHaveLength(1);
+    await act(async () => pressKey(input, 'Enter'));
+    expect(useSettingsStore.getState().activePageId).toBe('application.pet');
+    expect(useSettingsStore.getState().activeSectionId).toBeNull();
   });
 });

@@ -1,6 +1,5 @@
 import React from 'react';
 import { Button, Card, CardBody, CardFooter, CardHeader, Icon, OverflowText } from '@openbitfun/ui';
-import { Package } from 'lucide-react';
 import './SkillCard.scss';
 
 type SkillCardActionTone = 'primary' | 'danger' | 'success' | 'muted';
@@ -45,10 +44,6 @@ const SkillCard: React.FC<SkillCardProps> = ({
   style,
   ...rootProps
 }) => {
-  const glyph = iconKind === 'market'
-    ? <Icon glyph={Package} size="md" />
-    : <Icon name="extension" size="md" />;
-
   return (
     <div data-openbitfun-component="skill-card" data-openbitfun-part="root"
       {...rootProps}
@@ -75,7 +70,7 @@ const SkillCard: React.FC<SkillCardProps> = ({
           leading={(
             <div className="skill-card__icon-area" data-openbitfun-component="skill-card" data-openbitfun-part="iconArea">
               <div className="skill-card__icon" data-openbitfun-component="skill-card" data-openbitfun-part="icon">
-                {glyph}
+                <Icon name="book-open" size="md" />
               </div>
             </div>
           )}

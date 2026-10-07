@@ -10,9 +10,12 @@ globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 const api = vi.hoisted(() => ({
   readDir: vi.fn(async () => [{ name: 'old.txt', path: '/srv/project/old.txt', isDir: false }]),
   rename: vi.fn(async () => undefined),
+  downloadToLocalPath: vi.fn(),
+  cancelTransfer: vi.fn(async () => undefined),
 }));
 vi.mock('./sshApi', () => ({ sshApi: api }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
+vi.mock('@tauri-apps/plugin-dialog', () => ({ save: vi.fn(async () => '/downloads/old.txt') }));
 
 it('renames a remote file once and keeps IME and outside clicks from dismissing the dialog', async () => {
   const container = document.createElement('div');
@@ -48,5 +51,35 @@ it('renames a remote file once and keeps IME and outside clicks from dismissing 
   } finally {
     act(() => root.unmount());
     container.remove();
+  }
+});
+
+it('stops a browser download using the id of its in-flight command', async () => {
+  Object.defineProperty(window, '__TAURI__', { value: {}, configurable: true });
+  let finishDownload!: () => void;
+  api.downloadToLocalPath.mockImplementationOnce(() => new Promise<void>((resolve) => {
+    finishDownload = resolve;
+  }));
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<RemoteFileBrowser connectionId="ssh-host" initialPath="/srv/project" onSelect={() => undefined} onCancel={() => undefined} />));
+    const row = [...document.querySelectorAll<HTMLElement>('.remote-file-browser__row')].find(node => node.textContent?.includes('old.txt'))!;
+    act(() => row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })));
+    const download = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(node => node.textContent === 'ssh.remote.download')!;
+    await act(async () => download.click());
+
+    const transferId = api.downloadToLocalPath.mock.calls[0]?.[4];
+    expect(transferId).toEqual(expect.any(String));
+    const stop = [...document.querySelectorAll<HTMLButtonElement>('button')].find(node => node.textContent === 'actions.cancel')!;
+    await act(async () => stop.click());
+    expect(api.cancelTransfer).toHaveBeenCalledExactlyOnceWith(transferId);
+    expect(api.downloadToLocalPath.mock.calls[0]?.[5]()).toBe(true);
+    await act(async () => finishDownload());
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    delete (window as Window & { __TAURI__?: unknown }).__TAURI__;
   }
 });

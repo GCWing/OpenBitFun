@@ -1,0 +1,41 @@
+@layer openbitfun.components {
+  .root {
+    display: inline-block;
+    color: var(--openbitfun-color-content-primary);
+  }
+
+  /* Keep ordinary text as the fallback for print, reduced motion and high contrast. */
+  @media screen and (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+    @supports ((mask-image: linear-gradient(currentColor, currentColor)) or (-webkit-mask-image: linear-gradient(currentColor, currentColor))) and (color: color-mix(in srgb, currentColor 40%, transparent)) {
+      .root[data-active="true"] {
+        /* One alpha mask also covers composed text and its overflow viewports,
+           retaining each label's color and a readable 40% opacity floor. */
+        --_shimmer-text-mask: linear-gradient(
+          90deg,
+          currentColor 35%,
+          color-mix(in srgb, currentColor 90%, transparent) 40%,
+          color-mix(in srgb, currentColor 55%, transparent) 46%,
+          color-mix(in srgb, currentColor 40%, transparent) 50%,
+          color-mix(in srgb, currentColor 55%, transparent) 54%,
+          color-mix(in srgb, currentColor 90%, transparent) 60%,
+          currentColor 65%
+        );
+        -webkit-mask-image: var(--_shimmer-text-mask);
+        mask-image: var(--_shimmer-text-mask);
+        -webkit-mask-size: 300% 100%;
+        mask-size: 300% 100%;
+        -webkit-mask-position: 100% 0;
+        mask-position: 100% 0;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        animation: openbitfun-text-shimmer calc(var(--openbitfun-motion-duration-loop) * 4) linear infinite;
+      }
+    }
+  }
+
+  @keyframes openbitfun-text-shimmer {
+    /* The band rests outside the text at both ends, making the loop seam invisible. */
+    from, 6% { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+    92%, to { -webkit-mask-position: 0% 0; mask-position: 0% 0; }
+  }
+}

@@ -6,30 +6,11 @@
     gap: var(--openbitfun-space-3);
   }
 
-  .field {
-    display: grid;
-    min-inline-size: 0;
-    grid-template-columns: minmax(7rem, auto) minmax(0, 1fr);
-    gap: var(--openbitfun-space-2);
-    color: var(--openbitfun-color-content-secondary);
-    font-size: var(--openbitfun-type-body-sm-font-size);
-  }
-
-  .fieldLabel,
-  .sectionLabel {
-    color: var(--openbitfun-color-content-muted);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-  }
-
-  .fieldValue {
-    min-inline-size: 0;
-    overflow-wrap: anywhere;
-  }
-
   .sessionList {
     display: flex;
     flex-direction: column;
-    gap: var(--openbitfun-space-2);
+    gap: 0;
+    max-block-size: 20rem;
   }
 
   .session {
@@ -37,19 +18,30 @@
     min-inline-size: 0;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--openbitfun-space-1) var(--openbitfun-space-3);
-    padding: var(--openbitfun-space-3);
-    border-radius: var(--openbitfun-radius-sm);
-    background: var(--openbitfun-color-surface-raised);
+    padding-block: var(--openbitfun-space-2);
     color: var(--openbitfun-color-content-secondary);
     font-size: var(--openbitfun-type-body-sm-font-size);
   }
 
-  .sessionId {
-    overflow-wrap: anywhere;
+  .record { padding-block: var(--openbitfun-space-2); }
+
+  .record [data-openbitfun-part="sectionLabel"] {
     color: var(--openbitfun-color-content-primary);
   }
 
+  .record + .record,
+  .session + .session {
+    border-block-start: 1px solid var(--openbitfun-color-border-subtle);
+  }
+
+  .sessionId {
+    grid-column: 1;
+    overflow-wrap: anywhere;
+    color: var(--openbitfun-color-content-muted);
+  }
+
   .sessionName {
+    color: var(--openbitfun-color-content-primary);
     min-inline-size: 0;
     overflow: hidden;
     white-space: nowrap;
@@ -63,31 +55,15 @@
     white-space: nowrap;
   }
 
-  .messageSection {
-    display: flex;
-    min-inline-size: 0;
-    flex-direction: column;
-    gap: var(--openbitfun-space-2);
-  }
-
-  .message {
-    max-block-size: 20rem;
-    margin: 0;
-    padding: var(--openbitfun-space-3);
-    overflow: auto;
-    border-radius: var(--openbitfun-radius-sm);
-    background: var(--openbitfun-color-surface-raised);
-    color: var(--openbitfun-color-content-secondary);
-    font-family: inherit;
-    font-size: var(--openbitfun-type-body-sm-font-size);
-    line-height: var(--openbitfun-type-body-md-line-height);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
-
   .empty {
     color: var(--openbitfun-color-content-muted);
     font-size: var(--openbitfun-type-body-sm-font-size);
+  }
+
+  .status {
+    min-inline-size: 0;
+    color: inherit;
+    font-size: var(--openbitfun-type-meta-font-size);
   }
 
   .error {

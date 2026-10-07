@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,6 +32,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import org.json.JSONObject
 import com.openbitfun.mobile.app.R
 import com.openbitfun.mobile.core.feature.session.ToolAction
 import com.openbitfun.mobile.core.feature.session.ToolCard
@@ -212,6 +214,11 @@ internal fun ToolStatusRow(
         }
         return
     }
+    if (tool.kind == com.openbitfun.mobile.core.feature.session.ToolKind.TODO ||
+        tool.operation == ToolOperation.UPDATE_TODOS || tool.name.equals("TodoWrite", ignoreCase = true)) {
+        TodoToolCard(tool = tool, enabled = enabled, modifier = modifier)
+        return
+    }
     var localExpanded by rememberSaveable(tool.id) { mutableStateOf(false) }
     val disclosure = LocalToolDisclosure.current
     val expanded = disclosure?.let { it.selected == tool.id } ?: localExpanded
@@ -354,6 +361,79 @@ internal fun ToolStatusRow(
                     modifier = Modifier,
                 )
             }
+        }
+    }
+}
+
+
+private data class TodoItem(val content: String, val status: String)
+
+private fun parseTodoItems(value: String): List<TodoItem> = runCatching {
+    val root = JSONObject(value)
+    val todos = root.optJSONArray("todos") ?: return@runCatching emptyList()
+    buildList {
+        for (index in 0 until todos.length()) {
+            val item = todos.optJSONObject(index) ?: continue
+            val content = item.optString("content").trim()
+            if (content.isNotEmpty()) add(TodoItem(content, item.optString("status", "pending")))
+        }
+    }
+}.getOrDefault(emptyList())
+
+@Composable
+private fun TodoToolCard(tool: ToolCard, enabled: Boolean, modifier: Modifier) {
+    var expanded by rememberSaveable(tool.id) { mutableStateOf(tool.phase != ToolPhase.COMPLETED) }
+    val items = remember(tool.input, tool.output) {
+        parseTodoItems(tool.input).ifEmpty { parseTodoItems(tool.output) }
+    }
+    val done = items.count { it.status.equals("completed", true) }
+    val title = stringResource(R.string.tool_op_update_todos)
+    val active = items.firstOrNull { it.status.equals("in_progress", true) }
+        ?: items.firstOrNull { it.status.equals("pending", true) }
+    val summary = when {
+        items.isEmpty() -> tool.target.ifBlank { stringResource(R.string.tool_todo_fallback) }
+        done == items.size -> stringResource(R.string.tool_todo_all_completed)
+        else -> active?.content ?: items.first().content
+    }
+    Column(
+        modifier = modifier.fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            ToolStatusIcon(tool, Modifier)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                Text(summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (items.isNotEmpty()) Text("$done/${items.size}", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Chevron(if (expanded) R.drawable.ic_symbol_chevron_down else R.drawable.ic_symbol_chevron_right)
+        }
+        if (expanded && items.isNotEmpty()) {
+            Column(Modifier.fillMaxWidth().padding(start = 29.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.fillMaxWidth().height(2.dp).background(MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(2.dp))) {
+                    Box(Modifier.fillMaxWidth(done.toFloat() / items.size.toFloat()).height(2.dp).background(MaterialTheme.colorScheme.onSurfaceVariant, RoundedCornerShape(2.dp)))
+                }
+                items.forEach { item ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
+                        Text(if (item.status.equals("completed", true)) "✓" else if (item.status.equals("cancelled", true)) "×" else if (item.status.equals("in_progress", true)) "•" else "○",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(item.content, style = MaterialTheme.typography.bodySmall,
+                            color = if (item.status.equals("in_progress", true)) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+        if (expanded && items.isEmpty() && tool.output.isNotBlank()) {
+            ToolDetail(stringResource(R.string.tool_output), tool.output, tool.phase == ToolPhase.FAILED)
         }
     }
 }

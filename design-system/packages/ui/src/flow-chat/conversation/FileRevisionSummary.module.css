@@ -1,0 +1,186 @@
+@layer openbitfun.components {
+  .group {
+    min-inline-size: 0;
+  }
+
+  .header {
+    position: relative;
+    isolation: isolate;
+    min-inline-size: 0;
+    padding-block-end: var(--openbitfun-space-1);
+  }
+
+  .front,
+  .page {
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-default);
+    border-radius: var(--openbitfun-control-activity-item-surface-radius);
+    background: var(--openbitfun-color-surface-panel);
+  }
+
+  .page {
+    position: absolute;
+    pointer-events: none;
+    inset-inline-start: 0;
+    inset-inline-end: var(--openbitfun-space-2);
+    inset-block-start: calc(var(--openbitfun-space-1) / 2);
+    inset-block-end: calc(var(--openbitfun-space-1) / 2);
+    transition: opacity var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
+      transform var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  .page[data-layer='2'] {
+    inset-inline-end: var(--openbitfun-space-4);
+    inset-block-start: var(--openbitfun-space-1);
+    inset-block-end: 0;
+  }
+
+  .header[data-expanded='true'] .page {
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--openbitfun-space-1)));
+  }
+
+  .front {
+    position: relative;
+    display: flex;
+    align-items: center;
+    transition: border-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+  }
+
+  .front:is(:hover, :has(:focus-visible)) {
+    border-color: var(--openbitfun-color-border-strong);
+  }
+
+  .toggle {
+    box-sizing: border-box;
+    display: flex;
+    gap: var(--openbitfun-space-2);
+    align-items: center;
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    min-block-size: calc(var(--openbitfun-control-activity-item-surface-height) - 2 * var(--openbitfun-border-width-default));
+    padding-block: var(--openbitfun-control-activity-item-surface-padding-block);
+    padding-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-body-sm-font-family);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .toggle:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: calc(-1 * var(--openbitfun-focus-width));
+  }
+
+  .icon {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+    color: var(--openbitfun-color-content-secondary);
+  }
+
+  .disclosure {
+    position: absolute;
+    inset: 0;
+    display: inline-flex;
+    opacity: 0;
+    background: var(--openbitfun-color-surface-panel);
+  }
+
+  .toggle:is(:hover, :focus-visible) .disclosure {
+    opacity: 1;
+  }
+
+  .subject {
+    display: flex;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+    min-inline-size: 0;
+    flex: 1 1 0;
+  }
+
+  .filename {
+    min-inline-size: 0;
+    flex: 1 1 0;
+    color: var(--openbitfun-color-content-secondary);
+  }
+
+  .metadata {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--openbitfun-space-3);
+    min-inline-size: 0;
+    max-inline-size: 65%;
+    margin-inline-start: auto;
+  }
+
+  .result {
+    display: inline-flex;
+    align-items: center;
+    min-inline-size: 0;
+    max-inline-size: 12em;
+    gap: var(--openbitfun-space-1);
+    color: var(--openbitfun-color-content-secondary);
+  }
+
+  .result[data-status='error'] {
+    color: var(--openbitfun-color-status-danger-content);
+  }
+
+  .count {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    color: var(--openbitfun-color-content-primary);
+    font-weight: var(--openbitfun-type-label-lg-font-weight);
+  }
+
+  .front[data-has-file-action='true']:is(:hover, :has(:focus-visible)) .changes,
+  .front[data-has-file-action='true']:is(:hover, :has(:focus-visible)) .metadata[data-has-status='false'] {
+    display: none;
+  }
+
+  .actions {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    inset-inline-end: var(--openbitfun-control-flow-chat-card-padding-inline);
+    inset-block: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .header[data-expanded='true'] .actions,
+  .front:is(:hover, :has(:focus-visible)) .actions {
+    position: static;
+    align-self: stretch;
+    margin-inline-end: var(--openbitfun-control-flow-chat-card-padding-inline);
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (hover: none) {
+    .actions {
+      position: static;
+      align-self: stretch;
+      margin-inline-end: var(--openbitfun-control-flow-chat-card-padding-inline);
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .page,
+    .front { transition: none; }
+  }
+
+  @media (forced-colors: active) {
+    .front,
+    .page { border-color: CanvasText; }
+  }
+}

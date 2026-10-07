@@ -51,7 +51,6 @@ const BUILTIN_SKILL_GROUP_ORDER = [
   'debugging',
   'coordination',
   'planning',
-  'gstack',
 ];
 
 const BUILTIN_SKILL_GROUP_LABEL_KEYS: Record<string, string> = {
@@ -63,7 +62,6 @@ const BUILTIN_SKILL_GROUP_LABEL_KEYS: Record<string, string> = {
   debugging: 'debugging',
   coordination: 'coordination',
   planning: 'planning',
-  gstack: 'gstack',
 };
 
 function normalizeSkillKeys(value: unknown): string[] {

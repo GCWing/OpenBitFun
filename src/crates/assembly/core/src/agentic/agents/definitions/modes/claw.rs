@@ -16,7 +16,10 @@ impl ClawMode {
     pub fn new() -> Self {
         Self {
             default_tools: vec![
-                "Task".to_string(),
+                "AgentSpawn".to_string(),
+                "AgentSendInput".to_string(),
+                "AgentControl".to_string(),
+                "AgentList".to_string(),
                 "ListModels".to_string(),
                 "AgentWait".to_string(),
                 "Read".to_string(),
@@ -86,10 +89,6 @@ impl Agent for ClawMode {
 
     fn default_tools(&self) -> Vec<String> {
         self.default_tools.clone()
-    }
-
-    fn tool_exposure_overrides(&self) -> &crate::agentic::agents::AgentToolPolicyOverrides {
-        crate::agentic::agents::direct_computer_use_policy()
     }
 
     fn user_context_policy(&self) -> UserContextPolicy {

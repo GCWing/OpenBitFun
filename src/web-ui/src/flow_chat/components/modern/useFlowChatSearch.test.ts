@@ -111,6 +111,23 @@ describe('buildFlowChatSearchMatches', () => {
     });
   });
 
+  it('opens the collection before the reasoning disclosure when locating a folded thought', () => {
+    const virtualItems = [{
+      type: 'model-round', turnId: 'turn-1', isLastRound: true, isTurnComplete: true,
+      data: {
+        id: 'mixed', index: 0, startTime: 1, status: 'completed', isComplete: true, isStreaming: false,
+        items: [
+          { id: 'text', type: 'text', content: 'Visible narrative', status: 'completed', timestamp: 1, isStreaming: false },
+          { id: 'thinking', type: 'thinking', content: 'hidden needle', status: 'completed', timestamp: 2, isStreaming: false, isCollapsed: true },
+          { id: 'grep', type: 'tool', toolName: 'Grep', status: 'completed', timestamp: 3, toolCall: { id: 'grep', input: {} } },
+        ],
+      },
+    }] as VirtualItem[];
+    expect(buildFlowChatSearchMatches(virtualItems, 'needle')[0]).toMatchObject({
+      flowItemId: 'thinking', expandableIds: ['mixed:explore:grep', 'thinking'],
+    });
+  });
+
   it('keeps separate matches for each item in the same turn', () => {
     const virtualItems = [
       {

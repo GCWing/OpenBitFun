@@ -18,6 +18,10 @@ export const mobileTokens = {
       "light": "#FFFFFF",
       "dark": "#151514"
     },
+    "welcome_page_bg": {
+      "light": "#FFFFFF",
+      "dark": "#252522"
+    },
     "page_bg_fade": {
       "light": "#00FFFFFF",
       "dark": "#00151514"
@@ -228,7 +232,7 @@ export const mobileTokens = {
     },
     "welcome_dock": {
       "light": "#171917",
-      "dark": "#171917"
+      "dark": "#000000"
     },
     "welcome_button": {
       "light": "#FFFFFF",

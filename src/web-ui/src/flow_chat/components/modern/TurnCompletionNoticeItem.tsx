@@ -12,12 +12,12 @@ interface TurnCompletionNoticeItemProps {
 function getNoticeIcon(tone: TurnCompletionNotice['tone']): React.ReactNode {
   switch (tone) {
     case 'error':
-      return <AlertCircle size={16} />;
+      return <Icon glyph={AlertCircle} size="md" />;
     case 'info':
       return <Icon name="info" size="md" />;
     case 'warning':
     default:
-      return <AlertTriangle size={16} />;
+      return <Icon glyph={AlertTriangle} size="md" />;
   }
 }
 

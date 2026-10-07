@@ -1,6 +1,6 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import React, {
   useCallback, useEffect, useMemo, useRef, useState,
-  lazy,
   Suspense,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -40,7 +40,7 @@ import {
 
 const log = createLogger('AssistantConfigPage');
 
-const ScheduledJobsView = lazy(() => import('@/app/components/scheduled-jobs/ScheduledJobsView'));
+const ScheduledJobsView = lazyWithRecovery(() => import('@/app/components/scheduled-jobs/ScheduledJobsView'));
 
 const PERSONA_DOC_FILES = ['IDENTITY.md', 'SOUL.md', 'USER.md'] as const;
 type PersonaDocFile = typeof PERSONA_DOC_FILES[number];

@@ -1,5 +1,5 @@
 import { HostDialogQueue, type QueueSnapshot } from '../../../shared/dialog-queue/HostDialogQueue';
-import { normalizeWorkspaceRouting } from './workspaceIdentity';
+import { normalizeWorkspaceRouting, workspaceDisplayName } from './workspaceIdentity';
 import {
   REMOTE_CAPABILITY_HOST_STREAM_V1, UNSUPPORTED_HOST_MESSAGE,
   type HostStreamOptions, type SessionStreamHandle,
@@ -514,7 +514,7 @@ export class RemoteSessionManager {
       workspace_id: resp.workspace_id,
       has_workspace: resp.has_workspace,
       path: resp.path,
-      project_name: resp.project_name,
+      project_name: workspaceDisplayName(resp.project_name, resp.path, resp.remote_ssh_host, resp.remote_connection_id),
       git_branch: resp.git_branch,
       workspace_kind: resp.workspace_kind,
       assistant_id: resp.assistant_id,
@@ -529,7 +529,15 @@ export class RemoteSessionManager {
       resp: string;
       workspaces: RecentWorkspaceEntry[];
     }>({ cmd: 'list_recent_workspaces' });
-    return (resp.workspaces || []).map(normalizeWorkspaceRouting);
+    return (resp.workspaces || []).map((workspace) => ({
+      ...workspace,
+      name: workspaceDisplayName(
+        workspace.name,
+        workspace.path,
+        workspace.remote_ssh_host,
+        workspace.remote_connection_id,
+      ),
+    })).map(normalizeWorkspaceRouting);
   }
 
   async listWorkspaceCatalog(): Promise<WorkspaceCatalog> {
@@ -557,7 +565,24 @@ export class RemoteSessionManager {
       remoteConnectionId: workspace.remote_connection_id,
       remoteSshHost: workspace.remote_ssh_host,
     }, 'path', target);
-    return this.request({ cmd: 'set_workspace', ...reference }, target);
+    const response = await this.request<{
+      success: boolean;
+      workspace_id?: string;
+      path?: string;
+      project_name?: string;
+      remote_connection_id?: string;
+      remote_ssh_host?: string;
+      error?: string;
+    }>({ cmd: 'set_workspace', ...reference }, target);
+    return {
+      ...response,
+      project_name: workspaceDisplayName(
+        response.project_name,
+        response.path || workspace.path,
+        response.remote_ssh_host ?? workspace.remote_ssh_host,
+        response.remote_connection_id ?? workspace.remote_connection_id,
+      ),
+    };
   }
 
   /** True when the connected host serves session, terminal and catalog

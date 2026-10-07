@@ -44,6 +44,9 @@ use std::sync::{Arc, OnceLock};
 const MAX_CACHED_WORKSPACE_HOOK_SOURCES: usize = 32;
 const MAX_PENDING_CONTEXT_SESSIONS: usize = 1024;
 
+mod skill_hooks;
+pub(crate) use skill_hooks::activate_skill_hooks;
+
 pub(crate) fn new_runtime_hook_registry() -> RuntimeHookRegistry {
     runtime_hook_registry()
 }
@@ -341,6 +344,8 @@ pub struct UserPromptSubmitHookDecision {
 pub struct PreToolUseHookDecision {
     /// The tool call must not run; the reason is fed back to the model.
     pub deny_reason: Option<String>,
+    /// Skill hook requests an explicit decision through the permission mailbox.
+    pub ask_reason: Option<String>,
     /// The tool call bypasses the permission prompt for this invocation.
     pub allow: bool,
     /// Replacement tool arguments (`hookSpecificOutput.updatedInput`).
@@ -445,6 +450,11 @@ pub async fn dispatch_pre_tool_use(
         Some(AgentHookPermissionOutcome::Allow { .. }) => {
             decision.allow = true;
         }
+        Some(AgentHookPermissionOutcome::Ask { reason }) => {
+            decision.ask_reason = Some(reason.clone().unwrap_or_else(|| {
+                format!("A skill hook requires approval for the '{tool_name}' tool call.")
+            }));
+        }
         None => {}
     }
     if decision.deny_reason.is_none() {
@@ -496,7 +506,7 @@ pub async fn dispatch_permission_request(
             allow: true,
             message: reason,
         }),
-        None => None,
+        None | Some(AgentHookPermissionOutcome::Ask { .. }) => None,
     }
 }
 
@@ -609,6 +619,14 @@ pub async fn dispatch_stop(
 /// SessionEnd hooks run when a session is deleted (`reason: "other"`).
 /// Timeouts are capped tightly so deletion never hangs.
 pub async fn dispatch_session_end(facts: NativeHookSessionFacts<'_>, reason: &str) {
+    // Also clear on cancellation while waiting for SessionEnd commands.
+    struct ClearOnExit<'a>(&'a str);
+    impl Drop for ClearOnExit<'_> {
+        fn drop(&mut self) {
+            clear_session_hook_state(self.0);
+        }
+    }
+    let _clear = ClearOnExit(facts.session_id);
     pending_session_context().remove(facts.session_id);
     if let Some(dispatch) = prepare(facts, AgentHookEvent::SessionEnd).await {
         dispatch
@@ -622,6 +640,7 @@ pub async fn dispatch_session_end(facts: NativeHookSessionFacts<'_>, reason: &st
 /// Drop per-session hook state without dispatching anything.
 pub fn clear_session_hook_state(session_id: &str) {
     pending_session_context().remove(session_id);
+    runtime_hook_registry().clear_session(session_id);
 }
 
 /// Built-in DeepReview shared-context measurement hook.
@@ -876,9 +895,10 @@ async fn prepare<'a>(
         facts.workspace_root,
         config.project_hooks_enabled,
     )
-    .await?;
+    .await?
+    .with_project_hooks_enabled(config.project_hooks_enabled);
     let workspace_scope = facts.workspace_id.map(str::to_owned);
-    if !engine.has_rules_for_workspace(event, workspace_scope.as_deref()) {
+    if !engine.has_rules_for_session(event, workspace_scope.as_deref(), facts.session_id) {
         return None;
     }
     let cwd = facts

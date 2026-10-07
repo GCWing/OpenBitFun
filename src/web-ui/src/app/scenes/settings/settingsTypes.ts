@@ -1,7 +1,7 @@
 export type SettingsCategoryId =
   | 'application'
   | 'ai'
-  | 'workspace'
+  | 'development'
   | 'tools'
   | 'data';
 
@@ -9,40 +9,51 @@ export type SettingsPageId =
   | 'application.general'
   | 'application.appearance'
   | 'application.pet'
-  | 'application.voice'
-  | 'application.shortcuts'
-  | 'application.terminal'
-  | 'application.editor'
+  | 'application.input'
   | 'ai.models'
-  | 'ai.memory'
-  | 'workspace.session'
-  | 'workspace.worktrees'
-  | 'tools.execution'
+  | 'ai.session-memory'
+  | 'ai.execution'
+  | 'ai.permissions'
+  | 'development.editor'
+  | 'development.terminal'
+  | 'development.workspace'
   | 'tools.desktop-control'
   | 'tools.automation'
-  | 'tools.webSearch'
+  | 'tools.web-search'
   | 'tools.mcp'
-  | 'tools.acp'
+  | 'tools.external-agents'
   | 'data.usage'
   | 'data.archived'
   | 'data.diagnostics';
 
 export type SettingsViewId =
-  | 'common'
-  | 'advanced'
   | 'local'
   | 'ssh'
-  | 'json'
+  | 'json';
+
+/** Anchors in a single settings page, not nested pages or tab panels. */
+export type SettingsSectionId =
+  | 'pet'
+  | 'voice-call'
+  | 'voice'
+  | 'shortcuts'
+  | 'session'
+  | 'memory'
+  | 'workspace-search'
+  | 'worktrees'
+  | 'git'
   | 'quick-actions'
   | 'hooks';
 
 export interface SettingsDestination {
   pageId: SettingsPageId;
   viewId?: SettingsViewId;
+  sectionId?: SettingsSectionId;
 }
 
 export interface SettingsPageProps {
   isActive?: boolean;
   viewId?: SettingsViewId;
+  sectionId?: SettingsSectionId;
   navigationRequestId: number;
 }

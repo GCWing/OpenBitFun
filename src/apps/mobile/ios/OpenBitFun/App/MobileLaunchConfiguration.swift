@@ -12,8 +12,6 @@ enum MobileLaunchConfiguration {
         #endif
     }
 
-    static var pairingAccountPreview: Bool { ProcessInfo.processInfo.arguments.contains("--pairing-account") }
-    static var pairingManualPreview: Bool { ProcessInfo.processInfo.arguments.contains("--pairing-manual") }
     static func makeModel() -> MobileAppModel {
         let first = ChatSession(id: UUID().uuidString, title: "你好", updatedLabel: "刚刚")
         let model = MobileAppModel(
@@ -137,8 +135,9 @@ enum MobileLaunchConfiguration {
             model.settingsOpen = true
         }
         if arguments.contains("--remote-settings") {
+            // Remote permission lives on the single settings page.
             model.surface = .remote
-            model.remoteControlSettingsOpen = true
+            model.settingsOpen = true
         }
         if arguments.contains("--composer-model-picker") ||
             ProcessInfo.processInfo.environment["OPENBITFUN_COMPOSER_MODEL_PICKER"] == "1" {
@@ -162,9 +161,11 @@ enum MobileLaunchConfiguration {
                 ),
             ]
         }
-        if arguments.contains("--pairing") || arguments.contains("--pairing-manual") ||
-            arguments.contains("--pairing-account") {
-            model.pairingSheetOpen = true
+        // Legacy capture flags: QR and manual-link pairing were removed, so
+        // every pairing flag now opens the account device picker.
+        if arguments.contains("--pairing") || arguments.contains("--pairing-account") ||
+            arguments.contains("--device-picker") {
+            model.devicePickerOpen = true
         }
         if arguments.contains("--remote-create") || arguments.contains("--remote-create-workspace-picker") ||
             arguments.contains("--remote-create-session-loading") {
@@ -225,8 +226,9 @@ enum MobileLaunchConfiguration {
             model.accountSelectedDeviceID = "desktop-preview"
             model.accountDeviceCount = model.accountDevices.count
             model.coreErrorMessage = nil
-            model.settingsOpen = false
-            model.accountSheetOpen = true
+            // The signed-in account lives inline in Settings.
+            model.accountSheetOpen = false
+            model.settingsOpen = true
         }
         return model
     }
@@ -255,6 +257,7 @@ private extension MobileAppModel {
         accountSelectedDeviceID = "preview-desktop"
         surface = .remote
         remoteConnected = true
+        remotePermissionModeLoaded = true
         remoteExpectedDeviceKey = "account:preview-desktop"
         remoteInitialSessionReady = true
         remoteInitialWorkspaceReady = true

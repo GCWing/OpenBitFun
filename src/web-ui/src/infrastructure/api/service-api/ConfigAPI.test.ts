@@ -197,7 +197,10 @@ describe('skill scan response compatibility', () => {
   });
 
   it('preserves partial inventories and diagnostics from new hosts', async () => {
-    const value = { skills: [{ key: 'project::codex::pdf' }], diagnostics: [{ path: '/remote/denied', sourceId: 'codex', message: 'permission denied' }] };
+    const value = { skills: [{ key: 'project::codex::pdf' }], diagnostics: [
+      { path: '/remote/denied', sourceId: 'codex', message: 'permission denied' },
+      { path: '/remote/guard/SKILL.md', sourceId: 'claude-code', message: 'unsupported hooks', unsupportedField: 'hooks' },
+    ] };
     invokeMock.mockResolvedValueOnce(value);
     expect(await new ConfigAPI().getModeSkillScanReport({ modeId: 'agent', workspaceId: 'remote-workspace-id' }))
       .toEqual({ ...value, diagnosticsAvailable: true });

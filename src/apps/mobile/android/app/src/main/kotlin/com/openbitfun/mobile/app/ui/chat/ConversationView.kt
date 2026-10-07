@@ -271,7 +271,9 @@ internal fun ConversationView(
         Box(modifier = Modifier.fillMaxSize().testTag(CONVERSATION_TEST_TAG)) {
             if (timeline == null) {
                 Box(Modifier.fillMaxSize()) {
-                    if (loadingVisible) ConversationLoadingState(Modifier.fillMaxSize())
+                    if (loadingVisible) ConversationLoadingState(
+                        Modifier.fillMaxSize().padding(top = topInset, bottom = bottomInset),
+                    )
                 }
             } else if (visibleRows.isEmpty() && !state.hasMoreMessages) {
                 ConversationEmptyState(modifier = Modifier.fillMaxSize())

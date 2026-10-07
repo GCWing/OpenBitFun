@@ -46,6 +46,7 @@ import type {
   WorkspaceSearchRepoPhase,
 } from '@/infrastructure/api/service-api/tauri-commands';
 import {
+  cancelWorkspaceTransfer,
   downloadWorkspaceFileToDisk,
   joinWorkspaceTargetPath,
   normalizeWorkspaceTargetDirectory,
@@ -187,7 +188,6 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
 
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
   const [transfers, setTransfers] = useState<Map<string, TransferProgressState>>(new Map());
-  const dropTransferIdRef = useRef<string | null>(null);
   const [fileDropHighlight, setFileDropHighlight] = useState(false);
   const [inputDialog, setInputDialog] = useState<{
     isOpen: boolean;
@@ -211,7 +211,11 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
   const createTransferProgress = useCallback(() => {
     const id = crypto.randomUUID();
     const onProgress = (state: TransferProgressState | null) => {
+      const wasStopped = state !== null && cancelledTransferIdsRef.current.has(id);
       setTransfers((prev) => {
+        if (wasStopped) {
+          return prev;
+        }
         const next = new Map(prev);
         if (state === null) {
           next.delete(id);
@@ -220,6 +224,9 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
         }
         return next;
       });
+      if (state === null) {
+        cancelledTransferIdsRef.current.delete(id);
+      }
     };
     return { id, onProgress };
   }, []);
@@ -227,6 +234,9 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
   /** Stop an in-progress transfer by its ID. */
   const handleStopTransfer = useCallback((transferId: string) => {
     cancelledTransferIdsRef.current.add(transferId);
+    // A peer download runs in this process, so it also needs the stop signal
+    // that `cancel_transfer` can only deliver to the host running the transfer.
+    cancelWorkspaceTransfer(transferId);
     void sshApi.cancelTransfer(transferId);
     setTransfers((prev) => {
       const next = new Map(prev);
@@ -236,27 +246,27 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
   }, []);
 
   /**
-   * Stable callback for drag-and-drop file uploads. Uses a ref to track the
-   * current drop's transfer ID so each drop session gets its own entry in the
-   * `transfers` Map.
+   * Stable callback for drag-and-drop file uploads. The drop hook owns the
+   * transfer id and reports it with every progress state, so the card and the
+   * cancellable backend transfer stay the same operation.
    */
-  const handleDropProgress = useCallback((state: TransferProgressState | null) => {
+  const handleDropProgress = useCallback((state: TransferProgressState | null, transferId: string) => {
+    const wasStopped = state !== null && cancelledTransferIdsRef.current.has(transferId);
     setTransfers((prev) => {
+      if (wasStopped) {
+        return prev;
+      }
       const next = new Map(prev);
       if (state === null) {
-        const id = dropTransferIdRef.current;
-        if (id) {
-          next.delete(id);
-          dropTransferIdRef.current = null;
-        }
+        next.delete(transferId);
       } else {
-        if (!dropTransferIdRef.current) {
-          dropTransferIdRef.current = crypto.randomUUID();
-        }
-        next.set(dropTransferIdRef.current, state);
+        next.set(transferId, state);
       }
       return next;
     });
+    if (state === null) {
+      cancelledTransferIdsRef.current.delete(transferId);
+    }
   }, []);
 
   const searchLimitNotice =
@@ -515,10 +525,9 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
         );
       } catch (error) {
         log.error('Failed to download file', error);
+        const wasStopped = cancelledTransferIdsRef.current.has(id);
         onProgress(null);
-        if (cancelledTransferIdsRef.current.has(id)) {
-          cancelledTransferIdsRef.current.delete(id);
-        } else {
+        if (!wasStopped) {
           notification.error(t('transfer.failed', { error: String(error) }));
         }
       }
@@ -671,6 +680,13 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
         id
       );
 
+      if (result.cancelled && result.failedFiles.length === 0) {
+        if (result.successCount > 0) {
+          await loadFileTree(undefined, true);
+        }
+        return;
+      }
+
       if (result.successCount === 0 && result.failedFiles.length === 0) {
         notification.info(t('notifications.pasteNoFiles'));
         return;
@@ -706,10 +722,9 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
       }
     } catch (error) {
       log.error('Failed to paste files', error);
+      const wasStopped = cancelledTransferIdsRef.current.has(id);
       onProgress(null);
-      if (cancelledTransferIdsRef.current.has(id)) {
-        cancelledTransferIdsRef.current.delete(id);
-      } else {
+      if (!wasStopped) {
         notification.error(t('notifications.pasteFailed', { count: 1 }));
       }
     }
@@ -892,10 +907,16 @@ const FilesPanel: React.FC<FilesPanelProps> = ({
     }
   }, [workspacePath, loadFileTree, expandFolder]);
 
-  const handleFileDropError = useCallback((error: unknown) => {
-    handleDropProgress(null);
+  const handleFileDropError = useCallback((
+    error: unknown,
+    transferId: string,
+  ) => {
+    const wasStopped = cancelledTransferIdsRef.current.has(transferId);
+    handleDropProgress(null, transferId);
     setFileDropHighlight(false);
-    notification.error(t('transfer.failed', { error: String(error) }));
+    if (!wasStopped) {
+      notification.error(t('transfer.failed', { error: String(error) }));
+    }
   }, [notification, t, handleDropProgress]);
 
   useWorkspaceFileDrop({

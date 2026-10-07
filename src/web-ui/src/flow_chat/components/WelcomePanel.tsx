@@ -16,6 +16,9 @@ import { useAgentIdentityDocument } from '@/app/scenes/my-agent/useAgentIdentity
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
 import { useGitState } from '@/tools/git/hooks/useGitState';
+import { useSessionWorkspaceSelection } from '../hooks/useSessionWorkspaceSelection';
+import type { Session } from '../types/flow-chat';
+import { sessionWorkspaceId } from '../utils/sessionWorkspace';
 import './WelcomePanel.css';
 import './WelcomePanelSurface.scss';
 
@@ -24,6 +27,7 @@ const log = createLogger('WelcomePanel');
 interface WelcomePanelProps {
   onQuickAction?: (command: string) => void;
   className?: string;
+  session?: Session | null;
   sessionMode?: string;
   /** Owning workspace ID of the session being welcomed; selects the assistant identity document. */
   workspaceId?: string;
@@ -33,9 +37,10 @@ interface WelcomePanelProps {
 export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   onQuickAction,
   className = '',
-  sessionMode,
-  workspaceId,
-  workspacePath = '',
+  session,
+  sessionMode: initialSessionMode,
+  workspaceId: initialWorkspaceId,
+  workspacePath: initialWorkspacePath = '',
 }) => {
   const { t } = useTranslation('flow-chat');
   const { t: tCommon } = useTranslation('common');
@@ -47,12 +52,23 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
 
   const { switchLeftPanelTab } = useApp();
   const {
-    hasWorkspace,
+    hasWorkspace: hasActiveWorkspace,
     currentWorkspace,
+    openedWorkspaces,
     openedWorkspacesList,
     openWorkspace,
     switchWorkspace,
   } = useWorkspaceContext();
+  const { selectedWorkspace, workspaceControl } = useSessionWorkspaceSelection(session);
+  const workspace = session ? selectedWorkspace
+    : initialWorkspaceId ? openedWorkspaces.get(initialWorkspaceId) : currentWorkspace;
+  const workspaceId = session ? workspaceControl.selectedId : initialWorkspaceId ?? workspace?.id;
+  const workspacePath = session?.draft ? selectedWorkspace?.rootPath ?? ''
+    : session?.workspacePath ?? initialWorkspacePath;
+  const hasWorkspace = session ? Boolean(workspaceId) : hasActiveWorkspace;
+  const sessionMode = session?.mode ?? initialSessionMode;
+  const workspaceLabel = workspace?.name || (session
+    ? t('workspaceStrip.unavailableLabel') : t('shared:features.workspace'));
   const sessionModeLower = (sessionMode || '').toLowerCase();
   const isCoworkSession = sessionModeLower === 'cowork';
   const isClawSession = sessionModeLower === 'claw';
@@ -61,7 +77,9 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   // branch / worktree changes (including external ones picked up by the
   // GitStateManager poll). When there is no workspace or we are in a
   // cowork/claw session we pass a blank scope so the hook stays idle.
-  const activeWsId = !isCoworkSession && !isClawSession ? currentWorkspace?.id : undefined;
+  const activeWsId = !isCoworkSession && !isClawSession && workspace
+    ? session?.draft?.workspaceId ?? (session ? sessionWorkspaceId(session) : workspace.id)
+    : undefined;
   const gitScope = activeWsId ? { workspaceId: activeWsId } : { workspaceId: '' };
   const {
     isRepository,
@@ -83,14 +101,14 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   // Derive the same shape the old loadGitState produced so the render and
   // narrative helpers below do not have to change.
   const gitState = useMemo(() => {
-    if (!isRepository || !currentBranch) return null;
+    if (!activeWsId || !isRepository || !currentBranch) return null;
     return {
       currentBranch,
       unstagedFiles: (unstaged?.length || 0) + (untracked?.length || 0),
       stagedFiles: staged?.length || 0,
       unpushedCommits: ahead || 0,
     };
-  }, [isRepository, currentBranch, ahead, staged, unstaged, untracked]);
+  }, [activeWsId, isRepository, currentBranch, ahead, staged, unstaged, untracked]);
 
   const identityWorkspace = useMemo(
     () => (isClawSession && workspaceId ? { id: workspaceId, rootPath: workspacePath } : null),
@@ -123,9 +141,17 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   const aiPartnerKey = isCoworkSession ? 'welcome.aiPartnerCowork' : isClawSession ? 'welcome.aiPartnerClaw' : null;
 
   const otherWorkspaces = useMemo(
-    () => openedWorkspacesList.filter(ws => ws.id !== currentWorkspace?.id),
-    [openedWorkspacesList, currentWorkspace?.id],
+    () => (session ? workspaceControl.options : openedWorkspacesList).filter(ws => ws.id !== workspaceId),
+    [session, workspaceControl.options, openedWorkspacesList, workspaceId],
   );
+  const canSwitchWorkspace = session
+    ? !workspaceControl.locked && otherWorkspaces.length > 0 : true;
+  // The shell Git panel still follows its active workspace. A draft preview of
+  // another project must not open that unrelated panel or activate the project.
+  const canNavigateGit = !!activeWsId && activeWsId === currentWorkspace?.id;
+  useEffect(() => {
+    setWorkspaceDropdownOpen(false);
+  }, [session?.sessionId, workspaceId, canSwitchWorkspace]);
   const workspaceMenuLayout = useAnchoredPopoverPosition({
     open: workspaceDropdownOpen,
     anchorRef: workspaceTriggerRef,
@@ -137,8 +163,8 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   });
 
   const handleGitClick = useCallback(() => {
-    switchLeftPanelTab('git');
-  }, [switchLeftPanelTab]);
+    if (canNavigateGit) switchLeftPanelTab('git');
+  }, [canNavigateGit, switchLeftPanelTab]);
 
   const isGitClean = useMemo(
     () => !!gitState && gitState.unstagedFiles === 0 && gitState.stagedFiles === 0 && gitState.unpushedCommits === 0,
@@ -167,6 +193,7 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
               data-openbitfun-product-part="gitAction"
               className="welcome-panel__inline-btn"
               onClick={handleGitClick}
+              disabled={!canNavigateGit}
             >
               {label}
             </Button>
@@ -176,7 +203,7 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
         {t('welcome.period')}
       </>
     );
-  }, [gitState, handleGitClick, t]);
+  }, [gitState, handleGitClick, canNavigateGit, t]);
 
   useEffect(() => {
     if (!workspaceDropdownOpen) return;
@@ -205,9 +232,14 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
   }, [workspaceDropdownOpen]);
 
   const handleSwitchWorkspace = useCallback(async (ws: WorkspaceInfo) => {
-    try { setWorkspaceDropdownOpen(false); await switchWorkspace(ws); }
+    setWorkspaceDropdownOpen(false);
+    if (session) {
+      workspaceControl.onSelect(ws.id);
+      return;
+    }
+    try { await switchWorkspace(ws); }
     catch (err) { log.warn('Failed to switch workspace', err); }
-  }, [switchWorkspace]);
+  }, [session, workspaceControl, switchWorkspace]);
 
   const handleOpenOtherFolder = useCallback(async () => {
     try {
@@ -287,14 +319,13 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
                         labelBehavior="static"
                         variant="text"
                         leadingIcon={<FolderOpen size={13} className="welcome-panel__inline-icon" />}
-                        trailingIcon={
+                        trailingIcon={canSwitchWorkspace ? (
                           <Icon
                             name="chevron-down"
-                            size="lg"
-                            style={{ width: 11, height: 11 }}
+                            size="xs"
                             className={`welcome-panel__inline-chevron${workspaceDropdownOpen ? ' welcome-panel__inline-chevron--open' : ''}`}
                           />
-                        }
+                        ) : undefined}
                         ref={workspaceTriggerRef}
                         type="button"
                         data-openbitfun-product-component="welcome-panel"
@@ -302,14 +333,14 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
                         data-openbitfun-state={workspaceDropdownOpen ? 'open' : undefined}
                         className={`welcome-panel__inline-btn welcome-panel__inline-btn--interactive${workspaceDropdownOpen ? ' welcome-panel__inline-btn--active' : ''}`}
                         onClick={() => setWorkspaceDropdownOpen(v => !v)}
-                        disabled={isSelectingWorkspace}
-                        title={currentWorkspace?.rootPath}
+                        disabled={isSelectingWorkspace || !canSwitchWorkspace}
+                        title={workspace?.rootPath}
                         aria-haspopup="menu"
                         aria-expanded={workspaceDropdownOpen}
                       >
-                        {currentWorkspace?.name || t('shared:features.workspace')}
+                        {workspaceLabel}
                       </Button>
-                      {workspaceDropdownOpen && createOverlayPortal(
+                      {workspaceDropdownOpen && canSwitchWorkspace && createOverlayPortal(
                         <Menu
                           ref={workspaceMenuRef}
                           data-openbitfun-product-component="welcome-panel"
@@ -324,29 +355,29 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
                           autoFocusFirstItem
                           aria-label={t('shared:features.workspace')}
                         >
-                          <MenuItem
+                          {!session && <MenuItem
                             data-openbitfun-product-component="welcome-panel"
                             data-openbitfun-product-part="workspaceItem"
                             leading={<FolderPlus size={12} />}
                             onClick={() => { void handleCreateWorkspace(); }}
                           >
                             {tCommon('header.newProject')}
-                          </MenuItem>
-                          {(hasWorkspace || otherWorkspaces.length > 0) && <MenuSeparator />}
-                          {hasWorkspace && currentWorkspace && (
+                          </MenuItem>}
+                          {!session && (hasWorkspace || otherWorkspaces.length > 0) && <MenuSeparator />}
+                          {hasWorkspace && workspace && (
                             <MenuItem
                               role="menuitemradio"
                               checked
                               aria-disabled="true"
                               leading={<FolderOpen size={12} />}
-                              metadata={<Icon name="check-line" size="lg" style={{ width: 11, height: 11 }} />}
+                              metadata={<Icon name="check-line" size="xs" />}
                             >
-                              {currentWorkspace.name}
+                              {workspace.name}
                             </MenuItem>
                           )}
                           {otherWorkspaces.length > 0 && (
                             <>
-                              {hasWorkspace && currentWorkspace && <MenuSeparator />}
+                              {hasWorkspace && workspace && <MenuSeparator />}
                               {otherWorkspaces.map(ws => (
                                 <MenuItem
                                   key={ws.id}
@@ -371,12 +402,13 @@ export const WelcomePanel: React.FC<WelcomePanelProps> = ({
                         <Button
                           labelBehavior="static"
                           variant="text"
-                          leadingIcon={<Icon name="git" size="lg" style={{ width: 13, height: 13 }} className="welcome-panel__inline-icon" />}
+                          leadingIcon={<Icon name="git" size="sm" className="welcome-panel__inline-icon" />}
                           type="button"
                           data-openbitfun-product-component="welcome-panel"
                           data-openbitfun-product-part="gitAction"
                           className="welcome-panel__inline-btn"
                           onClick={handleGitClick}
+                          disabled={!canNavigateGit}
                         >
                           {gitState.currentBranch}
                         </Button>

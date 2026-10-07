@@ -9,16 +9,16 @@
     "retry": "Retry"
   },
   "capacity": {
-    "title": "Capacity",
-    "description": "Choose whether additional Review work runs one or two at a time, and how long it may wait for provider capacity.",
+    "title": "Review capacity",
     "maxParallelReviewers": {
       "label": "Review parallelism",
-      "description": "Controls whether additional review work runs one or two at a time. It changes concurrency, not review scope."
+      "description": "Run supplemental review tasks one at a time or two at once"
     },
     "maxQueueWaitSeconds": {
-      "label": "Capacity wait window",
-      "description": "How long optional work may wait for provider capacity. Already running checks can make the total review take longer."
-    }
+      "label": "Capacity wait time",
+      "description": "How long optional reviews wait for provider capacity; excludes time spent on checks already running"
+    },
+    "description": "Control how supplemental reviews use model capacity; changing concurrency keeps the review scope unchanged"
   },
   "messages": {
     "loadFailed": "Failed to load Review capacity.",

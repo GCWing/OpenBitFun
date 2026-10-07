@@ -12,6 +12,7 @@ export const confirmDialogMeta = {
     { defaultValue: "warning", name: "type", type: "info | warning | error | success" },
     { name: "confirmText", type: "ReactNode" },
     { name: "secondaryText", type: "ReactNode" },
+    { defaultValue: "inline", name: "secondaryActionPlacement", type: "inline | start" },
     { name: "cancelText", type: "ReactNode" },
     { name: "preview", type: "ReactNode" },
     { defaultValue: "false", name: "confirmDanger", type: "boolean" },
@@ -42,5 +43,8 @@ export const confirmDialogMeta = {
     "layout.confirmDialog.previewRadius",
     "type.body.md.fontSize",
     "type.code.sm.fontSize",
+    "space.2",
+    "space.3",
+    "space.4",
   ],
 } as const satisfies ComponentMeta;

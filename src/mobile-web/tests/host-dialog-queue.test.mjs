@@ -143,3 +143,18 @@ test('a live send becomes recoverable only when its acknowledgement fails',async
  assert.equal(f.calls.find(call=>call.action==='submit').message.turnId,id);
  assert.equal(f.executions,1);
 });
+
+test('a page without Web Crypto randomUUID still queues a send and an operation',async()=>{
+ const f=fixture();const q=f.create();
+ // The remote page of LAN mode is served over plain HTTP and older WebViews
+ // never expose `randomUUID`, while `getRandomValues` stays available.
+ const descriptor=Object.getOwnPropertyDescriptor(globalThis,'crypto');const original=globalThis.crypto;
+ Object.defineProperty(globalThis,'crypto',{configurable:true,value:{getRandomValues:original.getRandomValues.bind(original)}});
+ try {
+  await q.submit(message);await q.act({turnId:'queued'},'promote');
+ } finally {Object.defineProperty(globalThis,'crypto',descriptor);}
+ const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+ assert.match(f.calls.find(call=>call.action==='submit').message.turnId,uuid);
+ assert.match(f.calls.find(call=>call.action==='promote').operationId,uuid);
+ assert.equal(f.executions,1);
+});

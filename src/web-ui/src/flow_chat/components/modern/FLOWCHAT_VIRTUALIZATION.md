@@ -9,6 +9,52 @@ Do not substitute clipping overflow: user-message decorations and controls can
 extend outside the reading column. The rhythm test protects this stylesheet
 contract; it does not prove browser layout or end-to-end scroll stability.
 
+Embedded panels must preserve that shared formatting context. The Btw sidebar
+previously overrode the wrapper with `display: block`, allowing trailing child
+margins to escape measurement. Removing a boundary row then removed space not
+represented by virtual padding; tail follow could bring the row back, restoring
+the space and removing it again. `BtwSessionPanelLayout.test.ts` protects the
+cascade contract. `BtwVirtualSessionList.test.tsx` reproduces the feedback with
+supplied contained/escaping margin geometry, the real virtualizer, and delayed
+resize/scroll delivery. This isolates a window-churn mechanism; native WebView2
+memory savings and the fraction of observed runtime churn it explains still
+require a retest.
+
+## Completed-turn metrics
+
+The resident completed-turn footer keeps `FlowChatTurnMetrics` on the left and
+elapsed time with the existing actions on the right. Only elapsed time is shown
+inline; its shared Tooltip exposes the completion timestamp and elapsed time.
+Metric typography and Lucide glyph sizing belong to `@openbitfun/ui`.
+Each number has its own hover/focus/click capsule and details card. Clicking
+opens immediately and keeps the card open until another trigger click, an outside
+press, Escape, or scrolling; native button triggers also support keyboard activation. `FlowChatMetric`
+shares the selected-text capsule's surface material and preserves the existing
+Tooltip overlay ownership; borders are reserved so hover does not resize rows.
+Shared Tooltip visibility immediately closes cards and cancels pending opening on
+any window/container scroll, releasing click persistence without viewport writes.
+Viewport-exit observation also covers clipping caused by non-scroll layout changes.
+The details card paints its background, border, shadow and backdrop filter on
+the same outer surface, with an opaque fallback. Tooltip owns its entrance
+motion so the global popup animation cannot add another opacity layer.
+Only the session's latest turn shows its footer at rest. History rows share
+temporary hover/focus leases through the view's reader state, including across
+separate virtual blocks. Only the footer subscribes, and row recycling releases
+its leases. Open footer overlays keep their trigger row visible. Hidden footers
+retain their measured space and keyboard access; the typewriter reveal gate
+still takes precedence. Latest-turn identity comes from the session catalog,
+not the last visible virtual row or the end of a history window.
+The cache ring uses reported cache-read tokens divided by input tokens; if any
+call lacks cache telemetry, the turn's ratio stays unknown. The speed levels
+use output tokens divided by the whole turn duration (including tools/waits),
+with thresholds at 15, 40 and 80 tokens/s, disclosed in the Tooltip. This is not
+provider streaming throughput. Total usage and the cache ring form one unit,
+hidden only when both values are missing. If usage is known but the cache ratio
+is unknown, a neutral dashed ring remains; cache-only data adds no total placeholder.
+Other unavailable metrics and detail rows are omitted; reported zero remains visible.
+The row retains its existing reveal reservation and has no mount animation or
+viewport writes. Narrow panes may wrap the two groups without clipping actions.
+
 ## Interrupted turn continuity
 
 Cancelled rounds remain in the ordinary transcript. The display projection removes
@@ -19,6 +65,17 @@ continuation label inside the next visible model-round row, including when empty
 cancelled rounds precede it. That boundary prevents cross-round grouping from
 hiding the label; ordinary within-round tool folding remains available. Round ids
 and virtual row keys stay unchanged, with no viewport writes or mount animation.
+
+Retry history seals the preceding collection once, while the current effective
+attempt starts a new collection that can receive following model rounds. Attempt
+normalization must not disable grouping for the whole round. Failed attempts stay
+in their independent history disclosure and never join the current collection.
+For old records, the display policy disregards an unqualified
+`disableExploreGrouping` hint only when multiple recorded attempts all use the
+native Runtime identity `<round-id>:attempt:<index>`. Explicit host policies carry
+the optional `disableExploreGroupingSource: "host"` provenance; older hints with
+unrecognized attempt identities remain authoritative. Projection never rewrites
+the saved hint, attempts, or member identities.
 
 ## Measurement compensation and cached offsets
 

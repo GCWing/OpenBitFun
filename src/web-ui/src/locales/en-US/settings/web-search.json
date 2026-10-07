@@ -8,10 +8,10 @@
     "openbitfunSearchHttp": "Custom HTTP service"
   },
   "providerDescriptions": {
-    "exaMcpFree": "Use Exa's free search service without an API key or additional setup.",
-    "exaSearchApi": "Use your Exa API key to access the search service. Enter and save your credential below.",
-    "tavily": "Use your Tavily API key to access the search service. Enter and save your credential below.",
-    "openbitfunSearchHttp": "Connect a self-hosted or enterprise service that implements the OpenBitFun search protocol. Enter its address below and configure authentication if needed."
+    "exaMcpFree": "No API key or extra configuration needed",
+    "exaSearchApi": "Requires an Exa API key; enter and save it below",
+    "tavily": "Requires a Tavily API key; enter and save it below",
+    "openbitfunSearchHttp": "Connect a self-hosted or internal search service with its address and required authentication"
   },
   "auth": {
     "none": "No authentication",
@@ -20,25 +20,26 @@
   },
   "sections": {
     "provider": {
-      "title": "Search provider"
+      "title": "Search provider",
+      "description": "Search is configured separately from chat models; the service determines which address and credentials are needed"
     },
     "http": {
-      "title": "OpenBitFun Search HTTP Protocol v1",
-      "description": "Connect a self-hosted or enterprise endpoint that implements the fixed OpenBitFun protocol."
+      "title": "Custom search service",
+      "description": "The service must implement OpenBitFun Search HTTP Protocol v1"
     },
     "protocol": {
       "title": "Protocol specification",
       "description": "The request and response format required for a custom search endpoint."
     },
     "credential": {
-      "title": "Device credential",
-      "description": "The secret is encrypted locally on the host that executes WebSearch and is not synchronized."
+      "title": "Search service credentials",
+      "description": "Keys are encrypted on the host that runs searches and are not synced to other devices"
     }
   },
   "fields": {
     "provider": {
       "label": "Provider",
-      "description": "Save the configuration to apply a provider change.",
+      "description": "Used for subsequent web searches after saving",
       "placeholder": "Choose a search service"
     },
     "providerHelp": {
@@ -46,33 +47,31 @@
       "description": "Choose a search service to see its setup requirements."
     },
     "endpoint": {
-      "label": "Endpoint",
+      "label": "Service URL",
       "description": "HTTPS is required. Plain HTTP is accepted only for localhost or a loopback IP.",
       "placeholder": "https://search.example.com/search"
     },
     "authMode": {
-      "label": "Authentication",
-      "description": "Choose no auth, a Bearer credential, or one restricted custom header."
+      "label": "Authentication"
     },
     "headerName": {
-      "label": "Header name",
-      "description": "Use a custom credential header such as X-API-Key. For Bearer authentication, select Bearer credential.",
+      "label": "Credential header name",
+      "description": "Enter a custom header such as X-API-Key; choose Bearer credentials for Authorization",
       "placeholder": "X-Search-Key"
     },
     "credentialStatus": {
-      "label": "Status",
-      "description": "Credential status on the current execution host"
+      "label": "Status"
     },
     "credential": {
       "label": "API key or secret",
-      "description": "Saving a new value replaces the current device-local secret.",
+      "description": "Saving a new value replaces this service's key on the execution host",
       "placeholder": "Enter credential",
       "replacePlaceholder": "Enter a new credential to replace the saved value"
     }
   },
   "status": {
-    "configured": "Configured on this device",
-    "missing": "Missing on this device"
+    "configured": "Configured on the execution host",
+    "missing": "Credentials missing on the execution host"
   },
   "protocol": {
     "request": {
@@ -106,11 +105,11 @@
     "saved": "Web Search configuration saved.",
     "saveFailed": "Failed to save Web Search configuration.",
     "credentialRequired": "Enter a credential before saving.",
-    "credentialSaved": "Credential saved on this device.",
-    "credentialSaveFailed": "Failed to save the device credential.",
-    "credentialSaveFailedAfterConfigSaved": "The Web Search configuration was saved, but the device credential was not. Enter it again and retry.",
-    "credentialCleared": "Credential cleared from this device.",
-    "credentialClearFailed": "Failed to clear the device credential.",
+    "credentialSaved": "Credentials saved on the execution host",
+    "credentialSaveFailed": "Failed to save credentials on the execution host",
+    "credentialSaveFailedAfterConfigSaved": "Search configuration saved, but credentials could not be saved on the execution host. Enter the credentials again and retry",
+    "credentialCleared": "Credentials cleared from the execution host",
+    "credentialClearFailed": "Failed to clear credentials from the execution host",
     "protocolCopied": "Protocol copied.",
     "protocolCopyFailed": "Failed to copy the protocol."
   }

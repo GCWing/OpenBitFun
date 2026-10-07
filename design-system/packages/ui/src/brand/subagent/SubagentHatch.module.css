@@ -1,0 +1,45 @@
+@layer openbitfun.components {
+  .root {
+    display: inline-block;
+    position: relative;
+    width: var(--openbitfun-space-8);
+    height: var(--openbitfun-space-8);
+    flex: 0 0 auto;
+    vertical-align: bottom;
+    isolation: isolate;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .shell,
+  .avatar {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    transform-origin: center bottom;
+  }
+
+  .shell { z-index: 1; }
+  .avatar { opacity: 0; }
+  .root[data-phase="ready"] .shell { opacity: 0; }
+  .root[data-phase="ready"] .avatar { opacity: 1; }
+
+  .shell > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .shell [data-hatch-part] {
+    transform-box: view-box;
+    transform-origin: 128px 238px;
+  }
+
+  .shell [data-hatch-part="lid"] { transform-origin: 128px 140px; }
+  .shell [data-hatch-part="eyes"] {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+}

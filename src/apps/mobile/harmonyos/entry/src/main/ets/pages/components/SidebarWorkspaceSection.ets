@@ -94,7 +94,7 @@ export struct SidebarWorkspaceSection {
           .onClick(() => { void this.onRefreshDevices(); })
       }
       Row() {}.height(0)
-        .bindSheet($$this.workspaceTools.visible, this.WorkspaceTools(), { height: SheetSize.LARGE, onWillDismiss: (action: DismissSheetAction): void => {
+        .bindSheet($$this.workspaceTools.visible, this.WorkspaceTools(), { height: SheetSize.LARGE, showClose: false, onWillDismiss: (action: DismissSheetAction): void => {
           if (this.workspaceTools.dirty) this.onWorkspaceTools({ type: 'close' });
           else { this.onWorkspaceTools({ type: 'close' }); action.dismiss(); }
         }, onDisappear: () => this.onWorkspaceTools({ type: 'close' }) })
@@ -432,7 +432,14 @@ export struct SidebarWorkspaceSection {
   }
 
   private liveWorkspaceName(entry: DeviceDirectoryEntry): string {
-    return this.liveWorkspacePath(entry).length > 0 ? this.workspaceName : '';
+    if (this.liveWorkspacePath(entry).length === 0) return '';
+    if (this.workspaceKind === 'remote' && this.workspaceConnectionId.length > 0) {
+      const connection = this.savedConnections.find((item: SavedRuntimeConnection): boolean => {
+        return item.id === this.workspaceConnectionId && item.name.trim().length > 0;
+      });
+      if (connection) return connection.name;
+    }
+    return this.workspaceName;
   }
 
   private liveWorkspaceKind(entry: DeviceDirectoryEntry): string {

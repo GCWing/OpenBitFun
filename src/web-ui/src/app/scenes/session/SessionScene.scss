@@ -1,7 +1,4 @@
-/**
- * SessionScene styles — ChatPane + Resizer + AuxPane layout.
- * Resizer styles moved here from WorkspaceShell.scss.
- */
+/** Session content hosts; horizontal pane geometry belongs to SplitView. */
 .openbitfun-session-scene {
   display: flex;
   flex-direction: column;
@@ -14,40 +11,14 @@
   background: var(--openbitfun-color-surface-scene);
   color: var(--openbitfun-color-content-primary);
 
-  &--dragging {
-    user-select: none;
-    cursor: col-resize;
-
-    * { pointer-events: none; }
-
-    .openbitfun-pane-resizer,
-    .openbitfun-bottom-pane-resizer { pointer-events: auto; }
-
-    .openbitfun-session-scene__chat-pane,
-    .openbitfun-session-scene__aux-pane,
-    .openbitfun-session-scene__bottom-terminal-pane { transition: none; }
-
-    .openbitfun-dual-column__header,
-    .openbitfun-dual-column__header-two-row,
-    .openbitfun-dual-column__drop-indicator-content,
-    .openbitfun-dual-column__dropdown {
-      backdrop-filter: none !important;
-      -webkit-backdrop-filter: none !important;
-    }
-
-    .openbitfun-dual-column__header::after,
-    .openbitfun-dual-column__header-two-row::after { display: none !important; }
-  }
-
+  &--dragging { user-select: none; }
   &--dragging-bottom {
     cursor: row-resize;
+    .openbitfun-session-scene__main-row { pointer-events: none; }
   }
 }
 
-
 .openbitfun-session-scene__main-row {
-  display: flex;
-  flex-direction: row;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
@@ -55,233 +26,17 @@
   overflow: hidden;
 }
 
-
-.openbitfun-session-scene__chat-pane {
-  flex: 1 1 auto;
-  min-width: 400px;
-  height: 100%;
-  overflow: hidden;
-  position: relative;
-  box-sizing: border-box;
-
-  &--dragging {
-    transition: none;
-    * { transition: none !important; animation: none !important; }
-  }
-}
-
-
+.openbitfun-session-scene__chat-pane,
 .openbitfun-session-scene__aux-pane {
   display: flex;
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   height: 100%;
   overflow: hidden;
   position: relative;
   box-sizing: border-box;
-  max-width: 1200px;
-
-  transition: width var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard),
-              opacity var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard);
-
-  &--collapsed {
-    min-width: 0;
-    width: 0 !important;
-    pointer-events: none;
-    opacity: 0;
-  }
-
-  &--no-animation {
-    transition: none !important;
-    * { transition: none !important; animation: none !important; }
-  }
-
-  &--dragging {
-    transition: none;
-    * { transition: none !important; animation: none !important; }
-
-    .openbitfun-dual-column__header,
-    .openbitfun-dual-column__header-two-row,
-    .openbitfun-dual-column__drop-indicator-content,
-    .openbitfun-dual-column__dropdown {
-      backdrop-filter: none !important;
-      -webkit-backdrop-filter: none !important;
-    }
-    .openbitfun-dual-column__header::after,
-    .openbitfun-dual-column__header-two-row::after { display: none !important; }
-  }
-
-  &--editor-mode {
-    flex: 1 1 auto;
-    min-width: 300px;
-    max-width: none;
-  }
-
-  // Near-collapse warning
-  &--near-collapse {
-    position: relative;
-
-    &::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(
-        to right,
-        color-mix(in srgb, var(--openbitfun-color-accent-default) 25%, transparent) 0%,
-        color-mix(in srgb, var(--openbitfun-color-accent-default) 12%, transparent) 50%,
-        transparent 100%
-      );
-      pointer-events: none;
-      z-index: 100;
-      animation: pane-collapse-pulse 0.8s ease-in-out infinite;
-    }
-
-    &::after {
-      content: var(--panel-collapse-hint-right);
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      transform: translate(-50%, -50%);
-      color: color-mix(in srgb, var(--openbitfun-color-accent-default) 90%, transparent);
-      font-size: var(--openbitfun-type-flow-control-font-size);
-      font-weight: var(--openbitfun-type-label-selected-font-weight);
-      pointer-events: none;
-      z-index: 101;
-      white-space: nowrap;
-      text-shadow: 0 1px 2px color-mix(in srgb, var(--openbitfun-color-content-on-light) 30%, transparent);
-      animation: pane-collapse-hint 0.3s ease-out;
-    }
-  }
 }
-
-
-.openbitfun-pane-resizer {
-  width: 1px;
-  flex-shrink: 0;
-  position: relative;
-  cursor: col-resize;
-  user-select: none;
-  z-index: var(--openbitfun-layer-sticky);
-  background: var(--openbitfun-color-border-subtle);
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: -6px;
-    right: -6px;
-    background: transparent;
-  }
-
-  // Explicit property list (no `transition: all`): only the collapse width
-  // and cheap paint properties animate; hover feedback uses transform below.
-  transition: width var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard),
-              opacity var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard),
-              background-color var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard);
-
-  &--collapsed {
-    width: 0;
-    opacity: 0;
-    pointer-events: none;
-    cursor: default;
-    background: transparent;
-
-    &::before { display: none; }
-  }
-
-  &__line {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    // Final size is fixed; hover/drag feedback scales via transform so no
-    // layout work happens while the pointer sweeps across the divider.
-    transform: translate(-50%, -50%) scaleY(0.72);
-    width: 2px;
-    height: 50px;
-    background: transparent;
-    border-radius: var(--openbitfun-radius-sm);
-    transition: opacity var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard),
-                background-color var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard),
-                box-shadow var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard),
-                transform var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard);
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  &__handle {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    opacity: 0;
-    transition: opacity var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard);
-    pointer-events: none;
-  }
-
-  &__icon {
-    color: color-mix(in srgb, var(--openbitfun-color-content-muted) 60%, transparent);
-    transition: color var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard);
-  }
-
-  &:hover,
-  &--hovering {
-    .openbitfun-pane-resizer__line {
-      background: linear-gradient(180deg,
-        transparent 0%,
-        color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent) 20%,
-        color-mix(in srgb, var(--openbitfun-color-accent-default) 80%, transparent) 50%,
-        color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent) 80%,
-        transparent 100%
-      );
-      transform: translate(-50%, -50%) scaleY(1);
-      opacity: 1;
-    }
-    .openbitfun-pane-resizer__handle { opacity: 1; }
-    .openbitfun-pane-resizer__icon { color: color-mix(in srgb, var(--openbitfun-color-accent-default) 90%, transparent); }
-  }
-
-  &--dragging {
-    .openbitfun-pane-resizer__line {
-      background: linear-gradient(180deg,
-        transparent 0%,
-        color-mix(in srgb, var(--openbitfun-color-accent-default) 60%, transparent) 20%,
-        var(--openbitfun-color-accent-default) 50%,
-        color-mix(in srgb, var(--openbitfun-color-accent-default) 60%, transparent) 80%,
-        transparent 100%
-      );
-      box-shadow: 0 0 12px color-mix(in srgb, var(--openbitfun-color-accent-default) 50%, transparent);
-      transform: translate(-50%, -50%) scaleY(1.2);
-      opacity: 1;
-    }
-    .openbitfun-pane-resizer__handle { opacity: 1; }
-    .openbitfun-pane-resizer__icon { color: var(--openbitfun-color-accent-default); }
-  }
-
-  &:focus {
-    outline: none;
-    .openbitfun-pane-resizer__line {
-      background: linear-gradient(180deg,
-        transparent 0%,
-        color-mix(in srgb, var(--openbitfun-color-accent-default) 50%, transparent) 20%,
-        color-mix(in srgb, var(--openbitfun-color-accent-default) 90%, transparent) 50%,
-        color-mix(in srgb, var(--openbitfun-color-accent-default) 50%, transparent) 80%,
-        transparent 100%
-      );
-      box-shadow: 0 0 8px color-mix(in srgb, var(--openbitfun-color-accent-default) 40%, transparent);
-      transform: translate(-50%, -50%) scaleY(1.1);
-      opacity: 1;
-    }
-    .openbitfun-pane-resizer__handle { opacity: 1; }
-  }
-
-  &:focus-visible {
-    .openbitfun-pane-resizer__line {
-      outline: 2px solid var(--openbitfun-color-focus-ring);
-      outline-offset: 2px;
-    }
-  }
-}
-
 
 .openbitfun-session-scene__bottom-terminal-pane {
   display: flex;
@@ -437,66 +192,24 @@
 }
 
 
-@keyframes pane-collapse-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-@keyframes pane-collapse-hint {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
-
-
 @media (prefers-reduced-motion: reduce) {
-  .openbitfun-session-scene,
-  .openbitfun-session-scene__chat-pane,
-  .openbitfun-session-scene__aux-pane,
   .openbitfun-session-scene__bottom-terminal-pane,
-  .openbitfun-pane-resizer,
   .openbitfun-bottom-pane-resizer,
-  .openbitfun-pane-resizer__line,
   .openbitfun-bottom-pane-resizer__line,
-  .openbitfun-pane-resizer__handle,
   .openbitfun-bottom-pane-resizer__handle,
-  .openbitfun-pane-resizer__icon,
-  .openbitfun-bottom-pane-resizer__icon {
-    transition: none;
-  }
-
-  .openbitfun-session-scene__aux-pane--near-collapse {
-    &::before, &::after { animation: none; }
-  }
+  .openbitfun-bottom-pane-resizer__icon { transition: none; }
 }
-
 
 @media (hover: none) and (pointer: coarse) {
-  .openbitfun-pane-resizer {
-    width: 8px;
-
-    &::before { left: -10px; right: -10px; }
-    &__line { width: 2px; opacity: 1; }
-    &__handle { opacity: 0.8; }
-  }
-
   .openbitfun-bottom-pane-resizer {
     height: 8px;
-
     &::before { top: -10px; bottom: -10px; }
     &__line { height: 2px; opacity: 1; }
     &__handle { opacity: 0.8; }
   }
 }
 
-
 @media (prefers-contrast: high) {
-  .openbitfun-pane-resizer {
-    &__line { background: currentColor; opacity: 1; }
-    &:hover &__line,
-    &--hovering &__line,
-    &--dragging &__line { background: currentColor; outline: 2px solid currentColor; }
-  }
-
   .openbitfun-bottom-pane-resizer {
     &__line { background: currentColor; opacity: 1; }
     &:hover &__line,

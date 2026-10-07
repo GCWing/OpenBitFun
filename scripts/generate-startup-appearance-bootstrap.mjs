@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { createServer } from 'vite';
+import { createStartupAppearanceViteConfig } from './startup-appearance-vite-config.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,21 +53,7 @@ function createDesktopBootstrapThemeCss(themeValues, cssVariables) {
   ].join('\n');
 }
 
-const server = await createServer({
-  root: webUiRoot,
-  logLevel: 'error',
-  appType: 'custom',
-  server: {
-    middlewareMode: true,
-    // This generator only loads modules in-process. Do not inherit the Web UI
-    // HMR socket, which may already belong to an active desktop dev server.
-    hmr: false,
-  },
-  optimizeDeps: {
-    entries: [],
-    noDiscovery: true,
-  },
-});
+const server = await createServer(createStartupAppearanceViteConfig(webUiRoot));
 
 try {
   const [

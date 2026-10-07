@@ -7,6 +7,11 @@
  *
  * - Root node_modules missing → pnpm scripts fail with "node_modules missing,
  *   did you mean to install?"
+ * - A package directory inside node_modules/.pnpm unexpectedly empty (or a
+ *   dangling link) → the matching node_modules/.bin shim resolves to a path
+ *   without content, and nested tools fail with a confusing "Cannot find
+ *   module .../bin/<tool>" error, for example
+ *   ".../design-system/packages/ui/node_modules/typescript/bin/tsc"
  * - src/mobile-web/dist missing → cargo check -p openbitfun-desktop and
  *   cargo check --workspace fail with "resource path '../../mobile-web/dist'
  *   doesn't exist" in the openbitfun-desktop build script
@@ -24,8 +29,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { existsSync, readdirSync, rmSync } from 'node:fs';
+import { join, dirname, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -35,6 +40,69 @@ const ROOT_DIR = process.env.OPENBITFUN_BUILD_PREREQS_TEST_ROOT || DEFAULT_ROOT;
 const FIX = process.argv.includes('--fix');
 
 // --- Check logic (extracted for re-use and testing) ---
+
+const VIRTUAL_STORE_SAMPLE_LIMIT = 5;
+
+function readdirWithTypes(dir) {
+  try {
+    return readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Package directories inside node_modules/.pnpm that pnpm recorded but whose
+ * files are gone: an existing but empty package directory, or a link whose
+ * target disappeared. Either one makes the workspace bin shims resolve to a
+ * path without content.
+ */
+function findBrokenVirtualStorePackages(rootDir) {
+  const virtualStoreDir = join(rootDir, 'node_modules', '.pnpm');
+  if (!existsSync(virtualStoreDir)) {
+    return [];
+  }
+
+  const isBroken = (packageDir, entry) => {
+    // readdir reports the name of a dangling link, but the path cannot be opened.
+    if (!existsSync(packageDir)) {
+      return true;
+    }
+    // Links to peer packages hold no files themselves; their target is checked
+    // through its own entry in the virtual store.
+    if (entry.isSymbolicLink()) {
+      return false;
+    }
+    return readdirWithTypes(packageDir).length === 0;
+  };
+
+  const broken = [];
+  for (const storeEntry of readdirWithTypes(virtualStoreDir)) {
+    if (!storeEntry.isDirectory()) {
+      continue;
+    }
+    const storeNodeModules = join(virtualStoreDir, storeEntry.name, 'node_modules');
+
+    for (const entry of readdirWithTypes(storeNodeModules)) {
+      if (entry.name.startsWith('@')) {
+        const scopeDir = join(storeNodeModules, entry.name);
+        for (const scopedEntry of readdirWithTypes(scopeDir)) {
+          const packageDir = join(scopeDir, scopedEntry.name);
+          if (isBroken(packageDir, scopedEntry)) {
+            broken.push(packageDir);
+          }
+        }
+        continue;
+      }
+      const packageDir = join(storeNodeModules, entry.name);
+      if (isBroken(packageDir, entry)) {
+        broken.push(packageDir);
+      }
+    }
+  }
+
+  return broken;
+}
 
 function runChecks(rootDir) {
   const errors = [];
@@ -49,7 +117,30 @@ function runChecks(rootDir) {
     });
   }
 
-  // --- Check 2: mobile-web dist (required by openbitfun-desktop build script) ---
+  // --- Check 2: pnpm virtual store integrity ---
+  const brokenPackages = findBrokenVirtualStorePackages(rootDir);
+  if (brokenPackages.length > 0) {
+    const samples = brokenPackages
+      .slice(0, VIRTUAL_STORE_SAMPLE_LIMIT)
+      .map((packageDir) => relative(rootDir, packageDir));
+    const remaining = brokenPackages.length - samples.length;
+    const sampleText = remaining > 0 ? `${samples.join(', ')}, ...(+${remaining} more)` : samples.join(', ');
+
+    errors.push({
+      name: 'pnpm virtual store',
+      message:
+        `${brokenPackages.length} installed package(s) are missing their files: ${sampleText}. ` +
+        'The matching node_modules/.bin shims point at a path without content, so nested tools fail with ' +
+        'a confusing "Cannot find module .../bin/<tool>" error. pnpm install alone does not repair this: ' +
+        'pnpm leaves an existing empty package directory untouched, so the broken directories must be removed first.',
+      fix: ['pnpm', 'install'],
+      cleanPaths: brokenPackages,
+      fixNote:
+        '--fix removes the broken package directories first, because pnpm install would otherwise leave them empty. To repair by hand, delete the paths above and run pnpm install.',
+    });
+  }
+
+  // --- Check 3: mobile-web dist (required by openbitfun-desktop build script) ---
   if (!existsSync(join(rootDir, 'src', 'mobile-web', 'dist', 'index.html'))) {
     errors.push({
       name: 'mobile-web dist',
@@ -59,7 +150,7 @@ function runChecks(rootDir) {
     });
   }
 
-  // --- Check 3: OpenCode extension Host dist (product runtime resource) ---
+  // --- Check 4: OpenCode extension Host dist (product runtime resource) ---
   const pluginHostDist = join(
     rootDir,
     'src',
@@ -77,7 +168,7 @@ function runChecks(rootDir) {
     });
   }
 
-  // --- Check 4: sherpa-onnx prebuilt libs ---
+  // --- Check 5: sherpa-onnx prebuilt libs ---
   // sherpa-onnx-sys build.rs auto-detects target/sherpa-onnx-prebuilt/<version>/lib/
   // and returns immediately without downloading. Only warn for the first-build
   // scenario where no prebuilt cache exists yet.
@@ -106,7 +197,11 @@ function runChecks(rootDir) {
 function collectPendingFixes(errors) {
   return errors
     .filter((e) => e.fix)
-    .map((e) => ({ name: e.name, fix: e.fix }));
+    .map((e) => ({
+      name: e.name,
+      fix: e.fix,
+      cleanPaths: e.cleanPaths ?? [],
+    }));
 }
 
 function reportResults({ errors, warnings }) {
@@ -116,6 +211,9 @@ function reportResults({ errors, warnings }) {
       console.error(`  [FAIL] ${e.name}: ${e.message}`);
       if (e.fix) {
         console.error(`         Fix: ${e.fix.join(' ')}`);
+      }
+      if (e.fixNote) {
+        console.error(`         Note: ${e.fixNote}`);
       }
     }
     console.error();
@@ -132,7 +230,20 @@ function reportResults({ errors, warnings }) {
 
 function runFixes(pendingFixes, rootDir) {
   let allSucceeded = true;
-  for (const { name, fix } of pendingFixes) {
+  for (const { fix, cleanPaths } of pendingFixes) {
+    for (const target of cleanPaths) {
+      // Only ever delete inside the virtual store: a broken path must not be
+      // allowed to escape into source or user data.
+      const virtualStorePrefix = `${join(rootDir, 'node_modules', '.pnpm')}${sep}`;
+      if (!target.startsWith(virtualStorePrefix)) {
+        console.error(`Refusing to remove path outside the pnpm virtual store: ${target}\n`);
+        allSucceeded = false;
+        continue;
+      }
+      console.log(`Removing broken package directory ${relative(rootDir, target)}`);
+      rmSync(target, { recursive: true, force: true });
+    }
+
     const [cmd, ...args] = fix;
     console.log(`$ ${fix.join(' ')}`);
     try {

@@ -150,8 +150,8 @@
       }
     },
     "link": {
-      "default": { "$type": "color", "$value": "{ref.color.blue.600}" },
-      "hover": { "$type": "color", "$value": "{ref.color.blue.700}" }
+      "default": { "$type": "color", "$value": "{ref.color.cyan.500}" },
+      "hover": { "$type": "color", "$value": "{ref.color.cyan.600}" }
     },
     "border": {
       "subtle": { "$type": "color", "$value": "rgba(16, 26, 39, 0.08)" },
@@ -232,6 +232,36 @@
       "$description": "Stable code-change accents shared by diff lines and compact addition/deletion counts.",
       "added": { "$type": "color", "$value": "{ref.color.green.550}" },
       "removed": { "$type": "color", "$value": "{ref.color.red.650}" }
+    },
+    "codeDiff": {
+      "$description": "Read-only code comparisons: turquoise additions, coral removals, separate line/gutter/word layers, and syntax colors. These renderer roles intentionally differ from product status and Git-summary colors.",
+      "foreground": { "$type": "color", "$value": "{ref.color.gray.900}" },
+      "lineNumber": { "$type": "color", "$value": "{ref.color.neutral.750}" },
+      "gutterBorder": { "$type": "color", "$value": "{ref.color.neutral.0}" },
+      "added": {
+        "marker": { "$type": "color", "$value": "{ref.color.green.450}" },
+        "line": { "$type": "color", "$value": "{ref.color.green.75}" },
+        "gutter": { "$type": "color", "$value": "{ref.color.green.60}" },
+        "word": { "$type": "color", "$value": "{ref.color.green.150}" }
+      },
+      "removed": {
+        "marker": { "$type": "color", "$value": "{ref.color.red.450}" },
+        "line": { "$type": "color", "$value": "{ref.color.red.75}" },
+        "gutter": { "$type": "color", "$value": "{ref.color.red.65}" },
+        "word": { "$type": "color", "$value": "{ref.color.red.150}" }
+      },
+      "syntax": {
+        "comment": { "$type": "color", "$value": "{ref.color.neutral.550}" },
+        "punctuation": { "$type": "color", "$value": "{ref.color.neutral.600}" },
+        "keyword": { "$type": "color", "$value": "{ref.color.pink.550}" },
+        "declaration": { "$type": "color", "$value": "{ref.color.purple.475}" },
+        "function": { "$type": "color", "$value": "{ref.color.purple.650}" },
+        "string": { "$type": "color", "$value": "{ref.color.green.625}" },
+        "number": { "$type": "color", "$value": "{ref.color.cyan.475}" },
+        "property": { "$type": "color", "$value": "{ref.color.amber.625}" },
+        "variable": { "$type": "color", "$value": "{ref.color.amber.525}" },
+        "operator": { "$type": "color", "$value": "{ref.color.cyan.425}" }
+      }
     },
     "status": {
       "info": {

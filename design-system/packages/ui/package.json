@@ -17,6 +17,10 @@
       "types": "./dist/types/registry.d.ts",
       "import": "./dist/registry.js"
     },
+    "./brand": {
+      "types": "./dist/types/brand.d.ts",
+      "import": "./dist/brand.js"
+    },
     "./flow-chat": {
       "types": "./dist/types/flow-chat.d.ts",
       "import": "./dist/flow-chat.js"
@@ -40,7 +44,7 @@
   },
   "dependencies": {
     "@openbitfun/design-tokens": "workspace:^",
-    "lucide-react": "^0.541.0"
+    "lucide-react": "^0.560.0"
   },
   "peerDependencies": {
     "react": ">=18.3.0 <20",

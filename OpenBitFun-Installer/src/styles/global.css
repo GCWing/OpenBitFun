@@ -162,11 +162,8 @@ html, body, #root {
   width: 112px;
   height: 112px;
   background-color: currentColor;
-  -webkit-mask: url('../../../assets/brand/source/openbitfun-mark.svg') center / contain no-repeat;
-  mask: url('../../../assets/brand/source/openbitfun-mark.svg') center / contain no-repeat;
 }
 .brand-mark[data-size="hero"] { width: 144px; height: 144px; }
-.brand-mark[data-working="true"] { animation: installer-breathe 2400ms ease-in-out infinite; }
 
 .welcome-page { display: flex; flex: 1; min-height: 0; }
 .welcome-brand {

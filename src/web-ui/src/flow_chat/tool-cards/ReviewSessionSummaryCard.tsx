@@ -1,8 +1,10 @@
+import { useToolCardDisclosure } from '../timeline/readerState';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Button } from '@openbitfun/ui';
+import { IconButton, Icon } from '@openbitfun/ui';
 import { useTranslation } from 'react-i18next';
 import type { ToolCardProps } from '../types/flow-chat';
 import { ReviewSummaryToolCard } from '@openbitfun/ui/flow-chat';
+import { useToolCardHeightContract } from './useToolCardHeightContract';
 import { flowChatStore } from '../store/FlowChatStore';
 import { openBtwSessionInAuxPane } from '../services/btwSessionPane';
 import { openMainSession } from '../services/sessionActivation';
@@ -31,9 +33,14 @@ function isReviewRunning(status?: string): boolean {
 export const ReviewSessionSummaryCard: React.FC<ToolCardProps> = React.memo(({
   toolItem,
   sessionId,
+  onExpand,
 }) => {
   const { t } = useTranslation('flow-chat');
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useToolCardDisclosure('isExpanded');
+  const { cardRootRef, applyExpandedState } = useToolCardHeightContract({
+    toolId: toolItem.id ?? toolItem.toolCall?.id,
+    toolName: toolItem.toolName,
+  });
   const [flowState, setFlowState] = useState(() => flowChatStore.getState());
   const [snapshotFiles, setSnapshotFiles] = useState<string[]>([]);
 
@@ -98,10 +105,11 @@ export const ReviewSessionSummaryCard: React.FC<ToolCardProps> = React.memo(({
     : t('toolCards.reviewSessionSummary.emptySummary'));
 
   return (
+    <div ref={cardRootRef} data-tool-card-id={toolItem.id}>
     <ReviewSummaryToolCard
       status={status}
       isExpanded={isExpanded}
-      onToggle={() => setIsExpanded((current) => !current)}
+      onToggle={() => applyExpandedState(isExpanded, !isExpanded, setIsExpanded, { onExpand })}
       kind={kind === 'deep_review' ? 'deep-review' : 'review'}
       loading={running}
       title={`${reviewLabel}: ${statusText}`}
@@ -111,11 +119,14 @@ export const ReviewSessionSummaryCard: React.FC<ToolCardProps> = React.memo(({
         count: changedFiles.length,
       }) : undefined}
       filesLabel={t('toolCards.reviewSessionSummary.changedFilesTitle')}
-      action={(
-        <Button
+      action={childSessionId && parentSessionId ? (
+        <IconButton
           type="button"
-          variant="primary"
+          variant="quiet"
           size="sm"
+          icon={<Icon name="arrow-up-right" size="sm" />}
+          aria-label={t('toolCards.reviewSessionSummary.openReview')}
+          title={t('toolCards.reviewSessionSummary.openReview')}
           onClick={async () => {
             if (!childSessionId || !parentSessionId) return;
             await openMainSession(parentSessionId);
@@ -124,11 +135,10 @@ export const ReviewSessionSummaryCard: React.FC<ToolCardProps> = React.memo(({
               parentSessionId,
             });
           }}
-        >
-          {t('toolCards.reviewSessionSummary.openReview')}
-        </Button>
-      )}
+        />
+      ) : undefined}
     />
+    </div>
   );
 });
 

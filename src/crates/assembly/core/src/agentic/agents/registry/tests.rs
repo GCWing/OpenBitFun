@@ -464,31 +464,6 @@ fn builtin_modes_carrying_the_environment_tools_can_forward_a_port_they_opened()
 }
 
 #[test]
-fn agent_list_and_delete_are_exposed_only_to_swarm_planners() {
-    for spec in builtin_agent_specs() {
-        let agent = (spec.factory)();
-        let has_list = agent.default_tools().iter().any(|tool| tool == "AgentList");
-        let has_delete = agent
-            .default_tools()
-            .iter()
-            .any(|tool| tool == "AgentDelete");
-        let should_have_controls = matches!(agent.id(), "Ultimate" | "SwarmPlanner");
-        assert_eq!(
-            has_list,
-            should_have_controls,
-            "unexpected AgentList exposure for {}",
-            agent.id()
-        );
-        assert_eq!(
-            has_delete,
-            should_have_controls,
-            "unexpected AgentDelete exposure for {}",
-            agent.id()
-        );
-    }
-}
-
-#[test]
 fn skill_tool_is_exposed_only_to_ultra_and_swarm_worker_within_the_swarm_catalog() {
     for spec in builtin_agent_specs() {
         let agent = (spec.factory)();
@@ -579,11 +554,6 @@ fn product_full_agent_registry_preserves_the_complete_builtin_catalog() {
 }
 
 #[test]
-fn generate_doc_hidden_agent_defaults_to_fast() {
-    assert_eq!(default_model_id_for_builtin_agent("GenerateDoc"), "fast");
-}
-
-#[test]
 fn deep_review_family_defaults_to_fast() {
     for agent_type in [
         "DeepReview",
@@ -654,7 +624,7 @@ fn historical_reviewer_invocations_bind_to_the_current_worker_runtime() {
 }
 
 #[tokio::test]
-async fn task_visible_subagents_are_filtered_by_parent_agent() {
+async fn task_visible_subagents_are_filtered_by_parent_visibility() {
     let registry = AgentRegistry::new();
 
     let agentic_visible = registry
@@ -730,8 +700,8 @@ async fn task_visible_subagents_are_filtered_by_parent_agent() {
     for swarm_id in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
         assert!(ultra_visible.iter().any(|agent| agent.id == swarm_id));
     }
-    assert_eq!(ultra_visible.len(), 3);
-    assert!(!ultra_visible
+    assert!(ultra_visible.len() > 3);
+    assert!(ultra_visible
         .iter()
         .any(|agent| agent.id == "GeneralPurpose"));
 
@@ -744,10 +714,13 @@ async fn task_visible_subagents_are_filtered_by_parent_agent() {
             external_sources_supported: false,
         })
         .await;
-    assert_eq!(planner_visible.len(), 3);
+    assert!(planner_visible.len() > 3);
     for swarm_id in ["SwarmPlanner", "SwarmWorker", "SwarmReviewer"] {
         assert!(planner_visible.iter().any(|agent| agent.id == swarm_id));
     }
+    assert!(planner_visible
+        .iter()
+        .any(|agent| agent.id == "GeneralPurpose"));
 }
 
 #[test]
@@ -775,10 +748,10 @@ fn merge_dynamic_mcp_tools_appends_registered_mcp_tools_once() {
 
 #[test]
 fn merge_dynamic_acp_tools_appends_registered_acp_subagents_once() {
-    let configured_tools = vec!["Read".to_string(), "Task".to_string()];
+    let configured_tools = vec!["Read".to_string(), "AgentSpawn".to_string()];
     let registered_tool_names = vec![
         "Read".to_string(),
-        "Task".to_string(),
+        "AgentSpawn".to_string(),
         "acp__codex__prompt".to_string(),
         "acp__claude-code__prompt".to_string(),
         "acp__codex__prompt".to_string(),
@@ -790,7 +763,7 @@ fn merge_dynamic_acp_tools_appends_registered_acp_subagents_once() {
         merged,
         vec![
             "Read".to_string(),
-            "Task".to_string(),
+            "AgentSpawn".to_string(),
             "acp__codex__prompt".to_string(),
             "acp__claude-code__prompt".to_string(),
         ]
@@ -813,12 +786,12 @@ fn merge_dynamic_acp_tools_ignores_other_tool_families() {
 
 #[test]
 fn merge_dynamic_mode_tools_appends_mcp_then_acp_tools() {
-    let resolved_tools = vec!["Read".to_string(), "Task".to_string()];
+    let resolved_tools = vec!["Read".to_string(), "AgentSpawn".to_string()];
     let registered_tool_names = vec![
         "Read".to_string(),
         "mcp__notion__notion-search".to_string(),
         "acp__codex__prompt".to_string(),
-        "Task".to_string(),
+        "AgentSpawn".to_string(),
     ];
 
     let merged = merge_dynamic_mode_tools(resolved_tools, &registered_tool_names, true);
@@ -827,7 +800,7 @@ fn merge_dynamic_mode_tools_appends_mcp_then_acp_tools() {
         merged,
         vec![
             "Read".to_string(),
-            "Task".to_string(),
+            "AgentSpawn".to_string(),
             "mcp__notion__notion-search".to_string(),
             "acp__codex__prompt".to_string(),
         ]

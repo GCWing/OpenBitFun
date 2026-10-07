@@ -1,53 +1,220 @@
 @layer openbitfun.components {
+  .answerMessage {
+    box-sizing: border-box;
+    inline-size: fit-content;
+    max-inline-size: var(--openbitfun-control-flow-chat-user-message-max-width);
+    min-inline-size: 0;
+    margin-inline: auto 0;
+    padding-block: var(--openbitfun-control-flow-chat-user-message-padding-block);
+    padding-inline: var(--openbitfun-control-flow-chat-user-message-radius);
+    border-radius: var(--openbitfun-control-flow-chat-user-message-radius);
+    background: var(--openbitfun-color-action-quiet-hover);
+    color: var(--openbitfun-color-content-primary);
+    font-family: var(--openbitfun-type-flow-control-font-family);
+    font-size: var(--openbitfun-type-flow-control-font-size);
+    font-weight: var(--openbitfun-type-flow-control-font-weight);
+    line-height: var(--openbitfun-type-flow-body-line-height);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .answerList,
+  .answerPair {
+    display: flex;
+    min-inline-size: 0;
+    flex-direction: column;
+    margin: 0;
+  }
+
+  .answerList {
+    gap: var(--openbitfun-space-3);
+  }
+
+  .answerPair {
+    gap: var(--openbitfun-space-1);
+  }
+
+  .answeredQuestion {
+    color: var(--openbitfun-color-content-primary);
+  }
+
+  .answer {
+    margin: 0;
+    color: var(--openbitfun-color-content-secondary);
+    font-family: var(--openbitfun-type-flow-meta-font-family);
+    font-size: var(--openbitfun-type-flow-meta-font-size);
+    font-weight: var(--openbitfun-type-flow-meta-font-weight);
+    line-height: var(--openbitfun-type-flow-meta-line-height);
+  }
+
   .root {
+    box-sizing: border-box;
+    container: ask-user / inline-size;
     inline-size: 100%;
     min-inline-size: 0;
     overflow: hidden;
-    border: 0;
+    border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
     border-radius: var(--openbitfun-radius-lg);
-    outline: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
-    outline-offset: calc(-1 * var(--openbitfun-border-width-default));
     background: var(--openbitfun-color-surface-panel);
     box-shadow: none;
     color: var(--openbitfun-color-content-primary);
-    font-family:var(--openbitfun-type-body-md-font-family);
-    line-height: var(--openbitfun-type-heading-page-line-height);
+    font-family: var(--openbitfun-type-body-sm-font-family);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
   }
 
   .header,
   .summaryButton {
-    min-block-size: var(--openbitfun-control-ask-user-header-height);
+    box-sizing: border-box;
+    min-block-size: calc(var(--openbitfun-control-activity-item-surface-height) - 2 * var(--openbitfun-border-width-default));
     border: 0;
-    color: var(--openbitfun-color-action-neutral-content);
+    color: var(--openbitfun-color-content-primary);
     background: transparent;
     font: inherit;
   }
 
   .header {
+    position: relative;
     display: flex;
     align-items: center;
-    padding-block: var(--openbitfun-control-ask-user-summary-padding-block);
-    padding-inline: var(--openbitfun-control-ask-user-summary-padding-inline-start);
-    border-block-end: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    gap: var(--openbitfun-space-2);
+    padding-block: 0;
+    padding-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
+    box-shadow: inset 0 calc(-1 * var(--openbitfun-border-width-default)) var(--openbitfun-color-border-subtle);
     font-size: var(--openbitfun-type-body-sm-font-size);
     font-weight: var(--openbitfun-type-label-lg-font-weight);
   }
 
-  .headerTrailing {
-    margin-inline-start: auto;
-    flex-shrink: 0;
+  .headerLeading {
+    display: flex;
+    min-inline-size: 0;
+    flex: 1 1 auto;
+    align-items: center;
+    gap: var(--openbitfun-space-2);
+  }
+
+  .headerToggle {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .header[data-disclosure="true"] .headerLeading,
+  .header[data-disclosure="true"] .headerTrailing,
+  .header[data-disclosure="true"] .summaryAction {
+    position: relative;
+    pointer-events: none;
+  }
+
+  .header[data-disclosure="true"] .headerTrailing :global(button) {
+    pointer-events: auto;
+  }
+
+  .headerToggle:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: calc(-1 * var(--openbitfun-focus-width));
+  }
+
+  .headerIcon,
+  .questionCount {
+    flex: 0 0 auto;
+  }
+
+  .headerIcon {
+    color: inherit;
+  }
+
+  .skippedIcon {
+    color: var(--openbitfun-color-content-secondary);
+  }
+
+  .questionCount {
+    white-space: nowrap;
     font-variant-numeric: tabular-nums;
   }
 
+  .headerSubject {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    padding-inline-start: var(--openbitfun-space-2);
+    border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    color: var(--openbitfun-color-content-secondary);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+  }
+
+  .headerTrailing {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--openbitfun-space-2);
+    margin-inline-start: auto;
+    min-inline-size: 0;
+    max-inline-size: 50%;
+    flex: 0 1 auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .headerTrailing:empty {
+    display: none;
+  }
+
+  .navigation {
+    position: relative;
+  }
+
+  .counter {
+    color: var(--openbitfun-color-content-muted);
+    font-family: var(--openbitfun-type-code-sm-font-family);
+    font-size: var(--openbitfun-type-body-xs-font-size);
+    font-weight: var(--openbitfun-type-body-md-font-weight);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .progress {
+    position: absolute;
+    inset-inline: 0;
+    inset-block-end: 0;
+    display: block;
+    appearance: none;
+    inline-size: 100%;
+    block-size: var(--openbitfun-border-width-default);
+    margin: 0;
+    overflow: hidden;
+    border: 0;
+    border-radius: 0;
+    background: var(--openbitfun-color-surface-subtle);
+    color: var(--openbitfun-color-content-secondary);
+  }
+
+  .progress::-webkit-progress-bar {
+    border-radius: inherit;
+    background: var(--openbitfun-color-surface-subtle);
+  }
+
+  .progress::-webkit-progress-value {
+    background: var(--openbitfun-color-content-secondary);
+  }
+
+  .progress::-moz-progress-bar {
+    background: var(--openbitfun-color-content-secondary);
+  }
+
   .summaryButton {
+    box-sizing: border-box;
     display: flex;
     inline-size: 100%;
+    min-block-size: calc(var(--openbitfun-control-activity-item-surface-height) - 2 * var(--openbitfun-border-width-default));
     align-items: center;
     justify-content: space-between;
-    gap: var(--openbitfun-control-ask-user-option-content-gap);
-    padding-block: var(--openbitfun-control-ask-user-summary-padding-block);
-    padding-inline-start: var(--openbitfun-control-ask-user-summary-padding-inline-start);
-    padding-inline-end: var(--openbitfun-control-ask-user-summary-padding-inline-end);
+    gap: var(--openbitfun-space-2);
+    padding-block: var(--openbitfun-control-activity-item-surface-padding-block);
+    padding-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
+    line-height: var(--openbitfun-type-body-sm-line-height);
     text-align: start;
     cursor: pointer;
   }
@@ -70,24 +237,23 @@
 
   .summaryLeading {
     flex: 1 1 auto;
-    gap: var(--openbitfun-control-ask-user-option-content-gap);
+    gap: var(--openbitfun-space-2);
   }
 
   .summaryCopy {
     flex: 1 1 auto;
     gap: var(--openbitfun-space-1);
     font-size: var(--openbitfun-type-body-sm-font-size);
-    font-weight: var(--openbitfun-type-label-lg-font-weight);
-    line-height: var(--openbitfun-type-heading-page-line-height);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
   }
 
   .summaryIcon,
-  .controlIcon,
   .statusIcon {
     display: inline-flex;
     flex: 0 0 auto;
-    inline-size: var(--openbitfun-control-ask-user-icon-size);
-    block-size: var(--openbitfun-control-ask-user-icon-size);
+    inline-size: var(--openbitfun-control-icon-size-md);
+    block-size: var(--openbitfun-control-icon-size-md);
     align-items: center;
     justify-content: center;
   }
@@ -96,13 +262,10 @@
     color: var(--openbitfun-color-status-success-content);
   }
 
-  .summaryIcon > svg {
-    fill: currentColor;
-    stroke: var(--openbitfun-color-content-inverse);
-  }
-
+  .summaryIcon > [data-openbitfun-component="icon"],
+  .statusIcon > [data-openbitfun-component="icon"],
+  .summaryAction > [data-openbitfun-component="icon"],
   .summaryIcon > svg,
-  .controlIcon > svg,
   .statusIcon > svg,
   .summaryAction > svg {
     display: block;
@@ -110,13 +273,13 @@
     block-size: 100%;
   }
 
-  .selectedSingleControl > circle:nth-of-type(2) {
-    fill: currentColor;
-  }
-
   .summaryLabel,
   .summaryArrow {
     flex: 0 0 auto;
+  }
+
+  .summaryLabel {
+    font-weight: var(--openbitfun-type-label-lg-font-weight);
   }
 
   .summaryDetail {
@@ -127,21 +290,35 @@
   }
 
   .summaryAction {
+    box-sizing: border-box;
     display: inline-flex;
     flex: 0 0 auto;
-    inline-size: var(--openbitfun-control-ask-user-summary-action-size);
-    block-size: var(--openbitfun-control-ask-user-summary-action-size);
+    inline-size: var(--openbitfun-space-5);
+    block-size: var(--openbitfun-space-5);
     align-items: center;
     justify-content: center;
     padding: var(--openbitfun-space-1);
     border-radius: var(--openbitfun-radius-xs);
     color: var(--openbitfun-color-content-muted);
+    opacity: 0;
+  }
+
+  .summaryButton:hover .summaryAction,
+  .summaryButton:focus-visible .summaryAction,
+  .header:hover .summaryAction,
+  .headerToggle:focus-visible ~ .summaryAction,
+  .headerToggle:focus-visible ~ .headerTrailing .summaryAction {
+    opacity: 1;
   }
 
   .details {
     display: grid;
     grid-template-rows: 1fr;
     transition: grid-template-rows var(--openbitfun-motion-duration-base) var(--openbitfun-motion-easing-standard);
+  }
+
+  .details[hidden] {
+    display: none;
   }
 
   .root[data-openbitfun-has-summary="true"][data-openbitfun-expanded="false"] .details {
@@ -157,7 +334,8 @@
     display: flex;
     flex-direction: column;
     gap: var(--openbitfun-control-ask-user-body-gap);
-    padding: var(--openbitfun-control-ask-user-body-padding);
+    padding-block: var(--openbitfun-control-ask-user-body-padding);
+    padding-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
   }
 
   .question {
@@ -176,13 +354,30 @@
   }
 
   .prompt {
+    box-sizing: border-box;
     display: block;
     inline-size: 100%;
-    padding-inline: var(--openbitfun-control-ask-user-question-padding-inline);
-    color: var(--openbitfun-color-action-neutral-content);
+    padding-block: 0;
+    padding-inline: 0;
+    color: var(--openbitfun-color-content-primary);
     font-size: var(--openbitfun-type-body-sm-font-size);
-    font-weight: var(--openbitfun-type-label-selected-font-weight);
-    line-height: var(--openbitfun-type-heading-page-line-height);
+    font-weight: var(--openbitfun-type-label-lg-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+  }
+
+  .prompt:focus-visible {
+    outline: var(--openbitfun-focus-width) solid var(--openbitfun-color-focus-ring);
+    outline-offset: var(--openbitfun-focus-offset);
+    border-radius: var(--openbitfun-radius-xs);
+  }
+
+  .questionDescription {
+    margin-block-start: var(--openbitfun-space-1);
+    margin-inline: 0;
+    color: var(--openbitfun-color-content-muted);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+    overflow-wrap: anywhere;
   }
 
   .options {
@@ -196,63 +391,47 @@
   .option {
     display: flex;
     min-inline-size: 0;
-    align-items: center;
-    gap: var(--openbitfun-control-ask-user-option-content-gap);
-    padding-block: var(--openbitfun-control-ask-user-option-padding-block);
-    padding-inline: var(--openbitfun-control-ask-user-option-padding-inline);
-    border-radius: var(--openbitfun-radius-base);
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    border-radius: var(--openbitfun-radius-lg);
     background: var(--openbitfun-color-surface-subtle);
-    transition:
-      background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard),
-      box-shadow var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
+    transition: background-color var(--openbitfun-motion-duration-fast) var(--openbitfun-motion-easing-standard);
   }
 
-  .option:hover:not(:has(.nativeControl:disabled)),
-  .option:has(.nativeControl[data-openbitfun-preview-state="hover"]) {
+  .option:hover:has(.optionSelector[data-disabled="false"][data-readonly="false"]),
+  .option:has([data-openbitfun-preview-state="hover"]) {
     background: var(--openbitfun-color-action-neutral-surface-hover);
   }
 
-  .option:has(.nativeControl:focus-visible) {
-    box-shadow: 0 0 0 var(--openbitfun-focus-width) var(--openbitfun-color-focus-ring);
-  }
-
-  .nativeControl {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    overflow: hidden;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .optionSelector {
+  .option .optionSelector {
+    box-sizing: border-box;
     display: flex;
     flex: 1 1 auto;
     min-inline-size: 0;
-    align-items: center;
-    gap: var(--openbitfun-control-ask-user-option-content-gap);
-    cursor: pointer;
+    min-block-size: var(--openbitfun-control-height-lg);
+    align-items: flex-start;
+    gap: var(--openbitfun-space-2);
+    padding-block: max(var(--openbitfun-control-ask-user-option-padding-block), calc((var(--openbitfun-control-height-lg) - 1lh) / 2));
+    padding-inline: var(--openbitfun-control-ask-user-option-padding-inline);
+    font: inherit;
   }
 
-  .nativeControl:disabled + .optionSelector {
-    cursor: default;
+  .optionSelector > :global([data-openbitfun-part="control"]) {
+    margin-block-start: max(0px, calc((1lh - var(--openbitfun-control-icon-size-md)) / 2));
   }
 
-  .controlIcon {
-    color: var(--openbitfun-color-border-default);
-  }
-
-  .option[data-selected="true"] .controlIcon {
-    color: var(--openbitfun-color-action-neutral-content);
-  }
-
-  .optionContent {
-    display: flex;
+  .optionSelector > :global([data-openbitfun-part="content"]) {
     flex: 1 1 auto;
     min-inline-size: 0;
-    align-items: center;
+  }
+
+  .optionCopy {
+    display: flex;
+    min-inline-size: 0;
+    align-items: baseline;
     justify-content: space-between;
-    gap: var(--openbitfun-space-4);
+    gap: var(--openbitfun-space-3);
   }
 
   .optionLabel,
@@ -261,53 +440,57 @@
   }
 
   .optionLabel {
+    display: block;
     flex: 0 1 auto;
     min-inline-size: 0;
-    color: var(--openbitfun-color-action-neutral-content);
-    font-weight: var(--openbitfun-type-label-lg-font-weight);
-    line-height: var(--openbitfun-type-heading-page-line-height);
+    color: var(--openbitfun-color-content-primary);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
+    overflow-wrap: anywhere;
   }
 
   .optionDescription {
+    display: block;
     overflow: hidden;
     flex: 1 1 auto;
-    max-inline-size: var(--openbitfun-control-ask-user-description-max-width);
     min-inline-size: 0;
+    max-inline-size: var(--openbitfun-control-ask-user-description-max-width);
     color: var(--openbitfun-color-content-muted);
-    font-weight: var(--openbitfun-type-body-md-font-weight);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
     line-height: var(--openbitfun-type-body-sm-line-height);
     text-align: end;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .customInput {
-    flex: 1 1 var(--openbitfun-control-ask-user-description-max-width);
-    max-inline-size: var(--openbitfun-control-ask-user-description-max-width);
-    min-inline-size: 180px;
+    min-inline-size: 0;
+    padding-block-end: var(--openbitfun-control-ask-user-option-padding-block);
+    margin-inline-start: calc(var(--openbitfun-control-ask-user-option-padding-inline) + var(--openbitfun-control-icon-size-md) + var(--openbitfun-space-2));
+    margin-inline-end: var(--openbitfun-control-ask-user-option-padding-inline);
   }
 
   .customInput > :global([data-openbitfun-component="input"]) {
     inline-size: 100%;
   }
 
-  .root[data-disabled="true"] .option {
-    color: var(--openbitfun-color-content-disabled);
-  }
-
-  .root[data-disabled="true"] .optionLabel,
-  .root[data-disabled="true"] .optionDescription,
-  .root[data-disabled="true"] .controlIcon {
+  .option[data-selected="false"]:has(.optionSelector[data-disabled="true"]) .optionLabel,
+  .option[data-selected="false"]:has(.optionSelector[data-disabled="true"]) .optionDescription {
     color: var(--openbitfun-color-content-disabled);
   }
 
   .footer {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: var(--openbitfun-space-2);
-    padding-block: var(--openbitfun-space-2);
-    padding-inline: var(--openbitfun-space-3);
-    border-block-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    flex-wrap: wrap;
+    gap: var(--openbitfun-space-3);
+    padding-block: 0 var(--openbitfun-control-ask-user-body-padding);
+    padding-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
+  }
+
+  .submit {
+    flex-shrink: 0;
+    margin-inline-start: auto;
   }
 
   .submit,
@@ -319,20 +502,19 @@
   }
 
   .status {
-    gap: var(--openbitfun-space-1);
-    padding-inline-start: var(--openbitfun-space-2);
-    border-inline-start: var(--openbitfun-border-width-default) solid var(--openbitfun-color-border-subtle);
+    min-inline-size: 0;
+    flex: 1 1 auto;
+    gap: var(--openbitfun-space-2);
     color: var(--openbitfun-color-content-muted);
   }
 
   .statusText {
-    font-size: var(--openbitfun-type-body-xs-font-size);
-    font-weight: var(--openbitfun-type-label-lg-font-weight);
-    line-height: var(--openbitfun-type-body-md-line-height);
+    font-size: var(--openbitfun-type-body-sm-font-size);
+    font-weight: var(--openbitfun-type-body-sm-font-weight);
+    line-height: var(--openbitfun-type-body-sm-line-height);
   }
 
-  .root[data-openbitfun-state="asking"] .statusIcon,
-  .root[data-openbitfun-state="timeout"] .statusIcon {
+  .root[data-openbitfun-state="asking"] .statusIcon {
     color: var(--openbitfun-color-status-warning-content);
   }
 
@@ -346,26 +528,27 @@
   }
 
   .root[data-openbitfun-state="loading"] .statusIcon,
+  .root[data-openbitfun-state="timeout"] .statusIcon,
   .root[data-openbitfun-state="submitting"] .statusIcon {
     color: var(--openbitfun-color-content-secondary);
   }
 
-  .root[data-openbitfun-state="loading"] .statusIcon > svg,
-  .root[data-openbitfun-state="submitting"] .statusIcon > svg {
+  .root[data-openbitfun-state="loading"] .statusIcon > :is(svg, [data-openbitfun-component="icon"]),
+  .root[data-openbitfun-state="submitting"] .statusIcon > :is(svg, [data-openbitfun-component="icon"]) {
     animation: openbitfun-ask-user-spin var(--openbitfun-motion-duration-loop) linear infinite;
   }
 
   .statusOnly {
-    min-block-size: var(--openbitfun-control-ask-user-header-height);
+    min-block-size: var(--openbitfun-control-activity-item-surface-height);
     gap: var(--openbitfun-space-2);
-    padding-block: var(--openbitfun-space-3);
-    padding-inline: var(--openbitfun-space-4);
+    padding-block: var(--openbitfun-control-activity-item-surface-padding-block);
+    padding-inline: calc(var(--openbitfun-control-flow-chat-card-padding-inline) + var(--openbitfun-control-ask-user-option-padding-inline)) calc(var(--openbitfun-control-flow-chat-card-padding-inline) + var(--openbitfun-control-ask-user-option-padding-inline));
   }
 
   .feedback {
     gap: var(--openbitfun-space-2);
     margin-block-end: var(--openbitfun-control-ask-user-body-padding);
-    margin-inline: var(--openbitfun-control-ask-user-body-padding);
+    margin-inline: var(--openbitfun-control-flow-chat-card-padding-inline);
     padding-block: var(--openbitfun-space-2);
     padding-inline: var(--openbitfun-space-3);
     border: var(--openbitfun-border-width-default) solid var(--openbitfun-color-status-warning-border);
@@ -380,37 +563,27 @@
     background: var(--openbitfun-color-status-danger-surface);
   }
 
-  :global([data-density="touch"]) .summaryButton,
-  :global([data-density="touch"]) .option {
+  :global([data-density="touch"]) .optionSelector {
     min-block-size: var(--openbitfun-control-hit-target);
   }
 
-  @media (max-width: 640px) {
-    .option,
-    .optionSelector {
-      align-items: flex-start;
-    }
-
-    .option[data-custom="true"][data-selected="true"] {
-      flex-wrap: wrap;
-    }
-
-    .optionContent {
-      display: block;
+  @container ask-user (max-width: 36rem) {
+    .optionCopy {
+      flex-direction: column;
+      align-items: stretch;
+      gap: var(--openbitfun-space-1);
     }
 
     .optionDescription {
-      display: block;
       max-inline-size: none;
-      margin-block-start: var(--openbitfun-space-1);
       text-align: start;
-      white-space: normal;
     }
+  }
 
-    .customInput {
+  @container ask-user (max-width: 24rem) {
+    .footer .status {
       flex-basis: 100%;
-      max-inline-size: none;
-      margin-inline-start: calc(var(--openbitfun-control-ask-user-icon-size) + var(--openbitfun-control-ask-user-option-content-gap));
+      order: 1;
     }
   }
 
@@ -420,8 +593,8 @@
       transition: none;
     }
 
-    .root[data-openbitfun-state="loading"] .statusIcon > svg,
-    .root[data-openbitfun-state="submitting"] .statusIcon > svg {
+    .root[data-openbitfun-state="loading"] .statusIcon > :is(svg, [data-openbitfun-component="icon"]),
+    .root[data-openbitfun-state="submitting"] .statusIcon > :is(svg, [data-openbitfun-component="icon"]) {
       animation: none;
     }
   }
@@ -439,14 +612,18 @@
       background: Canvas;
     }
 
-    .option:has(.nativeControl:focus-visible),
+    .headerToggle:focus-visible,
+    .prompt:focus-visible,
     .summaryButton:focus-visible {
       outline-color: Highlight;
     }
 
-    .summaryIcon,
-    .option[data-selected="true"] .controlIcon {
+    .summaryIcon {
       color: Highlight;
+    }
+
+    .progress {
+      appearance: auto;
     }
   }
 }

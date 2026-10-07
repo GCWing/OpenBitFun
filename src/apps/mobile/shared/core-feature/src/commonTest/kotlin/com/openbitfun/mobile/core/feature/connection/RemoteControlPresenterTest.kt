@@ -28,7 +28,31 @@ class RemoteControlPresenterTest {
         assertEquals(RemoteControlSource.ACCOUNT_DEVICE, summary.source)
         assertEquals("Studio", summary.desktopName)
         assertEquals(ConnectionPhase.CONNECTED, summary.phase)
-        assertEquals(RemoteControlAction.RECONNECT, summary.action)
+        assertEquals(RemoteControlAction.DISCONNECT, summary.action)
+    }
+
+    @Test
+    fun aDroppedAccountDeviceLinkOffersReconnect() {
+        for (phase in listOf(ConnectionPhase.IDLE, ConnectionPhase.DISCONNECTED, ConnectionPhase.FAILED)) {
+            val summary = RemoteControlPresenter.summarize(
+                accountDeviceId = "device-1",
+                accountDeviceName = "Studio",
+                accountPhase = phase,
+            )
+
+            assertEquals(RemoteControlAction.RECONNECT, summary.action, phase.name)
+        }
+    }
+
+    @Test
+    fun aComingBackAccountDeviceLinkCanStillBeLeft() {
+        val summary = RemoteControlPresenter.summarize(
+            accountDeviceId = "device-1",
+            accountDeviceName = "Studio",
+            accountPhase = ConnectionPhase.RECONNECTING,
+        )
+
+        assertEquals(RemoteControlAction.DISCONNECT, summary.action)
     }
 
     @Test

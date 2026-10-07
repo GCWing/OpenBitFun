@@ -27,10 +27,92 @@ describe('thinking streaming renderer', () => {
   });
   afterEach(() => act(() => root.unmount()));
 
-  async function render(content: string, isStreaming = true) {
+  async function render(content: string, isStreaming = true, singleLinePreview = false) {
     await act(async () => root.render(<ThinkingMarkdown content={content} isStreaming={isStreaming} isDark
-      components={components} urlTransform={urlTransform} renderFragment={renderFragment} />));
+      components={components} urlTransform={urlTransform} renderFragment={renderFragment} singleLinePreview={singleLinePreview} />));
   }
+
+  it('retains inline emphasis, links and code in the latest preview paragraph', async () => {
+    await render('Earlier paragraph.\n\nLatest **bold**, *emphasis*, ~~removed~~, `value` and [link](https://example.com).', true, true);
+    const preview = container.querySelector('.thinking-markdown-preview')!;
+    expect(preview.textContent).toBe('Latest bold, emphasis, removed, value and link.');
+    expect(preview.querySelector('strong')?.textContent).toBe('bold');
+    expect(preview.querySelector('em')?.textContent).toBe('emphasis');
+    expect(preview.querySelector('del')?.textContent).toBe('removed');
+    expect(preview.querySelector('code')?.textContent).toBe('value');
+    expect(preview.querySelector('a')?.getAttribute('href')).toBe('https://example.com');
+    expect(preview.querySelector('p')).toBeNull();
+  });
+
+  it('previews the latest code line without block geometry and retains the full code on completion', async () => {
+    const content = 'Before.\n\n```ts\nconst first = 1;\n  const latest = "代码 👨‍👩‍👧‍👦";\n\n';
+    await render(content, true, true);
+    const code = container.querySelector('.thinking-markdown-full code');
+    const preview = container.querySelector('.thinking-markdown-preview')!;
+    expect(preview.textContent).toBe('const latest = "代码 👨‍👩‍👧‍👦";');
+    expect(preview.querySelector('pre, code, button')).toBeNull();
+    await render(content + '```', false, true);
+    expect(container.querySelector('.thinking-markdown-full code')).toBe(code);
+    expect(preview.textContent).toBe('const latest = "代码 👨‍👩‍👧‍👦";');
+    expect(code?.textContent).toContain('const first = 1;');
+  });
+
+  it.each(['\n\n```ts\n', '\n\n---\n', '\n\n![', '  \n'])('keeps readable content through an empty formatting boundary: %j', async boundary => {
+    await render('Last **readable** line.' + boundary, true, true);
+    expect(container.querySelector('.thinking-markdown-preview')?.textContent).toBe('Last readable line.');
+  });
+
+  it('keeps long logical lines intact for browser wrapping instead of slicing by character count', async () => {
+    const line = 'const value = "' + 'long 中文 👩‍💻 '.repeat(100) + '";';
+    await render('```ts\n' + line, true, true);
+    expect(container.querySelector('.thinking-markdown-preview')?.textContent).toBe(line);
+  });
+
+  it('reduces nested list and heading layout while retaining inline formatting', async () => {
+    await render('- first\n  - nested **bold** and `value`', true, true);
+    let preview = container.querySelector('.thinking-markdown-preview')!;
+    expect(preview.textContent).toBe('nested bold and value');
+    expect(preview.querySelector('ul, ol, li, p')).toBeNull();
+    expect(preview.querySelector('strong')?.textContent).toBe('bold');
+    await render('## A *heading*', true, true);
+    preview = container.querySelector('.thinking-markdown-preview')!;
+    expect(preview.querySelector('strong em')?.textContent).toBe('heading');
+    expect(preview.querySelector('h1, h2, h3')).toBeNull();
+  });
+
+  it('flattens the latest table row, skips empty rows and preserves cell emphasis', async () => {
+    await render('| A | B |\n| - | - |\n| first | old |\n| latest | **bold** |\n| | |', true, true);
+    const preview = container.querySelector('.thinking-markdown-preview')!;
+    expect(preview.textContent).toBe('latest · bold');
+    expect(preview.querySelector('strong')?.textContent).toBe('bold');
+    expect(preview.querySelector('table, tr, td')).toBeNull();
+    expect(container.querySelectorAll('.thinking-markdown-full td')).toHaveLength(6);
+  });
+
+  it('uses text for math and image geometry without sending the preview through expensive renderers', async () => {
+    await render('Formula $\\frac{a}{b}$ and ![Diagram](https://example.com/image.png)', true, true);
+    const preview = container.querySelector('.thinking-markdown-preview')!;
+    expect(preview.textContent).toBe('Formula \\frac{a}{b} and Diagram');
+    expect(preview.querySelector('img, .katex')).toBeNull();
+    // Only the retained full body asks for math rendering.
+    expect(renderFragment).toHaveBeenCalledTimes(1);
+  });
+
+  it('sanitizes exceptional HTML preview content and flattens block layout', async () => {
+    await render('<details><summary>More</summary><p>Hello <strong>world</strong></p><img alt="Diagram" src="image.png"><script>unsafe()</script></details>', false, true);
+    const preview = container.querySelector('.thinking-markdown-preview')!;
+    expect(preview.textContent).toBe('More Hello world Diagram');
+    expect(preview.querySelector('strong')?.textContent).toBe('world');
+    expect(preview.querySelector('details, p, img, script')).toBeNull();
+  });
+
+  it('does not carry preview content across replacement or rewind', async () => {
+    await render('Old thought.\n\n```ts\nold();', true, true);
+    await render('New **thought**.', true, true);
+    expect(container.querySelector('.thinking-markdown-preview')?.textContent).toBe('New thought.');
+    await render('', true, true);
+    expect(container.querySelector('.thinking-markdown-preview')?.textContent).toBe('');
+  });
 
   it('skips rendering settled blocks while a 100K tail grows and preserves DOM on completion', async () => {
     const prefix = 'Settled **paragraph**.\n\n';

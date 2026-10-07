@@ -1,71 +1,12 @@
-import React, { forwardRef, Suspense, useMemo } from 'react';
-import type {
-  TerminalOutputRendererHandle,
-  TerminalOutputRendererProps,
-} from './TerminalOutputRenderer';
-import {
-  buildTerminalOutputFallbackModel,
-  type TerminalOutputFallbackModel,
-} from './terminalOutputPresentation';
-import './TerminalOutputRenderer.scss';
+import { forwardRef } from 'react';
+import { LazyTerminalOutputRenderer as SharedRenderer, type TerminalOutputRendererHandle, type TerminalOutputRendererProps as SharedProps } from '@openbitfun/flow-chat-presentation/terminal';
+import { terminalOutputHost } from './terminalOutputHost';
 
-const DeferredTerminalOutputRenderer = React.lazy(() =>
-  import('./TerminalOutputRenderer').then((module) => ({
-    default: module.TerminalOutputRenderer,
-  }))
-);
-export function TerminalOutputFallback({
-  className,
-  content,
-  minHeight,
-  maxHeight,
-  maxRows,
-}: Pick<TerminalOutputRendererProps, 'className' | 'content' | 'minHeight' | 'maxHeight' | 'maxRows'>) {
-  const fallback = buildTerminalOutputFallbackModel(content, { minHeight, maxHeight, maxRows });
-
-  return (
-    <pre
-      className={['terminal-output-pre', className].filter(Boolean).join(' ')}
-      data-openbitfun-component="terminal-tool"
-      data-openbitfun-part="output"
-      style={{
-        height: `${fallback.height}px`,
-        maxHeight: `${fallback.height}px`,
-        overflow: 'hidden',
-      }}
-    >
-      {fallback.content}
-    </pre>
-  );
-}
-
-export const LazyTerminalOutputRenderer = forwardRef<
-  TerminalOutputRendererHandle,
-  TerminalOutputRendererProps
->((props, ref) => {
-  const initialFallback = useMemo<TerminalOutputFallbackModel>(
-    () => buildTerminalOutputFallbackModel(props.content, {
-      minHeight: props.minHeight,
-      maxHeight: props.maxHeight,
-      maxRows: props.maxRows,
-    }),
-    [props.content, props.maxHeight, props.maxRows, props.minHeight],
-  );
-
-  return (
-    <Suspense fallback={<TerminalOutputFallback {...props} />}>
-      <DeferredTerminalOutputRenderer
-        {...props}
-        ref={ref}
-        initialFallback={initialFallback}
-      />
-    </Suspense>
-  );
-});
-
+export type TerminalOutputRendererProps = Omit<SharedProps, 'host'>;
+export type { TerminalOutputRendererHandle };
+export const LazyTerminalOutputRenderer = forwardRef<TerminalOutputRendererHandle, TerminalOutputRendererProps>((props, ref) => (
+  <SharedRenderer {...props} ref={ref} host={terminalOutputHost} />
+));
 LazyTerminalOutputRenderer.displayName = 'LazyTerminalOutputRenderer';
-
-export type {
-  TerminalOutputRendererHandle,
-  TerminalOutputRendererProps,
-};
+export default LazyTerminalOutputRenderer;
+export { TerminalOutputFallback } from '@openbitfun/flow-chat-presentation/terminal';

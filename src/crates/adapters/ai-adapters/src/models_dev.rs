@@ -12,7 +12,8 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 
 use crate::client::quirks::{
-    is_deepseek_reasoning_effort_model, is_glm_52_reasoning_effort_model, is_zhipuai_url,
+    is_deepseek_reasoning_effort_model, is_deepseek_url, is_glm_52_reasoning_effort_model,
+    is_zhipuai_url, normalize_deepseek_reasoning_effort, normalize_glm_52_reasoning_effort,
 };
 use crate::providers::anthropic::request::{
     anthropic_thinking_capability, AnthropicThinkingCapability,
@@ -758,6 +759,7 @@ pub fn project_reasoning_catalog_with_limit_and_auto_binding(
                     order: preset.order.unwrap_or(100),
                     actions: preset.actions.clone(),
                     source: ReasoningPresetSource::ModelConfig,
+                    effective_effort: None,
                     execution_provider: Some(execution_provider.clone()),
                     execution_model: Some(execution_model.clone()),
                 },
@@ -766,6 +768,9 @@ pub fn project_reasoning_catalog_with_limit_and_auto_binding(
     }
 
     let mut presets = descriptors.into_values().collect::<Vec<_>>();
+    for preset in &mut presets {
+        preset.effective_effort = reasoning_display_effort(provider, base_url, preset);
+    }
     presets.sort_by(|left, right| {
         left.order
             .cmp(&right.order)
@@ -1159,6 +1164,44 @@ fn is_codex_chatgpt_base_url(base_url: &str) -> bool {
         })
 }
 
+// Display aliases follow the existing executing adapter without changing which
+// presets the catalog recognizes, or their persisted ids and request actions.
+fn reasoning_display_effort(
+    provider: &str,
+    base_url: &str,
+    preset: &ReasoningPresetDescriptor,
+) -> Option<String> {
+    let execution_provider = preset.execution_provider.as_deref()?;
+    if preset.source == ReasoningPresetSource::ModelConfig
+        || execution_provider == crate::providers::shared::GENERIC_REASONING_PROVIDER_ID
+    {
+        return None;
+    }
+    let provider = provider.trim().to_ascii_lowercase();
+    if !matches!(provider.as_str(), "openai" | "anthropic" | "deepseek")
+        || (provider == "openai" && is_responses_endpoint(base_url))
+    {
+        return None;
+    }
+    let execution_model = preset.execution_model.as_deref()?;
+    let effort = preset.actions.iter().find_map(|action| match action {
+        ReasoningPresetAction::Effort { value } => Some(value.as_str()),
+        _ => None,
+    })?;
+    if execution_provider.eq_ignore_ascii_case("deepseek")
+        || is_deepseek_url(base_url)
+        || is_deepseek_reasoning_effort_model(execution_model)
+    {
+        normalize_deepseek_reasoning_effort(execution_model, effort).map(ToOwned::to_owned)
+    } else if is_glm_52_reasoning_effort_model(execution_model)
+        && (execution_provider.eq_ignore_ascii_case("zhipuai") || is_zhipuai_url(base_url))
+    {
+        normalize_glm_52_reasoning_effort(effort).map(ToOwned::to_owned)
+    } else {
+        None
+    }
+}
+
 fn effort_descriptors(
     values: &[Option<String>],
     nullable_effort: bool,
@@ -1178,6 +1221,7 @@ fn effort_descriptors(
                 value: value.to_string(),
             }],
             source,
+            effective_effort: None,
             execution_provider: Some(execution_provider.to_string()),
             execution_model: Some(execution_model.to_string()),
         })
@@ -1205,6 +1249,7 @@ fn toggle_descriptors(
             order: 0,
             actions: vec![ReasoningPresetAction::Toggle { enabled: false }],
             source,
+            effective_effort: None,
             execution_provider: Some(execution_provider.to_string()),
             execution_model: Some(execution_model.to_string()),
         },
@@ -1214,6 +1259,7 @@ fn toggle_descriptors(
             order: 1,
             actions: vec![ReasoningPresetAction::Toggle { enabled: true }],
             source,
+            effective_effort: None,
             execution_provider: Some(execution_provider.to_string()),
             execution_model: Some(execution_model.to_string()),
         },
@@ -1260,6 +1306,7 @@ fn budget_descriptors(
             order: 30 + index as i32,
             actions: vec![ReasoningPresetAction::BudgetTokens { value }],
             source,
+            effective_effort: None,
             execution_provider: Some(execution_provider.to_string()),
             execution_model: Some(execution_model.to_string()),
         })
@@ -2207,6 +2254,92 @@ mod tests {
 
         assert_eq!(projection.status, ReasoningCapabilityStatus::Unsupported);
         assert!(projection.presets.is_empty());
+    }
+
+    #[test]
+    fn effort_display_metadata_preserves_ids_actions_and_generic_fallback() {
+        let values = ["low", "medium", "high", "xhigh", "max"].map(|value| Some(value.to_string()));
+        for (provider, model, expected) in [
+            ("zhipuai", "glm-5.2", ["high", "high", "high", "max", "max"]),
+            (
+                "deepseek",
+                "deepseek-v4-flash",
+                ["low", "high", "high", "max", "max"],
+            ),
+        ] {
+            let source = ModelsDevCatalog::parse_str(
+                &serde_json::json!({
+                    (provider): {"models": {(model): {"reasoning": true,
+                        "reasoning_options": {"type": "effort", "values": values}}}}
+                })
+                .to_string(),
+            )
+            .unwrap();
+            let config = ReasoningConfig {
+                catalog: ReasoningCatalogBinding::ModelsDev {
+                    provider: provider.into(),
+                    model: model.into(),
+                },
+                ..Default::default()
+            };
+            let projection = project_reasoning_catalog(
+                "openai",
+                model,
+                "https://gateway.example.com/v1/chat/completions",
+                Some(&config),
+                Some(&source),
+            );
+            assert_eq!(projection.status, ReasoningCapabilityStatus::Known);
+            assert_eq!(projection.presets.len(), values.len());
+            for ((descriptor, wire), effective) in
+                projection.presets.iter().zip(&values).zip(expected)
+            {
+                assert_eq!(Some(descriptor.id.as_str()), wire.as_deref());
+                assert_eq!(descriptor.effective_effort.as_deref(), Some(effective));
+                assert_eq!(
+                    descriptor.actions,
+                    vec![ReasoningPresetAction::Effort {
+                        value: wire.clone().unwrap(),
+                    }]
+                );
+            }
+            // The same source binding over Responses keeps that adapter's
+            // original efforts; Chat/Anthropic aliases cannot cross protocols.
+            for transport in ["responses", "openai"] {
+                let responses = project_reasoning_catalog(
+                    transport,
+                    model,
+                    "https://gateway.example.com/v1/responses",
+                    Some(&config),
+                    Some(&source),
+                );
+                assert_eq!(responses.presets.len(), values.len());
+                assert!(responses
+                    .presets
+                    .iter()
+                    .all(|preset| preset.effective_effort.is_none()));
+            }
+        }
+        let generic = project_reasoning_catalog(
+            "openai",
+            "glm-5.2",
+            "https://gateway.example.com/v1",
+            None,
+            None,
+        );
+        assert_eq!(generic.status, ReasoningCapabilityStatus::Known);
+        assert_eq!(
+            generic
+                .presets
+                .iter()
+                .map(|preset| preset.id.as_str())
+                .collect::<Vec<_>>(),
+            ["off", "on", "low", "medium", "high"]
+        );
+        assert!(generic
+            .presets
+            .iter()
+            .all(|preset| preset.effective_effort.is_none()));
     }
 
     #[test]

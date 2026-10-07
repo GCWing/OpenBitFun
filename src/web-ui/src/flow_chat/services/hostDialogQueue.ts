@@ -7,6 +7,8 @@ import { FlowChatStore } from '../store/FlowChatStore';
 import { isAcpFlowSession } from '../utils/acpSession';
 import { resolveSessionDriverId } from '../session-drivers/resolve';
 import { translateAgentIdentityFields } from '../../../../shared/agent-harness/wire';
+import { registerSubmittedMessageScrollIntent, finishSubmittedMessageScrollIntent, peekSubmittedMessageScrollIntent } from './submittedMessageScrollIntent';
+import { getSubmittedMessagePreviews } from './submittedMessagePresentation';
 
 const clients = new Map<string, HostDialogQueue>();
 function currentAccount(): string {
@@ -30,11 +32,27 @@ export function hostDialogQueue(sessionId: string): HostDialogQueue {
     client = new HostDialogQueue(owner, sessionId, async request => {
       scope.assertCurrent('send queue operation');
       if (currentAccount() !== account) throw new Error('Queue account changed');
-      const result = await api.invoke<import('../../../../shared/dialog-queue/HostDialogQueue').QueueSnapshot>(
-        'manage_dialog_queue', { request: translateAgentIdentityFields(request, 'legacy') });
-      scope.assertCurrent('apply queue operation');
-      if (currentAccount() !== account) throw new Error('Queue account changed');
-      return result;
+      // The queue has now selected the actual idempotent Turn id. Register
+      // before invoking, since DialogTurnStarted can beat the RPC receipt.
+      const intent = request.action === 'submit'
+        ? peekSubmittedMessageScrollIntent(scope, sessionId, request.message.turnId)
+          ?? (getSubmittedMessagePreviews(scope, sessionId).length > 0
+            ? undefined
+            : registerSubmittedMessageScrollIntent(scope, sessionId, request.message.turnId, null))
+        : undefined;
+      try {
+        const result = await api.invoke<import('../../../../shared/dialog-queue/HostDialogQueue').QueueSnapshot>(
+          'manage_dialog_queue', { request: translateAgentIdentityFields(request, 'legacy') });
+        scope.assertCurrent('apply queue operation');
+        if (currentAccount() !== account) throw new Error('Queue account changed');
+        // Parking/steering work is not a new transcript placement. Later queue
+        // drain or outbox replay must not resurrect this old send gesture.
+        if (intent && result.receipt?.status !== 'started') finishSubmittedMessageScrollIntent(intent);
+        return result;
+      } catch (error) {
+        if (intent) finishSubmittedMessageScrollIntent(intent);
+        throw error;
+      }
     });
     clients.set(key, client);
   }

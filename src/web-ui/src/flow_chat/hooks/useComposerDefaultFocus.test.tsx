@@ -44,6 +44,7 @@ describe('useComposerDefaultFocus', () => {
   });
 
   afterEach(() => {
+    document.getSelection()?.removeAllRanges();
     act(() => root.unmount());
     container.remove();
     document.body.replaceChildren();
@@ -111,6 +112,23 @@ describe('useComposerDefaultFocus', () => {
 
     act(() => window.dispatchEvent(new FocusEvent('focus')));
 
+    expect(document.activeElement).toBe(composer);
+  });
+
+  it('preserves transcript selection on window restore, but still accepts explicit typing', () => {
+    const composer = renderProbe({ sessionId: 'session-a', isSceneActive: true });
+    composer.blur();
+    const transcript = document.createElement('div');
+    transcript.setAttribute('data-flowchat-selection-root', 'session-a');
+    transcript.textContent = 'Recorded response selected by the reader';
+    document.body.append(transcript);
+    const range = document.createRange(); range.selectNodeContents(transcript);
+    document.getSelection()!.addRange(range);
+    const focus = vi.spyOn(composer, 'focus');
+    act(() => window.dispatchEvent(new FocusEvent('focus')));
+    expect(focus).not.toHaveBeenCalled();
+    expect(document.getSelection()?.toString()).toBe(transcript.textContent);
+    pressKey('a');
     expect(document.activeElement).toBe(composer);
   });
 

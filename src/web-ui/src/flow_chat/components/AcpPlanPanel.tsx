@@ -1,7 +1,7 @@
 import { Icon } from '@openbitfun/ui';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { CircleDashed, LoaderCircle } from 'lucide-react';
+import { CircleDashed } from 'lucide-react';
 
 import type { AcpPlanEntry } from '@/infrastructure/api/service-api/ACPClientAPI';
 import './AcpPlanPanel.scss';
@@ -13,17 +13,14 @@ export interface AcpPlanPanelProps {
 function statusIcon(status: string): React.ReactNode {
   switch (status) {
     case 'completed':
-      return <Icon name="check-line" size="lg" style={{ width: 13, height: 13 }} className="openbitfun-acp-plan__icon openbitfun-acp-plan__icon--done" />;
+      return <Icon name="check-line" size="sm" className="openbitfun-acp-plan__icon openbitfun-acp-plan__icon--done" />;
     case 'in_progress':
       return (
-        <LoaderCircle
-          size={13}
-          className="openbitfun-acp-plan__icon openbitfun-acp-plan__icon--active"
-        />
+        <Icon name="progress-25" size="sm" className="openbitfun-acp-plan__icon openbitfun-acp-plan__icon--active" />
       );
     default:
       return (
-        <CircleDashed size={13} className="openbitfun-acp-plan__icon openbitfun-acp-plan__icon--pending" />
+        <Icon glyph={CircleDashed} size="sm" className="openbitfun-acp-plan__icon openbitfun-acp-plan__icon--pending" />
       );
   }
 }

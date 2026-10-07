@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Layers } from 'lucide-react';
-import { Combobox } from '@openbitfun/ui';
-import { Spinner } from '@openbitfun/ui';
+import { Combobox, Icon, IconButton, Spinner, Tooltip } from '@openbitfun/ui';
 import { notificationService } from '@/shared/notification-system';
 import { configManager } from '../services/ConfigManager';
 import type {
@@ -25,14 +24,21 @@ const normalizeSelectValue = (value: string | number | (string | number)[]): str
 
 type DefaultModelSlot = 'primary' | 'fast' | 'image_understanding' | 'speech_recognition';
 
-export const DefaultModelConfig: React.FC = () => {
+export const DefaultModelConfig: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
   const { t } = useTranslation('settings/default-model');
   const { buildModelOption } = useModelSelectPresentation();
-  const renderOptionalLabel = (text: string) => (
-    <>
-      {text}
-      <span className="default-model-config__optional-label">（{t('core.optional')}）</span>
-    </>
+  const renderSlotLabel = (label: string, description: string) => (
+    <span className="default-model-config__slot-label-content">
+      <span>{label}</span>
+      <Tooltip content={description} placement="top" trigger="hover-focus" openOnClick>
+        <IconButton
+          size="xs"
+          variant="annotation"
+          aria-label={description}
+          icon={<Icon name="info" size="xs" />}
+        />
+      </Tooltip>
+    </span>
   );
   
   
@@ -182,11 +188,11 @@ export const DefaultModelConfig: React.FC = () => {
   }
 
   return (
-    <div className="default-model-config" data-openbitfun-component="default-model-config" data-openbitfun-part="root">
+    <div className={`default-model-config${compact ? ' default-model-config--compact' : ''}`} data-openbitfun-component="default-model-config" data-openbitfun-part="root">
       <ConfigPageRow
-        label={t('core.primary.label')}
-        description={t('core.primary.description')}
+        label={renderSlotLabel(t('core.primary.label'), t('core.primary.description'))}
         required
+        multiline={compact}
         align="center"
       >
         <Combobox
@@ -203,8 +209,8 @@ export const DefaultModelConfig: React.FC = () => {
       </ConfigPageRow>
 
       <ConfigPageRow
-        label={renderOptionalLabel(t('core.fast.label'))}
-        description={t('core.fast.description')}
+        label={renderSlotLabel(t('core.fast.label'), t('core.fast.description'))}
+        multiline={compact}
         align="center"
       >
         <Combobox
@@ -222,8 +228,11 @@ export const DefaultModelConfig: React.FC = () => {
       </ConfigPageRow>
 
       <ConfigPageRow
-        label={renderOptionalLabel(t('optional.capabilities.image_understanding.label'))}
-        description={t('optional.capabilities.image_understanding.description')}
+        label={renderSlotLabel(
+          t('optional.capabilities.image_understanding.label'),
+          t('optional.capabilities.image_understanding.description'),
+        )}
+        multiline={compact}
         align="center"
       >
         <Combobox
@@ -241,8 +250,11 @@ export const DefaultModelConfig: React.FC = () => {
       </ConfigPageRow>
 
       <ConfigPageRow
-        label={renderOptionalLabel(t('optional.capabilities.speech_recognition.label'))}
-        description={t('optional.capabilities.speech_recognition.description')}
+        label={renderSlotLabel(
+          t('optional.capabilities.speech_recognition.label'),
+          t('optional.capabilities.speech_recognition.description'),
+        )}
+        multiline={compact}
         align="center"
       >
         <Combobox

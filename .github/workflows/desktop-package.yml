@@ -740,6 +740,7 @@ jobs:
             --version "${{ needs.prepare.outputs.version }}" \
             --tag "${{ needs.prepare.outputs.release_tag }}" \
             --repo "${{ github.repository }}" \
+            --notes-file "scripts/release-notes/${{ needs.prepare.outputs.version }}.md" \
             --out release-updater-assets/latest-v1.json \
             --required-platforms "${REQUIRED_UPDATER_PLATFORMS}"
 

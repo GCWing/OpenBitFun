@@ -9,6 +9,7 @@ export function resolveFirstDesignLabLocale(
   fallback?: DesignLabLocale,
 ): DesignLabLocale;
 export function interpolateMessage(template: string, params?: TranslateParams): string;
+export function formatDesignLabNumber(value: number, locale: unknown): string;
 export function translateFromCatalog<Key extends string>(
   catalog: Readonly<Record<DesignLabLocale, Readonly<Record<Key, string>>>>,
   locale: unknown,

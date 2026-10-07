@@ -24,6 +24,8 @@ const REAL_PX = 40;
 
 interface Item {
   key: string;
+  knownHeightPx?: number;
+  estimatedHeightPx?: number;
 }
 
 interface HarnessProps {
@@ -32,9 +34,10 @@ interface HarnessProps {
   items: Item[];
   onApi: (api: FlowChatVirtualizer) => void;
   isViewportSuspended?: () => boolean;
+  widthPx?: number;
 }
 
-function Harness({ scroller, header, items, onApi, isViewportSuspended }: HarnessProps) {
+function Harness({ scroller, header, items, onApi, isViewportSuspended, widthPx }: HarnessProps) {
   const scrollerRef = React.useRef<HTMLElement | null>(scroller);
   const headerRef = React.useRef<HTMLElement | null>(header);
   onApi(useFlowChatVirtualizer({
@@ -42,7 +45,9 @@ function Harness({ scroller, header, items, onApi, isViewportSuspended }: Harnes
     scrollerRef,
     headerRef,
     getItemKey: (item: Item) => item.key,
-    estimateItemHeightPx: () => ESTIMATE_PX,
+    estimateItemHeightPx: (item: Item) => item.estimatedHeightPx ?? ESTIMATE_PX,
+    getKnownItemHeightPx: (item: Item) => item.knownHeightPx,
+    estimateContext: { availableWidthPx: widthPx },
     isViewportSuspended,
     scrollPaddingStartPx: 0,
     writeViewport: () => true,
@@ -143,6 +148,60 @@ describe('useFlowChatVirtualizer measurement', () => {
       { startPx: 0, endPx: REAL_PX },
       { startPx: REAL_PX, endPx: REAL_PX + ESTIMATE_PX },
     ]);
+  });
+
+  it('never measures nested code or subagent viewport rows as transcript rows', () => {
+    renderRow(0, REAL_PX);
+    const nested = document.createElement('div');
+    nested.setAttribute('data-flowchat-virtual-viewport', '');
+    const line = document.createElement('div');
+    line.setAttribute('data-virtual-index', '0');
+    Object.defineProperty(line, 'offsetHeight', { value: 9999 });
+    nested.appendChild(line); scroller.appendChild(nested);
+    expect(measureAndRead([0])).toEqual([{ startPx: 0, endPx: REAL_PX }]);
+  });
+
+  it('retains unchanged mounted heights when scrollbar width invalidates the size cache', () => {
+    [0, 1, 2].forEach(index => renderRow(index, REAL_PX));
+    measureAndRead([2]);
+
+    // Opening a collection introduces a scrollbar. Compact rows keep the same
+    // border box, so ResizeObserver will not send another height change.
+    for (const widthPx of [540, 525, 540]) {
+      act(() => root.render(
+        <Harness scroller={scroller} header={header}
+          items={[{ key: 'a' }, { key: 'b' }, { key: 'c' }]} widthPx={widthPx}
+          onApi={next => { api = next; }} />,
+      ));
+      expect(api.getItemBounds(2)).toEqual({ startPx: REAL_PX * 2, endPx: REAL_PX * 3 });
+    }
+  });
+
+  it('replaces a stale measured size when a stable row is collected and restores its estimate when it returns', () => {
+    renderRow(1, 300);
+    measureAndRead([2]);
+    expect(api.getItemBounds(2)?.startPx).toBe(400);
+
+    act(() => root.render(
+      <Harness
+        scroller={scroller}
+        header={header}
+        items={[{ key: 'a' }, { key: 'b', knownHeightPx: 0 }, { key: 'c' }]}
+        onApi={next => { api = next; }}
+      />,
+    ));
+    expect(api.getItemBounds(1)).toEqual({ startPx: 100, endPx: 100 });
+    expect(api.getItemBounds(2)?.startPx).toBe(100);
+
+    act(() => root.render(
+      <Harness
+        scroller={scroller}
+        header={header}
+        items={[{ key: 'a' }, { key: 'b', estimatedHeightPx: 120 }, { key: 'c' }]}
+        onApi={next => { api = next; }}
+      />,
+    ));
+    expect(api.getItemBounds(2)?.startPx).toBe(220);
   });
 
   it('does not measure rendered rows while the native host has suspended the viewport', () => {

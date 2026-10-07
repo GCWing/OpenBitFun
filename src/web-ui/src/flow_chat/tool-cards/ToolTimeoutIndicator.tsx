@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
-import { subscribeOverlayInteraction, createOverlayPortal, Menu, MenuItem } from '@openbitfun/ui';
-import { Timer, Infinity as InfinityIcon } from 'lucide-react';
+import { subscribeOverlayInteraction, createOverlayPortal, Menu, MenuItem, Icon } from '@openbitfun/ui';
+import { Infinity as InfinityIcon } from 'lucide-react';
+import { ToolDuration, formatDurationPrecise } from '@openbitfun/ui/flow-chat';
 import { useTranslation } from 'react-i18next';
 import { getAppearanceOverlayHost } from '@/infrastructure/appearance/runtime/AppearanceOverlayHost';
 import { useAnchoredPopoverPosition } from '@/shared/utils/useAnchoredPopoverPosition';
@@ -8,32 +9,10 @@ import { useLiveElapsedTime } from '../hooks/useLiveElapsedTime';
 import { useSubagentTimeoutControl } from '../hooks/useSubagentTimeoutControl';
 import './ToolTimeoutIndicator.scss';
 
-function formatDurationLive(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  const seconds = Math.floor(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  if (minutes < 60) {
-    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
-}
-
-function formatDurationPrecise(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`;
-  const seconds = ms / 1000;
-  if (seconds < 60) return `${seconds.toFixed(1)}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.round(seconds % 60);
-  return `${minutes}m ${remainingSeconds}s`;
-}
-
 export interface ToolTimeoutIndicatorProps {
   startTime?: number;
   isRunning: boolean;
+  showIcon?: boolean;
   timeoutMs?: number;
   showControls?: boolean;
   subagentSessionId?: string;
@@ -48,6 +27,7 @@ export interface ToolTimeoutIndicatorProps {
 export const ToolTimeoutIndicator: React.FC<ToolTimeoutIndicatorProps> = ({
   startTime,
   isRunning,
+  showIcon = true,
   timeoutMs,
   showControls = false,
   subagentSessionId,
@@ -150,15 +130,8 @@ export const ToolTimeoutIndicator: React.FC<ToolTimeoutIndicatorProps> = ({
             })
     );
 
-    return (
-      <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="root" data-openbitfun-mode="completed"
-        className={`duration-text duration-text--completed${completedStatus ? ` duration-text--completed-${completedStatus}` : ''}`}
-        title={completionLabel}
-        aria-label={completionLabel}
-      >
-        <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="duration">{durationLabel}</span>
-      </span>
-    );
+    return <ToolDuration isRunning={false} showIcon={showIcon} completedDurationMs={completedDurationMs}
+      completedStatus={completedStatus} completionLabel={completionLabel} />;
   }
 
   // Not running and no completed duration: nothing to show.
@@ -166,38 +139,9 @@ export const ToolTimeoutIndicator: React.FC<ToolTimeoutIndicatorProps> = ({
 
   const hasTimeout = Boolean(timeoutMs && timeoutMs > 0);
   const canControlTimeout = showControls && hasTimeout && Boolean(subagentSessionId);
-  const displayRemaining = isTimeoutDisabled ? null : remainingMs;
-
-  // Determine warning threshold: remaining < 20% of original timeout.
-  const isWarning =
-    displayRemaining != null &&
-    timeoutMs != null &&
-    timeoutMs > 0 &&
-    displayRemaining < timeoutMs * 0.2;
-
   return (
-    <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="root" data-openbitfun-mode="live" data-openbitfun-state={[isWarning && 'warning', isTimeoutDisabled && 'disabled', isPopoverOpen && 'open'].filter(Boolean).join(' ')} className="tool-timeout-indicator">
-      <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="duration" className={`duration-text duration-text--live ${isWarning ? 'duration-text--warning' : ''}`}>
-        <Timer size={13} strokeWidth={2} />
-        <span data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="elapsed" className="duration-elapsed">{formatDurationLive(elapsedMs)}</span>
-        {hasTimeout && (
-          <>
-            <span className="duration-separator">/</span>
-            <span
-              data-openbitfun-component="tool-timeout-indicator"
-              data-openbitfun-part="timeout"
-              className={`duration-timeout ${isTimeoutDisabled ? 'duration-timeout--disabled' : ''} ${isWarning ? 'duration-timeout--warning' : ''}`}
-            >
-              {isTimeoutDisabled
-                ? <InfinityIcon size={14} className="duration-timeout--infinity" />
-                : displayRemaining != null
-                  ? formatDurationLive(displayRemaining)
-                  : formatDurationLive(timeoutMs!)}
-            </span>
-          </>
-        )}
-      </span>
-
+    <ToolDuration isRunning showIcon={showIcon} elapsedMs={elapsedMs} remainingMs={remainingMs} timeoutMs={timeoutMs}
+      timeoutDisabled={isTimeoutDisabled} open={isPopoverOpen}>
       {canControlTimeout && (
         <div data-openbitfun-component="tool-timeout-indicator" data-openbitfun-part="controls" className="timeout-control-wrapper" ref={controlRef}>
           <button
@@ -217,7 +161,7 @@ export const ToolTimeoutIndicator: React.FC<ToolTimeoutIndicatorProps> = ({
                 : t('toolCards.timeout.disableTooltip')
             }
           >
-            <InfinityIcon size={12} />
+            <Icon glyph={InfinityIcon} size="xs" />
             <span className="timeout-ignore-btn__label">
               {isTimeoutDisabled
                 ? t('toolCards.timeout.enableLabel')
@@ -287,6 +231,6 @@ export const ToolTimeoutIndicator: React.FC<ToolTimeoutIndicatorProps> = ({
           )}
         </div>
       )}
-    </span>
+    </ToolDuration>
   );
 };

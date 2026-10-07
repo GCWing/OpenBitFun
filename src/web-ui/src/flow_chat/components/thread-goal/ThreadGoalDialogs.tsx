@@ -5,7 +5,7 @@ import {
   DialogClose,
   DialogHeader,
   DialogHeading,
-  DialogTitle,
+  DialogTitle, Icon,
 } from '@openbitfun/ui';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +19,8 @@ import {
   buildThreadGoalWorkflowSteps,
   shouldShowThreadGoalWorkflow,
 } from './threadGoalWorkflow';
+import { useThreadGoalElapsedSeconds } from './useThreadGoalElapsedSeconds';
+import { formatThreadGoalElapsedSeconds } from '../../utils/threadGoalDuration';
 import {
   resolveThreadGoalActionLabel,
   resolveThreadGoalStatusLabel,
@@ -27,6 +29,7 @@ import './ThreadGoalDialogs.scss';
 
 function formatUsageLine(
   goal: NonNullable<ThreadGoalController['goal']>,
+  elapsedSeconds: number,
   t: ReturnType<typeof useTranslation>['t']
 ): string | null {
   const parts: string[] = [];
@@ -44,10 +47,10 @@ function formatUsageLine(
       })
     );
   }
-  if ((goal.timeUsedSeconds ?? 0) > 0) {
+  if (elapsedSeconds > 0) {
     parts.push(
       t('threadGoal.usageTime', {
-        seconds: goal.timeUsedSeconds,
+        duration: formatThreadGoalElapsedSeconds(elapsedSeconds, t),
       })
     );
   }
@@ -88,7 +91,17 @@ export const ThreadGoalDialogs: React.FC<ThreadGoalDialogsProps> = ({
 
   const statusLabel = goal ? resolveThreadGoalStatusLabel(t, goal.status) : '';
 
-  const usageLine = goal ? formatUsageLine(goal, t) : null;
+  // `pause` is what the menu offers exactly while the goal is driving turns, so
+  // the readiness to pause is the policy's own answer to "is this goal running"
+  // — the same rule the track reads its stopwatch from. The clock only runs while
+  // the menu is in front of the user, since nothing else shows the readout.
+  const elapsedSeconds = useThreadGoalElapsedSeconds({
+    goalId: goal?.goalId,
+    accountedSeconds: goal?.timeUsedSeconds ?? 0,
+    advancing: controller.menuOpen && controller.availableActions.includes('pause'),
+  });
+
+  const usageLine = goal ? formatUsageLine(goal, elapsedSeconds, t) : null;
 
   const workflowSteps = useMemo(
     () => (goal ? buildThreadGoalWorkflowSteps(goal.status) : []),
@@ -149,7 +162,7 @@ export const ThreadGoalDialogs: React.FC<ThreadGoalDialogsProps> = ({
           >
             <div data-openbitfun-component="thread-goal-dialogs" data-openbitfun-part="header" className="openbitfun-thread-goal-menu__header">
               <span className={statusBadgeClass(goal.status)}>
-                <Target size={14} aria-hidden />
+                <Icon glyph={Target} size="sm" aria-hidden />
                 {statusLabel}
               </span>
               {usageLine ? (

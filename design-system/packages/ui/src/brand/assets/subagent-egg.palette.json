@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "owner": "OpenBitFun Subagent hatch artwork",
+  "file": "subagent-egg.svg",
+  "consumer": "design-system/packages/ui/src/brand/subagent/SubagentHatch.tsx",
+  "reason": "The inner character reuses robot-01's four authored colors. Three cream shell material roles distinguish the egg from the character inside; existing avatar palettes have no shell roles. Theme surface and status tokens would recolor this identity artwork across themes. Lifecycle status remains owned by surrounding UI tokens.",
+  "colors": {
+    "stem": "#D5AB57",
+    "body": "#F4D57A",
+    "knob": "#B67D43",
+    "face": "#714B30",
+    "shell": "#F9E9BD",
+    "shellHighlight": "#FFF8E7",
+    "shellRim": "#E5CE96"
+  }
+}

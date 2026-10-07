@@ -575,9 +575,8 @@ mod tests {
             "Task",
             "AgentSpawn",
             "AgentSendInput",
-            "AgentInterrupt",
+            "AgentControl",
             "AgentList",
-            "AgentDelete",
             "AgentWait",
             "LaunchReviewAgent",
             "Skill",
@@ -812,7 +811,6 @@ mod tests {
                 "Worktree",
                 "ReviewPlatform",
                 "ControlHub",
-                "ComputerUse",
                 "Playbook",
             ],
             "deferred tool manifest must stay stable before moving registry or manifest ownership"

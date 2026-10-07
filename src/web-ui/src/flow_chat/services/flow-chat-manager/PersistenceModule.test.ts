@@ -174,6 +174,16 @@ describe('PersistenceModule', () => {
     });
   });
 
+  it.each([0, 900])('preserves reported cache tokens %s in the saved turn payload', cachedTokens => {
+    const turn = createDialogTurn('completed');
+    turn.tokenUsage = { inputTokens: 1200, outputTokens: 320, totalTokens: 1520, cachedTokens, timestamp: 2400 };
+    const persisted = JSON.parse(JSON.stringify(convertDialogTurnToBackendFormat(turn, 0)));
+    expect(persisted.tokenUsage.cachedTokens).toBe(cachedTokens);
+    delete turn.tokenUsage.cachedTokens;
+    expect(JSON.parse(JSON.stringify(convertDialogTurnToBackendFormat(turn, 0))).tokenUsage)
+      .not.toHaveProperty('cachedTokens');
+  });
+
   it('persists finish reason when present', () => {
     const turn = createDialogTurn('completed');
     turn.finishReason = 'max_rounds';

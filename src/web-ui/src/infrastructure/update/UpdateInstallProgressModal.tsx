@@ -153,6 +153,7 @@ export const UpdateInstallProgressModal: React.FC<UpdateInstallProgressModalProp
       closeOnPointerOutside={false}
       closeOnEscape={!installing}
       size="sm"
+      data-testid="app-update-install-dialog"
     >
       <DialogHeader>
         <DialogHeading>
@@ -182,10 +183,10 @@ export const UpdateInstallProgressModal: React.FC<UpdateInstallProgressModalProp
                 {t('update.downloadAgain')}
               </Button>
             ) : null}
-            <Button variant="fill" size="md" disabled={installing} onClick={onCloseInstalled}>
+            <Button data-testid="app-update-install-later" variant="fill" size="md" disabled={installing} onClick={onCloseInstalled}>
               {t('update.restartLater')}
             </Button>
-            <Button variant="primary" size="md" disabled={installing} loading={installing} onClick={onRestart}>
+            <Button data-testid="app-update-install-confirm" variant="primary" size="md" disabled={installing} loading={installing} onClick={onRestart}>
               {t(installing ? 'update.installing' : 'update.installAndRestart')}
             </Button>
           </div>

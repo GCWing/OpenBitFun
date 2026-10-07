@@ -1,4 +1,3 @@
-use crate::agentic::agents::is_swarm_planner_agent_type;
 use crate::agentic::coordination::get_global_coordinator;
 use crate::agentic::tools::framework::{
     PermissionIntent, Tool, ToolRenderOptions, ToolResult, ToolUseContext, ValidationResult,
@@ -29,16 +28,7 @@ impl AgentListTool {
                 "AgentList does not accept field '{field}'"
             )));
         }
-        if let Some(context) = context {
-            let agent_type = context.agent_type.as_deref().ok_or_else(|| {
-                OpenBitFunError::tool("agent_type is required in context".to_string())
-            })?;
-            if !is_swarm_planner_agent_type(agent_type) {
-                return Err(OpenBitFunError::tool(
-                    "AgentList is available only to Ultra and SwarmPlanner".to_string(),
-                ));
-            }
-        }
+        let _ = context;
         Ok(())
     }
 }
@@ -160,28 +150,6 @@ mod tests {
                 "properties": {},
                 "additionalProperties": false
             })
-        );
-    }
-
-    #[tokio::test]
-    async fn validation_accepts_only_swarm_planners() {
-        assert!(
-            AgentListTool::new()
-                .validate_input(&serde_json::json!({}), Some(&context("Ultimate")))
-                .await
-                .result
-        );
-        assert!(
-            AgentListTool::new()
-                .validate_input(&serde_json::json!({}), Some(&context("SwarmPlanner")),)
-                .await
-                .result
-        );
-        assert!(
-            !AgentListTool::new()
-                .validate_input(&serde_json::json!({}), Some(&context("SwarmWorker")))
-                .await
-                .result
         );
     }
 }

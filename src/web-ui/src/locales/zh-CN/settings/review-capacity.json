@@ -9,16 +9,16 @@
     "retry": "重试"
   },
   "capacity": {
-    "title": "容量",
-    "description": "选择补充审核工作逐项或两路运行，并设置等待供应商容量的时长",
+    "title": "审核容量",
     "maxParallelReviewers": {
       "label": "审核并行数",
-      "description": "控制补充审核工作逐项或两路运行；只改变并行方式，不改变审核范围"
+      "description": "补充审核任务可逐个执行或同时执行两个"
     },
     "maxQueueWaitSeconds": {
-      "label": "容量等待窗口",
-      "description": "可选审核工作等待供应商容量的时长；已经运行的检查可能让审核总耗时更长"
-    }
+      "label": "容量等待时间",
+      "description": "可选审核任务等待供应商空闲容量的时长，不包含已开始运行的检查耗时"
+    },
+    "description": "决定补充审核如何使用模型容量；调整并行数不改变审核范围"
   },
   "messages": {
     "loadFailed": "加载 Review 容量失败。",

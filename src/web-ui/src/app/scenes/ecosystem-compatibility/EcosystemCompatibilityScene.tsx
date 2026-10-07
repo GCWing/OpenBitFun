@@ -1,3 +1,4 @@
+import { lazyWithRecovery } from '@/shared/utils/lazyWithRecovery';
 import {
   Button,
   DialogBody,
@@ -25,7 +26,7 @@ import {
   Textarea,
   Tooltip,
 } from '@openbitfun/ui';
-import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '@/infrastructure/i18n';
 import { useCurrentWorkspace } from '@/infrastructure/contexts/WorkspaceContext';
 import {
@@ -53,7 +54,7 @@ import { ecosystemDiscoveryCache, rememberEcosystemCatalog } from './ecosystemDi
 import { useEcosystemCompatibilityStore } from './ecosystemCompatibilityStore';
 import './EcosystemCompatibilityScene.scss';
 
-const AcpAgentsConfig = lazy(
+const AcpAgentsConfig = lazyWithRecovery(
   () => import('@/infrastructure/config/components/AcpAgentsConfig'),
 );
 const PRODUCT_ICON_SOURCES: Record<EcosystemProductId, string> = {

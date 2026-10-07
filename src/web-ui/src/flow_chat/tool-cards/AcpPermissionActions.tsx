@@ -47,9 +47,9 @@ function optionIcon(kind: AcpPermissionOption['kind']): React.ReactNode {
     case 'allow_once':
       return <Icon name="check-line" size="xs" />;
     case 'allow_always':
-      return <ShieldCheck size={12} />;
+      return <Icon glyph={ShieldCheck} size="xs" />;
     case 'reject_always':
-      return <ShieldX size={12} />;
+      return <Icon glyph={ShieldX} size="xs" />;
     case 'reject_once':
     default:
       return <Icon name="xmark" size="xs" />;
