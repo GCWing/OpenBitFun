@@ -64,14 +64,29 @@ fn chunk_boundary_cases_match_string_api() {
 }
 
 #[test]
+fn repairs_truncated_llm_url_across_reader_chunks() {
+    let input = r##"{"content":"# Heading\nhttps:/"##;
+    let expected = r##"{"content":"# Heading\nhttps:/"}"##;
+    for chunk_size in [1, 2, 3, 5] {
+        let mut output = Vec::new();
+        jsonrepair_reader_to_writer(
+            ChunkedReader::new(input.as_bytes(), chunk_size),
+            &mut output,
+        )
+        .unwrap();
+        assert_eq!(output, expected.as_bytes(), "chunk size {chunk_size}");
+    }
+}
+
+#[test]
 fn preserves_repair_errors_without_partial_output() {
-    let mut input = Cursor::new(br#""\u00""#);
-    let mut output = Vec::new();
+    for input in [&br#""\u00""#[..], &b"[\x0c"[..], &br#""\udfff""#[..]] {
+        let mut output = Vec::new();
+        let err = jsonrepair_reader_to_writer(Cursor::new(input), &mut output).unwrap_err();
 
-    let err = jsonrepair_reader_to_writer(&mut input, &mut output).unwrap_err();
-
-    assert!(matches!(err, JsonRepairStreamError::Repair(_)));
-    assert!(output.is_empty());
+        assert!(matches!(err, JsonRepairStreamError::Repair(_)));
+        assert!(output.is_empty());
+    }
 }
 
 #[test]
@@ -129,7 +144,7 @@ struct FailingReader;
 
 impl Read for FailingReader {
     fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
-        Err(io::Error::other("source closed"))
+        Err(io::Error::new(io::ErrorKind::Other, "source closed"))
     }
 }
 
@@ -137,7 +152,7 @@ struct FailingWriter;
 
 impl Write for FailingWriter {
     fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
-        Err(io::Error::other("destination closed"))
+        Err(io::Error::new(io::ErrorKind::Other, "destination closed"))
     }
 
     fn flush(&mut self) -> io::Result<()> {

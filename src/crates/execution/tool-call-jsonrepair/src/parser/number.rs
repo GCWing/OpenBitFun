@@ -30,6 +30,10 @@ impl JsonRepairer {
         let mut append_trailing_zero = false;
         let mut has_leading_dot = false;
         let mut has_invalid_leading_zero = false;
+        // Exponent (`e`/`E`) is only valid after at least one integer or fraction
+        // digit. Without this guard, plus-prefixed forms like `+e` / `+e1` (after
+        // `parse_plus_number` strips `+`) would emit invalid JSON such as `e0`.
+        let mut has_digit = false;
 
         if self.peek() == Some('-') {
             self.pos += 1;
@@ -55,6 +59,7 @@ impl JsonRepairer {
                     return Ok(false);
                 }
 
+                has_digit = true;
                 while self.pos < len && chars::is_digit(self.chars[self.pos]) {
                     self.pos += 1;
                 }
@@ -75,6 +80,9 @@ impl JsonRepairer {
                     integer_digits += 1;
                     self.pos += 1;
                 }
+                if integer_digits > 0 {
+                    has_digit = true;
+                }
 
                 if self.pos < len && self.chars[self.pos] == '.' {
                     self.pos += 1;
@@ -84,6 +92,7 @@ impl JsonRepairer {
                         self.pos = start;
                         return Ok(false);
                     } else {
+                        has_digit = true;
                         while self.pos < len && chars::is_digit(self.chars[self.pos]) {
                             self.pos += 1;
                         }
@@ -91,7 +100,10 @@ impl JsonRepairer {
                 }
             }
 
-            if !append_trailing_zero && self.pos < len && matches!(self.chars[self.pos], 'e' | 'E')
+            if !append_trailing_zero
+                && has_digit
+                && self.pos < len
+                && matches!(self.chars[self.pos], 'e' | 'E')
             {
                 self.pos += 1;
                 if self.pos < len && matches!(self.chars[self.pos], '-' | '+') {

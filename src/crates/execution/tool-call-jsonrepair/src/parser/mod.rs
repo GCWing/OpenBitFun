@@ -284,39 +284,23 @@ impl JsonRepairer {
         true
     }
 
-    /// Remove last occurrence of `c` from output.
-    pub(super) fn strip_last_occurrence(&mut self, c: char) {
-        if let Some(idx) = self.output.rfind(c) {
-            self.output.remove(idx);
-        }
-    }
-
     /// Fast path for the common trailing-comma rollback case.
-    /// Removes a comma only when it's the last non-whitespace output char.
-    pub(super) fn strip_trailing_comma(&mut self) {
+    /// Never remove a separator before the current container's output.
+    pub(super) fn strip_trailing_comma(&mut self, min_index: usize) {
         let bytes = self.output.as_bytes();
-        if let Some(&last) = bytes.last() {
-            if last == b',' {
-                self.output.pop();
-                return;
-            }
-            if !matches!(last, b' ' | b'\n' | b'\r' | b'\t') {
-                self.strip_last_occurrence(',');
-                return;
-            }
-        }
-
         let mut idx = bytes.len();
-        while idx > 0 && matches!(bytes[idx - 1], b' ' | b'\n' | b'\r' | b'\t') {
+        while idx > min_index && matches!(bytes[idx - 1], b' ' | b'\n' | b'\r' | b'\t') {
             idx -= 1;
         }
 
-        if idx > 0 && bytes[idx - 1] == b',' {
+        if idx > min_index && bytes[idx - 1] == b',' {
             self.output.remove(idx - 1);
             return;
         }
 
-        self.strip_last_occurrence(',');
+        if let Some(relative_index) = self.output[min_index..].rfind(',') {
+            self.output.remove(min_index + relative_index);
+        }
     }
 
     /// Insert `text` before any trailing whitespace in the output buffer.

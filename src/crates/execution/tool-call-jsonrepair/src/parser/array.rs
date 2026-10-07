@@ -11,6 +11,7 @@ impl JsonRepairer {
 
         self.enter_container()?;
         self.output.push('[');
+        let frame_start = self.output.len();
         self.pos += 1;
         self.parse_whitespace_and_comments();
 
@@ -41,7 +42,7 @@ impl JsonRepairer {
             let processed_value = self.parse_value()?;
             if !processed_value {
                 // Trailing comma or truncated input.
-                self.strip_trailing_comma();
+                self.strip_trailing_comma(frame_start);
                 break;
             }
         }
