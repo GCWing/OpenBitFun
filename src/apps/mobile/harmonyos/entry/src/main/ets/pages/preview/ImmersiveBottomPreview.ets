@@ -275,7 +275,7 @@ export struct ImmersiveBottomPreview {
   aboutToAppear(): void {
     const scenarioId = AppStorage.get<string>('scenarioId') ?? '';
     this.floating = scenarioId.endsWith('-wide') && !scenarioId.endsWith('-wide-shell');
-    this.drawer = scenarioId.endsWith('-drawer') || scenarioId.startsWith('immersive-bottom-tools');
+    this.drawer = scenarioId.includes('-drawer') || scenarioId.startsWith('immersive-bottom-tools');
     this.settings = scenarioId.endsWith('-settings') || scenarioId.endsWith('-settings-dark');
     this.cover = scenarioId.endsWith('-cover');
     this.galleryVisible = scenarioId.endsWith('-miniapps');
