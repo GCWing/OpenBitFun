@@ -1,5 +1,11 @@
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
+import { MessageCopyScope } from '../actions/ConversationIntent';
+import { MarkdownParser } from '../../services/MarkdownParser';
+import {
+  AssistantMessageCopyMenuItem,
+  AssistantMessageCopyMenuPolicy
+} from '../policy/AssistantMessageCopyMenuPolicy';
 import {
   UserMessageMenuAction,
   UserMessageMenuItem,
@@ -8,7 +14,19 @@ import {
 import { UserMessageTruncationPolicy } from '../policy/UserMessageTruncationPolicy';
 import { ConversationUiMessage } from '../state/ConversationUiModels';
 import { MessageImageGallery } from './ChatMessageContent';
-import { ACCENT, INK, MUTED, CONTENT_ON_ACTION, STATUS_DANGER, SOFT, FILE_LINK } from './Theme';
+import {
+  ACCENT,
+  CARD,
+  INK,
+  LINE,
+  MUTED,
+  CONTENT_ON_ACTION,
+  SHADOW_SUBTLE,
+  SOFT,
+  STATUS_DANGER,
+  TRANSPARENT,
+  FILE_LINK
+} from './Theme';
 
 @ComponentV2
 export struct ChatTypingDots {
@@ -181,5 +199,114 @@ export struct ChatUserMessageBubble {
   private visibleText(): string {
     const text = this.item.text.trim();
     return text === '(空消息)' || text === '(empty message)' ? '' : text;
+  }
+}
+
+/**
+ * The assistant message's copy affordance: the SOFT-weakened capsule of the
+ * bottom action row, beside the retry pill's ACCENT one.
+ *
+ * It opens an anchored popover rather than a bottom sheet, because the frozen
+ * design keeps a lightweight action list at its trigger on compact and wide
+ * layouts alike. The popup is bound to the control it was opened from, so it
+ * points at that control, dismisses on an outside tap, and carries the same
+ * short transition as the conversation header's menu. A row thawed from the
+ * reusable pool closes its menu first: the pool hands a kept `@Local` back to a
+ * different message.
+ *
+ * The bubble passes the message's Markdown source as the transcript holds it.
+ * Only the plain entry renders it down, through the parser's existing
+ * Markdown-to-text pass; the other two copy the source itself.
+ */
+@ComponentV2
+export struct AssistantMessageCopyAction {
+  @Param source: string = '';
+  @Event onCopyScoped: (text: string, scope: MessageCopyScope) => void =
+    (_text: string, _scope: MessageCopyScope) => {};
+  @Local showMenu: boolean = false;
+
+  aboutToReuse(): void {
+    this.showMenu = false;
+  }
+
+  build() {
+    Text(RemoteI18n.t('common.copy'))
+      .fontSize(MobileDesignTypography.labelSmall.size)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(INK)
+      .height(28)
+      .padding({ left: 10, right: 10 })
+      .backgroundColor(SOFT)
+      .borderRadius(14)
+      .accessibilityText(RemoteI18n.t('common.copy'))
+      .onClick(() => {
+        this.showMenu = !this.showMenu;
+      })
+      .bindPopup(this.showMenu, {
+        builder: () => {
+          this.CopyMenu();
+        },
+        placement: Placement.BottomLeft,
+        popupColor: TRANSPARENT,
+        enableArrow: false,
+        autoCancel: true,
+        mask: false,
+        targetSpace: 8,
+        onStateChange: (event: PopupStateChangeParam) => {
+          this.showMenu = event.isVisible;
+        }
+      })
+  }
+
+  /**
+   * The conversation popover's established surface, with the frozen copy menu
+   * inside it: a section title, then one 48-high row per export scope.
+   *
+   * The design's per-entry glyphs are not reproduced. The approved artboard
+   * carries them as HMSymbol codes with no name recorded, so no established
+   * asset could be reused; drawing a different one would silently replace a
+   * frozen element. Device verification owns that gap.
+   */
+  @Builder
+  private CopyMenu() {
+    Column() {
+      Text(RemoteI18n.t('common.copy'))
+        .width('100%')
+        .height(28)
+        .padding({ left: 8, right: 8 })
+        .fontSize(MobileDesignTypography.bodySmall.size)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(MUTED)
+        .textAlign(TextAlign.Start)
+      ForEach(AssistantMessageCopyMenuPolicy.items(), (entry: AssistantMessageCopyMenuItem) => {
+        Text(RemoteI18n.t(entry.labelKey))
+          .width('100%')
+          .height(48)
+          .padding({ left: 8, right: 8 })
+          .fontSize(MobileDesignTypography.titleSmall.size)
+          .fontColor(INK)
+          .textAlign(TextAlign.Start)
+          .borderRadius(10)
+          .onClick(() => {
+            this.runMenuAction(entry);
+          })
+      }, (entry: AssistantMessageCopyMenuItem) => entry.action)
+    }
+    .width(292)
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .backgroundColor(CARD)
+    .border({ width: 0.5, color: LINE })
+    .borderRadius(16)
+    .shadow({ radius: 18, color: SHADOW_SUBTLE, offsetY: 7 })
+    .transition(TransitionEffect.opacity(0).animation({ duration: 150, curve: Curve.EaseOut }))
+  }
+
+  private runMenuAction(entry: AssistantMessageCopyMenuItem): void {
+    this.showMenu = false;
+    this.onCopyScoped(this.payloadFor(entry.scope), entry.scope);
+  }
+
+  private payloadFor(scope: MessageCopyScope): string {
+    return scope === MessageCopyScope.Plain ? MarkdownParser.formatInlineText(this.source) : this.source;
   }
 }

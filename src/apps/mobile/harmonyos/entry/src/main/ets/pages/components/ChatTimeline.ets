@@ -14,6 +14,7 @@ import {
   ObservableChatTimelineItem
 } from '../../model/ChatTimelineModels';
 import { ChatSurface } from '../state/ChatSurface';
+import { MessageCopyScope } from '../actions/ConversationIntent';
 import {
   CARD,
   INK,
@@ -57,6 +58,8 @@ struct ChatAssistantTimelineRow {
   @Event onAnswerQuestion: (toolId: string, answers: ConversationUiQuestionAnswer) => void =
     (_toolId: string, _answers: ConversationUiQuestionAnswer) => {};
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onCopyMessageScoped: (text: string, scope: MessageCopyScope) => void =
+    (_text: string, _scope: MessageCopyScope) => {};
   @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
@@ -99,6 +102,7 @@ struct ChatAssistantTimelineRow {
       onCancelTool: this.onCancelTool,
       onAnswerQuestion: this.onAnswerQuestion,
       onCopyMessage: this.onCopyMessage,
+      onCopyMessageScoped: this.onCopyMessageScoped,
       onOpenFullText: this.onOpenFullText,
       onRetryMessage: this.onRetryMessage,
       onOpenFilePreview: this.onOpenFilePreview,
@@ -165,6 +169,8 @@ export struct ChatTimeline {
   @Event onAnswerQuestion: (toolId: string, answers: ConversationUiQuestionAnswer) => void =
     (_toolId: string, _answers: ConversationUiQuestionAnswer) => {};
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onCopyMessageScoped: (text: string, scope: MessageCopyScope) => void =
+    (_text: string, _scope: MessageCopyScope) => {};
   @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
@@ -281,6 +287,9 @@ export struct ChatTimeline {
                     onCopyMessage: (text: string) => {
                       this.onCopyMessage(text);
                     },
+                    onCopyMessageScoped: (text: string, scope: MessageCopyScope) => {
+                      this.onCopyMessageScoped(text, scope);
+                    },
                     onOpenFullText: (text: string) => {
                       this.onOpenFullText(text);
                     },
@@ -329,6 +338,7 @@ export struct ChatTimeline {
                 onCancelTool: this.onCancelTool,
                 onAnswerQuestion: this.onAnswerQuestion,
                 onCopyMessage: this.onCopyMessage,
+                onCopyMessageScoped: this.onCopyMessageScoped,
                 onOpenFullText: this.onOpenFullText,
                 onRetryMessage: this.onRetryMessage,
                 onOpenFilePreview: this.onOpenFilePreview,

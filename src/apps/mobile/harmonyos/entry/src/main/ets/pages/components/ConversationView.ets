@@ -9,7 +9,7 @@ import { RemoteLogger } from '../../services/RemoteLogger';
 import { ChatComposerCapabilities } from '../state/ChatComposerCapabilities';
 import { ChatSurface } from '../state/ChatSurface';
 import { ConversationViewState } from '../state/ConversationViewState';
-import { ConversationIntent, ConversationIntents, ConversationIntentType } from '../actions/ConversationIntent';
+import { ConversationIntent, ConversationIntents, ConversationIntentType, MessageCopyScope } from '../actions/ConversationIntent';
 import { SettingsPlacement } from '../policy/SettingsPlacementPolicy';
 import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
 import { ChatTimeline } from './ChatTimeline';
@@ -402,8 +402,11 @@ export struct ConversationView {
       onCopyMessage: (text: string) => {
         this.onCopyMessage(text);
       },
+      onCopyMessageScoped: (text: string, scope: MessageCopyScope) => {
+        this.onCopyMessageScoped(text, scope);
+      },
       onOpenFullText: (text: string) => {
-        this.openFullText(text);
+        this.onOpenFullText(text);
       },
       onRetryMessage: (text: string) => {
         this.onRetryMessage(text);
@@ -671,6 +674,9 @@ export struct ConversationView {
     this.dispatchValue(ConversationIntentType.RenameSession, title);
   }
   private onCopyMessage(text: string): void { this.dispatchValue(ConversationIntentType.CopyMessage, text); }
+  private onCopyMessageScoped(text: string, scope: MessageCopyScope): void {
+    this.onIntent(ConversationIntents.copyMessage(text, scope));
+  }
   private onRetryMessage(text: string): void { this.dispatchValue(ConversationIntentType.RetryMessage, text); }
   private onOpenFullText(text: string): void {
     if (text.length === 0) {

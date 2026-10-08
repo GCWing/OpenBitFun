@@ -53,7 +53,7 @@ import { AsyncLifecycleGate } from '../../services/AsyncLifecycleGate';
 import { RemoteUiState } from '../../services/RemoteUiState';
 import { VoiceInputLifecycleController } from '../../services/VoiceInputLifecycleController';
 import { VoiceInputService } from '../../services/VoiceInputService';
-import { ConversationIntent } from '../actions/ConversationIntent';
+import { ConversationIntent, MessageCopyScope } from '../actions/ConversationIntent';
 import { AppRootHostPort } from '../host/AppRootHostAdapter';
 import { AppRootPresentationActions } from '../actions/AppRootPresentationActions';
 import {
@@ -779,7 +779,9 @@ export abstract class AppRootRuntimeComposition {
       rename: async (title: string): Promise<void> => {
         await this.conversationController.renameVisibleSession(title);
       },
-      copy: async (text: string): Promise<void> => { await this.conversationController.copyRemoteMessage(text); },
+      copy: async (text: string, scope: MessageCopyScope): Promise<void> => {
+        await this.conversationController.copyRemoteMessage(text, scope);
+      },
       retry: async (text: string): Promise<void> => { await this.conversationController.retryVisibleMessage(text); },
       selectModel: async (id: string): Promise<void> => { await this.conversationController.selectVisibleModel(id); },
       pickImages: async (): Promise<void> => { await this.pickImages(); },

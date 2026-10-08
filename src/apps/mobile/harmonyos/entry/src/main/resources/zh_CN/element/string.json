@@ -2257,6 +2257,18 @@
       "value": "复制全文"
     },
     {
+      "name": "chat_copyRich",
+      "value": "复制（富文本）"
+    },
+    {
+      "name": "chat_copyMarkdown",
+      "value": "复制 Markdown"
+    },
+    {
+      "name": "chat_copyPlain",
+      "value": "复制纯文本"
+    },
+    {
       "name": "status_waitingConnection",
       "value": "等待连接"
     },
