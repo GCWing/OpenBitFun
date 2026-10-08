@@ -156,7 +156,9 @@ export struct AppSidebar {
     // the session rows are content that scrolls under the navigation indicator.
     // The footer, its fade and the list's tail are what keep the strip clear,
     // each against the edge this panel actually has.
-    .padding({ left: 20, right: 20, top: 0 })
+    // Both the compact drawer and wide master pane live outside Navigation's
+    // safe-area handling. Reserve the live status-bar inset for their header.
+    .padding({ left: 20, right: 20, top: this.insets.top })
     .backgroundColor(SIDEBAR_BG)
   }
 

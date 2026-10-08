@@ -5,6 +5,7 @@ import { RemoteI18n } from '../../../i18n/RemoteI18n';
 import { REMOTE_CAPABILITY_HARNESS_PROFILES_V1, RemoteSession } from '../../../model/RemoteModels';
 import { RemoteLogger } from '../../../services/RemoteLogger';
 import { RemoteUiState } from '../../../services/RemoteUiState';
+import { WindowInsetsBinding } from '../../../services/WindowSystemBarService';
 import { RemotePageState } from '../../state/RemotePageState';
 import {
   AppRootPresentationActions,
@@ -65,15 +66,24 @@ export struct RemoteSurfaceHost {
   @Event onOpenSidebar: () => void = () => {};
   @Event onRestoreSidebar: () => void = () => {};
   @Event onCloseSettings: () => void = () => {};
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
 
   // The wide layout keeps the master pane inside a routed destination, so a
   // mount here while switching sessions means the navigation stack was torn
   // down for a change that is only page state — the sidebar rebuild this used
   // to pay for. See AppShellViewModel.replaceRouteWithoutAnimation.
   aboutToAppear(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
     RemoteLogger.info(
       `remote surface mounted mode=${this.mode} connection=${this.remotePageState.connectionState} sessions=${this.remotePageState.visibleSessions().length}`
     );
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
   }
 
   build() {
@@ -234,6 +244,7 @@ export struct RemoteSurfaceHost {
     }
     .width('100%')
     .height('100%')
+    .padding({ top: this.insets.top })
     .backgroundColor(PAGE_BG)
   }
 
@@ -276,7 +287,7 @@ export struct RemoteSurfaceHost {
       this.CompactEmptyState()
 
     }
-    .width('100%').height('100%').backgroundColor(PAGE_BG)
+    .width('100%').height('100%').padding({ top: this.insets.top }).backgroundColor(PAGE_BG)
   }
 
   @Builder

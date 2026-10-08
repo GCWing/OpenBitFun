@@ -1,4 +1,5 @@
 import { RemoteUiState } from '../../services/RemoteUiState';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import { REMOTE_CAPABILITY_HARNESS_PROFILES_V1 } from '../../model/RemoteModels';
 import {
   AppRootPresentationActions,
@@ -63,6 +64,18 @@ export struct WideConversationHost {
   @Event onRestoreMasterPane: () => void = () => {};
   @Event onToggleFilePreviewExpanded: () => void = () => {};
   @Event onOpenRemoteViewSettings: () => void = () => {};
+  @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
+
+  aboutToAppear(): void {
+    const context = this.getUIContext().getHostContext();
+    if (context) {
+      this.insets.bind(this.getUIContext(), context);
+    }
+  }
+
+  aboutToDisappear(): void {
+    this.insets.unbind();
+  }
 
   build() {
     if (this.showsRemoteConversation() &&
@@ -118,7 +131,7 @@ export struct WideConversationHost {
 
       if (this.wideMasterPaneCollapsed) {
         SidebarToggleButton({ restore: true, controlSize: 44, onToggle: this.onRestoreMasterPane })
-          .position({ x: 12, y: 12 }).zIndex(2)
+          .position({ x: 12, y: this.insets.top + 12 }).zIndex(2)
           .hitTestBehavior(HitTestMode.Default)
       }
     }

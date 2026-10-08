@@ -30,6 +30,8 @@ const sessionActionSurface = source('entry/src/main/ets/pages/components/Session
 const sessionDetailsView = source('entry/src/main/ets/pages/components/SessionDetailsView.ets');
 const conversationViewSettings = source('entry/src/main/ets/pages/components/ConversationViewSettings.ets');
 const welcomeHome = source('entry/src/main/ets/pages/components/WelcomeHome.ets');
+const remoteSurfaceHost = source('entry/src/main/ets/pages/components/remote/RemoteSurfaceHost.ets');
+const wideConversationHost = source('entry/src/main/ets/pages/components/WideConversationHost.ets');
 
 // Reads one @Builder out of a component, so an assertion can name the layer it
 // is about instead of counting matches in the whole file.
@@ -171,8 +173,8 @@ test('the sidebar list scrolls under the bar and its floating footer keeps the s
   // the footer keeps its distance from that edge itself, and the list ends in
   // a tail spacer so its last row rests above the navigation bar.
   const content = normalize(builderBody(appSidebar, 'SidebarContent'));
-  assert.match(content, /\.padding\(\{ left: 20, right: 20, top: 0 \}\)/,
-    'the panel root must not shrink its scrolling viewport');
+  assert.match(content, /\.padding\(\{ left: 20, right: 20, top: this\.insets\.top \}\)/,
+    'compact and wide sidebar headers must clear the live status bar without reserving the bottom strip');
   assert.match(content, /\.padding\(\{ bottom: this\.scrollTailPadding\(\) \}\)/,
     'the session list must end in a tail spacer');
   assert.match(content, /\.margin\(\{ bottom: this\.footerBottomPadding\(\) \}\)/,
@@ -183,6 +185,21 @@ test('the sidebar list scrolls under the bar and its floating footer keeps the s
   assert.match(normalize(appSidebar),
     /private footerBottomPadding\(\): number \{[\s\S]*?return this\.insets\.bottomPadding\(16\);/,
     'the footer must keep the design spacing wherever the strip is already clear');
+});
+
+test('compact and wide home headers and sidebar restore controls clear the status bar', () => {
+  for (const name of ['CompactHomeContent', 'FlowPlaceholder']) {
+    assert.match(normalize(builderBody(remoteSurfaceHost, name)),
+      /\.padding\(\{ top: this\.insets\.top \}\)/,
+      `${name} must reserve the live top inset`);
+  }
+  assert.match(normalize(wideConversationHost),
+    /\.position\(\{ x: 12, y: this\.insets\.top \+ 12 \}\)/,
+    'the collapsed wide master pane restore control must clear the status bar');
+  for (const component of [remoteSurfaceHost, wideConversationHost]) {
+    assert.match(component, /this\.insets\.bind\(this\.getUIContext\(\), context\)/);
+    assert.match(component, /this\.insets\.unbind\(\)/);
+  }
 });
 
 test('the workspace tools sheet scrolls under the bar and its fixed controls do not', () => {
