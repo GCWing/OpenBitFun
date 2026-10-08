@@ -109,7 +109,10 @@ export default class EntryAbility extends UIAbility {
   /**
    * The immersive shell is not verifiable from a screenshot alone: whether the
    * window covers the status bar and how tall the bottom strip is are device
-   * facts, so state them once per launch.
+   * facts, so state them once per launch. The camera cutout is stated in full —
+   * visibility and all four rectangles — because it is the one avoid area that
+   * moves to a different edge when the device rotates, and a device without a
+   * cutout reports zeroes here rather than staying silent about it.
    */
   private logWindowInsets(mainWindow: window.Window): void {
     try {
@@ -119,6 +122,11 @@ export default class EntryAbility extends UIAbility {
         'Window insets statusBar=%{public}s navigation=%{public}s windowRect=%{public}s',
         String(system.topRect.height), String(navigation.bottomRect.height),
         JSON.stringify(mainWindow.getWindowProperties().windowRect));
+      const cutout = mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_CUTOUT);
+      hilog.info(DOMAIN, TAG,
+        'Window cutout visible=%{public}s top=%{public}s bottom=%{public}s left=%{public}s right=%{public}s',
+        String(cutout.visible), String(cutout.topRect.height), String(cutout.bottomRect.height),
+        String(cutout.leftRect.width), String(cutout.rightRect.width));
     } catch (err) {
       hilog.error(DOMAIN, TAG, 'Failed to read window insets. Cause: %{public}s', JSON.stringify(err));
     }
