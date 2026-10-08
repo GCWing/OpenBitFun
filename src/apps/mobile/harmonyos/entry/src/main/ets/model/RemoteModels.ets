@@ -159,6 +159,11 @@ export interface RemoteCommand {
   reason?: string;
   mode?: RemotePermissionMode;
   answers?: Object;
+  // rollback_session_to_turn: the user turn being withdrawn and the storage
+  // index the caller last saw for it. Omitting the index only widens the race
+  // window; it never changes which turn the host addresses.
+  target_turn_id?: string;
+  expected_storage_turn_index?: number;
   image_contexts?: RemoteImageContext[];
   images?: ImageAttachment[];
   // provision_peer_device. `request_id` is minted by the device being
@@ -361,9 +366,41 @@ export interface SteerTurnResult {
   steeringId: string;
 }
 
+/**
+ * Answer to `rollback_session_to_turn`, sent as `resp: "session_rolled_back"`.
+ *
+ * `retired_turn_ids` includes the target turn itself. `composer_text` is the
+ * prompt the desktop would have put back into its composer, offered so the
+ * client can show the same edit-and-resend continuation; the host omits the key
+ * when it has no prompt to offer. The transcript itself is repaired by the next
+ * poll's authoritative snapshot, not by this answer.
+ */
+export interface SessionRolledBackResponse extends CommandStatusResponse {
+  session_id?: string;
+  retired_turn_ids?: string[];
+  restored_files?: string[];
+  composer_text?: string;
+  changed?: boolean;
+}
+
+/** The decoded rollback answer, with absent host fields kept as absence. */
+export interface SessionRolledBackResult {
+  sessionId: string;
+  retiredTurnIds: string[];
+  restoredFiles: string[];
+  composerText?: string;
+  changed: boolean;
+}
+
 export const REMOTE_CAPABILITY_DIALOG_STEER_V1: string = 'dialog_steer_v1';
 export const REMOTE_CAPABILITY_PLAN_BUILD_V1: string = 'plan_build_v1';
 export const REMOTE_CAPABILITY_HARNESS_PROFILES_V1: string = 'harness_profiles_v1';
+/**
+ * The host can retire a turn and every turn after it, then restore the files
+ * those turns touched (`rollback_session_to_turn`). A host without it answers
+ * the command with an error, so the client checks before offering the entry.
+ */
+export const REMOTE_CAPABILITY_SESSION_ROLLBACK_V1: string = 'session_rollback_v1';
 /** The host resolves `workspace_id` in commands and stamps it on its projections. */
 export const REMOTE_CAPABILITY_WORKSPACE_ID_REFERENCES_V1: string = 'workspace_id_references_v1';
 
