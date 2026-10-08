@@ -100,19 +100,45 @@ export class WindowSystemBarService {
    * single subscription (`InsetsBroadcast`) instead of opening one per component.
    */
   static async observeInsets(context: Context, onChange: WindowInsetListener): Promise<WindowInsetSubscription> {
+    // Swapped for the real release as soon as the window is in hand. Until then
+    // there is nothing on the window to take back, so the placeholder is what a
+    // failure before `on` registered ends up calling.
+    let detach: WindowInsetSubscription = (): void => {};
     try {
       const appWindow = await window.getLastWindow(context);
       const read: () => void = (): void => { onChange(WindowSystemBarService.insetsOf(appWindow)); };
       const onAvoidAreaChange: (data: window.AvoidAreaOptions) => void = (_data: window.AvoidAreaOptions): void => {
         read();
       };
-      const subscription: WindowInsetSubscription = (): void => {
+      // `listening` records whether `on` actually took. The release takes back
+      // exactly the listener this call put on and never one it did not: the
+      // failure path below runs after `on` may or may not have registered, and
+      // releasing blind would detach a callback that is not ours.
+      let listening = false;
+      detach = (): void => {
+        if (!listening) {
+          return;
+        }
+        listening = false;
         appWindow.off('avoidAreaChange', onAvoidAreaChange);
       };
       appWindow.on('avoidAreaChange', onAvoidAreaChange);
+      listening = true;
       read();
-      return subscription;
-    } catch (_err) {
+      return detach;
+    } catch (err) {
+      // A window that cannot hand over its avoid areas must not stop the page
+      // rendering, so this still falls back to zero insets — but it is not the
+      // silent no-op it used to be. The listener registered above is released
+      // first: leaving it on would keep the window alive past every unmount, and
+      // leaving the shared broadcast at zero would let every later avoid-area
+      // change throw inside the system's own callback with nobody watching, so
+      // the whole app would lay itself out against zero insets for the rest of
+      // the process with nothing in the log to say why.
+      detach();
+      RemoteLogger.error(
+        `window insets read failed, falling back to zero insets: ${err instanceof Error ? err.message : String(err)}`
+      );
       onChange({ top: 0, bottom: 0, left: 0, right: 0 });
       return (): void => {};
     }

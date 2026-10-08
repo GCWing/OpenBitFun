@@ -127,6 +127,36 @@ test('the window inset service is the only place the strip is measured', () => {
   assert.match(windowService, /appWindow\.off\('avoidAreaChange'/, 'the binding must release its listener');
 });
 
+test('a window read that fails releases its listener and says so', () => {
+  // The failure path used to hand back an empty release and zero every inset.
+  // Two things followed, and neither was visible from anywhere else: the
+  // listener registered one line above stayed on the window for the life of the
+  // process — `InsetsBroadcast.close()` had nothing to call, so an app with no
+  // mounted surface still held a window listener — and the shared broadcast was
+  // pinned to zeroes, so every later avoid-area change re-threw inside the
+  // system's own callback with nobody watching and the whole app laid itself out
+  // against zero insets. That is the silent whole-app regression this test
+  // exists to keep out: the failure has to be released and it has to be logged.
+  const observe = windowService.slice(
+    windowService.indexOf('static async observeInsets'),
+    windowService.indexOf('private static avoidEdges'));
+  assert.notEqual(observe.indexOf('} catch'), -1,
+    'observeInsets must keep a failure path: a window that cannot answer is not a reason to stop the page rendering');
+  const failure = normalize(observe.slice(observe.indexOf('} catch')));
+  assert.match(failure, /(?:appWindow\.off\('avoidAreaChange'|detach\(\);)/,
+    'the failure path must take the listener it registered back off the window, directly or through the shared ' +
+    'release: leaving it registered outlives every unmount, and zeroing the broadcast pins the whole app to zero ' +
+    'insets for the rest of the process');
+  assert.match(failure, /RemoteLogger\.(?:error|warn)\(/,
+    'the failure path must log: silently zeroing every inset is the whole-app regression this path used to cause');
+  // The release the failure path calls has to be the one that really detaches,
+  // and it has to be guarded by whether `on` registered at all: releasing blind
+  // would detach a callback that was never ours.
+  assert.match(normalize(windowService),
+    /detach = \(\): void => \{ if \(!listening\) \{ return; \} listening = false; appWindow\.off\('avoidAreaChange', onAvoidAreaChange\); \};/,
+    'the shared release must be the one place the window listener is taken off, and it must not fire when nothing was registered');
+});
+
 test('the whole app subscribes to the window once, not once per surface', () => {
   // One window, one avoid-area fact. Fourteen surfaces each opening their own
   // `getLastWindow` and their own listener meant fourteen subscriptions to the
