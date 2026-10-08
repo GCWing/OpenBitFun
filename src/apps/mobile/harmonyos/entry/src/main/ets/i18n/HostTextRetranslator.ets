@@ -23,8 +23,7 @@ interface EntryLanguage {
 //
 // The rawfile catalog keeps every language in one document: a trailing
 // 2-3 letter lowercase dot segment (for example "common.back.zh") tags the
-// entry language, and untagged entries belong to the locale language passed
-// to the constructor.
+// entry language, and untagged entries are the generator's English block.
 //
 // Per-language reverse indexes identify which catalog language a stored
 // message was rendered in; the matched key is then re-rendered in the output
@@ -141,7 +140,8 @@ export class HostTextRetranslator {
         return { key: name.slice(0, lastDot), language: suffix };
       }
     }
-    return { key: name, language: this.currentLanguage };
+    // Untagged entries are the generator's English block.
+    return { key: name, language: 'en' };
   }
 
   private outputLanguageFor(sourceLanguage: string): string {
