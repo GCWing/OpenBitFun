@@ -69,26 +69,14 @@ export function mergeAvoidEdges(areas: AvoidEdges[]): AvoidEdges {
 export type WindowInsetListener = (insets: WindowInsets) => void;
 export type WindowInsetSubscription = () => void;
 
-/** Platform window adapter for surfaces that need to draw behind system bars. */
+/**
+ * Platform window adapter for surfaces that need to draw behind system bars.
+ *
+ * The shell's immersive layout itself is the ability's decision — `EntryAbility`
+ * lays the window out full-screen — and it is what makes the insets below the
+ * app's own to reserve rather than the framework's.
+ */
 export class WindowSystemBarService {
-  /**
-   * Immersive layout for the whole shell, not one page: the transcript has to be
-   * able to reach the bottom edge of the screen, which only exists in the page
-   * area once the window stops reserving the navigation-bar strip.
-   *
-   * Immersive layout also moves the page's own origin to the top of the window,
-   * so every page that draws chrome against an edge reads the insets below
-   * instead of assuming the framework avoided the bars for it.
-   */
-  static async setLayoutFullScreen(context: Context, enabled: boolean): Promise<void> {
-    try {
-      const appWindow = await window.getLastWindow(context);
-      await appWindow.setWindowLayoutFullScreen(enabled);
-    } catch (_err) {
-      // Window layout is best effort and must not block page rendering.
-    }
-  }
-
   /**
    * Reads the insets once and re-reads them on every avoid-area change — folding,
    * rotation and the soft keyboard all move the avoid areas without recreating
@@ -361,17 +349,6 @@ export class WindowInsetsBinding {
 
   rightPadding(designSpacing: number): number {
     return Math.max(designSpacing, this.right);
-  }
-
-  /**
-   * The clearance both sides need for a control that has to stay centred — a
-   * glyph, a pill, an icon whose own box is what the user sees. Reserving the
-   * wider strip on both sides is what keeps it on the window's centre line; a
-   * full-width band wants `leftPadding`/`rightPadding` instead, so its own
-   * design spacing is only ever raised on the side the device actually claims.
-   */
-  sidePadding(designSpacing: number): number {
-    return Math.max(designSpacing, Math.max(this.left, this.right));
   }
 
   /**

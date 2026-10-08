@@ -213,12 +213,12 @@ test('the whole app subscribes to the window once, not once per surface', () => 
   assert.equal(tree.reduce((count, [, text]) => count + occurrences(text, "off('avoidAreaChange'"), 0), 1,
     'the window listener must be released from exactly one place, in the service that opened it: a release ' +
     'anywhere else means a component closed a listener it did not open');
-  // `KeyboardReleaseService` is the tree's third window read and a deliberate
+  // `KeyboardReleaseService` is the tree's other window read and a deliberate
   // one: it dismisses the soft keyboard, it is not an inset source, and it opens
-  // no avoid-area listener. The two counted here are the full-screen setup and
-  // the shared inset read, both in the service above.
-  assert.equal(occurrences(windowService, 'window.getLastWindow('), 2,
-    'only the full-screen setup and the shared inset read may ask the window service for insets');
+  // no avoid-area listener. The one counted here is the shared inset read above,
+  // which is the app's only inset source.
+  assert.equal(occurrences(windowService, 'window.getLastWindow('), 1,
+    'only the shared inset read may ask the window service for insets');
 
   // Reference counted: the first registration opens the shared subscription and
   // the last release closes it, so the app holds the window for exactly as long
@@ -244,7 +244,7 @@ test('the whole app subscribes to the window once, not once per surface', () => 
   assert.match(windowService, /bind\(uiContext: UIContext, context: Context\): void \{/,
     'the binding must keep the bind signature every surface already calls');
   assert.match(windowService, /unbind\(\): void \{/, 'the binding must keep its unbind');
-  for (const primitive of ['leftPadding', 'rightPadding', 'sidePadding', 'bottomPadding', 'tailSpacing']) {
+  for (const primitive of ['leftPadding', 'rightPadding', 'bottomPadding', 'tailSpacing']) {
     assert.match(windowService, new RegExp(`${primitive}\\(designSpacing: number\\): number \\{`),
       `the binding must keep ${primitive} as its own primitive`);
   }
@@ -286,10 +286,9 @@ test('the insets merge every avoid area that claims an edge, cutout included', (
 test('the binding exposes the side strips and the paddings that consume them', () => {
   // Left and right are 0 on a portrait phone, so `max(design, strip)` is exactly
   // the design value there and the change is invisible until a device rotates
-  // its camera onto that side. The three primitives are there because a cutout
-  // only ever lands on one side: a full-width band reserves the side the device
-  // claims and keeps its own gutter on the other, while a control that has to
-  // stay centred reserves the wider of the two on both.
+  // its camera onto that side. The two primitives are split by side because a
+  // cutout only ever lands on one of them: a band reserves the side the device
+  // claims and keeps its own gutter on the other.
   for (const edge of ['top', 'bottom', 'left', 'right']) {
     assert.match(windowService, new RegExp(`@Trace ${edge}: number = 0;`),
       `the binding must publish the ${edge} strip`);
@@ -302,9 +301,6 @@ test('the binding exposes the side strips and the paddings that consume them', (
   assert.match(normalize(windowService),
     /rightPadding\(designSpacing: number\): number \{ return Math\.max\(designSpacing, this\.right\); \}/,
     'a side strip must only ever raise its own side above the design spacing');
-  assert.match(normalize(windowService),
-    /sidePadding\(designSpacing: number\): number \{ return Math\.max\(designSpacing, Math\.max\(this\.left, this\.right\)\); \}/,
-    'a control that stays centred reserves the wider of the two sides');
 });
 
 test('the module declares the cutout as an avoid area', () => {
