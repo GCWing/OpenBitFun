@@ -70,6 +70,12 @@ function call(sourceText, name) {
   throw new Error(`unbalanced .${name}() call`);
 }
 
+// Counts a literal, so an assertion can be about how many times a call exists
+// rather than only about whether it exists at all.
+function occurrences(sourceText, needle) {
+  return sourceText.split(needle).length - 1;
+}
+
 test('the shell runs the window full-screen for every page', () => {
   // Not the welcome page's private trick any more: the transcript can only reach
   // the bottom edge of the screen if the window stops reserving the strip above
@@ -109,6 +115,54 @@ test('the window inset service is the only place the strip is measured', () => {
     'the binding must keep the design spacing wherever it already clears the strip');
   assert.match(windowService, /appWindow\.on\('avoidAreaChange'/, 'the binding must follow avoid-area changes');
   assert.match(windowService, /appWindow\.off\('avoidAreaChange'/, 'the binding must release its listener');
+});
+
+test('the whole app subscribes to the window once, not once per surface', () => {
+  // One window, one avoid-area fact. Fourteen surfaces each opening their own
+  // `getLastWindow` and their own listener meant fourteen subscriptions to the
+  // same event and a window during which two surfaces disagreed about the strip
+  // between them. There is one read and one listener left, and this is the
+  // assertion that keeps a component from quietly growing its own again: the
+  // per-component subscription is a regression, however convenient it looks.
+  assert.equal(occurrences(windowService, "appWindow.on('avoidAreaChange'"), 1,
+    'the window must be subscribed to exactly once, by the shared broadcast: a second listener means a component opened its own');
+  assert.equal(occurrences(windowService, "appWindow.off('avoidAreaChange'"), 1,
+    'the window must be released exactly once: a second release means a component closed a listener it did not open');
+  assert.equal(occurrences(windowService, 'window.getLastWindow('), 2,
+    'only the full-screen setup and the shared inset read may ask for the window');
+
+  // Reference counted: the first registration opens the shared subscription and
+  // the last release closes it, so the app holds the window for exactly as long
+  // as one surface is actually mounted on it.
+  const broadcast = normalize(windowService.slice(
+    windowService.indexOf('class InsetsBroadcast'),
+    windowService.indexOf('const sharedInsetsBroadcast')));
+  assert.match(broadcast, /subscribe\(context: Context, listener: WindowInsetListener\): WindowInsetSubscription/,
+    'a binding must register its callback with the broadcast rather than with the window');
+  assert.match(broadcast, /if \(this\.listeners\.length === 1\) \{ this\.open\(context\); \} listener\(this\.current\);/,
+    'the first registration must open the shared window subscription and hand the new subscriber the current value');
+  assert.match(broadcast, /if \(this\.listeners\.length === 0\) \{ this\.close\(\); \}/,
+    'the last release must close the shared window subscription');
+  assert.match(broadcast, /if \(generation !== this\.generation \|\| this\.listeners\.length === 0\) \{ subscription\(\); return; \}/,
+    'a window read that resolves after the last release, or after a later open, must be handed straight back');
+  assert.match(normalize(windowService), /this\.subscription = sharedInsetsBroadcast\.subscribe\(context, callback\);/,
+    'the binding must take its registration from the shared broadcast');
+
+  // The binding's public shape is what the 14+ surfaces are written against, so
+  // it stays: bind/unbind keep their signature, and every padding primitive the
+  // pages consume is still here. A page that needs the top strip mounts a
+  // binding — the one-shot read it used to have could not follow a rotation.
+  assert.match(windowService, /bind\(uiContext: UIContext, context: Context\): void \{/,
+    'the binding must keep the bind signature every surface already calls');
+  assert.match(windowService, /unbind\(\): void \{/, 'the binding must keep its unbind');
+  for (const primitive of ['leftPadding', 'rightPadding', 'sidePadding', 'bottomPadding', 'tailSpacing']) {
+    assert.match(windowService, new RegExp(`${primitive}\\(designSpacing: number\\): number \\{`),
+      `the binding must keep ${primitive} as its own primitive`);
+  }
+  assert.equal(windowService.includes('topSystemInsetPx'), false,
+    'the one-shot status-bar read must stay gone: it could not follow a rotation, and the binding it was folded into can');
+  assert.match(normalize(welcomeHome), /\.padding\(\{ top: this\.insets\.top \}\)/,
+    'the welcome page must reserve the top strip from the shared binding');
 });
 
 test('the insets merge every avoid area that claims an edge, cutout included', () => {

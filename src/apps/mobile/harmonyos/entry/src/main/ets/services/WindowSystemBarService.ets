@@ -89,22 +89,15 @@ export class WindowSystemBarService {
     }
   }
 
-  static async topSystemInsetPx(context: Context): Promise<number> {
-    try {
-      const appWindow = await window.getLastWindow(context);
-      return appWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM).topRect.height;
-    } catch (_err) {
-      return 0;
-    }
-  }
-
   /**
    * Reads the insets once and re-reads them on every avoid-area change — folding,
    * rotation and the soft keyboard all move the avoid areas without recreating
    * the page, and a stale number either clips the composer or leaves the
    * transcript reserving space nothing is drawn in.
    *
-   * The returned function unregisters the listener.
+   * The returned function unregisters the listener. This is the app's one window
+   * read: every surface reaches it through `WindowInsetsBinding`, which shares a
+   * single subscription (`InsetsBroadcast`) instead of opening one per component.
    */
   static async observeInsets(context: Context, onChange: WindowInsetListener): Promise<WindowInsetSubscription> {
     try {
@@ -154,6 +147,107 @@ export class WindowSystemBarService {
 }
 
 /**
+ * The window's one avoid-area subscription, shared by every binding.
+ *
+ * The four numbers are a fact about one window, not about one component. While
+ * each of the 14+ bindings opened its own `getLastWindow` and its own
+ * `avoidAreaChange` listener, the app held one subscription per mounted surface,
+ * and those surfaces disagreed with each other for as long as each one's
+ * asynchronous window call took to resolve: a page that mounted just after a
+ * rotation could lay itself out from the previous numbers while its neighbour
+ * already had the new ones.
+ *
+ * This is reference-counted instead. The first subscriber opens the one window
+ * listener, the last release closes it, and every binding in between is a
+ * callback on this object. A new subscriber is handed the current value as it
+ * registers, so a surface that mounts after the last change still starts from
+ * real numbers rather than from zeroes.
+ *
+ * The values it broadcasts are px, the unit the window reports. Each binding
+ * converts them with its own `UIContext`, because two windows on one device need
+ * not share a scale.
+ */
+class InsetsBroadcast {
+  private listeners: WindowInsetListener[] = [];
+  private current: WindowInsets = { top: 0, bottom: 0, left: 0, right: 0 };
+  private subscription?: WindowInsetSubscription;
+  private opened: boolean = false;
+  /**
+   * Bumped by every open and every close, so a window read that resolves late
+   * can tell whether it still belongs to the current subscription.
+   */
+  private generation: number = 0;
+
+  /**
+   * Registers one listener and returns its release.
+   *
+   * Registration is synchronous — the shared window call happens inside `open`
+   * and is not awaited here — so a component that unmounts immediately after
+   * binding has nothing in flight to leak: it releases a listener that is
+   * already in the list, and the shared subscription is torn down by that same
+   * release if it was the last one.
+   */
+  subscribe(context: Context, listener: WindowInsetListener): WindowInsetSubscription {
+    this.listeners.push(listener);
+    if (this.listeners.length === 1) {
+      this.open(context);
+    }
+    listener(this.current);
+    return (): void => {
+      this.release(listener);
+    };
+  }
+
+  private release(listener: WindowInsetListener): void {
+    const index = this.listeners.indexOf(listener);
+    if (index >= 0) {
+      this.listeners.splice(index, 1);
+    }
+    if (this.listeners.length === 0) {
+      this.close();
+    }
+  }
+
+  private open(context: Context): void {
+    if (this.opened) {
+      return;
+    }
+    this.opened = true;
+    this.generation += 1;
+    const generation = this.generation;
+    RemoteLogger.info('window insets subscription opened');
+    void WindowSystemBarService.observeInsets(context, (insets: WindowInsets): void => {
+      this.current = insets;
+      for (const listener of this.listeners) {
+        listener(insets);
+      }
+    }).then((subscription: WindowInsetSubscription): void => {
+      // The last subscriber can be gone, or a later open can already own the
+      // window, before this read resolves. Either way this subscription has no
+      // one left to serve, so it is handed straight back instead of being kept.
+      if (generation !== this.generation || this.listeners.length === 0) {
+        subscription();
+        return;
+      }
+      this.subscription = subscription;
+    });
+  }
+
+  private close(): void {
+    this.opened = false;
+    this.generation += 1;
+    if (this.subscription) {
+      this.subscription();
+      this.subscription = undefined;
+      RemoteLogger.info('window insets subscription closed');
+    }
+  }
+}
+
+/** The process-wide instance every `WindowInsetsBinding` registers with. */
+const sharedInsetsBroadcast: InsetsBroadcast = new InsetsBroadcast();
+
+/**
  * One component's live view of the window insets, in vp.
  *
  * The shell is immersive, so every surface that puts chrome against a screen
@@ -163,9 +257,10 @@ export class WindowSystemBarService {
  * The sides are part of the same model: they are the camera cutout, which a
  * rotated device moves onto one of them, so a full-width band reserves them
  * before its own design spacing rather than assuming the page starts clear.
- * They mount and unmount independently, so the binding owns the subscription
- * rather than leaving each page to juggle one, and it holds vp because padding,
- * margins and radii in this app are vp.
+ * They mount and unmount independently, so the binding holds a registration on
+ * the app's one shared subscription rather than leaving each page to juggle a
+ * window listener of its own, and it holds vp because padding, margins and radii
+ * in this app are vp.
  */
 @ObservedV2
 export class WindowInsetsBinding {
@@ -178,7 +273,11 @@ export class WindowInsetsBinding {
 
   bind(uiContext: UIContext, context: Context): void {
     this.disposed = false;
-    void WindowSystemBarService.observeInsets(context, (insets: WindowInsets): void => {
+    // Registering is synchronous and immediately delivers the current value, so
+    // this surface is laid out from real numbers as soon as it mounts and is
+    // releasable the moment it goes. The callback still checks `disposed`
+    // because the broadcast can deliver a change across an unmount.
+    const callback: WindowInsetListener = (insets: WindowInsets): void => {
       if (this.disposed) {
         return;
       }
@@ -187,15 +286,14 @@ export class WindowInsetsBinding {
       this.left = uiContext.px2vp(insets.left);
       this.right = uiContext.px2vp(insets.right);
       RemoteLogger.info(`window insets top=${this.top} bottom=${this.bottom} left=${this.left} right=${this.right}`);
-    }).then((subscription: WindowInsetSubscription): void => {
-      // The page can disappear before the window call resolves; releasing here
-      // keeps a listener from outliving the component that asked for it.
-      if (this.disposed) {
-        subscription();
-        return;
-      }
-      this.subscription = subscription;
-    });
+    };
+    // A binding that is bound twice replaces its own registration instead of
+    // leaving the previous one behind on the shared subscription.
+    const previous = this.subscription;
+    this.subscription = sharedInsetsBroadcast.subscribe(context, callback);
+    if (previous) {
+      previous();
+    }
   }
 
   unbind(): void {

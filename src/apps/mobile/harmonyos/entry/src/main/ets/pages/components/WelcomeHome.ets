@@ -1,7 +1,7 @@
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { MobileDesignTypography, MobileDesignGeometry as G } from '../../generated/MobileDesignTokens';
 import { MotionPreference } from '../../services/MotionPreference';
-import { WindowInsetsBinding, WindowSystemBarService } from '../../services/WindowSystemBarService';
+import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import { WelcomeBrandFlow } from './WelcomeBrandFlow';
 import { INK, PAGE_BG, WELCOME_PAGE_BG, MUTED, TRANSPARENT } from './Theme';
 
@@ -22,17 +22,20 @@ export struct WelcomeHome {
   @Local elapsed: number = 0;
   @Local pageHeight: number = 700;
   @Local pageWidth: number = 390;
-  @Local topInset: number = 0;
   // The dock paints into the strip (expandSafeArea carries its background to
   // the screen edge), so its buttons read the strip: the design's own clearance
   // where it is already taller than the indicator, the indicator's height
   // where it is not.
+  //
+  // The page's top strip comes from the same binding rather than a read of its
+  // own. It used to ask the service for the status bar height once, at mount,
+  // which left the header reserving the strip a landscape rotation had already
+  // moved the camera cutout onto, and left the value stale after the rotation.
   @Local insets: WindowInsetsBinding = new WindowInsetsBinding();
   private timer: number = -1;
   private started: number = 0;
 
   aboutToAppear(): void {
-    this.readTopInset();
     const context = this.getUIContext().getHostContext();
     if (context) {
       this.insets.bind(this.getUIContext(), context);
@@ -42,16 +45,6 @@ export struct WelcomeHome {
   aboutToDisappear(): void {
     this.stop();
     this.insets.unbind();
-  }
-
-  private readTopInset(): void {
-    const context = this.getUIContext().getHostContext();
-    if (!context) {
-      return;
-    }
-    void WindowSystemBarService.topSystemInsetPx(context).then((topInsetPx: number): void => {
-      this.topInset = this.getUIContext().px2vp(topInsetPx);
-    });
   }
 
   private stop(): void { if (this.timer >= 0) clearInterval(this.timer); this.timer = -1; }
@@ -124,11 +117,11 @@ export struct WelcomeHome {
               .padding({ bottom: 24 })
             this.Actions()
           }.width('100%').height(Math.max(0,
-            this.pageHeight - this.topInset - G.welcomeHeaderHeight))
+            this.pageHeight - this.insets.top - G.welcomeHeaderHeight))
         }
       }.width('100%')
     }.width('100%').height('100%').scrollBar(BarState.Off).backgroundColor(WELCOME_PAGE_BG)
-      .padding({ top: this.topInset })
+      .padding({ top: this.insets.top })
       .onSizeChange((_old: SizeOptions, size: SizeOptions) => {
         this.pageHeight = Number(size.height);
         this.pageWidth = Number(size.width);
