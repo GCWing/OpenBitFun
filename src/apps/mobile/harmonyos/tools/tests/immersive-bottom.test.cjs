@@ -195,7 +195,8 @@ test('the chat page bottom layer reaches the screen edge and its composer does n
   // ...it may paint into the strip even where the page area still stops above
   // it, and it is named so a layout dump can be read against the pixels.
   assert.equal(call(bottom, 'expandSafeArea'),
-    '.expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], [SafeAreaEdge.BOTTOM])');
+    '.expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], ' +
+      '[SafeAreaEdge.START, SafeAreaEdge.END, SafeAreaEdge.BOTTOM])');
   assert.equal(call(bottom, 'id'), ".id('conversation-bottom-fade')");
   // The transcript borrows the layer's measured height, which is what lets the
   // last message scroll above the fade instead of under the composer.
@@ -434,6 +435,42 @@ test('every background that owns a screen edge claims the cutout as well', () =>
     assert.equal(systemOnly, 0, `${name} must not leave a fill on the system area alone`);
   }
 });
+
+test('each fill names the edges its own box actually touches', () => {
+  // Naming the cutout type is only half of the claim: `expandSafeArea` takes
+  // effect per edge and only where the component's own boundary meets that
+  // edge's safe-area boundary. A cutout in landscape sits on the window's left
+  // or right edge, so a fill that named only TOP/BOTTOM claimed nothing at all
+  // on the one edge the rotated cutout lands on, however clearly it named the
+  // type. Each of the four fills now names exactly the edges its box owns:
+  //
+  //   drawer floor / cover scrim  the window itself, all four edges;
+  //   chat page's bottom fade     the window's full width and its bottom edge,
+  //                               while its top edge sits mid-pane — naming TOP
+  //                               would claim a strip it never touches;
+  //   home dock                   the bottom edge only, because the composition
+  //                               that gives the dock a fill of its own is the
+  //                               compact one, and a side cutout only exists in
+  //                               a window wide enough for `wide()`, which swaps
+  //                               that fill for a centred, capped column.
+  const shellBuild = appShell.slice(appShell.indexOf('build() {'),
+    appShell.indexOf('@Builder', appShell.indexOf('build() {')));
+  for (const [name, slice, expected] of [
+    ['the drawer floor', shellBuild,
+      '[SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM, SafeAreaEdge.START, SafeAreaEdge.END]'],
+    ['the account cover scrim', builderBody(appShell, 'CompactLoginCover'),
+      '[SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM, SafeAreaEdge.START, SafeAreaEdge.END]'],
+    ['the chat page bottom fade', builderBody(conversationView, 'BottomOverlay'),
+      '[SafeAreaEdge.START, SafeAreaEdge.END, SafeAreaEdge.BOTTOM]'],
+    ['the home dock', builderBody(welcomeHome, 'Actions'),
+      '[SafeAreaEdge.BOTTOM]']
+  ]) {
+    assert.equal(call(slice, 'expandSafeArea'),
+      `.expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], ${expected})`,
+      `${name} must claim exactly the edges its box owns`);
+  }
+});
+
 
 test('every surface whose side edge is the screen edge reserves the side strips', () => {
   // The side strips are the camera cutout, which a rotated device moves onto the

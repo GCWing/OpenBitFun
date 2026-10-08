@@ -232,8 +232,14 @@ export struct ConversationView {
     // the navigation bar this is what keeps the strip from being bare page
     // colour under the fade. The cutout is a separate avoid area, so the fade
     // claims it as well: a device that rotated its camera onto an edge the fade
-    // reaches would otherwise show the page colour beside the gradient.
-    .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], [SafeAreaEdge.BOTTOM])
+    // reaches would otherwise show the page colour beside the gradient. The
+    // layer is the window's full width, so a rotated cutout lands on its own
+    // `START`/`END` edge and has to be named here as well. `TOP` is deliberately
+    // absent: this layer is only as tall as the status line and the composer and
+    // sits at the bottom of the pane, so its top edge is nowhere near the window's
+    // top avoid area and naming it would claim a strip the fade never touches.
+    .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT],
+      [SafeAreaEdge.START, SafeAreaEdge.END, SafeAreaEdge.BOTTOM])
     // Named so a layout dump can be read against the pixels: the fade's own box
     // is what says where the chat page's bottom edge sits and how far the
     // transcript can scroll, and neither is visible in the composer's bounds.

@@ -169,6 +169,16 @@ export struct WelcomeHome {
       .backgroundColor(this.wide() ? TRANSPARENT : $r('app.color.welcome_dock'))
       // The dock's fill reaches the bottom edge of the screen. The cutout is a
       // separate avoid area from the system bars, so it is claimed here too.
+      //
+      // Only the bottom edge is named, and deliberately so. The cutout reaches a
+      // side edge only while the window is wide — a landscape phone is ~790vp and
+      // a landscape foldable is wider still — and at 600vp this page already
+      // swaps the dock for its `wide()` composition, where the dock is a centred
+      // column capped at 400vp with no fill of its own and the hero's own
+      // background carries the page. So the compact composition this fill belongs
+      // to is exactly the composition in which the side strips are 0, and a
+      // `START`/`END` claim here could never take effect: it would name edges
+      // whose safe-area boundary this column does not sit on.
       .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], [SafeAreaEdge.BOTTOM])
       .borderRadius({ topLeft: G.welcomeDockRadius, topRight: G.welcomeDockRadius })
   }
