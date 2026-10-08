@@ -80,19 +80,24 @@ test('the shell runs the window full-screen for every page', () => {
     'the welcome page must not switch the window layout any more');
 });
 
-test('both system bars are transparent so the page owns their strips', () => {
+test('neither system bar sets a background so the page owns their strips', () => {
   // The window runs full-screen, so the status bar's strip is the page's own
   // top edge: the drawer's fill and the chat page's blurred header band are what
-  // should show there. An opaque bar painted the page colour over both — it
+  // should show there. The strips are transparent by platform default and carry
+  // the page's own background through, so the ability must not set a background
+  // colour on them at all. An opaque bar painted the page colour over both — it
   // clipped the sidebar's title — and it also sat over the pull-down
   // notification centre's frosted background as a white strip. The content
   // colour is what keeps the clock and the icons legible either way.
-  assert.match(entryAbility, /navigationBarColor: MobileDesignColors\.transparent\.light/,
-    'the navigation bar must be transparent so the page bottom shows through');
-  assert.match(entryAbility, /statusBarColor: MobileDesignColors\.transparent\.light/,
-    'the status bar must be transparent so the page top shows through');
-  assert.match(entryAbility, /statusBarContentColor: content/,
+  const bars = call(normalize(entryAbility), 'setWindowSystemBarProperties');
+  assert.equal(bars.includes('statusBarColor:'), false,
+    'the status bar must keep the platform default background instead of setting one');
+  assert.equal(bars.includes('navigationBarColor:'), false,
+    'the navigation bar must keep the platform default background instead of setting one');
+  assert.match(bars, /statusBarContentColor: content/,
     'the status bar icons must keep following the colour mode');
+  assert.match(bars, /navigationBarContentColor: content/,
+    'the navigation bar icons must keep following the colour mode');
 });
 
 test('the window inset service is the only place the strip is measured', () => {

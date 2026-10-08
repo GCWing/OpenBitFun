@@ -132,16 +132,14 @@ export default class EntryAbility extends UIAbility {
     const content = dark ? MobileDesignColors.ink.dark : MobileDesignColors.ink.light;
     try {
       this.mainWindow.setWindowSystemBarProperties({
-        // Both bars are transparent, because the window is laid out full-screen
-        // and the strips they occupy are the page's own edges: the drawer's fill
-        // and the chat page's blurred header band are what should show there.
-        // An opaque status bar painted the page colour over both, which clipped
-        // the sidebar's title, and it also sat over the pull-down notification
-        // centre's frosted background as a white strip instead of blending into
-        // it. `statusBarContentColor` is what keeps the clock and the icons
-        // legible against whatever the page puts behind them.
-        statusBarColor: MobileDesignColors.transparent.light,
-        navigationBarColor: MobileDesignColors.transparent.light,
+        // The window is laid out full-screen above (`setWindowLayoutFullScreen(true)`),
+        // so it already runs in the immersive layout, and the status bar and the
+        // navigation area are transparent by platform default: both strips carry
+        // the page's own background through. The page therefore owns what shows
+        // there — the drawer's fill and the chat page's blurred header band — and
+        // any background colour set here would repaint the page's edge instead.
+        // The content colours are the only thing left to state: they keep the
+        // clock and the icons legible against whatever the page puts behind them.
         statusBarContentColor: content,
         navigationBarContentColor: content
       });
