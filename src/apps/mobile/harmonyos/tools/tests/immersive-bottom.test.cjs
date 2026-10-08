@@ -86,6 +86,37 @@ function occurrences(sourceText, needle) {
   return sourceText.split(needle).length - 1;
 }
 
+// Every `.ets` source in the entry module's `ets` tree. Some of these contracts
+// are about the whole app and not about one file — "one window listener" is the
+// clearest of them — and a component that breaks one lives anywhere in the tree.
+// `generated/` is left out: it is emitted from the design tokens and carries no
+// window code, so a match there would be a generator bug rather than this
+// contract moving.
+function etsSources(root) {
+  const files = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      if (entry.name === 'generated') {
+        continue;
+      }
+      files.push(...etsSources(path.join(root, entry.name)));
+    } else if (entry.name.endsWith('.ets')) {
+      files.push(path.join(root, entry.name));
+    }
+  }
+  return files;
+}
+
+// The whole tree as `[relativePath, text]` pairs, with `/` separators so an
+// expectation reads the same on every host.
+function etsTree(relativeRoot) {
+  const root = path.join(__dirname, '../..', relativeRoot);
+  return etsSources(root).map((file) => [
+    path.relative(root, file).split(path.sep).join('/'),
+    fs.readFileSync(file, 'utf8')
+  ]);
+}
+
 test('the shell runs the window full-screen for every page', () => {
   // Not the welcome page's private trick any more: the transcript can only reach
   // the bottom edge of the screen if the window stops reserving the strip above
@@ -164,12 +195,30 @@ test('the whole app subscribes to the window once, not once per surface', () => 
   // between them. There is one read and one listener left, and this is the
   // assertion that keeps a component from quietly growing its own again: the
   // per-component subscription is a regression, however convenient it looks.
-  assert.equal(occurrences(windowService, "appWindow.on('avoidAreaChange'"), 1,
-    'the window must be subscribed to exactly once, by the shared broadcast: a second listener means a component opened its own');
-  assert.equal(occurrences(windowService, "appWindow.off('avoidAreaChange'"), 1,
-    'the window must be released exactly once: a second release means a component closed a listener it did not open');
+  //
+  // Counted over the whole `ets` tree, not over the service alone. Counting one
+  // file only proved the service did not grow a second listener; a component
+  // living in any other file could open one and nothing here would notice, which
+  // is exactly the shape this contract exists to forbid.
+  const tree = etsTree('entry/src/main/ets');
+  const subscribingFiles = tree
+    .filter(([, text]) => text.includes("on('avoidAreaChange'"))
+    .map(([name]) => name);
+  assert.deepEqual(subscribingFiles, ['services/WindowSystemBarService.ets'],
+    'the window must be subscribed to from the shared service and nowhere else: any other file registering ' +
+    '`avoidAreaChange` is a component holding its own window listener, which the app-wide release cannot reach ' +
+    'and which disagrees with the shared numbers between reads');
+  assert.equal(tree.reduce((count, [, text]) => count + occurrences(text, "on('avoidAreaChange'"), 0), 1,
+    'the window must be subscribed to exactly once, by the shared broadcast: a second listener means a surface opened its own');
+  assert.equal(tree.reduce((count, [, text]) => count + occurrences(text, "off('avoidAreaChange'"), 0), 1,
+    'the window listener must be released from exactly one place, in the service that opened it: a release ' +
+    'anywhere else means a component closed a listener it did not open');
+  // `KeyboardReleaseService` is the tree's third window read and a deliberate
+  // one: it dismisses the soft keyboard, it is not an inset source, and it opens
+  // no avoid-area listener. The two counted here are the full-screen setup and
+  // the shared inset read, both in the service above.
   assert.equal(occurrences(windowService, 'window.getLastWindow('), 2,
-    'only the full-screen setup and the shared inset read may ask for the window');
+    'only the full-screen setup and the shared inset read may ask the window service for insets');
 
   // Reference counted: the first registration opens the shared subscription and
   // the last release closes it, so the app holds the window for exactly as long
@@ -704,4 +753,31 @@ test('the side gesture area is deliberately not tracked, and says so', () => {
   assert.equal(insetsOf.includes('TYPE_SYSTEM_GESTURE'), false,
     'reading the gesture area is a new decision: it moves where every full-width band starts, so it must not ' +
     'be merged in as a drive-by, and the note above the merge has to be rewritten with it');
+});
+
+test('the binding and the broadcast keep the lifecycle branches their state depends on', () => {
+  // Four single lines carry the whole "a surface only reads insets while it is
+  // mounted, and the app only holds the window while a surface is" rule, and not
+  // one of them is load-bearing for any other assertion in this file. Each
+  // deletion breaks a different real path, so they are pinned by name.
+  // The broadcast is declared above the binding in the file, so each is read
+  // from its own declaration to the next one that follows it.
+  const broadcast = normalize(windowService.slice(
+    windowService.indexOf('class InsetsBroadcast'),
+    windowService.indexOf('export class WindowInsetsBinding')));
+  const binding = normalize(windowService.slice(windowService.indexOf('export class WindowInsetsBinding')));
+  assert.match(binding, /unbind\(\): void \{ this\.disposed = true;/,
+    'unbind must mark the binding disposed: without it the shared broadcast keeps writing later changes into a ' +
+    'surface that is already gone and the dead surface relayouts on every avoid-area change');
+  assert.match(binding,
+    /const callback: WindowInsetListener = \(insets: WindowInsets\): void => \{ if \(this\.disposed\) \{ return; \}/,
+    'the callback must keep its disposed guard: the broadcast delivers a change that can land across an unmount, ' +
+    'and without the guard a surface that is no longer mounted is still written to');
+  assert.match(binding,
+    /const previous = this\.subscription; this\.subscription = sharedInsetsBroadcast\.subscribe\(context, callback\); if \(previous\) \{ previous\(\); \}/,
+    'bind must release its previous registration: binding twice would leave the first callback on the shared ' +
+    'subscription, so the surface is updated twice and the broadcast counts a subscriber that no longer exists');
+  assert.match(broadcast, /private close\(\): void \{ this\.opened = false;/,
+    'close must clear opened: left true, the broadcast believes it is still open, so after the last surface ' +
+    'closes and a new one opens the window listener is never rebuilt and the insets never update again');
 });
