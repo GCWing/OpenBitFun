@@ -108,6 +108,7 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
   const {
     setActiveWorkspace,
     closeWorkspaceById,
+    assistantWorkspaces,
     deleteAssistantWorkspace,
     primaryAssistantWorkspaceId,
     resetAssistantWorkspace,
@@ -956,8 +957,18 @@ const WorkspaceItem: React.FC<WorkspaceItemProps> = ({
                 >
                   {t('nav.sessions.manage')}
                 </MenuItem>
+                <MenuItem
+                  leading={<Icon glyph={FolderOpen} size="sm" />}
+                  onClick={() => { void handleCloseWorkspace(); }}
+                  disabled={assistantWorkspaces === null}
+                  title={assistantWorkspaces === null ? t('nav.workspaces.closeAssistantUnsupported') : undefined}
+                  data-testid="nav-workspace-menu-close-assistant"
+                >
+                  {t('nav.workspaces.actions.closeAssistant')}
+                </MenuItem>
                 {(isDefaultAssistantWorkspace || isDeletableAssistantWorkspace) ? (
                   <>
+                    <MenuSeparator />
                     {isDefaultAssistantWorkspace ? (
                       <MenuItem
                         leading={<Icon glyph={RotateCcw} size="sm" />}

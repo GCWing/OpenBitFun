@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "f965bcc92d234b79484b5ec6a2fbd817c40e4c78119dd41b804fbbce3876fa5a",
+  "digest": "e05dbc222e1267523832f82d6392701ab011c9d8d5ad1582dbe407904dc80d3d",
   "ownerDigest": "2269c2432e5db44706b2bce44df3c60672141a47c36141aeb1257ea7fd2507f8",
   "searchAcceptance": [
     {
@@ -138,11 +138,11 @@
     "features": 22,
     "settings": 21,
     "userFacing": 43,
-    "documentedItems": 324,
+    "documentedItems": 325,
     "controlCoverage": {
       "direct": 49,
       "delegated": 62,
-      "interactive": 213,
+      "interactive": 214,
       "unsupported": 0
     }
   },
@@ -1418,6 +1418,7 @@
       "capabilityId": "feature.personal-assistants",
       "itemIds": [
         "assistant-gallery",
+        "assistant-open-close",
         "primary-delete-reset",
         "identity-avatar",
         "persona-documents",
@@ -1508,6 +1509,52 @@
         "additionalProperties": true
       },
       "openReason": "unstructuredInteraction",
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "profile"
+      }
+    },
+    {
+      "id": "feature.personal-assistants:open:assistant-open-close",
+      "capabilityId": "feature.personal-assistants",
+      "itemIds": [
+        "assistant-open-close"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "visualSelection",
       "presentationTarget": {
         "kind": "scene",
         "sceneId": "profile"
@@ -19970,6 +20017,17 @@
           }
         },
         {
+          "id": "assistant-open-close",
+          "titleZh": "关闭侧栏中的助理并取消正在运行的会话，保留配置和历史，之后从助理空间重新打开",
+          "titleEn": "Close sidebar assistants and cancel running sessions, preserve configuration and history, and reopen them from the assistant gallery",
+          "control": {
+            "kind": "open",
+            "reasonCode": "visualSelection",
+            "reasonZh": "关闭操作依赖用户选择的助理；助理空间保留完整目录，并提供重新打开入口。",
+            "reasonEn": "Closing depends on the assistant selected by the user; the gallery retains the complete catalog and provides a reopen action."
+          }
+        },
+        {
           "id": "primary-delete-reset",
           "titleZh": "设为主助理、删除非主助理，或将助理工作区重置为默认状态",
           "titleEn": "Set the primary assistant, delete non-primary assistants, or reset an assistant workspace to defaults",
@@ -20127,6 +20185,8 @@
         "Configure default Skills, built-in tools, and MCP tools",
         "浏览已有助理、创建新助理并查看每个助理的身份与能力概览",
         "Browse existing assistants, create a new one, and review each assistant's identity and capability summary",
+        "关闭侧栏中的助理并取消正在运行的会话，保留配置和历史，之后从助理空间重新打开",
+        "Close sidebar assistants and cancel running sessions, preserve configuration and history, and reopen them from the assistant gallery",
         "设为主助理、删除非主助理，或将助理工作区重置为默认状态",
         "Set the primary assistant, delete non-primary assistants, or reset an assistant workspace to defaults",
         "编辑助理名称、角色类型和气质，并选择官方头像、Emoji 或自定义头像字符",

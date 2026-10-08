@@ -272,6 +272,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("get_announcement_tips",                                      Agnostic,    ControllerLocal,  REFUSED),
     op("get_app_state",                                              Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_app_version",                                            Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
+    op("get_assistant_workspaces",                                   Agnostic,    Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_available_modes",                                        Unaudited,   Proxied,          HANDLED),
     op("get_available_tools",                                        Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("get_baseline_snapshot_diff",                                 Unaudited,   Proxied,          CLI_NOT_IMPLEMENTED),

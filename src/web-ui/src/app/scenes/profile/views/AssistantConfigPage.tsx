@@ -94,7 +94,7 @@ const AssistantConfigPage: React.FC = () => {
   const { t } = useTranslation('scenes/profile');
   const { openGallery, activeWorkspaceId } = useNurseryStore();
   const selectedAssistantWorkspaceId = useMyAgentStore((s) => s.selectedAssistantWorkspaceId);
-  const { assistantWorkspacesList, currentWorkspace } = useWorkspaceContext();
+  const { allAssistantWorkspacesList: assistantWorkspacesList, currentWorkspace } = useWorkspaceContext();
 
   const effectiveWorkspaceId = useMemo(() => {
     const inList = (id: string | null | undefined) =>

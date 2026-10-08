@@ -82,6 +82,8 @@ export interface WorkspaceStartupStateSnapshot {
   currentWorkspace: WorkspaceInfo | null;
   recentWorkspaces: WorkspaceInfo[];
   openedWorkspaces: WorkspaceInfo[];
+  /** Present only on hosts that support reopening closed assistants. */
+  assistantWorkspaces?: WorkspaceInfo[];
   primaryAssistantWorkspaceId?: string | null;
   legacyRemoteWorkspace?: RemoteWorkspaceSnapshot | null;
 }
@@ -149,6 +151,7 @@ export class GlobalAPI {
       scope.assertCurrent('upgrade workspace catalog');
       const records = upgradeLegacyWorktreeReferences([
         ...snapshot.openedWorkspaces, ...snapshot.recentWorkspaces,
+        ...(snapshot.assistantWorkspaces ?? []),
         ...(snapshot.currentWorkspace ? [snapshot.currentWorkspace] : []),
       ]);
       const byId = new Map(records.map(record => [record.id, record]));
@@ -158,6 +161,7 @@ export class GlobalAPI {
       return {
         ...snapshot,
         openedWorkspaces: snapshot.openedWorkspaces.map(record => byId.get(record.id)!),
+        assistantWorkspaces: snapshot.assistantWorkspaces?.map(record => byId.get(record.id)!),
         recentWorkspaces: snapshot.recentWorkspaces.map(record => byId.get(record.id)!),
         currentWorkspace: snapshot.currentWorkspace ? byId.get(snapshot.currentWorkspace.id)! : null,
       };
@@ -374,6 +378,16 @@ export class GlobalAPI {
       return upgradeLegacyWorktreeReferences(await api.invoke<WorkspaceInfo[]>('get_opened_workspaces', { request: {} }));
     } catch (error) {
       throw createTauriCommandError('get_opened_workspaces', error);
+    }
+  }
+
+  async getAssistantWorkspaces(): Promise<WorkspaceInfo[]> {
+    try {
+      return upgradeLegacyWorktreeReferences(await api.invoke<WorkspaceInfo[]>(
+        'get_assistant_workspaces', { request: {} },
+      ));
+    } catch (error) {
+      throw createTauriCommandError('get_assistant_workspaces', error);
     }
   }
 

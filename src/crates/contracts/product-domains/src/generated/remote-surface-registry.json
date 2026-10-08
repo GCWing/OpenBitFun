@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "digest": "fnv1a64:dcb2b9d52e3f978f",
+  "digest": "fnv1a64:7a6e4c114b970186",
   "retiredCommandPrefixes": [
     {
       "prefix": "lsp_",
@@ -2277,6 +2277,18 @@
     },
     {
       "id": "get_app_version",
+      "surface": "tauri_command",
+      "remoteWorkspace": "WorkspaceAgnostic",
+      "peer": {
+        "kind": "proxied"
+      },
+      "cliPeer": {
+        "kind": "unsupported",
+        "reason": "the CLI peer host has no handler for this command"
+      }
+    },
+    {
+      "id": "get_assistant_workspaces",
       "surface": "tauri_command",
       "remoteWorkspace": "WorkspaceAgnostic",
       "peer": {

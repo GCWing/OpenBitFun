@@ -117,3 +117,6 @@ cargo test -p openbitfun-core --no-default-features --features <minimal-features
 feature-free facade 改动使用第一种，单一 feature 边界改动使用第二种，行为改动使用第三种。
 只有 Cargo feature、依赖方向或 test-target 布局变化时才运行 `pnpm run check:core-boundaries`。
 workspace check 与产品全量测试由 CI 兜底，不是 Core 默认预检。仅改文档时运行 `git diff --check`。
+
+助理发现、打开状态持久化和按工作区 ID 重新打开的聚焦验证：
+`cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib service::workspace::service::tests::assistant_`。

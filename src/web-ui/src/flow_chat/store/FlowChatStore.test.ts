@@ -298,6 +298,62 @@ function resetStartupTraceEventsForTest(): void {
   trace.phaseRecords.length = 0;
 }
 
+describe('FlowChatStore workspace-close cancellation', () => {
+  let originalWorkspaces: Map<string, any>;
+  beforeEach(() => {
+    originalWorkspaces = new Map(workspaceFixtures);
+    resetStore();
+    apiMocks.cancelSession.mockReset();
+    vi.stubGlobal('window', { dispatchEvent: vi.fn() });
+    vi.stubGlobal('CustomEvent', class {
+      constructor(public type: string, public init?: { detail?: unknown }) {}
+    });
+  });
+  afterEach(() => {
+    resetStore();
+    workspaceFixtures.clear();
+    originalWorkspaces.forEach((workspace, id) => workspaceFixtures.set(id, workspace));
+    vi.unstubAllGlobals();
+  });
+
+  function runningSession() {
+    return createSession({
+      workspacePath: '/assistant',
+      isTransient: true,
+      dialogTurns: [{
+        id: 'running-turn', sessionId: 'session-1', startTime: 1, status: 'processing',
+        userMessage: { id: 'user-1', content: 'Work', timestamp: 1 }, modelRounds: [],
+      }],
+    });
+  }
+
+  it('cancels running assistant sessions while retaining their history', async () => {
+    const session = runningSession();
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: session.sessionId }));
+    apiMocks.cancelSession.mockResolvedValueOnce({ cancelled: true, dialogTurnId: 'running-turn' });
+    await expect(flowChatStore.cancelRunningSessionsForWorkspace({
+      id: session.workspaceId!, rootPath: '/assistant',
+    })).resolves.toEqual([session.sessionId]);
+    expect(apiMocks.cancelSession).toHaveBeenCalledWith(session.sessionId);
+    expect(flowChatStore.getState().sessions.get(session.sessionId)?.dialogTurns[0].status).toBe('cancelled');
+  });
+
+  it('does not cancel the newly selected peer projection when an old host replies', async () => {
+    const session = runningSession();
+    flowChatStore.setState(() => ({ sessions: new Map([[session.sessionId, session]]), activeSessionId: session.sessionId }));
+    const reply = createDeferred<{ cancelled: boolean; dialogTurnId: string | null }>();
+    apiMocks.cancelSession.mockReturnValueOnce(reply.promise);
+    const cancelling = flowChatStore.cancelRunningSessionsForWorkspace({ id: session.workspaceId!, rootPath: '/assistant' });
+    const rejection = expect(cancelling).rejects.toSatisfy(isSurfaceChangedError);
+    activateSurface('peer-cancel-test');
+    const peerSession = runningSession();
+    flowChatStore.setState(() => ({ sessions: new Map([[peerSession.sessionId, peerSession]]), activeSessionId: peerSession.sessionId }));
+    reply.resolve({ cancelled: true, dialogTurnId: 'running-turn' });
+    await rejection;
+    expect(flowChatStore.getState().sessions.get(peerSession.sessionId)?.dialogTurns[0].status).toBe('processing');
+  });
+});
+
 describe('FlowChatStore lazy worktree preference', () => {
   afterEach(() => {
     resetStore();

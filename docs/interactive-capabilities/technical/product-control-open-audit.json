@@ -1,13 +1,13 @@
 {
   "schemaVersion": 1,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "f965bcc92d234b79484b5ec6a2fbd817c40e4c78119dd41b804fbbce3876fa5a",
-  "count": 213,
+  "catalogDigest": "e05dbc222e1267523832f82d6392701ab011c9d8d5ad1582dbe407904dc80d3d",
+  "count": 214,
   "reasonCounts": {
     "externalAuth": 4,
     "secretEntry": 5,
     "unstructuredInteraction": 185,
-    "visualSelection": 19
+    "visualSelection": 20
   },
   "entries": [
     {
@@ -353,7 +353,27 @@
       },
       "evidence": [
         "command:create_assistant_workspace",
+        "command:get_assistant_workspaces",
         "source:src/web-ui/src/app/scenes/profile/views/NurseryGallery.tsx#NurseryGallery"
+      ]
+    },
+    {
+      "capabilityId": "feature.personal-assistants",
+      "itemId": "assistant-open-close",
+      "titleZh": "关闭侧栏中的助理并取消正在运行的会话，保留配置和历史，之后从助理空间重新打开",
+      "titleEn": "Close sidebar assistants and cancel running sessions, preserve configuration and history, and reopen them from the assistant gallery",
+      "reasonCode": "visualSelection",
+      "reasonZh": "关闭操作依赖用户选择的助理；助理空间保留完整目录，并提供重新打开入口。",
+      "reasonEn": "Closing depends on the assistant selected by the user; the gallery retains the complete catalog and provides a reopen action.",
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "profile"
+      },
+      "evidence": [
+        "command:close_workspace",
+        "command:open_workspace",
+        "source:src/web-ui/src/app/components/NavPanel/sections/workspaces/WorkspaceItem.tsx#handleCloseWorkspace",
+        "source:src/web-ui/src/app/scenes/profile/views/NurseryGallery.tsx#handleOpenAssistant"
       ]
     },
     {

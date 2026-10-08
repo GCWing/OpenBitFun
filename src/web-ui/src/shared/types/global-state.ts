@@ -219,6 +219,7 @@ export interface WorkspaceStartupState {
   currentWorkspace: WorkspaceInfo | null;
   recentWorkspaces: WorkspaceInfo[];
   openedWorkspaces: WorkspaceInfo[];
+  assistantWorkspaces?: WorkspaceInfo[];
   primaryAssistantWorkspaceId: string | null;
   legacyRemoteWorkspace: RemoteWorkspaceSnapshot | null;
 }
@@ -260,6 +261,7 @@ export interface GlobalStateAPI {
   ): Promise<WorkspaceInfo>;
   getCurrentWorkspace(): Promise<WorkspaceInfo | null>;
   getOpenedWorkspaces(): Promise<WorkspaceInfo[]>;
+  getAssistantWorkspaces(): Promise<WorkspaceInfo[]>;
   getRecentWorkspaces(): Promise<WorkspaceInfo[]>;
   removeWorkspaceFromRecent(workspaceId: string): Promise<void>;
   cleanupInvalidWorkspaces(): Promise<number>;
@@ -429,6 +431,7 @@ function mapWorkspaceStartupStateSnapshot(
     currentWorkspace: snapshot.currentWorkspace ? mapWorkspaceInfo(snapshot.currentWorkspace) : null,
     recentWorkspaces,
     openedWorkspaces: snapshot.openedWorkspaces.map(mapWorkspaceInfo),
+    assistantWorkspaces: snapshot.assistantWorkspaces?.map(mapWorkspaceInfo),
     primaryAssistantWorkspaceId: snapshot.primaryAssistantWorkspaceId ?? null,
     legacyRemoteWorkspace: mapRemoteWorkspaceSnapshot(snapshot.legacyRemoteWorkspace),
   };
@@ -611,6 +614,10 @@ export function createGlobalStateAPI(): GlobalStateAPI {
 
     async getOpenedWorkspaces(): Promise<WorkspaceInfo[]> {
       return (await globalAPI.getOpenedWorkspaces()).map(mapWorkspaceInfo);
+    },
+
+    async getAssistantWorkspaces(): Promise<WorkspaceInfo[]> {
+      return (await globalAPI.getAssistantWorkspaces()).map(mapWorkspaceInfo);
     },
 
     async getRecentWorkspaces(): Promise<WorkspaceInfo[]> {

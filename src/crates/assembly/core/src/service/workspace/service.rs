@@ -1056,12 +1056,16 @@ impl WorkspaceService {
     /// Returns all tracked assistant workspaces, including inactive ones.
     pub async fn get_assistant_workspaces(&self) -> Vec<WorkspaceInfo> {
         let manager = self.manager.read().await;
-        manager
+        let mut workspaces: Vec<_> = manager
             .get_workspaces()
             .values()
             .filter(|workspace| workspace.workspace_kind == WorkspaceKind::Assistant)
             .cloned()
-            .collect()
+            .collect();
+        workspaces.sort_by(|left, right| {
+            (&left.assistant_id, &left.id).cmp(&(&right.assistant_id, &right.id))
+        });
+        workspaces
     }
 
     /// Returns the assistant workspace currently assigned the primary role.
@@ -2168,6 +2172,7 @@ impl WorkspaceService {
 
     async fn ensure_assistant_workspaces(&self) -> OpenBitFunResult<()> {
         let descriptors = self.discover_assistant_workspaces().await?;
+        let known_assistants = self.get_assistant_workspaces().await;
         let has_current_workspace = self.get_current_workspace().await.is_some();
         let has_opened_remote = {
             let manager = self.manager.read().await;
@@ -2197,8 +2202,13 @@ impl WorkspaceService {
             // If a remote workspace tab exists but nothing is current yet (e.g. pending SSH
             // reconnect), do not auto-activate the default assistant workspace — that would look
             // like a spurious new local workspace.
-            let should_activate =
-                !has_current_workspace && !has_opened_remote && index == activation_index;
+            // Discovery refreshes the catalog, not the user's opened list. Only
+            // a fresh install selects an assistant automatically; an empty opened
+            // list on an existing install can mean the user closed every assistant.
+            let should_activate = known_assistants.is_empty()
+                && !has_current_workspace
+                && !has_opened_remote
+                && index == activation_index;
             let options = WorkspaceCreateOptions {
                 auto_set_current: should_activate,
                 add_to_recent: false,
@@ -2208,8 +2218,17 @@ impl WorkspaceService {
                 ..Default::default()
             };
 
-            self.open_workspace_with_options(descriptor.path, options)
+            if should_activate {
+                self.open_workspace_with_options(descriptor.path, options)
+                    .await?;
+            } else {
+                self.track_workspace_activity(
+                    descriptor.path,
+                    options,
+                    WorkspaceActivityMode::RefreshMetadata,
+                )
                 .await?;
+            }
         }
 
         {
@@ -2487,6 +2506,145 @@ mod tests {
         assert_eq!(primary.id, named.id);
         assert!(service.is_primary_assistant_workspace(&named.id).await);
         assert!(!service.is_primary_assistant_workspace(&built_in.id).await);
+    }
+
+    #[tokio::test]
+    async fn assistant_close_preserves_catalog_and_closed_state_after_restart() {
+        let env = TestEnvironment::new();
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+        service.ensure_assistant_workspaces().await.unwrap();
+        let built_in = service.get_primary_assistant_workspace().await.unwrap();
+        let named = service
+            .create_assistant_workspace(Some("closed-assistant".to_string()))
+            .await
+            .unwrap();
+        service
+            .set_primary_assistant_workspace(&named.id)
+            .await
+            .unwrap();
+        let history_marker = named.root_path.join("history-marker.txt");
+        fs::write(&history_marker, "preserved").await.unwrap();
+        service.close_workspace(&named.id).await.unwrap();
+        service.close_workspace(&built_in.id).await.unwrap();
+
+        let restored = build_test_workspace_service(env.path_manager.clone()).await;
+        restored.load_workspace_history_only().await.unwrap();
+        restored.ensure_assistant_workspaces().await.unwrap();
+        // Repeated discovery/cleanup must not reopen an explicitly closed row.
+        restored.ensure_assistant_workspaces().await.unwrap();
+        assert!(restored.get_opened_workspaces().await.is_empty());
+        assert!(restored.get_current_workspace().await.is_none());
+        assert_eq!(restored.get_assistant_workspaces().await.len(), 2);
+        assert_eq!(
+            restored.get_primary_assistant_workspace().await.unwrap().id,
+            named.id
+        );
+        assert_eq!(
+            fs::read_to_string(&history_marker).await.unwrap(),
+            "preserved"
+        );
+
+        let reopened = restored.open_workspace_by_id(&named.id).await.unwrap();
+        assert_eq!(reopened.id, named.id);
+        assert_eq!(restored.get_opened_workspaces().await.len(), 1);
+        assert_eq!(restored.get_current_workspace().await.unwrap().id, named.id);
+    }
+
+    #[tokio::test]
+    async fn assistant_discovery_preserves_existing_opened_order_and_selection() {
+        let env = TestEnvironment::new();
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+        service.ensure_assistant_workspaces().await.unwrap();
+        let built_in = service.get_primary_assistant_workspace().await.unwrap();
+        let named = service
+            .create_assistant_workspace(Some("named".into()))
+            .await
+            .unwrap();
+        let second = service
+            .create_assistant_workspace(Some("second".into()))
+            .await
+            .unwrap();
+        service.set_active_workspace(&named.id).await.unwrap();
+        service
+            .reorder_opened_workspaces(vec![
+                built_in.id.clone(),
+                second.id.clone(),
+                named.id.clone(),
+            ])
+            .await
+            .unwrap();
+        service.close_workspace(&built_in.id).await.unwrap();
+        service.ensure_assistant_workspaces().await.unwrap();
+        assert_eq!(
+            service
+                .get_opened_workspaces()
+                .await
+                .iter()
+                .map(|workspace| &workspace.id)
+                .collect::<Vec<_>>(),
+            vec![&second.id, &named.id]
+        );
+        assert_eq!(service.get_current_workspace().await.unwrap().id, named.id);
+        assert_eq!(
+            service.get_primary_assistant_workspace().await.unwrap().id,
+            built_in.id
+        );
+    }
+
+    #[tokio::test]
+    async fn assistant_catalog_accepts_legacy_persistence_without_primary_selection() {
+        let env = TestEnvironment::new();
+        let service = build_test_workspace_service(env.path_manager.clone()).await;
+        service.ensure_assistant_workspaces().await.unwrap();
+        let built_in = service.get_primary_assistant_workspace().await.unwrap();
+        let named = service
+            .create_assistant_workspace(Some("legacy".into()))
+            .await
+            .unwrap();
+        let mut payload: serde_json::Value = service
+            .persistence
+            .load_json("workspace_data")
+            .await
+            .unwrap()
+            .unwrap();
+        payload
+            .as_object_mut()
+            .unwrap()
+            .remove("primary_assistant_key");
+        payload
+            .as_object_mut()
+            .unwrap()
+            .remove("recent_assistant_workspaces");
+        service
+            .persistence
+            .save_json("workspace_data", &payload, StorageOptions::default())
+            .await
+            .unwrap();
+
+        let restored = build_test_workspace_service(env.path_manager.clone()).await;
+        restored.load_workspace_history_only().await.unwrap();
+        restored.ensure_assistant_workspaces().await.unwrap();
+        assert_eq!(
+            restored
+                .get_opened_workspaces()
+                .await
+                .iter()
+                .map(|workspace| &workspace.id)
+                .collect::<Vec<_>>(),
+            vec![&named.id, &built_in.id]
+        );
+        assert_eq!(restored.get_current_workspace().await.unwrap().id, named.id);
+        assert_eq!(
+            restored.get_primary_assistant_workspace().await.unwrap().id,
+            built_in.id
+        );
+        let saved: WorkspacePersistenceData = restored
+            .persistence
+            .load_json("workspace_data")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.opened_workspace_ids, vec![named.id, built_in.id]);
     }
 
     #[tokio::test]
