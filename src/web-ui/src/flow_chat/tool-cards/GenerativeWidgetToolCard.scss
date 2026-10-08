@@ -23,6 +23,11 @@
   gap: var(--openbitfun-control-flow-chat-control-gap);
 }
 
+.generative-widget-card__export-action {
+  display: inline-flex;
+  align-items: center;
+}
+
 .generative-widget-card__status {
   font-size: var(--openbitfun-type-flow-control-font-size);
   color: var(--openbitfun-color-content-secondary);

@@ -2002,7 +2002,12 @@
       "finished": "產生結束"
     },
     "generativeWidget": {
-      "exportFileNamePrefix": "OpenBitFun組件"
+      "exportFileNamePrefix": "OpenBitFun組件",
+      "exportHtml": "匯出 HTML",
+      "exportingHtml": "正在匯出 HTML…",
+      "exportHtmlSuccess": "HTML 已匯出",
+      "exportHtmlFailed": "匯出 HTML 失敗",
+      "exportHtmlHostUnavailable": "此操作需要 OpenBitFun，無法在匯出的 HTML 中使用。"
     },
     "initMiniApp": {
       "title": "初始化小應用",

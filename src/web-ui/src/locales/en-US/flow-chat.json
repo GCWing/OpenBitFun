@@ -2002,7 +2002,12 @@
       "finished": "Generation ended"
     },
     "generativeWidget": {
-      "exportFileNamePrefix": "OpenBitFun-Widget"
+      "exportFileNamePrefix": "OpenBitFun-Widget",
+      "exportHtml": "Export HTML",
+      "exportingHtml": "Exporting HTML...",
+      "exportHtmlSuccess": "HTML exported",
+      "exportHtmlFailed": "Failed to export HTML",
+      "exportHtmlHostUnavailable": "This action requires OpenBitFun and is unavailable in the exported HTML."
     },
     "initMiniApp": {
       "title": "Initialize mini app",
