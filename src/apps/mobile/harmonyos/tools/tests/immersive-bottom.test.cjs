@@ -318,6 +318,24 @@ test('the module declares the cutout as an avoid area', () => {
     'the module must declare avoid_cutout before its abilities');
 });
 
+test('the bands a layout dump has to read are named', () => {
+  // The side strips are invisible in a screenshot. A layout dump is where they
+  // can be measured, and a band with side padding shows up there only as the
+  // offset between the band's own box and its first child — the box itself does
+  // not move. So the bands that carry one are named for the dump, the way the
+  // chat page's bottom fade already is: the chat page's top band, and the wide
+  // home header band whose box is the window in one parent and the wide detail
+  // pane in the other, which is the question its side padding turns on.
+  const top = builderBody(conversationView, 'TopOverlay');
+  assert.equal(call(top, 'id'), ".id('conversation-top-band')",
+    'the chat page top band must stay named so a dump can read its box against its first child');
+  assert.match(normalize(remoteSurfaceHost), /\.id\('remote-wide-home-band'\)/,
+    'the wide home header band must stay named: whether its box is the window or the detail pane is ' +
+    'exactly what decides whether its side padding clears a cutout or only indents its content');
+  assert.equal(call(builderBody(conversationView, 'BottomOverlay'), 'id'), ".id('conversation-bottom-fade')",
+    'the chat page bottom fade must stay named');
+});
+
 test('the binding owns both strip numbers a surface needs', () => {
   // bottomPadding is for a fixed control: the design's spacing, or the strip if
   // the strip is larger. tailSpacing is for the end of a scrolling surface: the
@@ -558,9 +576,12 @@ test('the welcome dock reads the strip through the shared binding', () => {
   assert.match(normalize(welcomeHome),
     /bottom: this\.wide\(\) \? 0 : this\.insets\.bottomPadding\(G\.welcomeDockBottom\)/,
     'the dock must lift its content by the strip wherever the indicator is taller');
-  assert.match(welcomeHome,
-    /\.expandSafeArea\(\[SafeAreaType\.SYSTEM, SafeAreaType\.CUTOUT\], \[SafeAreaEdge\.BOTTOM\]\)/,
-    'the dock fill must still reach the screen edge');
+  assert.equal(call(normalize(welcomeHome), 'expandSafeArea'),
+    '.expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], ' +
+      '[SafeAreaEdge.START, SafeAreaEdge.END, SafeAreaEdge.BOTTOM])',
+    'the dock fill must reach the screen edge on the sides as well as the bottom: `wide()` is a logical-width ' +
+    'test and a side cutout is not, so a landscape window below 600vp, a split screen, a free window and a ' +
+    'hover posture all leave this column sitting on the window\'s side edges with no side claim and a page-colour sliver beside its fill');
 });
 
 test('every background that owns a screen edge claims the cutout as well', () => {
@@ -591,11 +612,16 @@ test('each fill names the edges its own box actually touches', () => {
   //   chat page's bottom fade     the window's full width and its bottom edge,
   //                               while its top edge sits mid-pane — naming TOP
   //                               would claim a strip it never touches;
-  //   home dock                   the bottom edge only, because the composition
-  //                               that gives the dock a fill of its own is the
-  //                               compact one, and a side cutout only exists in
-  //                               a window wide enough for `wide()`, which swaps
-  //                               that fill for a centred, capped column.
+  //   home dock                   the bottom edge and both sides. The sides are
+  //                               only load-bearing in one combination, but it
+  //                               is a reachable one: the dock has a fill of its
+  //                               own only in the compact composition, while a
+  //                               side cutout exists in any landscape window —
+  //                               including a sub-600vp one, a split screen, a
+  //                               free window or a hover posture, where the dock
+  //                               does sit on the window's side edges. In the
+  //                               `wide()` composition the dock paints
+  //                               TRANSPARENT, so the extra claim draws nothing.
   const shellBuild = appShell.slice(appShell.indexOf('build() {'),
     appShell.indexOf('@Builder', appShell.indexOf('build() {')));
   for (const [name, slice, expected] of [
@@ -606,7 +632,7 @@ test('each fill names the edges its own box actually touches', () => {
     ['the chat page bottom fade', builderBody(conversationView, 'BottomOverlay'),
       '[SafeAreaEdge.START, SafeAreaEdge.END, SafeAreaEdge.BOTTOM]'],
     ['the home dock', builderBody(welcomeHome, 'Actions'),
-      '[SafeAreaEdge.BOTTOM]']
+      '[SafeAreaEdge.START, SafeAreaEdge.END, SafeAreaEdge.BOTTOM]']
   ]) {
     assert.equal(call(slice, 'expandSafeArea'),
       `.expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], ${expected})`,
