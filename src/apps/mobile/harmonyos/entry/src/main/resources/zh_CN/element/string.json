@@ -2249,6 +2249,14 @@
       "value": "请分析这张图片。"
     },
     {
+      "name": "chat_fullText",
+      "value": "全文"
+    },
+    {
+      "name": "chat_copyFullText",
+      "value": "复制全文"
+    },
+    {
       "name": "status_waitingConnection",
       "value": "等待连接"
     },

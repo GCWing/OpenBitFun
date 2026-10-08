@@ -10,8 +10,11 @@ import { ChatComposerCapabilities } from '../state/ChatComposerCapabilities';
 import { ChatSurface } from '../state/ChatSurface';
 import { ConversationViewState } from '../state/ConversationViewState';
 import { ConversationIntent, ConversationIntents, ConversationIntentType } from '../actions/ConversationIntent';
+import { SettingsPlacement } from '../policy/SettingsPlacementPolicy';
+import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
 import { ChatTimeline } from './ChatTimeline';
 import { ConversationLoadingState } from './ConversationLoadingState';
+import { UserMessageFullTextSheet } from './UserMessageFullTextSheet';
 import { WindowInsetsBinding } from '../../services/WindowSystemBarService';
 import {
   ConversationViewContract,
@@ -48,6 +51,17 @@ export struct ConversationView {
   @Event onIntent: (intent: ConversationIntent) => void = (_intent: ConversationIntent) => {};
   @Event onRestoreSidebar: () => void = () => {};
   @Local showHeaderActions: boolean = false;
+  /**
+   * The user message whose full text is open, as a panel over the conversation.
+   *
+   * One panel at a time is the whole reason this is state of the conversation
+   * rather than of the row that was long-pressed: the rows are virtualized and
+   * reused, and a sheet bound per row would fight the pool instead of the
+   * message it belongs to. It is view state, so it never becomes a projected
+   * field or an intent: nothing outside this pane reads it.
+   */
+  @Local showFullText: boolean = false;
+  @Local fullTextMessage: string = '';
   /**
    * How much of the pane the two floating layers cover, measured rather than
    * assumed: the composer grows with multiline text and attachments, and the
@@ -103,6 +117,17 @@ export struct ConversationView {
     .width('100%')
     .height('100%')
     .backgroundColor(PAGE_BG)
+    .bindSheet($$this.showFullText, this.FullTextSheet(), this.fullTextSheetOptions())
+  }
+
+  @Builder
+  private FullTextSheet() {
+    UserMessageFullTextSheet({
+      text: this.fullTextMessage,
+      onClose: () => {
+        this.showFullText = false;
+      }
+    })
   }
 
   /**
@@ -377,6 +402,9 @@ export struct ConversationView {
       onCopyMessage: (text: string) => {
         this.onCopyMessage(text);
       },
+      onOpenFullText: (text: string) => {
+        this.openFullText(text);
+      },
       onRetryMessage: (text: string) => {
         this.onRetryMessage(text);
       },
@@ -618,6 +646,7 @@ export struct ConversationView {
   private get composerPresentation(): ComposerPresentation { return this.options.composerPresentation; }
   private get composerInputId(): string { return this.options.composerInputId; }
   private get hoverOperateMode(): boolean { return this.options.hoverOperateMode; }
+  private get fullTextSheetPlacement(): SettingsPlacement { return this.options.fullTextSheetPlacement; }
   private onOpenSidebar(): void { this.dispatchSimple(ConversationIntentType.OpenSidebar); }
   private onBack(): void { this.dispatchSimple(ConversationIntentType.Back); }
   private onTogglePinSession(): void { this.dispatchSimple(ConversationIntentType.TogglePin); }
@@ -643,6 +672,19 @@ export struct ConversationView {
   }
   private onCopyMessage(text: string): void { this.dispatchValue(ConversationIntentType.CopyMessage, text); }
   private onRetryMessage(text: string): void { this.dispatchValue(ConversationIntentType.RetryMessage, text); }
+  private onOpenFullText(text: string): void {
+    if (text.length === 0) {
+      return;
+    }
+    this.fullTextMessage = text;
+    this.showFullText = true;
+  }
+  private fullTextSheetOptions(): SheetOptions {
+    // The same adaptive contract as the other overlay sheets: the content draws
+    // the surface, the sheet supplies transparency, the scrim, and a drag bar
+    // wherever the placement resolves to a bottom sheet.
+    return AdaptiveSheetOptions.fromPlacement(this.fullTextSheetPlacement, true);
+  }
   private onOpenFilePreview(path: string, label: string): void {
     this.onIntent(ConversationIntents.openFilePreview(path, label));
   }

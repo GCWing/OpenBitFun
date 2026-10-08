@@ -50,6 +50,8 @@ export struct WideConversationHost {
   @Param filePreviewLayout: FilePreviewLayout = new FilePreviewLayout(FilePreviewPlacement.Hidden);
   @Param sessionDetailsPlacement: SettingsPlacement =
     SettingsPlacementPolicy.compactBottom(SettingsSheetKind.SessionDetails);
+  @Param fullTextSheetPlacement: SettingsPlacement =
+    SettingsPlacementPolicy.compactBottom(SettingsSheetKind.UserMessageFullText);
   @Param wideMasterPaneWidth: number = 0;
   @Param wideMasterDetailGap: number = 0;
   @Param wideDetailContentOffset: number = 0;
@@ -362,6 +364,7 @@ export struct WideConversationHost {
         this.filePreviewLayout
       ),
       useWidePresentation: true,
+      fullTextSheetPlacement: this.fullTextSheetPlacement,
       onRestoreSidebar: this.onRestoreMasterPane
     })
   }

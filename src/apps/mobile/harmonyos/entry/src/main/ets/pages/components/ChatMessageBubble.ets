@@ -33,12 +33,16 @@ export struct ChatUserMessageRow {
     detail: ''
   };
   @Param showRetryAction: boolean = false;
+  @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
 
   build() {
     ChatUserMessageBubble({
       item: this.item,
       showRetryAction: this.showRetryAction,
+      onCopyMessage: this.onCopyMessage,
+      onOpenFullText: this.onOpenFullText,
       onRetryMessage: this.onRetryMessage
     })
   }
@@ -72,6 +76,7 @@ export struct ChatMessageBubble {
   @Event onAnswerQuestion: (toolId: string, answers: ConversationUiQuestionAnswer) => void =
     (_toolId: string, _answers: ConversationUiQuestionAnswer) => {};
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
@@ -332,7 +337,9 @@ export struct ChatMessageBubble {
       if (this.isUserSteeringEntry(entry)) {
         ChatUserMessageBubble({
           item: this.steeringMessage(entry, path),
-          showRetryAction: false
+          showRetryAction: false,
+          onCopyMessage: this.onCopyMessage,
+          onOpenFullText: this.onOpenFullText
         })
       } else if (this.isThinkingEntry(entry)) {
         this.Thinking(

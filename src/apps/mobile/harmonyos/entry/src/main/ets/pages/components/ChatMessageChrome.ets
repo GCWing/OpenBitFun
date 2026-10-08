@@ -1,8 +1,14 @@
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
+import {
+  UserMessageMenuAction,
+  UserMessageMenuItem,
+  UserMessageMenuPolicy
+} from '../policy/UserMessageMenuPolicy';
+import { UserMessageTruncationPolicy } from '../policy/UserMessageTruncationPolicy';
 import { ConversationUiMessage } from '../state/ConversationUiModels';
 import { MessageImageGallery } from './ChatMessageContent';
-import { ACCENT, INK, MUTED, CONTENT_ON_ACTION, STATUS_DANGER, SOFT } from './Theme';
+import { ACCENT, INK, MUTED, CONTENT_ON_ACTION, STATUS_DANGER, SOFT, FILE_LINK } from './Theme';
 
 @ComponentV2
 export struct ChatTypingDots {
@@ -72,6 +78,8 @@ export struct ChatUserMessageBubble {
     detail: ''
   };
   @Param showRetryAction: boolean = false;
+  @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
 
   build() {
@@ -84,7 +92,13 @@ export struct ChatUserMessageBubble {
               MessageImageGallery({ images: this.item.images, userStyle: true })
             }
             if (this.visibleText().length > 0) {
-              Text(this.visibleText()).fontSize(MobileDesignTypography.bodyLarge.size).lineHeight(MobileDesignTypography.bodyLarge.lineHeight).fontColor(INK)
+              if (UserMessageTruncationPolicy.shouldTruncate(this.visibleText())) {
+                this.TruncatedText()
+              } else {
+                // A short message is the ordinary selectable Text: a long press
+                // raises the system selection menu and its handles.
+                this.PlainText()
+              }
             }
           }
           .padding({
@@ -106,6 +120,62 @@ export struct ChatUserMessageBubble {
     }
     .width('100%')
     .padding({ top: 2, bottom: 2 })
+  }
+
+  @Builder
+  private PlainText() {
+    Text(this.visibleText())
+      .fontSize(MobileDesignTypography.bodyLarge.size)
+      .lineHeight(MobileDesignTypography.bodyLarge.lineHeight)
+      .fontColor(INK)
+      .copyOption(CopyOptions.LocalDevice)
+  }
+
+  /**
+   * The truncated bubble. The cut is made by the policy rather than by
+   * `maxLines` ellipsis: the full-text affordance has to sit inline after the
+   * ellipsis, and an ellipsized Text cannot host an appended clickable span.
+   *
+   * This Text carries no `copyOption`: the frozen design keeps selection
+   * handles off a bubble whose text continues past what is drawn, and answers a
+   * long press with the menu below instead. Handles belong to the panel.
+   */
+  @Builder
+  private TruncatedText() {
+    Text() {
+      Span(UserMessageTruncationPolicy.truncatedPreview(this.visibleText()))
+        .fontColor(INK)
+      Span(` ${RemoteI18n.t('chat.fullText')}`)
+        .fontSize(MobileDesignTypography.bodyMedium.size)
+        .fontColor(FILE_LINK)
+        .decoration({ type: TextDecorationType.Underline, color: FILE_LINK })
+        .onClick(() => {
+          this.onOpenFullText(this.visibleText());
+        })
+    }
+    .fontSize(MobileDesignTypography.bodyLarge.size)
+    .lineHeight(MobileDesignTypography.bodyLarge.lineHeight)
+    .width('100%')
+    .textAlign(TextAlign.Start)
+    .bindContextMenu(this.TruncatedMenu(), ResponseType.LongPress)
+  }
+
+  @Builder
+  private TruncatedMenu() {
+    Menu() {
+      ForEach(UserMessageMenuPolicy.items(), (entry: UserMessageMenuItem) => {
+        MenuItem({ content: RemoteI18n.t(entry.labelKey) })
+          .onClick(() => {
+            this.runMenuAction(entry.action);
+          })
+      }, (entry: UserMessageMenuItem) => entry.action)
+    }
+  }
+
+  private runMenuAction(action: UserMessageMenuAction): void {
+    if (action === UserMessageMenuAction.CopyFullText) {
+      this.onCopyMessage(this.visibleText());
+    }
   }
 
   private visibleText(): string {

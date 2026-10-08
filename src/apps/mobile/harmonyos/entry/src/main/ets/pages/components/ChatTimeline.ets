@@ -57,6 +57,7 @@ struct ChatAssistantTimelineRow {
   @Event onAnswerQuestion: (toolId: string, answers: ConversationUiQuestionAnswer) => void =
     (_toolId: string, _answers: ConversationUiQuestionAnswer) => {};
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
@@ -98,6 +99,7 @@ struct ChatAssistantTimelineRow {
       onCancelTool: this.onCancelTool,
       onAnswerQuestion: this.onAnswerQuestion,
       onCopyMessage: this.onCopyMessage,
+      onOpenFullText: this.onOpenFullText,
       onRetryMessage: this.onRetryMessage,
       onOpenFilePreview: this.onOpenFilePreview,
       onBuildPlan: this.onBuildPlan,
@@ -163,6 +165,7 @@ export struct ChatTimeline {
   @Event onAnswerQuestion: (toolId: string, answers: ConversationUiQuestionAnswer) => void =
     (_toolId: string, _answers: ConversationUiQuestionAnswer) => {};
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
@@ -241,6 +244,12 @@ export struct ChatTimeline {
                   ChatUserMessageRow({
                     item: toConversationUiMessage(repeatItem.item.message!),
                     showRetryAction: repeatItem.item.showRetryAction === true,
+                    onCopyMessage: (text: string) => {
+                      this.onCopyMessage(text);
+                    },
+                    onOpenFullText: (text: string) => {
+                      this.onOpenFullText(text);
+                    },
                     onRetryMessage: (text: string) => {
                       this.onRetryMessage(text);
                     }
@@ -271,6 +280,9 @@ export struct ChatTimeline {
                     },
                     onCopyMessage: (text: string) => {
                       this.onCopyMessage(text);
+                    },
+                    onOpenFullText: (text: string) => {
+                      this.onOpenFullText(text);
                     },
                     onRetryMessage: (text: string) => {
                       this.onRetryMessage(text);
@@ -317,6 +329,7 @@ export struct ChatTimeline {
                 onCancelTool: this.onCancelTool,
                 onAnswerQuestion: this.onAnswerQuestion,
                 onCopyMessage: this.onCopyMessage,
+                onOpenFullText: this.onOpenFullText,
                 onRetryMessage: this.onRetryMessage,
                 onOpenFilePreview: this.onOpenFilePreview,
                 onBuildPlan: this.onBuildPlan,
