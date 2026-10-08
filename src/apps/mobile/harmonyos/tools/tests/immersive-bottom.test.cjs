@@ -634,3 +634,44 @@ test('every top band the status bar shows through is a theme-following page colo
       `${name} must not paint a screen-edge fill with media chrome: ${unreadable}`);
   }
 });
+
+test('the chat page owns the keyboard avoidance the bottom rule assumes', () => {
+  // `insetsOf` hands the bottom strip to the keyboard while it is visible,
+  // because `KeyboardAvoidMode.RESIZE` has already lifted the page above it:
+  // reserving the navigation indicator as well would count the same strip twice.
+  // The mode is set by the chat page itself and only while that page is mounted,
+  // so the rule leans on a page it cannot see. Without RESIZE the keyboard is
+  // still up and the bottom strip is still handed to it, so the bottom is
+  // reserved by the keyboard and the navigation bar both - the composer and
+  // everything docked below the transcript sit under the keyboard with a
+  // bar-sized hole beneath them.
+  const appear = conversationView.slice(conversationView.indexOf('aboutToAppear(): void {'),
+    conversationView.indexOf('aboutToDisappear(): void {'));
+  const disappear = conversationView.slice(conversationView.indexOf('aboutToDisappear(): void {'),
+    conversationView.indexOf('build() {'));
+  assert.match(conversationView, /private previousKeyboardAvoidMode: KeyboardAvoidMode = /,
+    'the chat page must keep the mode it found, so it can put it back');
+  assert.match(appear, /this\.previousKeyboardAvoidMode = this\.getUIContext\(\)\.getKeyboardAvoidMode\(\);/,
+    'the chat page must read the current keyboard avoid mode before it changes it');
+  assert.match(appear, /this\.getUIContext\(\)\.setKeyboardAvoidMode\(KeyboardAvoidMode\.RESIZE\);/,
+    'the chat page must set RESIZE while it is mounted: the bottom inset rule in WindowSystemBarService ' +
+    'assumes the keyboard has already lifted the page, so without RESIZE the bottom is reserved by the ' +
+    'keyboard and the navigation bar at once');
+  assert.match(disappear,
+    /this\.getUIContext\(\)\.setKeyboardAvoidMode\(this\.previousKeyboardAvoidMode\);/,
+    'the chat page must restore the mode it found when it goes, so the rest of the shell keeps the platform default');
+});
+
+test('the side gesture area is deliberately not tracked, and says so', () => {
+  // `TYPE_SYSTEM_GESTURE` is the region a system return gesture can start from,
+  // and the official immersive sample reads it beside the areas this app merges.
+  // The omission here is a recorded decision with a follow-up rather than an
+  // oversight, so the note and the behaviour are asserted together: the day one
+  // of them moves, the other has to move with it.
+  assert.match(windowService, /TYPE_SYSTEM_GESTURE/,
+    'the decision not to track the gesture area must stay recorded next to the merge it belongs to');
+  const insetsOf = normalize(windowService.slice(windowService.indexOf('private static insetsOf')));
+  assert.equal(insetsOf.includes('TYPE_SYSTEM_GESTURE'), false,
+    'reading the gesture area is a new decision: it moves where every full-width band starts, so it must not ' +
+    'be merged in as a drive-by, and the note above the merge has to be rewritten with it');
+});

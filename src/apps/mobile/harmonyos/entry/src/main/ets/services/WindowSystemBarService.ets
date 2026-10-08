@@ -127,6 +127,16 @@ export class WindowSystemBarService {
     // declares `avoid_cutout` (see module.json5). Rotating the device moves it
     // from the top edge to a side one, which is why it is merged here with the
     // system and navigation areas instead of being left to the top strip.
+    //
+    // `TYPE_SYSTEM_GESTURE` is deliberately not read here, and that is a decision
+    // rather than an oversight. It is the region a system return gesture can be
+    // started from; the official immersive-layout sample reads it beside the
+    // areas above. This app registers the omission as an open follow-up instead
+    // of merging it now: the bottom of that region is already covered by the
+    // navigation indicator here, and reserving its side part unconditionally
+    // would move every full-width band inward on a gesture-navigation device
+    // with no measured overlap to justify it. Merge it in the day a swiped edge
+    // is observed to swallow a control.
     const merged = mergeAvoidEdges([
       WindowSystemBarService.avoidEdges(appWindow, window.AvoidAreaType.TYPE_SYSTEM),
       WindowSystemBarService.avoidEdges(appWindow, window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR),
