@@ -58,7 +58,10 @@ export struct AppShell {
         .width('100%')
         .height('100%')
         .backgroundColor(SIDEBAR_BG)
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+        // The cutout is an avoid area of its own, so the floor claims it too: a
+        // notch the framework would otherwise leave bare has to end up under the
+        // same fill the rest of the window is.
+        .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
         .hitTestBehavior(HitTestMode.None)
         .opacity((this.allowSidebar && this.shellState.showSidebar) ? 1 : 0)
         // Matched to the content card rather than to the sidebar panel: the
@@ -148,7 +151,9 @@ export struct AppShell {
   private CompactLoginCover() {
     Stack({ alignContent: Alignment.Bottom }) {
       Column().width('100%').height('100%').backgroundColor(SCRIM)
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+        // The scrim is the cover's own background over the whole shell, so a bare
+        // notch would read as a hole in the dimming: it claims the cutout too.
+        .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
         .onClick(() => { this.shellState.showSettings = false; })
       Scroll() {
         Column() { this.settings() }

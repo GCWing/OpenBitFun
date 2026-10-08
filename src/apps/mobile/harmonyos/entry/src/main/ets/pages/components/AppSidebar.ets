@@ -163,7 +163,12 @@ export struct AppSidebar {
     // row is what has to keep clear of the status bar: the fill still reaches
     // the top of the window, and the title, the search field and the session
     // rows start below the strip.
-    .padding({ left: 20, right: 20, top: this.insets.top })
+    //
+    // Its side edges are the screen's too, and a rotated device moves the camera
+    // cutout onto one of them: the wider of the design's gutter and the cutout
+    // is what the panel reserves, so the 20 the design asks for survives on a
+    // device that claims no side strip at all.
+    .padding({ left: this.insets.leftPadding(20), right: this.insets.rightPadding(20), top: this.insets.top })
     .backgroundColor(SIDEBAR_BG)
   }
 

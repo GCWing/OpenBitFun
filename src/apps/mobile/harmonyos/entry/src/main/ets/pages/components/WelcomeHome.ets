@@ -167,7 +167,9 @@ export struct WelcomeHome {
       .padding({ left: G.welcomeGutter, right: G.welcomeGutter, top: this.wide() ? 0 : G.welcomeGutter,
         bottom: this.wide() ? 0 : this.insets.bottomPadding(G.welcomeDockBottom) })
       .backgroundColor(this.wide() ? TRANSPARENT : $r('app.color.welcome_dock'))
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+      // The dock's fill reaches the bottom edge of the screen. The cutout is a
+      // separate avoid area from the system bars, so it is claimed here too.
+      .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], [SafeAreaEdge.BOTTOM])
       .borderRadius({ topLeft: G.welcomeDockRadius, topRight: G.welcomeDockRadius })
   }
   @Builder

@@ -237,7 +237,9 @@ export struct RemoteSurfaceHost {
     Column() {
       // The compact home is a page, not a sheet: its header band is the top edge
       // of the window, so the band reserves the status bar and the drawer
-      // control and title start below the clock and the indicators.
+      // control and title start below the clock and the indicators. The band is
+      // the window's full width, so it reserves the side strips as well — the
+      // drawer control is the control a landscape cutout would land on.
       ConversationHeader({
         title: RemoteI18n.t('app.title'),
         subtitle: this.compactHeaderContext(),
@@ -245,7 +247,11 @@ export struct RemoteSurfaceHost {
         showSidebarButton: true,
         onOpenSidebar: this.onOpenSidebar
       })
-        .padding({ top: this.insets.top })
+        .padding({
+          left: this.insets.leftPadding(0),
+          right: this.insets.rightPadding(0),
+          top: this.insets.top
+        })
       if (RemoteCompactHomePolicy.shouldShowConnectHome(this.remotePageState.connectionState)) {
         this.ConnectionEntry()
       } else {
@@ -292,9 +298,15 @@ export struct RemoteSurfaceHost {
       // page, not a sheet, so it should not grow a divider just because it is
       // wider. The band's box grows by the status bar strip for the same reason
       // the compact header's does: the wide detail pane's top edge is the
-      // window's top edge too.
+      // window's top edge too, and its side edge is the window's as well, so the
+      // restore control keeps clear of a cutout that rotated onto that side.
       .width('100%').height(76 + this.insets.top)
-      .padding({ left: 16, right: 16, top: 14 + this.insets.top, bottom: 12 })
+      .padding({
+        left: this.insets.leftPadding(16),
+        right: this.insets.rightPadding(16),
+        top: 14 + this.insets.top,
+        bottom: 12
+      })
 
       this.CompactEmptyState()
 

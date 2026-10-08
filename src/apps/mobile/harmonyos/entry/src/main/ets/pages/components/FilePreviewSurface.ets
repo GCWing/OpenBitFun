@@ -180,8 +180,15 @@ export struct FilePreviewSurface {
     // The header band is the surface's top edge in both hosts — the compact
     // full-page overlay and the wide preview pane — so it carries the status bar
     // strip itself: the band's fill still reaches the top of the window and the
-    // back control and title sit below the clock and the indicators.
-    .padding({ left: 8, right: 8, top: 8 + this.insets.top, bottom: 8 })
+    // back control and title sit below the clock and the indicators. It spans
+    // the window horizontally, so it carries the side strips the same way: on a
+    // rotated device the back control is what the camera cutout would cover.
+    .padding({
+      left: this.insets.leftPadding(8),
+      right: this.insets.rightPadding(8),
+      top: 8 + this.insets.top,
+      bottom: 8
+    })
     .alignItems(VerticalAlign.Center)
     .border({ width: { bottom: 1 }, color: LINE })
     .backgroundColor(PAGE_BG)

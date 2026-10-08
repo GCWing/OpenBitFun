@@ -184,8 +184,10 @@ export struct ConversationView {
       .width('100%')
       // Carried by the band that owns the background, not by the wrapper: the
       // band is what has to reach the status bar, and its measured height is
-      // what the transcript borrows as its content start offset.
-      .padding({ top: this.topSafeInset })
+      // what the transcript borrows as its content start offset. The band is the
+      // window's full width too, so it reserves the side strips as well; the
+      // header's own gutter lives inside it and is not restated here.
+      .padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })
       .backgroundColor(PAGE_BG_OVERLAY)
       .backgroundBlurStyle(BlurStyle.Thin)
       this.TopEdgeFade()
@@ -206,8 +208,15 @@ export struct ConversationView {
     // The composer keeps the distance from the screen edge it had while the page
     // area ended above the navigation bar, and the layer's own box grows by that
     // strip: the gradient below is the layer's background, so it fills the strip
-    // and the transcript behind it reaches the bottom of the screen.
-    .padding({ bottom: this.bottomSafeInset })
+    // and the transcript behind it reaches the bottom of the screen. The layer
+    // spans the window's width, so the side strips are the layer's own business
+    // as well: the composer's gutter is inside it, and on a rotated device the
+    // camera cutout would otherwise sit over the first control of the row.
+    .padding({
+      left: this.insets.leftPadding(0),
+      right: this.insets.rightPadding(0),
+      bottom: this.bottomSafeInset
+    })
     // The fade covers the whole layer, not just a strip above it: the transcript
     // runs behind the composer, so anything short of that leaves a line of text
     // sitting crisp and legible beside the pill after it has already faded out
@@ -221,8 +230,10 @@ export struct ConversationView {
     // into it. Where the immersive layout already puts the page area there the
     // two overlap and nothing extra is drawn; on a window that still ends above
     // the navigation bar this is what keeps the strip from being bare page
-    // colour under the fade.
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    // colour under the fade. The cutout is a separate avoid area, so the fade
+    // claims it as well: a device that rotated its camera onto an edge the fade
+    // reaches would otherwise show the page colour beside the gradient.
+    .expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], [SafeAreaEdge.BOTTOM])
     // Named so a layout dump can be read against the pixels: the fade's own box
     // is what says where the chat page's bottom edge sits and how far the
     // transcript can scroll, and neither is visible in the composer's bounds.

@@ -18,6 +18,8 @@ function source(relativePath) {
 const entryAbility = source('entry/src/main/ets/entryability/EntryAbility.ets');
 const conversationView = source('entry/src/main/ets/pages/components/ConversationView.ets');
 const windowService = source('entry/src/main/ets/services/WindowSystemBarService.ets');
+const moduleConfig = source('entry/src/main/module.json5');
+const appShell = source('entry/src/main/ets/pages/components/AppShell.ets');
 const appSidebar = source('entry/src/main/ets/pages/components/AppSidebar.ets');
 const miniAppSurface = source('entry/src/main/ets/pages/components/MiniAppSurface.ets');
 const settingsSheet = source('entry/src/main/ets/pages/components/SettingsSheet.ets');
@@ -109,6 +111,70 @@ test('the window inset service is the only place the strip is measured', () => {
   assert.match(windowService, /appWindow\.off\('avoidAreaChange'/, 'the binding must release its listener');
 });
 
+test('the insets merge every avoid area that claims an edge, cutout included', () => {
+  // The camera cutout is an avoid area of its own: the framework's SYSTEM area
+  // is the status bar and the navigation bar only, so a model that read those
+  // two could not express a cutout at all — and the cutout is the one area that
+  // moves, onto a side edge, as soon as the device rotates. More than one area
+  // can claim the same edge, and they overlap rather than stack, so an edge is
+  // the widest claim among them: the merge is one `Math.max` per edge, the same
+  // merge the official `handleCutoutAvoidArea` sample performs.
+  assert.match(windowService, /export function mergeAvoidEdges\(areas: AvoidEdges\[\]\): AvoidEdges/,
+    'the per-edge merge must stay a function of its own, not be buried in the reader');
+  const merge = normalize(windowService.slice(
+    windowService.indexOf('export function mergeAvoidEdges'),
+    windowService.indexOf('export class WindowSystemBarService')));
+  for (const edge of ['top', 'bottom', 'left', 'right']) {
+    assert.match(merge, new RegExp(`${edge} = Math\\.max\\(${edge}, area\\.${edge}\\)`),
+      `the merge must take the widest claim on the ${edge} edge`);
+  }
+  const insetsOf = normalize(windowService.slice(windowService.indexOf('private static insetsOf')));
+  for (const type of ['TYPE_SYSTEM', 'TYPE_NAVIGATION_INDICATOR', 'TYPE_CUTOUT']) {
+    assert.match(insetsOf, new RegExp(type),
+      `${type} must be one of the areas the insets are read from`);
+  }
+  // The keyboard keeps owning the bottom strip while it is up: `RESIZE` has
+  // already lifted the page above it (see ConversationView), so reserving the
+  // navigation indicator as well would count the same strip twice.
+  assert.match(insetsOf, /bottom: keyboardVisible \? 0 : merged\.bottom/,
+    'the keyboard must keep taking the bottom strip while it is visible');
+});
+
+test('the binding exposes the side strips and the paddings that consume them', () => {
+  // Left and right are 0 on a portrait phone, so `max(design, strip)` is exactly
+  // the design value there and the change is invisible until a device rotates
+  // its camera onto that side. The three primitives are there because a cutout
+  // only ever lands on one side: a full-width band reserves the side the device
+  // claims and keeps its own gutter on the other, while a control that has to
+  // stay centred reserves the wider of the two on both.
+  for (const edge of ['top', 'bottom', 'left', 'right']) {
+    assert.match(windowService, new RegExp(`@Trace ${edge}: number = 0;`),
+      `the binding must publish the ${edge} strip`);
+    assert.match(windowService, new RegExp(`this\\.${edge} = uiContext\\.px2vp\\(insets\\.${edge}\\)`),
+      `the binding must convert the ${edge} strip to vp like the others`);
+  }
+  assert.match(normalize(windowService),
+    /leftPadding\(designSpacing: number\): number \{ return Math\.max\(designSpacing, this\.left\); \}/,
+    'a side strip must only ever raise its own side above the design spacing');
+  assert.match(normalize(windowService),
+    /rightPadding\(designSpacing: number\): number \{ return Math\.max\(designSpacing, this\.right\); \}/,
+    'a side strip must only ever raise its own side above the design spacing');
+  assert.match(normalize(windowService),
+    /sidePadding\(designSpacing: number\): number \{ return Math\.max\(designSpacing, Math\.max\(this\.left, this\.right\)\); \}/,
+    'a control that stays centred reserves the wider of the two sides');
+});
+
+test('the module declares the cutout as an avoid area', () => {
+  // Without this metadata the page does not avoid the camera cutout at all: the
+  // framework only treats it as an avoid area once the module asks, so neither
+  // the side strips below nor a background expanded into it would exist. It is a
+  // module-level entry, not a per-ability one: the declaration has to sit before
+  // the abilities array starts.
+  const moduleBlock = moduleConfig.slice(moduleConfig.indexOf('"module"'), moduleConfig.lastIndexOf('"abilities"'));
+  assert.match(moduleBlock, /"name": "avoid_cutout",[\s\S]*?"value": "true"/,
+    'the module must declare avoid_cutout before its abilities');
+});
+
 test('the binding owns both strip numbers a surface needs', () => {
   // bottomPadding is for a fixed control: the design's spacing, or the strip if
   // the strip is larger. tailSpacing is for the end of a scrolling surface: the
@@ -121,12 +187,15 @@ test('the binding owns both strip numbers a surface needs', () => {
 
 test('the chat page bottom layer reaches the screen edge and its composer does not move', () => {
   const bottom = builderBody(conversationView, 'BottomOverlay');
-  // The layer's box grows by the strip, so its own gradient fills it...
-  assert.equal(call(bottom, 'padding'), '.padding({ bottom: this.bottomSafeInset })');
+  // The layer's box grows by the strip, so its own gradient fills it — and it
+  // carries the side strips too, because the layer is the window's full width
+  // and the composer's own gutter lives inside it...
+  assert.equal(call(bottom, 'padding'),
+    '.padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), bottom: this.bottomSafeInset })');
   // ...it may paint into the strip even where the page area still stops above
   // it, and it is named so a layout dump can be read against the pixels.
   assert.equal(call(bottom, 'expandSafeArea'),
-    '.expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])');
+    '.expandSafeArea([SafeAreaType.SYSTEM, SafeAreaType.CUTOUT], [SafeAreaEdge.BOTTOM])');
   assert.equal(call(bottom, 'id'), ".id('conversation-bottom-fade')");
   // The transcript borrows the layer's measured height, which is what lets the
   // last message scroll above the fade instead of under the composer.
@@ -137,9 +206,13 @@ test('the chat page bottom layer reaches the screen edge and its composer does n
 test('the chat page header band reserves the status bar itself', () => {
   // The shell is immersive, so the page draws from the top of the window and the
   // band is what has to keep the header out of the status bar. Its own box is
-  // the transcript's content start offset, so the two stay in step.
+  // the transcript's content start offset, so the two stay in step. The band is
+  // the window's full width as well, which is what makes its sides the sides the
+  // camera cutout rotates onto; the header's own gutter is inside it and is not
+  // restated here.
   const top = builderBody(conversationView, 'TopOverlay');
-  assert.equal(call(top, 'padding'), '.padding({ top: this.topSafeInset })');
+  assert.equal(call(top, 'padding'),
+    '.padding({ left: this.insets.leftPadding(0), right: this.insets.rightPadding(0), top: this.topSafeInset })');
   assert.match(top, /\.backgroundColor\(PAGE_BG_OVERLAY\)/,
     'the band that carries the inset must stay the one that paints the header');
 });
@@ -153,25 +226,26 @@ test('every surface whose top edge is the screen edge reserves the status bar', 
   // back control, the preview's header and the home headers' drawer control are
   // all one strip lower than they were while the page area ended below it.
   assert.match(normalize(builderBody(appSidebar, 'SidebarContent')),
-    /\.padding\(\{ left: 20, right: 20, top: this\.insets\.top \}\)/,
+    /\.padding\(\{ left: this\.insets\.leftPadding\(20\), right: this\.insets\.rightPadding\(20\), top: this\.insets\.top \}\)/,
     'the drawer panel must reserve the strip above its title');
   assert.match(normalize(miniAppSurface),
-    /\.height\(56 \+ this\.insets\.top\)\.padding\(\{ left: 12, right: 12, top: this\.insets\.top \}\)/,
+    /\.height\(56 \+ this\.insets\.top\)\s*\.padding\(\{ left: this\.insets\.leftPadding\(12\), right: this\.insets\.rightPadding\(12\), top: this\.insets\.top \}\)/,
     'the mini-app gallery header must reserve the strip');
   assert.match(normalize(filePreviewSurface),
-    /\.height\(68 \+ this\.insets\.top\)[\s\S]*?\.padding\(\{ left: 8, right: 8, top: 8 \+ this\.insets\.top, bottom: 8 \}\)/,
+    /\.height\(68 \+ this\.insets\.top\)[\s\S]*?\.padding\(\{ left: this\.insets\.leftPadding\(8\), right: this\.insets\.rightPadding\(8\), top: 8 \+ this\.insets\.top, bottom: 8 \}\)/,
     'the file preview header must reserve the strip');
   assert.match(normalize(remoteSurfaceHost),
-    /\.padding\(\{ top: this\.insets\.top \}\)/,
+    /\.padding\(\{ left: this\.insets\.leftPadding\(0\), right: this\.insets\.rightPadding\(0\), top: this\.insets\.top \}\)/,
     'the compact home header must reserve the strip');
   assert.match(normalize(remoteSurfaceHost),
-    /\.height\(76 \+ this\.insets\.top\) \.padding\(\{ left: 16, right: 16, top: 14 \+ this\.insets\.top, bottom: 12 \}\)/,
+    /\.height\(76 \+ this\.insets\.top\)\s*\.padding\(\{ left: this\.insets\.leftPadding\(16\), right: this\.insets\.rightPadding\(16\), top: 14 \+ this\.insets\.top, bottom: 12 \}\)/,
     'the wide home header must reserve the strip');
   // A floating control on a pane whose top edge is the window's keeps the strip
   // clear itself, the way the surfaces' fixed bottom controls keep the
-  // navigation bar clear.
+  // navigation bar clear. Its left edge is the window's edge in the collapsed
+  // wide layout, so the same offset carries the side strip.
   assert.match(normalize(wideConversationHost),
-    /\.position\(\{ x: 12, y: 12 \+ this\.insets\.top \}\)/,
+    /\.position\(\{ x: this\.insets\.leftPadding\(12\), y: 12 \+ this\.insets\.top \}\)/,
     'the floating master-restore control must reserve the strip');
   for (const [name, text] of [['RemoteSurfaceHost', remoteSurfaceHost],
     ['WideConversationHost', wideConversationHost]]) {
@@ -223,7 +297,8 @@ test('the sidebar list scrolls under the bar and its floating footer keeps the s
   // the footer keeps its distance from that edge itself, and the list ends in
   // a tail spacer so its last row rests above the navigation bar.
   const content = normalize(builderBody(appSidebar, 'SidebarContent'));
-  assert.match(content, /\.padding\(\{ left: 20, right: 20, top: this\.insets\.top \}\)/,
+  assert.match(content,
+    /\.padding\(\{ left: this\.insets\.leftPadding\(20\), right: this\.insets\.rightPadding\(20\), top: this\.insets\.top \}\)/,
     'the panel root must reserve the status bar without shrinking its scrolling viewport');
   assert.match(content, /\.padding\(\{ bottom: this\.scrollTailPadding\(\) \}\)/,
     'the session list must end in a tail spacer');
@@ -340,8 +415,57 @@ test('the welcome dock reads the strip through the shared binding', () => {
     /bottom: this\.wide\(\) \? 0 : this\.insets\.bottomPadding\(G\.welcomeDockBottom\)/,
     'the dock must lift its content by the strip wherever the indicator is taller');
   assert.match(welcomeHome,
-    /\.expandSafeArea\(\[SafeAreaType\.SYSTEM\], \[SafeAreaEdge\.BOTTOM\]\)/,
+    /\.expandSafeArea\(\[SafeAreaType\.SYSTEM, SafeAreaType\.CUTOUT\], \[SafeAreaEdge\.BOTTOM\]\)/,
     'the dock fill must still reach the screen edge');
+});
+
+test('every background that owns a screen edge claims the cutout as well', () => {
+  // The CUTOUT area is described separately from SYSTEM — which the framework
+  // defines as the status bar and the navigation bar — so a fill that claims the
+  // system area alone stops short of a notch and shows the page colour beside
+  // it. These are the four full-bleed backgrounds of the shell: the drawer's
+  // floor, the account cover's scrim, the chat page's bottom fade and the home
+  // dock.
+  for (const [name, text, expected] of [['AppShell', appShell, 2],
+    ['ConversationView', conversationView, 1], ['WelcomeHome', welcomeHome, 1]]) {
+    const claims = (text.match(/\.expandSafeArea\(\[SafeAreaType\.SYSTEM, SafeAreaType\.CUTOUT\]/g) ?? []).length;
+    assert.equal(claims, expected, `${name} must claim the cutout wherever it claims the system area`);
+    const systemOnly = (text.match(/\.expandSafeArea\(\[SafeAreaType\.SYSTEM\]/g) ?? []).length;
+    assert.equal(systemOnly, 0, `${name} must not leave a fill on the system area alone`);
+  }
+});
+
+test('every surface whose side edge is the screen edge reserves the side strips', () => {
+  // The side strips are the camera cutout, which a rotated device moves onto the
+  // window's left or right edge. A full-width band consumes them per side —
+  // `max(design, strip)` — so the design's own gutter survives on a device that
+  // claims no side strip at all, which is every portrait phone.
+  //
+  // The sheets and covers are deliberately absent: `bindSheet` and
+  // `bindContentCover` inset their own page horizontally, so their rows never
+  // reach the window's side edges and a side padding there would only move
+  // content that was already clear.
+  for (const [name, text, pattern] of [
+    ['the drawer panel', appSidebar,
+      /\.padding\(\{ left: this\.insets\.leftPadding\(20\), right: this\.insets\.rightPadding\(20\), top: this\.insets\.top \}\)/],
+    ['the compact home header', remoteSurfaceHost,
+      /\.padding\(\{ left: this\.insets\.leftPadding\(0\), right: this\.insets\.rightPadding\(0\), top: this\.insets\.top \}\)/],
+    ['the wide home header', remoteSurfaceHost,
+      /\.padding\(\{ left: this\.insets\.leftPadding\(16\), right: this\.insets\.rightPadding\(16\), top: 14 \+ this\.insets\.top, bottom: 12 \}\)/],
+    ['the gallery header', miniAppSurface,
+      /\.padding\(\{ left: this\.insets\.leftPadding\(12\), right: this\.insets\.rightPadding\(12\), top: this\.insets\.top \}\)/],
+    ['the preview header', filePreviewSurface,
+      /\.padding\(\{ left: this\.insets\.leftPadding\(8\), right: this\.insets\.rightPadding\(8\), top: 8 \+ this\.insets\.top, bottom: 8 \}\)/],
+    ['the chat header band', conversationView,
+      /\.padding\(\{ left: this\.insets\.leftPadding\(0\), right: this\.insets\.rightPadding\(0\), top: this\.topSafeInset \}\)/],
+    ['the composer layer', conversationView,
+      /\.padding\(\{ left: this\.insets\.leftPadding\(0\), right: this\.insets\.rightPadding\(0\), bottom: this\.bottomSafeInset \}\)/]
+  ]) {
+    assert.match(normalize(text), pattern, `${name} must consume the side strips through the binding`);
+  }
+  assert.match(normalize(wideConversationHost),
+    /\.position\(\{ x: this\.insets\.leftPadding\(12\), y: 12 \+ this\.insets\.top \}\)/,
+    'the floating control must take its x offset through the binding as well');
 });
 
 test('every surface that owns a bottom edge reads the shared binding, not a constant', () => {
