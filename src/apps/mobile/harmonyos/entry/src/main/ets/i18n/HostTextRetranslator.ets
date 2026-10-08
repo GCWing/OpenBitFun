@@ -1,4 +1,4 @@
-import { resourceManager } from '@kit.LocalizationKit';
+import { util } from '@kit.ArkTS';
 
 interface TemplateEntry {
   key: string;
@@ -89,12 +89,11 @@ export class HostTextRetranslator {
   private loadCatalog(): void {
     try {
       const resourceManager = getContext(this).resourceManager;
-      // Rawfile paths are relative to the resources/rawfile root.
+      // Rawfile paths are relative to the resources/rawfile root, and the
+      // content arrives as UTF-8 bytes. Decode multi-byte catalog text with
+      // TextDecoder instead of per-byte fromCharCode, which mangles it.
       const rawResource = resourceManager.getRawFileContentSync('string.json');
-      let jsonString = '';
-      for (let i = 0; i < rawResource.length; i++) {
-        jsonString += String.fromCharCode(rawResource[i]);
-      }
+      const jsonString = util.TextDecoder.create('utf-8').decodeWithStream(rawResource);
       const catalog = JSON.parse(jsonString) as StringCatalog;
       const strings = catalog.string || [];
 

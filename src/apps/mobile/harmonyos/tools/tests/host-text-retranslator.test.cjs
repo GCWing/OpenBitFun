@@ -13,17 +13,35 @@ const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS }
 }).outputText;
 
+// Mock the '@kit.ArkTS' util.TextDecoder dependency of the compiled module.
+// getRawFileContentSync delivers UTF-8 bytes on device, so the harness must
+// decode them the same way instead of assuming one byte equals one character.
+function mockKitRequire(name) {
+  if (name === '@kit.ArkTS') {
+    return {
+      util: {
+        TextDecoder: {
+          create() {
+            return {
+              decodeWithStream(bytes) {
+                return Buffer.from(bytes).toString('utf8');
+              }
+            };
+          }
+        }
+      }
+    };
+  }
+  return {};
+}
+
 // Mock getContext to return a fake resourceManager with test catalog data
 function createMockContext(catalog) {
   return {
     resourceManager: {
       getRawFileContentSync(filename) {
-        const jsonString = JSON.stringify(catalog);
-        const bytes = [];
-        for (let i = 0; i < jsonString.length; i++) {
-          bytes.push(jsonString.charCodeAt(i));
-        }
-        return bytes;
+        // Serve UTF-8-encoded bytes, matching device rawfile reads.
+        return Array.from(Buffer.from(JSON.stringify(catalog), 'utf8'));
       }
     }
   };
@@ -36,7 +54,7 @@ function createRetranslator(catalog) {
   const originalGetContext = global.getContext;
   global.getContext = () => mockContext;
   try {
-    new Function('require', 'exports', compiled)(() => ({}), exportsObject);
+    new Function('require', 'exports', compiled)(mockKitRequire, exportsObject);
     // The constructor reads the catalog through getContext, so it must run
     // while the override is active.
     return new exportsObject.HostTextRetranslator('en-US');
