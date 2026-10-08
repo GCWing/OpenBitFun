@@ -109,7 +109,8 @@ Use these tables to select tools for the user's tasks, then put their exact name
 | `ReadMCPResource` | Read a connected MCP server's resource by URI. |
 | `ListMCPPrompts` | List prompt templates exposed by a connected MCP server. |
 | `GetMCPPrompt` | Fetch and render a named prompt template from a connected MCP server. |
-| `SessionControl` | Create, list, rename, cancel, and delete persisted agent sessions. |
+| `ListWorkspaces` | Discover registered local, assistant, and remote workspace IDs on the runtime host without activating them. |
+| `SessionControl` | Create or list sessions by workspace ID or caller-scoped absolute path; rename, cancel, or delete by session ID. |
 | `SessionMessage` | Send a message to another agent session and receive its result asynchronously. |
 | `SessionHistory` | Export an agent session transcript and index for targeted history reads. |
 | `PortForward` | Forward a port from an SSH host to the user's machine. |

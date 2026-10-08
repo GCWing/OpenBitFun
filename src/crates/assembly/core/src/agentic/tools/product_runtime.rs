@@ -294,7 +294,15 @@ mod baseline_tests {
             .expect("agent-runtime guarantees its Basic and AgentControl owners");
         let names = registry.get_tool_names();
 
-        for required in ["LS", "Read", "Task", "AgentSpawn", "SessionControl", "Cron"] {
+        for required in [
+            "LS",
+            "Read",
+            "Task",
+            "AgentSpawn",
+            "ListWorkspaces",
+            "SessionControl",
+            "Cron",
+        ] {
             assert!(
                 names.iter().any(|name| name == required),
                 "missing {required}"

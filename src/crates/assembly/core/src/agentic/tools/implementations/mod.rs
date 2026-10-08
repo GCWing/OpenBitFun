@@ -42,6 +42,7 @@ pub mod get_time_tool;
 pub mod glob_tool;
 pub mod grep_tool;
 pub mod list_models_tool;
+pub mod list_workspaces_tool;
 pub mod ls_tool;
 #[cfg(feature = "tools-mcp")]
 pub mod mcp_tools;
@@ -112,6 +113,7 @@ pub use get_time_tool::GetTimeTool;
 pub use glob_tool::GlobTool;
 pub use grep_tool::GrepTool;
 pub use list_models_tool::ListModelsTool;
+pub use list_workspaces_tool::ListWorkspacesTool;
 pub use ls_tool::LSTool;
 #[cfg(feature = "tools-mcp")]
 pub use mcp_tools::{

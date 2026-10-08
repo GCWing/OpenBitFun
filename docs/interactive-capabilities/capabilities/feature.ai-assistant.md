@@ -29,9 +29,9 @@ Work with AI in project context, create sessions, continue tasks, answer permiss
   - Start, steer, interrupt, cancel, or recover an agent turn
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 查看并逐个或批量回答等待中的权限请求
   - Review and answer pending permission requests individually or in a batch
-- **由专用智能体工具控制 / Delegated Agent tool** · `SessionControl` / `SessionHistory` / `Read` / `Grep` · 分页加载、搜索和回填历史消息与会话内容
+- **由专用智能体工具控制 / Delegated Agent tool** · `ListWorkspaces` / `SessionControl` / `SessionHistory` / `Read` / `Grep` · 分页加载、搜索和回填历史消息与会话内容
   - Page through, search, and backfill historical turns and session content
-- **由专用智能体工具控制 / Delegated Agent tool** · `SessionControl` / `SessionMessage` · 让智能体创建、列出、取消、删除会话或向另一会话发送消息
+- **由专用智能体工具控制 / Delegated Agent tool** · `ListWorkspaces` / `SessionControl` / `SessionMessage` · 让智能体创建、列出、取消、删除会话或向另一会话发送消息
   - Let an agent create, list, cancel, or delete sessions and send messages to another session
 - **智能体可定位入口，需交互完成 / Agent opens; interaction required** · 在对话中通过 @ 选择当前模式可用的 MCP 服务
   - Use @ in chat to select MCP servers available to the current mode

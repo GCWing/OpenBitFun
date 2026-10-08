@@ -283,6 +283,13 @@ Skill discovery, installation provenance, and local/remote registry regressions:
 cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib agentic::tools::implementations::skills::
 ```
 
+SessionControl workspace selection, remote routing, and session-targeted actions:
+
+```bash
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib session_control_tool::tests
+cargo test --locked -p openbitfun-core --no-default-features --features agent-runtime,git --lib list_workspaces
+```
+
 Skill hook activation, session cleanup, and tool preflight/permission ordering:
 
 ```bash

@@ -53,6 +53,7 @@ const PRODUCT_TOOL_REGISTRATION_ORDER: &[&str] = &[
     "ReadCanvas",
     "UpdateCanvas",
     "PatchCanvas",
+    "ListWorkspaces",
     "SessionControl",
     "SessionMessage",
     "SessionHistory",
@@ -146,6 +147,7 @@ impl StaticToolProviderFactory<dyn Tool> for ProductConcreteToolFactory {
             "CallDeferredTool" => Some(Arc::new(CallDeferredTool::new())),
             #[cfg(feature = "tools-git")]
             "GetFileDiff" => Some(Arc::new(GetFileDiffTool::new())),
+            "ListWorkspaces" => Some(Arc::new(ListWorkspacesTool::new())),
             "SessionControl" => Some(Arc::new(SessionControlTool::new())),
             "SessionMessage" => Some(Arc::new(SessionMessageTool::new())),
             "SessionHistory" => Some(Arc::new(SessionHistoryTool::new())),
@@ -276,6 +278,15 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn list_workspaces_materializes_as_readonly_deferred_discovery() {
+        let tool = ProductConcreteToolFactory
+            .materialize_tool("ListWorkspaces")
+            .expect("workspace catalog belongs to the session tool provider");
+        assert!(tool.is_readonly());
+        assert!(matches!(tool.default_exposure(), ToolExposure::Deferred));
     }
 
     #[cfg(all(feature = "tools-agent-control", feature = "remote-workspace"))]

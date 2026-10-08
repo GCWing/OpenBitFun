@@ -591,6 +591,7 @@ mod tests {
             "ReadCanvas",
             "UpdateCanvas",
             "PatchCanvas",
+            "ListWorkspaces",
             "SessionControl",
             "SessionMessage",
             "SessionHistory",
@@ -795,6 +796,7 @@ mod tests {
             vec![
                 "ListModels",
                 "GetFileDiff",
+                "ListWorkspaces",
                 "SessionControl",
                 "SessionMessage",
                 "SessionHistory",
@@ -844,6 +846,7 @@ mod tests {
                 "GetToolSpec",
                 "GetFileDiff",
                 "ReadCanvas",
+                "ListWorkspaces",
                 "SessionHistory",
                 "WebSearch",
                 "WebFetch",

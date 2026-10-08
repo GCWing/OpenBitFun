@@ -43,6 +43,7 @@ Choose the session type intentionally:
 
 - `Standard` for implementation, debugging, code changes, and planning tasks; ask it to use the built-in `plan` Skill when a plan artifact is the deliverable.
 - `Cowork` for research, documents, presentations, summaries, and other office-related work.
+- `DeepResearch` for systematic investigation and evidence-driven reports.
 
 Local computer/desktop work is not a SessionControl session type; use the `ComputerUse` tool directly when available.
 

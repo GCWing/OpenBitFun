@@ -43,6 +43,7 @@ impl ClawMode {
                 "create_goal".to_string(),
                 "update_goal".to_string(),
                 "Skill".to_string(),
+                "ListWorkspaces".to_string(),
                 "SessionControl".to_string(),
                 "SessionMessage".to_string(),
                 "SessionHistory".to_string(),
@@ -112,6 +113,7 @@ mod tests {
         assert!(!tools.contains(&"PublishMiniApp".to_string()));
         assert!(!tools.contains(&"FrontendWorkbench".to_string()));
         assert!(tools.contains(&"ListModels".to_string()));
+        assert!(tools.contains(&"ListWorkspaces".to_string()));
     }
 
     #[test]

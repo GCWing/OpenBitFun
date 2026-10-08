@@ -53,6 +53,7 @@ fn code_agent_tools_are_selected_from_atomic_provider_groups() {
         "AgentControl",
         "AgentList",
         "PortForward",
+        "ListWorkspaces",
         "OpenBitFunControl",
     ] {
         assert!(

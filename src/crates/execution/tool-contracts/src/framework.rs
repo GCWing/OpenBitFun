@@ -2342,6 +2342,10 @@ pub fn miniapp_headless_agent_tool_restrictions() -> ToolRuntimeRestrictions {
             "Cron is unavailable in MiniApp headless agent runs.",
         ),
         (
+            "ListWorkspaces",
+            "ListWorkspaces is unavailable in MiniApp headless agent runs.",
+        ),
+        (
             "SessionControl",
             "SessionControl is unavailable in MiniApp headless agent runs.",
         ),

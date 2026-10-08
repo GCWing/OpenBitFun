@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "63afe6c13213f11a7089fbb6208db930d563e4d3098f7c6dcf4c20a1f4e87271",
+  "digest": "434dc78df2ba3fa225ab75ab2839d8dcacebbf2e65123a49da3ceb4081c2988f",
   "ownerDigest": "c0e5c187cf62bc6ed06196ce8520b3eb427bf268cf24659b72d2552fb1d99c54",
   "searchAcceptance": [
     {
@@ -563,6 +563,7 @@
         "additionalProperties": true
       },
       "delegateTools": [
+        "ListWorkspaces",
         "SessionControl",
         "SessionHistory",
         "Read",
@@ -611,6 +612,7 @@
         "additionalProperties": true
       },
       "delegateTools": [
+        "ListWorkspaces",
         "SessionControl",
         "SessionMessage"
       ],
@@ -19317,6 +19319,7 @@
           "control": {
             "kind": "delegate",
             "tools": [
+              "ListWorkspaces",
               "SessionControl",
               "SessionHistory",
               "Read",
@@ -19339,15 +19342,16 @@
           "control": {
             "kind": "delegate",
             "tools": [
+              "ListWorkspaces",
               "SessionControl",
               "SessionMessage"
             ],
             "workflowZh": [
-              "用 SessionControl 在明确工作区内创建或列出会话；取消只终止当前运行轮次，删除是独立动作",
+              "用 ListWorkspaces 获取运行主机登记的 workspace_id，再传给 SessionControl.workspace 创建或列出本地或远程会话；绝对路径仅在调用者执行环境中解析；取消只终止当前轮次，删除是独立动作",
               "需要让另一持久会话接手工作时用 SessionMessage，并保留异步返回；跨远程边界时沿用目标会话绑定，不得复用控制器路径"
             ],
             "workflowEn": [
-              "Use SessionControl to create or list sessions in an explicit workspace; cancel affects only the active turn and delete is separate",
+              "Use ListWorkspaces to discover runtime-host workspace IDs, then pass one as SessionControl.workspace to create or list local or remote sessions; absolute paths resolve in the caller environment; cancel affects only the active turn and delete is separate",
               "Use SessionMessage when another persisted session should take over work and retain its asynchronous result; preserve the target session binding across remote boundaries"
             ]
           }
@@ -19579,6 +19583,7 @@
         "Call FrontendWorkbench prepare on the local Desktop in Creative mode, read the packaged API, and edit only draft CSS, JavaScript and owned assets without source or build tools",
         "Apply with the original draft ID; the host starts the immutable review window's 15-second countdown only after the real shell and customization activate, and apply waits for a final confirmed or rolled_back outcome",
         "Compose commands, state and events into reusable capabilities; use FrontendWorkbench inspect to discover schemas and diagnostics, then invoke to verify execution",
+        "ListWorkspaces",
         "SessionControl",
         "SessionHistory",
         "Grep",
@@ -19587,9 +19592,9 @@
         "Use SessionControl list to find the target session, then export its indexed transcript with SessionHistory",
         "Read only the exported index first, then use Read or Grep for the required turns instead of loading the entire history into context",
         "SessionMessage",
-        "用 SessionControl 在明确工作区内创建或列出会话；取消只终止当前运行轮次，删除是独立动作",
+        "用 ListWorkspaces 获取运行主机登记的 workspace_id，再传给 SessionControl.workspace 创建或列出本地或远程会话；绝对路径仅在调用者执行环境中解析；取消只终止当前轮次，删除是独立动作",
         "需要让另一持久会话接手工作时用 SessionMessage，并保留异步返回；跨远程边界时沿用目标会话绑定，不得复用控制器路径",
-        "Use SessionControl to create or list sessions in an explicit workspace; cancel affects only the active turn and delete is separate",
+        "Use ListWorkspaces to discover runtime-host workspace IDs, then pass one as SessionControl.workspace to create or list local or remote sessions; absolute paths resolve in the caller environment; cancel affects only the active turn and delete is separate",
         "Use SessionMessage when another persisted session should take over work and retain its asynchronous result; preserve the target session binding across remote boundaries",
         "get_goal",
         "create_goal",
