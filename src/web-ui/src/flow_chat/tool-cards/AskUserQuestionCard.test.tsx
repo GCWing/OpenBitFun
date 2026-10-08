@@ -550,7 +550,39 @@ describe('AskUserQuestionCard', () => {
     expect(document.activeElement).toBe(customInput);
   });
 
-  it('deselects a blank multi-select Other answer and omits it from submission', async () => {
+  it.each([
+    { sessionId: 'session-a', multiSelect: false },
+    { sessionId: undefined, multiSelect: false },
+    { sessionId: 'session-a', multiSelect: true },
+    { sessionId: undefined, multiSelect: true },
+  ])('retains Other selection and input focus after clearing text ($sessionId, multiple=$multiSelect)', async ({ sessionId, multiSelect }) => {
+    act(() => root.render(
+      <AskUserQuestionCard
+        toolItem={questionTool('pending_confirmation', multiSelect)}
+        config={config}
+        sessionId={sessionId}
+      />,
+    ));
+    await act(async () => container.querySelector<HTMLInputElement>('input[value="Other"]')!.click());
+    const input = container.querySelector<HTMLInputElement>('[data-openbitfun-part="custom-input"] input')!;
+    expect(document.activeElement).toBe(input);
+    act(() => setInputValue(input, 'Custom database'));
+
+    for (const value of ['', '   ']) {
+      act(() => setInputValue(input, value));
+      expect(container.querySelector('[data-openbitfun-part="custom-input"] input')).toBe(input);
+      expect(document.activeElement).toBe(input);
+      expect(container.querySelector<HTMLInputElement>('input[value="Other"]')?.checked).toBe(true);
+      expect(container.querySelector<HTMLButtonElement>('[data-openbitfun-part="submit"] button')?.disabled).toBe(true);
+    }
+
+    act(() => setInputValue(input, 'New database'));
+    expect(input.value).toBe('New database');
+    expect(document.activeElement).toBe(input);
+    expect(container.querySelector<HTMLButtonElement>('[data-openbitfun-part="submit"] button')?.disabled).toBe(false);
+  });
+
+  it('keeps a blank multi-select Other answer selected and omits it from submission', async () => {
     act(() => {
       root.render(
         <AskUserQuestionCard
@@ -578,7 +610,7 @@ describe('AskUserQuestionCard', () => {
       }
     });
 
-    expect(container.querySelector<HTMLInputElement>('input[value="Other"]')?.checked).toBe(false);
+    expect(container.querySelector<HTMLInputElement>('input[value="Other"]')?.checked).toBe(true);
     expect(container.querySelector<HTMLInputElement>('input[value="PostgreSQL"]')?.checked).toBe(true);
 
     const submitButton = container.querySelector<HTMLButtonElement>('[data-openbitfun-part="submit"] button');

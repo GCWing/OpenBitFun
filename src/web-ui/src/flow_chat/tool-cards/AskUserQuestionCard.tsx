@@ -367,42 +367,19 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
   const handleOtherInputChange = useCallback((
     questionIndex: number,
     value: string,
-    preserveOtherSelection = false,
   ) => {
     if (draftKey) {
       askUserQuestionDraftStore.getState().setOtherInput(
         draftKey,
         questionIndex,
         value,
-        preserveOtherSelection,
       );
       return;
     }
     setLocalDraft((current) => {
       const isEmpty = value.trim().length === 0;
-      const currentAnswer = current.answers[questionIndex];
-      let nextAnswers = current.answers;
-      if (
-        isEmpty
-        && !preserveOtherSelection
-        && Array.isArray(currentAnswer)
-        && currentAnswer.includes(OTHER_OPTION_VALUE)
-      ) {
-        nextAnswers = {
-          ...current.answers,
-          [questionIndex]: currentAnswer.filter((answer) => answer !== OTHER_OPTION_VALUE),
-        };
-      } else if (
-        isEmpty
-        && !preserveOtherSelection
-        && currentAnswer === OTHER_OPTION_VALUE
-      ) {
-        nextAnswers = { ...current.answers };
-        delete nextAnswers[questionIndex];
-      }
       return {
         ...current,
-        answers: nextAnswers,
         otherInputs: {
           ...current.otherInputs,
           [questionIndex]: isEmpty ? '' : value,
@@ -707,8 +684,8 @@ export const AskUserQuestionCard: React.FC<ToolCardProps> = ({
       ) : undefined}
       onFocusCapture={handleInteraction}
       onAnswersChange={handleAnswersChange}
-      onCustomAnswerChange={(questionId, value, meta) => {
-        handleOtherInputChange(Number(questionId), value, meta.isComposing);
+      onCustomAnswerChange={(questionId, value) => {
+        handleOtherInputChange(Number(questionId), value);
       }}
       onSubmit={handleSubmit}
       questions={designQuestions}

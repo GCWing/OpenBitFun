@@ -29,7 +29,6 @@ interface AskUserQuestionDraftState {
     key: string,
     questionIndex: number,
     value: string,
-    preserveOtherSelection?: boolean,
   ) => void;
   setSubmissionPhase: (key: string, phase: AskUserQuestionSubmissionPhase) => void;
   clearDraft: (key: string) => void;
@@ -103,28 +102,6 @@ function updateDraft(
   };
 }
 
-function removeOtherAnswer(
-  answers: Record<number, AskUserQuestionAnswer>,
-  questionIndex: number,
-): Record<number, AskUserQuestionAnswer> {
-  const current = answers[questionIndex];
-  if (Array.isArray(current)) {
-    if (!current.includes('Other')) {
-      return answers;
-    }
-    return {
-      ...answers,
-      [questionIndex]: current.filter(value => value !== 'Other'),
-    };
-  }
-  if (current !== 'Other') {
-    return answers;
-  }
-  const nextAnswers = { ...answers };
-  delete nextAnswers[questionIndex];
-  return nextAnswers;
-}
-
 function removeMatchingDrafts(
   state: AskUserQuestionDraftState,
   shouldRemove: (key: string) => boolean,
@@ -170,14 +147,11 @@ export const useAskUserQuestionDraftStore = create<AskUserQuestionDraftState>((s
     }));
   },
 
-  setOtherInput: (key, questionIndex, value, preserveOtherSelection = false) => {
+  setOtherInput: (key, questionIndex, value) => {
     set(state => updateDraft(state, key, draft => {
       const isEmpty = value.trim().length === 0;
       return {
         ...draft,
-        answers: isEmpty && !preserveOtherSelection
-          ? removeOtherAnswer(draft.answers, questionIndex)
-          : draft.answers,
         otherInputs: {
           ...draft.otherInputs,
           [questionIndex]: isEmpty ? '' : value,
