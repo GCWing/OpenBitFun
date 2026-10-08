@@ -157,6 +157,16 @@ export struct ChatUserMessageBubble {
    * This Text carries no `copyOption`: the frozen design keeps selection
    * handles off a bubble whose text continues past what is drawn, and answers a
    * long press with the menu below instead. Handles belong to the panel.
+   *
+   * It also carries no `width`: a percentage width resolves against the row the
+   * bubble sits in rather than the bubble's own content box, so the Text was
+   * measured wider than the fill behind it. Measured on device, the bubble's
+   * fill ended at 1215 of a 1256-wide screen while the Text's own box ran to
+   * 1256, and the appended affix — the only content on the last line that
+   * reaches past the fill — was drawn outside the bubble and clipped there. At
+   * the content's own width the line breaks inside the bubble, and the
+   * affordance wraps onto the next line when it does not fit, which is the shape
+   * the frozen design specifies.
    */
   @Builder
   private TruncatedText() {
@@ -173,8 +183,6 @@ export struct ChatUserMessageBubble {
     }
     .fontSize(MobileDesignTypography.bodyLarge.size)
     .lineHeight(MobileDesignTypography.bodyLarge.lineHeight)
-    .width('100%')
-    .textAlign(TextAlign.Start)
     .bindContextMenu(this.TruncatedMenu(), ResponseType.LongPress)
   }
 
