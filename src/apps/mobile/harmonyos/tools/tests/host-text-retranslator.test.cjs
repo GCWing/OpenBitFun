@@ -79,7 +79,19 @@ const testCatalog = {
     { name: 'dual.placeholder', value: '%1$s and %2$s' },
     { name: 'dual.placeholder.zh', value: '%1$s 和 %2$s' },
     { name: 'status.notConnected', value: 'Not connected' },
-    { name: 'status.notConnected.zh', value: '未连接' }
+    { name: 'status.notConnected.zh', value: '未连接' },
+    // Two distinct keys share one value per language: the value is ambiguous
+    // and must not be re-rendered through either key.
+    { name: 'duplicate.first', value: 'Duplicate value' },
+    { name: 'duplicate.first.zh', value: '重复值' },
+    { name: 'duplicate.second', value: 'Duplicate value' },
+    { name: 'duplicate.second.zh', value: '重复值' },
+    // The English templates of the two keys collide, so neither key's
+    // template can identify a match in any language.
+    { name: 'collision.first', value: '%1$s items' },
+    { name: 'collision.first.zh', value: '%1$s 项' },
+    { name: 'collision.second', value: '%1$s items' },
+    { name: 'collision.second.zh', value: '%1$s 条目' }
   ]
 };
 
@@ -89,6 +101,35 @@ test('exact match returns translated string', () => {
   assert.equal(retranslator.retranslate('返回'), 'Back');
   assert.equal(retranslator.retranslate('Not connected'), '未连接');
   assert.equal(retranslator.retranslate('未连接'), 'Not connected');
+});
+
+test('ambiguous value is returned as-is rather than guessed', () => {
+  const retranslator = createRetranslator(testCatalog);
+  assert.equal(retranslator.retranslate('Duplicate value'), 'Duplicate value');
+});
+
+test('ambiguous value refusal applies to every catalog language', () => {
+  const retranslator = createRetranslator(testCatalog);
+  assert.equal(retranslator.retranslate('重复值'), '重复值');
+});
+
+test('duplicate catalog values keep unique neighbors translatable', () => {
+  const retranslator = createRetranslator(testCatalog);
+  assert.equal(retranslator.retranslate('Back'), '返回');
+  assert.equal(retranslator.retranslate('返回'), 'Back');
+  assert.equal(retranslator.retranslate('Not connected'), '未连接');
+});
+
+test('template with an ambiguous value is refused in every language', () => {
+  const retranslator = createRetranslator(testCatalog);
+  // collision.first and collision.second share the English value
+  // '%1$s items', so neither key's template may match, even in Chinese
+  // where the values differ.
+  assert.equal(retranslator.retranslate('3 items'), '3 items');
+  assert.equal(retranslator.retranslate('3 项'), '3 项');
+  assert.equal(retranslator.retranslate('3 条目'), '3 条目');
+  // Unambiguous templates keep working.
+  assert.equal(retranslator.retranslate('3 more sessions'), '还有 3 个会话');
 });
 
 test('single placeholder template matches and fills correctly', () => {

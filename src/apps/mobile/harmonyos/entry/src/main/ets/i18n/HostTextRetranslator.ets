@@ -30,11 +30,16 @@ interface EntryLanguage {
 // language: the constructor language when the message matches another
 // catalog language, and otherwise the first other catalog language. That way
 // a stored string never re-renders in the language it matched.
+//
+// Values that several keys share in one language cannot identify their key,
+// so ambiguous values are refused rather than guessed, like the legacy
+// retranslate policy.
 export class HostTextRetranslator {
   private currentLanguage: string = 'en';
   private languages: string[] = [];
   private forwardByLanguage: Map<string, Map<string, string>> = new Map();
   private reverseByLanguage: Map<string, Map<string, string>> = new Map();
+  private ambiguousByLanguage: Map<string, Set<string>> = new Map();
   private templatesByLanguage: Map<string, TemplateEntry[]> = new Map();
 
   constructor(locale: string) {
@@ -102,19 +107,70 @@ export class HostTextRetranslator {
         this.ensureLanguage(tagged.language);
         const forward = this.forwardByLanguage.get(tagged.language);
         const reverse = this.reverseByLanguage.get(tagged.language);
+        const ambiguous = this.ambiguousByLanguage.get(tagged.language);
         const templates = this.templatesByLanguage.get(tagged.language);
-        if (!forward || !reverse || !templates) {
+        if (!forward || !reverse || !ambiguous || !templates) {
           continue;
         }
         forward.set(tagged.key, entry.value);
-        reverse.set(entry.value, tagged.key);
+        const existingKey = reverse.get(entry.value);
+        if (existingKey !== undefined) {
+          if (existingKey !== tagged.key) {
+            // A second key shares this value within the language, so the
+            // value cannot identify its key: refuse it instead of letting
+            // the later entry win like a plain overwrite would.
+            ambiguous.add(entry.value);
+            reverse.delete(entry.value);
+          }
+        } else if (!ambiguous.has(entry.value)) {
+          reverse.set(entry.value, tagged.key);
+        }
         if (entry.value.indexOf('%1$s') >= 0 || entry.value.indexOf('%2$s') >= 0) {
           templates.push({ key: tagged.key, template: entry.value });
         }
       }
+      this.pruneAmbiguousTemplates();
     } catch (error) {
       // Fallback: catalog unavailable, retranslate returns original message
     }
+  }
+
+  // A template is trustworthy only when its key's value is unique in every
+  // catalog language: one shared value in any language leaves the template
+  // shape unable to identify its key. Refuse such templates in every
+  // language, matching the legacy hasUniqueTemplate gate.
+  private pruneAmbiguousTemplates(): void {
+    for (let languageIndex = 0; languageIndex < this.languages.length; languageIndex += 1) {
+      const language = this.languages[languageIndex];
+      const templates = this.templatesByLanguage.get(language);
+      if (!templates) {
+        continue;
+      }
+      const kept: TemplateEntry[] = [];
+      for (let templateIndex = 0; templateIndex < templates.length; templateIndex += 1) {
+        const entry = templates[templateIndex];
+        if (!this.hasAmbiguousTemplate(entry.key)) {
+          kept.push(entry);
+        }
+      }
+      this.templatesByLanguage.set(language, kept);
+    }
+  }
+
+  private hasAmbiguousTemplate(key: string): boolean {
+    for (let languageIndex = 0; languageIndex < this.languages.length; languageIndex += 1) {
+      const language = this.languages[languageIndex];
+      const forward = this.forwardByLanguage.get(language);
+      const ambiguous = this.ambiguousByLanguage.get(language);
+      if (!forward || !ambiguous) {
+        return true;
+      }
+      const value = forward.get(key);
+      if (value === undefined || ambiguous.has(value)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private ensureLanguage(language: string): void {
@@ -123,6 +179,7 @@ export class HostTextRetranslator {
     }
     this.forwardByLanguage.set(language, new Map());
     this.reverseByLanguage.set(language, new Map());
+    this.ambiguousByLanguage.set(language, new Set<string>());
     this.templatesByLanguage.set(language, []);
     this.languages.push(language);
   }
