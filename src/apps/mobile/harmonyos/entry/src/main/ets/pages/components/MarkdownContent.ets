@@ -307,10 +307,12 @@ export struct MarkdownContent {
         Text(language.length > 0 ? language : 'code')
           .fontSize(MobileDesignTypography.labelSmall.size)
           .fontColor(MUTED)
+          .textSelectable(TextSelectableMode.UNSELECTABLE)
         Blank()
         Text(RemoteI18n.t('common.copy'))
           .fontSize(MobileDesignTypography.labelSmall.size)
           .fontColor(MUTED)
+          .textSelectable(TextSelectableMode.UNSELECTABLE)
           .onClick(() => {
             this.onCopyText(body);
           })
@@ -325,8 +327,11 @@ export struct MarkdownContent {
           .constraintSize({ minWidth: '100%' })
           // The code body scrolls horizontally inside the block, so it carries
           // its own copyOption rather than relying on the container to reach it.
-          // The language label and the copy action above stay non-selectable:
-          // a long press there would fight the copy button's own click.
+          // The language label and the copy action above stay outside the
+          // selection: measured on device, a container selection that spans the
+          // block copied those two labels as well, so the block's chrome reached
+          // the clipboard as text. `UNSELECTABLE` is what keeps a label out of a
+          // selection the container drives; the copy action's click still fires.
           .copyOption(CopyOptions.LocalDevice)
       }
       .scrollable(ScrollDirection.Horizontal)
