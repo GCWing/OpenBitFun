@@ -35,6 +35,16 @@ const welcomeHome = source('entry/src/main/ets/pages/components/WelcomeHome.ets'
 const remoteSurfaceHost = source('entry/src/main/ets/pages/components/remote/RemoteSurfaceHost.ets');
 const wideConversationHost = source('entry/src/main/ets/pages/components/WideConversationHost.ets');
 
+// Reads one component's build() chain, so an assertion can name the root box a
+// page paints without reaching into the file's other builders.
+function buildChain(sourceText) {
+  const start = sourceText.indexOf('build() {');
+  assert.notEqual(start, -1, 'the component must keep its build()');
+  const end = sourceText.indexOf('\n  @Builder', start);
+  assert.notEqual(end, -1, 'build() must be followed by another builder');
+  return sourceText.slice(start, end);
+}
+
 // Reads one @Builder out of a component, so an assertion can name the layer it
 // is about instead of counting matches in the whole file.
 function builderBody(sourceText, name) {
@@ -571,5 +581,56 @@ test('every surface that owns a bottom edge reads the shared binding, not a cons
     assert.match(text, /this\.insets\.bind\(this\.getUIContext\(\), context\)/,
       `${name} must bind the insets while it is mounted`);
     assert.match(text, /this\.insets\.unbind\(\)/, `${name} must release the insets when it goes`);
+  }
+});
+
+test('every top band the status bar shows through is a theme-following page colour', () => {
+  // The window's status-bar content colour is one value for the whole window and
+  // follows the colour mode alone (see `updateSystemBars` in EntryAbility): the
+  // light ink on a light band, the dark ink on a dark one. That single value is
+  // correct for every page shipped today for one reason only — every top band the
+  // window shows through the transparent status bar is a theme-following page
+  // colour — and this test is what turns that from a coincidence into a contract.
+  //
+  // Each entry names the band that owns the window's top edge and the semantic
+  // colour it paints with. A band that becomes media chrome (`MEDIA_BACKGROUND` /
+  // `MEDIA_SCRIM`, dark in both appearances) or a hard-coded colour puts the
+  // light-mode ink on a dark band, and the clock and the status icons stop being
+  // readable against it.
+  const bands = [
+    ['the drawer panel', builderBody(appSidebar, 'SidebarContent'), 'SIDEBAR_BG'],
+    ['the chat header band', builderBody(conversationView, 'TopOverlay'), 'PAGE_BG_OVERLAY'],
+    ['the gallery root', buildChain(miniAppSurface), 'PAGE_BG'],
+    ['the file preview root', buildChain(filePreviewSurface), 'PAGE_BG'],
+    ['the compact home root', builderBody(remoteSurfaceHost, 'CompactHomeContent'), 'PAGE_BG'],
+    ['the wide home root', builderBody(remoteSurfaceHost, 'FlowPlaceholder'), 'PAGE_BG'],
+    ['the wide home pane', builderBody(wideConversationHost, 'RemoteHomeContent'), 'PAGE_BG'],
+    ['the wide home detail', builderBody(wideConversationHost, 'RemoteHomeDetail'), 'PAGE_BG'],
+    ['the wide chat pane', builderBody(wideConversationHost, 'RemoteChatContent'), 'PAGE_BG'],
+    ['the connect sheet root', buildChain(connectView), 'CARD'],
+    ['the welcome page', buildChain(welcomeHome), 'WELCOME_PAGE_BG']
+  ];
+  const unreadable = 'the status bar icons are drawn in the colour-mode ink, so a top band that is dark in ' +
+    'that same appearance makes them unreadable: handle the band and the system bar content colour together ' +
+    '(see `updateSystemBars` in EntryAbility) instead of repainting the band on its own';
+  for (const [name, slice, token] of bands) {
+    assert.match(normalize(slice), new RegExp(`\\.backgroundColor\\(${token}\\)`),
+      `${name} must paint its top band with the theme-following ${token}`);
+    for (const forbidden of ['MEDIA_BACKGROUND', 'MEDIA_SCRIM']) {
+      assert.equal(slice.includes(forbidden), false,
+        `${name} must not paint its top band with ${forbidden} (dark in both appearances): ${unreadable}`);
+    }
+    assert.equal(slice.includes("backgroundColor('#"), false,
+      `${name} must not paint its top band with a hard-coded colour: ${unreadable}`);
+  }
+
+  // The same rule for the fills that reach the screen edge rather than sitting in
+  // a band: the status bar strip carries whatever the page paints there, so the
+  // surfaces that own it are the ones that have to keep their own ink legible on
+  // it. Each of the three already reads a theme-following token above.
+  for (const [name, text] of [['AppShell', appShell], ['ConversationView', conversationView],
+    ['WelcomeHome', welcomeHome]]) {
+    assert.equal(text.includes('MEDIA_BACKGROUND'), false,
+      `${name} must not paint a screen-edge fill with media chrome: ${unreadable}`);
   }
 });

@@ -132,6 +132,27 @@ export default class EntryAbility extends UIAbility {
     }
   }
 
+  /**
+   * The content colour of both system bars, for the whole window and the whole
+   * app.
+   *
+   * This is one value for one window, and it is derived from one thing only: the
+   * colour mode. There is no per-page override here, so any page whose top band
+   * is dark — a media viewer, an immersive title, a hero the design decides to
+   * paint dark — puts the light-mode ink on a dark band and the clock and the
+   * status icons stop being readable against it. Every top band the app ships
+   * today is a theme-following page colour (`PAGE_BG`, `SIDEBAR_BG`,
+   * `PAGE_BG_OVERLAY`, `WELCOME_PAGE_BG`, `CARD`), which is why the single value
+   * is correct as it stands; `immersive-bottom.test.cjs` guards that list as a
+   * tripwire.
+   *
+   * So: a new page that paints its own dark top band is not finished here. It has
+   * to come back to this method — either by declaring its band against the
+   * colour mode the way the others do, or by giving the app a per-page override
+   * (the platform's `HdsNavigation.systemBarStyle` is the page-level route, and
+   * the platform also warns against mixing it with the window-level calls used
+   * here). Either way the band and the content colour are one decision, not two.
+   */
   private updateSystemBars(colorMode?: ConfigurationConstant.ColorMode): void {
     if (!this.mainWindow) {
       return;
