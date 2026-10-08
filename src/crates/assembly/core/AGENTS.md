@@ -190,6 +190,12 @@ Narrower local guides already exist for some subtrees:
 
 ## Verification
 
+For config-backed product-control option defaults, typed binding, and persisted readback:
+
+```bash
+cargo test -p openbitfun-core --no-default-features --features agent-runtime,git --lib every_catalog_config_option
+```
+
 AI client construction and subscription credential compatibility:
 
 ```bash

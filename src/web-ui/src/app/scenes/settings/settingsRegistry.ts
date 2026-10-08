@@ -117,10 +117,16 @@ export const SETTINGS_PAGE_MANIFESTS: readonly SettingsPageManifest[] = [
     categoryId: 'application',
     labelKey: 'navigation.pages.input.label',
     descriptionKey: 'navigation.pages.input.description',
-    keywords: ['input', 'voice', 'speech', 'keyboard', 'shortcut', 'keybinding', 'hotkey'],
-    namespaces: ['settings', 'settings/voice-input'],
+    keywords: ['input', 'voice', 'speech', 'keyboard', 'shortcut', 'keybinding', 'hotkey', 'selection', 'annotation', 'excerpt'],
+    namespaces: ['settings', 'settings/application', 'settings/voice-input'],
     searchPhrases: [],
     sections: [
+      {
+        id: 'text-selection',
+        labelKey: 'navigation.sections.text-selection',
+        keywords: ['selection', 'annotation', 'excerpt', 'toolbar', 'popup', 'flowchat'],
+        searchPhrases: [phrase('settings/application', 'textSelection.title'), phrase('settings/application', 'textSelection.autoShowToolbar'), phrase('settings/application', 'textSelection.autoShowToolbarDescription')],
+      },
       {
         id: 'voice',
         labelKey: 'navigation.sections.voice',

@@ -437,6 +437,9 @@ pub struct AppFlowChatConfig {
         skip_serializing_if = "is_permission_mode_control_visible"
     )]
     pub show_permission_mode_control: bool,
+    /// Automatically show excerpt actions after selecting transcript text.
+    #[serde(default = "default_auto_show_selection_toolbar")]
+    pub auto_show_selection_toolbar: bool,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -454,6 +457,10 @@ fn is_permission_mode_control_visible(value: &bool) -> bool {
     *value
 }
 
+fn default_auto_show_selection_toolbar() -> bool {
+    true
+}
+
 impl Default for AppFlowChatConfig {
     fn default() -> Self {
         Self {
@@ -461,6 +468,7 @@ impl Default for AppFlowChatConfig {
             default_mode_id: None,
             last_mode_id: None,
             show_permission_mode_control: default_show_permission_mode_control(),
+            auto_show_selection_toolbar: default_auto_show_selection_toolbar(),
         }
     }
 }
@@ -3034,6 +3042,42 @@ mod tests {
             hidden_serialized["app"]["flow_chat"]["show_permission_mode_control"],
             false
         );
+    }
+
+    #[test]
+    fn app_flow_chat_selection_toolbar_defaults_and_round_trips() {
+        // Old payloads retain automatic display and remain readable after saving.
+        let legacy = serde_json::json!({ "default_mode_id": "Standard" });
+        let config: super::AppFlowChatConfig = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(config.auto_show_selection_toolbar);
+        let written = serde_json::to_value(&config).unwrap();
+        assert_eq!(written["default_mode_id"], legacy["default_mode_id"]);
+        let reloaded: super::AppFlowChatConfig = serde_json::from_value(written).unwrap();
+        assert!(reloaded.auto_show_selection_toolbar);
+
+        let disabled = serde_json::json!({
+            "auto_show_selection_toolbar": false,
+            "show_permission_mode_control": false,
+            "default_mode_id": "Standard"
+        });
+        let config: super::AppFlowChatConfig = serde_json::from_value(disabled.clone()).unwrap();
+        assert!(!config.auto_show_selection_toolbar);
+        let written = serde_json::to_value(&config).unwrap();
+        assert_eq!(written, disabled);
+        let reloaded: super::AppFlowChatConfig = serde_json::from_value(written).unwrap();
+        assert!(!reloaded.auto_show_selection_toolbar);
+
+        let enabled: super::AppFlowChatConfig = serde_json::from_value(serde_json::json!({
+            "auto_show_selection_toolbar": true,
+            "future_field": "tolerated"
+        }))
+        .unwrap();
+        assert!(enabled.auto_show_selection_toolbar);
+        assert_eq!(
+            serde_json::to_value(enabled).unwrap(),
+            serde_json::json!({ "auto_show_selection_toolbar": true })
+        );
+        assert!(super::AppFlowChatConfig::default().auto_show_selection_toolbar);
     }
 
     #[test]

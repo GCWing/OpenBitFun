@@ -4,8 +4,8 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "dbed6a03474e7ad0368377e1a1dfc8eb9ba43b88e57864ddbec2986f3fc3eb2c",
-  "ownerDigest": "c0e5c187cf62bc6ed06196ce8520b3eb427bf268cf24659b72d2552fb1d99c54",
+  "digest": "f965bcc92d234b79484b5ec6a2fbd817c40e4c78119dd41b804fbbce3876fa5a",
+  "ownerDigest": "2269c2432e5db44706b2bce44df3c60672141a47c36141aeb1257ea7fd2507f8",
   "searchAcceptance": [
     {
       "id": "companion-pet-mixed",
@@ -138,9 +138,9 @@
     "features": 22,
     "settings": 21,
     "userFacing": 43,
-    "documentedItems": 323,
+    "documentedItems": 324,
     "controlCoverage": {
-      "direct": 48,
+      "direct": 49,
       "delegated": 62,
       "interactive": 213,
       "unsupported": 0
@@ -11969,6 +11969,7 @@
       "id": "setting.application.input:query",
       "capabilityId": "setting.application.input",
       "itemIds": [
+        "auto-show-selection-toolbar",
         "voice-enabled",
         "language",
         "microphone-test",
@@ -12001,6 +12002,50 @@
       "inputSchema": {
         "type": "object",
         "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "valueSource": {
+        "kind": "static"
+      },
+      "presentationTarget": {
+        "kind": "settings",
+        "pageId": "application.voice"
+      }
+    },
+    {
+      "id": "setting.application.input:option:auto-show-selection-toolbar",
+      "capabilityId": "setting.application.input",
+      "itemIds": [
+        "auto-show-selection-toolbar"
+      ],
+      "kind": "option",
+      "risk": "write",
+      "executionHost": "productHost",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": true
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": true
+        }
+      },
+      "inputSchema": {
+        "type": "boolean"
       },
       "outputSchema": {
         "type": "object",
@@ -25736,11 +25781,14 @@
       "id": "setting.application.input",
       "kind": "setting",
       "categoryId": "application",
-      "titleZh": "语音",
-      "titleEn": "Voice",
-      "summaryZh": "配置语音输入、麦克风、识别语言、本地模型与实时语音通话。",
-      "summaryEn": "Configure voice input, microphones, recognition language, local models, and realtime voice calls.",
+      "titleZh": "输入与交互",
+      "titleEn": "Input & interaction",
+      "summaryZh": "配置对话文本选择操作、语音输入、麦克风、识别语言与本地模型。",
+      "summaryEn": "Configure conversation text selection actions, voice input, microphones, recognition language, and local models.",
       "keywordsZh": [
+        "选中文字",
+        "批注",
+        "侧边提问",
         "语音设置",
         "语音",
         "麦克风",
@@ -25748,6 +25796,9 @@
         "语音识别"
       ],
       "keywordsEn": [
+        "text selection",
+        "annotation",
+        "selection toolbar",
         "voice settings",
         "voice",
         "microphone",
@@ -25755,16 +25806,37 @@
         "speech recognition"
       ],
       "highlightsZh": [
+        "选中文字操作栏的自动显示开关",
         "语音输入与本地模型",
         "识别语言和最长录音时间",
         "实时语音通话"
       ],
       "highlightsEn": [
+        "Automatic text selection toolbar preference",
         "Voice input and local models",
         "Recognition language and maximum recording time",
         "Realtime voice calls"
       ],
       "items": [
+        {
+          "id": "auto-show-selection-toolbar",
+          "titleZh": "开启或关闭选中对话文本后的自动操作栏",
+          "titleEn": "Enable or disable automatic actions after selecting conversation text",
+          "destination": {
+            "kind": "settings",
+            "pageId": "application.voice",
+            "sectionId": "text-selection"
+          },
+          "control": {
+            "kind": "direct",
+            "operations": [],
+            "options": [
+              {
+                "id": "auto-show-selection-toolbar"
+              }
+            ]
+          }
+        },
         {
           "id": "voice-enabled",
           "titleZh": "在聊天输入框启用或停用语音输入",
@@ -25852,11 +25924,11 @@
       ],
       "stepsZh": [
         "打开设置",
-        "进入“应用与界面 > 语音”"
+        "进入“应用与界面 > 输入与交互”"
       ],
       "stepsEn": [
         "Open Settings",
-        "Go to App & Interface > Voice"
+        "Go to App & Interface > Input & Interaction"
       ],
       "agentExamplesZh": [
         "打开语音输入设置",
@@ -25872,6 +25944,16 @@
       },
       "operations": [],
       "options": [
+        {
+          "id": "auto-show-selection-toolbar",
+          "titleZh": "自动显示选中文字操作栏",
+          "titleEn": "Automatically show text selection actions",
+          "descriptionZh": "选中对话文本后自动显示批注和提问操作；关闭后仍可使用右键菜单和提问快捷键。",
+          "descriptionEn": "Automatically show annotation and question actions after selecting conversation text; right-click actions and the question shortcut remain available when disabled.",
+          "valueSchema": {
+            "type": "boolean"
+          }
+        },
         {
           "id": "voice-enabled",
           "titleZh": "启用语音输入",
@@ -25914,25 +25996,36 @@
       ],
       "searchTerms": [
         "setting.application.input",
-        "语音",
-        "Voice",
+        "输入与交互",
+        "Input & interaction",
         "应用设置",
         "Application settings",
+        "选中文字",
+        "批注",
+        "侧边提问",
         "语音设置",
+        "语音",
         "麦克风",
         "听写",
         "语音识别",
+        "text selection",
+        "annotation",
+        "selection toolbar",
         "voice settings",
         "voice",
         "microphone",
         "dictation",
         "speech recognition",
+        "选中文字操作栏的自动显示开关",
         "语音输入与本地模型",
         "识别语言和最长录音时间",
         "实时语音通话",
+        "Automatic text selection toolbar preference",
         "Voice input and local models",
         "Recognition language and maximum recording time",
         "Realtime voice calls",
+        "开启或关闭选中对话文本后的自动操作栏",
+        "Enable or disable automatic actions after selecting conversation text",
         "在聊天输入框启用或停用语音输入",
         "Enable or disable voice input in the chat composer",
         "选择自动检测或中文、粤语、英文、日文等识别语言",

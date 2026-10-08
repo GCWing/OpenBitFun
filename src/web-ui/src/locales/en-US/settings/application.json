@@ -4,6 +4,14 @@
   "common": {
     "retry": "Retry"
   },
+  "textSelection": {
+    "title": "Text selection",
+    "autoShowToolbar": "Automatically show text selection actions",
+    "autoShowToolbarDescription": "Show Add annotation and Ask in side chat after selecting conversation text. When disabled, these actions remain available in the right-click menu.",
+    "loading": "Loading text selection preferences…",
+    "loadFailed": "Failed to load text selection preferences",
+    "saveFailed": "Failed to save text selection preferences"
+  },
   "applicationGroups": {
     "startupAndUpdates": {
       "title": "Startup & updates",

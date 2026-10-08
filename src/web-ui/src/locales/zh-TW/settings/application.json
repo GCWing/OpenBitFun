@@ -4,6 +4,14 @@
   "common": {
     "retry": "重試"
   },
+  "textSelection": {
+    "title": "文字選取",
+    "autoShowToolbar": "自動顯示選取文字操作列",
+    "autoShowToolbarDescription": "選取對話文字後，顯示「新增批註」和「側邊提問」。關閉後仍可透過右鍵選單操作。",
+    "loading": "正在載入文字選取偏好…",
+    "loadFailed": "載入文字選取偏好失敗",
+    "saveFailed": "儲存文字選取偏好失敗"
+  },
   "applicationGroups": {
     "startupAndUpdates": {
       "title": "啟動與更新",

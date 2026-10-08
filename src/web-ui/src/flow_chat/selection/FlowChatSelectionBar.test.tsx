@@ -10,20 +10,35 @@ import { FLOWCHAT_EXCERPT_ACTION, type ExcerptActionRequest } from './excerptAct
 import { highlightExcerptRange } from './locateConversationExcerpt';
 
 const state = vi.hoisted(() => ({
-  sessions: new Map([['main', { sessionId: 'main', title: 'Source session', workspacePath: '/workspace' }]]),
+  sessions: new Map<string, { sessionId: string; title: string; workspacePath: string; sessionKind?: string }>([
+    ['main', { sessionId: 'main', title: 'Source session', workspacePath: '/workspace' }],
+    ['btw', { sessionId: 'btw', title: 'Side session', workspacePath: '/workspace', sessionKind: 'btw' }],
+  ]),
   t: (key: string) => key,
+  getPreference: vi.fn(),
+  preferenceListeners: new Set<() => void>(),
+  selectionIntent: vi.fn(),
 }));
+vi.mock('@/infrastructure/config/services/ConfigManager', () => ({ configManager: {
+  getOptionalConfig: state.getPreference,
+  watch: (_path: string, callback: () => void) => {
+    state.preferenceListeners.add(callback);
+    return () => state.preferenceListeners.delete(callback);
+  },
+} }));
+vi.mock('@/infrastructure/runtime', () => ({ isTauriRuntime: () => true }));
 vi.mock('../store/FlowChatStore', () => ({ flowChatStore: { getState: () => ({ sessions: state.sessions }) } }));
 vi.mock('../session-drivers/resolve', () => ({ resolveSessionDriverId: () => 'local' }));
 vi.mock('@/infrastructure/i18n', () => ({ useI18n: () => ({ t: state.t }) }));
 
-function Transcript() {
+function Transcript({ sessionId = 'main' }: { sessionId?: string }) {
   const rootRef = useRef<HTMLDivElement>(null);
   return <>
-    <div ref={rootRef} tabIndex={-1} data-flowchat-selection-root="main">
+    <div ref={rootRef} tabIndex={-1} data-flowchat-selection-root={sessionId}>
       <div data-turn-id="turn"><div data-flow-item-id="text">Selected source text</div></div>
     </div>
-    <FlowChatSelectionBar rootRef={rootRef} sessionId="main" />
+    <FlowChatSelectionBar rootRef={rootRef} sessionId={sessionId} parentSessionId={sessionId === 'btw' ? 'main' : undefined}
+      onSelectionIntent={state.selectionIntent} />
   </>;
 }
 
@@ -45,7 +60,7 @@ describe('selection toolbar and annotation dialog lifecycle', () => {
   const resizeCallbacks = new Set<() => void>();
   let textTop = 200;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     vi.useFakeTimers();
     activateSurface('local');
@@ -53,6 +68,9 @@ describe('selection toolbar and annotation dialog lifecycle', () => {
     resizeCallbacks.clear();
     textTop = 200;
     requests.length = 0;
+    state.getPreference.mockReset().mockResolvedValue(undefined);
+    state.selectionIntent.mockClear();
+    state.preferenceListeners.clear();
     vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
       frames.set(++frameId, callback);
       return frameId;
@@ -61,7 +79,7 @@ describe('selection toolbar and annotation dialog lifecycle', () => {
     container = document.createElement('div');
     document.body.append(container);
     root = createRoot(container);
-    act(() => root.render(<Transcript />));
+    await act(async () => root.render(<Transcript />));
     window.addEventListener(FLOWCHAT_EXCERPT_ACTION, receive);
   });
 
@@ -223,6 +241,75 @@ describe('selection toolbar and annotation dialog lifecycle', () => {
     });
     return textarea;
   }
+
+  async function setAutoShowToolbar(enabled: boolean) {
+    state.getPreference.mockResolvedValue(enabled);
+    await act(async () => state.preferenceListeners.forEach(callback => callback()));
+  }
+
+  it.each(['main', 'btw'])('hides automatic actions in %s while retaining selection, reading intent, and the ask shortcut', async (sessionId) => {
+    await setAutoShowToolbar(false);
+    await act(async () => root.render(<Transcript sessionId={sessionId} />));
+    selectForToolbar();
+    expect(toolbar()).toBeNull();
+    expect(state.selectionIntent).toHaveBeenCalledOnce();
+    expect(window.getSelection()?.toString()).toBe('Selected source text');
+    act(() => document.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'b', ctrlKey: true, altKey: true, bubbles: true, cancelable: true,
+    })));
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ action: 'ask', parentSessionId: 'main', excerpt: { source: { sessionId } } });
+  });
+
+  it('retains right-click annotation and side questions when automatic actions are disabled', async () => {
+    await setAutoShowToolbar(false);
+    expect(await openAnnotation()).not.toBeNull();
+    act(() => dialog().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    act(() => vi.advanceTimersByTime(180));
+    const target = selectForToolbar();
+    const context: SelectionContext = {
+      type: ContextType.SELECTION, event: new MouseEvent('contextmenu'), targetElement: target,
+      position: { x: 0, y: 0 }, timestamp: Date.now(), selectedText: window.getSelection()!.toString(),
+      selection: window.getSelection()!, isEditable: false,
+    };
+    const provider = contextMenuRegistry.findMatchingProviders(context)[0];
+    await act(async () => {
+      const items = await provider.getMenuItems(context);
+      expect(items[1].disabled).toBe(false);
+      await items[1].onClick?.(context);
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].action).toBe('ask');
+    expect(toolbar()).toBeNull();
+  });
+
+  it('closes an existing toolbar immediately and allows a fresh selection after re-enabling', async () => {
+    const target = selectForToolbar();
+    expect(toolbar()).not.toBeNull();
+    await setAutoShowToolbar(false);
+    expect(toolbar()).toBeNull();
+    expect(window.getSelection()?.toString()).toBe('Selected source text');
+    await setAutoShowToolbar(true);
+    expect(toolbar()).toBeNull();
+    act(() => {
+      window.getSelection()!.setBaseAndExtent(target.firstChild!, 1, target.firstChild!, 8);
+      document.dispatchEvent(new Event('selectionchange'));
+    });
+    flushFrames();
+    expect(toolbar()).not.toBeNull();
+  });
+
+  it('does not discard an open annotation or its comment when automatic actions are disabled', async () => {
+    const surface = await openAnnotation();
+    const textarea = enterComment('Keep this draft');
+    await setAutoShowToolbar(false);
+    expect(dialog()).toBe(surface);
+    expect(textarea.value).toBe('Keep this draft');
+    act(() => textarea.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', ctrlKey: true, bubbles: true, cancelable: true,
+    })));
+    expect(requests[0]).toMatchObject({ action: 'annotate', excerpt: { comment: 'Keep this draft' } });
+  });
 
   it('releases temporary paint without allowing an old locate timer to clear the next excerpt', () => {
     const highlights = new Map<string, Set<Range>>();
