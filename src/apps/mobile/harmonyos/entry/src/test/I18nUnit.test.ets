@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { AppLocale, APP_LOCALE_EN_US, APP_LOCALE_ZH_CN } from '../main/ets/i18n/AppLocale';
 import { RemoteI18n } from '../main/ets/i18n/RemoteI18n';
+import { HostTextRetranslator } from '../main/ets/i18n/HostTextRetranslator';
 import { ConnectionErrorPolicy } from '../main/ets/services/ConnectionErrorPolicy';
 import {
   GeneralChatServiceState,
@@ -108,6 +109,59 @@ export default function i18nUnitTest() {
       expect(RemoteI18n.speechLanguage()).assertEqual(APP_LOCALE_EN_US);
       expect(RemoteI18n.speechLocate()).assertEqual('US');
       restoreZhCn();
+    });
+
+    it('maps dotted keys to underscore resource names', 0, () => {
+      restoreZhCn();
+      expect(RemoteI18n.t('workspaceTools.browse')).assertEqual('浏览受控设备文件夹');
+      expect(RemoteI18n.t('settings.account.section')).assertEqual('账号');
+      expect(RemoteI18n.t('settings.general.section')).assertEqual('通用');
+      expect(RemoteI18n.t('remote.title')).assertEqual('远程');
+      expect(RemoteI18n.t('sidebar.moreSessions')).assertEqual('还有 %1$s 个会话');
+    });
+
+    it('has all keys in string.json matching ets catalogs', 0, () => {
+      restoreZhCn();
+      const zhKeys = RemoteI18n.keys(APP_LOCALE_ZH_CN).sort();
+      const enKeys = RemoteI18n.keys(APP_LOCALE_EN_US).sort();
+      expect(zhKeys.length).assertEqual(enKeys.length);
+      expect(zhKeys.length > 0).assertTrue();
+      expect(zhKeys.indexOf('settings.title') >= 0).assertTrue();
+      expect(zhKeys.indexOf('workspaceTools.browse') >= 0).assertTrue();
+      expect(zhKeys.indexOf('sidebar.moreSessions') >= 0).assertTrue();
+    });
+  });
+
+  describe('HostTextRetranslator', () => {
+    it('builds reverse index for O(1) exact matching', 0, () => {
+      restoreZhCn();
+      const retranslator = new HostTextRetranslator(APP_LOCALE_ZH_CN);
+      const zhBack = RemoteI18n.translate(APP_LOCALE_ZH_CN, 'common.back');
+      const enBack = RemoteI18n.translate(APP_LOCALE_EN_US, 'common.back');
+      expect(retranslator.retranslate(zhBack)).assertEqual(enBack);
+      expect(retranslator.retranslate(enBack)).assertEqual(zhBack);
+    });
+
+    it('matches templates with %1$s and %2$s', 0, () => {
+      restoreZhCn();
+      const retranslator = new HostTextRetranslator(APP_LOCALE_ZH_CN);
+      const zhSwitching = RemoteI18n.f('remote.settings.deviceSwitching', 'Desk-1');
+      expect(zhSwitching).assertEqual('正在切换到 Desk-1…');
+      const enSwitching = retranslator.retranslate(zhSwitching);
+      expect(enSwitching).assertEqual('Switching to Desk-1…');
+      const zhMore = RemoteI18n.f('sidebar.moreSessions', '3');
+      expect(zhMore).assertEqual('还有 3 个会话');
+      const enMore = retranslator.retranslate(zhMore);
+      expect(enMore).assertEqual('3 more sessions');
+    });
+
+    it('returns original message when no match found', 0, () => {
+      restoreZhCn();
+      const retranslator = new HostTextRetranslator(APP_LOCALE_ZH_CN);
+      const unknown = 'This message does not exist in any catalog';
+      expect(retranslator.retranslate(unknown)).assertEqual(unknown);
+      const empty = '';
+      expect(retranslator.retranslate(empty)).assertEqual(empty);
     });
   });
 }
