@@ -601,6 +601,7 @@ pub(super) const OPERATIONS: &[OperationDefinition] = &[
     op("reveal_external_source_location",                            Unsupported, Proxied,          HANDLED),
     op("reveal_in_explorer",                                         LocalOnly,   Proxied,          CLI_NOT_IMPLEMENTED),
     op("reveal_models_dev_cache_directory",                          LocalOnly,   Proxied,          CLI_NOT_IMPLEMENTED),
+    op("reveal_session_storage_directory",                           Agnostic,    OperatorOnly,     REFUSED),
     op("review_platform_clear_auth_token",                           Agnostic,    Proxied,          CLI_NO_DESKTOP_IDE_SURFACE),
     op("review_platform_get_issue",                                  Routed,      Proxied,          CLI_NO_DESKTOP_IDE_SURFACE),
     op("review_platform_get_pull_request_ci_log",                    Routed,      Proxied,          CLI_NO_DESKTOP_IDE_SURFACE),

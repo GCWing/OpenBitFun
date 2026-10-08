@@ -4,7 +4,7 @@
   "title": "OpenBitFun Playbook",
   "origin": "https://playbook.openbitfun.com",
   "source": "src/shared/interactive-capabilities/catalog.json",
-  "digest": "434dc78df2ba3fa225ab75ab2839d8dcacebbf2e65123a49da3ceb4081c2988f",
+  "digest": "dbed6a03474e7ad0368377e1a1dfc8eb9ba43b88e57864ddbec2986f3fc3eb2c",
   "ownerDigest": "c0e5c187cf62bc6ed06196ce8520b3eb427bf268cf24659b72d2552fb1d99c54",
   "searchAcceptance": [
     {
@@ -138,11 +138,11 @@
     "features": 22,
     "settings": 21,
     "userFacing": 43,
-    "documentedItems": 322,
+    "documentedItems": 323,
     "controlCoverage": {
       "direct": 48,
       "delegated": 62,
-      "interactive": 212,
+      "interactive": 213,
       "unsupported": 0
     }
   },
@@ -196,6 +196,7 @@
         "turn-control",
         "permission-mailbox",
         "history-search",
+        "session-storage-directory",
         "agent-session-coordination",
         "mcp-mentions",
         "tool-activity",
@@ -569,6 +570,52 @@
         "Read",
         "Grep"
       ],
+      "presentationTarget": {
+        "kind": "scene",
+        "sceneId": "session"
+      }
+    },
+    {
+      "id": "feature.ai-assistant:open:session-storage-directory",
+      "capabilityId": "feature.ai-assistant",
+      "itemIds": [
+        "session-storage-directory"
+      ],
+      "kind": "open",
+      "risk": "ui",
+      "executionHost": "presentationSurface",
+      "availability": {
+        "desktop": {
+          "available": true
+        },
+        "cli": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        },
+        "peer": {
+          "available": true,
+          "requiredCapabilities": [
+            "product_control_v1",
+            "product_control_presentation_v1"
+          ]
+        },
+        "remoteControl": {
+          "available": true
+        },
+        "detachedDispatch": {
+          "available": false,
+          "reason": "This delivery profile has no live presentation surface"
+        }
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "openReason": "visualSelection",
       "presentationTarget": {
         "kind": "scene",
         "sceneId": "session"
@@ -19336,6 +19383,17 @@
           }
         },
         {
+          "id": "session-storage-directory",
+          "titleZh": "从工作区或会话菜单打开会话存储目录，用于备份与手动排障",
+          "titleEn": "Open session storage from workspace or session menus for backups and manual troubleshooting",
+          "control": {
+            "kind": "open",
+            "reasonCode": "visualSelection",
+            "reasonZh": "需要用户选择工作区或会话，并在本机桌面文件管理器中操作；远程工作区打开本机保存的会话镜像，对端设备和 Detached Dispatch 会话不支持此操作。打开目录不会修改会话归属。",
+            "reasonEn": "The user selects a workspace or session and works in the local desktop file manager; remote workspaces reveal their locally stored session mirror, while peer and detached-dispatch sessions are unsupported. Opening storage does not change session ownership."
+          }
+        },
+        {
           "id": "agent-session-coordination",
           "titleZh": "让智能体创建、列出、取消、删除会话或向另一会话发送消息",
           "titleEn": "Let an agent create, list, cancel, or delete sessions and send messages to another session",
@@ -19551,6 +19609,8 @@
         "Review and answer pending permission requests individually or in a batch",
         "分页加载、搜索和回填历史消息与会话内容",
         "Page through, search, and backfill historical turns and session content",
+        "从工作区或会话菜单打开会话存储目录，用于备份与手动排障",
+        "Open session storage from workspace or session menus for backups and manual troubleshooting",
         "让智能体创建、列出、取消、删除会话或向另一会话发送消息",
         "Let an agent create, list, cancel, or delete sessions and send messages to another session",
         "在对话中通过 @ 选择当前模式可用的 MCP 服务",

@@ -468,6 +468,20 @@
           ]
         },
         {
+          "id": "session-storage-directory",
+          "titleZh": "从工作区或会话菜单打开会话存储目录，用于备份与手动排障",
+          "titleEn": "Open session storage from workspace or session menus for backups and manual troubleshooting",
+          "control": {
+            "kind": "open",
+            "reasonCode": "visualSelection",
+            "reasonZh": "需要用户选择工作区或会话，并在本机桌面文件管理器中操作；远程工作区打开本机保存的会话镜像，对端设备和 Detached Dispatch 会话不支持此操作。打开目录不会修改会话归属。",
+            "reasonEn": "The user selects a workspace or session and works in the local desktop file manager; remote workspaces reveal their locally stored session mirror, while peer and detached-dispatch sessions are unsupported. Opening storage does not change session ownership."
+          },
+          "evidence": [
+            "command:reveal_session_storage_directory"
+          ]
+        },
+        {
           "id": "agent-session-coordination",
           "titleZh": "让智能体创建、列出、取消、删除会话或向另一会话发送消息",
           "titleEn": "Let an agent create, list, cancel, or delete sessions and send messages to another session",
@@ -9455,6 +9469,9 @@
       "capabilityId": "setting.application.general"
     },
     "session": {
+      "capabilityId": "feature.ai-assistant"
+    },
+    "session_storage_directory": {
       "capabilityId": "feature.ai-assistant"
     },
     "dispatch": {

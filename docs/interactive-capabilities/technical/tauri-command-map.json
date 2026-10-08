@@ -1,11 +1,11 @@
 {
   "schemaVersion": 2,
   "generatedFrom": "src/shared/interactive-capabilities/catalog.json",
-  "catalogDigest": "434dc78df2ba3fa225ab75ab2839d8dcacebbf2e65123a49da3ceb4081c2988f",
-  "commandCount": 668,
+  "catalogDigest": "dbed6a03474e7ad0368377e1a1dfc8eb9ba43b88e57864ddbec2986f3fc3eb2c",
+  "commandCount": 669,
   "coverage": {
-    "commandCount": 668,
-    "documentedCommandCount": 620,
+    "commandCount": 669,
+    "documentedCommandCount": 621,
     "implementationCommandCount": 48,
     "implementationDigest": "f6d38a24a70708988cb47ada81d07eccf0668684e8734c9ee5155b9ffa7e3db8"
   },
@@ -7904,6 +7904,22 @@
       "sourceFile": "src/apps/desktop/src/api/commands.rs",
       "signature": "fn reveal_models_dev_cache_directory() -> Result<(), String>",
       "remoteWorkspacePolicy": "LocalOnly"
+    },
+    {
+      "id": "reveal_session_storage_directory",
+      "moduleId": "session_storage_directory",
+      "capabilityId": "feature.ai-assistant",
+      "capabilityIds": [
+        "feature.ai-assistant"
+      ],
+      "documentedItemIds": [
+        "feature.ai-assistant:session-storage-directory"
+      ],
+      "visibility": "documented",
+      "rustPath": "reveal_session_storage_directory",
+      "sourceFile": "src/apps/desktop/src/api/session_storage_directory.rs",
+      "signature": "fn reveal_session_storage_directory( state: State<'_, AppState>, request: RevealSessionStorageDirectoryRequest, ) -> Result<(), String>",
+      "remoteWorkspacePolicy": "WorkspaceAgnostic"
     },
     {
       "id": "review_platform_clear_auth_token",
