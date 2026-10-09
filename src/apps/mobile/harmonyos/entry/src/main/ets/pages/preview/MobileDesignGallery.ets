@@ -2,6 +2,7 @@ import { HistoryScrollPreview } from './HistoryScrollPreview';
 import { ColdStartHomePreview } from './ColdStartHomePreview';
 import { ComposerSubmissionPreview } from './ComposerSubmissionPreview';
 import { CopySelectionPreview } from './CopySelectionPreview';
+import { RollbackStagingPreview } from './RollbackStagingPreview';
 import { DurableTimelinePreview } from './DurableTimelinePreview';
 import { DeviceSelectorPreview } from './DeviceSelectorPreview';
 import { CatalogRefreshPreview } from './CatalogRefreshPreview';
@@ -71,6 +72,8 @@ struct MobileDesignGallery {
       WelcomeHome()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('copy-selection')) {
       CopySelectionPreview()
+    } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('copy-rollback')) {
+      RollbackStagingPreview()
     } else if ((AppStorage.get<string>('scenarioId') || '').startsWith('interaction-mailbox')) {
       InteractionMailboxPreview()
     } else {

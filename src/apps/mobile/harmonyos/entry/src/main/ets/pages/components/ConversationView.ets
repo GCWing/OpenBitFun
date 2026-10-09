@@ -3,7 +3,7 @@ import { InteractionMailboxAction } from '../../model/InteractionMailbox';
 import { MobileDesignGeometry, MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { KeyboardAvoidMode } from '@kit.ArkUI';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
-import { ChatTimelineItem, ObservableChatTimelineItem } from '../../model/ChatTimelineModels';
+import { ChatTimelineItem, ChatTimelineRevisionTracker, ObservableChatTimelineItem } from '../../model/ChatTimelineModels';
 import { ConnectionStatusPresenter } from '../../services/ConnectionStatusPresenter';
 import { RemoteLogger } from '../../services/RemoteLogger';
 import { ChatComposerCapabilities } from '../state/ChatComposerCapabilities';
@@ -11,6 +11,23 @@ import { ChatSurface } from '../state/ChatSurface';
 import { ConversationViewState } from '../state/ConversationViewState';
 import { ConversationIntent, ConversationIntents, ConversationIntentType, MessageCopyScope } from '../actions/ConversationIntent';
 import { SettingsPlacement } from '../policy/SettingsPlacementPolicy';
+import {
+  RollbackBarPresentation,
+  RollbackGhostRow,
+  RollbackPresentationPolicy
+} from '../policy/RollbackPresentationPolicy';
+import {
+  SessionRollbackEffect,
+  SessionRollbackEffectType,
+  SessionRollbackEvent,
+  SessionRollbackEventType,
+  SessionRollbackIdleState,
+  SessionRollbackPolicy,
+  SessionRollbackStage,
+  SessionRollbackState,
+  SessionRollbackStagingState
+} from '../policy/SessionRollbackPolicy';
+import { RollbackStagingBar } from './RollbackStagingBar';
 import { AdaptiveSheetOptions } from './AdaptiveSheetOptions';
 import { ChatTimeline } from './ChatTimeline';
 import { ConversationLoadingState } from './ConversationLoadingState';
@@ -63,6 +80,36 @@ export struct ConversationView {
   @Local showFullText: boolean = false;
   @Local fullTextMessage: string = '';
   /**
+   * The turn the open full-text panel belongs to.
+   *
+   * The panel is a second rollback entry on the same message, and a rollback
+   * addresses the turn rather than what the message displays, so the turn travels
+   * with the text that opened the panel.
+   */
+  @Local fullTextTurnId: string = '';
+  /**
+   * The staged rollback, held as three primitives rather than as one state object.
+   *
+   * The reducer stays the owner of the staging rules — which exits exist, what
+   * each one does to the composer, what a host outcome means after the exit — and
+   * these three fields are only what this pane has to keep between events:
+   * `stagingTargetTurnId` also answers "is a rollback staged", since the entry
+   * refuses to stage a message that has no turn to address. They are re-projected
+   * into a `SessionRollbackState` for every event, so the snapshot rule (the first
+   * snapshot wins, a second entry keeps it) is still applied in exactly one place.
+   */
+  @Local stagingTargetTurnId: string = '';
+  @Local stagingTargetText: string = '';
+  @Local composerSnapshot: string = '';
+  /**
+   * The last host rollback outcome this pane has already acted on.
+   *
+   * A confirm leaves staging before the host answers, so the refusal has to come
+   * back through projected state and be consumed exactly once — compared by
+   * sequence, because the same refusal twice is two outcomes.
+   */
+  @Local handledRollbackOutcomeSeq: number = 0;
+  /**
    * How much of the pane the two floating layers cover, measured rather than
    * assumed: the composer grows with multiline text and attachments, and the
    * mailbox appears without warning. The transcript runs the full height behind
@@ -98,6 +145,10 @@ export struct ConversationView {
     if (context) {
       this.insets.bind(this.getUIContext(), context);
     }
+    // Anything the host reported while this pane was away is already in the past
+    // for it: mounting is not a reason to resync a transcript it never showed, or
+    // to repeat a refusal the reader was already told about.
+    this.handledRollbackOutcomeSeq = this.state.rollbackOutcomeSeq;
   }
 
   aboutToDisappear(): void {
@@ -126,6 +177,9 @@ export struct ConversationView {
       text: this.fullTextMessage,
       onClose: () => {
         this.showFullText = false;
+      },
+      onRollback: () => {
+        this.onRollbackMessage(this.fullTextTurnId, this.fullTextMessage);
       }
     })
   }
@@ -422,6 +476,8 @@ export struct ConversationView {
       maxContentWidth: this.composerPresentation === ComposerPresentation.Floating ? 760 : 0,
       topInset: this.hoverOperateMode ? 0 : this.topInset,
       bottomInset: this.hoverOperateMode ? 0 : this.bottomInset,
+      ghostRowKeys: this.ghostRowKeys(),
+      rollbackNotice: this.state.rollbackNotice,
       onLoadOlder: () => {
         this.onLoadOlder();
       },
@@ -443,8 +499,11 @@ export struct ConversationView {
       onCopyMessageScoped: (text: string, scope: MessageCopyScope) => {
         this.onCopyMessageScoped(text, scope);
       },
-      onOpenFullText: (text: string) => {
-        this.onOpenFullText(text);
+      onOpenFullText: (text: string, turnId: string) => {
+        this.onOpenFullText(text, turnId);
+      },
+      onRollbackMessage: (turnId: string, text: string) => {
+        this.onRollbackMessage(turnId, text);
       },
       onRetryMessage: (text: string) => {
         this.onRetryMessage(text);
@@ -479,6 +538,19 @@ export struct ConversationView {
   @Builder
   Composer() {
     Column() {
+      // Above the composer in both presentations: the compact pill and the wide
+      // floating one both live in this column, so one placement covers both. The
+      // bar draws nothing at all while no rollback is staged.
+      RollbackStagingBar({
+        presentation: this.composerPresentation,
+        bar: this.rollbackBar(),
+        onConfirm: () => {
+          this.applyRollbackEvent({ type: SessionRollbackEventType.ConfirmRollback });
+        },
+        onClose: () => {
+          this.applyRollbackEvent({ type: SessionRollbackEventType.CloseStaging });
+        }
+      })
       ComposerBar({
       presentation: this.composerPresentation,
       capabilities: this.composerCapabilities,
@@ -600,6 +672,175 @@ export struct ConversationView {
     return ConversationViewContract.visibleTimelineItems(this.timelineItems);
   }
 
+  /**
+   * The staged rollback as the reducer sees it.
+   *
+   * Rebuilt per event rather than stored, so this pane owns only what it must
+   * remember between events and the policy keeps every rule about transitions.
+   */
+  private rollbackState(): SessionRollbackState {
+    if (this.stagingTargetTurnId.length === 0) {
+      return new SessionRollbackIdleState();
+    }
+    return new SessionRollbackStagingState(
+      this.stagingTargetTurnId,
+      this.stagingTargetText,
+      this.composerSnapshot
+    );
+  }
+
+  /** Adopts the reducer's state back into the three locals that stand for it. */
+  private adoptRollbackState(state: SessionRollbackState): void {
+    if (state.stage === SessionRollbackStage.Staging) {
+      this.stagingTargetTurnId = state.targetTurnId;
+      this.stagingTargetText = state.targetText;
+      this.composerSnapshot = state.composerSnapshot;
+      return;
+    }
+    // Leaving staging is what clears the preview: the ghost rows are derived from
+    // the target, so dropping it clears them without a second list to keep.
+    this.stagingTargetTurnId = '';
+    this.stagingTargetText = '';
+    this.composerSnapshot = '';
+  }
+
+  /**
+   * One staged-rollback event: reduce, adopt the new state, then apply the effects.
+   *
+   * The send-while-staging exit states itself as two effects in order — rollback,
+   * then send — and the viewmodel runs both inside one command, because the host
+   * has to retire the turn before a message may be appended to it. The text is
+   * therefore read out of the second effect and handed over with the first.
+   */
+  private applyRollbackEvent(event: SessionRollbackEvent): void {
+    const transition = SessionRollbackPolicy.reduce(this.rollbackState(), event);
+    this.adoptRollbackState(transition.state);
+    let sendText: string = '';
+    for (let index = 0; index < transition.effects.length; index++) {
+      const effect = transition.effects[index];
+      if (effect.type === SessionRollbackEffectType.SendMessageAfterRollback) {
+        sendText = effect.text || '';
+      }
+    }
+    for (let index = 0; index < transition.effects.length; index++) {
+      this.runRollbackEffect(transition.effects[index], sendText);
+    }
+  }
+
+  private runRollbackEffect(effect: SessionRollbackEffect, sendText: string): void {
+    switch (effect.type) {
+      case SessionRollbackEffectType.RefillComposer:
+      case SessionRollbackEffectType.RestoreComposerSnapshot:
+        this.onChatInputChange(effect.text || '');
+        return;
+      case SessionRollbackEffectType.KeepComposerText:
+        return;
+      case SessionRollbackEffectType.ShowGhostRows:
+        this.stagingTargetTurnId = effect.targetTurnId || this.stagingTargetTurnId;
+        return;
+      case SessionRollbackEffectType.ClearGhostRows:
+        // Already done by adopting the idle state: no ghost row outlives staging.
+        return;
+      case SessionRollbackEffectType.SendRollbackCommand:
+        this.onIntent(ConversationIntents.rollback(effect.targetTurnId || '', sendText));
+        return;
+      case SessionRollbackEffectType.SendMessageAfterRollback:
+        // Handed to the rollback command above; sending here would append the
+        // message before the host retired the turn.
+        return;
+      case SessionRollbackEffectType.ResyncTimeline:
+        this.onIntent(ConversationIntents.rollbackResync());
+        return;
+      case SessionRollbackEffectType.ShowDegradeNotice:
+        this.onIntent(ConversationIntents.rollbackNotice(RollbackPresentationPolicy.FAILED_KEY));
+        return;
+      default:
+        return;
+    }
+  }
+
+  /**
+   * The rollback entry on a user message was tapped.
+   *
+   * The decision is resolved here, at tap time, rather than when the row was
+   * drawn: a session that became busy in between is judged as it is now. A
+   * refusal is always said out loud — an entry that silently does nothing is
+   * indistinguishable from a broken one — while an allowed tap stages locally and
+   * sends nothing.
+   */
+  private onRollbackMessage(turnId: string, text: string): void {
+    const decision = this.state.rollbackGate.resolve();
+    if (!decision.allowed) {
+      this.onIntent(ConversationIntents.rollbackNotice(RollbackPresentationPolicy.denyMessageKey(decision.reason)));
+      return;
+    }
+    const target = turnId.trim();
+    if (target.length === 0) {
+      // The entry is still offered here — the session is usable, this message is
+      // just not addressable as a turn — so the refusal is the honest answer.
+      this.onIntent(ConversationIntents.rollbackNotice(RollbackPresentationPolicy.FAILED_KEY));
+      return;
+    }
+    // Staging takes the pane over: the panel that was opened from this message
+    // closes, because the preview belongs to the conversation behind it.
+    this.showFullText = false;
+    this.applyRollbackEvent({
+      type: SessionRollbackEventType.EnterStaging,
+      targetTurnId: target,
+      targetText: text,
+      composerSnapshot: this.chatInput
+    });
+  }
+
+  /**
+   * The rows the staged preview weakens: the target turn and every row after it.
+   *
+   * Derived, never stored: the rows are virtualized and their identity is the
+   * only thing stable about them, so the cut is expressed as row keys against the
+   * list the pane is showing right now.
+   */
+  private ghostRowKeys(): string[] {
+    if (this.stagingTargetTurnId.length === 0) {
+      return [];
+    }
+    const rows: RollbackGhostRow[] = this.visibleTimelineItems().map(
+      (row: ObservableChatTimelineItem): RollbackGhostRow => new RollbackGhostRow(
+        ChatTimelineRevisionTracker.itemKey(row),
+        row.message ? row.message.turnId || '' : ''
+      )
+    );
+    return RollbackPresentationPolicy.ghostRowKeys(rows, this.stagingTargetTurnId);
+  }
+
+  private rollbackBar(): RollbackBarPresentation {
+    return RollbackPresentationPolicy.bar(this.rollbackState());
+  }
+
+  /**
+   * Consumes a host outcome that arrived after staging was already over.
+   *
+   * Confirm and send leave staging before the host answers, which is the point:
+   * the preview is local and must react instantly. The answer therefore comes
+   * back through projected state rather than through the transition that sent it,
+   * and it must be applied even while idle — a stale target and a refusal both
+   * mean this client's transcript is describing history the host no longer has.
+   */
+  @Monitor('state')
+  onViewStateChanged(): void {
+    const sequence = this.state.rollbackOutcomeSeq;
+    if (sequence <= this.handledRollbackOutcomeSeq) {
+      return;
+    }
+    this.handledRollbackOutcomeSeq = sequence;
+    if (this.state.rollbackOutcome === SessionRollbackEventType.StaleViewDetected) {
+      this.applyRollbackEvent({ type: SessionRollbackEventType.StaleViewDetected });
+      return;
+    }
+    if (this.state.rollbackOutcome === SessionRollbackEventType.RollbackFailed) {
+      this.applyRollbackEvent({ type: SessionRollbackEventType.RollbackFailed });
+    }
+  }
+
   private statusLine(): string {
     if (this.canStop && this.connectionState === 'connected') {
       return RemoteI18n.t('chat.executing');
@@ -716,11 +957,12 @@ export struct ConversationView {
     this.onIntent(ConversationIntents.copyMessage(text, scope));
   }
   private onRetryMessage(text: string): void { this.dispatchValue(ConversationIntentType.RetryMessage, text); }
-  private onOpenFullText(text: string): void {
+  private onOpenFullText(text: string, turnId: string): void {
     if (text.length === 0) {
       return;
     }
     this.fullTextMessage = text;
+    this.fullTextTurnId = turnId;
     this.showFullText = true;
   }
   private fullTextSheetOptions(): SheetOptions {
@@ -739,7 +981,24 @@ export struct ConversationView {
   private onPickImages(): void { this.dispatchSimple(ConversationIntentType.PickImages); }
   private onRemoveImage(imageId: string): void { this.dispatchValue(ConversationIntentType.RemoveImage, imageId); }
   private onDownloadFile(path: string): void { this.dispatchValue(ConversationIntentType.DownloadFile, path); }
-  private onSend(): void { this.dispatchSimple(ConversationIntentType.Send); }
+  /**
+   * Send is the third exit of the staged rollback.
+   *
+   * While a rollback is staged the button means "roll back first, then send what
+   * is in the composer from there": the reducer states those two steps in that
+   * order and the viewmodel runs them as one command, so the message can never
+   * beat the rollback it was sent after.
+   */
+  private onSend(): void {
+    if (this.stagingTargetTurnId.length > 0) {
+      this.applyRollbackEvent({
+        type: SessionRollbackEventType.SendWhileStaging,
+        text: this.chatInput.trim()
+      });
+      return;
+    }
+    this.dispatchSimple(ConversationIntentType.Send);
+  }
   private onVoiceInput(): void { this.dispatchSimple(ConversationIntentType.VoiceInput); }
   private onChatInputChange(value: string): void {
     this.dispatchValue(ConversationIntentType.ChatInputChanged, value);

@@ -2269,6 +2269,34 @@
       "value": "复制纯文本"
     },
     {
+      "name": "chat_rollbackTo",
+      "value": "回滚到"
+    },
+    {
+      "name": "chat_rollbackItem",
+      "value": "回滚到此消息"
+    },
+    {
+      "name": "chat_rolledBackNotice",
+      "value": "已回滚 %1$s 条消息 · %2$s 个文件已还原"
+    },
+    {
+      "name": "chat_rollbackUnsupported",
+      "value": "当前 host 版本不支持回滚"
+    },
+    {
+      "name": "chat_rollbackSessionBusy",
+      "value": "会话进行中，稍后再试"
+    },
+    {
+      "name": "chat_rollbackDispatchDenied",
+      "value": "此类会话不支持回滚"
+    },
+    {
+      "name": "chat_rollbackFailed",
+      "value": "回滚失败，请重试"
+    },
+    {
       "name": "status_waitingConnection",
       "value": "等待连接"
     },

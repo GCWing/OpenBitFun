@@ -22,6 +22,7 @@ import { AppRoute } from '../navigation/AppRouteContract';
 import { ConversationCoreState } from './ConversationCoreState';
 import { GeneralChatPageState } from './GeneralChatPageState';
 import { RemotePageState } from './RemotePageState';
+import { RollbackEntryFacts } from '../policy/RollbackPresentationPolicy';
 
 /** Immutable presentation state consumed by ConversationView. */
 export class ConversationViewState {
@@ -53,6 +54,21 @@ export class ConversationViewState {
   selectedImages: ConversationUiSelectedImage[] = [];
   isVoiceListening: boolean = false;
   chatInput: string = '';
+  /**
+   * The facts a tap on the rollback entry is judged with.
+   *
+   * Projected, not decided: the entry can be tapped long after the row was drawn,
+   * so the pane resolves these facts into a decision at tap time. `none()` is the
+   * default because a surface with no host behind it — the local General Chat pane
+   * — has nothing to roll back to.
+   */
+  rollbackGate: RollbackEntryFacts = RollbackEntryFacts.none();
+  /** The system hint row a successful rollback left in this session's transcript. */
+  rollbackNotice: string = '';
+  /** Host outcome of a rollback this client asked for, or empty for none. */
+  rollbackOutcome: string = '';
+  /** Monotonic id of that outcome, so two identical failures are two outcomes. */
+  rollbackOutcomeSeq: number = 0;
 
   static project(
     route: AppRoute,
@@ -86,6 +102,18 @@ export class ConversationViewState {
     state.downloadedFilePath = remote.downloadedFilePath;
     state.fileDownloadStatus = remote.fileDownloadStatus;
     state.interactionMailbox = remote.interactionMailbox;
+    // A rollback needs an idle session on a host that serves the capability; a
+    // dispatch session cannot be proven from this controller (see
+    // `RollbackEntryFacts.isDispatchSession`), so the host's own refusal stays the
+    // loud answer rather than a silent "no" invented here.
+    state.rollbackGate = new RollbackEntryFacts(
+      remote.hostCapabilities.slice(),
+      remote.isBusy || state.canStop,
+      false
+    );
+    state.rollbackNotice = remote.rollbackNotice;
+    state.rollbackOutcome = remote.rollbackOutcome;
+    state.rollbackOutcomeSeq = remote.rollbackOutcomeSeq;
     return state;
   }
 

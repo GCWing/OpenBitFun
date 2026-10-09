@@ -39,17 +39,24 @@ export struct ChatUserMessageRow {
     detail: ''
   };
   @Param showRetryAction: boolean = false;
+  /** Whether the staged rollback's preview covers this row. See ChatTimeline. */
+  @Param ghost: boolean = false;
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
-  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
+  @Event onOpenFullText: (text: string, turnId: string) => void =
+    (_text: string, _turnId: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
+  @Event onRollbackMessage: (turnId: string, text: string) => void =
+    (_turnId: string, _text: string) => {};
 
   build() {
     ChatUserMessageBubble({
       item: this.item,
       showRetryAction: this.showRetryAction,
+      ghost: this.ghost,
       onCopyMessage: this.onCopyMessage,
       onOpenFullText: this.onOpenFullText,
-      onRetryMessage: this.onRetryMessage
+      onRetryMessage: this.onRetryMessage,
+      onRollbackMessage: this.onRollbackMessage
     })
   }
 }
@@ -84,7 +91,18 @@ export struct ChatMessageBubble {
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
   @Event onCopyMessageScoped: (text: string, scope: MessageCopyScope) => void =
     (_text: string, _scope: MessageCopyScope) => {};
-  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
+  @Event onOpenFullText: (text: string, turnId: string) => void =
+    (_text: string, _turnId: string) => {};
+  /**
+   * The rollback entry, forwarded for the user-authored bubbles this row draws.
+   *
+   * A steering message is drawn with the user bubble, so it carries the entry
+   * too. It has no turn of its own, which is why the entry is wired rather than
+   * hidden: the tap reaches the pane and is answered out loud, instead of a menu
+   * item that silently does nothing.
+   */
+  @Event onRollbackMessage: (turnId: string, text: string) => void =
+    (_turnId: string, _text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
@@ -381,7 +399,8 @@ export struct ChatMessageBubble {
           item: this.steeringMessage(entry, path),
           showRetryAction: false,
           onCopyMessage: this.onCopyMessage,
-          onOpenFullText: this.onOpenFullText
+          onOpenFullText: this.onOpenFullText,
+          onRollbackMessage: this.onRollbackMessage
         })
       } else if (this.isThinkingEntry(entry)) {
         this.Thinking(

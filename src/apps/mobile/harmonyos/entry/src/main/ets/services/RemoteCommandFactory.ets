@@ -222,6 +222,30 @@ export class RemoteCommandFactory {
     };
   }
 
+  /**
+   * Withdraw `targetTurnId` and every turn after it, then restore the files
+   * those turns touched. The target turn is withdrawn too, and its prompt comes
+   * back in the reply's `composer_text`.
+   *
+   * `expectedStorageTurnIndex` is the stale-view guard: the host refuses the
+   * rollback when the turn it would address is no longer the one the caller
+   * saw. Omitting it — which is what the phone does today, because no projected
+   * message carries a storage index — only widens the race window and never
+   * changes which turn is addressed, so it is omitted rather than sent as an
+   * empty value.
+   */
+  static rollbackSessionToTurn(sessionId: string, targetTurnId: string, expectedStorageTurnIndex?: number): RemoteCommand {
+    const command: RemoteCommand = {
+      cmd: 'rollback_session_to_turn',
+      session_id: sessionId,
+      target_turn_id: targetTurnId
+    };
+    if (expectedStorageTurnIndex !== undefined) {
+      command.expected_storage_turn_index = expectedStorageTurnIndex;
+    }
+    return command;
+  }
+
   static confirmTool(toolId: string, updatedInput?: Object): RemoteCommand {
     return {
       cmd: 'confirm_tool',

@@ -73,6 +73,28 @@ export class RemotePageState {
   @Trace pendingSessionId: string = '';
   @Trace isConversationDismissed: boolean = false;
   @Trace sessionErrorText: string = '';
+  /**
+   * The system hint row a successful rollback leaves in the transcript.
+   *
+   * It belongs to the page rather than to the pane that sent the command because
+   * the host's answer arrives after the staged preview is already gone: the pane
+   * is idle by then, and what it has to show is a fact about the session. It
+   * stays until the session changes or the conversation moves on, since the host
+   * has no such row of its own to resend.
+   */
+  @Trace rollbackNotice: string = '';
+  /**
+   * The host outcome of a rollback this client asked for, in the reducer's own
+   * vocabulary (`SessionRollbackEventType`), paired with a monotonic sequence.
+   *
+   * The pane consumes it by sequence rather than by value, because the same
+   * failure twice is two outcomes and a value comparison would drop the second.
+   * It covers the case the staged preview cannot: confirm and send leave staging
+   * before the host answers, so a refusal arrives while the pane is already idle
+   * and must still repair the transcript.
+   */
+  @Trace rollbackOutcome: string = '';
+  @Trace rollbackOutcomeSeq: number = 0;
   // Deliberately untraced: the memo behind visibleSessions(), not state anything
   // renders. Tracing it would make reading the list a write to the list.
   private visibleSessionsCache: RemoteSession[] = [];
@@ -321,6 +343,32 @@ export class RemotePageState {
     this.conversation.setChatInput(chatInput);
   }
 
+  /** Replace the rollback hint row; it describes the history as it now stands. */
+  setRollbackNotice(notice: string): void {
+    this.rollbackNotice = notice;
+  }
+
+  /** The conversation moved on, so the rolled-back history is no longer news. */
+  clearRollbackNotice(): void {
+    this.rollbackNotice = '';
+  }
+
+  /**
+   * Report one host outcome to the pane, in the reducer's vocabulary.
+   *
+   * The sequence is bumped whether or not the value changed, so a repeated
+   * failure is a second outcome rather than a state that already looked like it.
+   */
+  reportRollbackOutcome(event: string): void {
+    this.rollbackOutcome = event;
+    this.rollbackOutcomeSeq += 1;
+  }
+
+  clearRollbackOutcome(): void {
+    this.rollbackOutcome = '';
+    this.rollbackOutcomeSeq = 0;
+  }
+
   setSelectedImages(selectedImages: SelectedImageAttachment[]): void {
     this.conversation.setSelectedImages(selectedImages);
   }
@@ -393,6 +441,11 @@ export class RemotePageState {
     this.sessionErrorText = '';
     this.hostCapabilities = [];
     this.clearDownloadStatus();
+    // Both rollback traces describe one session's history: the hint row counts
+    // what that rollback withdrew and the outcome sequence orders its answers, so
+    // neither means anything once the session they belong to is gone.
+    this.clearRollbackNotice();
+    this.clearRollbackOutcome();
   }
 
   clearWorkspaceActions(): void {
