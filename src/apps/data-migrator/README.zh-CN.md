@@ -6,7 +6,7 @@
 
 ## 下载和使用
 
-**最新版本：[v0.1.1 — 下载数据迁移器](https://github.com/GCWing/OpenBitFun/releases/tag/data-migrator-v0.1.1)。**
+**最新版本：[v0.1.2 — 下载数据迁移器](https://github.com/GCWing/OpenBitFun/releases/tag/data-migrator-v0.1.2)。**
 
 | 系统 | 下载文件 | 启动方式 |
 | --- | --- | --- |

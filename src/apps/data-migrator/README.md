@@ -7,7 +7,7 @@ A separate, optional desktop utility for importing old **BitFun** data into
 
 ## Download and run
 
-**Latest release: [v0.1.1 — download Data Migrator](https://github.com/GCWing/OpenBitFun/releases/tag/data-migrator-v0.1.1).**
+**Latest release: [v0.1.2 — download Data Migrator](https://github.com/GCWing/OpenBitFun/releases/tag/data-migrator-v0.1.2).**
 
 | Platform | Download | Launch |
 | --- | --- | --- |
