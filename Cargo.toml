@@ -62,7 +62,7 @@ resolver = "2"
 
 # Shared package metadata — single source of truth for version
 [workspace.package]
-version = "1.0.3" # x-release-please-version
+version = "1.0.5" # x-release-please-version
 authors = ["OpenBitFun Team"]
 edition = "2021"
 
