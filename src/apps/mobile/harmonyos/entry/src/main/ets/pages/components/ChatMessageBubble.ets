@@ -1,6 +1,7 @@
 import { InteractionMailboxState } from '../../model/InteractionMailbox';
 import { MobileDesignTypography } from '../../generated/MobileDesignTokens';
 import { ConversationUiImage, ConversationUiMessage, ConversationUiMessageItem, ConversationUiQuestionAnswer, ConversationUiToolStatus } from '../state/ConversationUiModels';
+import { MessageCopyScope } from '../actions/ConversationIntent';
 import { RemoteI18n } from '../../i18n/RemoteI18n';
 import { ActivityGroupPolicy, ActivityThinkingPart } from '../policy/ActivityGroupPolicy';
 import { ChatMessageStructurePolicy, StructuredRenderGroup } from '../policy/ChatMessageStructurePolicy';
@@ -9,7 +10,12 @@ import { ConversationMessageRenderPolicy } from '../policy/ConversationMessageRe
 import { ThinkingPresentationPolicy } from '../policy/ThinkingPresentationPolicy';
 import { ACCENT, INK, LINE, STATUS_DANGER } from './Theme';
 import { MessageBodyMarkdown, MessageFileCards, MessageImageGallery, MessageMarkdown } from './ChatMessageContent';
-import { ChatMessageRetryAction, ChatTypingDots, ChatUserMessageBubble } from './ChatMessageChrome';
+import {
+  AssistantMessageCopyAction,
+  ChatMessageRetryAction,
+  ChatTypingDots,
+  ChatUserMessageBubble
+} from './ChatMessageChrome';
 import { SubagentTaskCard } from './SubagentTaskCard';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolStatusList } from './ToolStatusList';
@@ -33,12 +39,16 @@ export struct ChatUserMessageRow {
     detail: ''
   };
   @Param showRetryAction: boolean = false;
+  @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
 
   build() {
     ChatUserMessageBubble({
       item: this.item,
       showRetryAction: this.showRetryAction,
+      onCopyMessage: this.onCopyMessage,
+      onOpenFullText: this.onOpenFullText,
       onRetryMessage: this.onRetryMessage
     })
   }
@@ -72,6 +82,9 @@ export struct ChatMessageBubble {
   @Event onAnswerQuestion: (toolId: string, answers: ConversationUiQuestionAnswer) => void =
     (_toolId: string, _answers: ConversationUiQuestionAnswer) => {};
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onCopyMessageScoped: (text: string, scope: MessageCopyScope) => void =
+    (_text: string, _scope: MessageCopyScope) => {};
+  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
@@ -124,14 +137,8 @@ export struct ChatMessageBubble {
             this.item.error || '',
             this.showRetryAction ? (this.item.detail || '') : ''
           )
-        } else if (this.item.status === 'failed' && this.showRetryAction &&
-          (this.item.detail || '').trim().length > 0) {
-          ChatMessageRetryAction({
-            assistant: true,
-            retryText: this.item.detail || '',
-            onRetry: this.onRetryMessage
-          })
         }
+        this.ActionRow()
       }
       .layoutWeight(1)
       .padding({ right: 2 })
@@ -140,6 +147,46 @@ export struct ChatMessageBubble {
     .width('100%')
     .alignItems(VerticalAlign.Top)
     .padding({ top: 2, bottom: 2 })
+  }
+
+  /**
+   * The assistant message's bottom action row: retry and copy side by side, in
+   * the frozen design's order.
+   *
+   * Both occupants are optional and the row disappears when neither applies.
+   * Retry keeps the exact condition the previous `else if` used — including its
+   * exclusion by the errored branch above, which draws its own retry action —
+   * so moving it into this row changes no failed-state behavior. Copy is drawn
+   * whenever there is a body to write.
+   */
+  @Builder
+  ActionRow() {
+    if (this.showsRetryAction() || this.copySourceText().length > 0) {
+      Row({ space: 10 }) {
+        if (this.showsRetryAction()) {
+          ChatMessageRetryAction({
+            assistant: true,
+            retryText: this.item.detail || '',
+            onRetry: this.onRetryMessage
+          })
+        }
+        if (this.copySourceText().length > 0) {
+          AssistantMessageCopyAction({
+            source: this.copySourceText(),
+            onCopyScoped: this.onCopyMessageScoped
+          })
+        }
+      }
+      .alignItems(VerticalAlign.Center)
+    }
+  }
+
+  private showsRetryAction(): boolean {
+    if (this.isFailedAssistant(this.item) && (this.item.error || '').trim().length > 0) {
+      return false;
+    }
+    return this.item.status === 'failed' && this.showRetryAction &&
+      (this.item.detail || '').trim().length > 0;
   }
 
   @Builder
@@ -332,7 +379,9 @@ export struct ChatMessageBubble {
       if (this.isUserSteeringEntry(entry)) {
         ChatUserMessageBubble({
           item: this.steeringMessage(entry, path),
-          showRetryAction: false
+          showRetryAction: false,
+          onCopyMessage: this.onCopyMessage,
+          onOpenFullText: this.onOpenFullText
         })
       } else if (this.isThinkingEntry(entry)) {
         this.Thinking(
@@ -605,6 +654,18 @@ export struct ChatMessageBubble {
 
   private isFailedAssistant(item: ConversationUiMessage): boolean {
     return item.role !== 'user' && (item.status || '').toLowerCase() === 'failed';
+  }
+
+  /**
+   * The message body the copy entries act on.
+   *
+   * Deliberately the same gathering the bubble already draws from, rather than
+   * a second reading of `items`: a structured turn's raw Markdown lives in its
+   * trailing top-level text entry, and a copy path that re-derived it would
+   * drift from what the user is looking at.
+   */
+  private copySourceText(): string {
+    return this.finalMessageText(this.item);
   }
 
   private finalMessageText(item: ConversationUiMessage): string {

@@ -2249,6 +2249,26 @@
       "value": "Please analyze this image."
     },
     {
+      "name": "chat_fullText",
+      "value": "Full text"
+    },
+    {
+      "name": "chat_copyFullText",
+      "value": "Copy full text"
+    },
+    {
+      "name": "chat_copyRich",
+      "value": "Copy (rich text)"
+    },
+    {
+      "name": "chat_copyMarkdown",
+      "value": "Copy Markdown"
+    },
+    {
+      "name": "chat_copyPlain",
+      "value": "Copy plain text"
+    },
+    {
       "name": "status_waitingConnection",
       "value": "Waiting to connect"
     },

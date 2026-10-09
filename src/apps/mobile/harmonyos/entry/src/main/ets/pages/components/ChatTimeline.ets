@@ -14,6 +14,7 @@ import {
   ObservableChatTimelineItem
 } from '../../model/ChatTimelineModels';
 import { ChatSurface } from '../state/ChatSurface';
+import { MessageCopyScope } from '../actions/ConversationIntent';
 import {
   CARD,
   INK,
@@ -57,6 +58,9 @@ struct ChatAssistantTimelineRow {
   @Event onAnswerQuestion: (toolId: string, answers: ConversationUiQuestionAnswer) => void =
     (_toolId: string, _answers: ConversationUiQuestionAnswer) => {};
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onCopyMessageScoped: (text: string, scope: MessageCopyScope) => void =
+    (_text: string, _scope: MessageCopyScope) => {};
+  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
@@ -98,6 +102,8 @@ struct ChatAssistantTimelineRow {
       onCancelTool: this.onCancelTool,
       onAnswerQuestion: this.onAnswerQuestion,
       onCopyMessage: this.onCopyMessage,
+      onCopyMessageScoped: this.onCopyMessageScoped,
+      onOpenFullText: this.onOpenFullText,
       onRetryMessage: this.onRetryMessage,
       onOpenFilePreview: this.onOpenFilePreview,
       onBuildPlan: this.onBuildPlan,
@@ -163,6 +169,9 @@ export struct ChatTimeline {
   @Event onAnswerQuestion: (toolId: string, answers: ConversationUiQuestionAnswer) => void =
     (_toolId: string, _answers: ConversationUiQuestionAnswer) => {};
   @Event onCopyMessage: (text: string) => void = (_text: string) => {};
+  @Event onCopyMessageScoped: (text: string, scope: MessageCopyScope) => void =
+    (_text: string, _scope: MessageCopyScope) => {};
+  @Event onOpenFullText: (text: string) => void = (_text: string) => {};
   @Event onRetryMessage: (text: string) => void = (_text: string) => {};
   @Event onOpenFilePreview: (path: string, label: string) => void = (_path: string, _label: string) => {};
   @Event onBuildPlan: (path: string, name: string) => void = (_path: string, _name: string) => {};
@@ -241,6 +250,12 @@ export struct ChatTimeline {
                   ChatUserMessageRow({
                     item: toConversationUiMessage(repeatItem.item.message!),
                     showRetryAction: repeatItem.item.showRetryAction === true,
+                    onCopyMessage: (text: string) => {
+                      this.onCopyMessage(text);
+                    },
+                    onOpenFullText: (text: string) => {
+                      this.onOpenFullText(text);
+                    },
                     onRetryMessage: (text: string) => {
                       this.onRetryMessage(text);
                     }
@@ -271,6 +286,12 @@ export struct ChatTimeline {
                     },
                     onCopyMessage: (text: string) => {
                       this.onCopyMessage(text);
+                    },
+                    onCopyMessageScoped: (text: string, scope: MessageCopyScope) => {
+                      this.onCopyMessageScoped(text, scope);
+                    },
+                    onOpenFullText: (text: string) => {
+                      this.onOpenFullText(text);
                     },
                     onRetryMessage: (text: string) => {
                       this.onRetryMessage(text);
@@ -317,6 +338,8 @@ export struct ChatTimeline {
                 onCancelTool: this.onCancelTool,
                 onAnswerQuestion: this.onAnswerQuestion,
                 onCopyMessage: this.onCopyMessage,
+                onCopyMessageScoped: this.onCopyMessageScoped,
+                onOpenFullText: this.onOpenFullText,
                 onRetryMessage: this.onRetryMessage,
                 onOpenFilePreview: this.onOpenFilePreview,
                 onBuildPlan: this.onBuildPlan,

@@ -8,6 +8,7 @@ import { ChatTimelineItem } from '../../model/ChatTimelineModels';
 import { VoiceInputRouteSnapshot } from '../../services/VoiceInputLifecycleController';
 import { AppRootRouteState } from '../navigation/AppRootRouteState';
 import { AppRoute, AppRouteContract } from '../navigation/AppRouteContract';
+import { MessageCopyScope } from '../actions/ConversationIntent';
 import { GeneralChatPageState } from '../state/GeneralChatPageState';
 import { RemotePageState } from '../state/RemotePageState';
 import { RemoteChatPollingSnapshot } from '../../services/RemoteChatPollingLifecycleController';
@@ -137,7 +138,9 @@ export class ConversationController {
   }
   async stopRemoteTask(): Promise<void> { await this.transcript.stopRemoteTask(); }
   async renameRemoteSession(title: string): Promise<void> { await this.transcript.renameRemoteSession(title); }
-  async copyRemoteMessage(text: string): Promise<void> { await this.transcript.copyRemoteMessage(text); }
+  async copyRemoteMessage(text: string, scope: MessageCopyScope): Promise<void> {
+    await this.transcript.copyRemoteMessage(text, scope);
+  }
   async downloadRemoteFile(path: string): Promise<void> { await this.transcript.downloadRemoteFile(path); }
   retryRemoteMessage(text: string): void { this.transcript.retryRemoteMessage(text); }
   async approveRemoteTool(toolId: string, updatedInput?: Object): Promise<void> {
