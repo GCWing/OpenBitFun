@@ -8,6 +8,12 @@ const exported = {};
 new Function('require', 'exports', ts.transpileModule(source, {compilerOptions: {target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS}}).outputText)(name => ({
   './InteractionMailboxStore': { InteractionMailboxStore: class { select() {} } },
   './DurableSessionReducer': { DurableSessionReducer: class { messages() { return []; } } },
+  './SubagentStreamCoordinator': { SubagentStreamCoordinator: class {
+    beginSession() {}
+    endSession() {}
+    observeParentEvent() {}
+    decorate(messages) { return messages; }
+  } },
 }[name] || {}), exported);
 const flush = () => new Promise(resolve => setImmediate(resolve));
 function fixture() {
