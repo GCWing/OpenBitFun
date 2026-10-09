@@ -326,6 +326,9 @@ importers:
       '@xterm/xterm':
         specifier: 6.1.0-beta.141
         version: 6.1.0-beta.141
+      katex:
+        specifier: ^0.16.25
+        version: 0.16.28
       lucide-react:
         specifier: ^0.560.0
         version: 0.560.0(react@18.3.1)
@@ -341,9 +344,15 @@ importers:
       react-syntax-highlighter:
         specifier: ^15.6.6
         version: 15.6.6(react@18.3.1)
+      rehype-katex:
+        specifier: ^7.0.1
+        version: 7.0.1
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      remark-math:
+        specifier: ^6.0.0
+        version: 6.0.0
       socket.io-client:
         specifier: 4.8.3
         version: 4.8.3
@@ -351,6 +360,9 @@ importers:
         specifier: ^5.0.10
         version: 5.0.11(@types/react@18.3.27)(immer@11.1.4)(react@18.3.1)(use-sync-external-store@1.6.0(react@18.3.1))
     devDependencies:
+      '@types/katex':
+        specifier: ^0.16.7
+        version: 0.16.8
       '@types/react':
         specifier: ^18.3.0
         version: 18.3.27

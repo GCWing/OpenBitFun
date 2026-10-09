@@ -39,7 +39,7 @@ export function mountHostQueueFixture({ count = 1, expanded = true } = {}) {
     }, []);
     return <ThemeProvider><I18nProvider><div className={`chat-page${window.innerWidth >= 900 ? ' chat-page--wide' : ''}`} style={{ '--chat-composer-height': `${height}px` } as React.CSSProperties}>
     <header className="chat-page__header">项目介绍</header>
-    <div className="chat-page__messages"><div className="chat-msg chat-msg--assistant"><ThinkingBlock thinking="检查代码和测试覆盖。" /><div className="chat-msg__assistant-content"><MarkdownContent content={"我先看一下工作区，再继续分析实现。\n\nhttps://example.com/very/long/path/that/should/wrap/without/overflowing/the/mobile/viewport"} /></div></div></div>
+    <div className="chat-page__messages"><div className="chat-msg chat-msg--assistant"><ThinkingBlock thinking="检查代码和测试覆盖。" /><div className="chat-msg__assistant-content"><MarkdownContent content={"我先看一下工作区，再继续分析实现。\n\n公式演示：\\(E = mc^2\\)\n\n\\[\\sum_{i=1}^n i = \\frac{n(n+1)}{2}\\]\n\n```bash\necho $$ $1 $&\n```\n\nhttps://example.com/very/long/path/that/should/wrap/without/overflowing/the/mobile/viewport"} /></div></div></div>
     <ChatComposerBar queueContent={<MobileHostQueue queue={queue} onRestore={noop} />}
       cancelling={false} containerRef={ref} expanded={expanded} imageAnalyzing={false} sending={false}
       input="继续检查" inputRef={null} modelControls={null} onActivate={noop} onAttach={noop} onCancel={() => calls.push('stop')}

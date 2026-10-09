@@ -480,6 +480,29 @@
     margin-right: 6px;
     accent-color: var(--openbitfun-color-accent-default);
   }
+
+  // ─── Math (KaTeX) ───────────────────────────────────────────────────────────
+
+  .katex-display {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+    margin: 0.5rem 0;
+    padding: var(--openbitfun-space-1) 0;
+
+    > .katex {
+      display: inline-block;
+      min-width: 0;
+      text-align: initial;
+    }
+  }
+
+  .katex {
+    font-size: 1.05em;
+    line-height: 1.2;
+    text-indent: 0;
+  }
 }
 
 // Output bytes can be larger than the viewport. Keep their aspect ratio in
