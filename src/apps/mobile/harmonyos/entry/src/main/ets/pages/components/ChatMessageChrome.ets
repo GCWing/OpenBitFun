@@ -266,16 +266,16 @@ export struct AssistantMessageCopyAction {
       })
   }
 
-  // Keep the three copy scopes compact while preserving 48vp touch targets.
+  // Keep the three copy scopes compact while preserving 44vp touch targets.
   @Builder
   private CopyMenu() {
     Column() {
       ForEach(AssistantMessageCopyMenuPolicy.items(), (entry: AssistantMessageCopyMenuItem) => {
         Text(RemoteI18n.t(entry.labelKey))
           .width('100%')
-          .height(48)
+          .height(44)
           .padding({ left: 8, right: 8 })
-          .fontSize(MobileDesignTypography.bodyMedium.size)
+          .fontSize(MobileDesignTypography.bodySmall.size)
           .fontColor(INK)
           .textAlign(TextAlign.Start)
           .borderRadius(10)
@@ -284,8 +284,8 @@ export struct AssistantMessageCopyAction {
           })
       }, (entry: AssistantMessageCopyMenuItem) => entry.action)
     }
-    .width(220)
-    .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+    .width(196)
+    .padding({ left: 8, right: 8, top: 4, bottom: 4 })
     .backgroundColor(CARD)
     .border({ width: 0.5, color: LINE })
     .borderRadius(16)
