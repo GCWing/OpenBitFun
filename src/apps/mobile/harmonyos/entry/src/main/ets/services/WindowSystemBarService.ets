@@ -241,6 +241,12 @@ class InsetsBroadcast {
     const generation = this.generation;
     RemoteLogger.info('window insets subscription opened');
     void WindowSystemBarService.observeInsets(context, (insets: WindowInsets): void => {
+      // observeInsets publishes before its promise resolves, including its
+      // zero-inset failure fallback. Reject stale data before touching the
+      // shared cache or listeners; the cleanup guard below runs too late.
+      if (generation !== this.generation || this.listeners.length === 0) {
+        return;
+      }
       this.current = insets;
       for (const listener of this.listeners) {
         listener(insets);
