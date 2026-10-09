@@ -109,7 +109,6 @@ pub fn standard_harness_tools() -> Vec<String> {
         "Glob".to_string(),
         "WebSearch".to_string(),
         "WebFetch".to_string(),
-        "TodoWrite".to_string(),
         "get_goal".to_string(),
         "create_goal".to_string(),
         "update_goal".to_string(),
