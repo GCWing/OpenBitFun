@@ -12,6 +12,7 @@ new Function('require', 'exports', ts.transpileModule(source, {compilerOptions: 
     beginSession() {}
     endSession() {}
     observeParentEvent() {}
+    observeParentMessages() {}
     decorate(messages) { return messages; }
   } },
 }[name] || {}), exported);

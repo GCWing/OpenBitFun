@@ -25,6 +25,11 @@ export default class EntryAbility extends UIAbility {
       this.previewStorage = new LocalStorage();
       this.previewStorage.setOrCreate('scenarioId', scenarioId);
       AppStorage.setOrCreate('scenarioId', scenarioId);
+      // A preview can ask for a variant of its scenario without a scenario id of
+      // its own, because the gallery routes by the id alone. Anything not asked
+      // for is the scenario's own default.
+      const option = want.parameters?.['openbitfunDesignOption'] as string | undefined;
+      AppStorage.setOrCreate('previewOption', option ?? '');
     }
     try {
       const colorMode = scenarioId === 'cold-start-home-dark' || scenarioId === 'catalog-refresh-dark' || scenarioId === 'model-role-selector-dark' || scenarioId === 'subagent-process-dark' || scenarioId === 'subagent-swarm-dark' || scenarioId === 'file-visibility-dark' || scenarioId === 'immersive-bottom-dark' || scenarioId === 'immersive-bottom-drawer-dark' || scenarioId === 'immersive-bottom-settings-dark' || scenarioId === 'composer-overflow-dark' || scenarioId === 'composer-overflow-expanded-dark' || scenarioId === 'device-selector-dark' || scenarioId === 'streaming-dark' || scenarioId === 'interaction-mailbox-dark' || scenarioId === 'copy-selection-dark'

@@ -45,6 +45,30 @@ export const SWARM_PAYMENTS_SESSION: string = 'swarm-preview-child-payments';
 export const SWARM_DOCS_SESSION: string = 'swarm-preview-child-docs';
 /** Third worker: its own tools failed and it reported the failure. */
 export const SWARM_FLAKY_SESSION: string = 'swarm-preview-child-flaky';
+/** The wide delegation: ten workers launched at once, which is what the cap is for. */
+export const SWARM_WIDE_PARENT_SESSION: string = 'swarm-preview-parent-wide';
+/** Session id a wide worker runs in; the index is appended. */
+export const SWARM_WIDE_CHILD_PREFIX: string = 'swarm-preview-wide-child-';
+/** How many workers the wide delegation hands out at once. */
+export const SWARM_WIDE_WORKERS: number = 10;
+/** The dev key the preview's cold start stores its transcripts under. */
+export const SWARM_PREVIEW_DEVICE_KEY: string = 'swarm-preview-device';
+
+/**
+ * The beats a preview can play, whichever delegation it is playing.
+ *
+ * The parent session id is part of the script because it is the session a
+ * preview opens, and the children are the sessions a cold-start preview has to
+ * mute so that only the transcript cache can answer for them.
+ */
+export interface SwarmBeatScript {
+  parentSession(): string;
+  childSessions(): string[];
+  beatCount(): number;
+  position(): number;
+  advance(): boolean;
+  drain(): void;
+}
 
 interface SwarmUserMessage { id: string; content: string; timestamp: number; }
 interface SwarmTurnHeader {
@@ -143,7 +167,21 @@ export class SwarmSessionLog {
 
   /** Publishes the turn record, which every later record of this log repeats. */
   openTurn(): void {
-    this.publish(this.record(`turn/${this.turnId}`));
+    this.publish(this.record(`turn/${this.turnId}`, undefined, undefined, true));
+  }
+
+  /**
+   * Ends the turn this log is publishing, without publishing another item.
+   *
+   * A host writes a turn's own terminal status when the turn ends, and that
+   * status is the only place a finished worker says it is finished: its step
+   * count does not change at that moment, so nothing else in the log moves. It is
+   * the turn's own record, not a round's: a turn record carries the header the
+   * rounds repeat, which is what makes it the state of the turn.
+   */
+  settleTurn(status: string): void {
+    this.turnStatus = status;
+    this.publish(this.record(`turn/${this.turnId}`, undefined, undefined, true));
   }
 
   /** Opens the next model round and publishes it. */
@@ -220,14 +258,22 @@ export class SwarmSessionLog {
     return this.clock;
   }
 
-  private record(id: string, item?: SwarmItem, round?: SwarmRoundHeader): SwarmRecord {
+  /**
+   * One record of this session's log.
+   *
+   * A record of a turn's own state carries no round: `turnOnly` is what a turn
+   * header published on its own looks like, and a record stamped with the round
+   * the log happens to be in is a round's record, not the turn's.
+   */
+  private record(id: string, item?: SwarmItem, round?: SwarmRoundHeader,
+    turnOnly: boolean = false): SwarmRecord {
     this.revision++;
     const record: SwarmRecord = {
       sessionId: this.sessionId, id, revision: this.revision, turn: this.turnHeader()
     };
     if (round) {
       record.round = round;
-    } else if (this.roundId.length > 0) {
+    } else if (!turnOnly && this.roundId.length > 0) {
       record.round = {
         id: this.roundId, turnId: this.turnId, roundIndex: this.roundCount,
         timestamp: this.clock, status: this.turnStatus
@@ -289,6 +335,7 @@ class SwarmStreamSource implements HostSessionSource {
 export class SwarmLedger {
   private logs: Map<string, SwarmSessionLog> = new Map<string, SwarmSessionLog>();
   private streams: Map<string, HostSessionStream> = new Map<string, HostSessionStream>();
+  private muted: Set<string> = new Set<string>();
 
   /** Creates (once) the log a session publishes into. */
   open(sessionId: string, turnId: string, userText: string, turnIndex: number = 0): SwarmSessionLog {
@@ -300,6 +347,18 @@ export class SwarmLedger {
     return log;
   }
 
+  /**
+   * Stops these sessions from answering, the way a host that is gone answers.
+   *
+   * A cold-start preview reads the session on screen from the record log it
+   * publishes, and the workers it launched from nowhere at all: whatever a card
+   * still shows at that point came from the transcript cache, which is exactly
+   * what a phone that just restarted has.
+   */
+  muteSessions(sessionIds: string[]): void {
+    sessionIds.forEach((sessionId: string): void => { this.muted.add(sessionId); });
+  }
+
   openStream(sessionId: string, callbacks: HostSessionCallbacks): HostSessionStream {
     const stream = new HostSessionStream(sessionId, new SwarmStreamSource(this, sessionId), callbacks);
     this.streams.set(sessionId, stream);
@@ -309,7 +368,7 @@ export class SwarmLedger {
   /** A read page for one session: everything after the caller's cursor. */
   page(sessionId: string, request: HostStreamReadRequest): HostStreamPage {
     const log = this.logs.get(sessionId);
-    const records: HostStreamEventWire[] = log ? log.records() : [];
+    const records: HostStreamEventWire[] = log && !this.muted.has(sessionId) ? log.records() : [];
     const cursor = log ? log.newestSeq() : 0;
     const after = request.after ?? 0;
     const page: HostStreamPage = {
@@ -332,7 +391,7 @@ export class SwarmLedger {
  * Beats exist so the fixture can be captured mid-flight — a worker's steps
  * arriving one page at a time — instead of only in its finished state.
  */
-export class SwarmScript {
+export class SwarmScript implements SwarmBeatScript {
   private ledger: SwarmLedger;
   private parent: SwarmSessionLog;
   private payments: SwarmSessionLog;
@@ -362,9 +421,18 @@ export class SwarmScript {
       (): void => { this.beatDocsGrepStarted(); },
       (): void => { this.beatDocsGrepFinished(); },
       (): void => { this.beatDocsReadStarted(); },
-      (): void => { this.beatDocsSpawnSettles(); }
+      (): void => { this.beatDocsSpawnSettles(); },
+      // The workers answer, one turn at a time, after the parent has collected
+      // them: a worker's turn can end without publishing another step, so these
+      // beats are the only thing that moves a card's status.
+      (): void => { this.payments.settleTurn('completed'); },
+      (): void => { this.flaky.settleTurn('error'); },
+      (): void => { this.docs.settleTurn('completed'); }
     ];
   }
+
+  parentSession(): string { return SWARM_PARENT_SESSION; }
+  childSessions(): string[] { return [SWARM_PAYMENTS_SESSION, SWARM_FLAKY_SESSION, SWARM_DOCS_SESSION]; }
 
   /** How many beats the swarm has; a driver stops when `advance` answers false. */
   beatCount(): number { return this.beats.length; }
@@ -530,6 +598,108 @@ export class SwarmScript {
   }
 }
 
+/**
+ * The wide delegation: ten workers handed out at once.
+ *
+ * This is the delegation the follow cap exists for. Every launch is answered with
+ * the status the host answers a background worker with, so every card's own
+ * launch record says the call is done while its worker has only just started;
+ * each worker then publishes one step of its own. What the preview reads back is
+ * ten cards holding ten workers' process while only the cap's worth of child
+ * streams are open, and which of those streams is open follows what the reader
+ * opened and what finished.
+ */
+export class SwarmWideScript implements SwarmBeatScript {
+  private parent: SwarmSessionLog;
+  private children: SwarmSessionLog[] = [];
+  private beats: (() => void)[] = [];
+  private cursor: number = 0;
+
+  constructor(ledger: SwarmLedger) {
+    this.parent = ledger.open(SWARM_WIDE_PARENT_SESSION, 'swarm-wide-turn-1', SWARM_WIDE_PROMPT, 0);
+    for (let index = 0; index < SWARM_WIDE_WORKERS; index++) {
+      this.children.push(ledger.open(wideChildSession(index), `swarm-wide-turn-${index}`,
+        SWARM_WIDE_BRIEF, 0));
+    }
+    this.beats.push((): void => { this.beatOpening(); });
+    for (let index = 0; index < SWARM_WIDE_WORKERS; index++) {
+      this.beats.push((): void => { this.beatSpawn(index); });
+    }
+    for (let index = 0; index < SWARM_WIDE_WORKERS; index++) {
+      this.beats.push((): void => { this.beatWorkerStep(index); });
+    }
+  }
+
+  parentSession(): string { return SWARM_WIDE_PARENT_SESSION; }
+
+  childSessions(): string[] {
+    const sessions: string[] = [];
+    for (let index = 0; index < this.children.length; index++) sessions.push(wideChildSession(index));
+    return sessions;
+  }
+
+  beatCount(): number { return this.beats.length; }
+  position(): number { return this.cursor; }
+
+  advance(): boolean {
+    if (this.cursor >= this.beats.length) return false;
+    const beat = this.beats[this.cursor];
+    this.cursor++;
+    beat();
+    return true;
+  }
+
+  drain(): void {
+    while (this.advance()) {
+    }
+  }
+
+  private beatOpening(): void {
+    const parent = this.parent;
+    parent.openTurn();
+    parent.beginRound();
+    parent.thinking(SWARM_WIDE_PLAN_REASONING);
+    parent.text(SWARM_WIDE_PLAN_TEXT);
+  }
+
+  /** One launch, answered at once: the worker behind it has not reported yet. */
+  private beatSpawn(index: number): void {
+    this.parent.beginRound();
+    this.parent.toolFinished(wideSpawnId(index), 'AgentSpawn', {
+      agent_id: wideAgentId(index), agent_type: 'Explore', prompt: SWARM_WIDE_BRIEF
+    }, spawnTable(wideAgentId(index), `bg-${index}4c0a1`), { subagentSessionId: wideChildSession(index) });
+  }
+
+  /** The worker's own first step, published on the worker's own stream. */
+  private beatWorkerStep(index: number): void {
+    const child = this.children[index];
+    child.openTurn();
+    child.beginRound();
+    child.thinking(SWARM_WIDE_WORKER_THINKING);
+    child.toolFinished(wideStepId(index), 'Grep', {
+      pattern: 'audit', path: `src/area-${index}`, output_mode: 'files_with_matches'
+    }, `src/area-${index}/index.ts`);
+  }
+}
+
+/** The session one wide worker runs in. */
+export function wideChildSession(index: number): string {
+  return `${SWARM_WIDE_CHILD_PREFIX}${index}`;
+}
+
+/** The tool call that launched one wide worker; what its card is keyed by. */
+export function wideSpawnId(index: number): string {
+  return `swarm-wide-spawn-${index}`;
+}
+
+function wideAgentId(index: number): string {
+  return `audit-area-${index}`;
+}
+
+function wideStepId(index: number): string {
+  return `swarm-wide-grep-${index}`;
+}
+
 /** The text table an `AgentSpawn` answers with while its worker runs. */
 function spawnTable(agentId: string, bgTaskId: string): string {
   return ['agent_id          bg_task_id      status', `${agentId}     ${bgTaskId}        started`].join('\n');
@@ -569,6 +739,19 @@ const PARENT_PLAN_REASONING: string =
   'The audit splits into independent areas, so hand each one to a worker and collect their reports.';
 const PARENT_PLAN_TEXT: string =
   'I will run three workers in parallel: payment entry points, documentation drift, and a migration replay.';
+
+const SWARM_WIDE_PROMPT: string =
+  'Audit every area of the workspace at once and report which ones a reader should look at first.';
+const SWARM_WIDE_BRIEF: string = [
+  'Audit one area of the workspace and report the entry points it exposes.',
+  'Name each file you read and state what the area is responsible for.'
+].join('\n');
+const SWARM_WIDE_PLAN_REASONING: string =
+  'Ten areas, one worker each: the widest delegation this phone has had to draw.';
+const SWARM_WIDE_PLAN_TEXT: string =
+  'I will hand the audit to ten workers and follow every one of their streams.';
+const SWARM_WIDE_WORKER_THINKING: string =
+  'Read the area index first, then name what it covers.';
 
 const PAYMENTS_GREP_OUTPUT: string = [
   'src/payments/charge.ts', 'src/payments/refund.ts', 'src/payments/retry.ts',

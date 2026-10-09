@@ -7,6 +7,9 @@ const ts = require('typescript');
 const ROOT = path.join(__dirname, '../../entry/src/main/ets');
 const cache = new Map();
 
+/** The session-scoped logger, whose own platform kit is not reachable here. */
+const LOGGER = { RemoteLogger: { info() {}, warn() {}, error() {}, debug() {} } };
+
 /** Loads one .ets module and resolves its relative imports from the source tree. */
 function load(relative) {
   if (cache.has(relative)) return cache.get(relative);
@@ -22,6 +25,7 @@ function load(relative) {
     if (!name.startsWith('.')) return {};
     const target = path.relative(ROOT, path.resolve(path.join(ROOT, relative), '..', name))
       .split(path.sep).join('/');
+    if (target === 'services/RemoteLogger') return LOGGER;
     return fs.existsSync(path.join(ROOT, `${target}.ets`)) ? load(target) : {};
   }, exported);
   return exported;
@@ -124,16 +128,79 @@ function childRecords() {
 }
 
 /**
+ * The child's own turn record at a new revision.
+ *
+ * A worker's turn ending publishes no item: the turn's own status is the only
+ * place a finished worker says it is finished, and it is what a card's header
+ * has to be read from.
+ */
+function childTurnSettle(revision, status, sessionId = CHILD_SESSION) {
+  return {
+    session_id: sessionId,
+    event: 'session-record',
+    payload: {
+      sessionId, id: 'turn/turn', revision,
+      turn: {
+        turnId: 'turn', turnIndex: 0, sessionId, timestamp: 1,
+        userMessage: { id: 'user', content: 'the brief', timestamp: 1 },
+        status
+      }
+    }
+  };
+}
+
+/** One record of a child's own turn, on a turn of its choosing. */
+function childTurnRecord(turnId, id, type, order, data) {
+  return {
+    session_id: CHILD_SESSION,
+    event: 'session-record',
+    payload: {
+      sessionId: CHILD_SESSION, id: `item/${id}`, revision: 1,
+      turn: {
+        turnId, turnIndex: 1, sessionId: CHILD_SESSION, timestamp: 9,
+        userMessage: { id: `${turnId}-user`, content: 'carry on', timestamp: 9 }, status: 'inprogress'
+      },
+      round: { id: `${turnId}-round`, turnId, roundIndex: 0, timestamp: 10, status: 'inprogress' },
+      item: { type, data: Object.assign({ id, orderIndex: order, timestamp: 11 }, data) }
+    }
+  };
+}
+
+/** A turn's own record at a new revision, for a turn other than the first. */
+function childTurnHeaderSettle(turnId, revision, status) {
+  return {
+    session_id: CHILD_SESSION,
+    event: 'session-record',
+    payload: {
+      sessionId: CHILD_SESSION, id: `turn/${turnId}`, revision,
+      turn: {
+        turnId, turnIndex: 1, sessionId: CHILD_SESSION, timestamp: 9,
+        userMessage: { id: `${turnId}-user`, content: 'carry on', timestamp: 9 }, status
+      }
+    }
+  };
+}
+
+/** The card a decorated parent transcript draws for one launch. */
+function cardOf(coordinator, records, toolId = SWARM_CALL_ID) {
+  const decorated = coordinator.decorate(parentMessages(records));
+  const card = Policy.subagentBranchAt(ui.toConversationUiMessage(decorated[1]).items || [], 0, toolId);
+  assert.ok(card, 'the launch is drawn as a card');
+  return card;
+}
+
+/**
  * A coordinator over a stub stream per child session, plus the callbacks it
  * registered, so a test can deliver child records as the host would.
  */
-function coordinatorHarness() {
+function coordinatorHarness(options = {}) {
   const opened = new Map();
   const closed = [];
   const errors = [];
   let notifications = 0;
   const coordinator = new SubagentStreamCoordinator({
     subscribeSession: (sessionId, callbacks) => {
+      if (options.refuses) throw new Error(`no stream for ${sessionId}`);
       opened.set(sessionId, callbacks);
       return { close: () => { closed.push(sessionId); }, wake: () => {}, loadOlder: () => {}, isClosed: () => false };
     }
@@ -442,6 +509,132 @@ test('the same child record published twice adds one step', () => {
   coordinator.endSession();
 });
 
+test('a launch record that settled does not settle the worker it started', () => {
+  const harness = coordinatorHarness();
+  const { coordinator, opened } = harness;
+  coordinator.beginSession(SESSION);
+  // The host answers an asynchronous `AgentSpawn` as soon as the worker starts,
+  // so the launching item is completed while its worker has barely begun.
+  coordinator.observeParentEvent(launchRecord(1, 'completed'));
+  const callbacks = opened.get(CHILD_SESSION);
+  callbacks.onEvent(childThinkingRecord(1));
+  callbacks.onCaughtUp();
+
+  const card = cardOf(coordinator, [launchRecord(1, 'completed')]);
+  assert.equal(card.tool.status, 'running',
+    'the header reports the turn its worker is in, not the call that started it');
+  assert.equal((card.subItems || []).length, 1, 'with the step its worker has published');
+  coordinator.endSession();
+});
+
+test("a worker's turn settling is what settles its card", () => {
+  const harness = coordinatorHarness();
+  const { coordinator, opened } = harness;
+  coordinator.beginSession(SESSION);
+  coordinator.observeParentEvent(launchRecord(1, 'completed'));
+  const callbacks = opened.get(CHILD_SESSION);
+  childRecords().forEach(event => callbacks.onEvent(event));
+  callbacks.onCaughtUp();
+  assert.equal(cardOf(coordinator, [launchRecord(1, 'completed')]).tool.status, 'running');
+
+  // The worker's turn ends and it publishes no further step: the turn's own
+  // status is the only thing that moved.
+  callbacks.onEvent(childTurnSettle(9, 'completed'));
+  const done = cardOf(coordinator, [launchRecord(1, 'completed')]);
+  assert.equal(done.tool.status, 'completed', 'the card is settled by its worker reporting');
+  assert.equal((done.subItems || []).length, 3, 'and keeps every step the worker published');
+
+  // The same reading covers a worker that ended badly.
+  const failed = coordinatorHarness();
+  failed.coordinator.beginSession(SESSION);
+  failed.coordinator.observeParentEvent(launchRecord(1, 'completed'));
+  const failing = failed.opened.get(CHILD_SESSION);
+  childRecords().forEach(event => failing.onEvent(event));
+  failing.onCaughtUp();
+  failing.onEvent(childTurnSettle(9, 'error'));
+  assert.equal(cardOf(failed.coordinator, [launchRecord(1, 'completed')]).tool.status, 'failed',
+    'a worker whose turn ended in error is drawn as failed');
+  failed.coordinator.endSession();
+  coordinator.endSession();
+});
+
+test('a child stream that said nothing leaves the launch record to speak for its worker', () => {
+  // The child's stream fails before it publishes anything: nothing is known about
+  // the worker, so nothing is invented for it.
+  const broken = coordinatorHarness();
+  broken.coordinator.beginSession(SESSION);
+  broken.coordinator.observeParentEvent(launchRecord(1, 'completed'));
+  broken.opened.get(CHILD_SESSION).onError(new Error('stream failed'));
+  assert.equal(cardOf(broken.coordinator, [launchRecord(1, 'completed')]).tool.status, 'completed',
+    'the launching item keeps the status it was recorded with');
+  assert.equal(broken.errors.length, 1, 'and the failure is still reported');
+  broken.coordinator.endSession();
+
+  // A child whose stream cannot even be opened is the same reading.
+  const refused = coordinatorHarness({ refuses: true });
+  refused.coordinator.beginSession(SESSION);
+  refused.coordinator.observeParentEvent(launchRecord(1, 'completed'));
+  assert.equal(cardOf(refused.coordinator, [launchRecord(1, 'completed')]).tool.status, 'completed',
+    'a worker that cannot be followed at all is drawn as its launch was recorded');
+  refused.coordinator.endSession();
+});
+
+test('a worker continued after it answered reports as running again', () => {
+  const harness = coordinatorHarness();
+  const { coordinator, opened } = harness;
+  coordinator.beginSession(SESSION);
+  coordinator.observeParentEvent(launchRecord(1, 'completed'));
+  const callbacks = opened.get(CHILD_SESSION);
+  childRecords().forEach(event => callbacks.onEvent(event));
+  callbacks.onCaughtUp();
+  callbacks.onEvent(childTurnSettle(9, 'completed'));
+  assert.equal(cardOf(coordinator, [launchRecord(1, 'completed')]).tool.status, 'completed');
+
+  // The same worker is handed a second turn: it is working again.
+  callbacks.onEvent(childTurnRecord('turn-2', 'child-think-2', 'thinking', 0, { content: 'Second pass' }));
+  assert.equal(cardOf(coordinator, [launchRecord(1, 'completed')]).tool.status, 'running',
+    'any turn of a worker still in progress is the worker still working');
+  callbacks.onEvent(childTurnHeaderSettle('turn-2', 2, 'completed'));
+  assert.equal(cardOf(coordinator, [launchRecord(1, 'completed')]).tool.status, 'completed',
+    'and its last turn is what it reports when none is');
+  coordinator.endSession();
+});
+
+test('the fixture keeps a settled launch and a working worker apart, beat by beat', async () => {
+  const harness = await swarmHarness();
+  const { script, timeline, controller } = harness;
+  const cardById = id => cardsFromTimeline(timeline).cards.find(card => card.tool.id === id);
+  const statusOf = id => (cardById(id) || { tool: {} }).tool.status;
+  const launches = ['swarm-payments-spawn', 'swarm-flaky-spawn', 'swarm-docs-spawn'];
+  try {
+    beatThrough(script, 13); // every launch has settled; no worker has reported yet
+    await until(() => cardCount(timeline) === 3, 'three launches');
+    await until(() => launches.every(id => (cardById(id)?.subItems || []).length > 0),
+      'the workers to publish their steps');
+
+    assert.equal(statusOf('swarm-docs-spawn'), 'running',
+      'a launch that settled while its worker is still working draws a running card');
+    assert.equal(statusOf('swarm-payments-spawn'), 'running',
+      'a worker that finished before its branch was opened is read from its own turn');
+    assert.equal(statusOf('swarm-flaky-spawn'), 'running',
+      'and a worker whose own tools failed is still working until its turn ends');
+    const docsSteps = (cardById('swarm-docs-spawn')?.subItems || []).length;
+
+    beatThrough(script, 14); // the first worker's turn ends
+    await until(() => statusOf('swarm-payments-spawn') === 'completed', 'the first worker to report');
+    beatThrough(script, 15);
+    await until(() => statusOf('swarm-flaky-spawn') === 'failed', 'the second worker to report');
+    beatThrough(script, 16);
+    await until(() => statusOf('swarm-docs-spawn') === 'completed', 'the last worker to report');
+
+    assert.equal((cardById('swarm-docs-spawn')?.subItems || []).length, docsSteps,
+      'a worker settling adds no step: only its status moved');
+    assert.deepEqual(harness.errors, [], 'no worker stream failed');
+  } finally {
+    controller.stop();
+  }
+});
+
 test('a settled launch repaints its card even when its worker says nothing new', () => {
   const harness = coordinatorHarness();
   const { coordinator, opened } = harness;
@@ -453,14 +646,15 @@ test('a settled launch repaints its card even when its worker says nothing new',
 
   const running = coordinator.decorate(parentMessages([launchRecord(1, 'running')]));
   const runningCard = Policy.subagentBranchAt(ui.toConversationUiMessage(running[1]).items || [], 0, SWARM_CALL_ID);
-  assert.equal(runningCard.tool.status, 'running', 'the launch is drawn at the status it was recorded with');
+  assert.equal(runningCard.tool.status, 'running', 'the card is drawn at the worker status it was recorded with');
   assert.equal((runningCard.subItems || []).length, 1, 'with the one step its worker has published');
 
   // The launch settles. Its worker publishes no further step, so the launching
   // item's own record is the only thing that changed.
   const settled = coordinator.decorate(parentMessages([launchRecord(1, 'running'), launchRecord(2, 'completed')]));
   const settledCard = Policy.subagentBranchAt(ui.toConversationUiMessage(settled[1]).items || [], 0, SWARM_CALL_ID);
-  assert.equal(settledCard.tool.status, 'completed');
+  assert.equal(settledCard.tool.status, 'running',
+    "the card still reports the worker's own lifecycle, not the settled launch record");
   assert.equal((settledCard.subItems || []).length, 1, 'and its worker keeps the branch it already had');
   assert.ok(settled[1].renderVersion > running[1].renderVersion,
     'the card is repainted: a tool item status alone is not part of the row key');
@@ -722,8 +916,10 @@ test('the controller reads the launch record for the child session it names', ()
   const controller = fs.readFileSync(path.join(ROOT, 'services/ChatSessionController.ets'), 'utf8');
   assert.match(controller, /this\.subagents\.observeParentEvent\(event\)/,
     'the parent stream is where a child session is discovered');
-  assert.match(controller, /this\.subagents\.decorate\(this\.reducer\.messages\(\)\)/,
+  assert.match(controller, /this\.subagents\.decorate\(transcript\)/,
     'and the branch is attached on the one path that publishes the transcript');
+  assert.match(controller, /this\.subagents\.observeParentMessages\(transcript\)/,
+    'which also reads the children a cached transcript names, so a cold view has them');
   assert.match(controller, /this\.subagents\.beginSession\(sessionId\)/,
     'a session switch rebinds the follow set');
   assert.match(controller, /this\.subagents\.endSession\(\)/,

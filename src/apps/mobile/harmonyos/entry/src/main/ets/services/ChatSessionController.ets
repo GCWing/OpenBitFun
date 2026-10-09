@@ -2,7 +2,7 @@ import { InteractionMailboxStore } from './InteractionMailboxStore';
 import { InteractionMailboxAction, InteractionMailboxState } from '../model/InteractionMailbox';
 import { DurableSessionReducer } from './DurableSessionReducer';
 import { HostSessionStream, HostSessionEvent } from './HostSessionStream';
-import { SubagentStreamCoordinator } from './SubagentStreamCoordinator';
+import { SubagentBranchCache, SubagentFollowState, SubagentStreamCoordinator } from './SubagentStreamCoordinator';
 import {
   ChatMessage,
   RemoteModelCatalog
@@ -48,6 +48,13 @@ export interface ChatSessionControllerCallbacks {
 export interface ChatSessionControllerOptions {
   /** Stabilization window before the first idle poll after selecting a session. */
   initialPollDelayMs: number;
+  /**
+   * Where a delegation's child transcripts are kept between app launches.
+   *
+   * Absent for a host that has no phone transcript cache to write to: the
+   * branches then live for as long as the session is open, as they always did.
+   */
+  branchCache?: SubagentBranchCache;
 }
 
 
@@ -76,7 +83,7 @@ export class ChatSessionController {
   private pendingModelCatalog?: RemoteModelCatalog;
 
   constructor(sessionManager: RemoteSessionManager, callbacks: ChatSessionControllerCallbacks,
-    _options?: ChatSessionControllerOptions) {
+    options?: ChatSessionControllerOptions) {
     this.sessionManager = sessionManager; this.callbacks = callbacks;
     this.mailbox = new InteractionMailboxStore(sessionManager, (state: InteractionMailboxState): void => { this.callbacks.onMailbox?.(state); });
     // A delegation tool's child sessions are streams of their own; they are read
@@ -84,7 +91,8 @@ export class ChatSessionController {
     // item that launched them.
     this.subagents = new SubagentStreamCoordinator(sessionManager,
       (): void => { this.publishChildBranch(); },
-      (error: Error): void => { if (!this.stopped) this.callbacks.onError(error); });
+      (error: Error): void => { if (!this.stopped) this.callbacks.onError(error); },
+      options?.branchCache);
   }
   start(sessionId: string, cursor: ChatSessionCursor, _activeTurn?: ChatMessage): void {
     if (!this.stopped && this.sessionId === sessionId && this.stream && !this.stream.isClosed()) {
@@ -182,12 +190,31 @@ export class ChatSessionController {
     if (!this.caughtUp || this.historyReplaying) return;
     this.publish();
   }
+  /**
+   * Makes sure one delegation's worker is being followed.
+   *
+   * The card asks for this when the reader opens it: the branch may have lost
+   * its stream to the cap, and an open card has to show the worker's own steps.
+   */
+  ensureBranchSubscribed(ownerToolCallId: string): void {
+    this.subagents.ensureSubscribed(ownerToolCallId);
+  }
+  /** How many of this session's children are followed, for previews and focused tests. */
+  subagentFollowState(): SubagentFollowState {
+    return this.subagents.followState();
+  }
   private publish(): void {
     if (this.stopped || !this.callbacks.canPoll(this.sessionId)) return;
+    const transcript: ChatMessage[] = this.reducer.messages();
+    // The transcript names every child this session launched. Reading the names
+    // out of it is what keeps a delegation's worker reachable when no parent
+    // record arrives — a phone that just restarted, or an offline host — because
+    // the cached launch item still carries the child Session id.
+    this.subagents.observeParentMessages(transcript);
     const persisted: ChatMessage[] = [];
     let active: ChatMessage | undefined = undefined;
     this.completedTurnId = '';
-    this.subagents.decorate(this.reducer.messages()).forEach((message: ChatMessage) => {
+    this.subagents.decorate(transcript).forEach((message: ChatMessage) => {
       if (message.role === 'assistant' && (message.status === 'active' || message.status === 'running')) active = message;
       else {
         persisted.push(message);

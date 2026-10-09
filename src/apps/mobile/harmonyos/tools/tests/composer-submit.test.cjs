@@ -52,6 +52,8 @@ const coreSource = fs.readFileSync(path.join(__dirname, '../../entry/src/main/et
 const coreJs = ts.transpileModule(coreSource, {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText;
 const coreExports = {};
 new Function('require','exports',coreJs)(name => name.endsWith('RemoteUiState') ? {RemoteUiState:{emptyActiveTurn:()=>({}),emptyModelCatalog:()=>({})}} :
+  name.endsWith('SubagentBranchExpansionState') ?
+    {SubagentBranchExpansionState:class{isExpanded(){return false;}toggle(){return false;}}} :
   {ChatTimelineRevisionTracker:class{reset(){return 0;}},ChatTimelineRowStore:class{clear(){}}},coreExports);
 function submitComposer(core, session, text, images) {
   const submission=core.prepareComposerSubmission(session,text,images); submission.commit(); return () => submission.rollback();
