@@ -266,32 +266,16 @@ export struct AssistantMessageCopyAction {
       })
   }
 
-  /**
-   * The conversation popover's established surface, with the frozen copy menu
-   * inside it: a section title, then one 48-high row per export scope.
-   *
-   * The design's per-entry glyphs are not reproduced. The approved artboard
-   * carries them as HMSymbol codes with no name recorded, so no established
-   * asset could be reused; drawing a different one would silently replace a
-   * frozen element. Device verification owns that gap.
-   */
+  // Keep the three copy scopes compact while preserving 48vp touch targets.
   @Builder
   private CopyMenu() {
     Column() {
-      Text(RemoteI18n.t('common.copy'))
-        .width('100%')
-        .height(28)
-        .padding({ left: 8, right: 8 })
-        .fontSize(MobileDesignTypography.bodySmall.size)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(MUTED)
-        .textAlign(TextAlign.Start)
       ForEach(AssistantMessageCopyMenuPolicy.items(), (entry: AssistantMessageCopyMenuItem) => {
         Text(RemoteI18n.t(entry.labelKey))
           .width('100%')
           .height(48)
           .padding({ left: 8, right: 8 })
-          .fontSize(MobileDesignTypography.titleSmall.size)
+          .fontSize(MobileDesignTypography.bodyMedium.size)
           .fontColor(INK)
           .textAlign(TextAlign.Start)
           .borderRadius(10)
@@ -300,8 +284,8 @@ export struct AssistantMessageCopyAction {
           })
       }, (entry: AssistantMessageCopyMenuItem) => entry.action)
     }
-    .width(292)
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .width(220)
+    .padding({ left: 8, right: 8, top: 6, bottom: 6 })
     .backgroundColor(CARD)
     .border({ width: 0.5, color: LINE })
     .borderRadius(16)
