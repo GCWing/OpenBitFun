@@ -2,6 +2,7 @@ import { InteractionMailboxStore } from './InteractionMailboxStore';
 import { InteractionMailboxAction, InteractionMailboxState } from '../model/InteractionMailbox';
 import { DurableSessionReducer } from './DurableSessionReducer';
 import { HostSessionStream, HostSessionEvent } from './HostSessionStream';
+import { SubagentStreamCoordinator } from './SubagentStreamCoordinator';
 import {
   ChatMessage,
   RemoteModelCatalog
@@ -61,6 +62,7 @@ export class ChatSessionController {
   private stream?: HostSessionStream;
   private reducer: DurableSessionReducer = new DurableSessionReducer();
   private mailbox: InteractionMailboxStore;
+  private subagents: SubagentStreamCoordinator;
   private generation: number = 0;
   private stopped: boolean = true;
   private caughtUp: boolean = false;
@@ -77,6 +79,12 @@ export class ChatSessionController {
     _options?: ChatSessionControllerOptions) {
     this.sessionManager = sessionManager; this.callbacks = callbacks;
     this.mailbox = new InteractionMailboxStore(sessionManager, (state: InteractionMailboxState): void => { this.callbacks.onMailbox?.(state); });
+    // A delegation tool's child sessions are streams of their own; they are read
+    // while this session is open and their records land in the branch of the
+    // item that launched them.
+    this.subagents = new SubagentStreamCoordinator(sessionManager,
+      (): void => { this.publishChildBranch(); },
+      (error: Error): void => { if (!this.stopped) this.callbacks.onError(error); });
   }
   start(sessionId: string, cursor: ChatSessionCursor, _activeTurn?: ChatMessage): void {
     if (!this.stopped && this.sessionId === sessionId && this.stream && !this.stream.isClosed()) {
@@ -87,6 +95,7 @@ export class ChatSessionController {
     this.sessionState = 'idle'; this.completedTurnId = ''; this.hasMoreMessages = false;
     this.historyLoading = false; this.historyReplaying = false; this.historyFailed = false;
     this.pendingModelCatalog = undefined;
+    this.subagents.beginSession(sessionId);
     const epoch = this.generation;
     void this.loadInitialModelCatalog(sessionId, epoch);
     try {
@@ -97,6 +106,9 @@ export class ChatSessionController {
           // must not delay the serial transcript stream or its durable cursor.
           if (event.event === 'session-interaction-changed') { void this.mailbox.refresh(); return; }
           if (!this.reducer.apply(event)) return;
+          // The launch of a child agent is a parent record: it is the only place
+          // the host names the session its process lives in.
+          this.subagents.observeParentEvent(event);
           if (this.caughtUp && !this.historyReplaying) this.publish();
         },
         onResumed: async (): Promise<void> => { if (this.current(epoch)) void this.mailbox.refresh(); },
@@ -140,6 +152,7 @@ export class ChatSessionController {
   }
   stop(_clearActiveTurn: boolean = true): void {
     this.generation++; this.stopped = true; this.mailbox.select(''); this.stream?.close(); this.stream = undefined;
+    this.subagents.endSession();
   }
   loadOlder(): void { this.stream?.loadOlder(); }
   nudge(): void { this.stream?.wake(); }
@@ -156,12 +169,25 @@ export class ChatSessionController {
   }
   private current(epoch: number): boolean { return epoch === this.generation && !this.stopped; }
   async pollNow(): Promise<void> { this.stream?.wake(); }
+  /**
+   * A child branch grew while the parent's own records did not.
+   *
+   * The transcript is republished through the same path a parent record takes,
+   * so an arriving subagent step and an arriving parent record reach the screen
+   * the same way. It waits for the parent's own page like any other publish:
+   * while a history replay is landing, the transcript on screen is a partial
+   * one and every record of it would repaint the conversation.
+   */
+  private publishChildBranch(): void {
+    if (!this.caughtUp || this.historyReplaying) return;
+    this.publish();
+  }
   private publish(): void {
     if (this.stopped || !this.callbacks.canPoll(this.sessionId)) return;
     const persisted: ChatMessage[] = [];
     let active: ChatMessage | undefined = undefined;
     this.completedTurnId = '';
-    this.reducer.messages().forEach((message: ChatMessage) => {
+    this.subagents.decorate(this.reducer.messages()).forEach((message: ChatMessage) => {
       if (message.role === 'assistant' && (message.status === 'active' || message.status === 'running')) active = message;
       else {
         persisted.push(message);
