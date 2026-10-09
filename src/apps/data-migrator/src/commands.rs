@@ -32,6 +32,30 @@ pub(crate) struct ResumeRequest {
     pub run_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub(crate) struct ResetRequest {
+    pub confirmation_id: String,
+    pub confirmation: String,
+}
+
+#[tauri::command]
+pub(crate) fn preview_openbitfun_reset(
+    state: State<'_, MigratorCoordinator>,
+    request: EmptyRequest,
+) -> Result<MigratorView, CommandError> {
+    let _ = request;
+    state.preview_reset()
+}
+
+#[tauri::command]
+pub(crate) fn reset_openbitfun_data(
+    state: State<'_, MigratorCoordinator>,
+    request: ResetRequest,
+) -> Result<MigratorView, CommandError> {
+    state.start_reset(request.confirmation_id, request.confirmation)
+}
+
 #[tauri::command]
 pub(crate) fn set_migration_locations(
     state: State<'_, MigratorCoordinator>,

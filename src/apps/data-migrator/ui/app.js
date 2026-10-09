@@ -61,6 +61,7 @@ let pollTimer;
 let locationsDirty = false;
 let locationSnapshot;
 let scopeSnapshot;
+let resetConfirmationId;
 
 function format(template, values) {
   return Object.entries(values).reduce((value, [key, replacement]) =>
@@ -139,6 +140,23 @@ function selection() {
 
 function render(view) {
   current = view;
+  const resetPreview = view.resetPreview;
+  if (resetConfirmationId !== resetPreview?.confirmationId) {
+    resetConfirmationId = resetPreview?.confirmationId;
+    document.getElementById('reset-confirmation').value = '';
+  }
+  show('reset-preview', Boolean(resetPreview) && !view.resetting);
+  show('reset-progress', view.resetting);
+  document.getElementById('reset-directories').replaceChildren(...(resetPreview?.directories || []).map((directory) =>
+    row(directory.path, directory.exists ? text.resetExists : text.resetMissing)));
+  const resetResult = view.resetResult;
+  show('reset-result', Boolean(resetResult));
+  if (resetResult) {
+    const resultNode = document.getElementById('reset-result');
+    const summary = document.createElement('p');
+    summary.textContent = resetResult.failed.length ? text.resetIncomplete : text.resetSuccess;
+    resultNode.replaceChildren(summary, ...resetResult.failed.map((path) => row(path, text.resetFailed)));
+  }
   const source = view.source;
   document.getElementById('source-badge').textContent = !source
     ? text.missing : source.supported ? text.ready : text.unsupported;
@@ -211,7 +229,11 @@ function render(view) {
     output.hidden = true;
   }
   document.querySelectorAll('button, #locations input, #language, #saved-task').forEach((node) => { node.disabled = view.running; });
-  document.getElementById('cancel').disabled = !view.running;
+  document.getElementById('cancel').disabled = !view.running || view.resetting;
+  document.getElementById('preview-reset').disabled = view.running || locationsDirty;
+  document.getElementById('reset-confirmation').disabled = view.running || locationsDirty;
+  document.getElementById('reset-data').disabled = view.running || locationsDirty || !resetPreview
+    || document.getElementById('reset-confirmation').value !== 'RESET';
   document.getElementById('start').disabled = !view.canExecute || locationsDirty;
   document.getElementById('resume-task').disabled = !tasks.selectedOptions[0] || tasks.selectedOptions[0].disabled || view.running || locationsDirty;
   for (const id of ['scan', 'prepare']) document.getElementById(id).disabled = view.running || locationsDirty;
@@ -292,6 +314,15 @@ document.getElementById('apply-locations').addEventListener('click', async () =>
 });
 document.getElementById('resume-task').addEventListener('click', () => call('resume_migration_task', { runId: document.getElementById('saved-task').value }));
 document.getElementById('new-task').addEventListener('click', () => call('new_migration_task'));
+document.getElementById('preview-reset').addEventListener('click', () => call('preview_openbitfun_reset'));
+document.getElementById('reset-confirmation').addEventListener('input', () => { if (current) render(current); });
+document.getElementById('reset-data').addEventListener('click', () => {
+  if (!current?.resetPreview) return;
+  call('reset_openbitfun_data', {
+    confirmationId: current.resetPreview.confirmationId,
+    confirmation: document.getElementById('reset-confirmation').value,
+  });
+});
 for (const id of ['close', 'finish']) document.getElementById(id).addEventListener('click', () => call('finish_legacy_migration'));
 
 document.getElementById('scan').addEventListener('click', () =>

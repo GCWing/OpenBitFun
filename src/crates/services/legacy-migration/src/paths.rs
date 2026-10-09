@@ -80,6 +80,46 @@ impl MigrationRoots {
             .join("bitfun-to-openbitfun")
     }
 
+    /// Selected destinations, expanded only at recognized platform product roots.
+    /// Never delete the parent of an arbitrary user-selected Skills/SSH directory.
+    pub(crate) fn target_reset_roots(&self) -> LegacyMigrationResult<Vec<PathBuf>> {
+        let defaults = Self::current_user_locations()?;
+        let mut roots = vec![
+            self.target_user_root.clone(),
+            self.target_home_root.clone(),
+            self.target_skills_root.clone(),
+            self.target_ssh_root.clone(),
+        ];
+        for (selected, default) in [
+            (&self.target_skills_root, &defaults.target_skills_root),
+            (&self.target_ssh_root, &defaults.target_ssh_root),
+        ] {
+            if paths_equivalent(selected, default) {
+                if let Some(parent) = default.parent() {
+                    roots.push(parent.to_path_buf());
+                }
+            }
+        }
+        if paths_equivalent(&self.target_user_root, &defaults.target_user_root)
+            && paths_equivalent(&self.target_home_root, &defaults.target_home_root)
+        {
+            // Desktop's Tauri identity owns persisted WebView/UI state separately
+            // from PathManager. The migrator has a different identity and survives.
+            for base in [
+                dirs::config_dir(),
+                dirs::data_dir(),
+                dirs::data_local_dir(),
+                dirs::cache_dir(),
+            ] {
+                let base = base.ok_or_else(|| {
+                    LegacyMigrationError::PathUnavailable("platform desktop data directory".into())
+                })?;
+                roots.push(base.join("com.openbitfun.desktop"));
+            }
+        }
+        Ok(roots)
+    }
+
     pub fn validate_distinct(&self) -> LegacyMigrationResult<()> {
         for (source, target) in [
             (&self.legacy_user_root, &self.target_user_root),

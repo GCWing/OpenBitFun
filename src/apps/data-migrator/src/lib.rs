@@ -46,6 +46,8 @@ pub fn run() -> Result<(), RunError> {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_migrator_bootstrap,
+            commands::preview_openbitfun_reset,
+            commands::reset_openbitfun_data,
             commands::set_migration_locations,
             commands::new_migration_task,
             commands::resume_migration_task,

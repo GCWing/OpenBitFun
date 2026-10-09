@@ -2,7 +2,7 @@ use openbitfun_legacy_migration::{
     atomic_write_json, blocking_writer_processes, export_failure_diagnostics, list_tasks,
     load_task, probe_legacy_source, save_task, CancellationToken, LegacyMigrationError,
     LegacyMigrationResult, MigrationEngine, MigrationLayout, MigrationRoots, NoCrashInjection,
-    ProbeLimits, SavedMigrationTask, WriterProcess,
+    ProbeLimits, ResetDirectory, SavedMigrationTask, TargetResetResult, WriterProcess,
 };
 use openbitfun_legacy_migration_adapters::adapters_for_groups;
 use openbitfun_product_domains::legacy_migration::{
@@ -175,6 +175,16 @@ pub(crate) struct MigratorView {
     pub can_execute: bool,
     pub recovery: bool,
     pub error: Option<CommandError>,
+    pub reset_preview: Option<ResetPreviewView>,
+    pub reset_result: Option<TargetResetResult>,
+    pub resetting: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ResetPreviewView {
+    pub confirmation_id: String,
+    pub directories: Vec<ResetDirectory>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -201,6 +211,9 @@ struct MigratorSession {
     running: bool,
     error: Option<CommandError>,
     cancellation: CancellationToken,
+    reset_preview: Option<ResetPreviewView>,
+    reset_result: Option<TargetResetResult>,
+    resetting: bool,
 }
 
 #[derive(Clone)]
@@ -263,6 +276,9 @@ impl MigratorCoordinator {
                 blockers: Vec::new(),
                 running: false,
                 cancellation: CancellationToken::default(),
+                reset_preview: None,
+                reset_result: None,
+                resetting: false,
             })),
         }
     }
@@ -313,12 +329,120 @@ impl MigratorCoordinator {
         session.progress = None;
         session.recovery = true;
         session.error = None;
+        session.reset_preview = None;
+        session.reset_result = None;
         Ok(snapshot(&session))
     }
 
     pub(crate) fn snapshot(&self) -> MigratorView {
         let session = self.lock();
         snapshot(&session)
+    }
+
+    pub(crate) fn preview_reset(&self) -> Result<MigratorView, CommandError> {
+        let mut session = self.lock();
+        if session.running {
+            return Err(CommandError::operation_in_progress());
+        }
+        let protected = reset_protected_directories(&session.settings_path)?;
+        let directories = openbitfun_legacy_migration::plan_target_reset(&session.roots, &protected)
+            .map_err(|_| CommandError::new("unsafe_reset_locations", "Reset refused: a destination overlaps source data, a protected directory, or a linked path. Check the selected locations.", false))?;
+        session.reset_preview = Some(ResetPreviewView {
+            confirmation_id: uuid::Uuid::new_v4().to_string(),
+            directories,
+        });
+        session.reset_result = None;
+        session.error = None;
+        Ok(snapshot(&session))
+    }
+
+    pub(crate) fn start_reset(
+        &self,
+        confirmation_id: String,
+        confirmation: String,
+    ) -> Result<MigratorView, CommandError> {
+        let (roots, preview, protected) = {
+            let mut session = self.lock();
+            if session.running {
+                return Err(CommandError::operation_in_progress());
+            }
+            let preview = session
+                .reset_preview
+                .clone()
+                .filter(|preview| preview.confirmation_id == confirmation_id)
+                .ok_or_else(|| {
+                    CommandError::new(
+                        "reset_confirmation_required",
+                        "Review the reset directories again before continuing.",
+                        true,
+                    )
+                })?;
+            if confirmation != "RESET" {
+                return Err(CommandError::new(
+                    "reset_confirmation_required",
+                    "Type RESET to confirm permanent deletion of OpenBitFun data.",
+                    true,
+                ));
+            }
+            let protected = reset_protected_directories(&session.settings_path)?;
+            session.running = true;
+            session.resetting = true;
+            session.progress = None;
+            session.error = None;
+            session.reset_result = None;
+            session.reset_preview = None;
+            (session.roots.clone(), preview, protected)
+        };
+        let coordinator = self.clone();
+        self.spawn_worker("openbitfun-data-reset", move || {
+            coordinator.reset_background(roots, preview, protected);
+        })
+    }
+
+    fn reset_background(
+        &self,
+        roots: MigrationRoots,
+        preview: ResetPreviewView,
+        protected: Vec<PathBuf>,
+    ) {
+        let mut blockers = Vec::new();
+        let result = (|| {
+            blockers = openbitfun_legacy_migration::blocking_writer_processes_for_product(
+                0,
+                &["openbitfun-data-migrator"],
+            )
+            .map_err(|error| CommandError::from_legacy(&error))?;
+            if !blockers.is_empty() {
+                return Err(CommandError::new("reset_writers_running", "Close BitFun, OpenBitFun, their CLI/background writers, and other Data Migrator instances, then retry reset.", true));
+            }
+            openbitfun_legacy_migration::reset_target_data(&roots, &preview.directories, &protected)
+                .map_err(|_| CommandError::new("reset_scope_changed", "Reset stopped because the directories failed revalidation. Review the paths again; some data may already have been removed.", true))
+        })();
+        self.finish_reset(roots, result, blockers);
+    }
+
+    fn finish_reset(
+        &self,
+        roots: MigrationRoots,
+        result: Result<TargetResetResult, CommandError>,
+        blockers: Vec<WriterProcess>,
+    ) {
+        let mut session = self.lock();
+        // Reload even after failure: a partial deletion invalidates old plans.
+        let replacement = Self::bootstrap_with(roots, session.settings_path.clone());
+        std::mem::swap(&mut *session, &mut *replacement.lock());
+        session.blockers = blockers;
+        match result {
+            Ok(result) => {
+                if !result.failed.is_empty() {
+                    session.error = Some(CommandError::new("reset_incomplete", "Some OpenBitFun directories could not be fully removed. Close applications using them, then review and retry reset before migrating.", true));
+                }
+                session.reset_result = Some(result);
+            }
+            Err(error) => {
+                session.error = Some(error);
+            }
+        }
     }
 
     pub(crate) fn export_diagnostics(&self) -> Result<DiagnosticsExportView, CommandError> {
@@ -559,6 +683,9 @@ impl MigratorCoordinator {
 
     pub(crate) fn cancel(&self) -> MigratorView {
         let mut session = self.lock();
+        if session.resetting {
+            return snapshot(&session);
+        }
         session.cancellation.cancel();
         if let Some(progress) = &mut session.progress {
             progress.code = if progress.safe_to_cancel {
@@ -600,6 +727,8 @@ impl MigratorCoordinator {
         session.cancellation = CancellationToken::default();
         session.running = true;
         session.error = None;
+        session.reset_preview = None;
+        session.reset_result = None;
         session.progress = Some(MigrationProgressEvent {
             run_id: session.request.run_id.clone(),
             phase: MigrationPhase::Scan,
@@ -628,6 +757,7 @@ impl MigratorCoordinator {
         {
             let mut session = self.lock();
             session.running = false;
+            session.resetting = false;
             let error = CommandError::worker_failed();
             session.error = Some(error.clone());
             return Err(error);
@@ -781,6 +911,34 @@ fn writer_processes() -> LegacyMigrationResult<Vec<WriterProcess>> {
     blocking_writer_processes(0)
 }
 
+fn reset_protected_directories(settings: &std::path::Path) -> Result<Vec<PathBuf>, CommandError> {
+    let settings_root = settings.parent().ok_or_else(|| {
+        CommandError::new(
+            "unsafe_reset_locations",
+            "The migrator configuration directory is unavailable.",
+            false,
+        )
+    })?;
+    let executable = std::env::current_exe().map_err(|_| {
+        CommandError::new(
+            "unsafe_reset_locations",
+            "The migrator installation directory is unavailable.",
+            false,
+        )
+    })?;
+    let executable_root = executable.parent().ok_or_else(|| {
+        CommandError::new(
+            "unsafe_reset_locations",
+            "The migrator installation directory is unavailable.",
+            false,
+        )
+    })?;
+    Ok(vec![
+        settings_root.to_path_buf(),
+        executable_root.to_path_buf(),
+    ])
+}
+
 fn validate_selection(selection: &MigrationSelection) -> Result<(), CommandError> {
     if selection.groups.is_empty() {
         return Err(CommandError::new(
@@ -829,6 +987,9 @@ fn snapshot(session: &MigratorSession) -> MigratorView {
         running: session.running,
         recovery: session.recovery,
         error: session.error.clone(),
+        reset_preview: session.reset_preview.clone(),
+        reset_result: session.reset_result.clone(),
+        resetting: session.resetting,
     }
 }
 
@@ -947,6 +1108,90 @@ mod tests {
         roots.target_home_root = roots.legacy_user_root.join("nested");
         assert!(coordinator.set_locations(roots).is_err());
         assert!(!settings.exists());
+    }
+
+    #[test]
+    fn reset_requires_fresh_confirmation_and_excludes_running_operations() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        let roots = fixture_roots(&root);
+        fs::create_dir_all(&roots.target_user_root).unwrap();
+        let keep = roots.target_user_root.join("keep");
+        fs::write(&keep, "target").unwrap();
+        let coordinator =
+            MigratorCoordinator::bootstrap_with(roots, root.join("tool/locations.json"));
+        assert!(coordinator
+            .start_reset("stale".into(), "RESET".into())
+            .is_err());
+        let preview = coordinator.preview_reset().unwrap().reset_preview.unwrap();
+        assert!(coordinator
+            .start_reset(preview.confirmation_id.clone(), "reset".into())
+            .is_err());
+        coordinator.preview_reset().unwrap();
+        assert!(coordinator
+            .start_reset(preview.confirmation_id, "RESET".into())
+            .is_err());
+        coordinator.lock().running = true;
+        assert!(coordinator.preview_reset().is_err());
+        assert!(coordinator
+            .start_reset("stale".into(), "RESET".into())
+            .is_err());
+        assert_eq!(fs::read_to_string(keep).unwrap(), "target");
+    }
+
+    #[test]
+    fn reset_reloads_history_after_success_or_partial_failure_and_preserves_preferences() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        let roots = fixture_roots(&root);
+        let settings = root.join("tool/locations.json");
+        atomic_write_json(&settings, &roots).unwrap();
+        let coordinator = MigratorCoordinator::bootstrap_with(roots.clone(), settings.clone());
+        fs::create_dir_all(&roots.target_user_root).unwrap();
+        fs::write(roots.target_user_root.join("keep"), "target").unwrap();
+        let preview = coordinator.preview_reset().unwrap().reset_preview.unwrap();
+        let protected = reset_protected_directories(&settings).unwrap();
+        let result = openbitfun_legacy_migration::reset_target_data(
+            &roots,
+            &preview.directories,
+            &protected,
+        )
+        .unwrap();
+        coordinator.finish_reset(roots.clone(), Ok(result), Vec::new());
+        let view = coordinator.snapshot();
+        assert!(view.reset_result.unwrap().failed.is_empty());
+        assert!(view.plan.is_none());
+        assert!(view.report.is_none());
+        assert!(view.saved_tasks.is_empty());
+        assert!(view.reset_preview.is_none());
+        assert!(!view.running && !view.resetting);
+        assert!(settings.exists());
+        assert!(!roots.target_user_root.exists());
+
+        coordinator.lock().running = true;
+        coordinator.lock().resetting = true;
+        coordinator.finish_reset(
+            roots.clone(),
+            Ok(TargetResetResult {
+                failed: vec![roots.target_home_root.clone()],
+                ..Default::default()
+            }),
+            Vec::new(),
+        );
+        let view = coordinator.snapshot();
+        assert_eq!(view.error.unwrap().code, "reset_incomplete");
+        assert!(!view.running && !view.resetting);
+        assert!(view.reset_preview.is_none());
+        coordinator.finish_reset(
+            roots,
+            Err(CommandError::new("reset_scope_changed", "Changed", true)),
+            Vec::new(),
+        );
+        assert_eq!(
+            coordinator.snapshot().error.unwrap().code,
+            "reset_scope_changed"
+        );
+        assert!(settings.exists());
     }
 
     #[test]
