@@ -8247,6 +8247,95 @@ impl SessionManager {
         generated_count
     }
 
+    /// Record a spawned subagent's child Session on the parent Turn's tool item.
+    ///
+    /// A synchronous delegated command is stamped in memory before its synthetic
+    /// Turn is written. An asynchronous spawn returns to the parent Turn long
+    /// before the child Turn finishes, so the link has to become durable on the
+    /// already persisted parent Turn for hosts that only read persisted Turns.
+    /// Rounds are materialized from the live generation exactly like a relay
+    /// read, so the stamped item keeps the round and item identity that the
+    /// later completion merge preserves.
+    ///
+    /// This is a best-effort annotation of an in-progress Turn: an unknown Turn,
+    /// an already terminal Turn, or a missing tool item leaves the Turn as is.
+    pub(crate) async fn link_subagent_session_on_parent_tool_item(
+        &self,
+        parent_session_id: &str,
+        parent_dialog_turn_id: &str,
+        parent_tool_call_id: &str,
+        subagent_session_id: &str,
+        subagent_dialog_turn_id: &str,
+        subagent_model_id: Option<String>,
+    ) -> OpenBitFunResult<()> {
+        if !self.should_persist_session_id(parent_session_id)
+            && !self.transient_turns.contains_key(parent_session_id)
+        {
+            return Ok(());
+        }
+        let Some(workspace_path) = self.effective_session_storage_path(parent_session_id).await
+        else {
+            return Ok(());
+        };
+        let _mutation_guard = self.acquire_session_mutation(parent_session_id).await?;
+        let Some(turn_index) = self.sessions.get(parent_session_id).and_then(|session| {
+            session
+                .dialog_turn_ids
+                .iter()
+                .position(|turn_id| turn_id == parent_dialog_turn_id)
+        }) else {
+            return Ok(());
+        };
+        let Some(mut turn) = self
+            .load_runtime_dialog_turn(&workspace_path, parent_session_id, turn_index)
+            .await?
+        else {
+            return Ok(());
+        };
+        // A terminal Turn is owned by its completion writer, which merges the
+        // same link from the in-memory rounds instead.
+        if turn.status != TurnStatus::InProgress {
+            return Ok(());
+        }
+        // Rounds materialize on the Turn's own start time, so a mid-Turn
+        // checkpoint does not reorder the running generation.
+        let materialized_at = turn.start_time;
+        let messages: Vec<Message> = self
+            .context_store
+            .get_context_messages(parent_session_id)
+            .into_iter()
+            .filter(|message| message.metadata.turn_id.as_deref() == Some(parent_dialog_turn_id))
+            .collect();
+        Self::append_generation_rounds(
+            &mut turn,
+            parent_dialog_turn_id,
+            &messages,
+            materialized_at,
+        );
+        let Some(tool_item) = turn
+            .model_rounds
+            .iter_mut()
+            .flat_map(|round| round.tool_items.iter_mut())
+            .find(|item| {
+                item.id == parent_tool_call_id || item.tool_call.id == parent_tool_call_id
+            })
+        else {
+            return Ok(());
+        };
+        tool_item.subagent_session_id = Some(subagent_session_id.to_string());
+        tool_item.subagent_dialog_turn_id = Some(subagent_dialog_turn_id.to_string());
+        if subagent_model_id.is_some() {
+            tool_item.subagent_model_id = subagent_model_id;
+        }
+        self.save_runtime_dialog_turn(&workspace_path, &turn)
+            .await?;
+        debug!(
+            "Linked spawned subagent Session on the parent tool item: parent_session_id={}, parent_turn_id={}, parent_tool_call_id={}, subagent_session_id={}",
+            parent_session_id, parent_dialog_turn_id, parent_tool_call_id, subagent_session_id
+        );
+        Ok(())
+    }
+
     /// Complete a reopened interrupted turn by appending only the messages
     /// produced by the current execution generation.
     pub async fn complete_recovered_dialog_turn(
