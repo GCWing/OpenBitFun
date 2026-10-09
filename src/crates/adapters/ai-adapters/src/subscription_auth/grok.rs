@@ -132,7 +132,12 @@ where
 }
 
 fn http_client(options: &SubscriptionHttpOptions) -> Result<reqwest::Client> {
-    super::build_http_client(options, "xAI (SuperGrok)")
+    // Discovery pins the endpoint origin. Do not let a redirect bypass that
+    // restriction or forward a device/refresh token to a different endpoint.
+    super::build_http_client_builder(options, "xAI (SuperGrok)")?
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .context("build xAI subscription http client")
 }
 
 fn now_ms() -> i64 {
@@ -547,6 +552,38 @@ mod tests {
         TokenResponse, DEFAULT_MODEL, LONG_TOKEN_REFRESH_LEEWAY_MS, SHORT_TOKEN_REFRESH_LEEWAY_MS,
         XAI_BASE_URL, XAI_REQUEST_URL,
     };
+
+    #[tokio::test]
+    async fn oauth_client_does_not_follow_token_endpoint_redirects() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = axum::Router::new().route(
+            "/token",
+            axum::routing::post(|| async {
+                (
+                    axum::http::StatusCode::TEMPORARY_REDIRECT,
+                    [(
+                        axum::http::header::LOCATION,
+                        "https://attacker.invalid/token",
+                    )],
+                )
+            }),
+        );
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let response = super::http_client(&super::SubscriptionHttpOptions::default())
+            .unwrap()
+            .post(format!("http://{address}/token"))
+            .form(&[("refresh_token", "synthetic-test-token")])
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(response.url().host_str(), Some("127.0.0.1"));
+        server.abort();
+    }
 
     #[test]
     fn discovery_accepts_changed_paths_and_ignores_unrelated_metadata() {

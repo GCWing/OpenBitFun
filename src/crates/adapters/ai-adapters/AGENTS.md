@@ -92,7 +92,8 @@ at the start of each login or refresh. Keep the issuer and endpoint origin pinne
 to `https://auth.x.ai`; discovery failure must remain explicit. A pending device
 grant retains its discovered token endpoint throughout polling. Discovery uses
 the host's subscription HTTP proxy options and does not change inference routes
-or persisted credential shapes.
+or persisted credential shapes. xAI OAuth requests must reject redirects so a
+validated endpoint cannot forward credentials to another origin.
 
 ```bash
 cargo test -p openbitfun-agent-stream
