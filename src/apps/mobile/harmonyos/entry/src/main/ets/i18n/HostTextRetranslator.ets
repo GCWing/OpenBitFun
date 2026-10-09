@@ -1,4 +1,5 @@
 import { util } from '@kit.ArkTS';
+import { fillMessageTemplate } from './MessageTemplate';
 
 interface TemplateEntry {
   key: string;
@@ -25,11 +26,8 @@ interface EntryLanguage {
 // 2-3 letter lowercase dot segment (for example "common.back.zh") tags the
 // entry language, and untagged entries are the generator's English block.
 //
-// Per-language reverse indexes identify which catalog language a stored
-// message was rendered in; the matched key is then re-rendered in the output
-// language: the constructor language when the message matches another
-// catalog language, and otherwise the first other catalog language. That way
-// a stored string never re-renders in the language it matched.
+// Reverse indexes recover the catalog key; rendering always uses the requested
+// language. Already localized messages therefore remain stable across refreshes.
 //
 // Values that several keys share in one language cannot identify their key,
 // so ambiguous values are refused rather than guessed, like the legacy
@@ -61,13 +59,18 @@ export class HostTextRetranslator {
       }
       const exactKey = reverse.get(message);
       if (exactKey !== undefined) {
-        const translated = this.renderEntry(exactKey, language);
+        const translated = this.renderEntry(exactKey);
         if (translated !== null) {
           return translated;
         }
       }
     }
 
+    // Prefer the most specific template; an equal-specificity disagreement
+    // cannot identify a key safely and leaves the original message intact.
+    let best: string | null = null;
+    let bestSpecificity = -1;
+    let ambiguous = false;
     // 2. Template match per language O(M)
     for (let languageIndex = 0; languageIndex < this.languages.length; languageIndex += 1) {
       const language = this.languages[languageIndex];
@@ -79,14 +82,42 @@ export class HostTextRetranslator {
         const entry = templates[templateIndex];
         const matched = this.matchTemplate(entry.template, message);
         if (matched !== null) {
-          const translated = this.renderTemplate(entry, language, matched);
+          const translated = this.renderTemplate(entry, matched);
           if (translated !== null) {
-            return translated;
+            const specificity = entry.template.replace(/%[12]\$s/g, '').length;
+            if (specificity > bestSpecificity) {
+              best = translated;
+              bestSpecificity = specificity;
+              ambiguous = false;
+            } else if (specificity === bestSpecificity && best !== translated) {
+              ambiguous = true;
+            }
           }
         }
       }
     }
 
+    return best !== null && !ambiguous ? best : message;
+  }
+
+  retranslateKnown(message: string, keys: string[]): string {
+    for (let index = 0; index < keys.length; index += 1) {
+      const key = keys[index].replace(/\./g, '_');
+      for (let languageIndex = 0; languageIndex < this.languages.length; languageIndex += 1) {
+        const language = this.languages[languageIndex];
+        const template = this.forwardByLanguage.get(language)?.get(key);
+        if (template === undefined) {
+          continue;
+        }
+        if (template === message) {
+          return this.renderEntry(key) ?? message;
+        }
+        const matched = this.matchTemplate(template, message);
+        if (matched !== null) {
+          return this.renderTemplate({ key, template }, matched) ?? message;
+        }
+      }
+    }
     return message;
   }
 
@@ -201,21 +232,8 @@ export class HostTextRetranslator {
     return { key: name, language: 'en' };
   }
 
-  private outputLanguageFor(sourceLanguage: string): string {
-    if (sourceLanguage !== this.currentLanguage && this.forwardByLanguage.has(this.currentLanguage)) {
-      return this.currentLanguage;
-    }
-    for (let index = 0; index < this.languages.length; index += 1) {
-      const language = this.languages[index];
-      if (language !== sourceLanguage) {
-        return language;
-      }
-    }
-    return sourceLanguage;
-  }
-
-  private renderEntry(baseKey: string, sourceLanguage: string): string | null {
-    const forward = this.forwardByLanguage.get(this.outputLanguageFor(sourceLanguage));
+  private renderEntry(baseKey: string): string | null {
+    const forward = this.forwardByLanguage.get(this.currentLanguage);
     if (!forward) {
       return null;
     }
@@ -223,8 +241,8 @@ export class HostTextRetranslator {
     return value !== undefined ? value : null;
   }
 
-  private renderTemplate(entry: TemplateEntry, sourceLanguage: string, matched: string[]): string | null {
-    const forward = this.forwardByLanguage.get(this.outputLanguageFor(sourceLanguage));
+  private renderTemplate(entry: TemplateEntry, matched: string[]): string | null {
+    const forward = this.forwardByLanguage.get(this.currentLanguage);
     if (!forward) {
       return null;
     }
@@ -232,10 +250,7 @@ export class HostTextRetranslator {
     if (template === undefined) {
       return null;
     }
-    if (matched.length === 1) {
-      return template.replace('%1$s', matched[0]);
-    }
-    return template.replace('%1$s', matched[0]).replace('%2$s', matched[1]);
+    return fillMessageTemplate(template, matched);
   }
 
   private matchTemplate(template: string, message: string): string[] | null {

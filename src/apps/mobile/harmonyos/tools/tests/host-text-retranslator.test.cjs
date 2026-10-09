@@ -4,198 +4,168 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
 
-// Transpile the HostTextRetranslator.ets source
-const source = fs.readFileSync(
-  path.join(__dirname, '../../entry/src/main/ets/i18n/HostTextRetranslator.ets'),
-  'utf8'
-);
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS }
-}).outputText;
+const root = path.resolve(__dirname, '../../entry/src/main');
+const english = JSON.parse(fs.readFileSync(path.join(root, 'resources/en_US/element/string.json'))).string;
+const chinese = JSON.parse(fs.readFileSync(path.join(root, 'resources/zh_CN/element/string.json'))).string;
+const realCatalog = { string: english.concat(chinese.map(entry => ({ ...entry, name: `${entry.name}.zh` }))) };
 
-// Mock the '@kit.ArkTS' util.TextDecoder dependency of the compiled module.
-// getRawFileContentSync delivers UTF-8 bytes on device, so the harness must
-// decode them the same way instead of assuming one byte equals one character.
-function mockKitRequire(name) {
-  if (name === '@kit.ArkTS') {
-    return {
-      util: {
-        TextDecoder: {
-          create() {
-            return {
-              decodeWithStream(bytes) {
-                return Buffer.from(bytes).toString('utf8');
-              }
-            };
-          }
-        }
-      }
-    };
-  }
-  return {};
-}
-
-// Mock getContext to return a fake resourceManager with test catalog data
-function createMockContext(catalog) {
-  return {
-    resourceManager: {
-      getRawFileContentSync(filename) {
-        // Serve UTF-8-encoded bytes, matching device rawfile reads.
-        return Array.from(Buffer.from(JSON.stringify(catalog), 'utf8'));
-      }
+// Run the production ArkTS classes with only platform resource/decorator mocks.
+function load(catalog = realCatalog) {
+  const cache = new Map();
+  let language = 'zh-CN';
+  const resourceManager = {
+    getRawFileContentSync(filename) {
+      assert.equal(filename, 'string.json');
+      return Buffer.from(JSON.stringify(catalog));
+    },
+    getStringByNameSync(key) {
+      return (language === 'zh-CN' ? chinese : english).find(entry => entry.name === key).value;
     }
+  };
+  function module(name) {
+    if (cache.has(name)) return cache.get(name);
+    const source = fs.readFileSync(path.join(root, 'ets/i18n', `${name}.ets`), 'utf8');
+    const compiled = ts.transpileModule(source, {
+      compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, experimentalDecorators: true }
+    }).outputText;
+    const exports = {};
+    const requireMock = specifier => {
+      if (specifier === '@kit.ArkTS') return { util: { TextDecoder: { create: () => ({ decodeWithStream: bytes => Buffer.from(bytes).toString('utf8') }) } } };
+      if (specifier === '@kit.LocalizationKit') return { intl: { DateTimeFormat: Intl.DateTimeFormat } };
+      return module(specifier.replace('./', ''));
+    };
+    new Function('require', 'exports', 'getContext', 'ObservedV2', 'Trace', compiled)(
+      requireMock, exports, () => ({ resourceManager }), value => value, () => {}
+    );
+    cache.set(name, exports);
+    return exports;
+  }
+  return {
+    create: locale => new (module('HostTextRetranslator').HostTextRetranslator)(locale),
+    remote: module('RemoteI18n').RemoteI18n,
+    setResourceLanguage: locale => { language = locale; }
   };
 }
 
-// Helper to create a retranslator with a given catalog
-function createRetranslator(catalog) {
-  const exportsObject = {};
-  const mockContext = createMockContext(catalog);
-  const originalGetContext = global.getContext;
-  global.getContext = () => mockContext;
-  try {
-    new Function('require', 'exports', compiled)(mockKitRequire, exportsObject);
-    // The constructor reads the catalog through getContext, so it must run
-    // while the override is active.
-    return new exportsObject.HostTextRetranslator('en-US');
-  } finally {
-    if (originalGetContext === undefined) {
-      delete global.getContext;
-    } else {
-      global.getContext = originalGetContext;
+for (const locale of ['zh-CN', 'en-US']) {
+  test(`${locale}: exact and templated messages always converge to the target`, () => {
+    const r = load().create(locale);
+    for (const [en, zh] of [
+      ['Back', '返回'],
+      ['Downloaded a.txt · 3 KB', '下载完成 a.txt · 3 KB'],
+      ['Switching to Desk-1…', '正在切换到 Desk-1…'],
+      ['3 more sessions', '还有 3 个会话'],
+      ['Show 3 more sessions', '再显示 3 条会话']
+    ]) {
+      const expected = locale === 'zh-CN' ? zh : en;
+      for (const input of [en, zh]) {
+        assert.equal(r.retranslate(input), expected);
+        assert.equal(r.retranslate(r.retranslate(input)), expected);
+      }
     }
-  }
+  });
+
+  test(`${locale}: every real catalog template translates with parameters intact`, () => {
+    const r = load().create(locale);
+    const source = locale === 'zh-CN' ? english : chinese;
+    const target = new Map((locale === 'zh-CN' ? chinese : english).map(e => [e.name, e.value]));
+    const fill = template => template.replace(/%[12]\$s/g, slot => slot === '%1$s' ? 'VALUE' : 'SIZE');
+    for (const entry of source.filter(e => e.value.includes('%1$s'))) {
+      const expected = fill(target.get(entry.name));
+      assert.equal(r.retranslate(fill(entry.value)), expected, entry.name);
+      assert.equal(r.retranslate(expected), expected, entry.name);
+    }
+  });
+
+  test(`${locale}: restricted status translation never falls back to the full catalog`, () => {
+    const r = load().create(locale);
+    for (const name of ['Back', '3 sessions', 'Show 3 more sessions', 'my workspace']) {
+      assert.equal(r.retranslateKnown(name, ['status.notConnected']), name);
+    }
+    for (const input of ['未连接', 'Not connected']) {
+      assert.equal(r.retranslateKnown(input, ['status.notConnected']), locale === 'zh-CN' ? '未连接' : 'Not connected');
+    }
+  });
+
+  test(`${locale}: workspace identity protects even names identical to placeholders`, () => {
+    const { remote } = load();
+    remote.setLanguage(locale);
+    for (const name of ['Back', '3 sessions', 'Not connected', '未连接']) {
+      assert.equal(remote.retranslateWorkspaceName(name, '/remote/project', ''), name);
+      assert.equal(remote.retranslateWorkspaceName(name, '', 'workspace-id'), name);
+    }
+    assert.equal(remote.retranslateWorkspaceName('Back', '', ''), 'Back');
+    assert.equal(remote.retranslateWorkspaceName('未连接', '', ''), locale === 'zh-CN' ? '未连接' : 'Not connected');
+  });
 }
 
-// Test catalog with single and dual placeholder templates
-const testCatalog = {
-  string: [
-    { name: 'common.back', value: 'Back' },
-    { name: 'common.back.zh', value: '返回' },
-    { name: 'sidebar.moreSessions', value: '%1$s more sessions' },
-    { name: 'sidebar.moreSessions.zh', value: '还有 %1$s 个会话' },
-    { name: 'remote.settings.deviceSwitching', value: 'Switching to %1$s…' },
-    { name: 'remote.settings.deviceSwitching.zh', value: '正在切换到 %1$s…' },
-    { name: 'dual.placeholder', value: '%1$s and %2$s' },
-    { name: 'dual.placeholder.zh', value: '%1$s 和 %2$s' },
-    { name: 'status.notConnected', value: 'Not connected' },
-    { name: 'status.notConnected.zh', value: '未连接' },
-    // Two distinct keys share one value per language: the value is ambiguous
-    // and must not be re-rendered through either key.
-    { name: 'duplicate.first', value: 'Duplicate value' },
-    { name: 'duplicate.first.zh', value: '重复值' },
-    { name: 'duplicate.second', value: 'Duplicate value' },
-    { name: 'duplicate.second.zh', value: '重复值' },
-    // The English templates of the two keys collide, so neither key's
-    // template can identify a match in any language.
-    { name: 'collision.first', value: '%1$s items' },
-    { name: 'collision.first.zh', value: '%1$s 项' },
-    { name: 'collision.second', value: '%1$s items' },
-    { name: 'collision.second.zh', value: '%1$s 条目' }
-  ]
-};
-
-test('exact match returns translated string', () => {
-  const retranslator = createRetranslator(testCatalog);
-  assert.equal(retranslator.retranslate('Back'), '返回');
-  assert.equal(retranslator.retranslate('返回'), 'Back');
-  assert.equal(retranslator.retranslate('Not connected'), '未连接');
-  assert.equal(retranslator.retranslate('未连接'), 'Not connected');
+test('literal parameters survive initial formatting and language refresh', () => {
+  const { remote, setResourceLanguage } = load();
+  remote.setLanguage('en-US');
+  setResourceLanguage('en-US');
+  for (const filename of ['budget$$.txt', 'x$&y.txt', "x$`y.txt", "x$'y.txt", 'a%2$s.txt', 'a%1$s.txt']) {
+    const initial = remote.f2('status.downloadDone', filename, '3 KB');
+    assert.equal(initial, `Downloaded ${filename} · 3 KB`);
+    remote.setLanguage('zh-CN');
+    assert.equal(remote.retranslate(initial), `下载完成 ${filename} · 3 KB`);
+    remote.setLanguage('en-US');
+  }
 });
 
-test('ambiguous value is returned as-is rather than guessed', () => {
-  const retranslator = createRetranslator(testCatalog);
-  assert.equal(retranslator.retranslate('Duplicate value'), 'Duplicate value');
+test('messages produced after locale update remain stable when asynchronous save completes', async () => {
+  const { remote, setResourceLanguage } = load();
+  remote.setLanguage('en-US');
+  remote.setLanguage('zh-CN');
+  setResourceLanguage('zh-CN');
+  const completedDuringSave = remote.f2('status.downloadDone', 'a.txt', '3 KB');
+  await Promise.resolve();
+  assert.equal(remote.retranslate(completedDuringSave), completedDuringSave);
 });
 
-test('ambiguous value refusal applies to every catalog language', () => {
-  const retranslator = createRetranslator(testCatalog);
-  assert.equal(retranslator.retranslate('重复值'), '重复值');
+test('unknown and ambiguous messages are retained', () => {
+  const catalog = { string: [
+    { name: 'first', value: 'Duplicate' }, { name: 'second', value: 'Duplicate' },
+    { name: 'first.zh', value: '重复' }, { name: 'second.zh', value: '重复' },
+    { name: 'one', value: '%1$s items' }, { name: 'two', value: '%1$s items' },
+    { name: 'one.zh', value: '%1$s 项' }, { name: 'two.zh', value: '%1$s 条' }
+  ] };
+  for (const locale of ['en-US', 'zh-CN']) {
+    const r = load(catalog).create(locale);
+    for (const message of ['', 'unknown', 'Duplicate', '重复', '3 items', '3 项', '3 条']) {
+      assert.equal(r.retranslate(message), message);
+    }
+  }
 });
 
-test('duplicate catalog values keep unique neighbors translatable', () => {
-  const retranslator = createRetranslator(testCatalog);
-  assert.equal(retranslator.retranslate('Back'), '返回');
-  assert.equal(retranslator.retranslate('返回'), 'Back');
-  assert.equal(retranslator.retranslate('Not connected'), '未连接');
+test('equally specific overlapping templates are not guessed', () => {
+  const r = load({ string: [
+    { name: 'first', value: 'A%1$s' }, { name: 'first.zh', value: '甲%1$s' },
+    { name: 'second', value: '%1$sB' }, { name: 'second.zh', value: '%1$s乙' }
+  ] }).create('zh-CN');
+  assert.equal(r.retranslate('AB'), 'AB');
 });
 
-test('template with an ambiguous value is refused in every language', () => {
-  const retranslator = createRetranslator(testCatalog);
-  // collision.first and collision.second share the English value
-  // '%1$s items', so neither key's template may match, even in Chinese
-  // where the values differ.
-  assert.equal(retranslator.retranslate('3 items'), '3 items');
-  assert.equal(retranslator.retranslate('3 项'), '3 项');
-  assert.equal(retranslator.retranslate('3 条目'), '3 条目');
-  // Unambiguous templates keep working.
-  assert.equal(retranslator.retranslate('3 more sessions'), '还有 3 个会话');
-});
-
-test('single placeholder template matches and fills correctly', () => {
-  const retranslator = createRetranslator(testCatalog);
-  // English to Chinese
-  assert.equal(retranslator.retranslate('3 more sessions'), '还有 3 个会话');
-  // Chinese to English
-  assert.equal(retranslator.retranslate('还有 5 个会话'), '5 more sessions');
-});
-
-test('single placeholder with prefix and suffix', () => {
-  const retranslator = createRetranslator(testCatalog);
-  // English to Chinese
-  assert.equal(retranslator.retranslate('Switching to Desk-1…'), '正在切换到 Desk-1…');
-  // Chinese to English
-  assert.equal(retranslator.retranslate('正在切换到 Desk-2…'), 'Switching to Desk-2…');
-});
-
-test('dual placeholder template matches and fills correctly', () => {
-  const retranslator = createRetranslator(testCatalog);
-  // English to Chinese: "foo and bar" -> "foo 和 bar"
-  assert.equal(retranslator.retranslate('foo and bar'), 'foo 和 bar');
-  // Chinese to English: "foo 和 bar" -> "foo and bar"
-  assert.equal(retranslator.retranslate('foo 和 bar'), 'foo and bar');
-});
-
-test('dual placeholder with different values', () => {
-  const retranslator = createRetranslator(testCatalog);
-  // English to Chinese
-  assert.equal(retranslator.retranslate('hello and world'), 'hello 和 world');
-  // Chinese to English
-  assert.equal(retranslator.retranslate('你好 和 世界'), '你好 and 世界');
-});
-
-test('returns original message when no match found', () => {
-  const retranslator = createRetranslator(testCatalog);
-  const unknown = 'This message does not exist in any catalog';
-  assert.equal(retranslator.retranslate(unknown), unknown);
-});
-
-test('returns empty string for empty input', () => {
-  const retranslator = createRetranslator(testCatalog);
-  assert.equal(retranslator.retranslate(''), '');
-});
-
-test('template match returns null for non-matching prefix', () => {
-  const retranslator = createRetranslator(testCatalog);
-  // "Switched to Desk-1…" does not start with the template prefix "Switching to "
-  assert.equal(retranslator.retranslate('Switched to Desk-1…'), 'Switched to Desk-1…');
-});
-
-test('template match returns null for non-matching suffix', () => {
-  const retranslator = createRetranslator(testCatalog);
-  // "3 more sessions xyz" doesn't end with the expected suffix
-  assert.equal(retranslator.retranslate('3 more sessions xyz'), '3 more sessions xyz');
-});
-
-test('dual placeholder with empty middle', () => {
-  const retranslator = createRetranslator(testCatalog);
-  // "foo and bar" where middle is " and "
-  assert.equal(retranslator.retranslate('A and B'), 'A 和 B');
-});
-
-test('dual placeholder with complex values', () => {
-  const retranslator = createRetranslator(testCatalog);
-  // Values containing spaces
-  assert.equal(retranslator.retranslate('hello world and foo bar'), 'hello world 和 foo bar');
-  assert.equal(retranslator.retranslate('你好世界 和 foo bar'), '你好世界 and foo bar');
+test('shared runtime refresh preserves workspace identity and refreshes download status', () => {
+  const source = fs.readFileSync(path.join(root, 'ets/pages/runtime/AppRootRuntimeComposition.ets'), 'utf8');
+  const body = source.split('  refreshLocalizedRuntimeCopy(): void {')[1].split('\n  }')[0];
+  const { remote } = load();
+  remote.setLanguage('zh-CN');
+  const state = {
+    statusText: 'Downloaded budget$$.txt · 3 KB',
+    sessionErrorText: '',
+    workspaceName: 'Not connected', workspacePath: '/remote/project', workspaceId: 'id',
+    fileDownloadStatus: 'Downloaded budget$$.txt · 3 KB',
+    setStatusText(value) { this.statusText = value; },
+    setError(value) { this.sessionErrorText = value; },
+    setWorkspace(name) { this.workspaceName = name; },
+    setDownloadStatus(_downloading, _downloaded, value) { this.fileDownloadStatus = value; }
+  };
+  const context = { remotePageState: state, filePreviewState: { errorText: '' } };
+  const refresh = new Function('RemoteI18n', 'ConnectionStatusPresenter', body);
+  for (let index = 0; index < 2; index++) {
+    refresh.call(context, remote, { labelKey: () => 'status.notConnected' });
+    assert.equal(state.statusText, '下载完成 budget$$.txt · 3 KB');
+    assert.equal(state.fileDownloadStatus, state.statusText);
+    assert.equal(state.workspaceName, 'Not connected');
+  }
 });

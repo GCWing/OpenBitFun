@@ -993,7 +993,7 @@ export abstract class AppRootRuntimeComposition {
   }
 
   refreshLocalizedRuntimeCopy(): void {
-    this.remotePageState.setStatusText(RemoteI18n.retranslateKnown(
+    this.remotePageState.setStatusText(RemoteI18n.retranslate(RemoteI18n.retranslateKnown(
       this.remotePageState.statusText,
       [
         ConnectionStatusPresenter.labelKey(this.remotePageState.connectionState),
@@ -1001,10 +1001,12 @@ export abstract class AppRootRuntimeComposition {
         'status.waitingConnection',
         'status.notConnected'
       ]
-    ));
+    )));
     this.remotePageState.setError(RemoteI18n.retranslate(this.remotePageState.sessionErrorText));
     this.remotePageState.setWorkspace(
-      RemoteI18n.retranslateKnown(this.remotePageState.workspaceName, ['status.notConnected']),
+      RemoteI18n.retranslateWorkspaceName(
+        this.remotePageState.workspaceName, this.remotePageState.workspacePath, this.remotePageState.workspaceId
+      ),
       this.remotePageState.workspacePath,
       this.remotePageState.assistantId,
       this.remotePageState.workspaceBranch,

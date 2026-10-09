@@ -1,3 +1,4 @@
+import { util } from '@kit.ArkTS';
 import { describe, expect, it } from '@ohos/hypium';
 import { AppLocale, APP_LOCALE_EN_US, APP_LOCALE_ZH_CN } from '../main/ets/i18n/AppLocale';
 import { RemoteI18n } from '../main/ets/i18n/RemoteI18n';
@@ -8,6 +9,15 @@ import {
   GeneralChatServiceStatus
 } from '../main/ets/services/general-chat/GeneralChatServiceState';
 import { TimeFormat } from '../main/ets/services/TimeFormat';
+
+interface RawStringEntry {
+  name: string;
+  value: string;
+}
+
+interface RawStringCatalog {
+  string: RawStringEntry[];
+}
 
 function restoreZhCn(): void {
   RemoteI18n.setLanguage(APP_LOCALE_ZH_CN);
@@ -120,39 +130,34 @@ export default function i18nUnitTest() {
       expect(RemoteI18n.t('sidebar.moreSessions')).assertEqual('还有 %1$s 个会话');
     });
 
-    it('has all keys in string.json matching ets catalogs', 0, () => {
+    it('keeps generated rawfile catalogs in key lockstep', 0, () => {
       restoreZhCn();
-      const zhKeys = RemoteI18n.keys(APP_LOCALE_ZH_CN).sort();
-      const enKeys = RemoteI18n.keys(APP_LOCALE_EN_US).sort();
-      expect(zhKeys.length).assertEqual(enKeys.length);
+      const bytes = getContext(RemoteI18n).resourceManager.getRawFileContentSync('string.json');
+      const catalog = JSON.parse(util.TextDecoder.create('utf-8').decodeWithStream(bytes)) as RawStringCatalog;
+      const enKeys = catalog.string.filter((entry: RawStringEntry) => !entry.name.endsWith('.zh'))
+        .map((entry: RawStringEntry) => entry.name).sort();
+      const zhKeys = catalog.string.filter((entry: RawStringEntry) => entry.name.endsWith('.zh'))
+        .map((entry: RawStringEntry) => entry.name.slice(0, -3)).sort();
+      expect(zhKeys.join('\n')).assertEqual(enKeys.join('\n'));
       expect(zhKeys.length > 0).assertTrue();
-      expect(zhKeys.indexOf('settings.title') >= 0).assertTrue();
-      expect(zhKeys.indexOf('workspaceTools.browse') >= 0).assertTrue();
-      expect(zhKeys.indexOf('sidebar.moreSessions') >= 0).assertTrue();
+      expect(zhKeys.indexOf('settings_title') >= 0).assertTrue();
+      expect(zhKeys.indexOf('workspaceTools_browse') >= 0).assertTrue();
+      expect(zhKeys.indexOf('sidebar_moreSessions') >= 0).assertTrue();
     });
   });
 
   describe('HostTextRetranslator', () => {
-    it('builds reverse index for O(1) exact matching', 0, () => {
-      restoreZhCn();
-      const retranslator = new HostTextRetranslator(APP_LOCALE_ZH_CN);
-      const zhBack = RemoteI18n.translate(APP_LOCALE_ZH_CN, 'common.back');
-      const enBack = RemoteI18n.translate(APP_LOCALE_EN_US, 'common.back');
-      expect(retranslator.retranslate(zhBack)).assertEqual(enBack);
-      expect(retranslator.retranslate(enBack)).assertEqual(zhBack);
-    });
-
-    it('matches templates with %1$s and %2$s', 0, () => {
-      restoreZhCn();
-      const retranslator = new HostTextRetranslator(APP_LOCALE_ZH_CN);
-      const zhSwitching = RemoteI18n.f('remote.settings.deviceSwitching', 'Desk-1');
-      expect(zhSwitching).assertEqual('正在切换到 Desk-1…');
-      const enSwitching = retranslator.retranslate(zhSwitching);
-      expect(enSwitching).assertEqual('Switching to Desk-1…');
-      const zhMore = RemoteI18n.f('sidebar.moreSessions', '3');
-      expect(zhMore).assertEqual('还有 3 个会话');
-      const enMore = retranslator.retranslate(zhMore);
-      expect(enMore).assertEqual('3 more sessions');
+    it('renders exact and templated messages in the requested language', 0, () => {
+      const chinese = new HostTextRetranslator(APP_LOCALE_ZH_CN);
+      const english = new HostTextRetranslator(APP_LOCALE_EN_US);
+      expect(chinese.retranslate('Back')).assertEqual('返回');
+      expect(chinese.retranslate('返回')).assertEqual('返回');
+      expect(english.retranslate('返回')).assertEqual('Back');
+      expect(english.retranslate('Back')).assertEqual('Back');
+      expect(chinese.retranslate('Downloaded a.txt · 3 KB')).assertEqual('下载完成 a.txt · 3 KB');
+      expect(chinese.retranslate('下载完成 a.txt · 3 KB')).assertEqual('下载完成 a.txt · 3 KB');
+      expect(chinese.retranslate('Show 3 more sessions')).assertEqual('再显示 3 条会话');
+      expect(english.retranslate('正在切换到 Desk-1…')).assertEqual('Switching to Desk-1…');
     });
 
     it('returns original message when no match found', 0, () => {

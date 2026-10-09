@@ -1,5 +1,6 @@
 import { AppLocale, APP_LOCALE_EN_US, APP_LOCALE_ZH_CN } from './AppLocale';
 import { HostTextRetranslator } from './HostTextRetranslator';
+import { fillMessageTemplate } from './MessageTemplate';
 import { intl } from '@kit.LocalizationKit';
 
 @ObservedV2
@@ -45,11 +46,11 @@ export class RemoteI18n {
   }
 
   static f(key: string, value: string): string {
-    return RemoteI18n.t(key).replace('%1$s', value);
+    return fillMessageTemplate(RemoteI18n.t(key), [value]);
   }
 
   static f2(key: string, first: string, second: string): string {
-    return RemoteI18n.t(key).replace('%1$s', first).replace('%2$s', second);
+    return fillMessageTemplate(RemoteI18n.t(key), [first, second]);
   }
 
   static translate(language: string, key: string): string {
@@ -116,23 +117,29 @@ export class RemoteI18n {
   }
 
   static retranslateKnown(message: string, keys: string[]): string {
-    for (let index = 0; index < keys.length; index += 1) {
-      if (RemoteI18n.textEquals(keys[index], message)) {
-        return RemoteI18n.t(keys[index]);
-      }
+    return RemoteI18n.hostTextRetranslator().retranslateKnown(message, keys);
+  }
+
+  static retranslateWorkspaceName(name: string, path: string, workspaceId: string): string {
+    if (path.length > 0 || workspaceId.length > 0) {
+      return name;
     }
-    return RemoteI18n.retranslate(message);
+    return RemoteI18n.retranslateKnown(name, ['status.notConnected']);
   }
 
   static retranslate(message: string): string {
     if (message.length === 0) {
       return message;
     }
+    return RemoteI18n.hostTextRetranslator().retranslate(message);
+  }
+
+  private static hostTextRetranslator(): HostTextRetranslator {
     const locale = RemoteI18n.language();
     if (!RemoteI18n.retranslator || RemoteI18n.retranslatorLocale !== locale) {
       RemoteI18n.retranslator = new HostTextRetranslator(locale);
       RemoteI18n.retranslatorLocale = locale;
     }
-    return RemoteI18n.retranslator!.retranslate(message);
+    return RemoteI18n.retranslator!;
   }
 }
